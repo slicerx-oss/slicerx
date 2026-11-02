@@ -13,6 +13,10 @@
 //!   above that one float where they reach past the solid the surfaces below them ask for.
 //! - With `ensure_vertical_shell_thickness` `partial` a piece does not reach past that solid, so it also rests on the
 //!   sparse infill along its edge, and it floats up to a wider circle ([`floating_width`]).
+//! - With some pairs of internal solid and sparse infill patterns (monotonic over grid among them; [`FLOATS_ON`] is
+//!   the measured table) a piece floats only where it lies over the unsupported area. One that only
+//!   borders it, such as a ring layer stacked on the ring layer below, stays internal solid infill. The band of a
+//!   sloped face, a narrow strip on a narrow strip of the layer below, keeps the touch test as it was.
 //! - How: concentric variable-width beads, like the other narrow pieces. A bead that encloses another prints
 //!   first, otherwise the nearest next. The first closed bead starts where its longest supported run starts
 //!   (supported: not over the unsupported area, or on the lower layer's sparse lines); each later closed bead
@@ -35,7 +39,7 @@
 )]
 
 use crate::arachne::WallLine;
-use crate::config::PrintConfig;
+use crate::config::{InfillPattern, PrintConfig};
 use crate::fm::Fm as _;
 use crate::geom::SCALE;
 use crate::par::Init as _;
@@ -171,6 +175,67 @@ pub(crate) fn fixed_walls(cfg: &PrintConfig) -> Option<PrintConfig> {
     Some(fixed)
 }
 
+/// The internal solid infill patterns of [`FLOATS_ON`]'s columns, in order. `zig-zag` reads as `rectilinear`.
+const SOLID_COLUMNS: [&str; 8] = [
+    "concentric",
+    "rectilinear",
+    "monotonic",
+    "monotonicline",
+    "alignedrectilinear",
+    "hilbertcurve",
+    "archimedeanchords",
+    "octagramspiral",
+];
+
+/// A measured table, not a rule: the pattern grid measured on 2026-11-02 on the stock P1S classic 4.5 mm ring (two
+/// classic walls, 15% infill wall overlap), changing only `internal_solid_infill_pattern` and
+/// `sparse_infill_pattern`. Per sparse infill pattern, one cell per internal solid infill pattern ([`SOLID_COLUMNS`]):
+/// true where the ring's narrow shell layers stacked on the ring layer below (z 1.6 and 1.8) print as floating
+/// vertical shell, false where they print as internal solid infill. A false pair sets [`Below::overlap_only`]. Sparse
+/// patterns that were not measured (quarter cubic, lateral honeycomb, lateral lattice, TPMS-D and TPMS-FK) are left
+/// out, so they keep the touch test as it was.
+#[rustfmt::skip]
+const FLOATS_ON: [(InfillPattern, [bool; 8]); 21] = [
+    (InfillPattern::Concentric, [true, false, false, false, false, false, false, false]),
+    (InfillPattern::Rectilinear, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Grid, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Line, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Cubic, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Triangles, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Stars, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Gyroid, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::Honeycomb, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::AdaptiveCubic, [true, true, false, false, false, false, false, false]),
+    (InfillPattern::AlignedRectilinear, [true, true, true, true, true, false, false, false]),
+    (InfillPattern::Honeycomb3d, [true, true, true, true, true, false, false, false]),
+    (InfillPattern::HilbertCurve, [true, true, true, true, true, true, false, false]),
+    (InfillPattern::ArchimedeanChords, [true, true, true, true, true, true, true, false]),
+    (InfillPattern::OctagramSpiral, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::SupportCubic, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::Lightning, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::CrossHatch, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::ZigZag, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::CrossZag, [true, true, true, true, true, true, true, true]),
+    (InfillPattern::LockedZag, [true, true, true, true, true, true, true, true]),
+];
+
+/// True when [`FLOATS_ON`] marks the region's pair of internal solid infill pattern (`monotonic` by default) and sparse
+/// infill pattern as not floating. A pair the table does not hold is false.
+fn overlap_only(cfg: &PrintConfig) -> bool {
+    let solid = match cfg.raw.get("internal_solid_infill_pattern") {
+        Some(serde_json::Value::String(s)) if s == "zig-zag" => "rectilinear",
+        Some(serde_json::Value::String(s)) => s.as_str(),
+        _ => "monotonic",
+    };
+    let Some(column) = SOLID_COLUMNS.iter().position(|c| *c == solid) else {
+        return false;
+    };
+    FLOATS_ON
+        .iter()
+        .find(|(sparse, _)| *sparse == cfg.sparse_infill_pattern)
+        .is_some_and(|(_, row)| row.get(column) == Some(&false))
+}
+
 /// What a narrow piece can rest on in the layer below, for [`split`]: the lower layer's unsupported area
 /// ([`unsupported`] of its sparse infill area), and the band its vertical shell rule alone makes solid where that
 /// band is at least a sparse infill line wide (the strip under the walls of a part that stands on the layers above,
@@ -201,6 +266,13 @@ pub(crate) struct Below<'a> {
     /// ([`crate::shells::slit_counts`]) on two or more fixed-width walls: a piece over the layer's bridges
     /// ([`Below::cut`]) also floats where the sparse infill past them comes within this of it. 0 otherwise.
     margin: i32,
+    /// The region's internal solid and sparse infill patterns are a pair that [`FLOATS_ON`] marks as not floating: a
+    /// piece then floats only where it lies over the unsupported area, not where it only borders it, and the lower
+    /// layer's band does not float it, unless the piece stands on a narrow strip below ([`Below::on_strip`]).
+    overlap_only: bool,
+    /// The lower layer's narrow internal solid pieces ([`crate::narrow::split_pieces`]) that are rings (with a hole),
+    /// and the strips (the others), worked out when first asked for ([`Below::on_strip`]).
+    lower_narrow: std::sync::OnceLock<(Shapes, Shapes)>,
 }
 
 impl<'a> Below<'a> {
@@ -236,6 +308,8 @@ impl<'a> Below<'a> {
             } else {
                 (cfg.sparse_infill_width() * SCALE).round() as i32
             },
+            overlap_only: overlap_only(cfg),
+            lower_narrow: std::sync::OnceLock::new(),
         }
     }
 
@@ -288,13 +362,34 @@ impl<'a> Below<'a> {
         })
     }
 
+    /// True when `one` stands on a narrow strip of the lower layer's internal solid area (a narrow piece with no
+    /// hole) and on no narrow ring (one with a hole): the band of a sloped face, one strip on another up the face. The
+    /// pattern table ([`FLOATS_ON`]) was measured on rings and does not hold for these.
+    fn on_strip(&self, one: &Shapes) -> bool {
+        let (rings, strips) = self.lower_narrow.once(|| {
+            let Some((_, shell)) = self.band else {
+                return (Shapes::new(), Shapes::new());
+            };
+            crate::narrow::split_pieces(shell)
+                .1
+                .into_iter()
+                .partition(|piece| piece.len() > 1)
+        });
+        let meets = |s: &Shapes| !s.is_empty() && !perimeters::intersection(one, s).is_empty();
+        meets(strips) && !meets(rings)
+    }
+
     /// True when the piece `one` rests on what does not hold it up below. Under `partial` the solid below a piece is
     /// the neighbors' surfaces alone, the piece's own size, so the piece also rests on the sparse infill along its
     /// edge where that infill is at least a sparse infill line wide. Where the slit above is too narrow to count
     /// ([`Below::margin`]), a piece over the layer's bridges also rests on the sparse infill within a sparse infill
     /// line past them: the bridge under a ring then ends at the ring's edge, so the ring's first shell layer over it
     /// floats. Where the slit counts the bridge reaches on under the block and that layer stays internal solid
-    /// infill. None of these counts the unsupported area outside the outline ([`Below::inside`]).
+    /// infill. None of these counts the unsupported area outside the outline ([`Below::inside`]). With a pattern pair
+    /// [`FLOATS_ON`] marks as not floating ([`Below::overlap_only`]), the piece shrinks by the hair instead of growing
+    /// by it before it is checked against the unsupported area, so it has to lie over that area, and the band does not
+    /// count; the other two tests are as they are. A piece on a narrow strip below ([`Below::on_strip`]) keeps the
+    /// first two tests as they are for every pattern pair.
     fn floats(&self, one: &Shapes) -> bool {
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
@@ -308,11 +403,14 @@ impl<'a> Below<'a> {
         let touch = |by: i32, area: &Shapes| {
             near(by) && rests(&perimeters::intersection(&perimeters::offset(one, by), area))
         };
-        touch(EPS, self.cut_to_outline(self.unsupported, &self.touchable))
-            || rests(&perimeters::intersection(
-                &perimeters::offset(one, EPS),
-                self.wide(),
-            ))
+        let measured = self.overlap_only && !self.on_strip(one);
+        let by = if measured { -EPS } else { EPS };
+        touch(by, self.cut_to_outline(self.unsupported, &self.touchable))
+            || (!measured
+                && rests(&perimeters::intersection(
+                    &perimeters::offset(one, EPS),
+                    self.wide(),
+                )))
             || (self.partial_edge && touch(EDGE, self.cut_to_outline(self.open(), &self.touchable_open)))
             || (self.margin > 0
                 && !self.cut.is_empty()
@@ -1001,6 +1099,38 @@ mod tests {
         let (f, r) = split(&vec![over.clone(), beside.clone()], &below, mm(4.625));
         assert_eq!(f, vec![over]);
         assert_eq!(r, vec![beside]);
+    }
+
+    #[test]
+    fn a_pattern_pair_marked_not_floating_needs_the_piece_over_the_sparse_below() {
+        // A piece that reaches 0.0015 mm into the sparse area floats only on the edge test; one 1 mm over it floats on
+        // both.
+        let sparse: Shapes = vec![vec![rect(0.0, 0.0, 10.0, 10.0)]];
+        let u = unsupported(&sparse);
+        let edge = vec![rect(9.9985, 2.0, 13.0, 8.0)];
+        let over = vec![rect(9.0, 2.0, 12.0, 8.0)];
+        let with = |solid: &str, sparse: InfillPattern| {
+            let mut cfg = PrintConfig::default();
+            cfg.raw
+                .insert("internal_solid_infill_pattern".into(), serde_json::json!(solid));
+            cfg.sparse_infill_pattern = sparse;
+            let below = Below::new(&u, None, &Shapes::new(), &cfg);
+            split(&vec![edge.clone(), over.clone()], &below, mm(4.625)).0
+        };
+        assert_eq!(
+            with("zig-zag", InfillPattern::Grid),
+            vec![edge.clone(), over.clone()]
+        );
+        assert_eq!(with("monotonic", InfillPattern::Grid), vec![over.clone()]);
+        assert_eq!(with("monotonic", InfillPattern::CrossHatch).len(), 2);
+        assert_eq!(
+            with("octagramspiral", InfillPattern::ArchimedeanChords),
+            vec![over.clone()]
+        );
+        // Pairs the table does not hold keep the edge test.
+        assert_eq!(with("monotonic", InfillPattern::QuarterCubic).len(), 2);
+        assert_eq!(with("monotonic", InfillPattern::TpmsD).len(), 2);
+        assert_eq!(with("unknown", InfillPattern::Grid).len(), 2);
     }
 
     #[test]

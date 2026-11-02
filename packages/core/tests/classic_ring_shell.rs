@@ -9,7 +9,8 @@
 //! - The ring: a 30 mm square box 2 mm tall under a centered 22 mm block to z 4, with 3 to 6 bottom shell layers. The
 //!   ring's shell layers that have the block within their top shell count reach 1.30 mm past the block's outline, to
 //!   the inner edge of the slit the ring's top layer leaves around the block. With 5 bottom shells the z 1.4 solid hangs
-//!   past the z 1.2 solid over sparse infill far enough to bridge, z 1.6 over it is internal solid and z 1.8 floats.
+//!   past the z 1.2 solid over sparse infill far enough to bridge, z 1.6 over it is internal solid and z 1.8 floats
+//!   (with zig-zag internal solid infill).
 //!   The lowest shell layer keeps its edge 0.10 mm past the outline plus one line under the slit, and `partial`
 //!   keeps every ring layer at the outline. With 3 bottom shells z 1.2 is one bridge, the line under the slit included.
 //! - Stairs (a ledge topped at z 2.0, a step `d` mm wide topped at 2.2 and a block to z 4 beyond it): with 5 bottom
@@ -20,11 +21,16 @@
 //!   under the slope widens to the slits and its lowest layer bridges; at 30% overlap the slit is too narrow to count
 //!   and nothing changes; with MK4 widths (0.40 and 0.44 mm walls, 3 walls, 25%, 4 top layers) on a printer that is
 //!   not a Bambu Lab one, the same solid and bridges print.
-//! - The ring's shell layers over its z 1.2 bridge with 3 bottom shells (the stock request, `precise_outer_wall` off),
-//!   by infill wall overlap: up to 19% the slit counts, z 1.4 is internal solid and z 1.6 and 1.8 float, about 34.9
-//!   each on the W 4.0 ring. From 20% it does not count, the ring layers carry about 31.9 and the first of them, z 1.4,
-//!   floats too: the bridge under it ends at the ring's edge, so the sparse infill past it comes within a sparse line.
+//! - The ring's shell layers over its z 1.2 bridge with 3 bottom shells (the stock request, `precise_outer_wall` off,
+//!   with zig-zag internal solid infill), by infill wall overlap: up to 19% the slit counts, z 1.4 is internal solid
+//!   and z 1.6 and 1.8 float, about 34.9 each on the W 4.0 ring. From 20% it does not count, the ring layers carry
+//!   about 31.9 and the first of them, z 1.4, floats too: the bridge under it ends at the ring's edge, so the sparse
+//!   infill past it comes within a sparse line.
 //!   It stays internal solid with variable-width walls, with one wall and with three.
+//! - Monotonic internal solid infill (the stock request's) over grid sparse infill: the ring's layers stacked on the
+//!   ring layer below only border the sparse infill under the block, so they stay internal solid infill, and only a
+//!   layer that lies over that sparse infill floats. The measured pattern grid decides which pairs of internal solid
+//!   and sparse infill patterns do this.
 //! - The classic x-mark on the P1S and A1 prints gap fill only after a top surface (fixtures/classic-ring-shell: their
 //!   stock settings with classic walls).
 //!
@@ -57,7 +63,12 @@ const SPARSE: &str = "Sparse infill";
 /// The G-code of the stock P1S request with classic walls and `edits` to its config, printing `mesh` at the middle
 /// of the bed.
 fn slice(mesh: Arc<Mesh>, edits: &[(&str, Value)]) -> String {
-    let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
+    slice_from(REQUEST, mesh, edits)
+}
+
+/// The same from the request at `path`.
+fn slice_from(path: &str, mesh: Arc<Mesh>, edits: &[(&str, Value)]) -> String {
+    let mut req: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     req["config"]["wall_generator"] = json!("classic");
     for (k, v) in edits {
         req["config"][*k] = v.clone();
@@ -293,7 +304,7 @@ fn solid(layers: &BTreeMap<(String, i64), f64>, z: f64) -> f64 {
 
 #[test]
 fn the_ring_layer_over_sparse_bridges_with_five_bottom_shells() {
-    let ms = step_case(5, &[]);
+    let ms = step_case(5, &[solid_pattern("zig-zag")]);
     let layers = per_layer(&ms);
     for (feature, want) in [(SOLID, 29.84), (SPARSE, 8.38)] {
         let got = at(&layers, feature, 1.2);
@@ -606,9 +617,15 @@ fn the_slit_counts_on_other_printers_too() {
 /// Floating vertical shell and internal solid infill on the ring's shell layers z 1.4, 1.6 and 1.8 of the W `w` step
 /// with `edits`: `want` is the label of each (true floating) and `e` the amount each layer carries, within `within`.
 fn check_ring(name: &str, w: f64, edits: &[(&str, Value)], want: [bool; 3], e: f64, within: f64) {
-    let layers = per_layer(&moves(&slice(step_w(w), edits)));
+    let zs: Vec<(f64, bool)> = [1.4, 1.6, 1.8].into_iter().zip(want).collect();
+    check_layers(name, &slice(step_w(w), edits), &zs, e, within);
+}
+
+/// The same on the layers `zs` (z, true floating) of the G-code `g`.
+fn check_layers(name: &str, g: &str, zs: &[(f64, bool)], e: f64, within: f64) {
+    let layers = per_layer(&moves(g));
     let mut misses = Vec::new();
-    for (z, floats) in [1.4, 1.6, 1.8].into_iter().zip(want) {
+    for &(z, floats) in zs {
         let (fl, is) = (at(&layers, FLOATING, z), at(&layers, SOLID, z));
         let (got, other, label) = if floats {
             (fl, is, FLOATING)
@@ -630,7 +647,7 @@ fn the_slit_counts_up_to_19_percent_overlap() {
         check_ring(
             &format!("{ov}% overlap"),
             4.0,
-            &[("infill_wall_overlap", json!(ov))],
+            &[solid_pattern("zig-zag"), ("infill_wall_overlap", json!(ov))],
             [false, true, true],
             e,
             0.03,
@@ -641,7 +658,7 @@ fn the_slit_counts_up_to_19_percent_overlap() {
 #[test]
 fn classic_ring_amounts_follow_the_slit() {
     for (w, want, e) in [(4.5, [false, true, true], 38.19), (5.0, [false; 3], 41.56)] {
-        check_ring(&format!("W {w}"), w, &[], want, e, 0.03);
+        check_ring(&format!("W {w}"), w, &[solid_pattern("zig-zag")], want, e, 0.03);
     }
 }
 
@@ -659,7 +676,7 @@ fn the_first_ring_layer_over_its_bridge_floats_from_20_percent_overlap() {
         check_ring(
             &format!("{ov}% overlap"),
             4.0,
-            &[("infill_wall_overlap", json!(ov))],
+            &[solid_pattern("zig-zag"), ("infill_wall_overlap", json!(ov))],
             [true; 3],
             e,
             0.03,
@@ -674,7 +691,7 @@ fn the_first_ring_layer_stays_internal_solid_with_other_walls() {
     check_ring(
         "variable-width walls",
         4.5,
-        &[("wall_generator", json!("aegis"))],
+        &[solid_pattern("zig-zag"), ("wall_generator", json!("aegis"))],
         [false, true, true],
         35.44,
         0.01,
@@ -687,4 +704,144 @@ fn the_first_ring_layer_stays_internal_solid_with_other_walls() {
             "{loops} walls, z 1.4: floating {fl:.2}, internal solid {is:.2}, want internal solid {e}"
         );
     }
+}
+
+/// The internal solid infill pattern edit: `zig-zag` (rectilinear) or `monotonic`, the stock request's.
+fn solid_pattern(name: &str) -> (&'static str, Value) {
+    ("internal_solid_infill_pattern", json!(name))
+}
+
+#[test]
+fn at_monotonic_the_stock_ring_layers_stay_internal_solid() {
+    // Stacked on the ring layer below, z 1.6 and 1.8 only border the sparse infill under the block.
+    check_ring(
+        "W 4.5",
+        4.5,
+        &[solid_pattern("monotonic")],
+        [false; 3],
+        38.19,
+        0.01,
+    );
+}
+
+#[test]
+fn at_zig_zag_the_stock_ring_layers_over_the_first_float() {
+    check_ring(
+        "W 4.5",
+        4.5,
+        &[solid_pattern("zig-zag")],
+        [false, true, true],
+        38.19,
+        0.01,
+    );
+}
+
+#[test]
+fn at_monotonic_only_the_first_ring_layer_floats_at_30_percent_overlap() {
+    // z 1.4 floats over the sparse infill past its bridge; the layers stacked on it stay internal solid.
+    check_ring(
+        "30% overlap",
+        4.0,
+        &[solid_pattern("monotonic"), ("infill_wall_overlap", json!(30))],
+        [true, false, false],
+        31.53,
+        0.03,
+    );
+}
+
+#[test]
+fn the_sparse_pattern_decides_whether_stacked_ring_layers_float() {
+    // Monotonic internal solid over cross hatch floats z 1.6 and 1.8; zig-zag over concentric does not.
+    let g = slice(
+        step_w(4.5),
+        &[
+            solid_pattern("monotonic"),
+            ("sparse_infill_pattern", json!("crosshatch")),
+        ],
+    );
+    check_layers(
+        "monotonic over cross hatch",
+        &g,
+        &[(1.6, true), (1.8, true)],
+        38.19,
+        0.01,
+    );
+    let g = slice(
+        step_w(4.5),
+        &[
+            solid_pattern("zig-zag"),
+            ("sparse_infill_pattern", json!("concentric")),
+        ],
+    );
+    check_layers(
+        "zig-zag over concentric",
+        &g,
+        &[(1.4, false), (1.6, false), (1.8, false)],
+        38.19,
+        0.01,
+    );
+}
+
+#[test]
+fn ring_layers_follow_the_measured_pattern_grid() {
+    // Pairs from both sides of the table (internal solid, sparse): the floating ones on z 1.6 and 1.8, the others
+    // internal solid on z 1.4, 1.6 and 1.8.
+    for (solid, sparse, floats) in [
+        ("concentric", "concentric", true),
+        ("archimedeanchords", "octagramspiral", true),
+        ("monotonic", "lightning", true),
+        ("octagramspiral", "archimedeanchords", false),
+        ("hilbertcurve", "alignedrectilinear", false),
+    ] {
+        let g = slice(
+            step_w(4.5),
+            &[solid_pattern(solid), ("sparse_infill_pattern", json!(sparse))],
+        );
+        let zs: &[(f64, bool)] = if floats {
+            &[(1.6, true), (1.8, true)]
+        } else {
+            &[(1.4, false), (1.6, false), (1.8, false)]
+        };
+        check_layers(&format!("{solid} over {sparse}"), &g, zs, 38.19, 0.01);
+    }
+}
+
+#[test]
+fn the_a1_ring_follows_the_pattern_grid() {
+    let a1 = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/classic-ring-shell/a1-x-mark.json"
+    );
+    let g = slice_from(
+        a1,
+        step_w(4.5),
+        &[
+            solid_pattern("octagramspiral"),
+            ("sparse_infill_pattern", json!("archimedeanchords")),
+        ],
+    );
+    check_layers(
+        "A1, octagramspiral over archimedeanchords",
+        &g,
+        &[(1.4, false), (1.6, false), (1.8, false)],
+        38.19,
+        0.01,
+    );
+}
+
+#[test]
+fn at_monotonic_five_layer_stairs_float_less() {
+    // Five bottom shells and a 5 mm2 smallest sparse area: the stair steps that only border the sparse infill below
+    // stay internal solid.
+    let ds = [0.3, 0.5, 0.7, 0.9, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0];
+    let ms = moves(&slice(
+        stairs(&ds),
+        &[
+            solid_pattern("monotonic"),
+            ("bottom_shell_layers", json!(5)),
+            ("minimum_sparse_infill_area", json!(5)),
+        ],
+    ));
+    let fl: f64 = ms.iter().filter(|m| m.feature == FLOATING).map(|m| m.e).sum();
+    assert!(near(fl, 18.51, 0.05), "floating {fl:.2}, want 18.51");
 }
