@@ -53,9 +53,11 @@ export interface PlanCardProps {
   /** False for a card from a saved log: it cannot be answered. */
   actionable: boolean
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
+  /** The person wrote in the message box instead of answering, which turns the plan down. */
+  dismissed?: boolean | undefined
 }
 
-export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose }: PlanCardProps) {
+export function PlanCard({ askId, plan: given, shown = given, picked, actionable, onChoose, dismissed = false }: PlanCardProps) {
   const [plan, setPlan] = useState(given)
   const [sent, setSent] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -111,7 +113,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
     </li>
   )
 
-  const status = chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
+  const status = dismissed ? 'Canceled' : chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
   const base = `plan-${plan.planId}`
 
   return (
@@ -195,5 +197,5 @@ export function planChoiceCard(props: ChoiceCardProps): ReactNode {
   const planId = planOfChoices(props.choices)
   const plan = planId ? planById(planId) : null
   if (!planId || !plan) return null
-  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} />
+  return <PlanCard key={props.askId} askId={props.askId} plan={plan} shown={shownPlan(planId) ?? plan} picked={props.picked} actionable={props.actionable} onChoose={props.onChoose} dismissed={props.dismissed} />
 }

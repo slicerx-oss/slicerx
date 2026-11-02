@@ -30,13 +30,22 @@ export interface ComposerProps {
   /** Sending is off, for example while nothing can answer yet; typing and attaching still work. */
   sendOff?: boolean
   placeholder?: string
+  /**
+   * A question card waits in the running reply: text in the box answers it (`onAnswer`) in place of a new message, and
+   * Stop turns into Send while there is text. Text only: with files attached, Send stays off.
+   */
+  answering?: boolean
+  onAnswer?: (text: string) => void
 }
 
-export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, placeholder = `Ask ${ASSISTANT_NAME}` }: ComposerProps) {
+export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, placeholder = `Ask ${ASSISTANT_NAME}`, answering = false, onAnswer }: ComposerProps) {
   const ids = useId()
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
   const ready = (text.trim() !== '' || attachments.list.length > 0) && !sendOff
+  // an answer to a waiting card is words only: a tool result cannot carry a file
+  const answers = running && answering && onAnswer !== undefined
+  const answerReady = answers && text.trim() !== '' && attachments.list.length === 0
   // The box is as tall as its text; the stylesheet's max-height stops it at COMPOSER_MAX_LINES and it scrolls from there.
   // It measures again when its width changes, since the same text wraps to more or fewer lines.
   const fit = (): void => {
@@ -60,6 +69,12 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
   }, [])
   const submit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault()
+    if (answers) {
+      if (!answerReady) return
+      onAnswer(text.trim())
+      setText('')
+      return
+    }
     if (!ready || running) return
     onSend(text.trim(), attachments.list)
     setText('')
@@ -90,7 +105,9 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
           onChange={(e) => setText(e.currentTarget.value)}
           onKeyDown={onKeyDown}
         />
-        {running ? (
+        {answers && text.trim() !== '' ? (
+          <Button size="sm" variant={answerReady ? 'primary' : 'ghost'} icon="send" type="submit" aria-label="Send" disabled={!answerReady} />
+        ) : running ? (
           <Button size="sm" variant="ghost" icon="pause" type="button" aria-label="Stop" onClick={onStop} />
         ) : (
           <Button size="sm" variant={ready ? 'primary' : 'ghost'} icon="send" type="submit" aria-label="Send" disabled={!ready} />

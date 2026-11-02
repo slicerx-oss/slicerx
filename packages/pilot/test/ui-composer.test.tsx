@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // @vitest-environment jsdom
 // The message box grows with its text: Enter sends, Shift+Enter starts a new line, and an input method's Enter only
-// ends its composition. The text goes as typed, new lines and all, and the box empties after sending.
+// ends its composition. The text goes as typed, new lines and all, and the box empties after sending. While a question
+// card waits, text in the box answers the card in place of a new message.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PilotAttachment } from '@slicerx/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,9 +11,9 @@ import { Composer, COMPOSER_MAX_LINES, enterSends, useAttachments } from '../ui/
 
 afterEach(cleanup)
 
-function Harness({ onSend, running = false }: { onSend: (t: string, a: PilotAttachment[]) => void; running?: boolean }) {
+function Harness({ onSend, running = false, answering, onAnswer, onStop }: { onSend: (t: string, a: PilotAttachment[]) => void; running?: boolean; answering?: boolean; onAnswer?: (t: string) => void; onStop?: () => void }) {
   const attachments = useAttachments()
-  return <Composer attachments={attachments} onSend={onSend} running={running} />
+  return <Composer attachments={attachments} onSend={onSend} running={running} {...(answering === undefined ? {} : { answering })} {...(onAnswer ? { onAnswer } : {})} {...(onStop ? { onStop } : {})} />
 }
 
 describe('enterSends', () => {
@@ -64,5 +65,53 @@ describe('the message box', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Make it taller' } })
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
+  })
+})
+
+describe('the message box while a question card waits', () => {
+  const button = () => screen.getAllByRole('button').at(-1) as HTMLButtonElement
+
+  it('shows Stop while empty, and Send once there is text; Enter answers the card and not a new message', () => {
+    const onSend = vi.fn()
+    const onAnswer = vi.fn()
+    const onStop = vi.fn()
+    render(<Harness onSend={onSend} running answering onAnswer={onAnswer} onStop={onStop} />)
+    expect(button().getAttribute('aria-label')).toBe('Stop')
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '  it is a different model  ' } })
+    expect(button().getAttribute('aria-label')).toBe('Send')
+    expect(button().disabled).toBe(false)
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAnswer).toHaveBeenCalledWith('it is a different model')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onStop).not.toHaveBeenCalled()
+    expect(box.value).toBe('')
+    expect(button().getAttribute('aria-label')).toBe('Stop')
+    fireEvent.click(button())
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Send off with files attached: an answer is words only', () => {
+    const onAnswer = vi.fn()
+    const file: PilotAttachment = { id: 'f1', name: 'photo.jpg', type: 'image/jpeg', bytes: 10, url: 'data:image/jpeg;base64,AA==' }
+    const attachments = { list: [file], problems: [], add: async () => undefined, remove: () => undefined, clear: () => undefined }
+    render(<Composer attachments={attachments} onSend={vi.fn()} running answering onAnswer={onAnswer} />)
+    const box = screen.getByRole('textbox')
+    fireEvent.change(box, { target: { value: 'this one' } })
+    const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement
+    expect(send.disabled).toBe(true)
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAnswer).not.toHaveBeenCalled()
+  })
+
+  it('still drops a message while a reply runs with no card waiting', () => {
+    const onSend = vi.fn()
+    const onAnswer = vi.fn()
+    render(<Harness onSend={onSend} running answering={false} onAnswer={onAnswer} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Make it taller' } })
+    expect(button().getAttribute('aria-label')).toBe('Stop')
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onAnswer).not.toHaveBeenCalled()
   })
 })
