@@ -12,6 +12,12 @@ import { SECTIONS, sectionOf } from './setting-sections'
 
 export const EDITABLE = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent'])
 
+/**
+ * Per-extruder choice lists (schema type `enums`) a printer row edits, one by one. Other list choices (nozzle type,
+ * extruder type, lift enforcement) join once their labels are checked.
+ */
+export const LIST_ENUM_KEYS: ReadonlySet<string> = new Set(['z_hop_types'])
+
 /** Process rows also support per-extruder switches, text and number-or-percent lists. */
 export const PROCESS_EDITABLE: ReadonlySet<string> = new Set([...EDITABLE, 'bools', 'string', 'floatsOrPercents'])
 

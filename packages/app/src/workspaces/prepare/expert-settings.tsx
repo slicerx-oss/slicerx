@@ -31,7 +31,7 @@ import { useScope } from './scope-bar'
 import { fixMatch } from './setting-fixes'
 import { buildTabs, EDITABLE_PROCESS, offeredTabs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
 
-export { EDITABLE, PROCESS_EDITABLE, INTENTS, visibleLevels } from './settings-view'
+export { EDITABLE, LIST_ENUM_KEYS, PROCESS_EDITABLE, INTENTS, visibleLevels } from './settings-view'
 
 /** Units as a person reads them; a temperature difference is still in degrees Celsius. */
 const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm3/s2': 'mm³/s²', 'mm/s2': 'mm/s²' }
@@ -162,7 +162,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
       return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { tip: { title: tip.title, body: tip.body, ...(tip.demo ? { demo: tip.demo } : {}) } } : {}) }
     })
     control = <Seg label={def.label ?? def.key} size="sm" full value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
-  } else if (def.type === 'enum') {
+  } else if (def.type === 'enum' || def.type === 'enums') {
     const offered = offeredValues(def, scalar, unavailable)
     const current = offered.find((o) => o.value === String(scalar ?? ''))
     // A closed select shows a short name for a long value; the menu, the tooltip and the accessible name keep the full one.
@@ -181,7 +181,11 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
         wrap={{ ...(Object.keys(optionTip).length || !full || full === face ? optionTip : tipAttrs({ title: full })), ...(wide ? { style: { width: `${wide}px` } } : {}) }}
         value={mixed ? '' : String(scalar ?? '')}
         disabled={Boolean(locked)}
-        onChange={(e) => e.currentTarget.value && setOverride(def.key, e.currentTarget.value)}
+        onChange={(e) => {
+          const v = e.currentTarget.value
+          // A per-extruder list keeps its list form; the printer row decides what the other entries take.
+          if (v) setOverride(def.key, def.type === 'enums' ? [v] : v)
+        }}
       >
         {mixed ? <option value="">Mixed</option> : null}
         {offered.map(({ value: v, label, gone }) => (
@@ -226,7 +230,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   // number-or-percent row names its unit in its toggle instead. A width in mm or a percent shows its unit only while
   // the value is a plain number: a percent carries its own % sign.
   const percentNow = def.type === 'floatOrPercent' && !plainNumber(scalar)
-  const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'floatsOrPercents' || percentNow ? '' : unitText
+  const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'enums' || def.type === 'floatsOrPercents' || percentNow ? '' : unitText
   return (
     <SettingRow
       as="li"
@@ -269,8 +273,8 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     >
       {!scoped && !overridden && own !== null ? (
         <p className="sx-small sx-muted slicerx-default">
-          {appName()} default. This printer's preset says {String(Array.isArray(own) ? own[0] : own)}.{' '}
-          <LinkButton onClick={() => setOverride(def.key, own)}>Use this preset's own ({String(Array.isArray(own) ? own[0] : own)})</LinkButton>
+          {appName()} default. This printer's preset says {formatValue(def, Array.isArray(own) ? own[0] : own)}.{' '}
+          <LinkButton onClick={() => setOverride(def.key, own)}>Use this preset's own ({formatValue(def, Array.isArray(own) ? own[0] : own)})</LinkButton>
         </p>
       ) : null}
       {helper}

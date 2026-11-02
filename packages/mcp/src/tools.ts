@@ -205,7 +205,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'settings',
     permission: 'slice',
-    description: 'Set or clear setting overrides for the open project, such as the config_patch from slicerx_plan_settings. Changes only the project, never a saved profile. With --app, edit the live project and read back with app.settings; scripts and printer settings are refused there. In automatic mode an open server project takes precedence, otherwise use the app while its link answers. clear restores inherited values; a key cannot also be in changes.',
+    description: 'Set or clear setting overrides for the open project, such as the config_patch from slicerx_plan_settings. Changes only the project, never a saved profile. With --app, edit the live project and read back with app.settings; scripts and printer settings are refused there, except z_hop_types (one entry per extruder). filament_travel_slope holds one entry per filament, slot 1 first, with "nil" for a filament that uses the printer\'s travel slope. In automatic mode an open server project takes precedence, otherwise use the app while its link answers. clear restores inherited values; a key cannot also be in changes.',
     input: projectSettingsInput,
     async approval(i) {
       return { title: `Change ${Object.keys(i.changes).length + i.clear.length} settings in this project?`, lines: [...Object.entries(i.changes).map(([k, v]) => `${k} = ${JSON.stringify(v)}`), ...i.clear.map((k) => `${k}: use inherited value`)].slice(0, 12), actions: [] }

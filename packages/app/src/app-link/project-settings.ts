@@ -11,7 +11,10 @@ import { get, markStale, set, toast } from '../state/store'
 import { LinkError } from './methods-error'
 
 const TYPES = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floatOrPercent', 'floats', 'ints', 'percents', 'bools', 'enums', 'floatsOrPercents'])
-const offered = (d: SettingDef) => d.section !== 'printer' && (TYPES.has(d.type) || d.section === 'process' && d.type === 'string' && takenFromFile(d.key, ''))
+/** Printer settings a client may read and set by name: the lift type, which the app's Printer settings edit too. Machine
+ * G-code and every other printer key stay refused. */
+export const PRINTER_LIFT_KEYS: ReadonlySet<string> = new Set(['z_hop_types'])
+const offered = (d: SettingDef) => (d.section !== 'printer' || PRINTER_LIFT_KEYS.has(d.key)) && (TYPES.has(d.type) || d.section === 'process' && d.type === 'string' && takenFromFile(d.key, ''))
 const supported = SETTINGS.filter(offered).map((d) => d.key)
 // These come from plate and filament controls, not preset rows. Read them without making them global override edits.
 const readOnly = ['curr_bed_type', 'flush_multiplier', 'flush_volumes_matrix', 'filament_map', 'filament_map_mode', 'first_layer_print_sequence', 'other_layers_print_sequence', 'other_layers_print_sequence_nums']
