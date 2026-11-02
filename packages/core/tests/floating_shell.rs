@@ -311,10 +311,15 @@ impl Read {
     }
 }
 
-/// The ring's three solid layers (z 1.4, 1.6 and 1.8) of `step(ring)` with `walls`, as labels, and the filament of
-/// the first and the second.
+/// The ring's three solid layers (z 1.4, 1.6 and 1.8) of `step(ring)` with `walls`, zig-zag internal solid infill and
+/// grid sparse infill (a pair whose stacked ring layers float), as labels, and the filament of the first and the
+/// second.
 fn ring_layers(ring: f32, walls: &str, extra: &Value) -> ([&'static str; 3], f64, f64) {
-    let mut set = json!({"wall_generator": walls, "sparse_infill_pattern": "grid"});
+    let mut set = json!({
+        "wall_generator": walls,
+        "sparse_infill_pattern": "grid",
+        "internal_solid_infill_pattern": "zig-zag",
+    });
     if let (Some(c), Some(e)) = (set.as_object_mut(), extra.as_object()) {
         c.extend(e.clone());
     }
