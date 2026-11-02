@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { openSheet } from '../../fixtures'
 import { openModel } from './model'
-import { BAY_1, expect, setState, sidebarAs } from './shell'
+import { BAY_1, exampleX, expect, setState, sidebarAs, sidebarDone } from './shell'
 
 const fixtures = join(import.meta.dirname, '..', '..', '..', '..', '..', 'packages')
 /** PrusaSlicer 2.9 projects: an MK4 on its input shaper firmware (printer_model MK4IS) and an MK4S, both 0.4 mm. */
@@ -17,6 +17,28 @@ export const MK4S = { name: 'prusaslicer-2.9.6.3mf', path: join(fixtures, 'setti
 
 type Sx = { __sx: { getState(): { printerId: string | null; profile: { printerId: string; nozzle: number } | null; overrides: Record<string, unknown> } } }
 const state = (page: Page) => page.evaluate(() => { const s = (window as unknown as Sx).__sx.getState(); return { printerId: s.printerId, profile: s.profile ? { printerId: s.profile.printerId, nozzle: s.profile.nozzle } : null, overrides: s.overrides } })
+
+type Kept = Record<string, unknown>
+
+/**
+ * Runs `body` and puts the page back as it found it. The journeys share one page per worker, and an opened project
+ * leaves its open note (Details, Change printer) and its fixed layers behind, which a later test on that page counts
+ * as controls of its own (shell.spec.ts counts the Slice tab's controls).
+ */
+export async function leavesNothing(page: Page, body: () => Promise<void>): Promise<void> {
+  const keys = ['easy', 'goal', 'goalBase', 'easyTouched'] as const
+  const was = await page.evaluate((k) => {
+    const s = (window as unknown as { __sx: { getState(): Record<string, unknown> } }).__sx.getState()
+    return Object.fromEntries(k.map((key) => [key, s[key]]))
+  }, [...keys]) as Kept
+  try {
+    await body()
+  } finally {
+    await sidebarDone(page)
+    await exampleX(page)
+    await setState(page, { ...was, openNote: null })
+  }
+}
 
 /** Opens a project as the job (in place of the plate's objects) and shows the pane its note is in. */
 async function open(page: Page, file: { name: string; path: string }): Promise<void> {
