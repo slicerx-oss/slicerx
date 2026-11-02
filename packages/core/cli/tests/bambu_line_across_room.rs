@@ -379,14 +379,14 @@ fn br_3_bambu_first_layer_starts_at_one_spacing_on_the_overlap_edge() {
     }
 }
 
-/// BR-3b. Where the first layer's spread lines across a strip would be shorter than 0.3 s0 (W - 2 eov under 1.3 s0),
-/// the strip prints one bottom path down its middle, W - 2 eov + h (1 - pi/4) wide as a line along it would be, with
-/// no lines across it and no gap fill: A1 2.350 and 2.391 mm, P1S 2.500 and 2.542 mm.
+/// BR-3b. Where every spread line across a first-layer strip would be shorter than 0.05 s0, the strip prints one
+/// bottom path down its middle, W - 2 eov + h (1 - pi/4) wide as a line along it would be, with no lines across it and
+/// no gap fill: A1 2.342 and 2.357 mm, P1S 2.493 and 2.504 mm.
 #[test]
 fn br_3b_bambu_first_layer_narrow_strips_print_one_path_down_the_middle() {
     for (case, names, eov) in [
-        ("a1--ml-2top-sp0-ac-f", ["T2.270", "T2.380"], 0.9419),
-        ("p1s--ml-2top-sp0-ac-f", ["T2.670", "T2.780"], 1.017),
+        ("a1--ml-2top-sp0-ac-f", ["T2.250", "T2.290"], 0.9419),
+        ("p1s--ml-2top-sp0-ac-f", ["T2.650", "T2.680"], 1.017),
     ] {
         let plate = Plate::slice(case);
         for name in names {
@@ -412,6 +412,36 @@ fn br_3b_bambu_first_layer_narrow_strips_print_one_path_down_the_middle() {
                     &format!("{what} width"),
                 );
             }
+            assert!(cut.gap_len() <= 0.05, "{what}: gap fill");
+        }
+    }
+}
+
+/// BR-3c. A strip whose spread lines across reach 0.05 s0 keeps them: 63 lines across, joined along the strip, and no
+/// gap fill. A1 2.361 mm (lines 0.026 long) and 2.391 mm, P1S 2.508 and 2.542 mm, and on the coarser A1 plate 2.361
+/// to 2.587 mm, where lines up to 0.26 mm long used to give way to a loop.
+#[test]
+fn br_3c_bambu_first_layer_strips_with_longer_lines_keep_them() {
+    for (case, names) in [
+        ("a1--ml-2top-sp0-ac-f", &["T2.300", "T2.380"][..]),
+        ("p1s--ml-2top-sp0-ac-f", &["T2.690", "T2.780"][..]),
+        (
+            "a1--ml-2top-sp0-ac-c",
+            &[
+                "T2.300", "T2.400", "T2.500", "T2.600", "T2.700", "T2.800", "T2.900",
+            ][..],
+        ),
+    ] {
+        let plate = Plate::slice(case);
+        for name in names {
+            let cut = plate.cut(name, false);
+            let what = format!("{case} {name} (W {:.3})", cut.w);
+            assert_eq!(cut.across().len(), 63, "{what}: pieces across");
+            assert!(
+                cut.surface.len() >= 97,
+                "{what}: {} bottom surface moves",
+                cut.surface.len()
+            );
             assert!(cut.gap_len() <= 0.05, "{what}: gap fill");
         }
     }
