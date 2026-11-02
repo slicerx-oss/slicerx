@@ -13,7 +13,7 @@ import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
 import { readPresetFiles } from '../presets'
 import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
-import { openProject } from '../project-open'
+import { openProject, projectPrinterUse } from '../project-open'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
 import { replacementConfig } from '../script-replacement'
@@ -164,6 +164,12 @@ export const summaryShape = {
   /** How the project's own printer G-code was used (project_settings). */
   project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
   warnings: z.array(z.string()),
+  /**
+   * With project_settings and a machine: profile: the printer another slicer's project was made for, the machine:
+   * profile that slices it there (for a printer SlicerX has a profile for), and whether this slice used it. A project_printer
+   * notice names that profile when the slice is for another printer.
+   */
+  project_printer: z.object({ name: z.string(), profile: z.string().optional(), nozzle: z.number().optional(), used: z.boolean().optional() }).optional(),
   /** `warnings` with the engine's code (as written), layer (0 based) and object id for each, when the engine gives them. */
   warning_details: z.array(z.object({ code: z.string(), message: z.string(), layer: z.number().optional(), object_id: z.string().optional() })).optional(),
   /** With project_settings: what the project's print settings carry that slicing did not use, by kind. */
@@ -181,8 +187,8 @@ export const summaryShape = {
     .optional(),
   /** Which wall generator the slice ran and why. */
   walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
-  /** Warnings with a code an app can act on, each also in `warnings`: `ignored_arguments` when the call carried arguments the tool does not take (named in the message), `no_printer` when no printer was named, `other_plates` when a project of more than one plate was sliced without a plate. */
-  notices: z.array(z.object({ code: z.enum(['ignored_arguments', 'no_printer', 'other_plates']), message: z.string() })).optional(),
+  /** Warnings with a code an app can act on, each also in `warnings`: `ignored_arguments` when the call carried arguments the tool does not take (named in the message), `no_printer` when no printer was named, `other_plates` when a project of more than one plate was sliced without a plate, `project_printer` when another slicer's project was sliced for a printer other than the one it was made for (the message names the machine: profile that uses it). */
+  notices: z.array(z.object({ code: z.enum(['ignored_arguments', 'no_printer', 'other_plates', 'project_printer']), message: z.string() })).optional(),
   note: z.string().optional(),
 }
 
@@ -258,6 +264,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   let project: ExtraLayers['project']
   let importReport: ReturnType<typeof readProjectFile>['summary']['import_report'] | undefined
   let projectRead: ReturnType<typeof readProjectFile> | undefined
+  // The printer the project was made for, and whether this slice is for it (the app's open note says the same).
+  let madeFor: ReturnType<typeof projectPrinterUse>
   if (isProject && (args.project_settings || args.plate !== undefined)) {
     const read = readProjectFile(modelPath)
     projectRead = read
@@ -285,6 +293,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     const mm = Number(Array.isArray(asked) ? asked[0] : asked)
     const opened = await openProject(projectRead, profiles, args.profiles, asked !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined, args.plate)
     if (opened) project = { ...project, opened, model: opened.printer }
+    madeFor = projectPrinterUse(projectRead, opened, basename(modelPath))
   }
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined
   // A printer preset file can move the slice to another printer, and the opened project slices on the one it opened on.
@@ -348,9 +357,10 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   }
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
   const ignored = ignoredArgumentsMessage(args, known)
-  const notices: { code: 'ignored_arguments' | 'no_printer' | 'other_plates'; message: string }[] = [
+  const notices: { code: 'ignored_arguments' | 'no_printer' | 'other_plates' | 'project_printer'; message: string }[] = [
     ...(ignored ? [{ code: 'ignored_arguments' as const, message: ignored }] : []),
     ...(noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []),
+    ...(madeFor?.message ? [{ code: 'project_printer' as const, message: madeFor.message }] : []),
   ]
   if (result.plate_count && args.plate === undefined) notices.push({ code: 'other_plates', message: `${basename(modelPath)} has ${result.plate_count} plates; sliced plate ${result.plate}. Pass plate to slice another.` })
   for (const n of notices) result.warnings.push(n.message)
@@ -368,6 +378,6 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
     ...(result.note ? [result.note] : []),
   ]
-  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
+  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), ...(madeFor ? { project_printer: madeFor.report } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
 }
 

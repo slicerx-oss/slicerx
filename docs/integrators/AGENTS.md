@@ -395,6 +395,7 @@ if (result.isError) {
 - In Electron, `process.execPath` is Electron itself. Use it with `env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }` only when that Electron's Node is 24 or later (check `process.versions.node` in the main process). Otherwise bundle a Node 24 runtime and use its path as `command`.
 - In a CommonJS main process, `require.resolve('@slicerx/mcp/cli')` gives the same path.
 - `slicerx_inspect_project` lists a 3MF's plates and filament slots first. Slice one plate per call.
+- A project from another slicer names the printer it was made for: `project_printer` in `slicerx_inspect_project` and in the slice result, with the `machine:` profile for it when SlicerX has one. The user's own printer stays the default. Offer the project's printer and slice with its profile only when the user picks it, as the app's open note does.
 - Send the renderer the bytes of `preview_path` (for the viewport) and the numbers. Never give the renderer file paths it can read itself.
 
 ### Recipe C: profiles, presets and the settings panel

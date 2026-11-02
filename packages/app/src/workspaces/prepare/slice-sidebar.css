@@ -19,4 +19,8 @@
 .open-note > .sx-ic { color: var(--cyan); }
 .open-note-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .open-note[data-open] .open-note-text { white-space: normal; }
+/* A note that asks to wrap (a project's printer offer) takes two lines before Details; the icon and close button stay
+   on its first line. */
+.open-note[data-wrap] { align-items: start; }
+.open-note[data-wrap]:not([data-open]) .open-note-text { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .open-note-acts { grid-column: 2 / 4; display: flex; gap: 8px; margin-left: -8px; }
