@@ -1383,7 +1383,8 @@ jobs:
   # Heavy: builds the engine in release mode and installs a browser. Pushes to main only.
   devkit:
     needs: detect
-    if: github.event_name == 'push' && needs.detect.outputs.node == 'true' && needs.detect.outputs.rust == 'true'
+    # On a push to main, and on a pull request labeled full-ci, so a change to this job shows green before it merges.
+    if: (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.detect.outputs.node == 'true' && needs.detect.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1401,6 +1402,9 @@ jobs:
       - run: node examples/integrator-sample/scripts/integration.mjs
         env:
           SLICERX_SX_BIN: ${{ github.workspace }}/target/release/sx
+      # The optional STEP reader tarball of the kit: an app with only the MCP installed is told to add it, and with both
+      # installed the server reads a STEP file. Like the sample above, npm installs the MCP's dependencies from the registry.
+      - run: pnpm test:kit-step
 
   # The heavy-work lock of the self-hosted CI (scripts/ci/heavy.sh), on a temporary lock.
   heavy-lock:
