@@ -249,8 +249,23 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     () => ({ ...partHandlers(host.slicer, phone), onRun: (request: string) => sendRef.current(request), can: (tool: string) => pilot.tools().some((t) => t.name === tool) }),
     [host, phone, pilot],
   )
-  // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
+  // On a phone the view folds to a strip while a card waits for an answer and comes back once it is answered, and the
+  // chat's top edge moves with it. `fold` is what the attribute shows: it changes a render after `folds` does, so the
+  // line last pressed in the chat (a card's chip or Cancel), or else the conversation's top, is measured while the view
+  // is still as it was, and the effect below puts it back in the same frame.
+  const folds = phone && cardWaits(transcript)
   const body = useRef<HTMLDivElement>(null)
+  const [fold, setFold] = useState(folds)
+  const pressed = useRef<Element | null>(null)
+  const anchor = useRef<{ el: Element; top: number } | null>(null)
+  useLayoutEffect(() => {
+    if (folds === fold) return
+    const el = body.current
+    const at = pressed.current?.isConnected && el?.contains(pressed.current) ? pressed.current : el?.firstElementChild
+    anchor.current = at ? { el: at, top: at.getBoundingClientRect().top } : null
+    setFold(folds)
+  }, [folds, fold])
+  // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   useLayoutEffect(() => {
     const el = body.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
@@ -285,20 +300,29 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [phone])
-  // On a phone the view folds while a card waits for an answer and comes back once it is answered. The chat's top edge
-  // moves with it, so a reader who has scrolled up keeps the same lines where they were: a card's button just pressed
-  // stays under the finger. At the bottom the observer above keeps the end in view, which holds them still too.
-  const waits = phone && cardWaits(transcript)
-  // a question card waiting in the reply: words in the message box answer it, in the same run
-  const open = openChoice(transcript)
-  const chatTop = useRef<number | null>(null)
+  // The view coming back makes the chat shorter from the top. The chat scrolls by as much, so the card just answered
+  // stays where it was on screen and the button just pressed stays under the finger, at the bottom of the chat or
+  // scrolled up. A short conversation cannot scroll that far, so the turns get the room they lack as blank space under
+  // the end, which the reply then fills before the chat follows it again. When the view folds for the next card that
+  // room goes, and a reader scrolled up keeps the same lines where they were; at the bottom the end stays in view.
+  const turns = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = body.current
-    if (!el) return
-    const top = el.getBoundingClientRect().top
-    if (chatTop.current !== null && !stick.current) el.scrollTop += top - chatTop.current
-    chatTop.current = top
-  }, [waits])
+    const a = anchor.current
+    anchor.current = null
+    if (fold && turns.current) turns.current.style.minHeight = ''
+    if (!el || !a || !a.el.isConnected) return
+    if (fold && stick.current) return
+    const to = el.scrollTop + a.el.getBoundingClientRect().top - a.top
+    const short = to - (el.scrollHeight - el.clientHeight)
+    if (!fold && short > 0 && turns.current) turns.current.style.minHeight = `${turns.current.offsetHeight + short}px`
+    el.scrollTop = to
+    // still following the end only if the chat is at it, so the observer above does not scroll the card away again
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 1
+    pressed.current = null
+  }, [fold])
+  // a question card waiting in the reply: words in the message box answer it, in the same run
+  const open = openChoice(transcript)
   // While a sheet waits and its record is scrolled out of the chat, a pill brings it back.
   const waiting = useSheetUi((s) => (sheetMode(s) === 'confirm' ? s.shown!.sheet.id : null))
   const [away, setAway] = useState(false)
@@ -332,7 +356,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       data-testid="mimir-chat"
       data-resizing={resizing || undefined}
       data-drop={dropping || undefined}
-      data-card-waits={waits || undefined}
+      data-card-waits={fold || undefined}
       aria-label={ASSISTANT_NAME}
       style={{ '--w-chat': `${width}px` } as CSSProperties}
       onDragOver={(e) => {
@@ -394,6 +418,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             const el = e.currentTarget
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
           }}
+          onPointerDown={(e) => (pressed.current = e.target as Element)}
+          onKeyDown={(e) => (pressed.current = e.target as Element)}
         >
           {notice ? (
             <div className="mimir-notice">
@@ -406,7 +432,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
               <p>{emptyNote(hostSlices())}</p>
             </div>
           ) : (
-            <div className="mimir-turns">
+            <div ref={turns} className="mimir-turns">
               <UsageLinkContext.Provider value={openUsage}>
                 <TranscriptView transcript={transcript} showThinking={thinking} approvals={handlers} words={stepWords} parts={parts} />
               </UsageLinkContext.Provider>
