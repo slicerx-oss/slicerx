@@ -56,7 +56,8 @@ export type Block =
   /** `builtin`: the runtime's own tool asked, so the host may show its own card in place of the approval card. */
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource; builtin?: boolean }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
-  | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
+  /** `picked` is the empty id for a question turned down (`dismissed`); `said` is what the person wrote instead. */
+  | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean; dismissed?: boolean; said?: string }
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
@@ -441,7 +442,11 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'sheet_bound':
       return mapBlocks(s, (b) => (b.kind === 'sheet' && b.sheet.id === event.sheetId ? { ...b, bound: { design: event.design, binds: event.binds } } : b))
     case 'ask_answered':
-      return mapBlocks(s, (b) => (b.kind === 'choice' && b.askId === event.askId && b.picked === null ? { ...b, picked: event.choiceId } : b))
+      return mapBlocks(s, (b) => {
+        if (b.kind !== 'choice' || b.askId !== event.askId || b.picked !== null) return b
+        if (event.dismissed !== true) return { ...b, picked: event.choiceId }
+        return event.said ? { ...b, picked: event.choiceId, dismissed: true, said: event.said } : { ...b, picked: event.choiceId, dismissed: true }
+      })
     case 'approval_resolved':
       // Policy approvals have no card; their permission note already says so.
       return mapBlocks(s, (b) =>

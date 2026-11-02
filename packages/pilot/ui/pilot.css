@@ -332,6 +332,13 @@
 .sx-pilot .choice-check{position:absolute;left:7px;top:50%;margin-top:-8px;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--green)}
 .sx-pilot .choice-check .sx-ic{width:14px;height:14px}
 .sx-pilot .choice-note{font-size:12.5px;color:var(--orange)}
+/* the foot row under the answers: Cancel at its end, there from the first render of a live card and kept after any
+   answer (disabled), so a pick or a cancel changes no size; the person's words, when they wrote instead of picking,
+   take its start and wrap to two lines at most */
+.sx-pilot .choice-foot{display:flex;align-items:flex-start;justify-content:flex-end;gap:8px;min-height:28px}
+.sx-pilot .choice-foot .sx-btn{flex:none}
+.sx-pilot .choice-said{min-width:0;font-size:13px;line-height:18px;color:var(--t-mute);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.sx-pilot .choice-foot .choice-said{flex:1;padding-top:5px}
 
 /* attachments: thumbnail, name, remove */
 .sx-pilot .att-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}

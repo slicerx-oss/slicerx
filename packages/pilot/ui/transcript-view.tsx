@@ -29,6 +29,8 @@ export interface ApprovalHandlers {
   cards?: Readonly<Record<string, ComponentType<ApprovalCardProps>>> | undefined
   /** Answers a choice card; without it the cards cannot be answered. */
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
+  /** Turns a choice card's question down without a pick; without it the cards have no Cancel. */
+  onDismiss?: ((askId: string) => Promise<void>) | undefined
   /** A card of the host's own for a question it recognizes (a plan to approve); null keeps the choice card. */
   choiceCard?: ((props: ChoiceCardProps) => ReactNode) | undefined
   /** Confirms a dimension sheet with its values; without it a sheet waits for another surface to answer it. */
@@ -97,7 +99,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'sheet':
       return <SheetRecord sheet={block.sheet} answer={block.answer} bound={block.bound !== undefined} actionable={!block.replay} values={approvals.sheetValues} onEdit={block.replay ? undefined : approvals.onEditSheet} onConfirm={approvals.onConfirmSheet} onCancel={approvals.onCancelSheet} onOpen={approvals.onOpenSheet} />
     case 'choice': {
-      const props: ChoiceCardProps = { askId: block.askId, title: block.title, question: block.question, choices: block.choices, picked: block.picked, actionable: !block.replay, onChoose: approvals.onChoose }
+      const props: ChoiceCardProps = { askId: block.askId, title: block.title, question: block.question, choices: block.choices, picked: block.picked, actionable: !block.replay, onChoose: approvals.onChoose, dismissed: block.dismissed === true, said: block.said, onDismiss: approvals.onDismiss }
       return approvals.choiceCard?.(props) ?? <ChoiceCard {...props} />
     }
     case 'summary':

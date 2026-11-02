@@ -72,7 +72,7 @@ export interface TargetPickerProps extends ChoiceCardProps {
   printers: readonly FleetRow[]
 }
 
-export function TargetPicker({ askId, title, question, choices, picked, actionable, onChoose, printers }: TargetPickerProps) {
+export function TargetPicker({ askId, title, question, choices, picked, actionable, onChoose, printers, dismissed = false }: TargetPickerProps) {
   // Shown as picked at once; the run's answer event confirms it.
   const [sent, setSent] = useState<string | null>(null)
   // an answer the app could not deliver: the ask is gone, so the card stops taking answers
@@ -83,7 +83,8 @@ export function TargetPicker({ askId, title, question, choices, picked, actionab
   const none = choices.find((c) => c.id === PICK_NONE)
   const at = chosen ? pickOf(chosen) : null
   const pickedName = at ? list.find((p) => p.id === at.printerId)?.name : undefined
-  const state = chosen === null ? (actionable && !inactive ? null : 'No answer') : at ? `${pickedName ?? 'Picked'}, slot ${at.slot}` : 'None picked'
+  // written in the message box instead of a pick: the question was turned down
+  const state = dismissed ? 'Canceled' : chosen === null ? (actionable && !inactive ? null : 'No answer') : at ? `${pickedName ?? 'Picked'}, slot ${at.slot}` : 'None picked'
 
   const choose = (id: string): void => {
     if (!live) return

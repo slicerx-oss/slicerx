@@ -210,6 +210,13 @@ describe('the plan card', () => {
     expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Not approved, nothing built')
   })
 
+  it('a plan turned down by a written reply reads Canceled', () => {
+    const plan: PartPlan = { planId: 'plan_said', ...BOX }
+    render(createElement(PlanCard, { askId: 'a', plan, picked: '', actionable: true, onChoose: vi.fn(async () => undefined), dismissed: true }))
+    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Canceled')
+    expect((screen.getByTestId('mimir-plan-go') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('leaves an ordinary question to the choice card, and a saved card cannot be answered', () => {
     expect(planChoiceCard({ askId: 'a', title: 'Confirm', question: 'Same model?', choices: [{ id: 'same', label: 'Yes' }, { id: 'other', label: 'No' }], picked: null, actionable: true })).toBeNull()
     const plan: PartPlan = { planId: 'plan_saved', ...BOX }
