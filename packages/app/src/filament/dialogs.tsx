@@ -6,6 +6,7 @@ import { materialType } from './slots'
 import { useHost } from '../host'
 import { filterSpools, spoolLabel, spoolVendors, useSpools, type Spool } from '../inventory/spools'
 import { Button, Dialog, Field, Input, Range, Seg, Select, tipAttrs } from '@slicerx/ui'
+import type { SettingValue } from '@slicerx/contracts'
 import { useMemo, useState } from 'react'
 import { Swatch } from '../parts'
 import { get, set, useApp } from '../state/store'
@@ -16,6 +17,11 @@ import { normalizeColor, resetSlots, setFlush, setFlushManual, setSlot } from '.
 import { flushPlan } from './slot-config'
 import { usePrinter } from '../lib/use-printer'
 import { slotMatches, slotSettingFor, slotWriter, writeSlot } from './slot-write'
+import { parseSlope, setSlotSlope, slopeHint, slotSlope, SLOPE_KEY } from './slot-lift'
+import { resolveConfig } from '../adapters/config'
+import { effectiveMode, useLayout } from '../first-run/look'
+import { settingTipAttrs } from '../lib/tips'
+import { useFilamentCount } from './count'
 
 const NO_BRAND = ''
 
@@ -44,6 +50,8 @@ export function SlotDialog() {
     [index, target, host, slotSetup, printerSlots, profile, easy, overrides],
   )
   const differs = write && 'setting' in write ? !slotMatches(printer, write.setting) : false
+  // The filament's own lift settings are Advanced ones, as in the settings panel.
+  const advanced = effectiveMode(useApp((st) => st.settingsMode), useLayout()) !== 'simple'
   return (
     <Dialog
       open={index !== null && Boolean(slot)}
@@ -133,9 +141,57 @@ export function SlotDialog() {
             </div>
           </Field>
           {slot.source === 'printer' ? <p className="sx-muted sx-small">Filled in from the printer. Change anything here to keep your values instead.</p> : null}
+          {advanced ? <TravelSlope slot={slot.index} /> : null}
         </div>
       ) : null}
     </Dialog>
+  )
+}
+
+/**
+ * The filament's own travel slope: the angle its slope, spiral or ramp lifts climb at. Empty uses the printer's value.
+ * Edits only this slot's entry of the per-filament list, live like the rest of the dialog.
+ */
+function TravelSlope({ slot }: { slot: number }) {
+  const easy = useApp((st) => st.easy)
+  const overrides = useApp((st) => st.overrides)
+  const count = useFilamentCount()
+  const config = useMemo(() => resolveConfig(easy, overrides) as Record<string, SettingValue | undefined>, [easy, overrides])
+  const inherited = useMemo(() => {
+    const { [SLOPE_KEY]: _own, ...rest } = overrides
+    return resolveConfig(easy, rest)[SLOPE_KEY]
+  }, [easy, overrides])
+  const own = slotSlope(config, slot)
+  const shown = own === undefined ? '' : String(own)
+  const commit = (el: HTMLInputElement) => {
+    const v = parseSlope(el.value)
+    if (v === null) {
+      el.value = shown
+      return
+    }
+    if (v === own) {
+      el.value = shown
+      return
+    }
+    setSlotSlope(slot, count, v, inherited)
+    el.value = v === undefined ? '' : String(v)
+  }
+  return (
+    <Field htmlFor="slot-travel-slope" label="Travel slope °" hint={slopeHint(config, slot)}>
+      <Input
+        id="slot-travel-slope"
+        key={`${slot}:${shown}`}
+        className="num"
+        inputMode="decimal"
+        placeholder="Printer value"
+        aria-describedby="slot-travel-slope-hint"
+        defaultValue={shown}
+        data-testid="slot-travel-slope"
+        {...settingTipAttrs(SLOPE_KEY, '.sx-field')}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
+    </Field>
   )
 }
 
