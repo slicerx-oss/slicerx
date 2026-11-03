@@ -14,8 +14,9 @@
 //! - With `ensure_vertical_shell_thickness` `partial` a piece does not reach past that solid, so it also rests on the
 //!   sparse infill along its edge, and it floats up to a wider circle ([`floating_width`]).
 //! - With some pairs of internal solid and sparse infill patterns (monotonic over grid among them; [`FLOATS_ON`] is
-//!   the measured table) a piece floats only where it lies over the unsupported area. One that only
-//!   borders it, such as a ring layer stacked on the ring layer below, stays internal solid infill. The band of a
+//!   the measured table) a piece floats only where it lies over the unsupported area's part at least a sparse infill
+//!   line wide. One that only borders it, such as a ring layer stacked on the ring layer below, or that lies only over
+//!   a sliver along the wall where no sparse line fits, stays internal solid infill. The band of a
 //!   sloped face, a narrow strip on a narrow strip of the layer below, keeps the touch test as it was.
 //! - How: concentric variable-width beads, like the other narrow pieces. A bead that encloses another prints
 //!   first, otherwise the nearest next. The first closed bead starts where its longest supported run starts
@@ -425,7 +426,9 @@ impl<'a> Below<'a> {
     /// floats. Where the slit counts the bridge reaches on under the block and that layer stays internal solid
     /// infill. None of these counts the unsupported area outside the outline ([`Below::inside`]). With a pattern pair
     /// [`FLOATS_ON`] marks as not floating ([`Below::overlap_only`]), the piece shrinks by the hair instead of growing
-    /// by it before it is checked against the unsupported area, so it has to lie over that area, and the band does not
+    /// by it before it is checked against the unsupported area's part at least a sparse infill line wide
+    /// ([`Below::open`]), so it has to lie over sparse infill the layer below prints, not over a sliver along the wall
+    /// where no sparse line fits (the corner of the infill area variable-width walls leave), and the band does not
     /// count; the other two tests are as they are. A piece on a narrow strip below ([`Below::on_strip`]) keeps the
     /// first two tests as they are for every pattern pair.
     fn floats(&self, one: &Shapes) -> bool {
@@ -442,8 +445,12 @@ impl<'a> Below<'a> {
             near(by) && rests(&perimeters::intersection(&perimeters::offset(one, by), area))
         };
         let measured = self.overlap_only && !self.on_strip(one);
-        let by = if measured { -EPS } else { EPS };
-        touch(by, self.cut_to_outline(self.unsupported, &self.touchable))
+        let (by, under) = if measured {
+            (-EPS, self.cut_to_outline(self.open(), &self.touchable_open))
+        } else {
+            (EPS, self.cut_to_outline(self.unsupported, &self.touchable))
+        };
+        touch(by, under)
             || (!measured
                 && rests(&perimeters::intersection(
                     &perimeters::offset(one, EPS),
@@ -1172,6 +1179,31 @@ mod tests {
     }
 
     #[test]
+    fn a_pattern_pair_marked_not_floating_reads_only_sparse_infill_a_line_wide() {
+        // The lower layer's sparse area is a 10 mm square and a sliver 0.02 mm wide along its edge from x 9 to 13, as
+        // the corner of the infill area variable-width walls leave. A piece over the sliver alone floats on the touch
+        // test, and with a pattern pair the table marks as not floating it stays internal solid infill; one 1 mm over
+        // the square floats with both.
+        let sparse = perimeters::union_all(&[
+            &vec![vec![rect(0.0, 0.0, 10.0, 10.0)]],
+            &vec![vec![rect(9.0, 0.0, 13.0, 0.02)]],
+        ]);
+        let u = unsupported(&sparse);
+        let sliver = vec![rect(10.5, -1.0, 12.0, 1.0)];
+        let over = vec![rect(9.0, 2.0, 12.0, 8.0)];
+        let with = |solid: &str| {
+            let mut cfg = PrintConfig::default();
+            cfg.raw
+                .insert("internal_solid_infill_pattern".into(), serde_json::json!(solid));
+            cfg.sparse_infill_pattern = InfillPattern::Grid;
+            let below = Below::new(&u, None, &Shapes::new(), &cfg);
+            split(&vec![sliver.clone(), over.clone()], &below, mm(4.625)).0
+        };
+        assert_eq!(with("zig-zag"), vec![sliver.clone(), over.clone()]);
+        assert_eq!(with("monotonic"), vec![over.clone()]);
+    }
+
+    #[test]
     fn a_piece_that_a_circle_of_the_floating_width_fits_in_does_not_float() {
         let sparse: Shapes = vec![vec![rect(0.0, 0.0, 10.0, 10.0)]];
         let u = unsupported(&sparse);
@@ -1216,11 +1248,17 @@ mod tests {
         // Aegis walls, two loops. The lower layer is a bar with a pointed end at x 25. Its infill area starts 0.02 mm
         // outside the infill area fixed-width walls would leave (here the bar moved in by the vertical shell rule's
         // wall offset), and its point reaches 0.1 mm further: the band covers that outline, so the sparse infill is the
-        // sliver and a strip one sparse line wide down the middle.
+        // sliver and a strip one sparse line wide down the middle. Zig-zag internal solid infill over grid sparse
+        // infill, a pair whose touch test reads the whole unsupported area (with monotonic the piece over the point
+        // reads only sparse infill a line wide and does not float, outline or not).
         let mut cfg = stock_widths(15.0);
         cfg.wall_loops = 2;
         cfg.raw
             .insert("wall_generator".into(), serde_json::json!("aegis"));
+        cfg.raw.insert(
+            "internal_solid_infill_pattern".into(),
+            serde_json::json!("zig-zag"),
+        );
         let bar: Shapes = vec![vec![vec![
             Pt::new(mm(0.0), mm(0.0)),
             Pt::new(mm(20.0), mm(0.0)),
