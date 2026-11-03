@@ -69,11 +69,19 @@ function sharedSource(plates: readonly PlateMeta[]): { modelId?: string; creator
 }
 
 /**
- * Print output made from Vault designs carries their sx:Listing and sx:Creator too, on the root model and on each
- * object, so the file opens again as a Vault design. Other print output stays plain 3MF.
+ * Print output made from Vault designs leaves without the model: the file holds the G-code, its MD5, the plate
+ * pictures, slice_info.config and plate_N.json (the objects a printer can skip), and a model part with no mesh
+ * (`meshless`, packages/threemf/src/project.ts). Its root model carries the sx:Listing and sx:Creator of the first
+ * Vault design on the plates, so the file still reads as a Vault design. Checked on the A1 and A1 mini: they print
+ * it, list its objects to skip, reprint it from their file list and start it from the SD card. Other print output
+ * stays plain 3MF with the model.
  */
-async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInput, 'sx'>> {
-  return fromVault(plates.flatMap((p) => p.objects)) ? { sx: { ...sharedSource(plates), exportedBy: await exportingUserId() } } : {}
+async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInput, 'sx' | 'meshless'>> {
+  const objects = plates.flatMap((p) => p.objects)
+  if (!fromVault(objects)) return {}
+  const first = objects.find((o) => o.source?.modelId)?.source ?? {}
+  const source = { ...(first.modelId ? { modelId: first.modelId } : {}), ...(first.creatorId ? { creatorId: first.creatorId } : {}) }
+  return { sx: { ...source, exportedBy: await exportingUserId() }, meshless: true }
 }
 
 /**
