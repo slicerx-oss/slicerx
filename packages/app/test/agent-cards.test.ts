@@ -79,11 +79,12 @@ describe('agent cards', () => {
   })
 
   it('shows the file, hash and options the hub sent, and ignores work for another printer', () => {
-    const work = { kind: 'print' as const, printerId: 'bay-4', file: { name: 'bracket.gcode', sizeBytes: 2_500_000, sha256: 'ab'.repeat(32) }, opts: { timelapse: true } }
+    const work = { kind: 'print' as const, printerId: 'bay-4', file: { name: 'bracket.gcode', sizeBytes: 2_500_000, sha256: 'ab'.repeat(32) }, opts: { timelapse: true, bedLeveling: false, plate: 2 } }
     const t = describeCard(card({ work }), names)
     expect(t.lines).toContain('File (named by the agent): bracket.gcode, 2.4 MB')
     expect(t.lines).toContain(`SHA-256: ${'ab'.repeat(8)}`)
-    expect(t.lines).toContain('Options: timelapse true')
+    // Print options by their names on the Print sheet; anything else as the hub sent it.
+    expect(t.lines).toContain('Options: Timelapse on, Bed leveling off, plate 2')
     expect(t.blocked).toBeUndefined()
     // Work for another printer is not shown, and the card cannot be approved.
     const elsewhere = describeCard(card({ work: { ...work, printerId: 'bay-9' } }), names)

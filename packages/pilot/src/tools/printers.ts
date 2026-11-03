@@ -6,11 +6,15 @@
 import { cameraGuardOf, developerModeRemedies, developerModeSure, duplicateTargets, followsSlotMap, matchSlots, NEEDS_DEVELOPER_MODE, pluginHas, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type MapFilament, type MapSlot, type PrinterHost, type PrinterInfo, type PrinterStatus, type SliceStats, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
+import { chosenOptions, mergeOptions, optionLabel, optionLines, SEND_OPTION_IDS, supportedOptions, unsupportedOptions, type SendOptionChoices, type SendOptionId, type SendOptionSpec } from '@slicerx/printer-catalog/send-options'
 import { ASSISTANT_NAME } from '../name'
 import { fmtDuration, fmtGrams, type SlicedPlate, type ToolShared } from '../shared'
 import { defineTool, type PilotTool, type ToolContext } from '../tool'
 
 const printerId = z.string().min(1).describe('Printer id, such as "bay-2"')
+
+/** printer.queue's options, one switch per print option in the shared table, so the list is never kept twice. */
+const queueOptionsInput = z.strictObject(Object.fromEntries(SEND_OPTION_IDS.map((id) => [id, z.boolean().optional()])) as Record<SendOptionId, z.ZodOptional<z.ZodBoolean>>).optional()
 
 /**
  * Printer ids for a request that names printers, a fleet group, or neither.
@@ -172,6 +176,23 @@ export function refuseDuplicateSlots(map: Readonly<Record<number, string>>, prin
   throw refusal('duplicate_slot', `Filaments ${andList(nums)} would ${nums.length === 2 ? 'both' : 'all'} feed from slot ${slot} on ${printerName}, which cannot work: give each filament its own slot in slotMap.`)
 }
 
+/** The print options a client may set on printer.queue, as the Print sheet's switches: all optional. */
+export type QueueOptionsInput = SendOptionChoices
+
+/**
+ * The print options printer.queue sends: the client's choices over the printer's defaults, as the Print sheet
+ * starts with them. An option this printer does not offer is refused before any card, naming what it does offer.
+ */
+export function queuePrintOptions(specs: readonly SendOptionSpec[], given: QueueOptionsInput | undefined, printerName: string): StartOptions {
+  const off = unsupportedOptions(specs, given)
+  if (off.length) {
+    const names = andList(off.map((id) => optionLabel(id).toLowerCase()))
+    const offers = specs.length ? `It offers ${andList(specs.map((sp) => sp.label.toLowerCase()))}.` : 'It takes no print options from here.'
+    throw refusal('unsupported_option', `${printerName} has no ${names}, so nothing was sent: leave ${off.length === 1 ? 'it' : 'them'} out of options. ${offers}`)
+  }
+  return mergeOptions(specs, given)
+}
+
 /** What printer.queue sends: the file, its start options, and where the slot map came from. */
 interface QueuePlan {
   file: JobFile
@@ -182,6 +203,8 @@ interface QueuePlan {
   opts: StartOptions
   /** `auto` when SlicerX matched the slots, `client` when the call named them, `none` for a printer that takes filament as the G-code says. */
   slots: 'auto' | 'client' | 'none'
+  /** The print options this printer offers, for the card's lines. */
+  specs: SendOptionSpec[]
   toolheadLine?: string
 }
 
@@ -191,7 +214,7 @@ interface QueuePlan {
  * one, the slots matched from a fresh status. Every other printer gets the plain G-code, as before. `card` is false
  * for the run after an approval, which reuses the slots the card showed.
  */
-async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: string; plate: number; slotMap?: Record<string, string> | undefined }, card: boolean): Promise<QueuePlan> {
+async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: string; plate: number; slotMap?: Record<string, string> | undefined; options?: QueueOptionsInput | undefined }, card: boolean): Promise<QueuePlan> {
   // A plate, printer or slot change after slicing: refused before any card, on every path with a run. A fresh slice
   // is no permission on its own; the send card and the guard's preflight still decide.
   const recorded = ctx.run?.get().slice
@@ -203,6 +226,16 @@ async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: s
   const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
   const name = info?.name ?? i.printerId
   const given = i.slotMap && Object.keys(i.slotMap).length > 0 ? i.slotMap : undefined
+  // The options the printer offers, read from a fresh status (its reported model and camera) as the Print sheet reads
+  // them. The run after an approval reuses what the card showed, so the start matches the approved options.
+  let specs = card ? undefined : entry.optionSpecs?.get(i.printerId)
+  let status: PrinterStatus | null | undefined
+  if (!specs) {
+    status = await ctx.host.printers.status(i.printerId).catch(() => null)
+    specs = info ? supportedOptions(info, status) : []
+    ;(entry.optionSpecs ??= new Map()).set(i.printerId, specs)
+  }
+  const options = queuePrintOptions(specs, i.options, name)
   if (!info?.plugin || !pluginHas(info.plugin, 'project_file')) {
     const job = await exportPlate(shared, ctx, i.plate)
     const prepared = entry.preparedToolheads?.get(i.printerId)
@@ -214,26 +247,26 @@ async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: s
     if (prepared && prepared.sourceSha256 !== job.file.sha256) throw new Error('This plate changed. Review its toolhead mapping again before sending.')
     const file = await uploadedFile(ctx, i.printerId, prepared?.file ?? job.file)
     const toolheadLine = prepared ? `Toolheads: ${prepared.plan.assignments.map((a) => `filament ${a.tool + 1} to toolhead ${Number(a.physicalTool) + 1}`).join(', ')}` : undefined
-    return { ...job, file, info, name, opts: queueOptions(given, info?.plugin, name, file.name), slots: 'none', ...(toolheadLine ? { toolheadLine } : {}) }
+    return { ...job, file, info, name, opts: { ...options, ...queueOptions(given, info?.plugin, name, file.name) }, slots: 'none', specs, ...(toolheadLine ? { toolheadLine } : {}) }
   }
   let opts: StartOptions
   if (given) {
-    opts = { slotMap: startSlotMap(given) }
+    opts = { ...options, slotMap: startSlotMap(given) }
     refuseDuplicateSlots(opts.slotMap ?? {}, name)
   } else {
     let map = card ? undefined : entry.autoSlots?.get(i.printerId)
     if (!map) {
-      const status = await ctx.host.printers.status(i.printerId).catch(() => null)
+      if (status === undefined) status = await ctx.host.printers.status(i.printerId).catch(() => null)
       map = autoSlotMap(plateFilaments(entry.result.stats, entry.config, ctx.context?.machine?.material), status?.slots ?? [], name)
       ;(entry.autoSlots ??= new Map()).set(i.printerId, map)
     }
-    opts = { slotMap: Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k) - 1, v])) }
+    opts = { ...options, slotMap: Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k) - 1, v])) }
   }
   const job = await exportProject(shared, ctx, i.plate, name)
   const file = await uploadedFile(ctx, i.printerId, job.file)
   // The printer follows the map only for a project file; a host that renamed it to plain G-code cannot carry one.
   if (!followsSlotMap(info.plugin, file.name)) throw refusal('not_supported', `${name} would not follow the filament slots for ${file.name}, so nothing was sent.`)
-  return { ...job, file, info, name, opts, slots: given ? 'client' : 'auto' }
+  return { ...job, file, info, name, opts, slots: given ? 'client' : 'auto', specs }
 }
 
 /**
@@ -441,25 +474,29 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
 
   const queue = defineTool({
     name: 'printer.queue',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'plugin',
     // It uploads and then starts, so it needs start permission; a user who allows queueing has not allowed starts.
     permission: 'start',
+    // The local tab's every-toolset turn has little room (test/context.test.ts), so this and the input stay short;
+    // which printers offer which options is in the MCP README.
     description:
-      'Send a sliced plate to a printer and start it (upload then start). Needs the plate sliced first. The app asks the user to approve. A Bambu Lab printer gets the plate as a .gcode.3mf, each filament fed from the loaded AMS slot of its material and closest color, as the Print sheet picks them. Refused before any approval when a filament has no loaded slot of its material, the printer has not reported its slots yet, or two filaments would share a slot. The result names the slot map sent.',
+      "Send a sliced plate to a printer and start it, once the user approves in the app. A Bambu Lab printer gets a .gcode.3mf, each filament fed from the loaded slot of its material and closest color, as the Print sheet picks. options are the Print sheet's switches; one left out takes the printer's default. Refused before any approval when a filament has no loaded slot, the printer has not reported its slots, two filaments share a slot, or the printer lacks an option (unsupported_option). The result names the slot map and options sent.",
     input: z.object({
       printerId,
       plate: z.number().int().min(1).describe('Plate number from slice'),
       slotMap: z
         .record(z.string().regex(/^\d{1,2}$/), z.string().min(1).max(32))
         .optional()
-        .describe('Only for a printer that follows a slot map (a Bambu Lab printer). Leave it out and each filament is matched to the loaded slot of its material and closest color; a map given here wins. Keys are 0 based filament indexes: {"0":"A3"} feeds filament 1 from slot A3, and "1" is the external spool'),
+        .describe('Bambu Lab only; wins over the match. 0 based filament index to slot: {"0":"A3"} feeds filament 1 from A3; slot "1" is the external spool'),
+      options: queueOptionsInput,
     }),
     printerFor: (i) => i.printerId,
     args: (i) => `${i.printerId} --send plate_${i.plate}`,
     async approval(i, ctx) {
       const plan = await planQueue(shared, ctx, i, true)
       const slots = slotMapLine(plan.opts.slotMap)
+      const options = optionLines(plan.specs, plan.opts)
       // What the card shows: the file, its slots (1 based, as the app shows them), time and grams. A record, not a permission.
       ctx.run?.recordSend({
         printerId: i.printerId,
@@ -475,6 +512,8 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         lines: [
           `Plate ${i.plate} on ${plan.info ? `${plan.info.name} (${plan.info.model})` : i.printerId}, ${fmtDuration(plan.timeS)}, ${fmtGrams(plan.grams)}`,
           // The slot map is part of what the person approves: it decides which filament feeds each part.
+          // Each print option as it will be sent, as the Print sheet's card lists them.
+          ...options,
           ...(slots ? [plan.slots === 'auto' ? `${slots} (matched to what is loaded)` : slots] : []),
           ...(plan.toolheadLine ? [plan.toolheadLine] : []),
           plan.file.kind === 'gcode.3mf' ? 'Uploads the .gcode.3mf and starts the print' : 'Uploads the G-code and starts the print',
@@ -530,10 +569,11 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
       const rows: [string, Cell][] = [['job', { text: 'accepted', tone: 'ok' }], ['file', remote.name]]
       if (slots) rows.push(['slots', slots.replace(/^Filament slots: /, '')])
       if (s) rows.push(...statusRows(s).slice(0, 1))
+      if (plan.specs.length) rows.push(['options', optionLines(plan.specs, opts).join(', ')])
       const display: ToolDisplay[] = [{ kind: 'kv', rows }]
-      // Read back: the slot map as it went to the printer, 0 based like the input, and where it came from.
+      // Read back: the slot map as it went to the printer, 0 based like the input, and where it came from, and the print options sent.
       const sent = opts.slotMap ? { slotMap: Object.fromEntries(Object.entries(opts.slotMap)), slotMapSource: plan.slots } : {}
-      return { summary: `Plate ${i.plate} accepted on ${i.printerId}`, output: { printerId: i.printerId, file: remote.name, state: s?.state, ...sent }, display }
+      return { summary: `Plate ${i.plate} accepted on ${i.printerId}`, output: { printerId: i.printerId, file: remote.name, state: s?.state, options: chosenOptions(opts), ...sent }, display }
     },
   })
 
