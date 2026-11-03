@@ -217,9 +217,11 @@ impl Line {
     }
 }
 
-/// One island's top: its lines, lowest first.
+/// One island's top: its lines, lowest first, and its lines up to 2 mm above the tip in print order, each as its horn
+/// (0 for A, 1 for B, 2 for a line across the slot) and whether it heads up the lines.
 struct Island {
     lines: Vec<Line>,
+    printed: Vec<(usize, bool)>,
 }
 
 impl Island {
@@ -283,16 +285,34 @@ fn read_plate(name: &str) -> Vec<Island> {
                 .fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.1), a.1.max(p.1)));
             let middle = f64::midpoint(along(poly[2]), along(poly[3]));
             let tip = across(poly[2]);
-            let mut mine: Vec<(f64, (f64, f64))> = pieces
+            let mine: Vec<(f64, (f64, f64), bool)> = pieces
                 .iter()
                 .filter(|m| {
                     m.from.0 > xa - 0.1 && m.from.0 < xb + 0.1 && m.from.1 > ya - 0.1 && m.from.1 < yb + 0.1
                 })
                 .map(|m| {
                     let (t0, t1) = (along(m.from) - middle, along(m.to) - middle);
-                    (across(m.from) - tip, (t0.min(t1), t0.max(t1)))
+                    (across(m.from) - tip, (t0.min(t1), t0.max(t1)), t1 > t0)
                 })
                 .collect();
+            // The pieces in print order, one entry per line.
+            let mut printed: Vec<(f64, usize, bool)> = Vec::new();
+            for &(s, p, up) in mine.iter().filter(|m| m.0 < 2.0) {
+                let horn = if p.1 < 0.01 {
+                    0
+                } else if p.0 > -0.01 {
+                    1
+                } else {
+                    2
+                };
+                if !printed
+                    .last()
+                    .is_some_and(|l| l.1 == horn && (s - l.0).abs() < 0.05)
+                {
+                    printed.push((s, horn, up));
+                }
+            }
+            let mut mine: Vec<(f64, (f64, f64))> = mine.into_iter().map(|m| (m.0, m.1)).collect();
             mine.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut lines: Vec<Line> = Vec::new();
             for (s, p) in mine {
@@ -304,7 +324,10 @@ fn read_plate(name: &str) -> Vec<Island> {
                     }),
                 }
             }
-            Island { lines }
+            Island {
+                lines,
+                printed: printed.into_iter().map(|p| (p.1, p.2)).collect(),
+            }
         })
         .collect()
 }
@@ -380,4 +403,47 @@ fn a_slot_tips_horns_hold_only_the_lines_below_the_boundary() {
         bad.len(),
         bad.join("\n")
     );
+}
+
+/// Each horn is a region of its own and the two print one after the other: horn B first when both hold an even number
+/// of lines, else horn A, heading so it ends at the slot; the second horn then heads up the lines. A horn's line that
+/// goes in beside the chain after it (a tip line) is not one of its region's lines, so the counts are the two runs
+/// printed first.
+#[test]
+fn a_slot_tips_horns_print_in_order_by_their_line_counts() {
+    let mut bad = Vec::new();
+    for name in ["notch", "notchf"] {
+        for (i, isl) in plate(name).iter().enumerate() {
+            let run = |from: usize| {
+                isl.printed.get(from).map_or(0, |h| {
+                    isl.printed[from..].iter().take_while(|p| p.0 == h.0).count()
+                })
+            };
+            let (r1, r2) = (run(0), run(run(0)));
+            let mut n = [0, 0, 0];
+            if let (Some(h1), Some(h2)) = (isl.printed.first(), isl.printed.get(r1)) {
+                n[h1.0] = r1;
+                n[h2.0] = r2;
+            }
+            let [na, nb, _] = n;
+            let (first, n1) = if na % 2 == 0 && nb % 2 == 0 {
+                (1, nb)
+            } else {
+                (0, na)
+            };
+            // Horn A ends at the slot heading up the lines, horn B heading down.
+            let up = (n1 % 2 == 1) == (first == 0);
+            let want: Vec<(usize, bool)> = (0..n1)
+                .map(|j| (first, (j % 2 == 0) == up))
+                .chain((0..na + nb - n1).map(|j| (1 - first, j % 2 == 0)))
+                .collect();
+            if na == 0 || nb == 0 || isl.printed.get(..na + nb) != Some(&want[..]) {
+                bad.push(format!(
+                    "{name} island {i} (A {na}, B {nb}): printed {:?}, want {want:?}",
+                    isl.printed
+                ));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} islands:\n{}", bad.len(), bad.join("\n"));
 }
