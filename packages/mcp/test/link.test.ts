@@ -144,6 +144,39 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(text(await h.call('slicerx_printer_list'))).not.toContain('Bay 5')
   })
 
+  it("reads the print watch's per-printer settings the app set, and cannot change them", async () => {
+    // The person's switches, set the way the app sets them over its own connection.
+    const app = await connectLink({ url, code })
+    await app.watch.setAutoPause('bay-4', true)
+    await app.watch.setHuginn('bay-4', true)
+    await app.watch.setAutoPause('bay-6', true)
+    await app.watch.setMask('bay-6', [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]])
+    try {
+      const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+      const r = await h.call('slicerx_print_watch_status', {})
+      expect(r.isError, text(r)).toBeFalsy()
+      type Row = { printerId: string; autoPause: boolean; huginn: boolean | null; pausesOnFailure: boolean; bedMask: boolean | null; watchedNow: boolean }
+      const rows = data<{ printers: Row[] }>(r).printers
+      const row = (id: string) => rows.find((p) => p.printerId === id)
+      expect(row('bay-4')).toMatchObject({ autoPause: true, huginn: true, pausesOnFailure: true, bedMask: false, watchedNow: false })
+      expect(row('bay-6')).toMatchObject({ autoPause: true, huginn: false, pausesOnFailure: false, bedMask: true })
+      expect(row('u1')).toMatchObject({ autoPause: false, huginn: false, pausesOnFailure: false, bedMask: false })
+      // The hub refuses the setter from an agent connection, so a client can only read it.
+      const agent = await connectLink({ url, code, role: 'agent' })
+      await expect(agent.watch.setAutoPause('u1', true)).rejects.toMatchObject({ code: 'forbidden' })
+      agent.close()
+      const u1 = data<{ printers: Row[] }>(await h.call('slicerx_print_watch_status', { printerId: 'u1' })).printers
+      expect(u1.map((p) => [p.printerId, p.autoPause])).toEqual([['u1', false]])
+      await h.client.close()
+    } finally {
+      await app.watch.setAutoPause('bay-4', false)
+      await app.watch.setHuginn('bay-4', false)
+      await app.watch.setAutoPause('bay-6', false)
+      await app.watch.setMask('bay-6', null)
+      app.close()
+    }
+  })
+
   it('Connect your AI agent: a credential from clients.create pairs the server as an agent, and revoking it shuts it out', async () => {
     const app = await connectLink({ url, code })
     const { clientId, clientKey, role } = await app.clients.create('Cursor (this computer)', 'agent')

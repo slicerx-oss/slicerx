@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-251 tools.
+252 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -178,6 +178,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_plan_settings` | Plan settings | settings | read, ungated | Work out which settings to change for a filament, printer, nozzle and print intent. |
 | `slicerx_prepare_script_replacement` | Prepare a stock-script replacement | core | read, ungated | Prepare an inspectable replacement with verified stock for an explicitly selected printer. |
 | `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. |
+| `slicerx_print_watch_status` | Print watch status | printers | read, ungated | Read the print watch's settings for each printer (or one, with printerId) as the SlicerX hub holds them: autoPause, the person's standing permission for the watch to pause that printer on a failure; huginn, whether huginn's second look (one camera frame to the connected assistant account) confirms a finding first; pausesOnFailure, true only when both are on, since the watch pauses only a confirmed finding of 0.8 or more; bedMask, whether the person drew a bed mask; and watchedNow, whether the hub hands the printer's frames to the detector now (it prints and has a camera). |
 | `slicerx_printer_add` |  |  | printer_config | Adds the printer to SlicerX with its profile, nozzle and connection. |
 | `slicerx_printer_cancel` |  |  | start | Cancel the running print. |
 | `slicerx_printer_config_check` |  |  | read | Check one printer against the knowledge base entry for its model: input shaping and pressure advance notes, stock nozzle against the loaded filament, hotend limit, AMS compatibility of loaded materials, camera, and the model's own notes for mimir. |
