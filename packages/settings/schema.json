@@ -311,6 +311,24 @@
    "intent": "adhesion"
   },
   {
+   "key": "brim_loop_rounding",
+   "section": "process",
+   "type": "enum",
+   "label": "Brim loop rounding",
+   "enumValues": [
+    "even",
+    "whole"
+   ],
+   "mode": "hidden",
+   "group": "adhesion",
+   "invalidates": "paths",
+   "help": "How many loops a brim prints: an even number of loops that fit in the brim width, or every whole loop that fits. Prusa projects set it when opened; the app does not list it.",
+   "enumLabels": [
+    "An even number of loops",
+    "Every whole loop"
+   ]
+  },
+  {
    "key": "brim_object_gap",
    "section": "process",
    "type": "float",

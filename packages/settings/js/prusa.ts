@@ -533,6 +533,9 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // A project with a skirt keeps it its distance from the brim's nominal edge (brim_separation and brim_width out from
   // the outline after elephant foot compensation), whatever the brim prints. The same as the engine's project read.
   if (Number(values['skirt_loops']) > 0) values['skirt_brim_edge'] = 'nominal'
+  // A project with a brim width prints every whole loop its width fits, odd counts too. The same as the engine's
+  // project read.
+  if ('brim_width' in values) values['brim_loop_rounding'] = 'whole'
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {
     const list = splitStrings(colors).map((c) => c.trim()).filter((c) => /^#[0-9A-Fa-f]{6}$/.test(c))

@@ -534,6 +534,7 @@ pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) 
     }
     edge_on_gap(&mut mapped);
     skirt_from_nominal_brim(&mut mapped);
+    brim_whole_loops(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
 }
@@ -562,6 +563,14 @@ fn skirt_from_nominal_brim(mapped: &mut Map<String, Value>) {
         .and_then(|v| v.trim().parse::<f64>().ok());
     if loops.is_some_and(|n| n > 0.0) {
         mapped.insert("skirt_brim_edge".to_owned(), Value::String("nominal".to_owned()));
+    }
+}
+
+/// A project with a brim width prints every whole loop its width fits, odd counts too (`brim_loop_rounding`
+/// `whole`). The same as `prusaProjectSettings` in the settings package.
+fn brim_whole_loops(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("brim_loop_rounding".to_owned(), Value::String("whole".to_owned()));
     }
 }
 
