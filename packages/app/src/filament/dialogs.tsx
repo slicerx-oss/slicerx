@@ -17,7 +17,7 @@ import { normalizeColor, resetSlots, setFlush, setFlushManual, setSlot } from '.
 import { flushPlan } from './slot-config'
 import { usePrinter } from '../lib/use-printer'
 import { slotMatches, slotSettingFor, slotWriter, writeSlot } from './slot-write'
-import { parseSlope, setSlotSlope, slopeHint, slotSlope, SLOPE_KEY } from './slot-lift'
+import { heightHint, HEIGHT_KEY, LIFT_TYPES, parseHeight, parseSlope, setSlotValue, slopeHint, slotHeight, slotSlope, slotType, SLOPE_KEY, typeHint, TYPE_KEY } from './slot-lift'
 import { resolveConfig } from '../adapters/config'
 import { effectiveMode, useLayout } from '../first-run/look'
 import { settingTipAttrs } from '../lib/tips'
@@ -141,10 +141,102 @@ export function SlotDialog() {
             </div>
           </Field>
           {slot.source === 'printer' ? <p className="sx-muted sx-small">Filled in from the printer. Change anything here to keep your values instead.</p> : null}
-          {advanced ? <TravelSlope slot={slot.index} /> : null}
+          {advanced ? (
+            <>
+              <LiftHeight slot={slot.index} />
+              <LiftType slot={slot.index} />
+              <TravelSlope slot={slot.index} />
+            </>
+          ) : null}
         </div>
       ) : null}
     </Dialog>
+  )
+}
+
+/**
+ * What a slot's lift fields read: the resolved config, the value of `key` under the plate overrides (what an override
+ * list is spelled out from) and the filament count.
+ */
+function useSlotLift(key: string) {
+  const easy = useApp((st) => st.easy)
+  const overrides = useApp((st) => st.overrides)
+  const count = useFilamentCount()
+  const config = useMemo(() => resolveConfig(easy, overrides) as Record<string, SettingValue | undefined>, [easy, overrides])
+  const inherited = useMemo(() => {
+    const { [key]: _own, ...rest } = overrides
+    return resolveConfig(easy, rest)[key]
+  }, [easy, overrides, key])
+  return { config, inherited, count }
+}
+
+/**
+ * A number field for this slot's entry of a per-filament list: empty uses the printer's value, text that is not a number
+ * goes back to what the field held, and a value is clamped by `parse`. Live like the rest of the dialog.
+ */
+function SlotNumber({ slot, id, settingKey, label, own, hint, parse }: { slot: number; id: string; settingKey: string; label: string; own: number | undefined; hint: string; parse: (text: string) => number | undefined | null }) {
+  const { inherited, count } = useSlotLift(settingKey)
+  const shown = own === undefined ? '' : String(own)
+  const commit = (el: HTMLInputElement) => {
+    const v = parse(el.value)
+    if (v === null || v === own) {
+      el.value = shown
+      return
+    }
+    setSlotValue(settingKey, slot, count, v, inherited)
+    el.value = v === undefined ? '' : String(v)
+  }
+  return (
+    <Field htmlFor={id} label={label} hint={hint}>
+      <Input
+        id={id}
+        key={`${slot}:${shown}`}
+        className="num"
+        inputMode="decimal"
+        placeholder="Printer value"
+        aria-describedby={`${id}-hint`}
+        defaultValue={shown}
+        data-testid={id}
+        {...settingTipAttrs(settingKey, '.sx-field')}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
+    </Field>
+  )
+}
+
+/** The filament's own Z hop height in mm. Empty uses the printer's value. */
+function LiftHeight({ slot }: { slot: number }) {
+  const { config } = useSlotLift(HEIGHT_KEY)
+  return <SlotNumber slot={slot} id="slot-z-hop" settingKey={HEIGHT_KEY} label="Z hop height mm" own={slotHeight(config, slot)} hint={heightHint(config, slot)} parse={parseHeight} />
+}
+
+/** The filament's own Z hop type, by its plain name. "Printer value" uses the printer's type. */
+function LiftType({ slot }: { slot: number }) {
+  const { config, inherited, count } = useSlotLift(TYPE_KEY)
+  const own = slotType(config, slot)
+  return (
+    <Field htmlFor="slot-z-hop-type" label="Z hop type" hint={typeHint(config, slot)}>
+      <Select
+        id="slot-z-hop-type"
+        value={own ?? ''}
+        aria-describedby="slot-z-hop-type-hint"
+        data-testid="slot-z-hop-type"
+        {...settingTipAttrs(TYPE_KEY, '.sx-field')}
+        onChange={(e) => {
+          const v = e.currentTarget.value
+          if (v !== (own ?? '')) setSlotValue(TYPE_KEY, slot, count, v === '' ? undefined : v, inherited)
+        }}
+      >
+        <option value="">Printer value</option>
+        {own !== undefined && !LIFT_TYPES.some((t) => t.value === own) ? <option value={own}>{own}</option> : null}
+        {LIFT_TYPES.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+    </Field>
   )
 }
 
@@ -153,46 +245,8 @@ export function SlotDialog() {
  * Edits only this slot's entry of the per-filament list, live like the rest of the dialog.
  */
 function TravelSlope({ slot }: { slot: number }) {
-  const easy = useApp((st) => st.easy)
-  const overrides = useApp((st) => st.overrides)
-  const count = useFilamentCount()
-  const config = useMemo(() => resolveConfig(easy, overrides) as Record<string, SettingValue | undefined>, [easy, overrides])
-  const inherited = useMemo(() => {
-    const { [SLOPE_KEY]: _own, ...rest } = overrides
-    return resolveConfig(easy, rest)[SLOPE_KEY]
-  }, [easy, overrides])
-  const own = slotSlope(config, slot)
-  const shown = own === undefined ? '' : String(own)
-  const commit = (el: HTMLInputElement) => {
-    const v = parseSlope(el.value)
-    if (v === null) {
-      el.value = shown
-      return
-    }
-    if (v === own) {
-      el.value = shown
-      return
-    }
-    setSlotSlope(slot, count, v, inherited)
-    el.value = v === undefined ? '' : String(v)
-  }
-  return (
-    <Field htmlFor="slot-travel-slope" label="Travel slope °" hint={slopeHint(config, slot)}>
-      <Input
-        id="slot-travel-slope"
-        key={`${slot}:${shown}`}
-        className="num"
-        inputMode="decimal"
-        placeholder="Printer value"
-        aria-describedby="slot-travel-slope-hint"
-        defaultValue={shown}
-        data-testid="slot-travel-slope"
-        {...settingTipAttrs(SLOPE_KEY, '.sx-field')}
-        onBlur={(e) => commit(e.currentTarget)}
-        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-      />
-    </Field>
-  )
+  const { config } = useSlotLift(SLOPE_KEY)
+  return <SlotNumber slot={slot} id="slot-travel-slope" settingKey={SLOPE_KEY} label="Travel slope °" own={slotSlope(config, slot)} hint={slopeHint(config, slot)} parse={parseSlope} />
 }
 
 export function FlushDialog() {

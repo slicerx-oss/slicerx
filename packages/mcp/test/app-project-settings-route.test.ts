@@ -26,7 +26,7 @@ it('never edits a server project when --app is required but the live app is clos
 
 it('sends a lift patch to the app as given, and tells clients which printer key it takes', async () => {
   const local = vi.fn(async () => ({ summary: 'local', output: {} }))
-  const overrides = { z_hop_types: ['Ramp Lift'], filament_travel_slope: [12, 'nil'] }
+  const overrides = { z_hop_types: ['Ramp Lift'], filament_z_hop: [0.6, 'nil'], filament_z_hop_types: ['nil', 'Normal Lift'], filament_travel_slope: [12, 'nil'] }
   const call = vi.fn(async () => ({ summary: 'updated', output: { overrides } }))
   const [tool] = routeToApp([{ name: 'project.set_overrides', run: local }] as never, { call: call as AppLinkCaller['call'] }, 'Workshop', { required: true })
   const args = { changes: overrides }
@@ -39,7 +39,9 @@ it('sends a lift patch to the app as given, and tells clients which printer key 
     const { tools } = await h.client.listTools()
     const set = tools.find((t) => t.name === 'slicerx_project_set_overrides')?.description ?? ''
     expect(set).toContain('except z_hop_types')
-    expect(set).toContain('filament_travel_slope holds one entry per filament, slot 1 first')
+    expect(set).toContain('filament_z_hop, filament_z_hop_types and filament_travel_slope hold one entry per filament, slot 1 first')
   } finally { await h.client.close() }
-  expect(appSettingsTools(undefined, 'Workshop')[0]!.description).toContain('printer settings other than z_hop_types are omitted')
+  const read = appSettingsTools(undefined, 'Workshop')[0]!.description
+  expect(read).toContain('printer settings other than z_hop_types are omitted')
+  expect(read).toContain("A filament's own lift (filament_z_hop, filament_z_hop_types, filament_travel_slope) reads as one entry per filament")
 })

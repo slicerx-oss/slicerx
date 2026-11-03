@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A filament's own travel slope (`filament_travel_slope`), one entry per filament slot, read the way the engine reads it:
-// slot N takes entry N - 1, a missing entry falls back to the last one, and "", "nil", null or an empty list means the
+// A filament's own lift: its Z hop height (`filament_z_hop`), Z hop type (`filament_z_hop_types`) and travel slope
+// (`filament_travel_slope`), one entry per filament slot, read the way the engine reads them: slot N takes entry N - 1, a missing entry falls back to the last one, and "", "nil", null or an empty list means the
 // filament uses the printer's value. The Filament dialog and the tests share these, so the dialog never disagrees with
 // the slice.
 import type { SettingValue } from '@slicerx/contracts'
@@ -10,6 +10,18 @@ import { markStale, set } from '../state/store'
 export const SLOPE_KEY = 'filament_travel_slope'
 export const SLOPE_MIN = 0
 export const SLOPE_MAX = 90
+export const HEIGHT_KEY = 'filament_z_hop'
+export const HEIGHT_MIN = 0
+export const HEIGHT_MAX = 5
+export const TYPE_KEY = 'filament_z_hop_types'
+/** The lift types by value, with the names the app shows. */
+export const LIFT_TYPES: readonly { value: string; label: string }[] = [
+  { value: 'Auto Lift', label: 'Auto' },
+  { value: 'Normal Lift', label: 'Normal' },
+  { value: 'Slope Lift', label: 'Slope' },
+  { value: 'Spiral Lift', label: 'Spiral' },
+  { value: 'Ramp Lift', label: 'Ramp' },
+]
 
 type Values = Readonly<Record<string, SettingValue | undefined>>
 
@@ -38,13 +50,13 @@ export function slotSlope(values: Values, slot: number): number | undefined {
 }
 
 /**
- * The overrides with slot `slot`'s travel slope set to `value`, or cleared to "nil" when `value` is undefined. The list
- * is first spelled out for every slot up to `slotCount` with the same fallback, so a one-entry list from an import keeps
- * meaning the same for the other slots. When no slot is left with a value (here or in `inherited`, the value under the
- * overrides) the key is dropped.
+ * The overrides with slot `slot`'s entry of the per-filament list `key` set to `value`, or cleared to "nil" when `value`
+ * is undefined. The list is first spelled out for every slot up to `slotCount` with the same fallback, so a one-entry
+ * list from an import keeps meaning the same for the other slots. When no slot is left with a value (here or in
+ * `inherited`, the value under the overrides) the key is dropped.
  */
-export function withSlotSlope(overrides: Values, slot: number, slotCount: number, value: number | undefined, inherited?: SettingValue): Record<string, SettingValue> {
-  const cur = overrides[SLOPE_KEY] ?? inherited
+export function withSlotValue(key: string, overrides: Values, slot: number, slotCount: number, value: number | string | undefined, inherited?: SettingValue): Record<string, SettingValue> {
+  const cur = overrides[key] ?? inherited
   const n = Math.max(1, slot, slotCount, Array.isArray(cur) ? cur.length : 0)
   const list = Array.from({ length: n }, (_, i) => {
     const e = slotEntry(cur, i + 1)
@@ -52,12 +64,17 @@ export function withSlotSlope(overrides: Values, slot: number, slotCount: number
   })
   list[slot - 1] = value === undefined ? 'nil' : value
   const next = { ...overrides } as Record<string, SettingValue>
-  if (list.every(unset) && slotSlopeList(inherited).every(unset)) delete next[SLOPE_KEY]
-  else next[SLOPE_KEY] = list as SettingValue
+  if (list.every(unset) && listOf(inherited).every(unset)) delete next[key]
+  else next[key] = list as SettingValue
   return next
 }
 
-function slotSlopeList(v: SettingValue | undefined): unknown[] {
+/** The overrides with slot `slot`'s travel slope set to `value` (see withSlotValue). */
+export function withSlotSlope(overrides: Values, slot: number, slotCount: number, value: number | undefined, inherited?: SettingValue): Record<string, SettingValue> {
+  return withSlotValue(SLOPE_KEY, overrides, slot, slotCount, value, inherited)
+}
+
+function listOf(v: SettingValue | undefined): unknown[] {
   return Array.isArray(v) ? v : v === undefined ? [] : [v]
 }
 
@@ -66,17 +83,42 @@ function slotSlopeList(v: SettingValue | undefined): unknown[] {
  * or null for text that is not a number (the field goes back to what it held).
  */
 export function parseSlope(text: string): number | undefined | null {
+  return parseClamped(text, SLOPE_MIN, SLOPE_MAX)
+}
+
+/** What the Z hop height field's text commits, as parseSlope does, clamped to 0 to 5 mm. */
+export function parseHeight(text: string): number | undefined | null {
+  return parseClamped(text, HEIGHT_MIN, HEIGHT_MAX)
+}
+
+function parseClamped(text: string, min: number, max: number): number | undefined | null {
   const t = text.trim()
   if (t === '') return undefined
   const n = Number(t)
   if (!Number.isFinite(n)) return null
-  return Math.min(SLOPE_MAX, Math.max(SLOPE_MIN, n))
+  return Math.min(max, Math.max(min, n))
 }
 
-/** Sets slot `slot`'s travel slope in the plate overrides (undefined clears it) and marks the slice stale. */
-export function setSlotSlope(slot: number, slotCount: number, value: number | undefined, inherited?: SettingValue): void {
-  set((s) => ({ overrides: withSlotSlope(s.overrides, slot, slotCount, value, inherited) }))
+/** Sets slot `slot`'s entry of the per-filament list `key` in the plate overrides (undefined clears it) and marks the slice stale. */
+export function setSlotValue(key: string, slot: number, slotCount: number, value: number | string | undefined, inherited?: SettingValue): void {
+  set((s) => ({ overrides: withSlotValue(key, s.overrides, slot, slotCount, value, inherited) }))
   markStale()
+}
+
+/** Slot `slot`'s own Z hop height in mm, or undefined when it uses the printer's. */
+export function slotHeight(values: Values, slot: number): number | undefined {
+  return asNumber(slotEntry(values[HEIGHT_KEY], slot))
+}
+
+/** Slot `slot`'s own Z hop type (its value, such as "Ramp Lift"), or undefined when it uses the printer's. */
+export function slotType(values: Values, slot: number): string | undefined {
+  const e = slotEntry(values[TYPE_KEY], slot)
+  return unset(e) ? undefined : String(e)
+}
+
+/** The name the app shows for a lift type's value. */
+export function liftTypeLabel(value: string): string {
+  return LIFT_TYPES.find((t) => t.value === value)?.label ?? value
 }
 
 /** The lift slot `slot` makes, from its own values or the printer's: the height in mm and the type's value. */
@@ -114,5 +156,40 @@ export function slopeHint(config: Values, slot: number): string {
   const lift = slotLift(config, slot)
   if (lift.height <= 0) lines.push('Z hop height is 0, so there is no lift.')
   else if (lift.type === 'Normal Lift') lines.push('The lift type is Normal, so the slope is not used.')
+  return lines.join(' ')
+}
+
+function firmwareRetracts(config: Values): boolean {
+  const v = config['use_firmware_retraction']
+  const fw = Array.isArray(v) ? v[0] : v
+  return fw === true || fw === 1 || fw === '1' || fw === 'true'
+}
+
+function mm(n: number): string {
+  return `${Number(n.toFixed(2))} mm`
+}
+
+/** The line under the Z hop height field: how high the filament lifts, and when it does not lift at all. */
+export function heightHint(config: Values, slot: number): string {
+  const own = slotHeight(config, slot)
+  const first = (v: SettingValue | undefined) => (Array.isArray(v) ? v[0] : v)
+  const lines = [
+    own === undefined
+      ? `Uses the printer's Z hop height, ${mm(asNumber(first(config['z_hop'])) ?? 0)}.`
+      : own === 0
+        ? 'At 0 mm, this filament does not lift.'
+        : `Lifts ${mm(own)} for this filament.`,
+  ]
+  if (firmwareRetracts(config)) lines.push('This printer retracts with its own firmware commands, so Z hop is not used.')
+  return lines.join(' ')
+}
+
+/** The line under the Z hop type field: the type the filament lifts with, and when the type has no effect. */
+export function typeHint(config: Values, slot: number): string {
+  const own = slotType(config, slot)
+  const lift = slotLift(config, slot)
+  const lines = [own === undefined ? `Uses the printer's Z hop type, ${liftTypeLabel(lift.type)}.` : `Lifts with ${liftTypeLabel(own)} for this filament.`]
+  if (firmwareRetracts(config)) lines.push('This printer retracts with its own firmware commands, so the type is not used.')
+  else if (lift.height <= 0) lines.push('Z hop height is 0, so there is no lift.')
   return lines.join(' ')
 }
