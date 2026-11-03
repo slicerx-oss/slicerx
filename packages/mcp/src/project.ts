@@ -74,6 +74,10 @@ interface Sitting {
 /** The gap a copy that duplicate places around others keeps, mm: the same as slicerx_arrange's default. */
 const DUPLICATE_GAP_MM = 6
 
+/** The most copies one fill of the bed adds, and the most copies of one object a plate holds after it, as in the app. */
+const FILL_MAX = 100
+const FILL_LIMIT = 200
+
 /** Where one copy sits on its plate. */
 export interface Placement {
   /** The plate object id the slice uses: `<object id>-<copy>`. */
@@ -488,6 +492,63 @@ export class McpProject implements PilotProject {
     }
     this.ranges = this.ranges.map((r) => (r.objects?.includes(e.obj.id) ? { ...r, objects: [...r.objects, ...ids] } : r))
     return { ids, moved }
+  }
+
+  /**
+   * Fills the free room on a plate with copies of an object (slicerx_project_fill_bed), as Fill bed does in the app: as
+   * many more copies as fit, up to `max`, nested on their true outlines at any turn about Z (on their boxes without the
+   * geometry engine) around every copy already on the plate, which stays where it sits. The new copies are copies of
+   * the object, so they print alike and its count on the plate grows. The plate is the first one the object is on
+   * unless `plateIndex` names another of its plates. An object no empty plate holds is refused; a bed with no room left
+   * adds nothing.
+   */
+  async fillBed(objectId: string, plateIndex?: number, max = FILL_MAX, spacing = DUPLICATE_GAP_MM): Promise<{ id: string; plate: number; added: number; copies: number }> {
+    const e = this.entry(objectId)
+    const id = e.obj.id
+    const homes = this.layout.filter((p) => p.items.some((i) => i.objectId === id)).map((p) => p.index)
+    const index = plateIndex ?? homes[0]
+    if (index === undefined) throw new ToolInputError(`${e.obj.name} is on no plate. Put it on one with slicerx_project_move_to_plate first.`)
+    if (!homes.includes(index)) throw new ToolInputError(`${e.obj.name} is not on plate ${index}; it is on plate${homes.length > 1 ? 's' : ''} ${homes.join(', ')}.`)
+    const plate = this.layout.find((p) => p.index === index)!
+    const item = plate.items.find((i) => i.objectId === id)!
+    // A placed object's copies stay where they sit too; a locked one keeps its place, so it is refused.
+    if (e.position) unlocked(e)
+    const room = Math.min(max, FILL_LIMIT - item.copies)
+    if (room <= 0) return { id, plate: index, added: 0, copies: item.copies }
+    if (!(await this.fitsEmpty(e, index, spacing, true))) {
+      const bed = this.bed(index)
+      throw new ToolInputError(`${e.obj.name} has no room even on an empty plate (${round2(e.obj.bboxMm[0])} x ${round2(e.obj.bboxMm[1])} mm with its brim and skirt, on a ${round2(bed.widthMm)} x ${round2(bed.depthMm)} mm bed), so no copy was added. Scale it down or cut it first.`, 'invalid_input', { reason: 'no_room', object: id })
+    }
+    const pins = new Map([...this.sitting(index)].map(([k, x]) => [k, x.at] as [string, Spot]))
+    const position = e.position
+    const copies = item.copies
+    // The copies there now are held where they sit (a placed object's too), and the new ones nest around them.
+    delete e.position
+    item.copies += room
+    const r = await this.nestPlan(index, spacing, pins, true)
+    const added = r ? room - (r.left.get(id) ?? 0) : 0
+    if (!r || added <= 0) {
+      item.copies = copies
+      if (position) e.position = position
+      return { id, plate: index, added: 0, copies }
+    }
+    if (r.left.size > 0) this.commitNest(index, r.at, r.left)
+    return { id, plate: index, added, copies: copies + added }
+  }
+
+  /**
+   * Mirrors an object along a bed axis (0 X, 1 Y, 2 Z), as Mirror does in the app: about the middle of its box, so the
+   * center of its footprint stays, and it sits on the bed again (see mirroredPose). Every copy follows, wherever it sits.
+   */
+  mirror(objectId: string, axis: 0 | 1 | 2): string {
+    const e = unlocked(this.entry(objectId))
+    const pose = mirroredPose(e.rotate ?? [0, 0, 0], e.scale ?? [1, 1, 1], axis)
+    if (e.rotate) e.rotate = pose.rotate
+    const scale = pose.scale
+    if (scale.every((v) => v === 1)) delete e.scale
+    else e.scale = scale
+    this.refreshBox(e)
+    return e.obj.id
   }
 
   /** Where each copy of a plate sits now, by plate object id: its move in X and Y, and whether its footprint is on the bed. */
@@ -964,9 +1025,11 @@ export class McpProject implements PilotProject {
     return e.obj.id
   }
 
-  /** Scale per axis, 1 as modeled; [1, 1, 1] clears it. */
-  setScale(objectId: string, scale: [number, number, number]): string {
+  /** Scale per axis, 1 as modeled; [1, 1, 1] clears it. A mirrored axis stays mirrored: its scale keeps its sign. */
+  setScale(objectId: string, size: [number, number, number]): string {
     const e = unlocked(this.entry(objectId))
+    const was = e.scale ?? [1, 1, 1]
+    const scale = size.map((v, k) => ((was[k] ?? 1) < 0 ? -Math.abs(v) : v)) as [number, number, number]
     if (scale.every((v) => v === 1)) delete e.scale
     else e.scale = scale
     this.refreshBox(e)
@@ -1108,6 +1171,11 @@ export class McpProject implements PilotProject {
     if (locked) e.locked = true
     else delete e.locked
     return e.obj.id
+  }
+
+  /** Whether an object is locked (slicerx_project_lock). */
+  isLocked(objectId: string): boolean {
+    return Boolean(this.entry(objectId).locked)
   }
 
   /** Puts an object in the print or leaves it out, as Leave out of the print does in the app. It keeps its place. */
@@ -1257,6 +1325,19 @@ export class McpProject implements PilotProject {
     } catch {
       return []
     }
+  }
+}
+
+/**
+ * The rotation and scale of an object mirrored along a bed axis (0 X, 1 Y, 2 Z). A mirror M along a bed axis of the
+ * object as placed, M R S, is M R M applied to the model mirrored along its own same axis, M S. So that axis of the
+ * scale turns negative, and the rotation about each of the other two axes turns the other way: M turns a rotation
+ * about another axis back and leaves the one about its own axis, whatever order the three come in.
+ */
+export function mirroredPose(rotate: readonly [number, number, number], scale: readonly [number, number, number], axis: 0 | 1 | 2): { rotate: [number, number, number]; scale: [number, number, number] } {
+  return {
+    rotate: rotate.map((v, k) => (k === axis || v === 0 ? v : -v)) as [number, number, number],
+    scale: scale.map((v, k) => (k === axis ? -v : v)) as [number, number, number],
   }
 }
 
