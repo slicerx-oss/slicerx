@@ -1264,6 +1264,12 @@ impl PrintConfig {
         {
             return Err(bad("skirt_brim_edge"));
         }
+        // Read where the brim's loops are counted (`session::brim_loops`); checked here so a wrong value is refused.
+        if let Some(x) = get("brim_loop_rounding")
+            && !matches!(x, Value::String(e) if e == "even" || e == "whole")
+        {
+            return Err(bad("brim_loop_rounding"));
+        }
         if let Some(x) = get("close_fan_the_first_x_layers") {
             let n = num(x).ok_or_else(|| bad("close_fan_the_first_x_layers"))?;
             if !(0.0..=1000.0).contains(&n) {
@@ -2599,6 +2605,7 @@ pub const READ_KEYS: &[&str] = &[
     "process_change_extrusion_role_gcode",
     "brim_width",
     "brim_type",
+    "brim_loop_rounding",
     "sparse_infill_anchor_max",
     "infill_anchor",
     "infill_anchor_max",

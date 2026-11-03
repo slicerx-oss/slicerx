@@ -1,6 +1,6 @@
 # Process: Adhesion: skirt, brim and raft
 
-28 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+29 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `brim_ears_detection_length`
 
@@ -46,6 +46,19 @@
 - Used only when: Brim type (`brim_type`) is not "no_brim"
 - Tier: Expert, adhesion
 - Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+
+### `brim_loop_rounding`
+
+**Brim loop rounding**
+
+How many loops a brim prints: an even number of loops that fit in the brim width, or every whole loop that fits. Prusa projects set it when opened; the app does not list it.
+
+- Type: enum
+- Default: none (the slice works it out when nothing sets it)
+- Values: `even` (An even number of loops), `whole` (Every whole loop)
+- Tier: Hidden (profile key)
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `brim_object_gap`

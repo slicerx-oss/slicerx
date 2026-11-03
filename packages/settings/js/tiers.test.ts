@@ -30,6 +30,14 @@ describe('process tiers', () => {
       expect(settingsForTier('process', tier, { filamentCount: 3 }).some((d) => d.key === 'skirt_brim_edge'), tier).toBe(false)
     }
   })
+  it('keeps the slice-only brim loop rounding out of every tier', () => {
+    // A Prusa project sets brim_loop_rounding when it is opened; no settings panel or search lists it.
+    expect(settingDef('brim_loop_rounding')).toMatchObject({ mode: 'hidden', section: 'process', enumValues: ['even', 'whole'] })
+    expect(isVisible(settingDef('brim_loop_rounding')!, { filamentCount: 1 })).toBe(false)
+    for (const tier of ['simple', 'advanced', 'expert'] as const) {
+      expect(settingsForTier('process', tier, { filamentCount: 3 }).some((d) => d.key === 'brim_loop_rounding'), tier).toBe(false)
+    }
+  })
   it('gives every user tier process key an intent', () => {
     const intents = new Set(['quality', 'strength', 'speed', 'supports', 'adhesion', 'multicolor', 'effects', 'output'])
     for (const d of process.filter((x) => ['simple', 'advanced', 'expert'].includes(x.mode))) expect(intents.has(d.intent ?? ''), d.key).toBe(true)

@@ -45,6 +45,7 @@ brim_ears_detection_length	process	float
 brim_ears_max_angle	process	float
 brim_ears_outer_only	process	bool
 brim_flow_ratio	process	float
+brim_loop_rounding	process	enum
 brim_object_gap	process	float
 brim_type	process	enum
 brim_use_efc_outline	process	bool
