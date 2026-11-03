@@ -6,6 +6,7 @@
 // in front of the app's slicer, so every model the app loads is kept.
 import {
   type GcodeExport,
+  type PlateSliceResult,
   type GcodeTarget,
   type MeshHandle,
   type MeshPart,
@@ -19,7 +20,7 @@ import {
 } from '@slicerx/contracts'
 import { type CloudClient, type CloudSliceObject, type CloudSliceOptions, type CloudSliceRequest, type PackedMesh, packedSize } from './client'
 import { sizeText } from './compress'
-import type { CloudJob } from './schemas'
+import type { CloudJob, Report } from './schemas'
 
 export interface CloudSlicerOptions {
   client: CloudClient
@@ -75,9 +76,37 @@ function progressFor(job: CloudJob): SliceProgress {
   return { stage, fraction: job.progress }
 }
 
+/** A slice id for one plate of a job that named its plates: `<job id>#<plate>`. */
+function plateSliceId(jobId: string, plate: number): string {
+  return `${jobId}#${plate}`
+}
+
+/** A slice id as the job it reads and the plate, when it is one plate's. */
+function sliceRef(sliceId: string): { jobId: string; plate?: number } {
+  const at = sliceId.lastIndexOf('#')
+  const plate = at > 0 ? Number(sliceId.slice(at + 1)) : Number.NaN
+  return Number.isInteger(plate) && plate >= 1 ? { jobId: sliceId.slice(0, at), plate } : { jobId: sliceId }
+}
+
 function toResult(job: CloudJob): SliceResult {
   const r = job.result
   if (!r) throw new Error('the cloud job finished without a result')
+  const plates = r.plates?.map((p): PlateSliceResult =>
+    p.status === 'succeeded'
+      ? { plate: p.plate, status: 'succeeded', result: reportResult(plateSliceId(job.id, p.plate), p) }
+      : { plate: p.plate, status: 'failed', error: p.error },
+  )
+  // A job that named its plates is read through the first plate that sliced, so its G-code is that plate's own.
+  const first = plates?.find((p) => p.status === 'succeeded')
+  return {
+    ...reportResult(first ? plateSliceId(job.id, first.plate) : job.id, r),
+    ...(plates ? { plates } : {}),
+    ...(r.projectPlates?.length ? { projectPlates: r.projectPlates } : {}),
+  }
+}
+
+/** One report of the service as the app's slice result, under `id`. */
+function reportResult(id: string, r: Report): SliceResult {
   const stageMicros: Partial<Record<SliceStage, number>> = {}
   for (const s of SLICE_STAGES) {
     const v = r.stageMicros[s]
@@ -86,7 +115,7 @@ function toResult(job: CloudJob): SliceResult {
   // The service's code goes through as written, a code this build does not know too, with the fields it added.
   const warnings = r.warnings as SliceWarning[]
   return {
-    id: job.id,
+    id,
     engine: 'sx',
     layerCount: r.layerCount,
     layerZ: Float32Array.from(r.layerZ),
@@ -173,12 +202,20 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     return bytes
   }
 
+  /** The finished job a slice id reads, with the plate when the id is one plate's. */
+  const jobOf = (sliceId: string): { job: CloudJob; plate?: number } | undefined => {
+    const ref = sliceRef(sliceId)
+    const job = jobs.get(sliceId) ?? jobs.get(ref.jobId)
+    if (!job) return undefined
+    return ref.plate !== undefined && job.id === ref.jobId ? { job, plate: ref.plate } : { job }
+  }
+
   const gcodeOf = (sliceId: string): Promise<Uint8Array> => {
     let hit = texts.get(sliceId)
     if (!hit) {
-      const job = jobs.get(sliceId)
-      if (!job?.result) return Promise.reject(new Error(`no cloud slice ${sliceId}`))
-      hit = opts.client.downloadGcode(job).then(unwrap)
+      const found = jobOf(sliceId)
+      if (!found?.job.result) return Promise.reject(new Error(`no cloud slice ${sliceId}`))
+      hit = opts.client.downloadGcode(found.job, found.plate).then(unwrap)
       texts.set(sliceId, hit)
       // A failed download is not kept: the next read tries again.
       hit.catch(() => texts.get(sliceId) === hit && texts.delete(sliceId))
@@ -220,6 +257,11 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       if (!access.invited) throw new Error('This account is not invited to cloud slicing yet. Slice on this device instead.')
       if (access.jobsToday >= access.jobsPerDay)
         throw new Error(`This account has used all ${access.jobsPerDay} cloud slices for the last 24 hours. Slice on this device instead.`)
+      // Every plate a slice names counts as one of the day's cloud slices.
+      const plates = req.options?.plates?.length ?? 1
+      const left = access.jobsPerDay - access.jobsToday
+      if (plates > left)
+        throw new Error(`This slice has ${plates} plates, and this account can slice ${left} more ${left === 1 ? 'plate' : 'plates'} in the cloud today.`)
       // The limit reads the upload as sent, so compressed where the runtime can compress.
       const uploads: Record<string, PackedMesh> = {}
       for (const [id, bytes] of Object.entries(meshes)) {
@@ -265,20 +307,23 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     },
 
     async getPreview(sliceId: string): Promise<ArrayBuffer> {
-      const job = jobs.get(sliceId)
-      if (!job) throw new Error(`no cloud slice ${sliceId}`)
-      return unwrap(await opts.client.downloadPreview(job)).slice().buffer
+      const found = jobOf(sliceId)
+      if (!found) throw new Error(`no cloud slice ${sliceId}`)
+      return unwrap(await opts.client.downloadPreview(found.job, found.plate)).slice().buffer
     },
 
     async exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport> {
-      const job = jobs.get(sliceId)
-      if (!job?.result) throw new Error(`no cloud slice ${sliceId}`)
+      const found = jobOf(sliceId)
+      const plate = found?.plate === undefined ? undefined : found.job.result?.plates?.find((p) => p.plate === found.plate)
+      const report = found?.plate === undefined ? found?.job.result : plate?.status === 'succeeded' ? plate : undefined
+      if (!found || !report) throw new Error(`no cloud slice ${sliceId}`)
       if (target.kind !== 'blob') throw new Error('cloud slices export as a download; save the blob with the file host')
       const data = await gcodeOf(sliceId)
+      const name = found.plate === undefined ? found.job.name : `${found.job.name} plate ${found.plate}`
       return {
-        fileName: `${job.name.replace(/[^A-Za-z0-9 ._-]/g, '_')}.gcode`,
+        fileName: `${name.replace(/[^A-Za-z0-9 ._-]/g, '_')}.gcode`,
         bytes: data.length,
-        sha256: job.result.gcodeSha256,
+        sha256: report.gcodeSha256,
         blob: new Blob([data.slice().buffer], { type: 'text/x-gcode' }),
       }
     },
@@ -292,8 +337,9 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     },
 
     release(id: string) {
-      // A cloud slice has nothing in the local slicer.
+      // A cloud slice has nothing in the local slicer. A plate's slice id lets go of that plate's text only.
       texts.delete(id)
+      if (sliceRef(id).plate !== undefined && jobs.has(sliceRef(id).jobId)) return
       if (jobs.delete(id)) return
       sources.delete(id)
       packed.delete(id)
@@ -336,6 +382,7 @@ export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
       if (!o.enabled()) return local.slice(req, opts)
       const r = await cloud.slice(o.prepare ? await o.prepare(req) : req, opts)
       clouded.add(r.id)
+      for (const p of r.plates ?? []) if (p.status === 'succeeded') clouded.add(p.result.id)
       return r
     },
     getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),

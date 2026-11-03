@@ -40,6 +40,7 @@ pub use crate::output::{
 };
 pub use crate::plate::{Bed, Plate, PlateObject};
 pub use crate::preview::{preview_buffers, stitch as stitch_preview};
+pub use crate::project_split::{ProjectFiles, ProjectPlate, SplitProjects, split_projects};
 pub use crate::session::{HeightRange, SliceSession};
 pub use crate::session_key::{SESSION_FREE_KEYS, session_key};
 pub use crate::threemf::{ProjectMetadata, metadata as project_metadata};
@@ -591,6 +592,11 @@ pub struct RequestOptions {
     pub plate_number: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_name: Option<String>,
+    /// The cloud service only: the plates of the request's 3MF projects to slice, from 1, each a slice of its own with
+    /// its own result. Without it a project slices its first plate. The engine and `sx slice --request` never read it
+    /// (`sx` refuses a request that sets it: name one plate as `file.3mf#N` there).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plates: Option<Vec<u32>>,
     /// The printer profile id the plate is sliced for (`bambu-h2d`): heimdall's collision check takes the head,
     /// gantry and tool changer of that printer, else of the settings' `printer_model`, else a generic head.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2778,6 +2784,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "plateName": { "type": "string", "description": "For filename_format: {plate_name}" },
         "plateNumber": { "type": "integer", "minimum": 1, "description": "For filename_format: {plate_number}, from 1" },
         "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" },
+        "plates": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 1, "maxItems": 32, "uniqueItems": true, "description": "Cloud service only: the plates of the request's 3MF projects to slice, each with its own result (the result's plates); without it a project slices its first plate. sx slice --request refuses it: name one plate as file.3mf#N" },
         "printerId": { "type": "string", "description": "Printer profile id (bambu-h2d): the head, gantry and tool changer the collision check uses" },
         "projectDefaults": { "type": "boolean", "description": "sx CLI: fill the keys config lacks that the app that wrote the first project file the plate names reads its own way, as sx slice <project.3mf> does (a Bambu Studio project: wipe_tower_wall_type rib unless prime_tower_rib_wall is set, initial_layer_travel_acceleration 500, internal_bridge_speed 100%). Off by default: config is taken as given" }
       }
@@ -2812,7 +2819,7 @@ pub const RESULT_SCHEMA: &str = r#"{
       }
     },
     "projectPlates": {
-      "type": "array", "description": "sx CLI only: each project the request names without #N that has more than one plate; the plate sliced is its first",
+      "type": "array", "description": "sx CLI and the cloud service: each project the request names without a plate (#N, or the cloud's options.plates) that has more than one plate; the plate sliced is its first",
       "items": {
         "type": "object", "required": ["file", "plates", "sliced", "text"],
         "properties": { "file": { "type": "string" }, "plates": { "type": "integer", "minimum": 2 }, "sliced": { "type": "integer", "minimum": 1 }, "text": { "type": "string" } }

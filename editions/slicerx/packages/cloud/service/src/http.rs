@@ -23,7 +23,7 @@ use sx_core::api::{SCHEMA_VERSION, SliceRequest};
 
 use crate::backend::{
     Backend, Bucket, CLOUD_SLICE_SCOPE, CloudQuota, DeliveryState, DeviceKind, Job, JobStatus, LINK_SCOPE,
-    LinkPrinter, NewJob, Principal, mesh_path,
+    LinkPrinter, MAX_PLATES, NewJob, Principal, daily_limit, job_plates, mesh_path, plate_result_paths,
 };
 use crate::error::{Error, Result};
 use crate::gzip::{Inflate, inflate};
@@ -94,6 +94,11 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/v1/jobs/{id}/cancel", post(cancel_job))
         .route("/v1/jobs/{id}/gcode", get(download_gcode))
         .route("/v1/jobs/{id}/preview", get(download_preview))
+        .route("/v1/jobs/{id}/plates/{plate}/gcode", get(download_plate_gcode))
+        .route(
+            "/v1/jobs/{id}/plates/{plate}/preview",
+            get(download_plate_preview),
+        )
         .route("/v1/devices", post(register_device))
         .route("/v1/devices/{id}/printers", put(set_printers))
         .route("/v1/devices/{id}/deliveries", get(poll_deliveries))
@@ -444,18 +449,90 @@ struct JobView {
     gcode_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     preview_url: Option<String>,
+    /// The download paths of each plate sliced, for a job that names its plates.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    plates: Vec<PlateLinks>,
+}
+
+/// Where one plate's files of a job that names its plates download from.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlateLinks {
+    plate: u32,
+    gcode_url: String,
+    preview_url: String,
+}
+
+/// The plates of a finished job's result that sliced (`result.plates`, from a job that names its plates).
+fn sliced_plates(job: &Job) -> Vec<u32> {
+    job.result
+        .as_ref()
+        .and_then(|r| r.get("plates"))
+        .and_then(Value::as_array)
+        .map(|plates| {
+            plates
+                .iter()
+                .filter(|p| p.get("status").and_then(Value::as_str) == Some("succeeded"))
+                .filter_map(|p| p.get("plate").and_then(Value::as_u64))
+                .filter_map(|n| u32::try_from(n).ok())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl From<Job> for JobView {
     fn from(job: Job) -> Self {
-        // Paths are cleared when the files expire (SX_CLOUD_RETENTION_DAYS).
+        // Paths are cleared when the files expire (SX_CLOUD_RETENTION_DAYS); a plate's files expire with them.
         let done = job.status == JobStatus::Succeeded;
+        let plates = if done && job.gcode_path.is_some() {
+            sliced_plates(&job)
+                .into_iter()
+                .map(|n| PlateLinks {
+                    plate: n,
+                    gcode_url: format!("/v1/jobs/{}/plates/{n}/gcode", job.id),
+                    preview_url: format!("/v1/jobs/{}/plates/{n}/preview", job.id),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Self {
             gcode_url: (done && job.gcode_path.is_some()).then(|| format!("/v1/jobs/{}/gcode", job.id)),
             preview_url: (done && job.preview_path.is_some()).then(|| format!("/v1/jobs/{}/preview", job.id)),
+            plates,
             job,
         }
     }
+}
+
+/// `options.plates`, when the request names its plates: 1 to [`MAX_PLATES`] plate numbers from 1, each once.
+fn check_plates(raw: &Value) -> Result<()> {
+    let Some(plates) = raw.pointer("/options/plates") else {
+        return Ok(());
+    };
+    let Some(list) = plates.as_array() else {
+        return Err(Error::BadRequest(
+            "options.plates must be a list of plate numbers".into(),
+        ));
+    };
+    if list.is_empty() || list.len() > MAX_PLATES {
+        return Err(Error::BadRequest(format!(
+            "options.plates names 1 to {MAX_PLATES} plates"
+        )));
+    }
+    let mut seen: Vec<u64> = Vec::with_capacity(list.len());
+    for p in list {
+        let Some(n) = p.as_u64().filter(|&n| n >= 1 && u32::try_from(n).is_ok()) else {
+            return Err(Error::BadRequest(
+                "options.plates are plate numbers from 1".into(),
+            ));
+        };
+        if seen.contains(&n) {
+            return Err(Error::BadRequest(format!("options.plates names plate {n} twice")));
+        }
+        seen.push(n);
+    }
+    Ok(())
 }
 
 /// Checks a request before it is queued, so the worker only sees requests it
@@ -467,6 +544,7 @@ async fn validate_request(app: &App, user_id: &str, raw: &Value) -> Result<()> {
             "upload meshes to /v1/meshes and reference them by SHA-256; a meshes map is not accepted".into(),
         ));
     }
+    check_plates(raw)?;
     let req: SliceRequest =
         serde_json::from_value(raw.clone()).map_err(|e| Error::BadRequest(format!("request: {e}")))?;
     if let Some(v) = req.schema_version
@@ -534,14 +612,20 @@ async fn create_job(
     Slicer(who, quota): Slicer,
     Json(body): Json<CreateJob>,
 ) -> Result<(StatusCode, Json<JobView>)> {
-    // The database enforces this too; checking first saves the mesh lookups.
-    if quota.jobs_today >= quota.jobs_per_day {
-        return Err(Error::Limit(format!(
-            "this account has used its {} cloud slices for the last 24 hours",
-            quota.jobs_per_day
-        )));
+    // The database enforces this too; checking first saves the mesh lookups. Every plate counts.
+    if let Some(why) = daily_limit(quota, 1) {
+        return Err(Error::Limit(why));
     }
     validate_request(&app, &who.user_id, &body.request).await?;
+    let plates = job_plates(&body.request);
+    if let Some(why) = daily_limit(quota, plates) {
+        return Err(Error::Limit(why));
+    }
+    if plates > 1 && body.target_printer_id.is_some() {
+        return Err(Error::BadRequest(
+            "a job sent to a printer slices one plate; name one in options.plates".into(),
+        ));
+    }
     let name = body
         .name
         .map(|n| n.trim().to_owned())
@@ -645,6 +729,64 @@ async fn download(app: &App, who: &Principal, id: &str, gcode: bool) -> Result<R
         bytes,
     )
         .into_response())
+}
+
+/// One plate's G-code or preview of a job that names its plates: there only while the job's files are kept.
+async fn download_plate(app: &App, who: &Principal, id: &str, plate: &str, gcode: bool) -> Result<Response> {
+    uuid_param(id, "job")?;
+    let plate: u32 = plate
+        .parse()
+        .ok()
+        .filter(|&n| n >= 1)
+        .ok_or_else(|| Error::BadRequest("the plate must be a number from 1".into()))?;
+    let job = app
+        .backend
+        .job(&who.user_id, id)
+        .await?
+        .ok_or(Error::NotFound("job"))?;
+    if job.status != JobStatus::Succeeded || job.gcode_path.is_none() || !sliced_plates(&job).contains(&plate)
+    {
+        return Err(Error::NotFound("result"));
+    }
+    let (gcode_path, preview_path) = plate_result_paths(&job.user_id, &job.id, plate);
+    let path = if gcode { gcode_path } else { preview_path };
+    let bytes = app
+        .backend
+        .get_object(Bucket::Results, &path)
+        .await?
+        .ok_or(Error::NotFound("result"))?;
+    let (ctype, name) = if gcode {
+        ("text/x-gcode", format!("plate-{plate}.gcode"))
+    } else {
+        ("application/octet-stream", format!("plate-{plate}.sxpv"))
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, ctype.to_owned()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{name}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn download_plate_gcode(
+    State(app): State<Arc<App>>,
+    Slicer(who, _): Slicer,
+    Path((id, plate)): Path<(String, String)>,
+) -> Result<Response> {
+    download_plate(&app, &who, &id, &plate, true).await
+}
+
+async fn download_plate_preview(
+    State(app): State<Arc<App>>,
+    Slicer(who, _): Slicer,
+    Path((id, plate)): Path<(String, String)>,
+) -> Result<Response> {
+    download_plate(&app, &who, &id, &plate, false).await
 }
 
 async fn download_gcode(

@@ -94,6 +94,39 @@ fn request_from_stdin_and_bad_input() {
 }
 
 #[test]
+fn a_request_naming_plates_is_refused_with_the_way_to_name_one() {
+    // options.plates belongs to the cloud service; here one request is one slice, so sx says how to pick a plate.
+    let body = std::fs::read_to_string(fixture("cube-request.json"))
+        .unwrap()
+        .replace("\"cube.stl\"", &format!("{:?}", fixture("cube.stl")));
+    let mut req: serde_json::Value = serde_json::from_str(&body).unwrap();
+    req["options"]["plates"] = serde_json::json!([1, 2]);
+    for cmd in ["slice", "check"] {
+        let mut child = sx()
+            .args([cmd, "--request", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(req.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(3), "{cmd}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("options.plates is read by the cloud service"),
+            "{cmd}: {err}"
+        );
+        assert!(err.contains("file.3mf#N"), "{cmd}: {err}");
+    }
+}
+
+#[test]
 fn schemas_are_json() {
     for which in ["request", "result"] {
         let out = sx().args(["schema", which]).output().unwrap();

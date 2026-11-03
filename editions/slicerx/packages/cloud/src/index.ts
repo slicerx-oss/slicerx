@@ -40,6 +40,7 @@ export type {
   DeliveryState,
   DeviceKind,
   JobStatus,
+  PlateReport,
   SliceReport,
 } from './schemas'
 export { cloudRoutedSlicer, createCloudSlicer, type CloudRouteOptions, type CloudSlicerOptions } from './slicer-host'

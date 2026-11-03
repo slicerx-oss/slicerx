@@ -15,6 +15,7 @@ import {
   type Delivery,
   type DeliveryState,
   type DeviceKind,
+  type PlateReport,
   aboutService,
   bridgePrinter,
   cloudAccess,
@@ -149,9 +150,12 @@ export interface CloudClient {
   cancelJob(id: string): Promise<CloudResult<CloudJob>>
   /** Polls until the job succeeds, fails or is canceled. */
   waitForJob(id: string, opts?: WaitOptions): Promise<CloudResult<CloudJob>>
-  /** Downloads the G-code and checks it against the job's reported hash. */
-  downloadGcode(job: CloudJob): Promise<CloudResult<Uint8Array>>
-  downloadPreview(job: CloudJob): Promise<CloudResult<Uint8Array>>
+  /**
+   * Downloads the G-code and checks it against the job's reported hash. With `plate`, that plate's of a job that named
+   * its plates (`options.plates`).
+   */
+  downloadGcode(job: CloudJob, plate?: number): Promise<CloudResult<Uint8Array>>
+  downloadPreview(job: CloudJob, plate?: number): Promise<CloudResult<Uint8Array>>
 
   registerDevice(name: string, kind: DeviceKind): Promise<CloudResult<CloudDevice>>
   setDevicePrinters(deviceId: string, printers: LinkPrinterInput[]): Promise<CloudResult<BridgePrinter[]>>
@@ -377,14 +381,19 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
       }
     },
 
-    downloadGcode(job) {
+    downloadGcode(job, plate) {
       if (job.status !== 'succeeded' || !job.result) return Promise.resolve(fail('not_found', 'the job has no G-code yet'))
-      return bytes(`/v1/jobs/${job.id}/gcode`, job.result.gcodeSha256 || null)
+      if (plate === undefined) return bytes(`/v1/jobs/${job.id}/gcode`, job.result.gcodeSha256 || null)
+      const p = slicedPlate(job, plate)
+      if (!p) return Promise.resolve(fail('not_found', `plate ${plate} of the job has no G-code`))
+      return bytes(`/v1/jobs/${job.id}/plates/${plate}/gcode`, p.gcodeSha256 || null)
     },
 
-    downloadPreview(job) {
+    downloadPreview(job, plate) {
       if (job.status !== 'succeeded') return Promise.resolve(fail('not_found', 'the job has no preview yet'))
-      return bytes(`/v1/jobs/${job.id}/preview`, null)
+      if (plate === undefined) return bytes(`/v1/jobs/${job.id}/preview`, null)
+      if (!slicedPlate(job, plate)) return Promise.resolve(fail('not_found', `plate ${plate} of the job has no preview`))
+      return bytes(`/v1/jobs/${job.id}/plates/${plate}/preview`, null)
     },
 
     registerDevice: (name, kind) => json(cloudDevice, 'POST', '/v1/devices', { json: { name, kind } }),
@@ -408,4 +417,10 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
     downloadDelivery: (d) => bytes(d.gcodePath, d.sha256 || null),
   }
   return client
+}
+
+/** Plate `plate`'s report in a finished job that named its plates, when that plate sliced. */
+function slicedPlate(job: CloudJob, plate: number): Extract<PlateReport, { status: 'succeeded' }> | undefined {
+  const p = job.result?.plates?.find((x) => x.plate === plate)
+  return p?.status === 'succeeded' ? p : undefined
 }

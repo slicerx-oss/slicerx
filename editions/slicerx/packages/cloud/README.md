@@ -16,8 +16,8 @@ The SlicerX edition hosts cloud slicing for invited accounts only. A donations-f
 
 - The switch is `features.cloudSlicing` in the edition config. `editions/slicerx/edition.config.ts` turns it on when `SLICERX_CLOUD_API_URL` names a deployed service and leaves it off otherwise; `SLICERX_FEATURES` can override it.
 - With the switch off, `sx-cloud` serves only `/healthz` and `/v1/about` and runs the library upload scan and the account purge. Jobs, meshes, devices and deliveries are not served, and no slicing worker starts.
-- With it on, only accounts in `cloud_access` (`0006_cloud_access.sql`) can upload meshes, queue jobs, read results or act as a bridge. Each row sets jobs per rolling 24 hours (default 20, canceled jobs count) and the largest mesh upload (default 25 MB, at most the bucket's 50 MB), counted as sent, so after gzip compression when the client compresses. A banned account loses access while it stays listed. The service role manages the list with `grant_cloud_access(email, jobs_per_day, max_upload_mb, note)` and `revoke_cloud_access(email)`; both are audited, and revoking cancels the account's queued jobs.
-- The database enforces access and the daily limit in the job trigger, and the storage policy hides an uninvited member's cloud files. The service checks the list on every slicing and bridge request and refuses uploads over the account's limit.
+- With it on, only accounts in `cloud_access` (`0006_cloud_access.sql`) can upload meshes, queue jobs, read results or act as a bridge. Each row sets slices per rolling 24 hours (default 20, canceled jobs count; a job counts once, or once per plate when it names plates of a project) and the largest mesh upload (default 25 MB, at most the bucket's 50 MB), counted as sent, so after gzip compression when the client compresses. A banned account loses access while it stays listed. The service role manages the list with `grant_cloud_access(email, jobs_per_day, max_upload_mb, note)` and `revoke_cloud_access(email)`; both are audited, and revoking cancels the account's queued jobs.
+- The database enforces access and the daily limit in the job trigger, and the storage policy hides an uninvited member's cloud files. Each plate a job names counts as one slice (`0031_cloud_job_plates.sql` reads `plate_count` from the request), and a job whose plates are more than the slices left today is refused before it runs, saying how many are left. Among the five queued or running jobs an account may have, a job counts once whatever its plates. The service checks the list on every slicing and bridge request and refuses uploads over the account's limit.
 - The upload scan is independent of this: the library needs it.
 
 ## Why Rust for the service
@@ -35,11 +35,12 @@ Every route except `/healthz` and `/v1/about` needs `Authorization: Bearer <cred
 | `GET /v1/about` | brand name, version and the source link (`legal.sourceUrl`); no credential |
 | `GET /v1/access` | `{ invited: false }`, or `{ invited: true, jobsPerDay, jobsToday, maxUploadBytes }`; needs `cloud_slice` but no invite |
 | `GET /v1/meshes/{sha256}` | 200 when the caller has uploaded this mesh, else 404 |
-| `PUT /v1/meshes/{sha256}` | uploads a mesh (STL, raw `SXMP` parts or the benchmark JSON), as it is or gzip compressed with `Content-Encoding: gzip`; the mesh must hash to the path. The account's limit and the 50 MB request limit read the size as sent, which is also what is stored; a gzip body may inflate to at most 200 MB |
-| `POST /v1/jobs` | `{ name?, request, targetPrinterId? }` queues a job; `request` is an `sx slice --request` body whose object `mesh` values are SHA-256 ids of uploaded meshes |
-| `GET /v1/jobs`, `GET /v1/jobs/{id}` | the caller's jobs with status, progress, stage, the result JSON and download paths |
+| `PUT /v1/meshes/{sha256}` | uploads a mesh (STL, a 3MF project, raw `SXMP` parts or the benchmark JSON), as it is or gzip compressed with `Content-Encoding: gzip`; the mesh must hash to the path. The account's limit and the 50 MB request limit read the size as sent, which is also what is stored; a gzip body may inflate to at most 200 MB |
+| `POST /v1/jobs` | `{ name?, request, targetPrinterId? }` queues a job; `request` is an `sx slice --request` body whose object `mesh` values are SHA-256 ids of uploaded meshes. `options.plates` (1 to 32 plate numbers, each once) slices those plates of the request's 3MF projects, each on its own; a job sent to a printer names at most one |
+| `GET /v1/jobs`, `GET /v1/jobs/{id}` | the caller's jobs with status, progress, stage, `plateCount`, `plateIndex` while it runs, the result JSON and download paths; a job that named plates has `plates: [{ plate, gcodeUrl, previewUrl }]` for each plate that sliced |
 | `POST /v1/jobs/{id}/cancel` | cancels a queued or running job |
-| `GET /v1/jobs/{id}/gcode`, `/preview` | the G-code and the SXPV preview |
+| `GET /v1/jobs/{id}/gcode`, `/preview` | the G-code and the SXPV preview (of the first plate that sliced, for a job that named plates) |
+| `GET /v1/jobs/{id}/plates/{n}/gcode`, `/preview` | plate `n`'s G-code and preview, for a job that named plates |
 | `POST /v1/devices` | `{ name, kind }` registers a device (`link`, `desktop`, `web`, `mobile`) |
 | `PUT /v1/devices/{id}/printers` | a bridge's printer list: `[{ localId, name, driver?, model? }]`; printers it leaves out are marked deleted |
 | `GET /v1/devices/{id}/deliveries?wait=25` | open deliveries for a bridge; with `wait` the call is held until an offer arrives (at most 30 s) |
