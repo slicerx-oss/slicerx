@@ -168,6 +168,7 @@ mod preheat;
 #[doc(hidden)]
 pub mod preview;
 pub mod printtime;
+mod project_split;
 #[cfg(feature = "import")]
 mod prusa;
 #[cfg(feature = "sleipnir")]

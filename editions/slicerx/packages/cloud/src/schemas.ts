@@ -9,7 +9,7 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 export const errorBody = z.object({ error: z.object({ code: z.string(), message: z.string() }) })
 
 /** The `sx slice` result JSON (`sx schema result`); only the fields the client reads are listed. */
-export const sliceReport = z.looseObject({
+const reportFields = {
   schemaVersion: z.number().int(),
   engine: z.string(),
   layerCount: z.number().int().nonnegative(),
@@ -30,6 +30,27 @@ export const sliceReport = z.looseObject({
   gcodeBytes: z.number().int().nonnegative(),
   gcodeSha256: z.string(),
   previewBytes: z.number().int().nonnegative(),
+}
+
+/** One plate of a job that named its plates (`options.plates`): its report, or why it did not slice. */
+export const plateReport = z.union([
+  z.looseObject({ plate: z.number().int().min(1), status: z.literal('succeeded'), ...reportFields }),
+  z.looseObject({ plate: z.number().int().min(1), status: z.literal('failed'), error: z.string() }),
+])
+export type PlateReport = z.infer<typeof plateReport>
+
+/** A project with more plates than the one sliced (`projectPlates`). */
+export const projectPlate = z.object({ file: z.string(), plates: z.number().int(), sliced: z.number().int(), text: z.string() })
+
+/** One slice's own report, as the job's result and each plate's carry it. */
+export const report = z.looseObject(reportFields)
+export type Report = z.infer<typeof report>
+
+export const sliceReport = z.looseObject({
+  ...reportFields,
+  /** A job that named its plates: every plate's report; the rest of the report is the first plate that sliced. */
+  plates: z.array(plateReport).optional(),
+  projectPlates: z.array(projectPlate).optional(),
 })
 export type SliceReport = z.infer<typeof sliceReport>
 
@@ -53,6 +74,11 @@ export const cloudJob = z.object({
   finishedAt: z.string().nullable(),
   gcodeUrl: z.string().optional(),
   previewUrl: z.string().optional(),
+  /** How many plates the job slices, and the one it is slicing while it runs (a job that names its plates). */
+  plateCount: z.number().int().min(1).nullish(),
+  plateIndex: z.number().int().min(1).nullish(),
+  /** Each sliced plate's downloads, for a job that named its plates. */
+  plates: z.array(z.object({ plate: z.number().int().min(1), gcodeUrl: z.string(), previewUrl: z.string() })).optional(),
 })
 export type CloudJob = z.infer<typeof cloudJob>
 

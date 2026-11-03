@@ -19,11 +19,24 @@ pub const LINK_SCOPE: &str = "link";
 /// A member can have this many jobs queued or running at once.
 pub const MAX_ACTIVE_JOBS: usize = 5;
 
+/// A job slices at most this many plates of a project (`options.plates`).
+pub const MAX_PLATES: usize = 32;
+
+/// How many plates a job's request slices: one per entry of `options.plates`, else one. Each counts against the
+/// account's daily slices, as the database counts them (`plate_count` in `0031_cloud_job_plates.sql`).
+pub fn job_plates(request: &Value) -> u32 {
+    request
+        .pointer("/options/plates")
+        .and_then(Value::as_array)
+        .map_or(1, |p| u32::try_from(p.len()).unwrap_or(u32::MAX).max(1))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bucket {
     /// Uploaded meshes at `<user id>/<sha256>`.
     Inputs,
-    /// Results at `<user id>/<job id>/slice.gcode` and `slice.sxpv`.
+    /// Results at `<user id>/<job id>/slice.gcode` and `slice.sxpv`, or one `plate-<n>.gcode` and `plate-<n>.sxpv`
+    /// per plate of a job that names its plates.
     Results,
     /// Library uploads waiting for the scan, at `<listing>/<version>/<file name>`.
     /// Members write their own version's path; only the service role reads it.
@@ -78,7 +91,7 @@ pub struct CloudQuota {
     /// Jobs allowed in any 24 hours, canceled ones included.
     #[serde(alias = "jobs_per_day")]
     pub jobs_per_day: u32,
-    /// Jobs created in the last 24 hours.
+    /// Slices of the last 24 hours: one per job, or one per plate of a job that names its plates.
     #[serde(alias = "jobs_today")]
     pub jobs_today: u32,
     /// The largest mesh this account may upload.
@@ -123,6 +136,12 @@ pub struct Job {
     pub created_at: String,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
+    /// How many plates the job slices ([`job_plates`]).
+    #[serde(default)]
+    pub plate_count: Option<i32>,
+    /// The plate the worker is slicing, from 1, while a job that names its plates runs.
+    #[serde(default)]
+    pub plate_index: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -355,9 +374,16 @@ pub trait Backend: Send + Sync {
     async fn jobs(&self, user_id: &str, limit: u32) -> Result<Vec<Job>>;
     async fn cancel_job(&self, user_id: &str, id: &str) -> Result<bool>;
     async fn claim_job(&self, worker: &str) -> Result<Option<Job>>;
-    /// Records progress; this is also the worker's heartbeat. Returns false
-    /// when the job is no longer running on this worker (canceled or reclaimed).
-    async fn report_progress(&self, id: &str, worker: &str, progress: f32, stage: &str) -> Result<bool>;
+    /// Records progress, with the plate being sliced (from 1) for a job that names its plates; this is also the
+    /// worker's heartbeat. Returns false when the job is no longer running on this worker (canceled or reclaimed).
+    async fn report_progress(
+        &self,
+        id: &str,
+        worker: &str,
+        progress: f32,
+        stage: &str,
+        plate: Option<u32>,
+    ) -> Result<bool>;
     async fn finish_job(&self, id: &str, worker: &str, outcome: Outcome) -> Result<bool>;
 
     async fn register_device(&self, user_id: &str, kind: DeviceKind, name: &str) -> Result<Device>;
@@ -403,6 +429,32 @@ pub fn result_paths(user_id: &str, job_id: &str) -> (String, String) {
         format!("{user_id}/{job_id}/slice.gcode"),
         format!("{user_id}/{job_id}/slice.sxpv"),
     )
+}
+
+/// Storage paths of the G-code and preview of plate `plate` of a job that names its plates.
+pub fn plate_result_paths(user_id: &str, job_id: &str, plate: u32) -> (String, String) {
+    (
+        format!("{user_id}/{job_id}/plate-{plate}.gcode"),
+        format!("{user_id}/{job_id}/plate-{plate}.sxpv"),
+    )
+}
+
+/// Why a job of `plates` plates would cross the account's daily slices, or `None` when it fits. Every plate counts,
+/// so a job is refused before it runs when its plates are more than the slices left today.
+pub fn daily_limit(quota: CloudQuota, plates: u32) -> Option<String> {
+    let left = quota.jobs_per_day.saturating_sub(quota.jobs_today);
+    if left == 0 {
+        return Some(format!(
+            "this account has used its {} cloud slices for the last 24 hours",
+            quota.jobs_per_day
+        ));
+    }
+    (plates > left).then(|| {
+        format!(
+            "this job slices {plates} plates, and this account can slice {left} more {} today",
+            if left == 1 { "plate" } else { "plates" }
+        )
+    })
 }
 
 /// A file name for the printer, in the form sx-link accepts unchanged: at

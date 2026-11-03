@@ -428,7 +428,14 @@ impl Backend for SupabaseBackend {
         .await
     }
 
-    async fn report_progress(&self, id: &str, worker: &str, progress: f32, stage: &str) -> Result<bool> {
+    async fn report_progress(
+        &self,
+        id: &str,
+        worker: &str,
+        progress: f32,
+        stage: &str,
+        plate: Option<u32>,
+    ) -> Result<bool> {
         let rows: Vec<Value> = self
             .rows(
                 self.rest(Method::PATCH, "cloud_jobs")
@@ -442,6 +449,7 @@ impl Backend for SupabaseBackend {
                     .json(&json!({
                         "progress": progress.clamp(0.0, 1.0),
                         "stage": stage,
+                        "plate_index": plate,
                         "heartbeat_at": "now",
                     })),
             )

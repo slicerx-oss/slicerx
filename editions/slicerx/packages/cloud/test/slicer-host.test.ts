@@ -7,7 +7,7 @@ import { type MeshHandle, type MeshPart, readPreview, type SliceOptions, type Sl
 import { createCloudClient } from '../src/client'
 import { sha256Hex } from '../src/hash'
 import { cloudRoutedSlicer, createCloudSlicer, encodeParts, lineStarts } from '../src/slicer-host'
-import { MOCK_GCODE, mockCloudService } from './mock-service'
+import { MOCK_GCODE, mockCloudService, mockPlateGcode } from './mock-service'
 
 /** A local slicer that hands out handles and records what it was asked to do. */
 function fakeLocal() {
@@ -268,5 +268,44 @@ describe('the account check before uploading', () => {
     const h = await cloud.loadParts('Body', [part('Body')])
     const err = await cloud.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: h.id, transform: T }]), config: {} as never }).then(() => null, (e: Error) => e.message)
     expect(err).toMatch(/^This model is [0-9.]+ (bytes|KB|MB)( \([0-9.]+ (bytes|KB|MB) compressed\))?, over the cloud upload limit\. Slice on this device instead\.$/)
+  })
+})
+
+describe('a whole project sliced by plate', () => {
+  const projectBytes = () => new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3, 4]).slice().buffer
+
+  it('sends only the plates named and reads each plate back by its own slice id', async () => {
+    const { svc, slicer } = setup()
+    svc.failPlates.set(4, 'the project has no plate 4')
+    const h = await slicer.loadModel(projectBytes(), 'Lantern.3mf')
+    const r = await slicer.slice({ plate: plate([{ id: 'p', name: 'Lantern.3mf', mesh: h.id } as never]), config: {} as never, options: { plates: [3, 1, 4] } })
+    expect((svc.requests[0]!['options'] as { plates?: number[] }).plates).toEqual([3, 1, 4])
+    expect(r.plates?.map((p) => [p.plate, p.status])).toEqual([[3, 'succeeded'], [1, 'succeeded'], [4, 'failed']])
+    const [three, one, four] = r.plates!
+    expect(four).toEqual({ plate: 4, status: 'failed', error: 'the project has no plate 4' })
+    if (three?.status !== 'succeeded' || one?.status !== 'succeeded') throw new Error('plates 3 and 1 slice')
+    // The slice itself reads as its first plate, and each plate reads its own G-code, time and preview.
+    expect(r.id).toBe(three.result.id)
+    expect(three.result.stats.timeS).toBe(60)
+    expect(one.result.stats.timeS).toBe(20)
+    expect(await (await slicer.exportGcode(r.id, { kind: 'blob' })).blob!.text()).toBe(mockPlateGcode(3))
+    const out = await slicer.exportGcode(one.result.id, { kind: 'blob' })
+    expect(await out.blob!.text()).toBe(mockPlateGcode(1))
+    expect(out.fileName).toBe('Cloud slice plate 1.gcode')
+    expect(readPreview(await slicer.getPreview(one.result.id)).layerCount).toBe(1)
+    const starts = await slicer.gcodeLineStarts!(one.result.id)
+    expect(starts.length - 1).toBe(mockPlateGcode(1).split(String.fromCharCode(10)).length - 1)
+    expect(svc.calls.some((c) => c.path.endsWith('/plates/1/gcode'))).toBe(true)
+  })
+
+  it('refuses plates the day has no room for before uploading, naming what is left', async () => {
+    const { svc, slicer } = setup()
+    svc.access = { invited: true, jobsPerDay: 20, jobsToday: 18, maxUploadBytes: 1 << 20 }
+    const h = await slicer.loadModel(projectBytes(), 'Lantern.3mf')
+    const err = await slicer
+      .slice({ plate: plate([{ id: 'p', name: 'Lantern.3mf', mesh: h.id } as never]), config: {} as never, options: { plates: [1, 2, 3] } })
+      .then(() => null, (e: Error) => e.message)
+    expect(err).toBe('This slice has 3 plates, and this account can slice 2 more plates in the cloud today.')
+    expect(svc.uploads.size).toBe(0)
   })
 })
