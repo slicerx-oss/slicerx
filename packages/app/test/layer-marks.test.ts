@@ -74,6 +74,17 @@ describe('layer marks in a project file', () => {
     expect(read.plates[0]!.marks).toEqual([{ z: 2, kind: 'pause' }, { z: 4.2, kind: 'color_change', slot: 3 }, { z: 6, kind: 'custom', gcode: 'M117 hi <there>' }])
   })
 
+  it('reopen custom G-code of several lines with its line breaks kept', async () => {
+    const { writeProject } = await import('../src/export/threemf')
+    const { readProject } = await import('../src/export/import3mf')
+    const { boxMesh } = await import('../src/plate/mesh-ops')
+    const { compose } = await import('../src/plate/transform')
+    const entry: PlateEntry = { id: 'a', name: 'Box', handle: { id: 'a', hash: 'a', name: 'a', triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }, parts: [{ ...boxMesh(10, 10, 10), name: 'Body', slot: 1 }], colors: ['#fff'], transform: compose({ position: [50, 50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+    const input = { plates: [{ id: 'p1', name: 'Plate 1', objects: [entry], settings: { sequence: 'by-layer' as const } }], bed: { widthMm: 256, depthMm: 256 }, settings: {}, layerMarks: { 0: [{ z: 3, kind: 'custom' as const, gcode: 'M117 Insert the nut\nG4 P1000' }] } }
+    const read = await readProject(writeProject(input), input.bed)
+    expect(read.plates[0]!.marks).toEqual([{ z: 3, kind: 'custom', gcode: 'M117 Insert the nut\nG4 P1000' }])
+  })
+
   it('a project without marks has no marks file', async () => {
     const { projectFiles } = await import('../src/export/threemf')
     const files = projectFiles({ plates: [], bed: { widthMm: 256, depthMm: 256 }, settings: {} })
