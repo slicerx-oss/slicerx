@@ -3,8 +3,8 @@
 // Placement and per-object control of the open project, as a person does it in the app: move, rotate and scale an
 // object, add, remove and fill plates, give an object its own settings, add cuts, support regions and settings
 // modifiers, and set settings by height; and the model ring's object verbs (duplicate, rename, lay on a face, lock,
-// leave out of the print, center, split to objects or parts). Each tool answers with the project as it is after the change
-// (slicerx_project_show reads it back the same way); the next slice uses it.
+// leave out of the print, center, split to objects or parts), mirror and fill the bed. Each tool answers with the
+// project as it is after the change (slicerx_project_show reads it back the same way); the next slice uses it.
 import { readFileSync } from 'node:fs'
 import type { SettingValue, VolumeRole } from '@slicerx/contracts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
@@ -134,7 +134,8 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const scale = tool({
     name: 'project.scale',
-    description: 'Scale an object: one factor for all axes (1.2 is 120 %), or one per axis in the object\'s own coordinates. Absolute, not added to the current scale; 1 is as modeled. Answers with the project, including the object\'s new size.',
+    version: '1.1.0',
+    description: 'Scale an object: one factor for all axes (1.2 is 120 %), or one per axis in the object\'s own coordinates. Absolute, not added to the current scale; 1 is as modeled. An axis slicerx_project_mirror mirrored stays mirrored (its scale stays negative). Answers with the project, including the object\'s new size.',
     input: z.object({ object: objectArg, scale: z.union([z.number().positive().max(100), z.tuple([z.number().positive().max(100), z.number().positive().max(100), z.number().positive().max(100)])]) }),
     title: (i) => `Scale ${i.object}?`,
     run(i, project) {
@@ -294,6 +295,45 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
     },
   })
 
+  const fillBed = tool({
+    name: 'project.fill_bed',
+    description:
+      'Fill the bed with copies of an object, as Fill bed does in the app: as many more copies as fit on its plate (up to max, 100 at most), nested on their true outlines at any turn about Z (on their boxes without the geometry engine), spacing mm apart, around every copy already there, which stays where it sits. The new copies are copies of the object, so they print alike: its copies on that plate grow, and each placement gives where it sits and its turnDeg. plate picks one of the object\'s plates (default its first). An object too large for an empty plate is refused; a bed with no room left adds none. For copies to change one by one, use slicerx_project_duplicate instead. Answers with how many were added, the object\'s copies on the plate, and the project.',
+    input: z.object({
+      object: objectArg,
+      plate: z.number().int().min(1).optional().describe('One of the object\'s plates; default the first it is on'),
+      max: z.number().int().min(1).max(100).default(100).describe('The most copies to add, 1 to 100'),
+      spacing: z.number().min(0).max(50).default(6).describe('Gap between copies in mm, default 6'),
+    }),
+    title: (i) => `Fill the bed with copies of ${i.object}?`,
+    async run(i, project) {
+      const r = await project.fillBed(i.object, i.plate, i.max, i.spacing)
+      const summary = r.added === 0 ? `No room left on plate ${r.plate} for another copy of ${r.id}` : `${r.added} ${r.added === 1 ? 'copy' : 'copies'} of ${r.id} added on plate ${r.plate}, ${r.copies} in all`
+      return done(summary, project, { object: r.id, plate: r.plate, added: r.added, copies: r.copies })
+    },
+  })
+
+  const mirror = tool({
+    name: 'project.mirror',
+    description:
+      'Mirror objects along X, Y or Z on the bed, as Mirror in the app does: each turns into its mirror image about the middle of its own box, so the center of its footprint stays, and it sits on the bed again (Z turns it upside down). Every copy follows. The mirror shows in the object\'s scale (that axis negative, in its own coordinates; slicerx_project_scale keeps it) and its rotation about the other two axes turns the other way, which places the same shape. Mirroring again along the same axis puts it back. A locked object is refused. Answers with the project, including each object\'s new rotation, scale and size.',
+    input: z.object({
+      object: z.union([objectArg, z.array(objectArg).min(1).max(50)]).describe('Object id (obj-1) or name, or a list of them, from slicerx_project_show'),
+      axis: z.enum(['x', 'y', 'z']).describe('The bed axis to mirror along'),
+    }),
+    title: (i) => `Mirror ${Array.isArray(i.object) ? i.object.join(', ') : i.object} along ${i.axis.toUpperCase()}?`,
+    run(i, project) {
+      const names = Array.isArray(i.object) ? i.object : [i.object]
+      const axis = ({ x: 0, y: 1, z: 2 } as const)[i.axis]
+      // Every object is found and unlocked before any of them changes.
+      const ids = [...new Set(names.map((n) => project.pose(n).id))]
+      const locked = project.objects().filter((o) => ids.includes(o.id) && project.isLocked(o.id))
+      if (locked.length) throw new ToolInputError(`${locked.map((o) => o.name).join(', ')} ${locked.length === 1 ? 'is' : 'are'} locked. Unlock it first with slicerx_project_lock (locked: false).`)
+      for (const id of ids) project.mirror(id, axis)
+      return done(`${ids.join(', ')} mirrored along ${i.axis.toUpperCase()}`, project, { objects: ids })
+    },
+  })
+
   const rename = tool({
     name: 'project.rename',
     description: 'Rename an object. Its id stays, and the new name shows in the app and in the exported project.',
@@ -379,5 +419,5 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
     },
   })
 
-  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, rename, layOnFace, lock, printable, center, splitObjects, splitParts] as PilotTool<never>[]
+  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, fillBed, mirror, rename, layOnFace, lock, printable, center, splitObjects, splitParts] as PilotTool<never>[]
 }

@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-252 tools.
+254 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -204,9 +204,11 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_brim_ears` |  |  | slice | Edit brim ears for an explicit object on SlicerX's shown plate. |
 | `slicerx_project_center` |  |  | slice | Center an object on the bed of its plate, as Center on the bed does in the app: the center of its footprint goes to the middle of the printable area (the circle's center on a round bed), and it stays there as if placed with slicerx_project_move. |
 | `slicerx_project_duplicate` |  |  | slice | Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. |
+| `slicerx_project_fill_bed` |  |  | slice | Fill the bed with copies of an object, as Fill bed does in the app: as many more copies as fit on its plate (up to max, 100 at most), nested on their true outlines at any turn about Z (on their boxes without the geometry engine), spacing mm apart, around every copy already there, which stays where it sits. |
 | `slicerx_project_height_ranges` |  |  | slice | Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). |
 | `slicerx_project_lay_on_face` |  |  | slice | Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. |
 | `slicerx_project_lock` |  |  | slice | Lock or unlock an object, as Lock on the app's ring menu does: a locked object is not moved, rotated, scaled, laid on a face, centered, cut or taken to another plate (those tools refuse it), and an arrange leaves it on its plate. |
+| `slicerx_project_mirror` |  |  | slice | Mirror objects along X, Y or Z on the bed, as Mirror in the app does: each turns into its mirror image about the middle of its own box, so the center of its footprint stays, and it sits on the bed again (Z turns it upside down). |
 | `slicerx_project_move` |  |  | slice | Place an object on its plate: x and y are the center of its footprint in mm, in bed coordinates (as the printer profile's printable area gives them). |
 | `slicerx_project_move_to_plate` |  |  | slice | Move an object, with all its copies, to another plate. |
 | `slicerx_project_object_settings` |  |  | slice | Give one object its own settings (setting keys), over the project's and the plate's: walls, infill, top and bottom shells, supports and speeds. |
