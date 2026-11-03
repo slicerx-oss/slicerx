@@ -9,7 +9,7 @@ import type { Material } from '../src/cloud/slice-job'
 import { usePocketHost } from '../src/data/provider'
 import { useListing } from '../src/data/catalog'
 import { useFleets, usePrinterViews, useSession } from '../src/data/queries'
-import { pickFromFleet, sliceAndSend, useEstimate, useSendModels } from '../src/data/send'
+import { pickFromFleet, sliceAndSend, useEstimate, useModelPlates, useSendModels } from '../src/data/send'
 import { usePocket } from '../src/state/store'
 import { Sheet } from '../src/components/sheet'
 import { SignIn } from '../src/components/sign-in'
@@ -35,6 +35,7 @@ export default function SendRoute() {
   const { data: session } = useSession()
   const [selection, setSelection] = useState<SendSelection | null>(null)
   const [signingIn, setSigningIn] = useState(false)
+  const [modelId, setModelId] = useState<string | null>(null)
 
   const choices = useMemo(
     () =>
@@ -63,7 +64,7 @@ export default function SendRoute() {
             const fleet = fleets.find((f) => f.id === target.fleetId)
             return fleet ? pickFromFleet(fleet, views) : null
           })()
-    return model && printer ? { model, printer, easy: sel.settings, material: MATERIAL } : null
+    return model && printer ? { model, printer, easy: sel.settings, material: MATERIAL, ...(sel.plate !== undefined ? { plate: sel.plate } : {}) } : null
   }
   // Re-estimate when the choice changes, not on every printer status tick.
   const resolveRef = useRef(resolve)
@@ -97,6 +98,8 @@ export default function SendRoute() {
   useEffect(() => {
     if (session) setSigningIn(false)
   }, [session])
+  // A plate is picked only for a cloud slice: a paired computer opens the project and slices it as it does today.
+  const plates = useModelPlates(computer ? null : (models.find((m) => m.id === modelId) ?? null))
   const initialTarget: SendTarget | undefined = params.printer ? { kind: 'printer', printerId: params.printer } : undefined
 
   return (
@@ -110,6 +113,8 @@ export default function SendRoute() {
         {...(params.model ? { initialModelId: params.model } : opened.data ? { initialModelId: `listing-${opened.data.listing.id}` } : {})}
         {...(initialTarget ? { initialTarget } : {})}
         onSelectionChange={setSelection}
+        onModelChange={setModelId}
+        plates={plates}
         estimate={estimate.estimate}
         estimating={estimate.estimating}
         fit={estimate.fit}

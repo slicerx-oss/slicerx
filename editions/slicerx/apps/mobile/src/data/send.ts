@@ -7,7 +7,8 @@ import type { EasySettings, Fleet, StoreClient, JobFile, PrinterInfo, PrinterSta
 import { useQueryClient } from '@tanstack/react-query'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { readPlates, type ProjectPlate } from '../cloud/plates'
 import { estimateOf, runCloudSlice, type Material, type PhoneModel, type PlateFit, type SlicePhase } from '../cloud/slice-job'
 import { boxStl } from '../cloud/stl'
 import { createCloudStub } from '../cloud/stub'
@@ -54,7 +55,7 @@ export function pickFromFleet(fleet: Fleet, views: PrinterView[]): PrinterInfo |
   return (members.find((v) => ready(v.status, ['idle'])) ?? members.find((v) => ready(v.status, ['finished'])))?.info ?? null
 }
 
-type SendInput = { model: PhoneModel; printer: PrinterInfo; easy: EasySettings; material: Material }
+type SendInput = { model: PhoneModel; printer: PrinterInfo; easy: EasySettings; material: Material; plate?: number }
 
 function sendApproval(file: Pick<JobFile, 'name' | 'sha256'>, printer: PrinterInfo, o: { layerCount: number; timeS: number; grams: number }) {
   return buildApproval({
@@ -126,6 +127,31 @@ export function useSendModels(opened?: CatalogItem | null) {
   }, [])
 
   return { models, loading: library.isPending && library.fetchStatus !== 'idle', pickFile }
+}
+
+/**
+ * The plates of a 3MF in the phone's files, read from the file on the device, so the person can pick one before
+ * anything is uploaded. Empty for any other model: a library model is downloaded only when it is sent, and an STL is
+ * one plate.
+ */
+export function useModelPlates(model: PhoneModel | null): ProjectPlate[] {
+  const [read, setRead] = useState<{ id: string; plates: ProjectPlate[] } | null>(null)
+  const current = useRef(model)
+  current.current = model
+  const id = model && model.origin === 'file' && /\.3mf$/i.test(model.name) ? model.id : null
+  useEffect(() => {
+    const m = current.current
+    if (!id || !m) return
+    let live = true
+    m.load().then(
+      (bytes) => live && setRead({ id, plates: readPlates(bytes) }),
+      () => live && setRead({ id, plates: [] }),
+    )
+    return () => {
+      live = false
+    }
+  }, [id])
+  return id && read?.id === id ? read.plates : []
 }
 
 /** Time and filament for a selection, and how a measured model fits the printer's bed, from the local estimator (no upload). */
