@@ -3,6 +3,7 @@
 // State shared by the tools of one mimir instance: slice results per plate,
 // so queueing sends exactly the G-code that was sliced and approved.
 import type { GcodeExport, JobFile, PrintConfig, SliceResult, ToolheadPlan } from '@slicerx/contracts'
+import type { SendOptionSpec } from '@slicerx/printer-catalog/send-options'
 
 export interface SlicedPlate {
   plate: number
@@ -16,6 +17,8 @@ export interface SlicedPlate {
   project?: { file: GcodeExport; data: ArrayBuffer }
   /** The slots matched for a send that the person was asked to approve, by printer id, so the start uses what the card showed. */
   autoSlots?: Map<string, Record<number, string>>
+  /** The print options offered for a send the person was asked to approve, by printer id, so the start sends what the card showed. */
+  optionSpecs?: Map<string, SendOptionSpec[]>
   /** Prepared copies per printer; the original export remains available for another choice. */
   preparedToolheads?: Map<string, { sourceSha256: string; file: JobFile; plan: ToolheadPlan }>
 }

@@ -190,7 +190,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_match` |  |  | read | Rank the printers that can print a model in a material right now: fit in the build volume, hotend temperature, nozzle hardness for abrasive filament, enclosure need, material already loaded, wait time and machine cost. |
 | `slicerx_printer_pause` |  |  | start | Pause the running print on a printer. |
 | `slicerx_printer_profile_search` |  |  | read | Searches the printer profile library by vendor or model text and returns profile ids with the nozzle sizes each profile has. |
-| `slicerx_printer_queue` |  |  | start | Send a sliced plate to a printer and start it (upload then start). |
+| `slicerx_printer_queue` |  |  | start | Send a sliced plate to a printer and start it, once the user approves in the app. |
 | `slicerx_printer_resume` |  |  | start | Resume a paused print. |
 | `slicerx_printer_set_temperature` |  |  | start | Set a nozzle, bed or chamber target temperature on a printer (0 turns the heater off). |
 | `slicerx_printer_setup` |  |  | read | Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. |

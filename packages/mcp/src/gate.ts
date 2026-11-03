@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import type { ApprovalRequest, ApprovalToken, PermissionClass, PermissionPolicy } from '@slicerx/contracts'
+import type { ApprovalRequest, ApprovalToken, PermissionClass, PermissionPolicy, StartOptions } from '@slicerx/contracts'
 import { grantApproval, hashParams, PERMISSION_LABELS, productName } from '@slicerx/contracts'
 import { buildApprovalRequest, decide, policyMayGrant, TOKEN_TTL_MS, toolMessage, type AgentWork, type ApprovalBroker, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
 import type { ActionLog } from './actionlog'
@@ -22,6 +22,8 @@ export interface PendingCall {
   expiresMs: number
   /** Only a person in SlicerX or on the phone can approve it (needsPerson); slicerx_approve can only decline it. */
   personOnly?: boolean
+  /** The print options handed to the hub with a print, as the card lists them, for reading them back. */
+  options?: Record<string, boolean>
   /** For a person-only request the hub runs: how it went, once the hub reports it. */
   outcome?: ApprovalDone
 }
@@ -95,6 +97,12 @@ export interface GateDeps {
 }
 
 const CHARACTER_LIMIT = 25_000
+
+/** A print's options as the hub was handed them, without the plate or slot map; undefined when it has none. */
+function printOptions(opts: StartOptions | undefined): Record<string, boolean> | undefined {
+  const out = Object.fromEntries(Object.entries(opts ?? {}).filter(([, v]) => typeof v === 'boolean'))
+  return Object.keys(out).length ? out : undefined
+}
 
 /** `printer.queue` becomes `slicerx_printer_queue`. */
 export function mcpName(pilotName: string): string {
@@ -248,7 +256,8 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
         return failFrom(e)
       }
       handed = work
-      const entry: PendingCall = { tool, input, request, expiresMs, personOnly: true }
+      const options = work.kind === 'print' ? printOptions(work.opts) : undefined
+      const entry: PendingCall = { tool, input, request, expiresMs, personOnly: true, ...(options ? { options } : {}) }
       deps.waiting?.set(request.id, (d) => {
         entry.outcome = d
         deps.waiting?.delete(request.id)
@@ -264,7 +273,8 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
       deps.pending.set(request.id, { tool, input, request, expiresMs, personOnly: true })
     }
     deps.log.append({ ...base, decision: 'needs_person', request_id: request.id })
-    const sent = handed?.kind === 'print' ? { file: handed.file.name, ...(handed.opts?.slotMap ? { slot_map: handed.opts.slotMap } : {}) } : {}
+    const options = handed?.kind === 'print' ? printOptions(handed.opts) : undefined
+    const sent = handed?.kind === 'print' ? { file: handed.file.name, ...(handed.opts?.slotMap ? { slot_map: handed.opts.slotMap } : {}), ...(options ? { options } : {}) } : {}
     const data = { status: 'needs_person', request_id: request.id, title: request.title, lines: request.lines, permission, expires_at: request.expiresAt, ...sent }
     const text = [`Needs a person: ${request.title}`, ...request.lines.map((l) => `- ${l}`), personOnlyNote(), `The request expires at ${request.expiresAt}.`].join('\n')
     return { content: [{ type: 'text', text }], structuredContent: data }
