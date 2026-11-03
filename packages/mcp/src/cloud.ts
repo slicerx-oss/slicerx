@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Cloud slicing against the SlicerX cloud service API (the edition's
-// packages/cloud README): upload the mesh by its SHA-256, queue a job, read
-// jobs. Off unless an integrator names a cloud API; with none configured both
+// packages/cloud README): upload the mesh or 3MF project by its SHA-256, queue
+// a job (one slice per plate named), read jobs. Off unless an integrator names a cloud API; with none configured both
 // tools answer that cloud slicing is not configured and touch no network.
 // No job here names a printer, so nothing these tools do can start a print.
 import { execFileSync } from 'node:child_process'
@@ -88,6 +88,18 @@ interface CloudJob {
   finishedAt?: string | null
   gcodeUrl?: string
   previewUrl?: string
+  plateCount?: number | null
+  plateIndex?: number | null
+  plates?: { plate: number; gcodeUrl: string; previewUrl: string }[]
+}
+
+/** One plate's report in the result of a job that named its plates. */
+interface PlateReport {
+  plate: number
+  status: 'succeeded' | 'failed'
+  error?: string
+  layerCount?: number
+  stats?: { timeS?: number; filamentG?: number[] }
 }
 
 interface CloudAccess {
@@ -163,33 +175,64 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     throw new ToolInputError(`The cloud service did not accept the request: ${why}`, 'service_error')
   }
 
-  const describe = (c: CloudOptions, j: CloudJob): Record<string, unknown> => ({
+  /** Each plate of a job that named its plates: how it went, its time and filament, and its own downloads. */
+  const plateList = (c: CloudOptions, j: CloudJob): Record<string, unknown>[] | undefined => {
+    const reports = j.result?.['plates'] as PlateReport[] | undefined
+    if (!reports) return undefined
+    return reports.map((p) => {
+      const links = j.plates?.find((l) => l.plate === p.plate)
+      if (p.status !== 'succeeded') return { plate: p.plate, status: p.status, error: p.error }
+      return {
+        plate: p.plate,
+        status: p.status,
+        layerCount: p.layerCount,
+        timeS: p.stats?.timeS,
+        grams: p.stats?.filamentG?.reduce((a, b) => a + b, 0),
+        ...(links ? { links: { gcode: absolute(c, links.gcodeUrl), preview: absolute(c, links.previewUrl) } } : {}),
+      }
+    })
+  }
+
+  const describe = (c: CloudOptions, j: CloudJob): Record<string, unknown> => {
+    const { plates: _plates, ...result } = j.result ?? {}
+    const plates = plateList(c, j)
+    return {
     id: j.id,
     name: j.name,
     status: j.status,
     progress: j.progress,
     stage: j.stage ?? undefined,
+    ...(j.plateCount && j.plateCount > 1 ? { plateCount: j.plateCount } : {}),
+    ...(j.plateIndex && j.status === 'running' ? { plateIndex: j.plateIndex } : {}),
     error: j.error ?? undefined,
     createdAt: j.createdAt,
     finishedAt: j.finishedAt ?? undefined,
-    result: j.result ?? undefined,
+    result: j.result ? result : undefined,
+    ...(plates ? { plates } : {}),
     ...(j.status === 'succeeded'
       ? j.gcodeUrl || j.previewUrl
         ? { links: { ...(j.gcodeUrl ? { gcode: absolute(c, j.gcodeUrl) } : {}), ...(j.previewUrl ? { preview: absolute(c, j.previewUrl) } : {}) }, linksNote: EXPIRY_NOTE }
         : { linksNote: 'The files of this job have expired (results are kept for 7 days).' }
       : {}),
-  })
+    }
+  }
   const absolute = (c: CloudOptions, u: string): string => (/^https?:\/\//.test(u) ? u : `${c.apiUrl}${u.startsWith('/') ? '' : '/'}${u}`)
 
   const slice = defineTool({
     name: 'cloud.slice',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      "Slice a model in the integrator's cloud instead of on this machine: checks the account is invited and within its daily job and upload limits, uploads the STL gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues a job with the settings (schema defaults, then each profile, then overrides) and returns the job id. Follow it with slicerx_cloud_jobs. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
+      "Slice a model or a whole 3MF project in the integrator's cloud instead of on this machine: checks the account is invited and within its daily slices and upload limit, uploads the file gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues one job with the settings (schema defaults, then each profile, then overrides) and returns the job id. A 3MF slices each plate named in plates as a slice of its own (each counts as one of the day's cloud slices), or its first plate without plates; each build item is an object of its own. Follow it with slicerx_cloud_jobs, which gives each plate's result and downloads. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
     input: z.object({
-      model: z.string().min(1).describe('Absolute path to an STL file, an http(s) URL, or a built-in test model such as sample:cube-20'),
+      model: z.string().min(1).describe('Absolute path to an STL or 3MF file, an http(s) URL, or a built-in test model such as sample:cube-20'),
+      plates: z
+        .array(z.number().int().min(1))
+        .min(1)
+        .max(32)
+        .optional()
+        .describe("3MF only: the plates to slice, from 1, each a slice of its own with its own result; only these are sliced, and each counts as one of the day's cloud slices. Default: the project's first plate"),
       profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
       overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('Setting keys to values, applied last'),
       name: z.string().min(1).max(120).optional().describe('Job name shown in the job list; default the file name'),
@@ -198,7 +241,10 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     async run(i) {
       const c = need()
       const path = await resolveModel(deps.policy, i.model)
-      if (extname(path).toLowerCase() !== '.stl') throw new ToolInputError('model: cloud slicing takes STL files', 'unsupported_format')
+      const ext = extname(path).toLowerCase()
+      if (ext !== '.stl' && ext !== '.3mf') throw new ToolInputError('model: cloud slicing takes STL and 3MF files', 'unsupported_format')
+      if (i.plates && ext !== '.3mf') throw new ToolInputError('plates: only a 3MF project has plates', 'invalid_input')
+      if (i.plates && new Set(i.plates).size !== i.plates.length) throw new ToolInputError('plates: name each plate once', 'invalid_input')
       await deps.profiles.prepare(i.profiles)
       const { explicit, applied } = resolveSliceConfig(deps.store, deps.profiles, i.profiles, i.overrides)
       const bytes = readFileSync(path)
@@ -206,6 +252,10 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
       if (!access.invited) throw new ToolInputError(NOT_INVITED, 'not_invited')
       if (access.jobsPerDay !== undefined && access.jobsToday !== undefined && access.jobsToday >= access.jobsPerDay)
         throw new ToolInputError(`This account has used all ${access.jobsPerDay} cloud jobs of the last 24 hours. Try later or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
+      // Every plate counts as one of the day's cloud slices.
+      const left = access.jobsPerDay !== undefined && access.jobsToday !== undefined ? access.jobsPerDay - access.jobsToday : undefined
+      if (i.plates && left !== undefined && i.plates.length > left)
+        throw new ToolInputError(`This job slices ${i.plates.length} plates, and this account can slice ${left} more ${left === 1 ? 'plate' : 'plates'} in the cloud today. Name fewer plates, try later or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
       // Sent gzip compressed when that is smaller; the limit reads the size as sent.
       const packed = await gzipAsync(bytes)
       const compressed = packed.length < bytes.length
@@ -225,7 +275,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
               schemaVersion: 1,
               plate: { objects: [{ id: 'o0', name: basename(path), mesh: sha }] },
               config: sxConfig(explicit),
-              options: { engine: 'sx', emitGcode: true, emitPreview: i.emit_preview },
+              options: { engine: 'sx', emitGcode: true, emitPreview: i.emit_preview, ...(i.plates ? { plates: i.plates } : {}) },
             },
           },
         })
@@ -236,11 +286,11 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
 
   const jobs = defineTool({
     name: 'cloud.jobs',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
-      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. Answers that cloud slicing is not configured when this server has no cloud API.',
+      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. Answers that cloud slicing is not configured when this server has no cloud API.',
     input: z.object({ job_id: jobId.optional(), limit: z.number().int().min(1).max(100).default(20) }),
     async run(i) {
       const c = need()

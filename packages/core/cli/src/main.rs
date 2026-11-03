@@ -315,6 +315,10 @@ fn mesh_paint(raw: &Value) -> std::collections::HashMap<String, Value> {
         .unwrap_or_default()
 }
 
+/// `options.plates` belongs to the cloud service, which slices each plate on its own; here one request is one slice.
+const PLATES_OPTION: &str =
+    "options.plates is read by the cloud service; name one plate of a project as file.3mf#N";
+
 /// `file.3mf#2` as the file and the plate number.
 fn split_ref(full: &str) -> (&str, Option<u32>) {
     match full.rsplit_once('#') {
@@ -353,149 +357,57 @@ fn project_defaults(
     Ok(())
 }
 
-/// The marks and tool changes project `bytes` sets on the layers of plate `plate_no` go into `req` unless it brings its
-/// own; returns a note for each of the project's tool changes that does not apply, unless the request brings its own.
-fn take_project_marks(
-    req: &mut sx_core::api::SliceRequest,
-    bytes: &[u8],
-    plate_no: u32,
-) -> Vec<sx_core::SliceWarning> {
-    let marks = sx_core::api::load_3mf_marks(bytes, plate_no);
-    if req.options.layer_gcode.is_none() && !marks.gcode.is_empty() {
-        req.options.layer_gcode = Some(marks.gcode);
-    }
-    if req.options.tool_changes.is_some() {
-        return Vec::new();
-    }
-    if !marks.tool_changes.is_empty() {
-        req.options.tool_changes = Some(marks.tool_changes);
-    }
-    marks.skipped
-}
-
 /// Meshes loaded while splitting a request's projects, by key.
 type SplitMeshes = std::collections::HashMap<String, std::sync::Arc<Mesh>>;
 
-/// A 3MF plate given without a transform becomes one object per build item ([`sx_core::api::load_3mf_items`]), so
-/// print by object, its clearance checks and the object labels see the objects and not one merged mesh. A slicer
-/// project's items stay where the file puts them (on the machine of the request's `printable_area`), any other 3MF's
-/// where the file puts them with the plate centered on the bed ([`sx_core::api::load_3mf_placement`]), as the app and
-/// `sx slice <file.3mf>` place them. With `plate.placement` `keep`, any 3MF's items stay where the file puts them, from
-/// the front left corner of the printable area, and a 3MF kept whole (given paint, volumes or brim ears) is moved the
-/// same way; the engine then refuses a part off the printable area. Returns their meshes under the new keys (a plate of one item keeps its key, with
-/// the item's mesh), a note for each project named without `#N` that has more plates than the one sliced (the
+/// The request's project files, read from the request's folder: a `.3mf` path, where `file.3mf#2` picks plate 2.
+struct RequestFiles<'a> {
+    base: &'a Path,
+    paths: &'a std::collections::HashMap<String, String>,
+    painted: &'a std::collections::HashMap<String, Value>,
+}
+
+impl sx_core::api::ProjectFiles for RequestFiles<'_> {
+    fn project(&self, key: &str) -> Option<(String, Option<u32>)> {
+        let full = self.paths.get(key).map_or(key, String::as_str);
+        let (rel, plate) = split_ref(full);
+        rel.to_ascii_lowercase()
+            .ends_with(".3mf")
+            .then(|| (rel.to_owned(), plate))
+    }
+
+    fn bytes(&self, file: &str) -> sx_core::Result<std::sync::Arc<Vec<u8>>> {
+        read_mesh_file(self.base, file).map(std::sync::Arc::new)
+    }
+
+    fn painted(&self, key: &str) -> bool {
+        self.painted.contains_key(key)
+    }
+}
+
+/// The request's 3MF plates as one object per build item ([`sx_core::api::split_projects`]). Returns their meshes
+/// under the new keys, a note for each project named without `#N` that has more plates than the one sliced (the
 /// result's `projectPlates`), each also on stderr, and a warning for each tool change a project keeps that does not
-/// apply ([`sx_core::api::load_3mf_marks`]).
+/// apply.
 fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
     paths: &std::collections::HashMap<String, String>,
     painted: &std::collections::HashMap<String, Value>,
 ) -> sx_core::Result<(SplitMeshes, Vec<Value>, Vec<sx_core::SliceWarning>)> {
-    use sx_core::api;
-    let mut cache = std::collections::HashMap::new();
-    let mut plate_notes: Vec<Value> = Vec::new();
-    let mut skipped: Vec<sx_core::SliceWarning> = Vec::new();
-    // The project plates the request names: the file, the plate's number and its entry in per-plate lists.
-    let mut projects: Vec<(String, u32, Option<usize>)> = Vec::new();
-    let bed = req.plate.bed.map_or_else(api::Bed::default, |b| api::Bed {
-        width_mm: b.width_mm,
-        depth_mm: b.depth_mm,
-        height_mm: b.height_mm,
-    });
-    let keep = req.plate.placement == api::PlatePlacement::Keep;
-    let mut out = Vec::with_capacity(req.plate.objects.len());
-    for o in std::mem::take(&mut req.plate.objects) {
-        let key = o.mesh_ref();
-        let full = paths.get(&key).map_or(key.as_str(), String::as_str);
-        let (rel, plate) = split_ref(full);
-        let is_3mf = rel.to_ascii_lowercase().ends_with(".3mf");
-        // A mesh given paint stays one object, so the paint's part indices are those of the mesh as loaded.
-        let plain = o.transform.is_none()
-            && o.volumes.is_empty()
-            && o.brim_points.is_empty()
-            && !painted.contains_key(&key);
-        if keep && is_3mf && !plain && o.transform.is_none() {
-            // Kept whole, in the file's build space: moved as its items would be, with no recentering.
-            let transform = Some(kept_whole(base, rel, plate, bed, &req.config)?);
-            out.push(api::ObjectSpec { transform, ..o });
-            continue;
-        }
-        if !plain || !is_3mf {
-            out.push(o);
-            continue;
-        }
-        let bytes = read_mesh_file(base, rel)?;
-        let (found, plates) = api::load_3mf_items_counted(&bytes, rel, plate)?;
-        let Some((plate_no, items)) = found else {
-            // loading it names the plate the file does not have
-            out.push(o);
-            continue;
-        };
-        if plate.is_none() && plates > 1 && !plate_notes.iter().any(|n| n["file"] == rel) {
-            let text = format!("{rel} has {plates} plates; slicing plate {plate_no} ({rel}#N picks another)");
-            eprintln!("sx: plates: {text}");
-            plate_notes.push(json!({"file": rel, "plates": plates, "sliced": plate_no, "text": text}));
-        }
-        skipped.extend(take_project_marks(req, &bytes, plate_no));
-        let found = api::load_3mf_placement(&bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])?;
-        let project = found != sx_core::plate::ItemsPlacement::Centered;
-        let placement = if project || keep {
-            sx_core::plate::ItemsPlacement::Kept(kept_offset(found, &req.config))
-        } else {
-            found
-        };
-        if project && !projects.iter().any(|(f, n, _)| f == rel && *n == plate_no) {
-            projects.push((
-                rel.to_owned(),
-                plate_no,
-                api::load_3mf_plate_index(&bytes, rel, plate_no)?,
-            ));
-        }
-        // A plate that is no project is centered on the bed, which starts where the printable area does.
-        let middle = sx_core::plate::bed_middle(bed, &req.config);
-        let at = sx_core::plate::items_transforms(&items, bed, Some(middle), placement);
-        if items.len() < 2 {
-            // One object keeps its key, centered as the plate or where the project puts it; the ears the file paints
-            // on it go with it, and its mesh is named after its object, not the file.
-            let mut o = o;
-            if let Some(one) = items.into_iter().next() {
-                o.brim_points.clone_from(&one.brim_points);
-                if placement != sx_core::plate::ItemsPlacement::Centered {
-                    o.transform = at.first().map(|t| t.to_vec());
-                }
-                cache.insert(key, std::sync::Arc::new(one));
-            }
-            out.push(o);
-            continue;
-        }
-        for ((k, mesh), at) in items.into_iter().enumerate().zip(at) {
-            let id = format!("{key}@{}", k + 1);
-            let mut one = o.clone();
-            one.id = format!("{}-{}", if o.id.is_empty() { "object" } else { &o.id }, k + 1);
-            one.name.clone_from(&mesh.name);
-            one.mesh = Value::String(id.clone());
-            one.transform = Some(at.to_vec());
-            one.brim_points.clone_from(&mesh.brim_points);
-            cache.insert(id, std::sync::Arc::new(mesh));
-            out.push(one);
-        }
+    let split = sx_core::api::split_projects(req, &RequestFiles { base, paths, painted })?;
+    for n in &split.plates {
+        eprintln!("sx: plates: {}", n.text);
     }
-    req.plate.objects = out;
-    // A request naming one project plate keeps the project's tower spot its settings carry, as the app does: the plate's
-    // own entry of the per-plate lists, with auto placement off unless the request sets it.
-    if let [(file, plate_no, index)] = projects.as_slice()
-        && let Some(config) = req.config.as_object_mut()
-    {
-        let auto_set = config.contains_key("prime_tower_auto_position");
-        if api::keep_plate_tower(config, *index, true, auto_set) == api::PlateTower::Unsure {
-            eprintln!(
-                "sx: prime tower: which of {file}'s tower spots is plate {plate_no}'s is not certain (its plates are \
-                 not numbered 1, 2, 3 in order, or the list has no entry for it), so the project's spot is not kept"
-            );
-        }
+    if let Some(why) = &split.tower_unsure {
+        eprintln!("sx: prime tower: {why}");
     }
-    Ok((cache, plate_notes, skipped))
+    let notes = split
+        .plates
+        .iter()
+        .map(|n| json!({"file": n.file, "plates": n.plates, "sliced": n.sliced, "text": n.text}))
+        .collect();
+    Ok((split.meshes, notes, split.skipped))
 }
 
 /// The bytes of the file `rel` names, relative to the request's folder `base`.
@@ -505,43 +417,6 @@ fn read_mesh_file(base: &Path, rel: &str) -> sx_core::Result<Vec<u8>> {
         name: path.display().to_string(),
         reason: e.to_string(),
     })
-}
-
-/// The transform of a 3MF plate kept as one object under `placement` `keep` (it has paint, volumes or brim ears of the
-/// request): a move from the file's build space onto the machine, as [`kept_offset`] moves its items.
-fn kept_whole(
-    base: &Path,
-    rel: &str,
-    plate: Option<u32>,
-    bed: sx_core::api::Bed,
-    config: &Value,
-) -> sx_core::Result<Vec<f32>> {
-    use sx_core::api;
-    let bytes = &read_mesh_file(base, rel)?;
-    let plate_no = match plate {
-        Some(n) => n,
-        None => api::load_3mf_items(bytes, rel, None)?.map_or(1, |(n, _)| n),
-    };
-    let [x, y] = kept_offset(
-        api::load_3mf_placement(bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])?,
-        config,
-    );
-    let mut t = sx_core::plate::IDENTITY;
-    t[12] = x;
-    t[13] = y;
-    Ok(t.to_vec())
-}
-
-/// How far a 3MF plate's items move from the file's build space onto the machine when they are kept where the file puts
-/// them: a project's own placement (its plate's place in the project taken off), or none for any other 3MF, plus the
-/// front left corner of the request's printable area.
-fn kept_offset(found: sx_core::plate::ItemsPlacement, config: &Value) -> [f32; 2] {
-    let [x, y] = match found {
-        sx_core::plate::ItemsPlacement::Kept(at) => at,
-        sx_core::plate::ItemsPlacement::Centered => [0.0, 0.0],
-    };
-    let [ox, oy] = sx_core::plate::area_origin(config);
-    [x + ox, y + oy]
 }
 
 /// The meshes of a request as the engine asks for them. A mesh is let go once the last object or volume naming it
@@ -789,6 +664,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
+    if req.options.plates.is_some() {
+        return fail(EXIT_INPUT, PLATES_OPTION.into());
+    }
     let (script_replacements, script_reviews) = match request_script_changes(&mut req, &raw, args) {
         Ok(result) => result,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
@@ -910,6 +788,9 @@ fn cmd_check(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
+    if req.options.plates.is_some() {
+        return fail(EXIT_INPUT, PLATES_OPTION.into());
+    }
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
     if let Err(e) = project_defaults(&mut req, &base, &paths) {
         return fail(EXIT_INPUT, e.to_string());

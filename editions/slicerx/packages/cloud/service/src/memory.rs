@@ -12,8 +12,8 @@ use async_trait::async_trait;
 
 use crate::backend::{
     Backend, Bucket, CloudQuota, Delivery, DeliveryRow, DeliveryState, Device, DeviceKind, Job, JobStatus,
-    LinkPrinter, MAX_ACTIVE_JOBS, NewJob, Outcome, ScanFinish, ScanJob, SyncPrinter, TokenGrant,
-    delivery_from_parts,
+    LinkPrinter, MAX_ACTIVE_JOBS, NewJob, Outcome, ScanFinish, ScanJob, SyncPrinter, TokenGrant, daily_limit,
+    delivery_from_parts, job_plates,
 };
 use crate::error::{Error, Result};
 
@@ -67,10 +67,15 @@ impl State {
 
     fn quota(&self, user_id: &str) -> Option<CloudQuota> {
         let &(jobs_per_day, max_upload_bytes) = self.access.get(user_id)?;
-        let jobs_today = self.jobs.iter().filter(|(j, _)| j.user_id == user_id).count();
+        let jobs_today: u32 = self
+            .jobs
+            .iter()
+            .filter(|(j, _)| j.user_id == user_id)
+            .map(|(j, _)| j.plate_count.map_or(1, |n| u32::try_from(n).unwrap_or(1)))
+            .sum();
         Some(CloudQuota {
             jobs_per_day,
-            jobs_today: u32::try_from(jobs_today).unwrap_or(u32::MAX),
+            jobs_today,
             max_upload_bytes,
         })
     }
@@ -377,11 +382,9 @@ impl Backend for MemoryBackend {
         let quota = s.quota(&new.user_id).ok_or_else(|| {
             Error::Forbidden("cloud slicing is invite only, and this account is not on the list".into())
         })?;
-        if quota.jobs_today >= quota.jobs_per_day {
-            return Err(Error::Limit(format!(
-                "this account has used its {} cloud slices for the last 24 hours",
-                quota.jobs_per_day
-            )));
+        let plates = job_plates(&new.request);
+        if let Some(why) = daily_limit(quota, plates) {
+            return Err(Error::Limit(why));
         }
         let active = s
             .jobs
@@ -422,6 +425,8 @@ impl Backend for MemoryBackend {
             created_at,
             started_at: None,
             finished_at: None,
+            plate_count: Some(i32::try_from(plates).unwrap_or(i32::MAX)),
+            plate_index: None,
         };
         s.jobs.push((job.clone(), None));
         Ok(job)
@@ -476,7 +481,14 @@ impl Backend for MemoryBackend {
         Ok(Some(job.clone()))
     }
 
-    async fn report_progress(&self, id: &str, worker: &str, progress: f32, stage: &str) -> Result<bool> {
+    async fn report_progress(
+        &self,
+        id: &str,
+        worker: &str,
+        progress: f32,
+        stage: &str,
+        plate: Option<u32>,
+    ) -> Result<bool> {
         let mut s = self.lock();
         let Some((job, _)) = s
             .jobs
@@ -487,6 +499,7 @@ impl Backend for MemoryBackend {
         };
         job.progress = progress.clamp(0.0, 1.0);
         job.stage = Some(stage.to_owned());
+        job.plate_index = plate.and_then(|n| i32::try_from(n).ok());
         Ok(true)
     }
 

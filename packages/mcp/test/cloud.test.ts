@@ -7,6 +7,7 @@ import { gunzipSync } from 'node:zlib'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cloudFromEnv, type CloudOptions } from '../src/cloud'
+import { mockCloudService, mockPlateGcode } from '../../../editions/slicerx/packages/cloud/test/mock-service'
 import { connect, data, text } from './helpers'
 
 afterEach(() => vi.restoreAllMocks())
@@ -174,5 +175,63 @@ describe('cloud slicing against the API contract', () => {
     const r = await h.call('slicerx_cloud_slice', { model: 'sample:cube-20' })
     expect(r.isError).toBe(true)
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('cloud slicing a whole 3MF project', () => {
+  /** A project file as the tool sends it; the stand-in service does not read it. */
+  function project(dir: string): string {
+    const file = join(dir, 'Lantern.3mf')
+    writeFileSync(file, Buffer.concat([Buffer.from([0x50, 0x4b, 3, 4]), Buffer.from(' a two plate project')]))
+    return file
+  }
+  type Plate = { plate: number; status: string; error?: string; timeS?: number; grams?: number; layerCount?: number; links?: { gcode: string; preview: string } }
+
+  it('slices only the plates named and reads each one back with its own downloads', async () => {
+    const svc = mockCloudService()
+    svc.failPlates.set(3, 'the plate has no printable geometry')
+    const cloud: CloudOptions = { apiUrl: 'http://127.0.0.1:8787', token: 'sxk_test', fetch: svc.fetch }
+    const h = await connect({ cloud })
+    const file = project(h.dir)
+    const r = await h.call('slicerx_cloud_slice', { model: file, plates: [2, 3] })
+    expect(r.isError, text(r)).toBeFalsy()
+    const sha = createHash('sha256').update(readFileSync(file)).digest('hex')
+    expect(svc.uploads.has(sha)).toBe(true)
+    const sent = svc.requests[0] as { plate: { objects: { mesh: string }[] }; options: { plates?: number[] } }
+    expect(sent.plate.objects.map((o) => o.mesh)).toEqual([sha])
+    expect(sent.options.plates).toEqual([2, 3])
+
+    const jobId = data<{ output: { jobId: string } }>(r).output.jobId
+    const got = data<{ output: { status: string; plateCount?: number; plates?: Plate[]; result?: Record<string, unknown> } }>(await h.call('slicerx_cloud_jobs', { job_id: jobId })).output
+    expect(got.status).toBe('succeeded')
+    expect(got.plateCount).toBe(2)
+    expect(got.result?.['plates']).toBeUndefined()
+    expect(got.plates?.map((p) => [p.plate, p.status])).toEqual([[2, 'succeeded'], [3, 'failed']])
+    const [two, three] = got.plates!
+    expect(two).toMatchObject({ timeS: 40, grams: 0.3, layerCount: 1 })
+    expect(two?.links?.gcode).toBe(`http://127.0.0.1:8787/v1/jobs/${jobId}/plates/2/gcode`)
+    expect(three).toEqual({ plate: 3, status: 'failed', error: 'the plate has no printable geometry' })
+    // The link is the plate's own G-code, read with the same token.
+    const res = await svc.fetch(two!.links!.gcode, { headers: { authorization: 'Bearer sxk_test' } })
+    expect(await res.text()).toBe(mockPlateGcode(2))
+  })
+
+  it('refuses plates the day has no room for, plates of an STL and a plate named twice, before any upload', async () => {
+    const svc = mockCloudService()
+    svc.access = { invited: true, jobsPerDay: 20, jobsToday: 18, maxUploadBytes: 25 * 1_048_576 }
+    const h = await connect({ cloud: { apiUrl: 'http://127.0.0.1:8787', token: 'sxk_test', fetch: svc.fetch } })
+    const file = project(h.dir)
+    const over = await h.call('slicerx_cloud_slice', { model: file, plates: [1, 2, 3] })
+    expect(over.isError).toBe(true)
+    expect(text(over)).toMatch(/This job slices 3 plates, and this account can slice 2 more plates in the cloud today/)
+    const stl = await h.call('slicerx_cloud_slice', { model: join(h.dir, 'cube.stl'), plates: [1] })
+    expect(text(stl)).toMatch(/only a 3MF project has plates/)
+    const twice = await h.call('slicerx_cloud_slice', { model: file, plates: [2, 2] })
+    expect(text(twice)).toMatch(/name each plate once/)
+    expect(svc.uploads.size).toBe(0)
+    expect(svc.requests).toHaveLength(0)
+    // Two plates fit what is left.
+    const fits = await h.call('slicerx_cloud_slice', { model: file, plates: [1, 2] })
+    expect(fits.isError, text(fits)).toBeFalsy()
   })
 })

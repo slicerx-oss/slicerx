@@ -7,6 +7,11 @@ import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_VERSION } from '@slicerx/contracts'
 import { sha256Hex } from '../src/hash'
 
 export const MOCK_GCODE = '; sliced in the cloud\nG28\nG1 X10 Y10 Z0.2 E1\n'
+
+/** The G-code the stand-in gives plate `plate` of a job that names its plates. */
+export function mockPlateGcode(plate: number): string {
+  return `; sliced in the cloud, plate ${plate}\nG28\nG1 X${10 * plate} Y10 Z0.2 E1\n`
+}
 const USER = '00000000-0000-4000-8000-0000000000a1'
 
 export interface MockCloudService {
@@ -26,6 +31,8 @@ export interface MockCloudService {
   access: Record<string, unknown>
   /** The warnings a job's result carries; tests change it. */
   warnings: Record<string, unknown>[]
+  /** Plates of a job that names its plates that fail, with the engine's words; tests change it. */
+  failPlates: Map<number, string>
 }
 
 /** A preview of one layer, 0.2 mm, with no toolpaths: enough for the app to show a finished slice. */
@@ -51,8 +58,9 @@ export function mockCloudService(): MockCloudService {
   const jobs = new Map<string, Record<string, unknown>>()
   const names: string[] = []
   const sent: MockCloudService['sent'] = []
-  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, sent, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 }, warnings: [] }
-  const gcode = new TextEncoder().encode(MOCK_GCODE)
+  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, sent, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 }, warnings: [], failPlates: new Map() }
+  const enc = new TextEncoder()
+  const gcode = enc.encode(MOCK_GCODE)
   const preview = onePreview()
   svc.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input))
@@ -65,7 +73,7 @@ export function mockCloudService(): MockCloudService {
       const sha = mesh[1]!
       if (method === 'GET') return uploads.has(sha) ? json(200, { sha256: sha }) : json(404, { error: { code: 'not_found', message: 'no such mesh' } })
       if (svc.refuseUpload) return svc.refuseUpload()
-      const wire = new Uint8Array(init.body as ArrayBuffer | Uint8Array)
+      const wire = init.body instanceof Blob ? new Uint8Array(await init.body.arrayBuffer()) : new Uint8Array(init.body as ArrayBuffer | Uint8Array)
       const encoding = new Headers(init.headers).get('content-encoding')
       sent.push({ sha256: sha, bytes: wire.length, encoding })
       const body = encoding === 'gzip' ? new Uint8Array(gunzipSync(wire)) : wire
@@ -78,6 +86,39 @@ export function mockCloudService(): MockCloudService {
       requests.push(body.request)
       names.push(body.name ?? '')
       const id = `00000000-0000-4000-8000-${String(jobs.size + 1).padStart(12, '0')}`
+      const report = async (text: Uint8Array, timeS: number) => ({
+        schemaVersion: 1,
+        engine: 'sx',
+        layerCount: 1,
+        layerZ: [0.2],
+        layerTimeS: [timeS],
+        stats: { timeS, filamentMm: [100], filamentG: [0.3], cost: 0, toolChanges: 0 },
+        stageMicros: {},
+        wallMs: 5,
+        warnings: svc.warnings,
+        gcodeBytes: text.length,
+        gcodeSha256: await sha256Hex(text),
+        previewBytes: preview.length,
+      })
+      // A job that names its plates: one report per plate, the first that sliced as the job's own.
+      const named = (body.request['options'] as { plates?: number[] } | undefined)?.plates
+      const plates: Record<string, unknown>[] | undefined = named
+        ? await Promise.all(
+            named.map(async (n) => {
+              const error = svc.failPlates.get(n)
+              return error ? { plate: n, status: 'failed', error } : { plate: n, status: 'succeeded', ...(await report(enc.encode(mockPlateGcode(n)), 20 * n)) }
+            }),
+          )
+        : undefined
+      const first = plates?.find((p) => p['status'] === 'succeeded')
+      const times = { createdAt: '2026-01-01T00:00:00Z', startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z' }
+      if (plates && !first) {
+        const error = `plate ${String(plates[0]!['plate'])}: ${String(plates[0]!['error'])}`
+        const failed = { id, userId: USER, name: body.name ?? 'Cloud slice', status: 'failed', progress: 1, stage: null, request: body.request, targetPrinterId: null, result: null, error, attempts: 1, ...times, plateCount: plates.length }
+        jobs.set(id, failed)
+        return json(202, { ...failed, status: 'queued', progress: 0, error: null, finishedAt: null })
+      }
+      const own = (p: Record<string, unknown>) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== 'plate' && k !== 'status'))
       const job = {
         id,
         userId: USER,
@@ -87,20 +128,7 @@ export function mockCloudService(): MockCloudService {
         stage: null,
         request: body.request,
         targetPrinterId: null,
-        result: {
-          schemaVersion: 1,
-          engine: 'sx',
-          layerCount: 1,
-          layerZ: [0.2],
-          layerTimeS: [20],
-          stats: { timeS: 20, filamentMm: [100], filamentG: [0.3], cost: 0, toolChanges: 0 },
-          stageMicros: {},
-          wallMs: 5,
-          warnings: svc.warnings,
-          gcodeBytes: gcode.length,
-          gcodeSha256: await sha256Hex(gcode),
-          previewBytes: preview.length,
-        },
+        result: first ? { ...own(first), plates } : await report(gcode, 20),
         error: null,
         attempts: 1,
         createdAt: '2026-01-01T00:00:00Z',
@@ -108,9 +136,25 @@ export function mockCloudService(): MockCloudService {
         finishedAt: '2026-01-01T00:00:01Z',
         gcodeUrl: `/v1/jobs/${id}/gcode`,
         previewUrl: `/v1/jobs/${id}/preview`,
+        plateCount: plates?.length ?? 1,
+        ...(plates
+          ? {
+              plates: plates
+                .filter((p) => p['status'] === 'succeeded')
+                .map((p) => ({ plate: p['plate'], gcodeUrl: `/v1/jobs/${id}/plates/${String(p['plate'])}/gcode`, previewUrl: `/v1/jobs/${id}/plates/${String(p['plate'])}/preview` })),
+            }
+          : {}),
       }
       jobs.set(id, job)
       return json(202, { ...job, status: 'queued', progress: 0, result: null, finishedAt: null })
+    }
+    const platePath = /^\/v1\/jobs\/([0-9a-f-]{36})\/plates\/(\d+)\/(gcode|preview)$/.exec(path)
+    const plateJob = platePath ? jobs.get(platePath[1]!) : undefined
+    if (platePath && plateJob) {
+      const n = Number(platePath[2])
+      const sliced = (plateJob['plates'] as { plate: number }[] | undefined)?.some((p) => p.plate === n)
+      if (!sliced) return json(404, { error: { code: 'not_found', message: 'result not found' } })
+      return new Response(platePath[3] === 'gcode' ? enc.encode(mockPlateGcode(n)) : preview, { status: 200 })
     }
     const jobPath = /^\/v1\/jobs\/([0-9a-f-]{36})(\/gcode|\/preview)?$/.exec(path)
     const job = jobPath ? jobs.get(jobPath[1]!) : undefined

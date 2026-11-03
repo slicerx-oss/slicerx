@@ -389,6 +389,7 @@ const FREE_OPTIONS: &[&str] = &[
     "plateNumber",
     "modelName",
     "layerGcode",
+    "plates",
 ];
 
 /// The key of the session `req` prepares: its plate with each mesh named by its content hash (`mesh_hash`, None

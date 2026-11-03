@@ -240,6 +240,12 @@ export interface SliceOptions {
    * internal bridges at the bridge speed). Off by default: the config is taken as given.
    */
   projectDefaults?: boolean
+  /**
+   * The cloud slicer only: the plates of a whole 3MF project to slice, from 1, each a slice of its own (the result's
+   * `plates`). Only these plates are sliced, and each counts as one of the account's daily cloud slices. Without it a
+   * project slices its first plate. Local engines do not read it.
+   */
+  plates?: number[]
 }
 
 export interface SliceRequest {
@@ -534,6 +540,27 @@ export interface SliceResult {
   collisions?: Collision[]
   /** Fixes for the collisions. */
   collisionFixes?: CollisionFix[]
+  /**
+   * A cloud slice of a whole 3MF project that named its plates (`options.plates`): each plate's own result, in the
+   * order asked. The rest of this result is the first plate that sliced. Each plate's `result.id` reads its own
+   * preview and G-code from the same slicer.
+   */
+  plates?: PlateSliceResult[]
+  /** Each project the plate names without a plate that has more plates than the one sliced (its first). */
+  projectPlates?: ProjectPlateNote[]
+}
+
+/** One plate of a slice that named its plates: its result, or why it did not slice. */
+export type PlateSliceResult =
+  | { plate: number; status: 'succeeded'; result: SliceResult }
+  | { plate: number; status: 'failed'; error: string }
+
+/** A project with more plates than the one sliced: how many it has and which one was sliced. */
+export interface ProjectPlateNote {
+  file: string
+  plates: number
+  sliced: number
+  text: string
 }
 
 export type GcodeTarget = { kind: 'blob' } | { kind: 'path'; path: string }
