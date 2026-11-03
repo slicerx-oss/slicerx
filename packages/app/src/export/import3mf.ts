@@ -14,6 +14,7 @@ import type { VolumeRole } from '../state/store'
 import { areaOrigin, areaSize } from '../plate/bed-origin'
 import { bounds } from '../plate/transform'
 import { ProjectReadError, unzipEntries } from './unzip'
+import { MARKS_PART, readLayerMarks, type FileMark } from '@slicerx/threemf/layer-marks'
 import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
@@ -58,9 +59,6 @@ export interface ImportedObject {
   fileId: string
 }
 
-/** Why a project's tool change saved in a mode other than the one-filament mode does not apply, as the engine words it. */
-export const TOOL_CHANGE_MODE_SKIP = 'the project saved it for a plate that prints several filaments'
-
 export interface ImportedPlate {
   name: string
   /** Absent when the plate follows the project's print sequence. */
@@ -69,7 +67,7 @@ export interface ImportedPlate {
   nozzleMap?: number[]
   objects: ImportedObject[]
   /** Pause, color change and custom G-code from Metadata/custom_gcode_per_layer.xml. Untrusted: custom text is checked before it is used. */
-  marks?: { z: number; kind: 'pause' | 'color_change' | 'custom' | 'tool_change'; gcode?: string; slot?: number; skip?: string }[]
+  marks?: FileMark[]
   /** The plate's number in the file (Bambu Studio and Orca's plater_id), when it has one. */
   plateNo?: number
 }
@@ -812,32 +810,12 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
     ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(Object.keys(a.rawObjectSettings).length ? { rawObjectSettings: a.rawObjectSettings } : {}), ...(a.noSlot.length ? { noSlot: a.noSlot } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
   }
-  // Marks from a slicer project's layer slider: color change 0, pause 1, tool change 2, custom 4 (other types are not
-  // carried over). A tool change applies only under the one-filament mode; under another it is kept with the reason.
-  const marksText = files.get('Metadata/custom_gcode_per_layer.xml')
+  // Marks from a slicer project's layer slider (@slicerx/threemf/layer-marks, the reader the MCP server's mark tools use).
+  const marksText = files.get(MARKS_PART)
   if (marksText) {
-    try {
-      const root = xml(dec.decode(marksText)).documentElement
-      for (const pl of kids(root, 'plate')) {
-        const id = Number(kids(pl, 'plate_info')[0]?.getAttribute('id'))
-        const target = plates[id - 1]
-        if (!target) continue
-        const marks: NonNullable<ImportedPlate['marks']> = []
-        const mode = kids(pl, 'mode')[0]?.getAttribute('value')?.trim()
-        for (const l of kids(pl, 'layer')) {
-          const z = Number(l.getAttribute('top_z'))
-          const type = Number(l.getAttribute('type'))
-          if (!Number.isFinite(z) || z <= 0) continue
-          const slot = Number(l.getAttribute('extruder'))
-          if (type === 0) marks.push({ z, kind: 'color_change', ...(Number.isInteger(slot) && slot >= 1 && slot <= 64 ? { slot } : {}) })
-          else if (type === 1) marks.push({ z, kind: 'pause' })
-          else if (type === 2 && Number.isInteger(slot) && slot >= 1 && slot <= 64) marks.push({ z, kind: 'tool_change', slot, ...(mode === 'MultiAsSingle' ? {} : { skip: TOOL_CHANGE_MODE_SKIP }) })
-          else if (type === 4) marks.push({ z, kind: 'custom', gcode: l.getAttribute('extra') ?? l.getAttribute('gcode') ?? '' })
-        }
-        if (marks.length) target.marks = marks.slice(0, 200)
-      }
-    } catch {
-      // A damaged marks file leaves the project without marks; the rest still opens.
+    for (const [i, marks] of Object.entries(readLayerMarks(dec.decode(marksText)))) {
+      const target = plates[Number(i)]
+      if (target) target.marks = marks
     }
   }
   if (plates.every((p) => p.objects.length === 0)) throw new ProjectReadError('The 3MF has nothing to print.')

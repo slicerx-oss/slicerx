@@ -10,6 +10,7 @@
 import { syncTimeline, timelineFiles, type History, type Timeline } from '@slicerx/cad-history'
 import { areaOrigin } from './area'
 import { plateObjectsFromGcode } from './gcode-objects'
+import { layerMarksXml, MARKS_PART, type WriteMark } from './layer-marks'
 import { md5Hex } from './md5'
 import { TextChunks, zip, zipCompressed, type ZipInput } from './zip'
 
@@ -531,7 +532,7 @@ export interface ProjectInput {
    * Metadata/custom_gcode_per_layer.xml. A tool change prints in `slot`; `skipped` keeps one that was read under another mode
    * than the one-filament mode, so the plate is written under that mode again.
    */
-  layerMarks?: Readonly<Record<number, readonly { z: number; kind: 'pause' | 'color_change' | 'custom' | 'tool_change'; gcode?: string; slot?: number; skipped?: boolean }[]>>
+  layerMarks?: Readonly<Record<number, readonly WriteMark[]>>
   /** Sliced G-code per plate index (0-based), for a .gcode.3mf. */
   gcode?: Readonly<Record<number, string>>
   /**
@@ -569,31 +570,6 @@ function meshBytes(input: ProjectInput): number {
 /** Past this, meshes go one file per object, as Bambu Studio writes them: one file would be too big to read back. */
 const SPLIT_BYTES = 32 * 1024 * 1024
 const MODEL_OPEN = '<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">'
-
-/** The mark type numbers in custom_gcode_per_layer.xml: color change 0, pause 1, tool change 2, custom 4. */
-const MARK_TYPE = { color_change: 0, pause: 1, tool_change: 2, custom: 4 } as const
-
-/** Metadata/custom_gcode_per_layer.xml in the form Orca's files carry, or '' without marks. */
-function marksXml(marks: ProjectInput['layerMarks']): string {
-  const plates = Object.entries(marks ?? {}).filter(([, list]) => list.length > 0)
-  if (plates.length === 0) return ''
-  const body = plates
-    .map(([i, list]) => {
-      const layers = list
-        .map((m) => {
-          const extra = m.kind === 'custom' ? (m.gcode ?? '') : ''
-          const gcode = m.kind === 'tool_change' ? 'tool_change' : extra
-          return `<layer top_z="${m.z}" type="${MARK_TYPE[m.kind]}" extruder="${(m.kind === 'color_change' || m.kind === 'tool_change') && m.slot ? m.slot : 1}" color="" extra="${esc(extra)}" gcode="${esc(gcode)}"/>`
-        })
-        .join('\n')
-      // A tool change applies under the one-filament mode only, so the mode keeps whether the plate's tool changes apply.
-      const tools = list.filter((m) => m.kind === 'tool_change')
-      const mode = tools.some((m) => m.skipped) ? 'MultiExtruder' : tools.length ? 'MultiAsSingle' : 'SingleExtruder'
-      return `<plate>\n<plate_info id="${Number(i) + 1}"/>\n${layers}\n<mode value="${mode}"/>\n</plate>`
-    })
-    .join('\n')
-  return `<?xml version="1.0" encoding="utf-8"?>\n<custom_gcodes_per_layer>\n${body}\n</custom_gcodes_per_layer>`
-}
 
 /**
  * Metadata/slicerx_dimensions.json (docs/cad-engine.md, "The dimensions part, exactly"): every kept
@@ -757,8 +733,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
   const values = valuesJson(input.namedValues ?? [])
   if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
-  const marks = marksXml(input.layerMarks)
-  if (marks) files.push({ name: 'Metadata/custom_gcode_per_layer.xml', data: marks })
+  const marks = layerMarksXml(input.layerMarks)
+  if (marks) files.push({ name: MARKS_PART, data: marks })
   const sliced = Object.entries(input.gcode ?? {}).map(([i, gcode]) => {
     const plate = input.plates[Number(i)]
     const printingObjects = (plate?.objects ?? []).filter((o) => o.printable !== false).map((o) => o.name)
