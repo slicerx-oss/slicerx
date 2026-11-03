@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-252 tools.
+255 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -206,6 +206,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_duplicate` |  |  | slice | Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. |
 | `slicerx_project_height_ranges` |  |  | slice | Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). |
 | `slicerx_project_lay_on_face` |  |  | slice | Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. |
+| `slicerx_project_layer_mark_add` | Add a layer mark to a project | core | slice | Add a pause, a color change or custom G-code at a layer to one plate of a 3MF project, as the app's Preview layer slider does, and save it in the file (Metadata/custom_gcode_per_layer.xml), so the project opens in the app and slices with it. |
+| `slicerx_project_layer_mark_remove` | Remove a layer mark from a project | core | slice | Remove the pause, color change, tool change or custom G-code at a height from one plate of a 3MF project and save the file, as removing a mark on the app's Preview layer slider does. |
+| `slicerx_project_layer_marks` | List layer marks in a project | core | read, ungated | List the pauses, color changes, tool changes and custom G-code a 3MF project sets at layers on one plate (Metadata/custom_gcode_per_layer.xml, the marks of the app's Preview layer slider), by height. |
 | `slicerx_project_lock` |  |  | slice | Lock or unlock an object, as Lock on the app's ring menu does: a locked object is not moved, rotated, scaled, laid on a face, centered, cut or taken to another plate (those tools refuse it), and an arrange leaves it on its plate. |
 | `slicerx_project_move` |  |  | slice | Place an object on its plate: x and y are the center of its footprint in mm, in bed coordinates (as the printer profile's printable area gives them). |
 | `slicerx_project_move_to_plate` |  |  | slice | Move an object, with all its copies, to another plate. |
