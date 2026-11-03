@@ -93,8 +93,10 @@ pub(crate) struct Corners {
 /// [`CORNER_U_FROM_HALF_MAX`] to w / 2 less [`CORNER_U_FROM_HALF_MIN`] (0.107 to 0.150 mm at w 0.42), for line width
 /// w `width_mm`, the corner gets one straight bead along the longer leg's wall, about
 /// 1.73 u - 0.10 mm wide; any other run-in corner in that range gets none. Those corners, the linked run-in tips down
-/// to [`TIP_ANGLE_MIN_DEG`] and the corners a line cuts across (bisector across the lines, [`CUT_ANGLE_MIN_DEG`] to
-/// [`CUT_ANGLE_MAX_DEG`]) get nothing from the strip pass either: they are listed in [`Corners::quiet`]. `lines` holds
+/// to [`TIP_ANGLE_MIN_DEG`], the corners a line cuts across (bisector across the lines, [`CUT_ANGLE_MIN_DEG`] to
+/// [`CUT_ANGLE_MAX_DEG`]) and the corners of [`SIDE_ANGLE_MIN_DEG`] to [`SIDE_ANGLE_MAX_DEG`] whose bisector runs
+/// neither way and that one line crosses from wall to wall get nothing from the strip pass either: they are listed in
+/// [`Corners::quiet`]. `lines` holds
 /// each line's first and last point in print order and `along` is the lines' direction.
 pub(crate) fn corner_beads(
     ends_area: &Shapes,
@@ -167,9 +169,12 @@ pub(crate) fn corner_beads(
                     continue;
                 }
                 let rule = (CORNER_ANGLE_MIN_DEG..=CORNER_ANGLE_MAX_DEG).contains(&angle);
-                if (bis.0 * along.1 - bis.1 * along.0).abs() > run_in_tilt
-                    || !(rule || (TIP_ANGLE_MIN_DEG..CORNER_ANGLE_MIN_DEG).contains(&angle))
-                {
+                // A corner whose bisector runs neither along nor across the lines.
+                let side = (bis.0 * along.1 - bis.1 * along.0).abs() > run_in_tilt;
+                if side && !(SIDE_ANGLE_MIN_DEG..=SIDE_ANGLE_MAX_DEG).contains(&angle) {
+                    continue;
+                }
+                if !(side || rule || (TIP_ANGLE_MIN_DEG..CORNER_ANGLE_MIN_DEG).contains(&angle)) {
                     continue;
                 }
                 // The nearest line end on each wall.
@@ -187,6 +192,14 @@ pub(crate) fn corner_beads(
                 let (Some(h1), Some(h2)) = (nearest(u1, l1), nearest(u2, l2)) else {
                     continue;
                 };
+                if side {
+                    // One line runs from wall to wall across it, as at the base corners of a 60 degree tip: the
+                    // strip pass leaves it empty too.
+                    if h1.1 == h2.1 {
+                        out.quiet.push(corner);
+                    }
+                    continue;
+                }
                 if h1.1 == h2.1 {
                     continue;
                 }
@@ -373,6 +386,11 @@ const RUN_IN_TOL_DEG: f64 = 3.0;
 const CUT_TOL_DEG: f64 = 10.0;
 const CUT_ANGLE_MIN_DEG: f64 = 40.0;
 const CUT_ANGLE_MAX_DEG: f64 = 110.0;
+/// The angles (degrees) of the corners whose bisector runs neither along nor across the lines that get nothing when
+/// one line runs across them from wall to wall. Wider ones, such as a 45 degree tip's 67.5 degree base corners, keep
+/// the sliver fill along their shallow wall.
+const SIDE_ANGLE_MIN_DEG: f64 = 55.0;
+const SIDE_ANGLE_MAX_DEG: f64 = 65.0;
 /// A strip piece is dropped at a quiet corner when it comes this close to it (mm) and lies wholly within
 /// [`QUIET_REACH_MM`] of it.
 const QUIET_NEAR_MM: f64 = 0.2;
