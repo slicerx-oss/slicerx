@@ -16,6 +16,8 @@ import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 const fixtures = join(__dirname, '../../settings/fixtures')
 // Prusa MK4S and Bambu Lab P1S projects with a brim and elephant foot compensation 0.2 (sx-cli tests/brim_efc_outline.rs).
 const brimFixtures = join(__dirname, '../../core/cli/tests/fixtures/brim-efc')
+// Prusa MK4S projects of boxes in a row with a skirt and a brim (sx-cli tests/brim_order.rs).
+const orderFixtures = join(__dirname, '../../core/cli/tests/fixtures/brim-order')
 type Case = { name: string; files?: string[]; lines?: string[]; config: Record<string, unknown>; unmapped: string[] }
 const cases = (JSON.parse(readFileSync(join(fixtures, 'prusa-project-settings.json'), 'utf8')) as { cases: Case[] }).cases
 const engineChoices = JSON.parse(readFileSync(join(__dirname, '../../settings/engine-choices.json'), 'utf8')) as Record<string, Record<string, unknown> | undefined>
@@ -77,6 +79,22 @@ describe('the brim outline a project reads back', () => {
     expect(prusa['brim_use_efc_outline']).toBe(true)
     expect(prusa['elefant_foot_compensation']).toBe(0.2)
     expect((await read('p1s--e0.2-g0.5'))['brim_use_efc_outline']).not.toBe(true)
+  })
+})
+
+describe('the brim order a project reads back', () => {
+  it('combines the brims of a Prusa project and leaves a Bambu Lab one at the default', async () => {
+    const h = await connect()
+    const read = async (dir: string, name: string) => {
+      const path = join(h.dir, `${name}.3mf`)
+      writeFileSync(path, readFileSync(join(dir, `${name}.3mf`)))
+      const r = await h.call('slicerx_inspect_project', { file: path })
+      expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+      return data<{ project_config: Record<string, unknown> }>(r).project_config
+    }
+    // Two boxes far apart on a Prusa MK4S project (sx-cli tests/brim_order.rs).
+    expect((await read(orderFixtures, 'mk4p--o2'))['combine_brims']).toBe(true)
+    expect((await read(brimFixtures, 'p1s--e0.2-g0.5'))['combine_brims']).not.toBe(true)
   })
 })
 

@@ -530,6 +530,9 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // A project with a brim width grows its brim from the first layer's outline after elephant foot compensation, so the
   // brim keeps its separation from the compensated outer wall. The same as the engine's project read.
   if ('brim_width' in values) values['brim_use_efc_outline'] = '1'
+  // A project with a brim width prints every object's brim on the first layer before any object, and brims that meet
+  // merge into one. The same as the engine's project read.
+  if ('brim_width' in values) values['combine_brims'] = '1'
   // A project with support on and its own support XY spacing keeps that much room between the part and the outer base
   // support line's edge, so its outer lines sit half a line width in. The same as the engine's project read.
   if (values['enable_support'] === '1' && 'support_object_xy_distance' in values) values['support_base_edge_inset'] = 'half_width'

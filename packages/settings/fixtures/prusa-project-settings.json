@@ -31,6 +31,7 @@
         "brim_type": "outer_only",
         "brim_width": "0",
         "brim_use_efc_outline": "1",
+        "combine_brims": "1",
         "chamber_minimal_temperature": "0",
         "chamber_temperature": "0",
         "print_sequence": "by layer",

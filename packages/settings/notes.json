@@ -341,7 +341,7 @@
   "top_surface_expansion_margin": "A margin for top surface growth, in mm. SlicerX keeps this for profile exchange and does not use it yet.",
   "top_surface_fill_order": "Whether the top surface fills from the center out or from the edge in. SlicerX keeps this for profile exchange and does not use it yet.",
   "wall_loops": "How many outlines each layer gets around the outside and around holes. More loops make stronger, heavier parts and take longer; 2 to 3 suits most prints.",
-  "combine_brims": "Merges brims that sit close together into one, so neighboring parts hold each other down.",
+  "combine_brims": "Merges brims that sit close together into one, so neighboring parts hold each other down, and prints every brim on the first layer before the parts. Prusa projects turn it on when opened.",
   "enable_support": "Builds removable support under overhangs that would otherwise print in mid-air. Supports cost filament and time and leave marks where they touch the part.",
   "independent_support_layer_height": "Lets support use its own layer height, which saves time and allows a finer gap under the part. Not used when the prime tower is on.",
   "max_bridge_length": "Bridges up to this long, in mm, print without support. 0 supports every bridge.",

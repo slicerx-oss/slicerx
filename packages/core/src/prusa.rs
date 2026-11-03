@@ -533,6 +533,7 @@ pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) 
         }
     }
     brim_on_compensated_outline(&mut mapped);
+    brims_together(&mut mapped);
     edge_on_gap(&mut mapped);
     skirt_from_nominal_brim(&mut mapped);
     brim_whole_loops(&mut mapped);
@@ -546,6 +547,14 @@ pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) 
 fn brim_on_compensated_outline(mapped: &mut Map<String, Value>) {
     if mapped.contains_key("brim_width") {
         mapped.insert("brim_use_efc_outline".to_owned(), Value::String("1".to_owned()));
+    }
+}
+
+/// A project with a brim width prints every object's brim on the first layer before any object, and brims that meet
+/// merge into one (`combine_brims`). The same as `prusaProjectSettings` in the settings package.
+fn brims_together(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("combine_brims".to_owned(), Value::String("1".to_owned()));
     }
 }
 
