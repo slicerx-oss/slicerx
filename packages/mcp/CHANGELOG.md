@@ -6,6 +6,9 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- `slicerx_printer_queue` 1.2.0 takes `options`, the Print sheet's print options: `bedLeveling`, `flowCalibration`, `vibrationCompensation`, `timelapse` and `firstLayerInspection`, each `true` or `false`. Which ones a printer offers and their defaults come from the same table as the Print sheet, read with the printer's reported model and camera. An option left out takes the printer's default, and the card the person approves lists every option as it will be sent. An option the printer does not offer, such as first layer inspection on an A1 or timelapse on a printer with no camera, is refused with `unsupported_option` before any card, and the message names the options it does offer. The answer returns `options` as sent to the hub.
+- `slicerx_pending_approvals` 1.1.0 returns `options` for a print handed to the hub: its print options as sent.
+
 - `slicerx_mimir_dismiss` 1.0.0: turns down the question mimir is waiting on in the open app (`askId`, optional `said` of up to 1000 characters). mimir carries on without an answer and reads `said` in its place; the tool never picks an answer and never stops mimir's run. Answers with `sessionId`, `askId` and `dismissed: true`. Refused with `not_found` when no question waits or `askId` is not the one waiting, `invalid_input` for a `said` over the limit, and `not_configured` while the mimir tab is closed. App link method `mimir.dismiss` (edit class).
 - `slicerx_mimir_session` returns `waiting`: the question mimir waits on now (`askId`, `title`, `question`, `choices`), or null. A question turned down shows in its turn's steps with `dismissed: true` and `said`, and `stats.questionsDismissed` counts them.
 
@@ -16,6 +19,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- `slicerx_printer_queue` sends the printer's Print sheet defaults when `options` is left out, so a Bambu Lab start carries bed leveling, timelapse and the rest as the Print sheet would send them. Before, it sent no print options and the printer used its own. The card lists them.
+- SlicerX's approval card for a print a client asked for names each print option as the Print sheet does, such as "Bed leveling off", instead of its key ("bedLeveling false").
 - `slicerx_mimir_ask` says in its description that it is refused while mimir waits on a question, and that `slicerx_mimir_dismiss` clears it.
 - `slicerx_slice_file` and `slicerx_estimate_file` name the arguments they do not take instead of dropping them without a word: the call still succeeds, and a warning (in `warnings`, the text and `notices` with the code `ignored_arguments`) lists each one. For `printer`, `process`, `filament` and `machine` it points to `profiles`, such as `"profiles": ["machine:snapmaker-u1", "process:standard"]`. Before, `{"printer": "Snapmaker U1"}` sliced on the generic machine with only the `no_printer` notice. A later release may refuse unknown arguments.
 - `slicerx_arrange` without the geometry engine (no sx-geom, or it fails) sets the copies it moves to a new plate in the middle of the bed, as the nest does and as the app's Arrange now does without the engine. Before, they stayed in the front left corner. When the middle would put a copy on an excluded area, the prime tower's room or past the bed edge, or a skirt round the whole print across an excluded area, they stay where they packed.

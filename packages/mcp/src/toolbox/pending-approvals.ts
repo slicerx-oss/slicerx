@@ -9,12 +9,12 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'pending_approvals',
     title: 'Pending approvals',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
     ungated: true,
-    description: `List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in ${productName()} or on the phone, and how those went once the hub ran them. A failed one carries the hub's error code; \`needs_developer_mode\` (a Bambu Lab printer that takes no print from other apps; \`sure\` false when that is a guess from a failed upload or an unanswered start) lists the two remedies to tell the user, and \`printer_storage_full\` (no room on the printer's card) lists the one remedy.`,
+    description: `List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in ${productName()} or on the phone, and how those went once the hub ran them. A print handed to the hub carries \`options\`, its print options as sent (bedLeveling, timelapse and the rest, true or false). A failed one carries the hub's error code; \`needs_developer_mode\` (a Bambu Lab printer that takes no print from other apps; \`sure\` false when that is a guess from a failed upload or an unanswered start) lists the two remedies to tell the user, and \`printer_storage_full\` (no room on the printer's card) lists the one remedy.`,
     input: z.object({}),
     async run() {
       const entries = [...d.gate.pending.values()]
@@ -29,6 +29,8 @@ export default (d: ServerToolDeps) =>
         permission: p.request.permission,
         expires_at: p.request.expiresAt,
         // Person-only requests are answered in SlicerX; the hub reports when it ran the work.
+        // A print's options as the hub was handed them, as the card lists them.
+        ...(p.options ? { options: p.options } : {}),
         status: p.outcome ? (p.outcome.ok ? 'done' : 'failed') : p.personOnly ? 'waiting_for_person' : 'waiting_for_you',
         ...(p.outcome?.code ? { code: p.outcome.code } : {}),
         ...(p.outcome?.message ? { message: p.outcome.message } : {}),

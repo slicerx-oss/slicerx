@@ -9,6 +9,9 @@
 import { slotMapLine, type ApprovalRequest, type ApprovalToken } from '@slicerx/contracts'
 import { appStore, get, set, toast, type PendingApproval } from '../state/store'
 import { appName } from '../edition'
+import { optionLabel, SEND_OPTION_IDS, type SendOptionId } from '../send/options'
+
+const PRINT_OPTIONS = new Set<string>(SEND_OPTION_IDS)
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
@@ -211,7 +214,9 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   }
   const options = Object.entries(w?.opts ?? {}).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v))
   // The hub's options are a fixed set of numbers and switches, so the whole list is short; it is never cut.
-  if (options.length) lines.push(`Options: ${options.map(([k, v]) => `${oneLine(k)} ${oneLine(String(v))}`).join(', ')}`)
+  // A print option the Print sheet knows shows by its name there, on or off; anything else as the hub sent it.
+  const word = ([k, v]: [string, unknown]) => (PRINT_OPTIONS.has(k) && typeof v === 'boolean' ? `${optionLabel(k as SendOptionId)} ${v ? 'on' : 'off'}` : `${oneLine(k)} ${oneLine(String(v))}`)
+  if (options.length) lines.push(`Options: ${options.map(word).join(', ')}`)
   // Every start option the hub holds is on the card: slot ids decide which filament goes where.
   const slots = slotWords(w?.opts?.['slotMap'])
   if (slots) lines.push(slots)
