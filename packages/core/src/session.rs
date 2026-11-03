@@ -2963,7 +2963,11 @@ impl SliceSession {
         for (island, owner) in union.iter().zip(&owners) {
             let (width, height) = widths.get(*owner).copied().unwrap_or((0.0, object_height));
             let one: Shapes = vec![island.clone()];
-            let loops = brim_loops(crate::brim::island_width(width, &one, height, spacing), spacing);
+            let loops = brim_loops(
+                &cfg,
+                crate::brim::island_width(width, &one, height, spacing),
+                spacing,
+            );
             if loops > 0
                 && let Some(room) = rooms.get_mut(*owner)
             {
@@ -3657,7 +3661,7 @@ impl SliceSession {
             } else {
                 cfg.brim_width
             };
-            let count = brim_loops(width, spacing);
+            let count = brim_loops(cfg, width, spacing);
             if count > 0 {
                 areas.extend(crate::brim::island_areas(
                     cfg,
@@ -11857,7 +11861,7 @@ impl SliceSession {
                 } else {
                     object_width
                 };
-                let count = brim_loops(brim_mm, spacing_mm);
+                let count = brim_loops(cfg, brim_mm, spacing_mm);
                 if count == 0 {
                     continue;
                 }
@@ -11894,12 +11898,18 @@ impl SliceSession {
                 if combine {
                     by_slot.entry(slot).or_default().extend(areas);
                 } else {
-                    finished.push((slot, crate::brim::finish(&areas, &bodies, spacing_mm)));
+                    finished.push((
+                        slot,
+                        crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg)),
+                    ));
                     finished_of.push(*object);
                 }
             }
             for (slot, areas) in by_slot {
-                finished.push((slot, crate::brim::finish(&areas, &bodies, spacing_mm)));
+                finished.push((
+                    slot,
+                    crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg)),
+                ));
                 finished_of.push(0);
             }
             for ((slot, loops), object) in finished.into_iter().zip(finished_of) {
@@ -14301,15 +14311,21 @@ fn brim_spacing(cfg: &PrintConfig) -> f64 {
         .max(cfg.line_width * 0.5)
 }
 
-/// How many loops a brim `width` mm wide prints: an even number of spacings, as in Orca.
-fn brim_loops(width: f64, spacing: f64) -> i32 {
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "brim loop count is small"
-    )]
-    let pairs = (width / spacing / 2.0).floor().max(0.0) as i32;
-    2 * pairs
+/// How many loops a brim `width` mm wide prints: an even number of spacings by default, or with
+/// `brim_loop_rounding` `whole` every whole spacing that fits.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "brim loop count is small"
+)]
+fn brim_loops(cfg: &PrintConfig, width: f64, spacing: f64) -> i32 {
+    let fits = (width / spacing).max(0.0);
+    let loops = if crate::brim::whole_loops(cfg) {
+        fits.floor()
+    } else {
+        2.0 * (fits / 2.0).floor()
+    };
+    loops as i32
 }
 
 fn turn_rooms(works: &[ToolWork], width: f64, height: f64) -> Vec<crate::output::TurnRoom> {

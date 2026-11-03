@@ -21,6 +21,7 @@
 //! | k8 | elephant foot compensation 0 |
 //! | k9 | one box |
 //! | pw1, pw6 | brim 1 and 6 mm, compensation 0 |
+//! | pw3a | brim 3 mm, compensation 0, first layer line width 0 (auto: 0.45) |
 //! | pg0 | brim gap 0, compensation 0 |
 //! | pe2 | brim 2 mm, compensation 0.2 |
 //!
@@ -410,6 +411,41 @@ fn a_prusa_projects_skirt_keeps_its_distance_from_the_nominal_brim_edge() {
     ] {
         assert_skirt(name, None, &[offset], None);
     }
+}
+
+/// How many brim loops go round the leftmost box on the first layer: the brim paths whose bounding box holds the
+/// box's center.
+fn brim_loops_round_first_box(ps: &[PathRun]) -> usize {
+    let z0 = ps.iter().map(|p| p.z).fold(f64::MAX, f64::min);
+    let [cx, cy] = centers(ps)[0];
+    ps.iter()
+        .filter(|p| p.z == z0 && p.feature == "Brim")
+        .filter(|p| {
+            let (lo, hi) = p
+                .points
+                .iter()
+                .fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
+                    (
+                        [lo[0].min(q[0]), lo[1].min(q[1])],
+                        [hi[0].max(q[0]), hi[1].max(q[1])],
+                    )
+                });
+            lo[0] < cx && cx < hi[0] && lo[1] < cy && cy < hi[1]
+        })
+        .count()
+}
+
+#[test]
+fn a_prusa_projects_brim_prints_every_whole_loop_its_width_fits() {
+    // Brim width over the loop spacing (the first layer width less the bead's rounded corners at 0.2 mm), every whole
+    // loop: 3 / 0.457 is 6.6 loops, 6 / 0.457 is 13.1 and 3 / 0.407 (0.45 lines) is 7.4.
+    for (name, loops) in [("mk4p--k8", 6), ("mk4p--pw6", 13), ("mk4p--pw3a", 7)] {
+        let got = brim_loops_round_first_box(&paths(&slice(name, None)));
+        assert_eq!(got, loops, "{name}: brim loops");
+    }
+    // A project of ours keeps an even number of loops: 6 mm over a 0.437 spacing (0.48 lines) fits 13.7, so 12.
+    let got = brim_loops_round_first_box(&paths(&slice("prusa-mk4--w6", Some(6.0))));
+    assert_eq!(got, 12, "prusa-mk4 with a 6 mm brim: brim loops");
 }
 
 #[test]

@@ -22,6 +22,7 @@ brim_ears_detection_length
 brim_ears_max_angle
 brim_ears_outer_only
 brim_flow_ratio
+brim_loop_rounding
 brim_object_gap
 brim_type
 brim_use_efc_outline

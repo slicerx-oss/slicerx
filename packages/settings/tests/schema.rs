@@ -26,8 +26,10 @@ fn entries_are_complete_and_unique() {
 
 /// The settings with no default: the slice works each out when nothing sets it. An unset first layer flow ratio
 /// prints at 1, and a default would add the key to the settings block of every file. An unset first layer width per
-/// feature leaves the first layer to `initial_layer_line_width`.
-const NO_DEFAULT: [&str; 10] = [
+/// feature leaves the first layer to `initial_layer_line_width`. An unset brim loop rounding prints an even number of
+/// loops.
+const NO_DEFAULT: [&str; 11] = [
+    "brim_loop_rounding",
     "skirt_brim_edge",
     "initial_layer_flow_ratio",
     "initial_layer_outer_wall_line_width",

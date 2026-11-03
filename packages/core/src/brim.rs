@@ -442,9 +442,17 @@ fn auto_ears(shapes: &Shapes, size: i32, detection: f64, max_angle_deg: f64, out
     discs
 }
 
+/// Whether a brim prints every whole loop its width fits, odd counts too (`brim_loop_rounding` `whole`), rather than
+/// an even number of loops.
+pub(crate) fn whole_loops(cfg: &PrintConfig) -> bool {
+    matches!(cfg.raw.get("brim_loop_rounding"), Some(serde_json::Value::String(r)) if r == "whole")
+}
+
 /// Loops of a brim area, as Orca's `tryExPolygonOffset`: the area pulled in half a spacing, then in
-/// steps of a spacing (1.3 in, 0.3 out) until nothing is left; outermost first.
-pub(crate) fn area_loops(area: &Shapes, spacing: i32) -> Vec<Ring> {
+/// steps of a spacing (1.3 in, 0.3 out) until nothing is left; outermost first. Each step takes a spacing off both
+/// sides of a band, so a band an odd number of spacings wide ends with one spacing to either side of its middle and
+/// no room for another pair; with `middle` that last piece prints one loop down its middle.
+pub(crate) fn area_loops(area: &Shapes, spacing: i32, middle: bool) -> Vec<Ring> {
     let simplify = |s: Shapes| -> Shapes {
         s.into_iter()
             .map(|sh| {
@@ -476,6 +484,21 @@ pub(crate) fn area_loops(area: &Shapes, spacing: i32) -> Vec<Ring> {
         }
         let shrunk = perimeters::shrink_round(&cur_s, by(1.3));
         cur = perimeters::offset_round(&shrunk, by(0.3));
+        if middle {
+            for shape in &cur_s {
+                let alone: Shapes = vec![shape.clone()];
+                if !perimeters::offset_round(&perimeters::shrink_round(&alone, by(1.3)), by(0.3)).is_empty() {
+                    continue;
+                }
+                // Pulled in just short of a spacing, a piece two spacings wide leaves a sliver down its middle;
+                // its outline is that loop. A narrower piece leaves nothing.
+                for sliver in simplify(perimeters::shrink_round(&alone, by(0.98))) {
+                    if let Some(ring) = sliver.first().filter(|r| r.len() >= 3) {
+                        loops.push(ring.clone());
+                    }
+                }
+            }
+        }
         guard += 1;
     }
     loops
@@ -729,7 +752,7 @@ impl Claims {
 /// The brim loops of the areas of one filament: their union without the part (`no_brim_area`), keeping
 /// the pieces that touch the part or each other (Orca: a brim area must contact an island or another
 /// brim), as `tryExPolygonOffset` loops, outermost first.
-pub(crate) fn finish(areas: &[Shapes], bodies: &Shapes, spacing: f64) -> Vec<Ring> {
+pub(crate) fn finish(areas: &[Shapes], bodies: &Shapes, spacing: f64, middle: bool) -> Vec<Ring> {
     let sp = mm(spacing);
     let all: Vec<&Shapes> = areas.iter().collect();
     let free = perimeters::difference(&perimeters::union_all(&all), bodies);
@@ -750,7 +773,7 @@ pub(crate) fn finish(areas: &[Shapes], bodies: &Shapes, spacing: f64) -> Vec<Rin
             })
             .map(|(_, s)| s.clone())
             .collect();
-    outside_in(area_loops(&kept, sp))
+    outside_in(area_loops(&kept, sp, middle))
 }
 
 /// The brim loops in Orca's print order (`union_pt_chained_outside_in`): the loops nest without crossing, and
