@@ -544,6 +544,28 @@ export interface ProjectInput {
   namedValues?: readonly { name: string; expr: string }[]
   /** The design timeline (docs/cad-history.md); without one, the objects' histories are merged by when steps were made. */
   timeline?: Timeline
+  /** The model's Title metadata; the first object's name when absent. */
+  title?: string
+  /**
+   * A print file without the model (a Vault design's print file): each plate is written with no objects, so the
+   * model part keeps its metadata but no mesh, component or build item, and model_settings.config keeps the plates
+   * without objects or instances. slice_info.config, plate_N.json, the G-code with its MD5 and the pictures are
+   * written from the G-code and the printing objects' names as before, so the printer still lists the objects it can
+   * skip. The parts that hang off objects (split meshes, the CAD history, dimensions, height ranges, brim ears) are
+   * left out with them, and so are the named values.
+   */
+  meshless?: boolean
+}
+
+/** The input of a print file without the model (`meshless`): the plates' printing objects become names only. */
+function meshlessInput(input: ProjectInput): ProjectInput {
+  const { meshless: _meshless, objectSettings: _settings, timeline: _timeline, namedValues: _values, ...rest } = input
+  const title = input.title ?? input.plates[0]?.objects[0]?.name
+  return {
+    ...rest,
+    ...(title !== undefined ? { title } : {}),
+    plates: input.plates.map((p) => (p.objects.length ? { ...p, objects: [], printNames: p.objects.filter((o) => o.printable !== false).map((o) => o.name) } : p)),
+  }
 }
 
 const SX_NS = 'https://slicerx.app/schemas/sx3mf/2026'
@@ -599,6 +621,7 @@ export function dimensionsJson(objects: readonly Pick<ObjectInput, 'id' | 'dimen
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/><Default Extension="md5" ContentType="text/plain"/><Default Extension="json" ContentType="application/json"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`
 
 export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInput[] {
+  if (input.meshless) return projectFiles(meshlessInput(input), splitAt)
   const split = meshBytes(input) > splitAt
   const objectFiles: ZipInput[] = []
   const resources: Piece[] = []
@@ -700,7 +723,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
     : ''
   const modelHead =
     `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"${split ? ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p"' : ''}${sx ? ` xmlns:sx="${SX_NS}"` : ''}>` +
-    `<metadata name="Application">${app}</metadata><metadata name="Title">${esc(input.plates[0]?.objects[0]?.name ?? 'Project')}</metadata>${sxMeta}` +
+    `<metadata name="Application">${app}</metadata><metadata name="Title">${esc(input.title ?? input.plates[0]?.objects[0]?.name ?? 'Project')}</metadata>${sxMeta}` +
     `<resources>`
   const modelTail = `</resources><build>${build.join('')}</build></model>`
   const model = new TextChunks(() => piecesOf([modelHead, ...resources, modelTail]))
