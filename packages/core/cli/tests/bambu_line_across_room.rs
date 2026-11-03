@@ -196,6 +196,56 @@ impl Plate {
         -(s.cx - self.center[0]) * a.sin() + (s.cy - self.center[1]) * a.cos() - s.w / 2.0
     }
 
+    fn strip(&self, name: &str) -> &Strip {
+        let i = self
+            .names
+            .iter()
+            .position(|n| n == name)
+            .unwrap_or_else(|| panic!("{}: no strip {name}", self.case));
+        &self.strips[i]
+    }
+
+    /// The strip `name`'s width.
+    fn width(&self, name: &str) -> f64 {
+        self.strip(name).w
+    }
+
+    /// Where the first layer's outer wall runs along the strip `name` (pieces at least 1 mm long whose middle lies in
+    /// the middle half of the strip), mm from its low long side, merged within 0.01 mm.
+    fn outer_sides(&self, name: &str) -> Vec<f64> {
+        let s = self.strip(name);
+        let a = s.ang.to_radians();
+        let (ux, uy) = (a.cos(), a.sin());
+        let frame = |p: [f64; 2]| {
+            let (dx, dy) = (p[0] - s.cx, p[1] - s.cy);
+            (dx * ux + dy * uy, -dx * uy + dy * ux + s.w / 2.0)
+        };
+        let mut at: Vec<f64> = Vec::new();
+        for m in self
+            .moves
+            .iter()
+            .filter(|m| m.z == self.first_z && m.feature == "Outer wall")
+        {
+            let ((u0, v0), (u1, v1)) = (frame(m.a), frame(m.b));
+            let (um, vm) = (f64::midpoint(u0, u1), f64::midpoint(v0, v1));
+            if um.abs() > s.l / 4.0 || !(-0.05..=s.w + 0.05).contains(&vm) || (u1 - u0).abs() < 1.0 {
+                continue;
+            }
+            if (v1 - v0).abs() > (u1 - u0).abs() * 1f64.to_radians().tan() {
+                continue;
+            }
+            at.push(vm);
+        }
+        at.sort_by(f64::total_cmp);
+        let mut out: Vec<f64> = Vec::new();
+        for a in at {
+            if out.last().is_none_or(|l| a - l > 0.01) {
+                out.push(a);
+            }
+        }
+        out
+    }
+
     /// What the strip `name` prints on the top layer (`top`) or the first layer.
     fn cut(&self, name: &str, top: bool) -> Cut {
         let i = self
@@ -444,6 +494,44 @@ fn br_3c_bambu_first_layer_strips_with_longer_lines_keep_them() {
             );
             assert!(cut.gap_len() <= 0.05, "{what}: gap fill");
         }
+    }
+}
+
+/// BR-3d. P1S, elephant foot compensation 0.15 mm: a first-layer strip too thin for the full compensation (W under
+/// the outer wall's width plus its spacing plus two 0.15, 1.257 mm) still comes in, as far as leaves that width plus
+/// its spacing, 0.957 mm. Its one outer wall loop then has its long sides one first-layer spacing (0.4571) apart, with
+/// no gap fill between them: every strip from 1.011 to 1.109 mm, lines across and along. A 2.444 mm strip takes the
+/// full 0.15 on each side.
+#[test]
+fn br_3d_bambu_first_layer_thin_strips_take_part_of_the_foot() {
+    let s0 = 0.5 - SQUISH;
+    for case in ["p1s--mo-stock-sp0-ac-f", "p1s--mo-stock-sp0-al-f"] {
+        let plate = Plate::slice(case);
+        let mut thin = 0;
+        for name in &plate.names {
+            let w = plate.width(name);
+            if w > 1.11 && name != "T2.520" {
+                continue;
+            }
+            let what = format!("{case} {name} (W {w:.3})");
+            let cut = plate.cut(name, false);
+            assert!(
+                cut.gap_len() <= 0.05,
+                "{what}: {:.3} mm of gap fill",
+                cut.gap_len()
+            );
+            let sides = plate.outer_sides(name);
+            assert_eq!(sides.len(), 2, "{what}: outer wall sides {sides:?}");
+            let want = if w > 1.11 { w - 0.3 - 0.5 } else { s0 };
+            near(
+                sides[1] - sides[0],
+                want,
+                0.006,
+                &format!("{what} outer wall sides apart"),
+            );
+            thin += usize::from(w <= 1.11);
+        }
+        assert!(thin >= 27, "{case}: {thin} thin strips");
     }
 }
 

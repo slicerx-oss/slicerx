@@ -7,8 +7,10 @@
 //! Orca: `PrintObject::make_perimeters` slice post-processing in PrintObjectSlice.cpp
 //! (`_shrink_contour_holes`, the elephant foot block) and ElephantFootCompensation.cpp. Orca varies
 //! the foot offset along the outline with a ray fan that measures the local width; here the offset
-//! is full where the part is at least the compensated perimeter width thick and absent where it is
-//! thinner, which gives the same outline on bodies and keeps thin walls whole.
+//! is full where the part is at least the compensated perimeter width thick. On Bambu Lab printers a
+//! thinner part comes in only as deep as leaves the outer wall's width plus its spacing, so it keeps room
+//! for one outer wall loop with nothing between its sides; elsewhere, and on a part thinner than that, it
+//! is left whole.
 
 use crate::config::PrintConfig;
 use crate::geom::SCALE;
@@ -24,6 +26,11 @@ pub(crate) struct Comp {
     foot_layers: u32,
     /// Width the external perimeter needs: its width plus its spacing.
     min_width: i32,
+    /// [`Self::min_width`] on the first layer, at the first layer's widths.
+    min_width_first: i32,
+    /// Bambu Lab printers: a stretch too thin for the whole foot offset takes the part of it that leaves
+    /// `min_width` ([`elephant_foot`]), and the first layer reads its own widths.
+    partial: bool,
 }
 
 fn units(mm: f64) -> i32 {
@@ -54,12 +61,16 @@ impl Comp {
         )]
         let foot_layers = cfg.raw_number("elefant_foot_compensation_layers", 1.0).max(1.0) as u32;
         let min_width = units(cfg.outer_wall_width() + cfg.spacing_for(cfg.outer_wall_width()));
+        let first = cfg.for_first_layer();
+        let min_width_first = units(first.outer_wall_width() + first.spacing_for(first.outer_wall_width()));
         Some(Self {
             contour,
             hole,
             foot: foot.max(0),
             foot_layers,
             min_width,
+            min_width_first,
+            partial: crate::firmware::bambu_printer(cfg, cfg.gcode_flavor),
         })
     }
 
@@ -99,7 +110,12 @@ impl Comp {
             uncompensated = Some(comp.clone());
             let layers = i64::from(self.foot_layers);
             let e = i64::from(self.foot) - i64::from(self.foot) / layers * i64::from(layer);
-            comp = elephant_foot(&comp, i32::try_from(e).unwrap_or(0), self.min_width);
+            let min_width = if layer == 0 && self.partial {
+                self.min_width_first
+            } else {
+                self.min_width
+            };
+            comp = elephant_foot(&comp, i32::try_from(e).unwrap_or(0), min_width, self.partial);
         }
         let growth = contour.max(hole);
         let mut processed: Shapes = Vec::new();
@@ -162,7 +178,9 @@ pub(crate) fn shrink_contour_holes(contour: i32, hole: i32, shapes: &Shapes) -> 
 
 /// The outline of each island pulled in by `e` along the stretches where the part is thick enough
 /// to take it: a stretch is thick when the compensated perimeter width (`min_width` plus two `e`) fits.
-fn elephant_foot(shapes: &Shapes, e: i32, min_width: i32) -> Shapes {
+/// With `partial` a stretch between `min_width` and that thick comes in only as far as leaves `min_width` (at most two
+/// [`FOOT_STEP`]s wider), and a thinner one stays as it is; without it every stretch that is not thick stays as it is.
+fn elephant_foot(shapes: &Shapes, e: i32, min_width: i32, partial: bool) -> Shapes {
     if e <= 0 {
         return shapes.clone();
     }
@@ -183,21 +201,127 @@ fn elephant_foot(shapes: &Shapes, e: i32, min_width: i32) -> Shapes {
             .map(|r| i128::from(crate::geom::area2_int(r)))
             .sum::<i128>()
             / 2;
-        // A tiny island is left alone.
-        if w < i64::from(need) || h < i64::from(need) || area < i128::from(need) * i128::from(need) * 5 {
-            out.extend(one);
-            continue;
-        }
-        let thick = perimeters::offset(&perimeters::offset(&one, -(need / 2)), need / 2);
-        if thick.is_empty() {
+        // A tiny island is left alone: under the full offset's own width and area, or with `partial` under the width
+        // the partial foot keeps and that area.
+        let least = if partial { min_width } else { need };
+        let floor = i128::from(least) * i128::from(least) * 5;
+        if w < i64::from(least) || h < i64::from(least) || area < floor {
             out.extend(one);
             continue;
         }
         let band = perimeters::difference(&one, &perimeters::offset(&one, -e));
-        let zone = perimeters::intersection(&band, &perimeters::offset(&thick, e));
-        out.extend(perimeters::difference(&one, &zone));
+        let thick = perimeters::offset(&perimeters::offset(&one, -(need / 2)), need / 2);
+        let mut zone = if thick.is_empty() {
+            Vec::new()
+        } else {
+            perimeters::intersection(&band, &perimeters::offset(&thick, e))
+        };
+        let rest = if partial {
+            perimeters::difference(&band, &zone)
+        } else {
+            Vec::new()
+        };
+        if !rest.is_empty() {
+            zone.extend(partial_foot(&one, &rest, e, min_width));
+            zone = perimeters::union_all(&[&zone]);
+        }
+        if zone.is_empty() {
+            out.extend(one);
+        } else {
+            out.extend(perimeters::difference(&one, &zone));
+        }
     }
     perimeters::union_all(&[&out])
+}
+
+/// The depth step of the partial foot, internal units (0.0025 mm): a thin stretch keeps at most twice this more
+/// than `min_width`.
+const FOOT_STEP: i32 = 25;
+
+/// The part of `rest` (the foot band of `one` that the full offset leaves) that comes off where `one` is thinner
+/// than `min_width` plus two `e`. The depths are a grid of [`FOOT_STEP`]s from the outline; the ring of the band
+/// between two grid depths comes off where `one` holds a disc of diameter `min_width` plus twice the deeper one there.
+/// Only the part of `one` near `rest` is read, since a disc of that size reaches no further.
+///
+/// A deeper disc fits in fewer places, so the grid depths are bisected: a point no deeper than the middle depth that
+/// the middle disc reaches comes off, one it does not reach is decided above the middle, and a deeper point is decided
+/// below it only where the middle disc reaches. A strip of one width takes one disc per halving, and each depth's
+/// disc is worked out once for all the parts that meet it.
+fn partial_foot(one: &Shapes, rest: &Shapes, e: i32, min_width: i32) -> Shapes {
+    let reach = min_width + 3 * e;
+    let near = perimeters::intersection(one, &perimeters::offset(rest, reach));
+    if near.is_empty() {
+        return Vec::new();
+    }
+    let steps = foot_steps(e);
+    let level = |k: i32| foot_level(e, steps, k);
+    // Each grid depth's disc reach and inset of `near`, worked out once: the halvings of different parts of the band
+    // meet the same depths.
+    let slots = usize::try_from(steps).unwrap_or(0) + 1;
+    let mut reached: Vec<Option<Shapes>> = vec![None; slots];
+    let mut insets: Vec<Option<Shapes>> = vec![None; slots];
+    let slot = |k: i32| usize::try_from(k).unwrap_or(0);
+    let mut zone: Vec<Shapes> = Vec::new();
+    // Parts of the band still to decide, with the grid depths (lo, hi] they lie between.
+    let mut open: Vec<(Shapes, i32, i32)> = vec![(rest.clone(), 0, steps)];
+    while let Some((area, lo, hi)) = open.pop() {
+        if area.is_empty() {
+            continue;
+        }
+        let at = if hi - lo == 1 { hi } else { lo + (hi - lo) / 2 };
+        let d = level(at);
+        let s = match reached.get_mut(slot(at)) {
+            Some(memo) => memo
+                .get_or_insert_with(|| foot_reach(&near, min_width, d))
+                .clone(),
+            None => foot_reach(&near, min_width, d),
+        };
+        if hi - lo == 1 {
+            if !s.is_empty() {
+                zone.push(perimeters::intersection(&area, &s));
+            }
+            continue;
+        }
+        let inner = match insets.get_mut(slot(at)) {
+            Some(memo) => memo.get_or_insert_with(|| perimeters::offset(&near, -d)).clone(),
+            None => perimeters::offset(&near, -d),
+        };
+        let shallow = perimeters::difference(&area, &inner);
+        if s.is_empty() {
+            open.push((shallow, lo, at));
+            continue;
+        }
+        let deep = perimeters::intersection(&area, &inner);
+        zone.push(perimeters::intersection(&shallow, &s));
+        open.push((perimeters::difference(&shallow, &s), lo, at));
+        open.push((perimeters::intersection(&deep, &s), at, hi));
+    }
+    let zone: Vec<&Shapes> = zone.iter().filter(|z| !z.is_empty()).collect();
+    if zone.is_empty() {
+        return Vec::new();
+    }
+    perimeters::union_all(&zone)
+}
+
+/// How many [`FOOT_STEP`]s the foot offset `e` spans.
+fn foot_steps(e: i32) -> i32 {
+    ((e + FOOT_STEP - 1) / FOOT_STEP).max(1)
+}
+
+/// The grid depth `k` of [`partial_foot`], internal units.
+fn foot_level(e: i32, steps: i32, k: i32) -> i32 {
+    if k == 0 { 0 } else { (e * k / steps).max(1) }
+}
+
+/// Where a disc of diameter `min_width` plus two `d` fits in `area`, grown by `d`: the band it lets come off.
+fn foot_reach(area: &Shapes, min_width: i32, d: i32) -> Shapes {
+    let r = min_width / 2 + d;
+    let room = perimeters::offset(&perimeters::offset(area, -r), r);
+    if room.is_empty() {
+        room
+    } else {
+        perimeters::offset(&room, d)
+    }
 }
 
 /// A filament setting in percent for a slot (`"98.5%"` or a number), 100 when absent.
@@ -287,6 +411,7 @@ pub(crate) fn scale_plate(plate: &crate::plate::Plate, f: [f64; 3]) -> crate::pl
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fm::Fm as _;
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {
         vec![vec![vec![
@@ -332,13 +457,164 @@ mod tests {
     #[test]
     fn the_elephant_foot_comes_in_on_a_thick_part_and_leaves_a_thin_wall_alone() {
         let block = square(0, 0, 300_000, 300_000);
-        let compensated = elephant_foot(&block, 2_000, 8_000);
+        let compensated = elephant_foot(&block, 2_000, 8_000, true);
         assert_eq!(width(&compensated), 296_000);
         // A 0.6 mm wall is thinner than the perimeter width: left as it is.
         let wall = square(0, 0, 300_000, 6_000);
         assert_eq!(
-            perimeters::bounds(&elephant_foot(&wall, 2_000, 8_000)),
+            perimeters::bounds(&elephant_foot(&wall, 2_000, 8_000, true)),
             perimeters::bounds(&wall)
         );
+    }
+
+    /// A short thin strip takes the partial foot too: a 1.1 by 6 mm strip (6.6 mm square, under the 7.9 mm square
+    /// floor that leaves a tiny island whole when the full offset is all there is) comes in as far as a long one does.
+    #[test]
+    fn a_short_thin_strip_takes_the_partial_foot() {
+        let height = |s: &Shapes| perimeters::bounds(s).map_or(0, |b| b[3] - b[1]);
+        let (e, min_width) = (1_500, 9_571);
+        for len in [60_000, 90_000, 309_000] {
+            let strip = square(0, 0, len, 11_000);
+            let got = height(&elephant_foot(&strip, e, min_width, true));
+            assert!(
+                (min_width..=min_width + 2 * FOOT_STEP).contains(&got),
+                "length {len}: {got}"
+            );
+        }
+    }
+
+    /// Without `partial` a strip too thin for the whole offset keeps its width, and a thick one takes all of it.
+    #[test]
+    fn without_the_partial_foot_a_thin_strip_keeps_its_width() {
+        let height = |s: &Shapes| perimeters::bounds(s).map_or(0, |b| b[3] - b[1]);
+        let (e, min_width) = (1_500, 7_971);
+        for w in [10_110, 10_940] {
+            let strip = square(0, 0, 309_000, w);
+            assert_eq!(height(&elephant_foot(&strip, e, min_width, false)), w, "W {w}");
+        }
+        let strip = square(0, 0, 309_000, 15_000);
+        assert_eq!(height(&elephant_foot(&strip, e, min_width, false)), 12_000);
+    }
+
+    /// [`partial_foot`] taken one grid depth at a time: each ring of the band comes off where the disc of its deeper
+    /// depth reaches.
+    fn partial_foot_stepped(one: &Shapes, rest: &Shapes, e: i32, min_width: i32) -> Shapes {
+        let steps = foot_steps(e);
+        let mut zone: Shapes = Vec::new();
+        for k in 1..=steps {
+            let d = foot_level(e, steps, k);
+            let s = foot_reach(one, min_width, d);
+            if s.is_empty() {
+                break;
+            }
+            let ring = perimeters::difference(
+                &perimeters::offset(one, -foot_level(e, steps, k - 1)),
+                &perimeters::offset(one, -d),
+            );
+            zone.extend(perimeters::intersection(
+                &perimeters::intersection(&ring, rest),
+                &s,
+            ));
+        }
+        perimeters::union_all(&[&zone])
+    }
+
+    #[allow(clippy::cast_precision_loss, reason = "test areas fit f64")]
+    fn area_of(s: &Shapes) -> f64 {
+        s.iter()
+            .flat_map(|x| x.iter())
+            .map(|r| crate::geom::area2_int(r) as f64)
+            .sum::<f64>()
+            / 2.0
+    }
+
+    /// The bisected partial foot takes off what the stepped one does, to within one step along the outline: strips
+    /// of a sweep of widths, a wedge that widens from too thin to thick enough for the whole offset, and a ring whose
+    /// wall thins to one side.
+    #[test]
+    fn the_bisected_partial_foot_matches_the_stepped_one() {
+        let (e, min_width) = (1_500, 9_571);
+        let mut shapes: Vec<Shapes> = (0..40).map(|i| square(0, 0, 120_000, 9_000 + i * 100)).collect();
+        shapes.push(vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(200_000, 0),
+            IntPoint::new(200_000, 14_000),
+            IntPoint::new(0, 8_500),
+        ]]]);
+        #[allow(clippy::cast_possible_truncation, reason = "test points")]
+        let circle = |cx: f64, r: f64, hole: bool| {
+            let mut ring: Vec<IntPoint<i32>> = (0..720)
+                .map(|i| {
+                    let a = f64::from(i) * std::f64::consts::PI / 360.0;
+                    IntPoint::new((cx + r * a.m_cos()) as i32, (r * a.m_sin()) as i32)
+                })
+                .collect();
+            if hole {
+                ring.reverse();
+            }
+            ring
+        };
+        shapes.push(vec![vec![
+            circle(0.0, 100_000.0, false),
+            circle(-2_000.0, 91_000.0, true),
+        ]]);
+        let need = min_width + 2 * e;
+        let mut taken = 0;
+        for (i, one) in shapes.iter().enumerate() {
+            let band = perimeters::difference(one, &perimeters::offset(one, -e));
+            let thick = perimeters::offset(&perimeters::offset(one, -(need / 2)), need / 2);
+            let full = if thick.is_empty() {
+                Vec::new()
+            } else {
+                perimeters::intersection(&band, &perimeters::offset(&thick, e))
+            };
+            let rest = perimeters::difference(&band, &full);
+            let bisected = partial_foot(one, &rest, e, min_width);
+            let stepped = partial_foot_stepped(one, &rest, e, min_width);
+            taken += usize::from(!stepped.is_empty());
+            let apart = area_of(&perimeters::difference(&bisected, &stepped))
+                + area_of(&perimeters::difference(&stepped, &bisected));
+            let outline: f64 = one
+                .iter()
+                .flat_map(|s| s.iter())
+                .map(|r| {
+                    r.iter()
+                        .zip(r.iter().cycle().skip(1))
+                        .map(|(a, b)| f64::from(a.x - b.x).m_hypot(f64::from(a.y - b.y)))
+                        .sum::<f64>()
+                })
+                .sum();
+            assert!(
+                apart <= outline * f64::from(FOOT_STEP),
+                "shape {i}: {apart} apart, outline {outline}"
+            );
+        }
+        assert!(taken >= 30, "{taken} shapes take part of the foot");
+    }
+
+    /// A strip between the outer wall's width plus its spacing (`min_width`) and that plus two foot offsets comes in
+    /// only as far as leaves `min_width`, give or take a step; a wider one takes the whole offset, a narrower one none.
+    #[test]
+    fn a_thin_strip_takes_only_the_part_of_the_foot_that_leaves_room_for_the_outer_wall() {
+        let height = |s: &Shapes| perimeters::bounds(s).map_or(0, |b| b[3] - b[1]);
+        let (e, min_width) = (1_500, 9_571);
+        for w in [10_110, 10_550, 10_940, 11_090, 12_500] {
+            let strip = square(0, 0, 309_000, w);
+            let got = height(&elephant_foot(&strip, e, min_width, true));
+            assert!(
+                (min_width..=min_width + 2 * FOOT_STEP).contains(&got),
+                "W {w}: {got}"
+            );
+        }
+        for w in [12_571, 15_000, 24_440] {
+            let strip = square(0, 0, 309_000, w);
+            assert_eq!(
+                height(&elephant_foot(&strip, e, min_width, true)),
+                w - 2 * e,
+                "W {w}"
+            );
+        }
+        let strip = square(0, 0, 309_000, 9_000);
+        assert_eq!(height(&elephant_foot(&strip, e, min_width, true)), 9_000);
     }
 }
