@@ -39,6 +39,8 @@ export interface CloudSliceInput {
   printer: PrinterInfo
   easy: EasySettings
   material: Material
+  /** The plate of a 3MF project to slice (`options.plates`), when the person picked one of several. */
+  plate?: number
 }
 
 export type SlicePhase =
@@ -158,7 +160,7 @@ export async function runCloudSlice(
       {
         plate: { bed: { widthMm: bw, depthMm: bd, heightMm: bh }, objects: [object] },
         config,
-        options: { flavor: shape.flavor, emitGcode: true, emitPreview: false },
+        options: { flavor: shape.flavor, emitGcode: true, emitPreview: false, ...(input.plate !== undefined ? { plates: [input.plate] } : {}) },
       },
       { onProgress: (p) => onPhase({ kind: 'slicing', stage: p.stage, fraction: p.fraction }), ...(signal ? { signal } : {}) },
     )
@@ -177,7 +179,28 @@ export async function runCloudSlice(
       ...(bounds.measured ? { sizeMm: bounds.sizeMm, fit: plateFit(bounds.sizeMm, shape.bed) } : {}),
       warnings,
     }
+  } catch (e) {
+    throw phoneCloudError(e, input.model.name)
   } finally {
     cloud.release(mesh.id)
   }
+}
+
+/** What the phone says when a 3MF project is over the hosted upload cap: the phone cannot slice it itself. */
+export const PROJECT_OVER_CAP = 'This project is over the 25 MB cloud limit. Slice it on your computer instead.'
+
+/**
+ * A cloud refusal in the phone's words. The cloud slicer's own next step, slicing on this device, does not apply on a
+ * phone: a 3MF over the upload cap says to use the computer, and a daily limit keeps the service's count of what is
+ * left without that step. Anything else passes through unchanged.
+ */
+export function phoneCloudError(e: unknown, fileName: string): unknown {
+  if (!(e instanceof Error) || e.name === 'AbortError') return e
+  const onDevice = / ?Slice on this device instead\.?$/
+  if (/\.3mf$/i.test(fileName) && /over (this account's |the )?cloud upload limit/i.test(e.message)) return new Error(PROJECT_OVER_CAP)
+  if (/cloud slices for the last 24 hours|more (plate|plates) (in the cloud )?today|this job slices \d+ plates/i.test(e.message) && onDevice.test(e.message)) {
+    const text = e.message.replace(onDevice, '')
+    return new Error(text.charAt(0).toUpperCase() + text.slice(1))
+  }
+  return e
 }

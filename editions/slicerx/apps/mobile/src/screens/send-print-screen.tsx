@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { EASY_GOALS, type EasyGoal, type EasySettings, type Fleet, type SupportMode } from '@slicerx/contracts'
+import type { ProjectPlate } from '../cloud/plates'
 import type { PlateFit } from '../cloud/slice-job'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
@@ -43,6 +44,8 @@ export interface SendSelection {
   target: SendTarget
   goal: EasyGoal
   settings: EasySettings
+  /** The plate of a 3MF project to slice, when the project has more than one. */
+  plate?: number
 }
 
 export interface Estimate {
@@ -69,6 +72,13 @@ export interface SendPrintScreenProps {
   estimating: boolean
   /** How the chosen model sits on the chosen printer's bed, when the phone could measure it. */
   fit?: PlateFit | null | undefined
+  /**
+   * The plates of the chosen 3MF project, read from the file on the phone. With more than one, the screen asks which
+   * plate to slice; only that plate is sliced and sent.
+   */
+  plates?: ProjectPlate[] | undefined
+  /** Tells the parent which model is chosen, so it can read that file's plates. */
+  onModelChange?: ((modelId: string | null) => void) | undefined
   /** Opens the system file picker; the parent adds the file to `library` and returns its id. */
   onPickFile: () => Promise<string | null>
   /** Called after the person confirms in the sheet. */
@@ -105,6 +115,11 @@ const WHERE_ICON = { desktop: 'desktop', browser: 'laptop', cloud: 'cloud-slice'
 
 const ready = (p: PrinterView) => p.status?.state === 'idle' || p.status?.state === 'finished'
 
+/** "Plate 2: Lid" or "Plate 2". */
+export function plateTitle(p: ProjectPlate): string {
+  return p.name ? `Plate ${p.plate}: ${p.name}` : `Plate ${p.plate}`
+}
+
 function Choice({ selected, disabled, onPress, children, testID }: { selected: boolean; disabled?: boolean; onPress: () => void; children: ReactNode; testID?: string }) {
   return (
     <Pressable
@@ -135,10 +150,22 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
   const [fileError, setFileError] = useState<string | null>(null)
 
   const model = p.library.find((m) => m.id === modelId) ?? null
+  const plates = useMemo(() => (p.plates && p.plates.length > 1 ? p.plates : []), [p.plates])
+  const [plateNo, setPlateNo] = useState<number | null>(null)
+  // A new plate list (another model, or the file read) starts on its first plate.
+  const plateKey = `${modelId ?? ''}:${plates.map((x) => x.plate).join(',')}`
+  useEffect(() => setPlateNo(null), [plateKey])
+  const plate = plates.find((x) => x.plate === plateNo) ?? plates[0] ?? null
   const settings = useMemo<EasySettings>(() => ({ ...EASY_GOALS[goal], supports, brim }), [goal, supports, brim])
-  const selection = useMemo<SendSelection | null>(() => (model && target ? { modelId: model.id, target, goal, settings } : null), [model, target, goal, settings])
+  const selection = useMemo<SendSelection | null>(
+    () => (model && target ? { modelId: model.id, target, goal, settings, ...(plate ? { plate: plate.plate } : {}) } : null),
+    [model, target, goal, settings, plate],
+  )
 
-  const { onSelectionChange } = p
+  const { onSelectionChange, onModelChange } = p
+  useEffect(() => {
+    onModelChange?.(modelId)
+  }, [modelId, onModelChange])
   // The estimate lives with the parent, which may slice remotely to get it.
   useEffect(() => {
     onSelectionChange?.(selection)
@@ -205,6 +232,27 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
       ) : (
         <Row title="Choose a model" detail="From your library or your files" icon="plus" iconColor={t.color.purple} chevron onPress={() => setPicking(true)} testID="model-choose" />
       )}
+
+      {model && plates.length > 1 ? (
+        <>
+          <SectionLabel label="Plate" />
+          <View style={{ paddingHorizontal: t.gutter, gap: 8 }} role="radiogroup" aria-label="Plate">
+            {plates.map((x) => (
+              <Choice key={x.plate} selected={plate?.plate === x.plate} onPress={() => setPlateNo(x.plate)} testID={`plate-${x.plate}`}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Txt variant="bodyMedium" numberOfLines={2}>
+                    {plateTitle(x)}
+                  </Txt>
+                  <Txt variant="caption" tone="muted">{`${x.objects} ${x.objects === 1 ? 'object' : 'objects'}`}</Txt>
+                </View>
+              </Choice>
+            ))}
+            <Txt variant="caption" tone="dim">
+              {`This project has ${plates.length} plates. Only the plate you pick is sliced and sent.`}
+            </Txt>
+          </View>
+        </>
+      ) : null}
 
       <SectionLabel label="Printer" />
       {p.printers.length === 0 ? (
@@ -321,8 +369,9 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
         <ApproveSheet
           open={confirming}
           onClose={() => setConfirming(false)}
-          title={`Print ${model.name}?`}
+          title={plate ? `Print ${model.name}, plate ${plate.plate}?` : `Print ${model.name}?`}
           lines={[
+            ...(plate ? [`${plateTitle(plate)}, ${plate.objects} ${plate.objects === 1 ? 'object' : 'objects'}. The project's other plates are not sliced.`] : []),
             `Slices on ${p.sliceLocation.name} with ${GOALS.find((g) => g.value === goal)?.label ?? goal} settings`,
             `Uploads to ${targetName} and starts printing when the upload finishes`,
             ...(p.estimate ? [`About ${fmtLeft(p.estimate.timeS)} and ${p.estimate.grams.toFixed(1)} g of filament`] : []),
