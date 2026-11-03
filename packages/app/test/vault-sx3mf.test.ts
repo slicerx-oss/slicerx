@@ -151,7 +151,7 @@ describe('print output made from a Vault design', () => {
     }) as unknown as Host
   const sliced = (plate: PlateEntry[]) => set({ plate, selection: null, selectedIds: [], slice: { status: 'done', result, stale: false }, toast: null })
 
-  it('carries sx:Listing on the root model and on each object, in .gcode.3mf and in the file sent to a printer', async () => {
+  it('carries sx:Listing on the root model and no model, in .gcode.3mf and in the file sent to a printer', async () => {
     sliced([vault('vault', 60)])
     const saved: { name: string; blob: Blob }[] = []
     expect(await exportGcode3mf(printHost(saved))).toBe(true)
@@ -159,19 +159,19 @@ describe('print output made from a Vault design', () => {
     for (const bytes of [new Uint8Array(await saved[0]!.blob.arrayBuffer()), await printGcode3mf(GCODE)]) {
       const files = await unzipEntries(bytes)
       expect(dec(files.get('3D/3dmodel.model'))).toContain(`<metadata name="sx:Listing">${VAULT.modelId}</metadata>`)
-      expect(dec(files.get('Metadata/model_settings.config'))).toContain(`<metadata key="sx:Listing" value="${VAULT.modelId}"/>`)
+      expect(dec(files.get('3D/3dmodel.model'))).toContain('<resources></resources><build></build>')
+      expect(dec(files.get('Metadata/model_settings.config'))).not.toContain('<object')
       expect(files.has('Metadata/plate_1.gcode')).toBe(true)
     }
   })
 
-  it('marks only the Vault object on a plate that mixes it with your own, in every plate export', async () => {
+  it('names the Vault design on a plate that mixes it with your own, in every plate export, and leaves no object to reopen', async () => {
     sliced([own('mine', 40), vault('vault', 140)])
     const saved: { name: string; blob: Blob }[] = []
     expect(await exportAllPlates(printHost(saved))).toBe(true)
     const files = await unzipEntries(new Uint8Array(await saved[0]!.blob.arrayBuffer()))
-    expect(dec(files.get('3D/3dmodel.model'))).not.toContain('name="sx:Listing"')
-    const back = await readProject(new Uint8Array(await saved[0]!.blob.arrayBuffer()), { widthMm: 256, depthMm: 256 })
-    expect(back.plates.flatMap((p) => p.objects).map((o) => o.source?.modelId ?? null)).toEqual([null, VAULT.modelId])
+    expect(dec(files.get('3D/3dmodel.model'))).toContain(`<metadata name="sx:Listing">${VAULT.modelId}</metadata>`)
+    await expect(readProject(new Uint8Array(await saved[0]!.blob.arrayBuffer()), { widthMm: 256, depthMm: 256 })).rejects.toThrow(/nothing to print/)
   })
 
   it('leaves print output from your own designs without sx: metadata', async () => {
@@ -181,7 +181,7 @@ describe('print output made from a Vault design', () => {
     expect(dec(files.get('Metadata/model_settings.config'))).not.toContain('sx:')
   })
 
-  it('round trips: a sliced Vault design exported as .gcode.3mf opens as a Vault design, STL export stays off and the MCP refuses it', async () => {
+  it('round trips: a sliced Vault design exported as .gcode.3mf reopens with no mesh and the MCP still refuses it', async () => {
     sliced([vault('vault', 60)])
     const saved: { name: string; blob: Blob }[] = []
     const h = printHost(saved)
@@ -189,16 +189,7 @@ describe('print output made from a Vault design', () => {
     const bytes = await saved[0]!.blob.arrayBuffer()
     set({ plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'p1', selection: null, selectedIds: [] })
     await openModelBytes(h, 'vault.gcode.3mf', bytes)
-    const opened = get().plate
-    expect(opened.length).toBeGreaterThan(0)
-    expect(opened.every((o) => o.source?.modelId === VAULT.modelId)).toBe(true)
-    set({ selection: opened[0]!.id, selectedIds: [opened[0]!.id] })
-    const out: string[] = []
-    expect(await exportMesh(host(out), 'selection', 'stl')).toBe(false)
-    expect(await exportMesh(host(out), 'plate', 'obj')).toBe(false)
-    expect(out).toEqual([])
-    const cmds = plateCommands(() => 'slicerx' as never, host([]))
-    expect(cmds.find((c) => c.id === 'export-plate-stl')?.enabled?.()).toBe(false)
+    expect(get().plate).toEqual([])
     const path = join(mkdtempSync(join(tmpdir(), 'sx-vault-')), 'vault.gcode.3mf')
     writeFileSync(path, new Uint8Array(bytes))
     expect(isVaultFile(path)).toBe(true)
