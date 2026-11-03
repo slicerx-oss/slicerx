@@ -13,6 +13,8 @@ import { isProjectUnread, takesProjectValue } from './prusa'
 import { sameValue } from './diff'
 import { settingDef } from './schema'
 import { selectVariants } from './variants'
+import { FILAMENT_OVERRIDE_KEYS } from './stock-layer'
+import { coerce, NIL } from './value'
 
 export interface ProjectSettings {
   /** Changes against the current settings, in our keys. */
@@ -21,12 +23,42 @@ export interface ProjectSettings {
   left: string[]
 }
 
+/**
+ * A filament override list with a `nil` entry, one entry per filament ("0.6,nil" or ["nil", "Ramp Lift"]): each `nil` is
+ * that filament on the printer's value, as the engine reads it, so it stays `nil` here instead of taking the entry
+ * before it, and a list that starts with `nil` still brings the other filaments' own values. Undefined for any other
+ * key or value, which the usual import reads.
+ */
+export function filamentOverrideList(key: string, raw: unknown): SettingValue | undefined {
+  const def = settingDef(key)
+  if (!def || !FILAMENT_OVERRIDE_KEYS.has(key)) return undefined
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.includes(',') ? raw.split(',') : undefined
+  const entries = list?.map((x) => (typeof x === 'string' ? x.trim() : x))
+  if (!entries?.includes(NIL) || entries.every((x) => x === NIL)) return undefined
+  const out: (string | number | boolean)[] = []
+  for (const x of entries) {
+    if (x === NIL) {
+      out.push(NIL)
+      continue
+    }
+    const c = coerce(def, [x])
+    if (c.ok !== true || !Array.isArray(c.value)) return undefined
+    out.push(c.value[0] as string | number | boolean)
+  }
+  return out as SettingValue
+}
+
 // Bambu Studio prints a project's own values for wall_filament, sparse_infill_filament and solid_infill_filament on
 // nothing ("1", the stock value, and every other alike), so the rule leaves a project's out (`unread`); an object's, a
 // part's or a modifier's own still count (`modifierSettings`).
 export function projectSettingChanges(raw: Record<string, unknown>, current: PrintConfig): ProjectSettings {
   const read = Object.fromEntries(Object.entries(raw).filter(([k]) => !isProjectUnread(k)))
-  const imported = importFlat(selectVariants(read)).config as Record<string, SettingValue>
+  const variants = selectVariants(read)
+  const imported = importFlat(variants).config as Record<string, SettingValue>
+  for (const [key, value] of Object.entries(variants)) {
+    const list = filamentOverrideList(key, value)
+    if (list) imported[key] = list
+  }
   const now = current as unknown as Record<string, SettingValue | undefined>
   const values: Record<string, SettingValue> = {}
   const left: string[] = []

@@ -7,7 +7,7 @@ import { resolveConfig } from '../src/adapters/config'
 import { SETTINGS, settingDef } from '../src/adapters/settings'
 import { sx3mfBytes } from '../src/export/actions'
 import { unzipEntries } from '../src/export/import3mf'
-import { slotSlope, withSlotSlope } from '../src/filament/slot-lift'
+import { slotHeight, slotSlope, slotType, withSlotSlope, withSlotValue } from '../src/filament/slot-lift'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { allPlates } from '../src/plate/plates'
 import { compose } from '../src/plate/transform'
@@ -94,6 +94,24 @@ describe('lift settings for clients', () => {
     const reply = await lift()
     expect(reply.output.overrides).toEqual({ z_hop_types: ['Spiral Lift', 'Spiral Lift'], filament_travel_slope: ['nil', 20] })
     expect(reply.output.overrides).toEqual(Object.fromEntries(['z_hop_types', 'filament_travel_slope'].map((k) => [k, get().overrides[k]])))
+  })
+
+  it("sets and reads back a filament's own Z hop height and type, per slot, as the Filament dialog writes them", async () => {
+    set({ overrides: {}, plate: [cube()] })
+    const keys = ['filament_z_hop', 'filament_z_hop_types']
+    await runCall('project.set_overrides', { changes: { filament_z_hop: [0.6, 'nil'], filament_z_hop_types: ['nil', 'Normal Lift'] } })
+    const reply = await runCall('settings.get', { keys }) as LiftReply
+    expect(reply.output.overrides).toEqual({ filament_z_hop: [0.6, 'nil'], filament_z_hop_types: ['nil', 'Normal Lift'] })
+    expect(reply.output.supported).toEqual(expect.arrayContaining(keys))
+    expect(slotHeight(get().overrides, 1)).toBe(0.6)
+    expect(slotType(get().overrides, 2)).toBe('Normal Lift')
+    const file = await saved()
+    expect(file['filament_z_hop']).toEqual(['0.6', 'nil'])
+    expect(file['filament_z_hop_types']).toEqual(['nil', 'Normal Lift'])
+    // An edit in the dialog reads back the same way.
+    set((s) => ({ overrides: withSlotValue('filament_z_hop_types', s.overrides, 1, 2, 'Ramp Lift') }))
+    expect(((await runCall('settings.get', { keys }) as LiftReply).output.overrides)['filament_z_hop_types']).toEqual(['Ramp Lift', 'Normal Lift'])
+    await expect(runCall('project.set_overrides', { changes: { filament_z_hop_types: ['Bogus Lift'] } })).rejects.toMatchObject({ code: 'invalid_input' })
   })
 
   it('refuses a lift type the engine does not know', async () => {

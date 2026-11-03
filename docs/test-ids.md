@@ -186,6 +186,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-rail` | The Filament section's spools: every slot the printer has loaded (or the project holds), grouped by unit |
 | `slice-filament-slot` | A spool, with `data-slot`, `data-used`, `data-parts` (parts on the shown plate), `data-mismatch` and `data-empty`; `aria-pressed` when the target prints with it. A click moves the target to it, Alt-click selects the objects on it, right-click opens its menu |
 | `slice-filament-edit` | Edit filament, in a spool's menu: what the slot holds |
+| `slot-z-hop` | In the Filament dialog (Advanced and up), the filament's own Z hop height in mm, empty for the printer's value |
+| `slot-z-hop-type` | In the Filament dialog (Advanced and up), the filament's own Z hop type (Auto, Normal, Slope, Spiral or Ramp), or Printer value |
 | `slot-travel-slope` | In the Filament dialog (Advanced and up), the filament's own travel slope in degrees: the angle its lifts climb at, empty for the printer's value |
 | `slice-filament-target` | Under the spools: what a click moves (`data-kind` objects, plate or filament) |
 | `slice-filament-target-*` | With two or more filaments in use and nothing selected, the option that picks the filament to move, by slot |
