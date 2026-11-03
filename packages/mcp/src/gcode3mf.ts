@@ -6,6 +6,7 @@
 // with the settings it was sliced with, and the plate pictures the engine drew. Like Bambu Studio's upload to a
 // printer, it carries no geometry, so it is for printing, not for editing.
 import type { SettingValue } from '@slicerx/contracts'
+import type { VaultMark } from '@slicerx/contracts/sx3mf-marks'
 import { productName } from '@slicerx/contracts'
 import { orcaReadable, settingDef, toOrca } from '@slicerx/settings'
 import { entryData, gcodeLabelIds, projectFiles } from '@slicerx/threemf'
@@ -26,7 +27,12 @@ function orcaSettings(config: Readonly<Record<string, SettingValue>>): Record<st
   return orcaReadable(out)
 }
 
-export function gcode3mf(sliced: string, summary: SliceSummary, config: Record<string, SettingValue>): Buffer {
+/**
+ * `vault` is the listing and creator of a Vault design the plate was sliced from (vault.ts, vaultMark). The file then
+ * carries them on its root model with the design's name as its title, as the app writes a Vault design's print file:
+ * still no mesh, and it reads as a Vault design again. Without it the file is as before.
+ */
+export function gcode3mf(sliced: string, summary: SliceSummary, config: Record<string, SettingValue>, vault?: VaultMark | null): Buffer {
   // The objects the printer's skip dialog lists, in the order the G-code labels them, named after the model.
   const printNames = gcodeLabelIds(sliced).map((_, k) => (k === 0 ? summary.model.name : `${summary.model.name} ${k + 1}`))
   const files = projectFiles({
@@ -35,6 +41,7 @@ export function gcode3mf(sliced: string, summary: SliceSummary, config: Record<s
     settings: orcaSettings(config),
     application: productName(),
     gcode: { 0: sliced },
+    ...(vault ? { title: summary.model.name, sx: { ...(vault.listing ? { modelId: vault.listing } : {}), ...(vault.creator ? { creatorId: vault.creator } : {}), exportedBy: '' } } : {}),
   })
   return writeZip(entryData(files))
 }
