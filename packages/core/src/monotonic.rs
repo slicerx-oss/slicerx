@@ -162,8 +162,9 @@ pub(crate) fn polylines_with(
 /// 0.05 spacing (`outer`, where the
 /// two ends of each path reach). With the Bambu Lab line top rules (`bambu`) every region with no neighbor on its left
 /// (the first region of each connected piece) starts on its first line's high end in this frame, wherever the previous
-/// region ended, and a line is split only where `outer` splits it: spans of one line that lie in one span of `outer`
-/// (pinched apart by the half spacing, as just above a slot's tip) print as one line.
+/// region ended (save the first of a notch's two horns, which ends at the notch, and the other horn follows it), and a
+/// line is split only where `outer` splits it: spans of one line that lie in one span of `outer` (pinched apart by the
+/// half spacing, as just above a slot's tip) print as one line.
 pub(crate) fn polylines_outer(
     spans: &[Iv],
     outer: &[Iv],
@@ -552,6 +553,52 @@ fn polylines_core(
             g.right = right;
         }
     }
+    // With the Bambu Lab line top rules, two first regions that lead into the same one region and share a line are the
+    // horns either side of a notch: horn A, high in this frame, and horn B. Horn B prints first when both hold an even
+    // number of lines, else horn A, from the side that ends it at the notch; the other horn follows at once, from its
+    // first line's high end as every first region starts. Per region: the first horn's start side (`horn_side`), the
+    // horn after it (`horn_next`) and, for the second, the horn before it (`horn_after`).
+    let mut horn_side: Vec<Option<bool>> = vec![None; regions.len()];
+    let mut horn_next: Vec<Option<usize>> = vec![None; regions.len()];
+    let mut horn_after: Vec<Option<usize>> = vec![None; regions.len()];
+    if lead_high {
+        for (c, body) in regions.iter().enumerate() {
+            let [a, b] = body.left.as_slice() else { continue };
+            let horn = |r: usize| regions.get(r).filter(|g| g.left.is_empty() && g.right == [c]);
+            let (Some(ga), Some(gb)) = (horn(*a), horn(*b)) else {
+                continue;
+            };
+            // Where each horn's span on a line they share starts along it.
+            let Some((ta, tb)) = ga.segs.iter().find_map(|&i| {
+                let sa = segs.get(i)?;
+                let sb = gb
+                    .segs
+                    .iter()
+                    .filter_map(|&j| segs.get(j))
+                    .find(|s| s.k == sa.k)?;
+                Some((sa.t0, sb.t0))
+            }) else {
+                continue;
+            };
+            let ((ra, na), (rb, nb)) = if ta > tb {
+                ((*a, ga.segs.len()), (*b, gb.segs.len()))
+            } else {
+                ((*b, gb.segs.len()), (*a, ga.segs.len()))
+            };
+            let (first, second, high) = if na.is_multiple_of(2) && nb.is_multiple_of(2) {
+                (rb, ra, true)
+            } else {
+                (ra, rb, !na.is_multiple_of(2))
+            };
+            if let (Some(s), Some(n), Some(f)) = (
+                horn_side.get_mut(first),
+                horn_next.get_mut(first),
+                horn_after.get_mut(second),
+            ) {
+                (*s, *n, *f) = (Some(high), Some(second), Some(first));
+            }
+        }
+    }
 
     // The pieces a region is printed as when it starts on the low side (false) or the high side, each with the
     // span end it starts on and the span end it stops on.
@@ -604,6 +651,11 @@ fn polylines_core(
                     && regions
                         .get(r)
                         .is_some_and(|g| g.left.iter().all(|&l| done.get(l).copied().unwrap_or(true)))
+                    && horn_after
+                        .get(r)
+                        .copied()
+                        .flatten()
+                        .is_none_or(|f| done.get(f).copied().unwrap_or(true))
             };
             let first_of = |r: usize| {
                 regions
@@ -611,7 +663,13 @@ fn polylines_core(
                     .and_then(|g| g.segs.first())
                     .and_then(|&i| segs.get(i))
             };
-            let mut pick: Option<(usize, bool, f64, bool)> = forced.take().map(|(r, h)| (r, h, 0.0, false));
+            // A notch's second horn follows its first at once.
+            let mut pick: Option<(usize, bool, f64, bool)> =
+                forced.take().map(|(r, h)| (r, h, 0.0, false)).or_else(|| {
+                    last.and_then(|l| horn_next.get(l).copied().flatten())
+                        .filter(|&r| ready(r))
+                        .map(|r| (r, true, 0.0, false))
+                });
             if pick.is_none() {
                 // Continue into a right neighbor of the last region when it is ready and the turn is
                 // allowed from the side chosen, else take the ready region whose start is nearest (the
@@ -622,8 +680,9 @@ fn polylines_core(
                         return;
                     };
                     let leads = lead_high && regions.get(r).is_some_and(|g| g.left.is_empty());
+                    let side = horn_side.get(r).copied().flatten().unwrap_or(true);
                     for high in [false, true] {
-                        if leads && !high {
+                        if leads && high != side {
                             continue;
                         }
                         if cont && cursor_end.is_none_or(|ce| turn_between(ce, (first_idx, high)).is_none()) {
@@ -672,9 +731,13 @@ fn polylines_core(
     // ants over up to 25 rounds and keeps the shortest path; this is the same search without the dice).
     let starts: Vec<(usize, bool)> = (0..regions.len())
         .filter(|&r| regions.get(r).is_some_and(|g| g.left.is_empty()))
+        .filter(|&r| horn_after.get(r).copied().flatten().is_none())
         .take(MAX_ANTS)
         .flat_map(|r| [(r, false), (r, true)])
-        .filter(|&(_, high)| high || !lead_high)
+        .filter(|&(r, high)| match horn_side.get(r).copied().flatten() {
+            Some(side) => high == side,
+            None => high || !lead_high,
+        })
         .collect();
     let mut best = walk(None);
     if regions.len() > 1 && regions.len() <= MAX_ANT_REGIONS {
