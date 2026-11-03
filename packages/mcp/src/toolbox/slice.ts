@@ -11,6 +11,7 @@ import { productName, type ScriptReplacementChoice } from '@slicerx/contracts'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, slicePrinter, type ExtraLayers, type SlotLayer } from '../config'
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
+import { vaultMark } from '../vault'
 import { readPresetFiles } from '../presets'
 import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
 import { openProject, projectPrinterUse } from '../project-open'
@@ -87,7 +88,7 @@ export const sliceInput = {
 
 export const sliceFileInput = {
   ...sliceInput,
-  output: z.enum(['gcode', 'gcode.3mf']).default('gcode').describe('gcode: a plain G-code file. gcode.3mf: also a .gcode.3mf holding the plate, the format Bambu Lab printers print'),
+  output: z.enum(['gcode', 'gcode.3mf']).default('gcode').describe('gcode: a plain G-code file. gcode.3mf: also a .gcode.3mf holding the plate, the format Bambu Lab printers print. For a Vault design it holds no mesh: the G-code, the objects the printer can skip and the listing'),
   preview: z.boolean().default(false).describe('Also write the toolpath preview (SXPV) that the @slicerx/embed viewport shows. sx engine only.'),
 }
 
@@ -345,7 +346,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   if (asked3mf && result.gcode_path) {
     await progress(0.9, 'Writing the .gcode.3mf')
     const path = join(outDir, `${basename(modelPath, extname(modelPath))}${args.plate ? `-plate${args.plate}` : ''}.gcode.3mf`)
-    writeFileSync(path, gcode3mf(readFileSync(result.gcode_path, 'utf8'), result, config))
+    // A Vault design's print file names its listing and carries no mesh, as the app writes it.
+    writeFileSync(path, gcode3mf(readFileSync(result.gcode_path, 'utf8'), result, config, vaultMark(modelPath)))
     result.gcode_3mf_path = path
   }
   await progress(1, 'Done')
