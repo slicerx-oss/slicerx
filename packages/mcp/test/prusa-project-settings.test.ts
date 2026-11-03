@@ -14,6 +14,8 @@ import { readZip, writeZip } from '../src/zip'
 import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 const fixtures = join(__dirname, '../../settings/fixtures')
+// Prusa MK4S and Bambu Lab P1S projects with a brim and elephant foot compensation 0.2 (sx-cli tests/brim_efc_outline.rs).
+const brimFixtures = join(__dirname, '../../core/cli/tests/fixtures/brim-efc')
 type Case = { name: string; files?: string[]; lines?: string[]; config: Record<string, unknown>; unmapped: string[] }
 const cases = (JSON.parse(readFileSync(join(fixtures, 'prusa-project-settings.json'), 'utf8')) as { cases: Case[] }).cases
 const engineChoices = JSON.parse(readFileSync(join(__dirname, '../../settings/engine-choices.json'), 'utf8')) as Record<string, Record<string, unknown> | undefined>
@@ -61,6 +63,23 @@ describe("readProjectFile and a PrusaSlicer project's settings", () => {
   })
 })
 
+describe('the brim outline a project reads back', () => {
+  it('is the compensated one for a Prusa project and stays unset for a Bambu Lab one', async () => {
+    const h = await connect()
+    const read = async (name: string) => {
+      const path = join(h.dir, `${name}.3mf`)
+      writeFileSync(path, readFileSync(join(brimFixtures, `${name}.3mf`)))
+      const r = await h.call('slicerx_inspect_project', { file: path })
+      expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+      return data<{ project_config: Record<string, unknown> }>(r).project_config
+    }
+    const prusa = await read('mk4p--e0.2-s0.5')
+    expect(prusa['brim_use_efc_outline']).toBe(true)
+    expect(prusa['elefant_foot_compensation']).toBe(0.2)
+    expect((await read('p1s--e0.2-g0.5'))['brim_use_efc_outline']).not.toBe(true)
+  })
+})
+
 /** The lines of a G-code file that print, without its comments. */
 const moves = (gcode: string): string[] => gcode.split('\n').filter((l) => !l.startsWith(';') && l.trim() !== '')
 
@@ -76,6 +95,20 @@ describe.skipIf(noSx())('a PrusaSlicer project through the MCP server and sx sli
     const viaCli = readFileSync(join(h.dir, 'cli.gcode'), 'utf8')
     const viaMcp = readFileSync(String(data<{ gcode_path: string }>(r).gcode_path), 'utf8')
     expect(viaCli.split('\n').filter((l) => l === ';TYPE:Support').length).toBeGreaterThan(50)
+    expect(moves(viaMcp)).toEqual(moves(viaCli))
+  })
+
+  it('prints the same brim as sx slice for a project with elephant foot compensation', { timeout: sxTimeout * 3 }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const path = join(h.dir, 'efc.3mf')
+    writeFileSync(path, readFileSync(join(brimFixtures, 'mk4p--e0.2-s0.5.3mf')))
+    const cli = spawnSync(sxBin, ['slice', path, '-o', join(h.dir, 'cli.gcode')], { encoding: 'utf8' })
+    expect(cli.status, cli.stderr).toBe(0)
+    const r = await h.call('slicerx_slice_file', { model: path, project_settings: true })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const viaCli = readFileSync(join(h.dir, 'cli.gcode'), 'utf8')
+    const viaMcp = readFileSync(String(data<{ gcode_path: string }>(r).gcode_path), 'utf8')
+    expect(viaCli.split('\n').filter((l) => l === ';TYPE:Brim').length).toBeGreaterThan(0)
     expect(moves(viaMcp)).toEqual(moves(viaCli))
   })
 

@@ -8,7 +8,7 @@
   "brim_loop_rounding": "How many loops a brim prints: an even number of loops that fit in the brim width, or every whole loop that fits. Prusa projects set it when opened; the app does not list it.",
   "brim_object_gap": "Leaves a small gap between the brim and the part, in mm, so the brim snaps off cleanly. 0.1 to 0.2 mm is typical; too large and the brim stops holding the part down.",
   "brim_type": "Adds flat rings around the first layer to hold the part to the bed. Auto adds one only where the part needs it; mouse ears put small discs at the ears placed on a part, or under its sharp corners when it has none.",
-  "brim_use_efc_outline": "Lines the brim up with the first layer after elephant foot compensation shrinks it. Turn it on only when that compensation is large and the brim pulls away from the part.",
+  "brim_use_efc_outline": "Lines the brim up with the first layer after elephant foot compensation shrinks it, so a large compensation does not pull the brim away from the part. Prusa projects turn it on when opened.",
   "brim_width": "How far the brim reaches out from the part, in mm. A wider brim holds better against warping and takes longer to print and peel off; 3 to 8 mm covers most parts.",
   "draft_shield": "Builds the skirt up as a thin wall as tall as the print, which shields ABS and ASA from drafts on an open printer. Not needed in an enclosure.",
   "min_skirt_length": "Adds skirt loops until at least this much filament has gone through the nozzle, in mm. Use it to prime the nozzle when the start G-code draws no purge line; 0 turns it off.",
