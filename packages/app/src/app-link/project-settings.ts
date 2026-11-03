@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { PrintConfig, SettingDef, SettingValue } from '@slicerx/contracts'
 import { projectSettingsInput, projectSettingsReadInput } from '@slicerx/mcp/toolset'
-import { checkValues, sameValue, SETTINGS, settingDef } from '@slicerx/settings'
+import { checkValues, filamentOverrideList, sameValue, SETTINGS, settingDef } from '@slicerx/settings'
 import { takenFromFile } from '../lib/setting-text'
 import { activeMeta } from '../plate/plates'
 import { settingEditValue } from '../plate/setting-edit-value'
@@ -35,6 +35,15 @@ function typed(key: string, raw: unknown): SettingValue {
   const def = definition(key)
   if (def.type === 'string' && !takenFromFile(key, raw)) throw new LinkError('invalid_input', `${key} does not match its text setting grammar`)
   try {
+    // A filament's own value per slot keeps its nil entries (that filament on the printer's value), as the Filament
+    // dialog writes them; every other entry is checked as one value.
+    const list: unknown[] | undefined = Array.isArray(raw) ? raw : undefined
+    const own = list ? filamentOverrideList(key, list) : undefined
+    if (list && own !== undefined) {
+      if (list.length > 256) throw new Error(`${key} has the wrong number of values`)
+      for (const v of list) if (v !== 'nil') settingEditValue(def, [v])
+      return own
+    }
     return settingEditValue(def, raw)
   } catch (e) {
     throw new LinkError('invalid_input', e instanceof Error ? e.message : String(e))
@@ -74,7 +83,9 @@ export function editProjectSettings(args: Record<string, unknown>, client: strin
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
   const patch = Object.fromEntries(Object.entries(parsed.data.changes).map(([k, v]) => [k, typed(k, v)]))
   parsed.data.clear.forEach(definition)
-  const errors = checkValues(patch as PrintConfig).filter((i) => i.severity === 'error' || i.code === 'enum_value_unavailable')
+  // A filament's nil entries (the printer's value) are not values to check; the rest of its list is.
+  const checked = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, Array.isArray(v) && (v as unknown[]).includes('nil') ? (v as unknown[]).filter((x) => x !== 'nil') : v]))
+  const errors = checkValues(checked as PrintConfig).filter((i) => i.severity === 'error' || i.code === 'enum_value_unavailable')
   if (errors.length) throw new LinkError('invalid_input', errors.map((i) => i.message).join('; '))
   const s = get()
   if (s.plateLoading || s.historyEdit || s.rollback || s.dragging || s.liveEdit || s.slice.status === 'running') throw new LinkError('busy', 'Finish the current load, slice or edit before changing project settings')

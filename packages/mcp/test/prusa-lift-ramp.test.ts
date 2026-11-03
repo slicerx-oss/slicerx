@@ -33,7 +33,7 @@ describe('the ramp lift settings', () => {
       const set = await h.call('slicerx_project_set_overrides', { changes: { filament_travel_slope: [5], filament_z_hop: [0.6], filament_z_hop_types: ['Ramp Lift'] } })
       expect(set.isError, text(set)).toBeFalsy()
       const read = data<{ output: { overrides: Record<string, unknown> } }>(await h.call('slicerx_project_show')).output.overrides
-      expect(read).toMatchObject({ filament_travel_slope: [5], filament_z_hop_types: ['Ramp Lift'] })
+      expect(read).toMatchObject({ filament_travel_slope: [5], filament_z_hop: [0.6], filament_z_hop_types: ['Ramp Lift'] })
       const bad = await h.call('slicerx_project_set_overrides', { changes: { filament_travel_slope: [95] } })
       expect(bad.isError).toBe(true)
     } finally { await h.client.close() }
