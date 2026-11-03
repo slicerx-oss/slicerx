@@ -111,3 +111,45 @@ it('shows no card when the model fits', async () => {
   expect(screen.queryByTestId('fit-card')).toBeNull()
   expect(screen.getByTestId('send-button')).toBeEnabled()
 })
+
+describe('a 3MF project with several plates', () => {
+  const plates = [
+    { plate: 1, name: 'Base', objects: 3 },
+    { plate: 2, name: '', objects: 1 },
+    { plate: 4, name: 'Lid', objects: 2 },
+  ]
+
+  it('asks which plate, starts on the first, and sends only the one picked', async () => {
+    const p = props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, plates })
+    await render(<SendPrintScreen {...p} />)
+    expect(screen.getByText('Plate 1: Base')).toBeTruthy()
+    expect(screen.getByText('Plate 2')).toBeTruthy()
+    expect(screen.getByText('2 objects')).toBeTruthy()
+    expect(screen.getByTestId('plate-1')).toBeChecked()
+    expect(p.onSelectionChange).toHaveBeenLastCalledWith(expect.objectContaining({ modelId: 'm1', plate: 1 }))
+    await fireEvent.press(screen.getByTestId('plate-4'))
+    expect(screen.getByTestId('plate-4')).toBeChecked()
+    expect(screen.getByTestId('plate-1')).not.toBeChecked()
+    expect(p.onSelectionChange).toHaveBeenLastCalledWith(expect.objectContaining({ plate: 4 }))
+    await fireEvent.press(screen.getByTestId('send-button'))
+    expect(screen.getByText('Print Hex planter, plate 4?')).toBeTruthy()
+    expect(screen.getByText("Plate 4: Lid, 2 objects. The project's other plates are not sliced.")).toBeTruthy()
+    await fireEvent.press(screen.getByTestId('send-sheet-confirm'))
+    await waitFor(() => expect(p.onSend).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'm1', plate: 4 })))
+  })
+
+  it('shows no plate choice for a project with one plate', async () => {
+    const p = props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, plates: [plates[0]!] })
+    await render(<SendPrintScreen {...p} />)
+    expect(screen.queryByTestId('plate-1')).toBeNull()
+    expect(p.onSelectionChange).toHaveBeenLastCalledWith(expect.not.objectContaining({ plate: expect.anything() }))
+  })
+
+  it('tells the parent which model is chosen, so it can read the plates', async () => {
+    const onModelChange = jest.fn()
+    await render(<SendPrintScreen {...props({ onModelChange })} />)
+    await fireEvent.press(screen.getByTestId('model-choose'))
+    await fireEvent.press(screen.getByTestId('pick-m2'))
+    expect(onModelChange).toHaveBeenLastCalledWith('m2')
+  })
+})

@@ -5,7 +5,7 @@
 // transform built from a size alone pushed models off the bed. Without one the cloud
 // slicer centers the real mesh and sets it down.
 import { EASY_GOALS, type PrinterInfo, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
-import { estimateOf, runCloudSlice, type PhoneModel } from './slice-job'
+import { PROJECT_OVER_CAP, estimateOf, phoneCloudError, runCloudSlice, type PhoneModel } from './slice-job'
 import { boxStl } from './stl'
 import { createCloudStub } from './stub'
 
@@ -117,5 +117,52 @@ describe('the fit on the bed', () => {
     expect(tall.fit).toMatchObject({ fits: false, over: [0, 0, 44] })
     const project = await runCloudSlice(cloud, { model: model('Project.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
     expect(project.fit).toBeUndefined()
+  })
+})
+
+describe('a plate of a 3MF project', () => {
+  it('names the picked plate in options.plates, and nothing for a model with one plate', async () => {
+    const { cloud, sent } = recording()
+    await runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined)
+    await runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(sent[0]!.options?.plates).toEqual([2])
+    expect(sent[1]!.options).not.toHaveProperty('plates')
+  })
+})
+
+describe('cloud refusals in the phone words', () => {
+  const quotaAll = 'This account has used all 20 cloud slices for the last 24 hours. Slice on this device instead.'
+
+  it('says a 3MF over the upload cap is for the computer, from the check before upload and from the service', () => {
+    for (const m of [
+      "A model on this plate is 31.2 MB, over this account's cloud upload limit of 25 MB. Slice on this device instead.",
+      "This model is 31.2 MB, over this account's cloud upload limit of 25 MB. Slice on this device instead.",
+      'This model is 31.2 MB, over the cloud upload limit.',
+    ])
+      expect((phoneCloudError(new Error(m), 'Lantern.3mf') as Error).message).toBe('This project is over the 25 MB cloud limit. Slice it on your computer instead.')
+    expect(PROJECT_OVER_CAP).toBe('This project is over the 25 MB cloud limit. Slice it on your computer instead.')
+  })
+
+  it('keeps the plates left from a daily limit, without the step that does not apply on a phone', () => {
+    expect((phoneCloudError(new Error(quotaAll), 'Lantern.3mf') as Error).message).toBe('This account has used all 20 cloud slices for the last 24 hours.')
+    const service = 'this job slices 3 plates, and this account can slice 1 more plate today. Slice on this device instead.'
+    expect((phoneCloudError(new Error(service), 'Lantern.3mf') as Error).message).toBe('This job slices 3 plates, and this account can slice 1 more plate today.')
+    const before = 'This slice has 3 plates, and this account can slice 1 more plate in the cloud today.'
+    expect((phoneCloudError(new Error(before), 'Lantern.3mf') as Error).message).toBe(before)
+  })
+
+  it('leaves an STL over the cap and any other error as they are', () => {
+    const big = new Error("A model on this plate is 31.2 MB, over this account's cloud upload limit of 25 MB. Slice on this device instead.")
+    expect(phoneCloudError(big, 'Bracket.stl')).toBe(big)
+    const other = new Error('the cloud service answered 500')
+    expect(phoneCloudError(other, 'Lantern.3mf')).toBe(other)
+  })
+
+  it('rejects a send with the phone words', async () => {
+    const stub = createCloudStub({ stageMs: 0, queueMs: 0 })
+    const cloud: SlicerHost = { ...stub, slice: () => Promise.reject(new Error(quotaAll)) }
+    await expect(
+      runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined),
+    ).rejects.toThrow(/^This account has used all 20 cloud slices for the last 24 hours\.$/)
   })
 })
