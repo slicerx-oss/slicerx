@@ -411,7 +411,7 @@ if (result.isError) {
 
 ### Recipe E: printers
 
-If the app has its own printer connection, send `gcode_3mf_path` (Bambu Lab) or `gcode_path` (others) through it. Otherwise start the server with `--printers link` next to a running `sx-link`, list printers with `slicerx_printer_list` and queue with `slicerx_printer_queue`. The answer is `approval_required` or `needs_person`: show the user that SlicerX or their phone is asking them to confirm, and wait. Do not build an approve button that calls `slicerx_approve` with `approve: true`.
+If the app has its own printer connection, send `gcode_3mf_path` (Bambu Lab) or `gcode_path` (others) through it. Otherwise start the server with `--printers link` next to a running `sx-link`, list printers with `slicerx_printer_list` and queue with `slicerx_printer_queue`, passing `options` (such as `{"timelapse": true}`) for the Print sheet's print options the person picked; the rest take the printer's defaults. The answer is `approval_required` or `needs_person`: show the user that SlicerX or their phone is asking them to confirm, and wait. Do not build an approve button that calls `slicerx_approve` with `approve: true`.
 
 ### Recipe F: local AI
 

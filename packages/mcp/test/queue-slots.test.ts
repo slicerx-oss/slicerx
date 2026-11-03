@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // slicerx_printer_queue the way a client calls it, for a Bambu Lab printer: the hub gets a .gcode.3mf with the slot
-// map matched to what is loaded (or the client's own), the answer reads that map back, and a plate the printer cannot
-// feed is refused before any card.
+// map matched to what is loaded (or the client's own) and the print options the Print sheet would send, the answer
+// reads both back, and a plate the printer cannot feed or an option it does not have is refused before any card.
 import { join } from 'node:path'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { hashParams } from '@slicerx/contracts'
@@ -41,9 +41,28 @@ async function sliced(filament: { type?: string; color?: string } = {}) {
 
 interface Answer {
   status: string
+  request_id?: string
   lines: string[]
   file?: string
   slot_map?: Record<string, string>
+  options?: Record<string, boolean>
+}
+
+/** The print options a P1S starts with on the Print sheet. */
+const P1S = { bedLeveling: true, vibrationCompensation: false, timelapse: true }
+
+/** Bay 2 reporting itself as an A1 with a camera, as the printer list and its status give it. */
+function asA1(h: Awaited<ReturnType<typeof connect>>) {
+  const host = h.ctx.printers!.host
+  const list = host.list.bind(host)
+  const status = host.status.bind(host)
+  Object.assign(host, {
+    list: async () => (await list()).map((p) => (p.id === 'bay-2' ? { ...p, name: 'A1', model: 'A1' } : p)),
+    status: async (id: string) => {
+      const s = await status(id)
+      return id === 'bay-2' ? { ...s, model: 'A1', cameraAvailable: true } : s
+    },
+  })
 }
 
 describe('slicerx_printer_queue to a Bambu Lab printer', () => {
@@ -62,7 +81,7 @@ describe('slicerx_printer_queue to a Bambu Lab printer', () => {
     const w = sent[0]?.work
     if (w?.kind !== 'print') throw new Error('expected print work')
     expect(w.file.kind).toBe('gcode.3mf')
-    expect(w.opts).toEqual({ slotMap: { 0: 'A2' } })
+    expect(w.opts).toEqual({ ...P1S, slotMap: { 0: 'A2' } })
     // The card the person approves binds the same file and the same map.
     const start = await hashParams({ printerId: 'bay-2', name: w.file.name, opts: w.opts, sha256: w.file.sha256 })
     expect(sent[0]?.request.actions[1]).toEqual({ action: 'printer.start', target: 'bay-2', paramsHash: start })
@@ -81,7 +100,7 @@ describe('slicerx_printer_queue to a Bambu Lab printer', () => {
     expect(a.slot_map).toEqual({ 0: 'A1' })
     expect(a.lines).toContain('Filament slots: filament 1 from slot A1')
     const w = sent[0]?.work
-    expect(w?.kind === 'print' ? w.opts : null).toEqual({ slotMap: { 0: 'A1' } })
+    expect(w?.kind === 'print' ? w.opts : null).toEqual({ ...P1S, slotMap: { 0: 'A1' } })
   })
 
   it('refuses a plate with no loaded slot of its material, before any card, in words to pass on', async () => {
@@ -100,6 +119,63 @@ describe('slicerx_printer_queue to a Bambu Lab printer', () => {
     const r = await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1, slotMap: { '0': 'A1', '1': 'A1' } })
     expect(r.isError).toBe(true)
     expect(data<{ error: { code: string } }>(r).error.code).toBe('duplicate_slot')
+    expect(sent).toEqual([])
+  })
+})
+
+describe('slicerx_printer_queue print options on an A1', () => {
+  it("hands the hub the client's options over the A1's defaults, lists every one on the card and reads them back", async () => {
+    const { h, sent } = await sliced()
+    asA1(h)
+    const r = await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1, options: { timelapse: true, bedLeveling: false } })
+    expect(r.isError, text(r)).toBeFalsy()
+    const a = data<Answer>(r)
+    expect(a.status).toBe('needs_person')
+    // An A1 starts with flow dynamics calibration on and vibration compensation off, and has no first layer inspection.
+    const options = { bedLeveling: false, flowCalibration: true, vibrationCompensation: false, timelapse: true }
+    expect(a.options).toEqual(options)
+    expect(a.lines).toEqual(expect.arrayContaining(['Bed leveling: off', 'Flow dynamics calibration: on', 'Vibration compensation: off', 'Timelapse: on']))
+    expect(a.lines.join(' ')).not.toContain('First layer inspection')
+    expect(text(r)).toContain('- Timelapse: on')
+    const w = sent[0]?.work
+    if (w?.kind !== 'print') throw new Error('expected print work')
+    expect(w.opts).toEqual({ ...options, slotMap: { 0: 'A1' } })
+    // The start the person approves is bound to exactly these options.
+    const start = await hashParams({ printerId: 'bay-2', name: w.file.name, opts: w.opts, sha256: w.file.sha256 })
+    expect(sent[0]?.request.actions[1]).toEqual({ action: 'printer.start', target: 'bay-2', paramsHash: start })
+    // The list a client checks reads the same options back.
+    const pending = data<{ pending: { request_id: string; options?: Record<string, boolean>; lines: string[] }[] }>(await h.call('slicerx_pending_approvals', {})).pending
+    expect(pending.find((p) => p.request_id === a.request_id)).toMatchObject({ options, lines: expect.arrayContaining(['Timelapse: on']) })
+  })
+
+  it("sends the A1's own defaults when the client names no options", async () => {
+    const { h, sent } = await sliced()
+    asA1(h)
+    const a = data<Answer>(await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1 }))
+    expect(a.options).toEqual({ bedLeveling: true, flowCalibration: true, vibrationCompensation: false, timelapse: false })
+    expect(a.lines).toContain('Timelapse: off')
+    const w = sent[0]?.work
+    expect(w?.kind === 'print' ? w.opts : null).toEqual({ bedLeveling: true, flowCalibration: true, vibrationCompensation: false, timelapse: false, slotMap: { 0: 'A1' } })
+  })
+
+  it('refuses first layer inspection on an A1 before any card, naming the options it has', async () => {
+    const { h, sent } = await sliced()
+    asA1(h)
+    const r = await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1, options: { firstLayerInspection: true } })
+    expect(r.isError).toBe(true)
+    expect(data<{ error: { code: string; message: string } }>(r).error).toEqual({
+      code: 'unsupported_option',
+      message: 'A1 has no first layer inspection, so nothing was sent: leave it out of options. It offers bed leveling, flow dynamics calibration, vibration compensation and timelapse.',
+    })
+    expect(sent).toEqual([])
+  })
+
+  it('refuses an option name the Print sheet does not have', async () => {
+    const { h, sent } = await sliced()
+    asA1(h)
+    const r = await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1, options: { timeLapse: true } })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/timeLapse/)
     expect(sent).toEqual([])
   })
 })

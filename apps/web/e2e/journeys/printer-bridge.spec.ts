@@ -580,7 +580,8 @@ test.describe(BAMBU, () => {
 
   // A client queues the plate over MCP, as a partner app does with slicerx-mcp: the hub gets a .gcode.3mf with each
   // filament matched to a loaded slot, the person approves the card in the app, and the printer starts it with
-  // `project_file`, the AMS mapping and use_ams on. Before, a client's send went as plain G-code with no mapping.
+  // `project_file`, the AMS mapping and use_ams on. Before, a client's send went as plain G-code with no mapping. The
+  // client's print options go with it over the A1's Print sheet defaults, and the card names each one.
   test('A1 with an AMS lite: a client queue send starts a .gcode.3mf from the matched slot', async ({ page }) => {
     test.slow()
     await idleAgain('a1')
@@ -603,9 +604,10 @@ test.describe(BAMBU, () => {
         const r = await mcp.call(tool, args)
         expect(r.isError, `${tool}: ${JSON.stringify(r.content)}`).toBeFalsy()
       }
-      const q = await mcp.call('slicerx_printer_queue', { printerId: 'a1', plate: 1 })
-      // Read back: the file and the slot map the hub was handed.
-      expect(q.structuredContent, JSON.stringify(q.content)).toMatchObject({ status: 'needs_person', request_id: expect.any(String), slot_map: { 0: target.id } })
+      const q = await mcp.call('slicerx_printer_queue', { printerId: 'a1', plate: 1, options: { bedLeveling: false } })
+      // Read back: the file, the slot map and the print options the hub was handed. Flow dynamics calibration is on, as an
+      // A1's Print sheet starts it.
+      expect(q.structuredContent, JSON.stringify(q.content)).toMatchObject({ status: 'needs_person', request_id: expect.any(String), slot_map: { 0: target.id }, options: { bedLeveling: false, flowCalibration: true, vibrationCompensation: false } })
       expect(String(q.structuredContent?.['file'])).toMatch(/\.gcode\.3mf$/)
       stopWatching = hub.admin.onApprovalDone((done) => {
         if (done.requestId === q.structuredContent?.['request_id']) completed = done
@@ -616,14 +618,19 @@ test.describe(BAMBU, () => {
       // The card in the app shows the slot the print starts from; the person approves it.
       const card = page.locator('dialog.approve-dialog[open]')
       await expect(card).toContainText(`filament 1 from slot ${target.id}`, { timeout: 30_000 })
+      await expect(card).toContainText('Bed leveling off')
+      await expect(card).toContainText('Flow dynamics calibration on')
       await card.getByRole('button', { name: 'Bed is clear, approve' }).click()
       await expect.poll(async () => (await starts()).length, { message: 'the printer got a project_file start', timeout: 60_000 }).toBeGreaterThan(before)
-      const start = JSON.parse((await starts()).at(-1)!.slice('project_file '.length)) as { param: string; url: string; ams_mapping: number[]; use_ams: boolean }
+      const start = JSON.parse((await starts()).at(-1)!.slice('project_file '.length)) as { param: string; url: string; ams_mapping: number[]; use_ams: boolean; bed_levelling?: boolean; flow_cali?: boolean }
       expect(start.param).toBe('Metadata/plate_1.gcode')
       expect(start.url).toMatch(/\.gcode\.3mf$/)
       // AMS lite slot A<n> is tray n - 1.
       expect(start.ams_mapping).toEqual([Number(target.id.slice(1)) - 1])
       expect(start.use_ams).toBe(true)
+      // The options the person approved reach the printer.
+      expect(start.bed_levelling).toBe(false)
+      expect(start.flow_cali).toBe(true)
       // Receipt at the printer can precede the hub recording the start. Finish before resetting it.
       await expect.poll(() => completed, { timeout: 60_000 }).toMatchObject({ ok: true })
     } finally {
