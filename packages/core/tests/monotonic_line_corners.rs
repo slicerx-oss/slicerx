@@ -496,13 +496,16 @@ fn the_beaded_corners_and_totals_hold() {
 
 // Corners of other angles, on plates of 40 prisms 3 mm tall built here. Island k of a plate moves along x so that a
 // fixed point of it steps across the bed-fixed line grid in 1/80 of the line pitch, so the corners sample every
-// offset against the lines.
+// offset against the lines. A plate name ending in `-sqf` lays its islands as the sqf plate does instead: island k
+// moves k times 0.0135 mm along x, so its corners fall into a few clusters of offsets.
 //
 // - At a run-in corner of 75 to 105 degrees, u is how far the shorter leg's line end sits from the corner across the
 //   lines. A free corner gets exactly one bead when u is 0.107 to 0.150 mm (asserted from 0.110 to 0.147), none from
 //   0.153 or up to 0.103; a linked one gets none. The bead runs along the longer leg's wall, 1.73 u - 0.10 mm wide.
 // - Corners a line cuts across get no gap fill near them, nor do run-in tips at 60 and 75 degrees whose two lines
 //   the chain links.
+// - Nor do the base corners of a 60 degree tip (60 degrees, bisector 60 degrees off the lines), where the first line
+//   runs from one wall to the other across the corner.
 
 /// The line pitch of the stock A1 top, mm.
 const PITCH: f64 = 0.37707;
@@ -518,11 +521,22 @@ fn spot(k: usize, step: f64) -> P {
     (x + (s - kf * PITCH / 80.0).rem_euclid(PITCH) / r, y)
 }
 
+/// Where island `k` of a `-sqf` plate on a grid of `step` mm sits: in rows of 8, moved k times 0.0135 mm along x.
+fn sqf_spot(k: usize, step: f64) -> P {
+    #[allow(clippy::cast_precision_loss, reason = "small island indices")]
+    let (col, row, kf) = ((k % 8) as f64, (k / 8) as f64, k as f64);
+    (20.0 + col * step + kf * 0.0135, 20.0 + row * step)
+}
+
 /// A plate of 40 convex islands, counterclockwise: `rh<deg>` rhombi with 6 mm sides whose `deg` corners sit at both
 /// ends of the diagonal along the lines (run-in corners) and whose other two are cut corners, `tip<deg>` isosceles
 /// triangles with 8 mm legs and the apex bisector along the lines, `ctip<deg>` the same with the bisector across them.
 fn islands(name: &str) -> Vec<Vec<P>> {
     let at = |a: f64| (a.to_radians().cos(), a.to_radians().sin());
+    let (name, spot): (&str, fn(usize, f64) -> P) = match name.strip_suffix("-sqf") {
+        Some(n) => (n, sqf_spot),
+        None => (name, spot),
+    };
     (0..40)
         .map(|k| {
             if let Some(deg) = name.strip_prefix("rh") {
@@ -861,6 +875,35 @@ fn linked_run_in_tips_get_no_bead() {
         assert!(
             wrong.is_empty(),
             "{name}: {} linked tip(s) beaded: {wrong:?}",
+            wrong.len()
+        );
+    }
+}
+
+#[test]
+fn the_base_corners_of_a_60_degree_tip_get_no_gap_fill() {
+    for name in ["tip60", "tip60-sqf"] {
+        let all = turns(name);
+        let base: Vec<&Turn> = all.iter().filter(|c| !c.run_in && !c.cut).collect();
+        assert!(base.len() >= 70, "{name}: {} base corners", base.len());
+        let wrong: Vec<String> = base
+            .iter()
+            .filter(|c| !c.beads.is_empty())
+            .map(|c| {
+                format!(
+                    "{:.0} degrees at ({:.3}, {:.3}), a {:.3}: {} move(s) {:.3} wide",
+                    c.angle,
+                    c.at.0,
+                    c.at.1,
+                    c.a,
+                    c.beads.len(),
+                    c.beads[0].width
+                )
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{name}: {} base corner(s) with gap fill: {wrong:?}",
             wrong.len()
         );
     }
