@@ -20,7 +20,6 @@
    "filament_unload_time": "machine_unload_filament_time",
    "long_retraction_when_cut": "long_retractions_when_cut",
    "max_volumetric_speed": "filament_max_volumetric_speed",
-   "overhang_totally_speed": "overhang_4_4_speed",
    "retraction_distance_when_cut": "retraction_distances_when_cut",
    "role_base_wipe_speed": "role_based_wipe_speed",
    "top_one_wall_type": "only_one_wall_top",

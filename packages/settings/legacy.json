@@ -328,7 +328,6 @@
   "filament_load_time",
   "filament_unload_time",
   "smooth_coefficient",
-  "overhang_totally_speed",
   "overhang_speed_classic",
   "anisotropic_surfaces"
  ],

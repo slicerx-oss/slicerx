@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 767 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 768 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -13,7 +13,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
 - [Multi material](process-multimaterial.md): 43 settings
-- [Overhangs and bridges](process-overhangs.md): 29 settings
+- [Overhangs and bridges](process-overhangs.md): 30 settings
 - [Profile metadata](process-profile.md): 8 settings
 - [Quality and geometry](process-quality.md): 96 settings
 - [Retraction](process-retraction.md): 2 settings
@@ -503,6 +503,7 @@ Alphabetical, each linking to its group file.
 - `overhang_reverse`: Overhang reverse, [process/overhangs](process-overhangs.md#overhang_reverse)
 - `overhang_reverse_internal_only`: Overhang reverse internal only, [process/overhangs](process-overhangs.md#overhang_reverse_internal_only)
 - `overhang_reverse_threshold`: Overhang reverse threshold, [process/overhangs](process-overhangs.md#overhang_reverse_threshold)
+- `overhang_totally_speed`: Fully clear overhang speed, [process/overhangs](process-overhangs.md#overhang_totally_speed)
 - `parallel_printheads_bed_exclude_areas`: Bed areas excluded for parallel heads, [printer/machine](printer-machine.md#parallel_printheads_bed_exclude_areas)
 - `parallel_printheads_count`: Parallel printheads count, [printer/machine](printer-machine.md#parallel_printheads_count)
 - `parking_pos_retraction`: Parking pos retraction, [printer/retraction](printer-retraction.md#parking_pos_retraction)
