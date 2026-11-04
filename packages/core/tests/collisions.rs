@@ -1401,3 +1401,80 @@ fn collision_positions_are_machine_coordinates_on_a_bed_that_does_not_start_at_z
         "{lo:?} {hi:?}"
     );
 }
+
+#[test]
+fn a_report_with_collisions_carries_the_plate_they_are_on_and_a_clean_one_none() {
+    let cfg = json!({
+        "extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40,
+        "printable_area": ["0x0", "256x0", "256x256", "0x256"],
+        "bed_exclude_area": ["0x0", "18x0", "18x28", "0x28"],
+    });
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 140.0, 100.0),
+        ],
+        cfg.clone(),
+        json!({}),
+    );
+    assert!(!r.report.collisions.is_empty());
+    let plate = r
+        .report
+        .collision_plate
+        .as_ref()
+        .expect("the plate of the collisions");
+    assert_eq!(
+        plate.bed,
+        [[0.0, 0.0], [256.0, 0.0], [256.0, 256.0], [0.0, 256.0]]
+    );
+    // Every object the collisions name is on it, under the same id, with its footprint where the request put it.
+    let ids: Vec<&str> = plate.objects.iter().map(|o| o.id.as_str()).collect();
+    assert_eq!(ids, ["tall", "low"]);
+    for c in &r.report.collisions {
+        assert!(
+            ids.contains(&c.object_id.as_str()) && ids.contains(&c.hit_id.as_str()),
+            "{c:?}"
+        );
+    }
+    let tall = &plate.objects[0];
+    assert_eq!(tall.name, "tall");
+    let (xs, ys): (Vec<f64>, Vec<f64>) = tall.hull.iter().map(|p| (p[0], p[1])).unzip();
+    let span = |v: &[f64]| {
+        [
+            v.iter().copied().fold(f64::MAX, f64::min),
+            v.iter().copied().fold(f64::MIN, f64::max),
+        ]
+    };
+    assert_eq!(
+        (span(&xs), span(&ys)),
+        ([60.0, 80.0], [100.0, 120.0]),
+        "{:?}",
+        tall.hull
+    );
+    assert_eq!(plate.zones.len(), 1);
+    assert_eq!(plate.zones[0].id, "exclusion-area");
+    assert_eq!(plate.zones[0].outline.len(), 4);
+    let written = serde_json::to_value(&r.report).unwrap();
+    assert_eq!(
+        written["collisionPlate"]["objects"][1]["id"], "low",
+        "{}",
+        written["collisionPlate"]
+    );
+
+    // In the order that clears it, the report has no plate and its JSON no key for one.
+    let r = run(
+        &[
+            ("low", block(20.0, 20.0, 6.0), 140.0, 100.0),
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+        ],
+        cfg,
+        json!({}),
+    );
+    assert!(r.report.collisions.is_empty() && r.report.collision_plate.is_none());
+    assert!(
+        serde_json::to_value(&r.report)
+            .unwrap()
+            .get("collisionPlate")
+            .is_none()
+    );
+}

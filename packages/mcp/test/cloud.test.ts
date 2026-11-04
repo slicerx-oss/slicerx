@@ -216,6 +216,76 @@ describe('cloud slicing a whole 3MF project', () => {
     expect(await res.text()).toBe(mockPlateGcode(2))
   })
 
+  it('reads back the collisions of each plate as the slice tools give them: named, on the plate, layers from 1', async () => {
+    const svc = mockCloudService()
+    // Plate 2 of the project prints its second build item into a keep-out zone, on a bed centered on 0, 0; plate 1 is clean.
+    svc.extra = (n) =>
+      n === 2
+        ? {
+            collisions: [{ kind: 'keep_out', severity: 'hit', part: 'nozzle', objectId: 'o0-2', hitId: 'exclusion-area', damagedId: 'o0-2', layer: 0, segment: 3, timeS: 12.4, lastLayer: 4, at: [-120, -120, 0.2], point: [-120, -120, 0.2], worstLayer: 0, worstPoint: [-120, -120, 0.2], depthMm: 0, hitHeightMm: 0, contactMin: [-124, -125, 0.2], contactMax: [-118, -116, 1] }],
+            collisionFixes: [{ kind: 'move_object', costS: 0, clears: [0], oneClick: false }],
+            collisionPlate: {
+              bed: [[-128, -128], [128, -128], [128, 128], [-128, 128]],
+              objects: [
+                { id: 'o0-1', name: 'Base', hull: [[0, 0], [20, 0], [20, 20], [0, 20]] },
+                { id: 'o0-2', name: 'Hook', hull: [[-125, -125], [-115, -125], [-115, -115], [-125, -115]] },
+              ],
+              zones: [{ id: 'exclusion-area', outline: [[-128, -128], [-110, -128], [-110, -100], [-128, -100]] }],
+            },
+          }
+        : {}
+    const h = await connect({ cloud: { apiUrl: 'http://127.0.0.1:8787', token: 'sxk_test', fetch: svc.fetch } })
+    const r = await h.call('slicerx_cloud_slice', { model: project(h.dir), plates: [1, 2] })
+    expect(r.isError, text(r)).toBeFalsy()
+    const jobId = data<{ output: { jobId: string } }>(r).output.jobId
+    type Got = { collisions?: unknown[]; plates?: (Plate & { collisions?: unknown[] })[]; result?: Record<string, unknown> }
+    const got = data<{ output: Got }>(await h.call('slicerx_cloud_jobs', { job_id: jobId })).output
+    const [one, two] = got.plates!
+    expect(one?.collisions).toBeUndefined()
+    expect(two?.collisions).toEqual([
+      {
+        index: 0,
+        kind: 'keep_out',
+        severity: 'hit',
+        part: 'nozzle',
+        object_id: 'o0-2',
+        object_name: 'Hook',
+        hit_id: 'exclusion-area',
+        hit_kind: 'zone',
+        damaged_id: 'o0-2',
+        first_layer: 1,
+        last_layer: 5,
+        time_s: 12,
+        contact_point: [8, 8, 0.2],
+        contact_box: { min: [4, 3, 0.2], max: [10, 12, 1] },
+        depth_mm: 0,
+      },
+    ])
+    // The job's own result is plate 1, which is clean: no collisions, and the engine's copies are never passed on raw.
+    expect(got.collisions).toBeUndefined()
+    expect(got.result?.['collisions']).toBeUndefined()
+    expect(got.result?.['collisionPlate']).toBeUndefined()
+  })
+
+  it('reads back the collisions of a job that names no plates, with its fixes as the engine wrote them', async () => {
+    const svc = mockCloudService()
+    svc.extra = () => ({
+      collisions: [{ kind: 'gantry', severity: 'hit', part: 'gantry', objectId: 'o0-2', hitId: 'o0-1', damagedId: 'o0-1', layer: 30, segment: 1, timeS: 812.6, lastLayer: 40, at: [70, 110, 25], point: [70, 110, 25], worstLayer: 35, worstPoint: [70, 110, 25.2], depthMm: 4.8, hitHeightMm: 30, limitMm: 25, contactMin: [60, 100, 25.2], contactMax: [80, 120, 30] }],
+      collisionFixes: [{ kind: 'reorder', costS: 0, clears: [0], oneClick: true, order: ['o0-2', 'o0-1'] }],
+      collisionPlate: { bed: [[0, 0], [256, 0], [256, 256], [0, 256]], objects: [{ id: 'o0-1', name: 'Tower', hull: [] }, { id: 'o0-2', name: 'Base', hull: [] }], zones: [] },
+    })
+    const h = await connect({ cloud: { apiUrl: 'http://127.0.0.1:8787', token: 'sxk_test', fetch: svc.fetch } })
+    const r = await h.call('slicerx_cloud_slice', { model: project(h.dir) })
+    const jobId = data<{ output: { jobId: string } }>(r).output.jobId
+    const got = data<{ output: { collisions?: Record<string, unknown>[]; result?: Record<string, unknown> } }>(await h.call('slicerx_cloud_jobs', { job_id: jobId })).output
+    expect(got.collisions).toHaveLength(1)
+    expect(got.collisions![0]).toMatchObject({ object_id: 'o0-2', object_name: 'Base', hit_id: 'o0-1', hit_kind: 'object', damaged_id: 'o0-1', first_layer: 31, contact_point: [70, 110, 25.2], limit_mm: 25 })
+    expect(got.result?.['collisionFixes']).toEqual([{ kind: 'reorder', costS: 0, clears: [0], oneClick: true, order: ['o0-2', 'o0-1'] }])
+    // The list of recent jobs says the same.
+    const list = data<{ output: { jobs: { collisions?: unknown[] }[] } }>(await h.call('slicerx_cloud_jobs', {})).output.jobs
+    expect(list[0]?.collisions).toEqual(got.collisions)
+  })
+
   it('refuses plates the day has no room for, plates of an STL and a plate named twice, before any upload', async () => {
     const svc = mockCloudService()
     svc.access = { invited: true, jobsPerDay: 20, jobsToday: 18, maxUploadBytes: 25 * 1_048_576 }

@@ -677,12 +677,78 @@ pub struct SliceReport {
     /// Fixes for the collisions, with what they cost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collision_fixes: Vec<crate::collide::CollisionFix>,
+    /// The plate the collisions are on, for a client that draws them; present only with collisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collision_plate: Option<CollisionPlate>,
     /// What the request's config set that this slice did not use; absent when it used everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_report: Option<ConfigReport>,
     /// The filaments each object's features printed with, one entry per plate object in plate order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feature_filaments: Vec<FeatureFilaments>,
+}
+
+/// The plate as the collision check saw it, in the machine's coordinates as the collisions are, mm: the printable area,
+/// each plate object's footprint and the keep-out zones. The slice report's `collisionPlate`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollisionPlate {
+    /// The printable area's outline.
+    pub bed: Vec<[f64; 2]>,
+    /// Every plate object, under the id the collisions name it by.
+    pub objects: Vec<CollisionPlateObject>,
+    /// The zones the printer keeps clear.
+    pub zones: Vec<CollisionPlateZone>,
+}
+
+/// One plate object of a [`CollisionPlate`]: its id, its name and the convex hull of its outline from above,
+/// counterclockwise.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollisionPlateObject {
+    pub id: String,
+    pub name: String,
+    pub hull: Vec<[f64; 2]>,
+}
+
+/// One keep-out zone of a [`CollisionPlate`], by the id a collision names it with (`exclusion-area`,
+/// `wrap-check-zone`), and its outline.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollisionPlateZone {
+    pub id: String,
+    pub outline: Vec<[f64; 2]>,
+}
+
+/// The plate `collisions` are on ([`CollisionPlate`]), or `None` when there are none. Positions to 0.01 mm.
+fn collision_plate(
+    session: &SliceSession,
+    config: &PrintConfig,
+    collisions: &[crate::collide::Collision],
+) -> Option<CollisionPlate> {
+    if collisions.is_empty() {
+        return None;
+    }
+    let mm = |p: &[f64; 2]| p.map(|v| (v * 100.0).round() / 100.0 + 0.0);
+    Some(CollisionPlate {
+        bed: config.printable_area.iter().map(mm).collect(),
+        objects: session
+            .footprints()
+            .iter()
+            .map(|f| CollisionPlateObject {
+                id: f.id.clone(),
+                name: f.name.clone(),
+                hull: f.hull.iter().map(mm).collect(),
+            })
+            .collect(),
+        zones: crate::collide::plate::zones(config)
+            .into_iter()
+            .map(|(kind, outline)| CollisionPlateZone {
+                id: crate::collide::plate::zone_id(kind).to_owned(),
+                outline: outline.iter().map(mm).collect(),
+            })
+            .collect(),
+    })
 }
 
 /// The filaments one object's features printed with, read from the sliced paths: what the slice resolved each
@@ -2688,6 +2754,7 @@ fn run_prepared_timed(
     );
     report.collisions = collisions.collisions;
     report.collision_fixes = collisions.fixes;
+    report.collision_plate = collision_plate(&held.get().session, &config, &report.collisions);
     for skipped in &thumb_skipped {
         report.warnings.push(SliceWarning {
             code: WarningCode::UnsupportedSetting,
@@ -2823,6 +2890,15 @@ pub const RESULT_SCHEMA: &str = r#"{
       "items": {
         "type": "object", "required": ["file", "plates", "sliced", "text"],
         "properties": { "file": { "type": "string" }, "plates": { "type": "integer", "minimum": 2 }, "sliced": { "type": "integer", "minimum": 1 }, "text": { "type": "string" } }
+      }
+    },
+    "collisionPlate": {
+      "type": "object", "description": "Present only with collisions: the plate they are on, mm in the machine's coordinates as the collisions are: the printable area, each plate object by the id the collisions name it with and the convex hull of its outline from above, and the keep-out zones",
+      "required": ["bed", "objects", "zones"],
+      "properties": {
+        "bed": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 } },
+        "objects": { "type": "array", "items": { "type": "object", "required": ["id", "name", "hull"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "hull": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 } } } } },
+        "zones": { "type": "array", "items": { "type": "object", "required": ["id", "outline"], "properties": { "id": { "enum": ["exclusion-area", "wrap-check-zone"] }, "outline": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 } } } } }
       }
     },
     "layerCount": { "type": "integer", "minimum": 0 },

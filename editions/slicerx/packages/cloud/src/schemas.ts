@@ -30,6 +30,17 @@ const reportFields = {
   gcodeBytes: z.number().int().nonnegative(),
   gcodeSha256: z.string(),
   previewBytes: z.number().int().nonnegative(),
+  /** The engine's collisions, their fixes and the plate they are on, and where the prime tower stands, as written. */
+  collisions: z.array(z.looseObject({ objectId: z.string(), hitId: z.string() })).optional(),
+  collisionFixes: z.array(z.looseObject({})).optional(),
+  collisionPlate: z
+    .looseObject({
+      bed: z.array(z.tuple([z.number(), z.number()])),
+      objects: z.array(z.looseObject({ id: z.string(), name: z.string(), hull: z.array(z.tuple([z.number(), z.number()])) })),
+      zones: z.array(z.looseObject({ id: z.string(), outline: z.array(z.tuple([z.number(), z.number()])) })),
+    })
+    .optional(),
+  primeTower: z.looseObject({}).optional(),
 }
 
 /** One plate of a job that named its plates (`options.plates`): its report, or why it did not slice. */
