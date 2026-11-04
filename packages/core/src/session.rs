@@ -10675,7 +10675,15 @@ impl SliceSession {
                         if let (Some(_), Some(p)) = (stretch, pitch.get_mut(which)) {
                             *p = p.max(surface_mm);
                         }
-                        let outer = perimeters::offset(&region, -mm(0.05 * surface_mm + end_edge));
+                        // A stretched top or first-layer piece's lines end 0.05 of the surface's own spacing inside
+                        // its free edges, whatever pitch they spread to (measured on fixed and variable-width walls,
+                        // not on Bambu Lab printers, which keep 0.05 of the pitch).
+                        let ends_mm = if stretch.is_some() && !bambu_stretch {
+                            nominal_mm
+                        } else {
+                            surface_mm
+                        };
+                        let outer = perimeters::offset(&region, -mm(0.05 * ends_mm + end_edge));
                         let inner_c = perimeters::offset(lines_in.as_ref().unwrap_or(&region), -inset);
                         let family = crate::infill::Family {
                             dir: d,
