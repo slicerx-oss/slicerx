@@ -537,6 +537,7 @@ pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) 
     edge_on_gap(&mut mapped);
     skirt_from_nominal_brim(&mut mapped);
     brim_whole_loops(&mut mapped);
+    objects_in_a_chain(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
 }
@@ -590,6 +591,15 @@ fn skirt_from_nominal_brim(mapped: &mut Map<String, Value>) {
 fn brim_whole_loops(mapped: &mut Map<String, Value>) {
     if mapped.contains_key("brim_width") {
         mapped.insert("brim_loop_rounding".to_owned(), Value::String("whole".to_owned()));
+    }
+}
+
+/// A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
+/// the shortest links between them printed from the end `objorder::chain` picks (`object_order_rule`
+/// `chain`). The same as `prusaProjectSettings` in the settings package.
+fn objects_in_a_chain(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("object_order_rule".to_owned(), Value::String("chain".to_owned()));
     }
 }
 

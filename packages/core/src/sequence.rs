@@ -595,10 +595,11 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
                 .map_or([0.0, 0.0], |o| o.center)
         })
         .collect();
-    let order: Vec<(usize, usize, usize)> = crate::objorder::order(&centers)
-        .into_iter()
-        .filter_map(|i| runs.get(i).copied())
-        .collect();
+    let order: Vec<(usize, usize, usize)> =
+        crate::objorder::order_by(crate::objorder::rule(config), &centers)
+            .into_iter()
+            .filter_map(|i| runs.get(i).copied())
+            .collect();
     if order.len() != runs.len() {
         return;
     }
@@ -631,10 +632,16 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
 }
 
 /// Puts each filament's paths of a merged layer (`groups`, path indexes in the layer's object order) in the order of
-/// that filament's objects alone (`objorder::run`), when the layer has several filaments: an object of several
+/// that filament's objects alone (`objorder::run_by`), when the layer has several filaments: an object of several
 /// filaments takes its place among each one's objects. Each object's paths keep their order, and the paths of no
 /// object the layer starts with (the skirt) stay first.
-fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &mut [Vec<usize>]) {
+fn in_run_order(
+    session: &SliceSession,
+    rule: crate::objorder::Rule,
+    l: &LayerPaths,
+    src: &Sources,
+    groups: &mut [Vec<usize>],
+) {
     if groups.len() < 2 || src.runs.len() < 2 {
         return;
     }
@@ -666,7 +673,10 @@ fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &
             continue;
         }
         let mut place: Vec<(usize, usize)> = Vec::new();
-        for (n, j) in crate::objorder::run(&centers, with).into_iter().enumerate() {
+        for (n, j) in crate::objorder::run_by(rule, &centers, with)
+            .into_iter()
+            .enumerate()
+        {
             if let Some(&k) = objects.get(j) {
                 place.push((k, n + 1));
             }
@@ -813,7 +823,7 @@ fn print_layer_as_plate(
         })
         .collect();
     if runs {
-        in_run_order(session, l, src, &mut groups);
+        in_run_order(session, crate::objorder::rule(layer_cfg), l, src, &mut groups);
     }
     // The print's first layer prints with its own line widths, the tower's too.
     let first = matches!(session.plate_tower_layer(layer_cfg, g, start), Some((at, None)) if at.first);

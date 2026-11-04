@@ -98,7 +98,8 @@ pub(crate) fn slice(
             .map_or([0.0, 0.0], |o| o.center)
     };
     let all: Vec<&crate::session::Instance> = session.instances().iter().collect();
-    let copies = in_order(&all, &centers);
+    let rule = crate::objorder::rule(config);
+    let copies = in_order(rule, &all, &centers);
     let mut info = crate::output::FirstLayerInfo::default();
     for c in &copies {
         #[allow(clippy::cast_possible_truncation, reason = "outlines are single precision")]
@@ -142,7 +143,7 @@ pub(crate) fn slice(
         let on = if on.len() == copies.len() {
             on
         } else {
-            in_order(&on, &centers)
+            in_order(rule, &on, &centers)
         };
         for c in &on {
             let Some(l) = outs
@@ -192,15 +193,16 @@ pub(crate) fn slice(
     Ok(out)
 }
 
-/// `copies` in print order on a layer (`objorder::order`), numbered for its ties by their plate objects.
+/// `copies` in print order on a layer by `rule` (`objorder::order_by`), numbered for its ties by their plate objects.
 fn in_order<'a>(
+    rule: crate::objorder::Rule,
     copies: &[&'a crate::session::Instance],
     center: &dyn Fn(&crate::session::Instance) -> [f64; 2],
 ) -> Vec<&'a crate::session::Instance> {
     let mut numbered = copies.to_vec();
     crate::sorting::sort_by_key(&mut numbered, |c| c.object);
     let centers: Vec<[f64; 2]> = numbered.iter().map(|c| center(c)).collect();
-    crate::objorder::order(&centers)
+    crate::objorder::order_by(rule, &centers)
         .into_iter()
         .filter_map(|k| numbered.get(k).copied())
         .collect()

@@ -542,6 +542,10 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // A project with a brim width prints every whole loop its width fits, odd counts too. The same as the engine's
   // project read.
   if ('brim_width' in values) values['brim_loop_rounding'] = 'whole'
+  // A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
+  // the shortest links between them printed from the end the engine's order picks. The same as the engine's project
+  // read.
+  if ('brim_width' in values) values['object_order_rule'] = 'chain'
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {
     const list = splitStrings(colors).map((c) => c.trim()).filter((c) => /^#[0-9A-Fa-f]{6}$/.test(c))

@@ -152,6 +152,7 @@
         "skirt_loops": "1",
         "skirt_brim_edge": "nominal",
         "brim_loop_rounding": "whole",
+        "object_order_rule": "chain",
         "slice_closing_radius": "0.049",
         "slicing_mode": "regular",
         "slow_down_layer_time": "5",
