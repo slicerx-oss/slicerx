@@ -508,4 +508,24 @@ mod tests {
             .collect();
         assert!(is_smooth(&round, 155f64.to_radians(), 0.4));
     }
+
+    #[test]
+    fn the_overhang_threshold_reads_a_percent_sign() {
+        // A project writes the threshold as "60%", a request as 60: the same threshold, not the 40% default.
+        let threshold = |v: serde_json::Value| {
+            let mut c = crate::config::PrintConfig::default();
+            c.raw
+                .insert("seam_slope_type".into(), serde_json::json!("external"));
+            c.raw.insert("scarf_overhang_threshold".into(), v);
+            Scarf::of(&c).map_or(f64::NAN, |s| s.overhang_percent)
+        };
+        for v in [
+            serde_json::json!(60),
+            serde_json::json!("60%"),
+            serde_json::json!(["60%"]),
+            serde_json::json!([60]),
+        ] {
+            assert!((threshold(v.clone()) - 60.0).abs() < 1e-9, "{v}");
+        }
+    }
 }
