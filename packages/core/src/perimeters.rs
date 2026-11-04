@@ -569,6 +569,20 @@ pub(crate) fn offset_with(shapes: &Shapes, delta: i32, bevel: f64) -> Shapes {
     out
 }
 
+/// [`offset`] with a negative `delta` and none of its early exits: every shape goes through the quick miter offset and
+/// then the union of moved loops, with neither [`shrinks_away`] nor [`nothing_left`]. The tests hold those exits to this.
+#[cfg(test)]
+pub(crate) fn offset_full(shapes: &Shapes, delta: i32) -> Shapes {
+    let mut out = Vec::with_capacity(shapes.len());
+    for shape in shapes {
+        match fast_offset(shape, delta) {
+            Some(s) => out.extend(s),
+            None => out.extend(clipper_offset(shape, delta)),
+        }
+    }
+    out
+}
+
 /// True when shrinking `shape` by `d` internal units must leave nothing. A point that far from every edge is the
 /// center of a disc of radius `d` inside the outline, so the outline's bounds are at least `2 d` across both ways and
 /// its area at least pi d^2; a shape short of either has no such point. The union of moved loops can still keep a
