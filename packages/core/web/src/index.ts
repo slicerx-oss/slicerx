@@ -20,6 +20,8 @@ export {
   SXPV_SEGMENT_BYTES,
   SXPV_TRAVEL_BYTES,
   SXPV_VERSION,
+  SXPV_VERSION_2,
+  expandPreview,
   readPreview,
   type FeatureId,
   type PreviewBuffers,

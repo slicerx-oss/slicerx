@@ -6,6 +6,7 @@ Keep a Changelog format; semver.
 
 ### Added
 
+- `readPreview` reads SXPV v2 as well as v1, expanding it into the v1 layout, and `expandPreview` and `SXPV_VERSION_2` are exported. The WASM pool still writes v1, since its shards are stitched in the page.
 - `projectMetadata` returns a PrusaSlicer project's print and filament settings as `projectSettings`, with `settingsFrom: "prusaslicer"`.
 - The slice result carries `chamberCooling` (the chamber cooling mode the printer's G-code reads, and where it came from), from the shards; `chamberCoolingOf` and `plateFacts` read it.
 - `meshParts(id)` and `projectMetadata(data, fileName)` on the pool host, and `decodeParts`.

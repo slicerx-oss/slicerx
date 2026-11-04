@@ -67,6 +67,48 @@ fn request_file_round_trip() {
 }
 
 #[test]
+fn preview_format_flag_writes_v2_and_refuses_other_values() {
+    let read = |format: &str| {
+        let dir = temp_dir(format!("sx-cli-pf-{format}-{}", std::process::id()));
+        let out = sx()
+            .args([
+                "slice",
+                "--request",
+                &fixture("cube-request.json"),
+                "--preview-format",
+                format,
+                "--out-dir",
+            ])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let preview = std::fs::read(dir.join("slice.sxpv")).unwrap();
+        assert_eq!(v["previewBytes"], preview.len());
+        (preview, std::fs::read(dir.join("slice.gcode")).unwrap())
+    };
+    let (v1, g1) = read("v1");
+    let (v2, g2) = read("v2");
+    assert_eq!(&v1[4..6], &1u16.to_le_bytes());
+    assert_eq!(&v2[4..6], &2u16.to_le_bytes());
+    assert_eq!(g1, g2);
+    assert_eq!(sx_core::preview_v2::decode(&v2).unwrap(), v1);
+    let bad = sx()
+        .args([
+            "slice",
+            "--request",
+            &fixture("cube-request.json"),
+            "--preview-format",
+            "v3",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(bad.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("use v1 or v2"));
+}
+
+#[test]
 fn request_from_stdin_and_bad_input() {
     let body = std::fs::read_to_string(fixture("cube-request.json"))
         .unwrap()

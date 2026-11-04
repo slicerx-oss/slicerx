@@ -339,6 +339,8 @@ async fn a_job_naming_plates_slices_only_those_each_with_its_own_files() {
             .await;
         assert_eq!(s, StatusCode::OK);
         assert_eq!(&preview[..4], b"SXPV");
+        // v1 unless the request asks for v2.
+        assert_eq!(&preview[4..6], &1u16.to_le_bytes());
     }
     assert_ne!(plates[0]["gcodeSha256"], plates[1]["gcodeSha256"]);
     let (s, first) = h

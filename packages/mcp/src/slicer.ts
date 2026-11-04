@@ -33,6 +33,8 @@ export interface SliceJob {
   widthsAsGiven?: readonly string[]
   /** Also write the SXPV preview buffer (sx engine only). */
   emitPreview?: boolean
+  /** The preview's SXPV encoding; v1 unless v2 is asked for. */
+  previewFormat?: 'v1' | 'v2'
   /** Slice even when paths cross or meet the toolhead (sx engine only); refused by default. */
   allowCollisions?: boolean
   /** Paint written over the model's own (sx engine, one object): { part: { color | seam | support | fuzzy: { triangle: text } } }. */

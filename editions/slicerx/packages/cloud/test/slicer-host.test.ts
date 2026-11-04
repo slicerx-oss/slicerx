@@ -211,6 +211,11 @@ describe('what a cloud slice sends', () => {
     expect(optionsOf(request)['engine']).toBe('sx')
   })
 
+  it('asks for the v2 preview, which readPreview expands, unless the request names v1', async () => {
+    expect(optionsOf((await sent({})).request)['previewFormat']).toBe('v2')
+    expect(optionsOf((await sent({ previewFormat: 'v1' })).request)['previewFormat']).toBe('v1')
+  })
+
   it('sends the thumbnail pixels as base64', async () => {
     const { request } = await sent({ thumbnail: { width: 1, height: 1, rgba: new Uint8Array([255, 0, 128, 255]) } })
     expect(optionsOf(request)['thumbnail']).toEqual({ width: 1, height: 1, rgba: '/wCA/w==' })

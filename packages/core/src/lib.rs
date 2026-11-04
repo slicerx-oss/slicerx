@@ -167,6 +167,7 @@ pub mod preflight;
 mod preheat;
 #[doc(hidden)]
 pub mod preview;
+pub mod preview_v2;
 pub mod printtime;
 mod project_split;
 #[cfg(feature = "import")]

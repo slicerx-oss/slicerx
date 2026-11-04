@@ -50,7 +50,7 @@ The typed way is `load_mesh`, then `slice` or `slice_range` on a `Plate`, then `
 - The config uses OrcaSlicer keys. Missing keys keep the defaults, and out-of-range values are rejected.
 - `slice_range` slices a range of layers, which is how the browser splits work across workers. Sharded and unsharded runs produce identical bytes, and every benchmark run checks it.
 - G-code comes out for Marlin 2, Klipper and RepRapFirmware, with time, filament length and weight per slot, cost and tool changes.
-- The preview buffer (SXPV) has 32 bytes per segment, drawn by the viewport with GPU instancing.
+- The preview buffer (SXPV) has 32 bytes per segment, drawn by the viewport with GPU instancing. With `previewFormat: "v2"` in the request options the slice writes SXPV v2 instead, about a fifth of the bytes, which `readPreview()` expands into the same records ([architecture.md](architecture.md#sxpv-v2)). v1 stays the default until a later release, so a reader of your own keeps working until you opt in.
 - Library code returns errors instead of panicking on bad input.
 
 ## CLI

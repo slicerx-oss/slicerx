@@ -109,6 +109,38 @@ objects (only when flags bit 2 is set; plates of two or more objects), S u16 in 
 
 New blocks go behind the existing ones under a new flag bit, so readers that do not know a flag still read the rest; the version changes only when an existing block changes.
 
+### SXPV v2
+
+v2 holds the same preview in about a fifth of the bytes, written layer by layer, and expands back into the exact v1 bytes. `readPreview()` expands it (`expandPreview()`), so every reader works on the v1 layout and the viewport uploads the same records. A slice writes v2 only when the request sets `options.previewFormat: "v2"` (`sx slice --preview-format v2`); v1 is the default. Rust writes and expands it in `sx-core::preview_v2`.
+
+```
+header (32 bytes): as v1, with version = 2 and the v1 flags of the blocks it expands into
+layer tables: as v1 (layer start, top z, print time, travel start)
+u32[N+1] layer block offsets, from the first block (0 first, the total length last)
+layer blocks, one per layer, each on its own (a reader can expand a layer as soon as its block has arrived):
+  17 varint stream lengths, then the 17 streams in this order:
+  runs      varint: segments in each run
+  ctrl      u8 per run: 1 starts where the last run ended, 2 positions stored raw, 4 lines listed
+  attr      varint per run: index into dict
+  z         zigzag: the run's z as f32 bits, less the last run's (the layer's top z first)
+  start     zigzag dx, dy of the run's first point from the last point (0, 0 first); not for ctrl 1 or 2
+  vert      zigzag dx, dy of each segment's end from the point before; not for ctrl 2
+  raw       f32 x, y of the start and of each end, for ctrl 2
+  fan       u8 per run          (extras only, as are temp, flags, line and lines)
+  temp      zigzag per run, less the last run's
+  flags     u8 per run: the first segment's extras flags (later segments of a run have none)
+  line      zigzag per run: the first segment's G-code line less (the last run's last line + 1), 0 first
+  lines     zigzag per later segment of a ctrl 4 run: its line less (the line before + 1)
+  object    zigzag per run, less the last run's (objects only)
+  travel    zigzag x0, y0 from the last travel's end (0, 0 first), then x1 - x0, y1 - y0 (travels only)
+  travelraw varint count, then per travel stored raw: varint gap from the last one (the layer's first travel first)
+            and its 16 v1 bytes
+  travelflags u8 per travel (extras only)
+  dict      12-byte entries: bytes 20 to 31 of a v1 segment record (width, height, feature, tool, speed, flow)
+```
+
+A run is a stretch of segments in one layer that join end to start and share width, height, feature, tool, speed, flow, z, fan, temperature and object, with no extras flags after its first segment. Varints are LEB128 of at most 8 bytes and below 2^53; zigzag maps 0, -1, 1, -2 to 0, 1, 2, 3. Positions are integers of 0.1 micrometer (the engine's own grid), rounded half up (`floor(x * 10000 + 0.5)`); a run or travel with a position that would not come back as the same f32 is stored raw, so the round trip is exact. Readers refuse a block whose streams do not add up exactly to its layer's segments and travels.
+
 Feature ids: 0 outer wall, 1 inner wall, 2 overhang wall, 3 top surface, 4 bottom surface, 5 internal solid, 6 sparse infill, 7 bridge, 8 support, 9 support interface, 10 brim or skirt, 11 ironing, 12 gap fill, 13 prime tower, 14 custom. Every table and record is 4-byte aligned, and the 32-byte stride suits GPU vertex fetch.
 
 ## Embedding surfaces
