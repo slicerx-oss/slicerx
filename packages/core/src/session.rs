@@ -2528,7 +2528,7 @@ impl SliceSession {
     /// each object's slice there and, by plate object, its place in the order the objects that print on the layer
     /// print in (`objorder.rs`). None for one object, or one object on the layer.
     /// With islands of several filaments in `works`, each filament's objects (those its islands are on) also get
-    /// their places in that filament's own run (`objorder::run`).
+    /// their places in that filament's own run (`objorder::run_by`).
     fn object_order_at(&self, cfg: &PrintConfig, layer: u32, works: &[ToolWork]) -> Option<ObjectRanks> {
         let first = self.part_object.first();
         if self.part_object.iter().all(|o| Some(o) == first)
@@ -2542,14 +2542,8 @@ impl SliceSession {
         if slices.len() < 2 {
             return None;
         }
-        let centers: Vec<[f64; 2]> = slices
-            .iter()
-            .map(|s| {
-                self.objects
-                    .get(usize::from(s.object))
-                    .map_or([0.0, 0.0], |o| o.center)
-            })
-            .collect();
+        let rule = crate::objorder::rule(cfg);
+        let centers: Vec<[f64; 2]> = slices.iter().map(|s| self.order_center(rule, s.object)).collect();
         let top = slices.iter().map(|s| usize::from(s.object)).max().unwrap_or(0);
         let places = |order: Vec<usize>| {
             let mut ranks = vec![usize::MAX; top + 1];
@@ -2560,7 +2554,7 @@ impl SliceSession {
             }
             ranks
         };
-        let ranks = places(crate::objorder::order(&centers));
+        let ranks = places(crate::objorder::order_by(rule, &centers));
         let mut tools: Vec<u8> = works
             .iter()
             .filter(|w| w.islands.iter().any(|i| island_point(i).is_some()))
@@ -2589,13 +2583,123 @@ impl SliceSession {
                 }
                 runs.push((
                     t,
-                    places(crate::objorder::run(&centers, |i| {
+                    places(crate::objorder::run_by(rule, &centers, |i| {
                         with.get(i).copied().unwrap_or(false)
                     })),
                 ));
             }
         }
         Some(ObjectRanks { slices, ranks, runs })
+    }
+
+    /// The point plate object `object` stands at for the order the objects print in (`objorder.rs`): the middle of
+    /// its footprint's box, or under `Chain` the lowest vertex of its first layer outline, the one with the largest x
+    /// of equally low ones. That point is the same for an object whatever its parts above the first layer and
+    /// wherever its placement origin is. An object with nothing on the first layer keeps its footprint's.
+    fn order_center(&self, rule: crate::objorder::Rule, object: u16) -> [f64; 2] {
+        let footprint = self
+            .objects
+            .get(usize::from(object))
+            .map_or([0.0, 0.0], |o| o.center);
+        if rule != crate::objorder::Rule::Chain {
+            return footprint;
+        }
+        self.object_slices_at(0)
+            .and_then(|slices| {
+                slices
+                    .iter()
+                    .find(|s| s.object == object)
+                    .and_then(|s| lowest_vertex(&s.shapes))
+            })
+            .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+    }
+
+    /// The point this session's objects stand at for the order of a plate printed as sessions one after another
+    /// (`sequence.rs`, `copies.rs`): under `Chain` the lowest vertex of this session's first layer, the one with the
+    /// largest x of equally low ones, as `order_center` gives an object of a plate sliced as one session; otherwise,
+    /// or with nothing on the first layer, `footprint`.
+    pub(crate) fn plate_order_point(&self, rule: crate::objorder::Rule, footprint: [f64; 2]) -> [f64; 2] {
+        if rule != crate::objorder::Rule::Chain {
+            return footprint;
+        }
+        self.object_slices_at(0)
+            .and_then(|slices| {
+                let all: Shapes = slices.iter().flat_map(|s| s.shapes.iter().cloned()).collect();
+                lowest_vertex(&all)
+            })
+            .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+    }
+
+    /// The first layer's brim loops `loops` of a plate of several objects under `Chain` (`objorder.rs`),
+    /// put in the order of the objects' brims: each object's loops together and in their own order, a loop round
+    /// several objects (brims that meet) with the first of them, and a loop round none with the object nearest it.
+    /// Other plates keep `loops` as they are.
+    fn brims_in_object_order(
+        &self,
+        cfg: &PrintConfig,
+        loops: Vec<Vec<IntPoint<i32>>>,
+    ) -> Vec<Vec<IntPoint<i32>>> {
+        let rule = crate::objorder::rule(cfg);
+        if rule != crate::objorder::Rule::Chain || loops.len() < 2 {
+            return loops;
+        }
+        let Some(slices) = self.object_slices_at(0) else {
+            return loops;
+        };
+        let slices: Vec<&crate::owners::ObjectSlice> =
+            slices.iter().filter(|s| !s.shapes.is_empty()).collect();
+        if slices.len() < 2 {
+            return loops;
+        }
+        let centers: Vec<[f64; 2]> = slices.iter().map(|s| self.order_center(rule, s.object)).collect();
+        let mut rank = vec![usize::MAX; slices.len()];
+        for (place, i) in crate::objorder::brim_order(rule, &centers)
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(r) = rank.get_mut(i) {
+                *r = place;
+            }
+        }
+        let probes: Vec<Option<IntPoint<i32>>> = slices
+            .iter()
+            .map(|s| {
+                s.shapes
+                    .first()
+                    .and_then(|sh| sh.first())
+                    .and_then(|r| r.first())
+                    .copied()
+            })
+            .collect();
+        let place_of = |ring: &Vec<IntPoint<i32>>| -> usize {
+            let round = (0..slices.len())
+                .filter(|&k| {
+                    probes
+                        .get(k)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|p| perimeters::point_in(ring, p))
+                })
+                .filter_map(|k| rank.get(k).copied())
+                .min();
+            round.unwrap_or_else(|| {
+                let Some(&p) = ring.first() else {
+                    return usize::MAX;
+                };
+                (0..slices.len())
+                    .min_by_key(|&k| {
+                        let gap = slices.get(k).map_or(i64::MAX, |s| box_gap(s.bounds, p));
+                        (gap, rank.get(k).copied().unwrap_or(usize::MAX))
+                    })
+                    .and_then(|k| rank.get(k).copied())
+                    .unwrap_or(usize::MAX)
+            })
+        };
+        let mut keyed: Vec<(usize, Vec<IntPoint<i32>>)> =
+            loops.into_iter().map(|r| (place_of(&r), r)).collect();
+        // Stable, so each object's loops keep their order.
+        keyed.sort_by_key(|k| k.0);
+        keyed.into_iter().map(|k| k.1).collect()
     }
 
     /// Each object's own slice on object layer `layer` (`owners.rs`), worked out once.
@@ -11905,11 +12009,19 @@ impl SliceSession {
                     finished_of.push(*object);
                 }
             }
+            // A plate that prints every brim before the objects (`brims_first`) prints the whole brim with its lowest
+            // filament, merged by geometry alone: the brim is the same whatever filament each object uses, and brims
+            // of two filaments that meet become one brim, not two laid over each other.
+            if brims_first(cfg) && by_slot.len() > 1 {
+                let mut all = std::mem::take(&mut by_slot).into_iter();
+                if let Some((low, mut areas)) = all.next() {
+                    areas.extend(all.flat_map(|(_, a)| a));
+                    by_slot.insert(low, areas);
+                }
+            }
             for (slot, areas) in by_slot {
-                finished.push((
-                    slot,
-                    crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg)),
-                ));
+                let loops = crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg));
+                finished.push((slot, self.brims_in_object_order(cfg, loops)));
                 finished_of.push(0);
             }
             for ((slot, loops), object) in finished.into_iter().zip(finished_of) {
@@ -14466,6 +14578,23 @@ fn first_layer_rank(mut smallest: Vec<(u8, f64)>) -> Vec<u8> {
     order.into_iter().map(|e| e.0).collect()
 }
 
+/// The lowest vertex of the outer outlines of `shapes`, the one with the largest x of equally low ones.
+fn lowest_vertex(shapes: &Shapes) -> Option<IntPoint<i32>> {
+    shapes
+        .iter()
+        .filter_map(|sh| sh.first())
+        .flatten()
+        .copied()
+        .min_by_key(|p| (p.y, std::cmp::Reverse(p.x)))
+}
+
+/// The squared distance from `p` to a box `[x0, y0, x1, y1]`, internal units; 0 inside it.
+fn box_gap(b: [i32; 4], p: IntPoint<i32>) -> i64 {
+    let dx = i64::from((b[0] - p.x).max(p.x - b[2]).max(0));
+    let dy = i64::from((b[1] - p.y).max(p.y - b[3]).max(0));
+    dx * dx + dy * dy
+}
+
 /// The objects' slices on a layer of a session printed layer by layer and their places in the order they print in
 /// (`SliceSession::object_order_at`).
 struct ObjectRanks {
@@ -14854,6 +14983,14 @@ fn resolve_ranges(
     Ok((objects, layer_cfg))
 }
 
+/// Whether the first layer prints every object's brim before the objects in the objects' order (`objorder::Rule`
+/// `Chain` with a brim): copies each print their own brim with themselves, so such a plate slices whole.
+fn brims_first(config: &PrintConfig) -> bool {
+    crate::objorder::rule(config) == crate::objorder::Rule::Chain
+        && crate::brim::Kind::of(config) != crate::brim::Kind::Off
+        && (config.brim_width > 0.0 || crate::brim::Kind::of(config) == crate::brim::Kind::Auto)
+}
+
 /// Objects that are copies of an earlier one: the same mesh, filaments and turn, moved only across the bed, with
 /// nothing of their own (settings, part settings, volumes, paint, brim ears). Per object, the object it copies
 /// (itself for the first) and how far it moves, mm; None when there are no copies or the plate's settings span
@@ -14874,6 +15011,7 @@ pub(crate) fn copies_of(
         || crate::raft::layers_asked(config) > 0
         || crate::spiral::enabled(config)
         || crate::tower::flag(config, "prime_tower_always")
+        || brims_first(config)
     {
         return None;
     }

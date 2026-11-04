@@ -427,6 +427,7 @@ nozzle_temperature_range_high	filament	ints
 nozzle_temperature_range_low	filament	ints
 nozzle_type	printer	enums
 nozzle_volume	printer	floats
+object_order_rule	process	enum
 only_one_wall_first_layer	process	bool
 only_one_wall_top	process	bool
 ooze_prevention	process	bool
