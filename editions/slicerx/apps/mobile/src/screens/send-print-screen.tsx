@@ -4,11 +4,12 @@
 // then send after a confirm sheet.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
-import { EASY_GOALS, type EasyGoal, type EasySettings, type Fleet, type SupportMode } from '@slicerx/contracts'
+import { EASY_GOALS, type Collision, type CollisionPlate, type EasyGoal, type EasySettings, type Fleet, type PrimeTowerPlacement, type SupportMode } from '@slicerx/contracts'
 import type { ProjectPlate } from '../cloud/plates'
 import type { PlateFit } from '../cloud/slice-job'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
+import { CollisionCard } from '../components/collision-card'
 import { Segmented, SwitchRow } from '../components/controls'
 import { FitCard } from '../components/fit-card'
 import { haptic } from '../components/feedback'
@@ -54,6 +55,13 @@ export interface Estimate {
   plates: number
 }
 
+/** What the cloud's slice of the plate found when it stopped the print: the collisions and the plate they are on. */
+export interface CollisionStopView {
+  collisions: Collision[]
+  plate?: CollisionPlate | undefined
+  tower?: PrimeTowerPlacement | undefined
+}
+
 export interface SendPrintScreenProps {
   library: ModelChoice[]
   printers: PrinterView[]
@@ -81,6 +89,11 @@ export interface SendPrintScreenProps {
   onModelChange?: ((modelId: string | null) => void) | undefined
   /** Opens the system file picker; the parent adds the file to `library` and returns its id. */
   onPickFile: () => Promise<string | null>
+  /**
+   * Set when the cloud's slice of this choice found a collision and nothing was sent: the card on top shows it, and the
+   * confirm sheet says Print anyway. The parent clears it when the choice changes.
+   */
+  collision?: CollisionStopView | null | undefined
   /** Called after the person confirms in the sheet. */
   onSend: (sel: SendSelection) => Promise<void>
   onBack: () => void
@@ -180,6 +193,10 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
 
   // A model that runs past the bed cannot print there: the card on top says where, and Print waits.
   const tooBig = p.fit !== undefined && p.fit !== null && !p.fit.fits && model !== null && targetName !== null
+  // A slice that stopped on a collision: the card on top says where, and Print asks again before it sends.
+  const stop = !tooBig && p.collision?.collisions.length ? p.collision : null
+  const hits = stop ? stop.collisions.filter((c) => c.severity === 'hit').length : 0
+  const hitsText = hits === 1 ? '1 collision on this plate' : `${hits} collisions on this plate`
   const header = <ScreenHeader title="Print" leading={<IconButton icon="chevron-left" label="Back" onPress={p.onBack} color={t.color.fg} />} />
 
   const footer = (
@@ -188,6 +205,10 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
         {tooBig ? (
           <Txt variant="caption" tone="dim">
             Does not fit this printer
+          </Txt>
+        ) : stop ? (
+          <Txt variant="caption" color={t.color.red} testID="collision-footer">
+            {hitsText}
           </Txt>
         ) : p.estimating ? (
           <View style={{ gap: 6 }}>
@@ -214,6 +235,7 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
   return (
     <Screen header={header} footer={footer} testID="send-print-screen">
       {tooBig && p.fit && model && targetName ? <FitCard fit={p.fit} model={model.name} printer={targetName} /> : null}
+      {stop ? <CollisionCard collisions={stop.collisions} plate={stop.plate} tower={stop.tower} /> : null}
       <SectionLabel label="Model" />
       {model ? (
         <Row
@@ -372,11 +394,12 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
           title={plate ? `Print ${model.name}, plate ${plate.plate}?` : `Print ${model.name}?`}
           lines={[
             ...(plate ? [`${plateTitle(plate)}, ${plate.objects} ${plate.objects === 1 ? 'object' : 'objects'}. The project's other plates are not sliced.`] : []),
-            `Slices on ${p.sliceLocation.name} with ${GOALS.find((g) => g.value === goal)?.label ?? goal} settings`,
+            stop ? `Sends the file ${p.sliceLocation.name} already sliced, with no new slice` : `Slices on ${p.sliceLocation.name} with ${GOALS.find((g) => g.value === goal)?.label ?? goal} settings`,
             `Uploads to ${targetName} and starts printing when the upload finishes`,
             ...(p.estimate ? [`About ${fmtLeft(p.estimate.timeS)} and ${p.estimate.grams.toFixed(1)} g of filament`] : []),
+            ...(stop ? [`The slice found ${hitsText}. Print anyway sends the file it made, as it is`] : []),
           ]}
-          confirmLabel="Start print"
+          confirmLabel={stop ? 'Print anyway' : 'Start print'}
           onConfirm={() => p.onSend(selection)}
           testID="send-sheet"
         />

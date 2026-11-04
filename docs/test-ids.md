@@ -535,6 +535,19 @@ The bridge refuses everything inside the Print sheet; these ids are for reading 
 | `fit-card` | The card on top of the Print screen when the chosen model does not fit the chosen printer |
 | `fit-card-drawing` | Its top view of the bed with the part where the cloud slicer places it |
 | `fit-card-over` | A strip of the part past the bed's edge in that view, one per edge |
+| `collision-card` | The card on top of the Print screen when the cloud's slice of the plate found a collision and nothing was sent |
+| `collision-drawing` | Its top view of the bed with the collision picked |
+| `collision-struck` | The outline of the part that gets hit in that view |
+| `collision-mover` | The outline of the other part of the collision in that view, in the selection color |
+| `collision-object` | The outline of another object on the plate in that view |
+| `collision-region` | The region hit in that view |
+| `collision-zone-<id>` | A zone the printer keeps clear in that view (`exclusion-area`, `wrap-check-zone`) |
+| `collision-tower` | The prime tower in that view |
+| `collision-no-plate` | The line in its place when the result has no plate to draw (an older cloud service) |
+| `collision-one` | The words for the one collision of the plate |
+| `collision-row-<n>` | The row of collision n (from 0) when the plate has more than one; pressing it shows it in the view |
+| `collision-more` | How many more collisions the plate has than the rows show |
+| `collision-footer` | The line beside Print saying how many collisions stopped the print |
 
 ## Exceptions to the danger- rule
 

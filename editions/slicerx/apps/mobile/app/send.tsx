@@ -5,11 +5,11 @@ import { View } from 'react-native'
 import { t } from '../src/components/theme'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Material } from '../src/cloud/slice-job'
+import type { CloudSliceOutcome, Material } from '../src/cloud/slice-job'
 import { usePocketHost } from '../src/data/provider'
 import { useListing } from '../src/data/catalog'
 import { useFleets, usePrinterViews, useSession } from '../src/data/queries'
-import { pickFromFleet, sliceAndSend, useEstimate, useModelPlates, useSendModels } from '../src/data/send'
+import { CollisionStop, pickFromFleet, sliceAndSend, useEstimate, useModelPlates, useSendModels } from '../src/data/send'
 import { usePocket } from '../src/state/store'
 import { Sheet } from '../src/components/sheet'
 import { SignIn } from '../src/components/sign-in'
@@ -36,6 +36,12 @@ export default function SendRoute() {
   const [selection, setSelection] = useState<SendSelection | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [modelId, setModelId] = useState<string | null>(null)
+  // A cloud slice that stopped on a collision, for the choice it was made for. Any change to the choice clears it.
+  const [stopped, setStopped] = useState<{ key: string; outcome: CloudSliceOutcome } | null>(null)
+  const selectionKey = selection ? JSON.stringify(selection) : ''
+  useEffect(() => {
+    setStopped((s) => (s && s.key !== selectionKey ? null : s))
+  }, [selectionKey])
 
   const choices = useMemo(
     () =>
@@ -119,10 +125,19 @@ export default function SendRoute() {
         estimating={estimate.estimating}
         fit={estimate.fit}
         onPickFile={async () => (await pickFile())?.id ?? null}
+        collision={stopped ? { collisions: stopped.outcome.collisions, plate: stopped.outcome.collisionPlate, tower: stopped.outcome.primeTower } : null}
         onSend={async (sel) => {
           const input = resolve(sel)
           if (!input) throw new Error('No printer in that fleet is ready for a new job')
-          await sliceAndSend(host, input, () => undefined)
+          const key = JSON.stringify(sel)
+          const anyway = stopped?.key === key ? stopped.outcome : undefined
+          try {
+            await sliceAndSend(host, input, () => undefined, undefined, anyway)
+          } catch (e) {
+            // Nothing was sent: the card on top shows the collision, and Print asks again.
+            if (e instanceof CollisionStop) return setStopped({ key, outcome: e.outcome })
+            throw e
+          }
           router.replace({
             pathname: '/printer/[id]',
             params: { id: input.printer.id },

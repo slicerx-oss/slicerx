@@ -13,7 +13,7 @@ import { clock } from '../../lib/preview-timeline'
 import { collisionParts, collisionsOf, damagedOf, fixesOf } from '../../plate/heimdall'
 import { applyCollisionFix } from '../../plate/heimdall-fix'
 import { jumpTo, pickCollision } from '../../plate/heimdall-jump'
-import { collisionDetail, collisionTitle, fixDetail, fixTitle, struckLabel, wordsOf } from '../../plate/heimdall-words'
+import { collisionDetail, collisionTitle, fixDetail, fixTitle, struckLabel, wordsOf } from '@slicerx/ui/heimdall-words'
 import { isPicked } from '../../plate/pick-parts'
 import { get, set, shownSlice, useApp } from '../../state/store'
 

@@ -98,6 +98,16 @@ export function printerProfile(id: string): PrinterProfile | undefined {
   return PRINTERS.find((p) => p.id === id)
 }
 
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+/** The profile of a printer named by vendor and model, matched on the words we have. */
+export function profileIdFor(printer: { vendor: string; model: string } | undefined): string | undefined {
+  if (!printer) return undefined
+  const model = norm(printer.model)
+  const vendor = norm(printer.vendor)
+  return PRINTERS.find((p) => norm(p.model) === model && (norm(p.vendor).includes(vendor) || vendor.includes(norm(p.vendor)) || norm(p.brand) === vendor))?.id
+}
+
 /** The printer's settings for a nozzle: bed shape and height, flavor, extruder type, machine limits, layer height limits. */
 export function printerConfig(id: string, nozzle?: number): PrintConfig | undefined {
   const p = printerProfile(id)

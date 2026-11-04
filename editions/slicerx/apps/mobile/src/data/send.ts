@@ -9,7 +9,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readPlates, type ProjectPlate } from '../cloud/plates'
-import { estimateOf, runCloudSlice, type Material, type PhoneModel, type PlateFit, type SlicePhase } from '../cloud/slice-job'
+import { estimateOf, runCloudSlice, type CloudSliceOutcome, type Material, type PhoneModel, type PlateFit, type SlicePhase } from '../cloud/slice-job'
 import { boxStl } from '../cloud/stl'
 import { createCloudStub } from '../cloud/stub'
 import type { PrinterView } from '../components/printers/printer-bits'
@@ -72,14 +72,27 @@ function sendApproval(file: Pick<JobFile, 'name' | 'sha256'>, printer: PrinterIn
 }
 
 /**
+ * The cloud's slice of the plate found a collision that strikes a part, so nothing was sent: the Print screen shows the
+ * card, and a second confirm sends this same file (`sliceAndSend` with `anyway`). Close calls alone do not stop.
+ */
+export class CollisionStop extends Error {
+  constructor(readonly outcome: CloudSliceOutcome) {
+    super('The slice found a collision on this plate, so nothing was sent')
+    this.name = 'CollisionStop'
+  }
+}
+
+/**
  * Slices and sends. With a paired computer that can slice, the computer slices and sends
  * (it signs its own approval only when it matches the phone's token); otherwise the cloud
  * slices and the phone uploads through host.printers. Resolves once the printer accepted
- * the job. The person already confirmed on the device before the screen called this.
+ * the job. The person already confirmed on the device before the screen called this. A cloud slice with a collision
+ * that strikes a part stops before the approval with a `CollisionStop`; `anyway` is that stop's outcome, confirmed
+ * again, and sends that file without slicing it again.
  */
-export async function sliceAndSend(host: PocketHost, input: SendInput, onPhase: (p: SlicePhase) => void, signal?: AbortSignal): Promise<{ layerCount: number; timeS: number; grams: number }> {
+export async function sliceAndSend(host: PocketHost, input: SendInput, onPhase: (p: SlicePhase) => void, signal?: AbortSignal, anyway?: CloudSliceOutcome): Promise<{ layerCount: number; timeS: number; grams: number }> {
   const { printer } = input
-  if (get().sliceLocation && host.printers.source().kind === 'paired') {
+  if (!anyway && get().sliceLocation && host.printers.source().kind === 'paired') {
     const slice = await sliceOnComputer(host, input, onPhase, signal)
     const token = await approve(host.approvals, await sendApproval(slice.file, printer, slice))
     await sendSlice(host, slice.sliceId, printer, token)
@@ -87,7 +100,8 @@ export async function sliceAndSend(host: PocketHost, input: SendInput, onPhase: 
   }
   // The cloud slicer takes the signed-in session's token; say so before uploading anything.
   if (host.edition.backend.cloudApi && !(await host.account.accessToken())) throw new Error('Sign in to slice in the cloud, or pair a computer to slice on')
-  const outcome = await runCloudSlice(host.cloud, input, onPhase, signal)
+  const outcome = anyway ?? (await runCloudSlice(host.cloud, input, onPhase, signal))
+  if (!anyway && outcome.collisions?.some((c) => c.severity === 'hit')) throw new CollisionStop(outcome)
   const token = await approve(host.approvals, await sendApproval(outcome.file, printer, outcome))
   const remote = await host.printers.upload(printer.id, outcome.file, token)
   await host.printers.start({ ...remote, sha256: remote.sha256 ?? outcome.file.sha256 }, {}, token)

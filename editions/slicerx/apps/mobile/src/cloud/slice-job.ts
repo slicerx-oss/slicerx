@@ -4,8 +4,8 @@
 // cloud slicer (Host['cloud'], a SlicerHost), and the G-code comes back as a
 // JobFile ready for PrinterHost.upload. Nothing here touches a printer; sending
 // is a separate, approval-gated step (screens/slice.tsx).
-import type { EasySettings, GcodeFlavor, JobFile, PlateObject, PrintConfig, PrinterInfo, SliceStage, SlicerHost } from '@slicerx/contracts'
-import { applyEasy, defaultConfig } from '@slicerx/settings'
+import type { Collision, CollisionPlate, EasySettings, GcodeFlavor, JobFile, PlateObject, PrimeTowerPlacement, PrintConfig, PrinterInfo, SliceStage, SlicerHost } from '@slicerx/contracts'
+import { applyEasy, defaultConfig, printerConfig, profileIdFor } from '@slicerx/settings'
 import { meshBounds } from './stl'
 
 export const MATERIALS = ['pla', 'petg', 'abs', 'tpu'] as const
@@ -60,6 +60,10 @@ export interface CloudSliceOutcome {
   /** How the measured model sits on the printer's bed, for the send screen's card; only with `sizeMm`. */
   fit?: PlateFit
   warnings: string[]
+  /** What the cloud's collision check found, and the plate it is on (machine mm); empty and absent when clean. */
+  collisions: Collision[]
+  collisionPlate?: CollisionPlate
+  primeTower?: PrimeTowerPlacement
 }
 
 /**
@@ -100,14 +104,52 @@ export function machineFor(p: Pick<PrinterInfo, 'vendor' | 'model' | 'plugin'>):
   return { bed: [220, 220, 250], flavor: 'marlin2' }
 }
 
+/** The zones a printer keeps clear, by their setting: the excluded areas and the nozzle wrap check corner. */
+const ZONE_KEYS = ['bed_exclude_area', 'head_wrap_detect_zone'] as const
+
+/**
+ * What the printer's own profile says about its bed, when the phone knows the model: the profile id (the cloud checks
+ * the plate with that printer), the printable area and height, and the zones the printer keeps clear.
+ */
+export interface PrinterSetup {
+  profileId: string
+  bed: [number, number, number]
+  area: [number, number][]
+  zones: Partial<Record<(typeof ZONE_KEYS)[number], unknown>>
+}
+
+export function printerSetup(p: Pick<PrinterInfo, 'vendor' | 'model'>): PrinterSetup | null {
+  const id = profileIdFor(p)
+  const cfg = id ? printerConfig(id) : undefined
+  const area = cfg?.printable_area as [number, number][] | undefined
+  if (!id || !cfg || !area?.length) return null
+  const xs = area.map((q) => q[0])
+  const ys = area.map((q) => q[1])
+  const bed: [number, number, number] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), Number(cfg.printable_height) || 0]
+  const zones: PrinterSetup['zones'] = {}
+  for (const k of ZONE_KEYS) {
+    const v = cfg[k]
+    if (Array.isArray(v) && v.length) zones[k] = v
+  }
+  return { profileId: id, bed, area, zones }
+}
+
+/** The bed a phone slice uses: the printer's profile when the phone knows the model, else the table above. */
+function bedOf(printer: PrinterInfo): [number, number, number] {
+  return printerSetup(printer)?.bed ?? machineFor(printer).bed
+}
+
 /** The resolved config for a phone slice: schema defaults, then Easy mode, then the printer and material. */
 export function phoneConfig(easy: EasySettings, printer: PrinterInfo, material: Material): PrintConfig {
   const shape = machineFor(printer)
+  const setup = printerSetup(printer)
   const temps = MATERIAL_TEMPS[material]
   const cfg = applyEasy(easy, defaultConfig() as PrintConfig)
-  const [w, d, h] = shape.bed
-  cfg.printable_area = [[0, 0], [w, 0], [w, d], [0, d]]
+  const [w, d, h] = setup?.bed ?? shape.bed
+  cfg.printable_area = setup?.area ?? [[0, 0], [w, 0], [w, d], [0, d]]
   cfg.printable_height = h
+  // The printer's own keep-out zones, so the cloud's collision check sees what the printer keeps clear.
+  for (const [k, v] of Object.entries(setup?.zones ?? {})) cfg[k] = v as PrintConfig[string]
   cfg.gcode_flavor = shape.flavor === 'bambu' ? 'marlin' : shape.flavor
   cfg.nozzle_temperature = Array.from({ length: Math.max(1, printer.nozzleCount) }, () => temps.nozzle)
   cfg['hot_plate_temp'] = [temps.bed]
@@ -144,7 +186,9 @@ export async function runCloudSlice(
   const bounds = meshBounds(data)
   const mesh = await cloud.loadModel(data, input.model.name)
   const shape = machineFor(input.printer)
-  const [bw, bd, bh] = shape.bed
+  const setup = printerSetup(input.printer)
+  const bed = bedOf(input.printer)
+  const [bw, bd, bh] = bed
   const warnings: string[] = []
   if (bounds.measured) {
     const [mx, my, mz] = bounds.sizeMm
@@ -160,7 +204,13 @@ export async function runCloudSlice(
       {
         plate: { bed: { widthMm: bw, depthMm: bd, heightMm: bh }, objects: [object] },
         config,
-        options: { flavor: shape.flavor, emitGcode: true, emitPreview: false, ...(input.plate !== undefined ? { plates: [input.plate] } : {}) },
+        options: {
+          flavor: shape.flavor,
+          emitGcode: true,
+          emitPreview: false,
+          ...(setup ? { printerId: setup.profileId } : {}),
+          ...(input.plate !== undefined ? { plates: [input.plate] } : {}),
+        },
       },
       { onProgress: (p) => onPhase({ kind: 'slicing', stage: p.stage, fraction: p.fraction }), ...(signal ? { signal } : {}) },
     )
@@ -170,14 +220,20 @@ export async function runCloudSlice(
     const bytes = await out.blob.arrayBuffer()
     cloud.release(result.id)
     for (const w of result.warnings) warnings.push(w.message)
+    // A slice of one plate of a project has its collision check in that plate's report, not the job's.
+    const picked = result.plates?.find((r) => r.status === 'succeeded')
+    const checked = picked?.status === 'succeeded' ? picked.result : result
     return {
       file: { name: out.fileName, kind: 'gcode', data: bytes, sha256: out.sha256 },
       layerCount: result.layerCount,
       timeS: result.stats.timeS,
       grams: result.stats.filamentG.reduce((a, b) => a + b, 0),
       layerHeight: config.layer_height,
-      ...(bounds.measured ? { sizeMm: bounds.sizeMm, fit: plateFit(bounds.sizeMm, shape.bed) } : {}),
+      ...(bounds.measured ? { sizeMm: bounds.sizeMm, fit: plateFit(bounds.sizeMm, bed) } : {}),
       warnings,
+      collisions: checked.collisions ?? [],
+      ...(checked.collisionPlate ? { collisionPlate: checked.collisionPlate } : {}),
+      ...(checked.primeTower ? { primeTower: checked.primeTower } : {}),
     }
   } catch (e) {
     throw phoneCloudError(e, input.model.name)
