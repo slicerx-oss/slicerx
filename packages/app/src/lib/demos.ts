@@ -467,6 +467,7 @@ export const SETTING_DEMOS: Readonly<Record<string, string>> = {
   overhang_2_4_speed: 'adv-overhang-speed',
   overhang_3_4_speed: 'adv-overhang-speed',
   overhang_4_4_speed: 'adv-overhang-speed',
+  overhang_totally_speed: 'adv-overhang-speed',
   overhang_fan_speed: 'adv-overhang-fan',
   overhang_fan_threshold: 'adv-overhang-fan',
   overhang_reverse: 'adv-overhang-reverse',

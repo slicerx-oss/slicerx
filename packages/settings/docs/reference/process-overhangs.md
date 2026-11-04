@@ -1,6 +1,6 @@
 # Process: Overhangs and bridges
 
-29 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+30 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `bridge_angle`
 
@@ -237,6 +237,20 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 - Recommended range: 0 to no maximum
 - Tier: Expert, quality
 - Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `overhang_totally_speed`
+
+**Fully clear overhang speed**
+
+- Type: list of numbers, one per extruder
+- Unit: mm/s
+- Default: [0]
+- Recommended range: 0 to no maximum
+- Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
+- Used only when: Slow down on overhangs (`enable_overhang_speed`) is on
+- Tier: Expert, quality
+- Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `thick_bridges`

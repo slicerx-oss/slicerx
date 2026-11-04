@@ -253,3 +253,18 @@ describe('the single-wall top threshold', () => {
     kept(importOrcaProfile({ type: 'process', name: 'Narrow bands', top_area_threshold: '100%' }, () => undefined) as never, '100%')
   })
 })
+
+describe('the fully clear overhang speed', () => {
+  // A speed in mm/s per extruder, as the engine reads it; 0 leaves those wall pieces at the bridge speed.
+  const kept = (r: { config: Record<string, unknown>; unknownKeys: string[]; ignoredKeys: string[]; invalidKeys: string[] }, value: number[]) => {
+    expect(r.config['overhang_totally_speed']).toEqual(value)
+    for (const list of [r.unknownKeys, r.ignoredKeys, r.invalidKeys]) expect(list).not.toContain('overhang_totally_speed')
+  }
+  it("is kept from a project's settings", () => {
+    kept(importFlat({ overhang_totally_speed: '12', layer_height: '0.2' }) as never, [12])
+    kept(importFlat({ overhang_totally_speed: ['10', '15'] }) as never, [10, 15])
+  })
+  it('is kept from a process profile', () => {
+    kept(importOrcaProfile({ type: 'process', name: 'Slow overhangs', overhang_totally_speed: ['8'] }, () => undefined) as never, [8])
+  })
+})

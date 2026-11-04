@@ -342,7 +342,9 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// along the lines and beaded the free right-angle corners: only the order and direction of the top surface lines, one
 /// 0.28 mm corner bead on the top layer (z 10.0), the travels and the filament total moved.
 /// Changed again when the corner bead took its width, length and ends from the line end's offset across the lines.
-const BY_OBJECT_FNV: &str = "106a0f7c12efff84";
+/// Changed again when `overhang_totally_speed` became a setting with a default: only its line in the settings block,
+/// `; overhang_totally_speed = 0`, was added.
+const BY_OBJECT_FNV: &str = "f2a5fe4e5a625c92";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

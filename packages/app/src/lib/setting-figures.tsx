@@ -776,6 +776,7 @@ const SAME_AS: Readonly<Record<string, string>> = {
   overhang_2_4_speed: 'enable_overhang_speed',
   overhang_3_4_speed: 'enable_overhang_speed',
   overhang_4_4_speed: 'enable_overhang_speed',
+  overhang_totally_speed: 'enable_overhang_speed',
   seam_slope_min_length: 'seam_slope_type',
   spiral_mode_smooth: 'spiral_mode',
   bottom_surface_pattern: 'top_surface_pattern',
