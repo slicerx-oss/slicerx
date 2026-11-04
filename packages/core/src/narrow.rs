@@ -733,6 +733,308 @@ mod tests {
         assert_eq!((normal, narrow), (vec![two[1].clone()], vec![two[0].clone()]));
     }
 
+    /// Whether `shape`'s outer ring spans less than `w` internal units in x or in y.
+    fn box_side_under(shape: &[Vec<IntPoint<i32>>], w: i64) -> bool {
+        shape
+            .first()
+            .filter(|r| r.len() >= 3)
+            .and_then(|r| perimeters::ring_bounds(r))
+            .is_some_and(|b| i64::from(b[2]) - i64::from(b[0]) < w || i64::from(b[3]) - i64::from(b[1]) < w)
+    }
+
+    /// `split_lines` with every inward offset taken in full, so none of them can leave early. A shape whose outer box
+    /// is under `skip_under` units across is also dropped before its opening (0 drops none): a stand-in for a wrong
+    /// bound. The property tests below hold `split_lines` equal to it with no bound.
+    fn split_lines_reference(
+        region: &Shapes,
+        dir: Dir,
+        spacing: i64,
+        spacing_mm: f64,
+        skip_under: i64,
+    ) -> (Shapes, Shapes) {
+        if region.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let sp = mm(spacing_mm);
+        let spacing = spacing.max(1);
+        let mut normal: Shapes = Vec::new();
+        for shape in region {
+            if skip_under > 0 && box_side_under(shape, skip_under) {
+                continue;
+            }
+            let one: Shapes = vec![shape.clone()];
+            let eroded = perimeters::offset_full(&one, -(2 * sp));
+            let opened = if eroded.is_empty() {
+                Vec::new()
+            } else {
+                perimeters::offset(&eroded, 3 * sp)
+            };
+            let core = perimeters::intersection(&one, &opened);
+            if core.is_empty() {
+                continue;
+            }
+            let inner_area = perimeters::offset_full(&core, -(sp / 2));
+            let rings: Vec<Vec<(i64, i64)>> = inner_area
+                .iter()
+                .flat_map(|s| s.iter())
+                .map(|r| r.iter().map(|p| dir.st(p.x, p.y)).collect())
+                .collect();
+            let outline: Vec<i64> = shape.iter().flatten().map(|p| dir.st(p.x, p.y).0).collect();
+            let (Some(&s_min), Some(&s_max)) = (outline.iter().min(), outline.iter().max()) else {
+                continue;
+            };
+            let n_lines = usize::try_from((s_max - s_min + spacing - 1) / spacing).unwrap_or(0);
+            let mut sections: Vec<Vec<(i64, i64)>> = Vec::with_capacity(n_lines);
+            for i in 0..n_lines {
+                let at = s_min + i64::try_from(i).unwrap_or(0) * spacing;
+                sections.push(
+                    sections_at(&rings, at)
+                        .into_iter()
+                        .filter(|&(a, b)| (b - a).abs() > spacing)
+                        .collect(),
+                );
+            }
+            let sections = filter_vibrating(&sections);
+            normal.extend(reconstruct(&sections, s_min, spacing, dir));
+        }
+        let normal_ex = union_shapes(&normal);
+        let narrow = if normal_ex.is_empty() {
+            region.clone()
+        } else {
+            perimeters::difference(region, &normal_ex)
+        };
+        let mut normal_all = normal_ex;
+        let mut keep: Shapes = Vec::new();
+        for piece in narrow {
+            let one: Shapes = vec![piece.clone()];
+            if perimeters::offset_full(&one, -(sp / 2)).is_empty() {
+                let grown = perimeters::offset(&one, sp * 3 / 10);
+                #[cfg(not(target_arch = "wasm32"))]
+                let nearby = perimeters::near(&normal_all, perimeters::bounds(&grown));
+                #[cfg(not(target_arch = "wasm32"))]
+                let base = nearby.as_ref().unwrap_or(&normal_all);
+                #[cfg(target_arch = "wasm32")]
+                let base = &normal_all;
+                if !normal_all.is_empty() && perimeters::overlap(base, &grown) {
+                    normal_all.push(piece);
+                    continue;
+                }
+            }
+            keep.push(piece);
+        }
+        if keep.is_empty() {
+            return (region.clone(), Vec::new());
+        }
+        let normal_out = if normal_all.is_empty() {
+            Vec::new()
+        } else {
+            perimeters::intersection(&perimeters::offset(&union_shapes(&normal_all), sp / 2), region)
+        };
+        (normal_out, keep)
+    }
+
+    /// A small deterministic generator (xorshift), so the cases repeat.
+    struct Rng(u64);
+
+    impl Rng {
+        #[allow(clippy::cast_precision_loss, reason = "a unit fraction")]
+        fn unit(&mut self) -> f64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn range(&mut self, lo: f64, hi: f64) -> f64 {
+            lo + (hi - lo) * self.unit()
+        }
+
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss,
+            reason = "a small index"
+        )]
+        fn pick(&mut self, n: usize) -> usize {
+            ((self.unit() * f64::from(u32::try_from(n).unwrap_or(u32::MAX))) as usize).min(n - 1)
+        }
+    }
+
+    /// Points in internal units, turned by `angle` about the origin and moved to `at`.
+    fn placed(points: &[[f64; 2]], angle: f64, at: [f64; 2]) -> Vec<IntPoint<i32>> {
+        let (s, c) = angle.m_sin_cos();
+        #[allow(clippy::cast_possible_truncation, reason = "plate coordinates")]
+        points
+            .iter()
+            .map(|p| {
+                IntPoint::new(
+                    (at[0] + p[0] * c - p[1] * s).round() as i32,
+                    (at[1] + p[0] * s + p[1] * c).round() as i32,
+                )
+            })
+            .collect()
+    }
+
+    /// One random shape, sized around `sp` internal units: a strip, an L, a ring, a tiny island, a star, or an
+    /// axis-aligned box whose narrow side is within a few units of 4 spacings.
+    fn random_shape(rng: &mut Rng, sp: f64) -> Vec<Vec<IntPoint<i32>>> {
+        let at = [rng.range(-2.0e5, 2.0e5), rng.range(-2.0e5, 2.0e5)];
+        let angle = if rng.unit() < 0.3 {
+            0.0
+        } else {
+            rng.range(0.0, std::f64::consts::TAU)
+        };
+        let box_pts = |w: f64, h: f64| vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]];
+        match rng.pick(6) {
+            0 => {
+                let w = rng.range(0.5, 7.0) * sp;
+                let l = rng.range(4.0, 60.0) * sp;
+                vec![placed(&box_pts(l, w), angle, at)]
+            }
+            1 => {
+                let (w1, w2) = (rng.range(0.8, 8.0) * sp, rng.range(0.8, 8.0) * sp);
+                let (l1, l2) = (rng.range(6.0, 40.0) * sp, rng.range(6.0, 40.0) * sp);
+                let pts = vec![[0.0, 0.0], [l1, 0.0], [l1, w1], [w2, w1], [w2, l2], [0.0, l2]];
+                vec![placed(&pts, angle, at)]
+            }
+            2 => {
+                let side = rng.range(5.0, 40.0) * sp;
+                let band = rng.range(0.5, 6.0) * sp;
+                let mut hole = placed(
+                    &box_pts(side - 2.0 * band, side - 2.0 * band),
+                    angle,
+                    [
+                        at[0] + band * angle.m_cos() - band * angle.m_sin(),
+                        at[1] + band * angle.m_sin() + band * angle.m_cos(),
+                    ],
+                );
+                hole.reverse();
+                vec![placed(&box_pts(side, side), angle, at), hole]
+            }
+            3 => {
+                let (w, h) = (rng.range(0.05, 3.0) * sp, rng.range(0.05, 3.0) * sp);
+                vec![placed(&box_pts(w, h), angle, at)]
+            }
+            4 => {
+                let n = 5 + u32::try_from(rng.pick(20)).unwrap_or(0);
+                let r0 = rng.range(1.0, 6.0) * sp;
+                let pts: Vec<[f64; 2]> = (0..n)
+                    .map(|i| {
+                        let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                        let r = r0 * rng.range(0.4, 1.0);
+                        [r * a.m_cos(), r * a.m_sin()]
+                    })
+                    .collect();
+                vec![placed(&pts, 0.0, at)]
+            }
+            _ => {
+                // Right at the bound: the narrow side is 4 spacings give or take 3 units, axis-aligned so the box is exact.
+                let w = (4.0 * sp).round() + f64::from(i32::try_from(rng.pick(7)).unwrap_or(0) - 3);
+                let l = rng.range(5.0, 50.0) * sp;
+                let pts = if rng.unit() < 0.5 {
+                    box_pts(l, w)
+                } else {
+                    box_pts(w, l)
+                };
+                vec![placed(&pts, 0.0, at)]
+            }
+        }
+    }
+
+    #[test]
+    fn the_early_exit_in_offset_leaves_the_split_unchanged() {
+        let mut rng = Rng(0x5eed_5b1f_7a11_ce55);
+        let (mut cases, mut small, mut large) = (0, 0, 0);
+        for &spacing_mm in &[0.35, 0.42, 0.45, 0.5, 0.62, 0.8] {
+            let sp = mm(spacing_mm);
+            let spacing = crate::paths::t_units(spacing_mm);
+            for _ in 0..200 {
+                let n = 1 + rng.pick(4);
+                let region: Shapes = (0..n).map(|_| random_shape(&mut rng, f64::from(sp))).collect();
+                for s in &region {
+                    if box_side_under(s, 4 * i64::from(sp)) {
+                        small += 1;
+                    } else {
+                        large += 1;
+                    }
+                }
+                for dir in [Dir::D45, Dir::D135] {
+                    assert_eq!(
+                        split_lines(&region, dir, spacing, spacing_mm),
+                        split_lines_reference(&region, dir, spacing, spacing_mm, 0),
+                        "spacing {spacing_mm} mm, {dir:?}, region {region:?}"
+                    );
+                    cases += 1;
+                }
+            }
+        }
+        // Both sides of the bound are covered.
+        assert_eq!(cases, 2400);
+        assert!(
+            small > 500 && large > 500,
+            "under the bound {small}, over it {large}"
+        );
+    }
+
+    #[test]
+    fn the_early_exit_in_offset_holds_right_at_4_spacings() {
+        // Axis-aligned bars whose narrow side runs from 4 spacings less 8 units to 4 spacings plus 8, every unit.
+        for &spacing_mm in &[0.42, 0.45, 0.5] {
+            let sp = mm(spacing_mm);
+            let spacing = crate::paths::t_units(spacing_mm);
+            for dw in -8..=8 {
+                let w = 4 * sp + dw;
+                let l = 40 * sp;
+                let flat = vec![vec![
+                    IntPoint::new(0, 0),
+                    IntPoint::new(l, 0),
+                    IntPoint::new(l, w),
+                    IntPoint::new(0, w),
+                ]];
+                let tall = vec![vec![
+                    IntPoint::new(0, 0),
+                    IntPoint::new(w, 0),
+                    IntPoint::new(w, l),
+                    IntPoint::new(0, l),
+                ]];
+                assert_eq!(box_side_under(&flat, 4 * i64::from(sp)), dw < 0);
+                for region in [vec![flat], vec![tall]] {
+                    for dir in [Dir::D45, Dir::D135] {
+                        assert_eq!(
+                            split_lines(&region, dir, spacing, spacing_mm),
+                            split_lines_reference(&region, dir, spacing, spacing_mm, 0),
+                            "spacing {spacing_mm} mm, width {w}, {dir:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_early_exit_at_5_spacings_is_caught() {
+        // The same comparison with the bound moved out to 5 spacings, which drops shapes that have a core, must
+        // disagree with the split somewhere across the spacings.
+        let mut rng = Rng(0x5eed_5b1f_7a11_ce55);
+        let mut caught = 0;
+        for &spacing_mm in &[0.35, 0.42, 0.45, 0.5, 0.62, 0.8] {
+            let sp = mm(spacing_mm);
+            let spacing = crate::paths::t_units(spacing_mm);
+            for _ in 0..200 {
+                let n = 1 + rng.pick(4);
+                let region: Shapes = (0..n).map(|_| random_shape(&mut rng, f64::from(sp))).collect();
+                for dir in [Dir::D45, Dir::D135] {
+                    if split_lines(&region, dir, spacing, spacing_mm)
+                        != split_lines_reference(&region, dir, spacing, spacing_mm, 5 * i64::from(sp))
+                    {
+                        caught += 1;
+                    }
+                }
+            }
+        }
+        assert!(caught > 0, "a bound of 5 spacings went unnoticed");
+    }
+
     #[test]
     fn a_ring_round_a_hole_is_narrow() {
         // A 12 mm square round a 7 mm hole: a 2.5 mm ring.
