@@ -3,15 +3,16 @@
 // The Bambu Studio 2.8 overlay (packages/profiles/overlays/bbl-2.8.json) is in the shipped Bambu Lab data: applying it
 // again changes nothing, so a regeneration that dropped it fails here. Rerun scripts/apply-overlay.ts after regenerating.
 // The MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json) is checked the same way, in
-// resolved/prusa.json and machine.json.
+// resolved/prusa.json and machine.json, and the Prusa brim (packages/profiles/overlays/prusa-brim.json) in resolved/prusa.json.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
+import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_BRIM_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
 import { printerConfig, printerProfile } from './profiles'
 import { resolvedProfile } from './resolved'
 import { loadFilamentPreset } from './filaments'
 import { defaultConfig } from './schema'
+import { stockLayer } from './stock-layer'
 
 const profiles = fileURLToPath(new URL('../../profiles/', import.meta.url))
 const read = <T>(path: string): T => JSON.parse(readFileSync(profiles + path, 'utf8')) as T
@@ -147,5 +148,57 @@ describe('MK4 IS lift and retraction for the stock MK4', () => {
     }
     // The MK4S has its own values from the maker and is not overlaid.
     expect(pick(printerConfig('prusa-mk4s') as unknown as Record<string, unknown>)).toEqual(owner)
+  })
+})
+
+describe('Prusa brim for every process tier', () => {
+  const brim = read<MakerOverlay>(PRUSA_BRIM_OVERLAY)
+
+  it('is applied to resolved/prusa.json', () => {
+    const shipped = readFileSync(profiles + 'resolved/prusa.json', 'utf8')
+    const data = JSON.parse(shipped) as ResolvedBrand
+    applyResolvedOverlay(data, brim, nozzle)
+    expect(JSON.stringify(data) + '\n').toBe(shipped)
+  })
+
+  it('sets only the two brim keys, on every tier', () => {
+    expect(brim.every_process?.values).toEqual({ brim_loop_rounding: 'whole', brim_use_efc_outline: '1' })
+    expect(brim.machine).toEqual({})
+    expect(brim.process).toEqual({})
+    expect(brim.filament).toEqual({})
+  })
+
+  it('gives every Prusa model, nozzle and tier whole loops from the compensated outline', () => {
+    const data = read<ResolvedBrand>('resolved/prusa.json')
+    let parts = 0
+    for (const [model, entry] of Object.entries(data.models)) {
+      for (const [size, part] of [['default', entry] as const, ...Object.entries(entry.nozzles ?? {})]) {
+        const base = part.process[part.base] as Record<string, unknown>
+        expect(base['brim_loop_rounding'], `${model} ${size}`).toBe('whole')
+        expect(base['brim_use_efc_outline'], `${model} ${size}`).toBe(true)
+        for (const [tier, p] of Object.entries(part.process)) {
+          if (tier === part.base) continue
+          const d = p as { set: Record<string, unknown>; unset: string[] }
+          for (const k of ['brim_loop_rounding', 'brim_use_efc_outline']) expect(k in d.set || d.unset.includes(k), `${model} ${size} ${tier} ${k}`).toBe(false)
+        }
+        parts++
+      }
+    }
+    expect(parts).toBeGreaterThan(20)
+  })
+
+  it('reaches the printer layer of the Prusa catalog printers and no other maker', async () => {
+    for (const printerId of ['prusa-mk4', 'prusa-mk4s', 'prusa-mini-plus', 'prusa-xl', 'prusa-xl-5-toolhead', 'prusa-core-one', 'prusa-core-one-l']) {
+      for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
+        const layer = await stockLayer({ printerId, tier, slots: [] })
+        expect(layer!.values['brim_loop_rounding'], `${printerId} ${tier}`).toBe('whole')
+        expect(layer!.values['brim_use_efc_outline'], `${printerId} ${tier}`).toBe(true)
+      }
+    }
+    for (const printerId of ['bambu-p1s', 'bambu-a1', 'creality-k1']) {
+      const layer = await stockLayer({ printerId, tier: 'standard', slots: [] })
+      expect(layer!.values['brim_loop_rounding'], printerId).toBeUndefined()
+      expect(layer!.values['brim_use_efc_outline'] ?? false, printerId).toBe(false)
+    }
   })
 })

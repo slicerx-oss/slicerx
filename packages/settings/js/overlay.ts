@@ -5,6 +5,8 @@
 // presets: filament presets by name (filaments/BBL.json), and the printer, default filament and process tiers of each
 // model and nozzle (resolved/bambu-lab.json). packages/profiles/overlays/prusa-mk4is.json gives the stock Prusa MK4 the
 // lift and retraction of the maker's MK4 IS profile, in resolved/prusa.json and in the printer settings of machine.json.
+// packages/profiles/overlays/prusa-brim.json gives every Prusa process tier the maker's brim: whole loops, grown from the
+// compensated first layer outline.
 // scripts/gen-resolved.ts applies them before writing, and scripts/apply-overlay.ts applies them to the shipped files, so
 // a regeneration of any of these files keeps them. Applying one twice changes nothing.
 import { sameValue } from './diff'
@@ -40,6 +42,8 @@ export interface VendorData { families: Record<string, { base: Raw; variants: Re
 export const BBL_OVERLAY = 'overlays/bbl-2.8.json'
 /** The MK4 IS lift and retraction for the stock Prusa MK4, relative to packages/profiles. */
 export const PRUSA_OVERLAY = 'overlays/prusa-mk4is.json'
+/** The maker's brim (whole loops, from the compensated outline) for every Prusa process tier, relative to packages/profiles. */
+export const PRUSA_BRIM_OVERLAY = 'overlays/prusa-brim.json'
 
 /**
  * Every maker overlay, in the order they apply: the brand whose resolved file it writes, the vendor filament file it
@@ -48,6 +52,7 @@ export const PRUSA_OVERLAY = 'overlays/prusa-mk4is.json'
 export const MAKER_OVERLAYS: readonly { path: string; brand: string; filaments?: string; machineJson: boolean }[] = [
   { path: BBL_OVERLAY, brand: 'bambu-lab', filaments: 'filaments/BBL.json', machineJson: false },
   { path: PRUSA_OVERLAY, brand: 'prusa', machineJson: true },
+  { path: PRUSA_BRIM_OVERLAY, brand: 'prusa', machineJson: false },
 ]
 
 const defaults = defaultConfig() as Raw
