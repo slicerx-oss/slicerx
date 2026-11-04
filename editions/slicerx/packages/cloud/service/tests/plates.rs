@@ -370,6 +370,56 @@ async fn a_job_naming_plates_slices_only_those_each_with_its_own_files() {
 }
 
 #[tokio::test]
+async fn each_plate_carries_its_own_collisions_and_the_plate_they_are_on() {
+    let h = harness();
+    let sha = h.upload(RV_TOKEN, &lantern()).await;
+    // By object under a low gantry: plate 1's two cubes, side by side, strike; plate 2's one cube has nothing to meet.
+    let mut req = request(&sha, Some(json!([2, 1])));
+    let cfg = req["config"].as_object_mut().unwrap();
+    cfg.insert("print_sequence".into(), json!("by object"));
+    cfg.insert("extruder_clearance_height_to_rod".into(), json!(10));
+    cfg.insert("extruder_clearance_dist_to_rod".into(), json!(40));
+    let id = h.queue(RV_TOKEN, req).await.unwrap();
+    let job = h.work(RV_TOKEN, &id).await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    let plates = job["result"]["plates"].as_array().unwrap();
+    let (two, one) = (&plates[0], &plates[1]);
+    assert_eq!((two["plate"].as_u64(), one["plate"].as_u64()), (Some(2), Some(1)));
+    assert!(
+        two.get("collisions").is_none() && two.get("collisionPlate").is_none(),
+        "{two}"
+    );
+    // The job's own report is plate 2's, so it is clean too.
+    assert!(job["result"].get("collisionPlate").is_none());
+    let hits = one["collisions"].as_array().expect("plate 1 strikes");
+    let plate = &one["collisionPlate"];
+    let ids: Vec<&str> = plate["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "{plate}");
+    for c in hits {
+        for key in ["objectId", "hitId"] {
+            assert!(
+                ids.contains(&c[key].as_str().unwrap()),
+                "{key} of {c} is on the plate {plate}"
+            );
+        }
+    }
+    let names: Vec<&str> = plate["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Cube 1", "Cube 2"]);
+    assert!(plate["bed"].as_array().unwrap().len() >= 3, "{plate}");
+    assert_eq!(plate["zones"], json!([]));
+}
+
+#[tokio::test]
 async fn a_job_whose_plates_all_fail_fails_with_the_first_plates_words() {
     let h = harness();
     let sha = h.upload(RV_TOKEN, &lantern()).await;

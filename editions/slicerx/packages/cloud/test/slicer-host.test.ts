@@ -55,6 +55,14 @@ function setup(enabled = true, encode?: (parts: MeshPart[]) => Uint8Array) {
   return { svc, slicer, cloud, released, sliced }
 }
 
+/** The plate check a report carries for a hit of the nozzle in a keep-out zone while `id` prints, as sx writes it. */
+const hitOn = (id: string) => ({
+  collisions: [{ kind: 'keep_out', severity: 'hit', part: 'nozzle', objectId: id, hitId: 'exclusion-area', damagedId: id, layer: 0, segment: 3, timeS: 12, lastLayer: 4, at: [5, 5, 0.2], point: [5, 5, 0.2], worstLayer: 0, worstPoint: [5, 5, 0.2], depthMm: 0, hitHeightMm: 0, contactMin: [2, 2, 0.2], contactMax: [8, 8, 1] }],
+  collisionFixes: [{ kind: 'move_object', costS: 0, clears: [0], oneClick: false }],
+  collisionPlate: { bed: [[0, 0], [256, 0], [256, 256], [0, 256]], objects: [{ id, name: 'Hook', hull: [[0, 0], [20, 0], [20, 20], [0, 20]] }], zones: [{ id: 'exclusion-area', outline: [[0, 0], [18, 0], [18, 28], [0, 28]] }] },
+  primeTower: { x: 200, y: 200, width: 30, depth: 30, angle: 0, reason: 'kept', footprint: [198, 198, 232, 232] },
+})
+
 describe('cloud slicing through the app slicer', () => {
   it("keeps the service's warnings as written: any code, and the fields beyond code, message and layer", async () => {
     const { svc, slicer } = setup()
@@ -66,6 +74,21 @@ describe('cloud slicing through the app slicer', () => {
     ]
     const r = await slicer.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never })
     expect(r.warnings).toEqual(svc.warnings)
+  })
+
+  it('keeps the plate check the service sends: collisions, their fixes, the plate they are on and the tower', async () => {
+    const { svc, slicer } = setup()
+    const body = await slicer.loadParts('Body', [part('Body')])
+    svc.extra = () => hitOn('a')
+    const r = await slicer.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never })
+    expect(r.collisions).toEqual(hitOn('a').collisions)
+    expect(r.collisionFixes).toEqual(hitOn('a').collisionFixes)
+    expect(r.collisionPlate).toEqual(hitOn('a').collisionPlate)
+    expect(r.primeTower).toEqual(hitOn('a').primeTower)
+    // A report from a service without them reads as before.
+    delete svc.extra
+    const clean = await slicer.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never })
+    expect(Object.keys(clean).filter((k) => /^collision|^primeTower/.test(k))).toEqual([])
   })
 
   it('uploads the models the app loaded, painted copy included, and returns the G-code', async () => {
@@ -273,6 +296,25 @@ describe('the account check before uploading', () => {
 
 describe('a whole project sliced by plate', () => {
   const projectBytes = () => new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3, 4]).slice().buffer
+
+  it('keeps the plate check of each plate a project names: collisions, fixes, the plate and the tower', async () => {
+    const { svc, slicer } = setup()
+    svc.extra = (n) => (n === 2 ? hitOn('p-2') : {})
+    const h = await slicer.loadModel(projectBytes(), 'Lantern.3mf')
+    const r = await slicer.slice({ plate: plate([{ id: 'p', name: 'Lantern.3mf', mesh: h.id } as never]), config: {} as never, options: { plates: [1, 2] } })
+    const [one, two] = r.plates!
+    if (one?.status !== 'succeeded' || two?.status !== 'succeeded') throw new Error('both plates slice')
+    expect(two.result.collisions).toEqual(hitOn('p-2').collisions)
+    expect(two.result.collisionFixes).toEqual(hitOn('p-2').collisionFixes)
+    expect(two.result.collisionPlate).toEqual(hitOn('p-2').collisionPlate)
+    expect(two.result.primeTower).toEqual(hitOn('p-2').primeTower)
+    // Plate 1 is clean: it carries none of them, and neither does the slice, which reads as plate 1.
+    for (const res of [one.result, r]) {
+      expect(res.collisions).toBeUndefined()
+      expect(res.collisionPlate).toBeUndefined()
+      expect(res.collisionFixes).toBeUndefined()
+    }
+  })
 
   it('sends only the plates named and reads each plate back by its own slice id', async () => {
     const { svc, slicer } = setup()

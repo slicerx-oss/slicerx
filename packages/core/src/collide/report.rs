@@ -238,10 +238,13 @@ impl Meta {
         match self.objects.get(i) {
             Some(o) => o.id.clone(),
             None if i == n => "prime-tower".to_owned(),
-            None => match self.zones.get(i.saturating_sub(n + 1)) {
-                Some(&super::plate::ZONE_WRAP_CHECK) => "wrap-check-zone".to_owned(),
-                _ => "exclusion-area".to_owned(),
-            },
+            None => super::plate::zone_id(
+                self.zones
+                    .get(i.saturating_sub(n + 1))
+                    .copied()
+                    .unwrap_or(super::plate::ZONE_EXCLUSION),
+            )
+            .to_owned(),
         }
     }
 }

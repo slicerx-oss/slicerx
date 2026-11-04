@@ -33,6 +33,8 @@ export interface MockCloudService {
   warnings: Record<string, unknown>[]
   /** Plates of a job that names its plates that fail, with the engine's words; tests change it. */
   failPlates: Map<number, string>
+  /** Fields a report carries beyond the usual ones, by plate (null for a job that names no plates); tests set it. */
+  extra?: (plate: number | null) => Record<string, unknown>
 }
 
 /** A preview of one layer, 0.2 mm, with no toolpaths: enough for the app to show a finished slice. */
@@ -86,7 +88,7 @@ export function mockCloudService(): MockCloudService {
       requests.push(body.request)
       names.push(body.name ?? '')
       const id = `00000000-0000-4000-8000-${String(jobs.size + 1).padStart(12, '0')}`
-      const report = async (text: Uint8Array, timeS: number) => ({
+      const report = async (text: Uint8Array, timeS: number, plate: number | null) => ({
         schemaVersion: 1,
         engine: 'sx',
         layerCount: 1,
@@ -99,6 +101,7 @@ export function mockCloudService(): MockCloudService {
         gcodeBytes: text.length,
         gcodeSha256: await sha256Hex(text),
         previewBytes: preview.length,
+        ...svc.extra?.(plate),
       })
       // A job that names its plates: one report per plate, the first that sliced as the job's own.
       const named = (body.request['options'] as { plates?: number[] } | undefined)?.plates
@@ -106,7 +109,7 @@ export function mockCloudService(): MockCloudService {
         ? await Promise.all(
             named.map(async (n) => {
               const error = svc.failPlates.get(n)
-              return error ? { plate: n, status: 'failed', error } : { plate: n, status: 'succeeded', ...(await report(enc.encode(mockPlateGcode(n)), 20 * n)) }
+              return error ? { plate: n, status: 'failed', error } : { plate: n, status: 'succeeded', ...(await report(enc.encode(mockPlateGcode(n)), 20 * n, n)) }
             }),
           )
         : undefined
@@ -128,7 +131,7 @@ export function mockCloudService(): MockCloudService {
         stage: null,
         request: body.request,
         targetPrinterId: null,
-        result: first ? { ...own(first), plates } : await report(gcode, 20),
+        result: first ? { ...own(first), plates } : await report(gcode, 20, null),
         error: null,
         attempts: 1,
         createdAt: '2026-01-01T00:00:00Z',
@@ -163,6 +166,7 @@ export function mockCloudService(): MockCloudService {
       if (jobPath[2] === '/preview') return new Response(preview, { status: 200 })
       return json(200, job)
     }
+    if (method === 'GET' && path === '/v1/jobs') return json(200, [...jobs.values()].reverse())
     return json(404, { error: { code: 'not_found', message: `${method} ${path}` } })
   }) as typeof globalThis.fetch
   return svc
