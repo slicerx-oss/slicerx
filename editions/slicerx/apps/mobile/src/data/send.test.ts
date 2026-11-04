@@ -4,10 +4,11 @@
 // hashed the way a host sees them, differ from the approved ones, or whose sha256 is not the hash of the uploaded bytes.
 import { hashParams, type ApprovalRequest, type JobFile, type PrinterInfo, type RemoteFile } from '@slicerx/contracts'
 import type { PocketHost } from '../host'
-import { libraryModel, pickedFileProblem, sliceAndSend, STEP_ON_PHONE } from './send'
+import { CollisionStop, libraryModel, pickedFileProblem, sliceAndSend, STEP_ON_PHONE } from './send'
 
 const mockOutcome = { current: null as unknown }
-jest.mock('../cloud/slice-job', () => ({ runCloudSlice: async () => mockOutcome.current }))
+const mockSlices = { count: 0 }
+jest.mock('../cloud/slice-job', () => ({ runCloudSlice: async () => (mockSlices.count++, mockOutcome.current) }))
 jest.mock('../cloud/stub', () => ({ createCloudStub: () => ({}) }))
 jest.mock('../cloud/stl', () => ({ boxStl: () => new ArrayBuffer(0) }))
 jest.mock('../pair', () => ({ sendSlice: jest.fn(), sliceOnComputer: jest.fn() }))
@@ -71,6 +72,41 @@ describe('phone send', () => {
     const h = hub()
     await expect(sliceAndSend(h.host, input, () => undefined)).rejects.toThrow(/sha256/)
     expect(h.started).toHaveLength(0)
+  })
+})
+
+describe('a cloud slice with a collision', () => {
+  const hit = { kind: 'hotend', severity: 'hit', part: 'toolhead', objectId: 'b', hitId: 'a', layer: 3, segment: 0, timeS: 9, lastLayer: 4, at: [0, 0, 1], point: [0, 0, 1], worstLayer: 3, worstPoint: [0, 0, 1], depthMm: 2, hitHeightMm: 10 }
+  const outcome = async (collisions: unknown[]) => {
+    const data = gcode.buffer.slice(0) as ArrayBuffer
+    return { file: { name: 'cube.gcode', kind: 'gcode', data, sha256: await sha(data) }, layerCount: 5, timeS: 60, grams: 2, collisions }
+  }
+
+  it('stops before the approval on a hit, sending nothing, with the outcome to send later', async () => {
+    mockOutcome.current = await outcome([hit])
+    const h = hub()
+    const err = await sliceAndSend(h.host, input, () => undefined).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(CollisionStop)
+    expect((err as CollisionStop).outcome).toBe(mockOutcome.current)
+    expect(h.uploaded).toHaveLength(0)
+    expect(h.started).toHaveLength(0)
+  })
+
+  it('goes on for a close call alone', async () => {
+    mockOutcome.current = await outcome([{ ...hit, severity: 'close' }])
+    const h = hub()
+    await sliceAndSend(h.host, input, () => undefined)
+    expect(h.started).toHaveLength(1)
+  })
+
+  it('sends the file of the stop when the person confirms again, with no second slice', async () => {
+    const stopped = await outcome([hit])
+    mockSlices.count = 0
+    const h = hub()
+    await sliceAndSend(h.host, input, () => undefined, undefined, stopped as never)
+    expect(mockSlices.count).toBe(0)
+    expect(h.started).toHaveLength(1)
+    expect(h.started[0]!.sha256).toBe(h.uploaded[0])
   })
 })
 

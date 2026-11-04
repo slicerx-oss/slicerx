@@ -17,6 +17,7 @@
     "./maker-tile": "./src/components/maker-tile.tsx",
     "./look": "./src/look-entry.ts",
     "./raven": "./src/raven-entry.ts",
+    "./heimdall-words": "./src/heimdall-words.ts",
     "./themes/*": "./themes/*"
   },
   "scripts": {

@@ -184,3 +184,56 @@ describe('cloud refusals in the phone words', () => {
     ).rejects.toThrow(/^This project is over the 10 MB cloud limit\. Slice it on your computer instead\.$/)
   })
 })
+
+describe('the printer the cloud checks the plate with', () => {
+  it("sends the printer's profile id and its own keep-out zones: the A1's nozzle wrap check corner, the P1S's excluded corner", async () => {
+    const { cloud, sent } = recording()
+    await runCloudSlice(cloud, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(sent[0]?.options?.printerId).toBe('bambu-a1')
+    expect(sent[0]?.config['head_wrap_detect_zone']).toBeTruthy()
+    expect(sent[0]?.config.printable_area).toEqual([[0, 0], [256, 0], [256, 256], [0, 256]])
+    const P1S: PrinterInfo = { ...A1, model: 'P1S' }
+    await runCloudSlice(cloud, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: P1S, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(sent[1]?.options?.printerId).toBe('bambu-p1s')
+    expect(sent[1]?.config['bed_exclude_area']).toBeTruthy()
+    // The P1S has no wrap check corner: the setting stays the schema's empty list.
+    expect(sent[1]?.config['head_wrap_detect_zone'] ?? []).toEqual([])
+  })
+
+  it('sends no profile id for a printer it does not know, on the bed of its table', async () => {
+    const { cloud, sent } = recording()
+    const odd: PrinterInfo = { ...A1, vendor: 'Workshop', model: 'Homebuilt 300' }
+    await runCloudSlice(cloud, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: odd, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(sent[0]?.options?.printerId).toBeUndefined()
+    expect(sent[0]?.config.printable_area).toEqual([[0, 0], [220, 0], [220, 220], [0, 220]])
+  })
+
+  it('keeps the collisions the cloud found, the plate they are on and the tower with the outcome', async () => {
+    const stub = createCloudStub({ stageMs: 0, queueMs: 0 })
+    const hit = { kind: 'keep_out', severity: 'hit', part: 'nozzle', objectId: 'obj-1', hitId: 'wrap-check-zone' }
+    const plate = { bed: [[0, 0], [256, 0], [256, 256], [0, 256]], objects: [], zones: [] }
+    const cloud: SlicerHost = { ...stub, slice: async (req, o) => ({ ...(await stub.slice(req, o)), collisions: [hit], collisionPlate: plate }) as never }
+    const out = await runCloudSlice(cloud, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(out.collisions).toEqual([hit])
+    expect(out.collisionPlate).toEqual(plate)
+    const clean = await runCloudSlice(stub, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(clean.collisions).toEqual([])
+    expect(clean.collisionPlate).toBeUndefined()
+  })
+
+  it('reads the collisions of a picked plate from that plate, as the job itself has none', async () => {
+    const stub = createCloudStub({ stageMs: 0, queueMs: 0 })
+    const hit = { kind: 'keep_out', severity: 'hit', part: 'nozzle', objectId: 'obj-1', hitId: 'wrap-check-zone' }
+    const plate = { bed: [[0, 0], [256, 0], [256, 256], [0, 256]], objects: [], zones: [] }
+    const cloud: SlicerHost = {
+      ...stub,
+      slice: async (req, o) => {
+        const r = await stub.slice(req, o)
+        return { ...r, plates: [{ plate: 2, status: 'succeeded', result: { ...r, collisions: [hit], collisionPlate: plate } }] } as never
+      },
+    }
+    const out = await runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined)
+    expect(out.collisions).toEqual([hit])
+    expect(out.collisionPlate).toEqual(plate)
+  })
+})

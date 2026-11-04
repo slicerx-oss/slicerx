@@ -153,3 +153,25 @@ describe('a 3MF project with several plates', () => {
     expect(onModelChange).toHaveBeenLastCalledWith('m2')
   })
 })
+
+it('shows the collision the slice stopped on, says so beside Print, and asks to print anyway', async () => {
+  const hit = { kind: 'hotend', severity: 'hit', part: 'toolhead', objectId: 'b', hitId: 'a', damagedId: 'a', layer: 3, segment: 0, timeS: 9, lastLayer: 4, at: [0, 0, 1], point: [0, 0, 1], worstLayer: 3, worstPoint: [0, 0, 1], depthMm: 2, hitHeightMm: 10 } as const
+  const plate = { bed: [[0, 0], [256, 0], [256, 256], [0, 256]] as [number, number][], objects: [{ id: 'a', name: 'Bracket', hull: [[0, 0], [10, 0], [10, 10]] as [number, number][] }, { id: 'b', name: 'Hook', hull: [[20, 0], [30, 0], [30, 10]] as [number, number][] }], zones: [] }
+  const p = props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, collision: { collisions: [hit as never], plate } })
+  await render(<SendPrintScreen {...p} />)
+  expect(screen.getByTestId('collision-card')).toBeTruthy()
+  expect(screen.getByText('The toolhead hits Bracket')).toBeTruthy()
+  expect(screen.getByTestId('collision-footer')).toHaveTextContent('1 collision on this plate')
+  expect(screen.getByTestId('send-button')).toBeEnabled()
+  await fireEvent.press(screen.getByTestId('send-button'))
+  expect(screen.getByText('Print anyway')).toBeTruthy()
+  expect(screen.getByText('The slice found 1 collision on this plate. Print anyway sends the file it made, as it is')).toBeTruthy()
+  await fireEvent.press(screen.getByTestId('send-sheet-confirm'))
+  await waitFor(() => expect(p.onSend).toHaveBeenCalledTimes(1))
+})
+
+it('shows no collision card without a stop', async () => {
+  await render(<SendPrintScreen {...props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, collision: null })} />)
+  expect(screen.queryByTestId('collision-card')).toBeNull()
+  expect(screen.queryByTestId('collision-footer')).toBeNull()
+})
