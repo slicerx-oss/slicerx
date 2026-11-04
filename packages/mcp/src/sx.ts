@@ -260,7 +260,7 @@ function writeRequest(job: SliceJob): { requestPath: string; objects: (SliceJobO
     config: sxConfig(job.explicitConfig, job.widthsAsGiven),
     // The config is a whole resolved profile, so the engine's list of keys it never reads would be long and say
     // nothing about the person's file (import_report does that); a refused value names its key instead.
-    options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
+    options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.emitPreview && job.previewFormat === 'v2' ? { previewFormat: 'v2' } : {}), configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
     meshes,
   }
   const requestPath = join(job.outDir, 'request.json')

@@ -90,6 +90,7 @@ export const sliceFileInput = {
   ...sliceInput,
   output: z.enum(['gcode', 'gcode.3mf']).default('gcode').describe('gcode: a plain G-code file. gcode.3mf: also a .gcode.3mf holding the plate, the format Bambu Lab printers print. For a Vault design it holds no mesh: the G-code, the objects the printer can skip and the listing'),
   preview: z.boolean().default(false).describe('Also write the toolpath preview (SXPV) that the @slicerx/embed viewport shows. sx engine only.'),
+  preview_format: z.enum(['v1', 'v2']).default('v1').describe('The encoding of the preview: v1, the fixed-size records every SXPV reader reads, or v2, the same toolpaths in about a fifth of the bytes, layer by layer, which readPreview in @slicerx/contracts and @slicerx/embed expands. v1 stays the default until a later release.'),
 }
 
 const v3 = z.tuple([z.number(), z.number(), z.number()])
@@ -219,7 +220,7 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep'; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep'; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -340,6 +341,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     trustedGcode,
     ...(widthsAsGiven.length ? { widthsAsGiven } : {}),
     emitPreview: emitGcode && args.preview === true && slicer.kind === 'sx',
+    ...(args.preview_format === 'v2' ? { previewFormat: 'v2' as const } : {}),
     ...(args.allow_collisions ? { allowCollisions: true } : {}),
     ...(args.paint ? { paint: args.paint } : {}),
   })

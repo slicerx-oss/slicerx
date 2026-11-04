@@ -3,9 +3,10 @@
 //! sx: slice from the command line and run the slicing benchmark.
 //!
 //! sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode | -o -] [--preview out.sxpv]
+//!   [--preview-format v1|v2]
 //!          [--allow-collisions] [--strict]
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]
-//! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
+//! sx slice --request <req.json | -> [--out-dir <dir>] [--preview-format v1|v2] [--allow-collisions] [--strict]
 //! sx check --request <req.json | ->
 //! sx schema [request | result]
 //! script recognition: --script-printer <model-id> --script-firmware <flavor>
@@ -39,7 +40,8 @@
 //! relative to the request file; `file.3mf#2` picks plate 2 of a project. A project named without `#N` that has
 //! more than one plate is listed in the result's `projectPlates` (and on stderr).
 //! With `--out-dir`, the G-code and SXPV are
-//! written there as `slice.gcode` and `slice.sxpv`. A by-object plate where the head, gantry or tool changer would meet
+//! written there as `slice.gcode` and `slice.sxpv`. `--preview-format v2` writes the preview as SXPV v2 (the request's
+//! `options.previewFormat`; `docs/architecture.md`), about a fifth of the v1 bytes; v1 stays the default. A by-object plate where the head, gantry or tool changer would meet
 //! a printed part, and any plate where two objects' paths cross or a path enters an exclusion area (the result's
 //! `collisions`), is refused with exit code 3, unless `--allow-collisions` asks for it anyway; close calls inside the
 //! profile's clearance radius pass with the result listing them.
@@ -111,7 +113,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -494,6 +496,18 @@ fn read_request(src: &str) -> Result<(String, PathBuf), String> {
 
 /// The command line lists the keys the engine does not use unless the request says not to; `--strict` refuses the
 /// slice over them.
+/// `--preview-format v1 | v2`: the SXPV encoding the preview is written in (v1 unless asked).
+fn preview_format(args: &[String]) -> Result<Option<sx_core::api::PreviewFormat>, String> {
+    use sx_core::api::PreviewFormat;
+    match flag(args, "--preview-format") {
+        None if has(args, "--preview-format") => Err("--preview-format needs v1 or v2".into()),
+        None => Ok(None),
+        Some("v1") => Ok(Some(PreviewFormat::V1)),
+        Some("v2") => Ok(Some(PreviewFormat::V2)),
+        Some(other) => Err(format!("--preview-format {other}: use v1 or v2")),
+    }
+}
+
 fn report_options(req: &mut sx_core::api::SliceRequest, args: &[String]) {
     if req.options.config_report.is_none() {
         req.options.config_report = Some(true);
@@ -672,6 +686,11 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
     report_options(&mut req, args);
+    match preview_format(args) {
+        Ok(Some(f)) => req.options.preview_format = Some(f),
+        Ok(None) => {}
+        Err(e) => return fail(EXIT_USAGE, e),
+    }
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
     if let Err(e) = project_defaults(&mut req, &base, &paths) {
         return fail(EXIT_INPUT, e.to_string());
@@ -1553,6 +1572,9 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         _ => std::io::Write::write_all(&mut std::io::stdout().lock(), &gcode)?,
     }
     if let Some(p) = flag(args, "--preview") {
+        if preview_format(args)? == Some(sx_core::api::PreviewFormat::V2) {
+            sxpv = sx_core::preview_v2::encode(&sxpv)?;
+        }
         std::fs::write(p, &sxpv)?;
     }
     for w in &out.warnings {

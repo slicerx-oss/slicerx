@@ -497,6 +497,17 @@ pub struct ThumbnailInput {
     pub rgba: String,
 }
 
+/// The encoding of a slice's SXPV preview.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewFormat {
+    /// The fixed-size records every SXPV reader reads.
+    #[default]
+    V1,
+    /// The layer-ordered varint encoding that expands back into the same v1 bytes.
+    V2,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestOptions {
@@ -525,6 +536,11 @@ pub struct RequestOptions {
     pub emit_gcode: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emit_preview: Option<bool>,
+    /// The preview's encoding: `v1` (the default) or `v2`, the same toolpaths in about a fifth of the bytes, in
+    /// layer order (`preview_v2`). Readers that know only v1 refuse v2, so a host asks for it only when its reader
+    /// expands it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_format: Option<PreviewFormat>,
     /// sleipnir: the top of every layer in mm, first entry is the first
     /// layer's top. Entries strictly ascend, each layer is 0.04 to 0.8 mm
     /// thick, and the last reaches the top of the plate. Replaces
@@ -2764,6 +2780,9 @@ fn run_prepared_timed(
     }
     report.gcode_bytes = run.gcode.len() as u64;
     report.gcode_sha256 = gcode_sha;
+    if req.options.preview_format == Some(PreviewFormat::V2) && !run.preview.is_empty() {
+        run.preview = crate::preview_v2::encode(&run.preview)?;
+    }
     report.preview_bytes = run.preview.len() as u64;
     #[allow(
         clippy::cast_precision_loss,
@@ -2830,6 +2849,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "shards": { "type": "integer", "minimum": 1 },
         "emitGcode": { "type": "boolean" },
         "emitPreview": { "type": "boolean" },
+        "previewFormat": { "enum": ["v1", "v2"], "description": "The SXPV encoding: v1 (the default) or v2, the same toolpaths in about a fifth of the bytes, in layer order, which expands back into the v1 bytes" },
         "layerGcode": { "type": "array", "items": { "type": "object", "required": ["kind"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "Placed on the first layer whose top reaches this height" }, "kind": { "enum": ["pause", "color_change", "custom"] }, "gcode": { "type": "string" } } }, "description": "G-code at the start of layers; pause and color_change both write the profile's pause G-code (a color change is a filament swap by hand), on each object at that height when printed by object" },
         "toolChanges": { "type": "array", "items": { "type": "object", "required": ["filament"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "The change happens at the start of the first layer whose top reaches this height" }, "filament": { "type": "integer", "minimum": 1, "maximum": 64 } } }, "description": "Tool changes at heights through the printer's change G-code, on a plate that prints one filament by layer; skipped with a tool_change_skipped warning otherwise" },
         "resumeZ": { "type": "object", "required": ["mode", "zMm"], "properties": { "mode": { "const": "declare" }, "zMm": { "type": "number", "minimum": 0 } }, "description": "With resumeFromLayer: write G92 Z after homing X and Y; the nozzle must be at zMm by hand" },

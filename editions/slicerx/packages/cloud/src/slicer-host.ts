@@ -149,12 +149,17 @@ function base64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-/** The request's options as the service reads them: everything the local engine gets, the thumbnail as base64. */
+/**
+ * The request's options as the service reads them: everything the local engine gets, the thumbnail as base64, and
+ * the preview as SXPV v2 unless the request names a format (`readPreview` expands v2). The service writes v1 unless
+ * asked, for clients that read only v1.
+ */
 function cloudOptions(o: SliceRequest['options']): CloudSliceOptions {
   const { thumbnail, engine: _engine, ...rest } = o ?? {}
   return {
     ...rest,
     engine: 'sx',
+    previewFormat: rest.previewFormat ?? 'v2',
     ...(thumbnail ? { thumbnail: { width: thumbnail.width, height: thumbnail.height, rgba: base64(thumbnail.rgba) } } : {}),
   }
 }
