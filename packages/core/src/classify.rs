@@ -266,6 +266,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                     opening,
                     surfaces_only: crate::shells::surfaces_only(cfg),
                     slit: i.slit_of.filter(|_| crate::shells::slit_counts(cfg)),
+                    slit_tag: i.tag,
                     narrow: crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true),
                 };
                 let solid = crate::shells::solid_area(&input);

@@ -28,6 +28,9 @@ type WalkKey = ((i64, i64, i64), u64);
 /// Layer, top and bottom shell layers, then the bits of the solid spacing, wall offset and opening, and whether
 /// only the surfaces count, narrow detection is on and the neighbors' slits count.
 type AroundKey = (i64, i64, i64, u64, u64, u64, bool, bool, bool);
+/// Layer, the settings fingerprint of its slit ([`Input::slit_tag`]), the inset to its infill area, and the bits of
+/// the solid spacing and of the opening.
+type SlitCutKey = (i64, u64, i32, u64, u64);
 
 #[derive(Default)]
 pub(crate) struct Cache {
@@ -44,6 +47,7 @@ pub(crate) struct Cache {
     around: Memo<AroundKey, Shared<Around>>,
     regions: Memo<(i64, u64), Shared<Vec<Option<crate::session::RegionPrep>>>>,
     slit: Memo<(i64, u64), Option<Shared<Shapes>>>,
+    slit_cut: Memo<SlitCutKey, Shared<Shapes>>,
 }
 
 impl Clone for Cache {
@@ -176,6 +180,12 @@ impl Cache {
             .map(|a| (*a).clone())
     }
 
+    /// The slit layer `m`'s walls cut out of its infill area as the shell rule reads it ([`Input::slit`]), empty where
+    /// there is none. Every layer whose shell reaches `m` reads the same cut.
+    fn slit_cut(&self, key: SlitCutKey, work: impl FnOnce() -> Shapes) -> Shared<Shapes> {
+        self.slit_cut.get_or(key, || std::sync::Arc::new(work()))
+    }
+
     /// The walls of layer `m`'s whole outline and its infill area, worked out by `work` for the settings
     /// fingerprinted by `tag`. The layer itself reads them too when its region is the whole outline.
     pub(crate) fn walls(
@@ -212,6 +222,8 @@ pub(crate) struct Input<'a> {
     /// they leave a slit wide enough to count ([`slit_counts`]); `None` for the others, which read as their outline inset by
     /// `wall_offset`.
     pub(crate) slit: Option<&'a dyn Fn(i64) -> Option<Shapes>>,
+    /// Fingerprint of the settings `slit` reads the layers with.
+    pub(crate) slit_tag: u64,
     /// `detect_narrow_internal_solid_infill`: a narrow band prints as concentric beads, so bands are kept from
     /// `BAND_MIN_NARROW` wide, not `BAND_MIN`.
     pub(crate) narrow: bool,
@@ -339,14 +351,26 @@ fn around(i: &Input<'_>) -> Around {
         if let Some(h) = holes.take() {
             let mut area = inset_of(m, &here);
             // A layer whose walls leave a slit under its top surface's one wall shows its real infill area, slit and all.
-            if let Some(slit) = i.slit
-                && let Some(above) = (i.slice)(m + 1)
-                && !free_of(m, 1, &here, &above).is_empty()
-                && let Some(real) = slit(m)
-            {
-                // Only a real slit counts: the hairline the two ways of working out an infill edge leave along the
-                // walls does not.
-                let cut = opened(&perimeters::difference(&area, &real), 0.25 * i.spacing);
+            if let Some(slit) = i.slit {
+                let work = || -> Shapes {
+                    if let Some(above) = (i.slice)(m + 1)
+                        && !free_of(m, 1, &here, &above).is_empty()
+                        && let Some(real) = slit(m)
+                    {
+                        // Only a real slit counts: the hairline the two ways of working out an infill edge leave
+                        // along the walls does not.
+                        opened(&perimeters::difference(&area, &real), 0.25 * i.spacing)
+                    } else {
+                        Vec::new()
+                    }
+                };
+                let cut = match i.cache {
+                    Some(c) => c.slit_cut(
+                        (m, i.slit_tag, inset, i.spacing.to_bits(), i.opening.to_bits()),
+                        work,
+                    ),
+                    None => std::sync::Arc::new(work()),
+                };
                 if !cut.is_empty() {
                     area = perimeters::difference(&area, &cut);
                     slits = perimeters::union_all(&[&slits, &cut]);
