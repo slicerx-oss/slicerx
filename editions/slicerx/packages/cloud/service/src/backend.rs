@@ -22,6 +22,10 @@ pub const MAX_ACTIVE_JOBS: usize = 5;
 /// A job slices at most this many plates of a project (`options.plates`).
 pub const MAX_PLATES: usize = 32;
 
+/// The highest plate number a job may name (`options.plates`). Far above any real project's plates, and well inside
+/// `cloud_jobs.plate_index`, a 32-bit integer the worker writes each plate it takes up to.
+pub const MAX_PLATE_NUMBER: u32 = 1000;
+
 /// How many plates a job's request slices: one per entry of `options.plates`, else one. Each counts against the
 /// account's daily slices, as the database counts them (`plate_count` in `0031_cloud_job_plates.sql`).
 pub fn job_plates(request: &Value) -> u32 {
@@ -139,7 +143,8 @@ pub struct Job {
     /// How many plates the job slices ([`job_plates`]).
     #[serde(default)]
     pub plate_count: Option<i32>,
-    /// The plate the worker is slicing, from 1, while a job that names its plates runs.
+    /// The plate the worker is slicing, from 1, for a job that names its plates. Once the job finishes it stays at the
+    /// last plate the worker took up.
     #[serde(default)]
     pub plate_index: Option<i32>,
 }
