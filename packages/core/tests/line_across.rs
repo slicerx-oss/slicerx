@@ -422,7 +422,7 @@ fn la1b_lines_across_start_at_one_spacing_at_zero_degrees() {
 
 /// LA-2. Strips 2.5 s0 long, where the 2 lines spread to the 1.2 s0 cap (0.45255 mm) along the strip: T0.990 keeps
 /// its gap fill bead; every strip from T1.020 prints its 2 lines across on both layers, 0.9075 and 0.9449 mm from the
-/// ends, 0.4954 mm wide, with today's ends (0.05 of the pitch in from each free edge).
+/// ends, 0.4954 mm wide, each line ending 0.05 s0 in from each free edge whatever pitch the lines spread to.
 #[test]
 fn la2_short_strips_print_lines_across_from_one_spacing() {
     let p = measure("creality-ender-3-v3--n4-cl-sp0-ac-k2.5f");
@@ -431,10 +431,12 @@ fn la2_short_strips_print_lines_across_from_one_spacing() {
     for name in p.names("T1.020-K2.500", "T1.400-K2.500") {
         let r = layer(&p.top, &name);
         let what = format!("top {name}");
-        lines_across(r, 2, Some(0.452_55), (0.9075, 0.9449), 0.002, 0.4954, &what);
+        lines_across(r, 2, None, (0.9075, 0.9449), 0.002, 0.4954, &what);
+        // Two lines on the G-code's 0.001 mm grid read their pitch to within 0.001 mm (as in LA-G3).
+        near(r.pitch.unwrap(), 0.452_55, 0.001, &format!("{what} pitch"));
         near(
             r.len,
-            r.w - 2.0 * ENDER_INS - 0.1 * 0.452_55,
+            r.w - 2.0 * ENDER_INS - 0.1 * ENDER_S0,
             0.003,
             &format!("{what} length"),
         );
