@@ -2335,6 +2335,9 @@ pub(crate) fn walls_for_top(
         let clear = classic_top_clear(top.upper, threshold);
         let mut islands = Vec::new();
         let mut cores = Vec::new();
+        // What the layer above's flat ledge keeps out of a band ([`TopCtx::above`]) reads only the layers above, so
+        // it is worked out once for every island, when the first one needs it.
+        let ledge = std::sync::OnceLock::new();
         for shape in region {
             let one = vec![shape.clone()];
             let room = classic_top_room(&one, &clear, ext);
@@ -2405,13 +2408,15 @@ pub(crate) fn walls_for_top(
             // `ledge` past that layer's outer wall center line, so a larger overlap shortens them. Where the layer
             // above steps in again, the band runs its full length.
             if let Some(above) = top.above {
-                #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
-                let inners = inner * (wall_loops as i32 - 1);
-                let upper_band = offset(&difference(top.upper, above), reach + inners);
-                // The lines end `ledge` past the layer above's outer wall center line.
-                let inside = difference(&offset(top.upper, -(ext / 2 + line_ends.ledge)), &upper_band);
+                let inside: &Shapes = crate::par::Init::once(&ledge, || {
+                    #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+                    let inners = inner * (wall_loops as i32 - 1);
+                    let upper_band = offset(&difference(top.upper, above), reach + inners);
+                    // The lines end `ledge` past the layer above's outer wall center line.
+                    difference(&offset(top.upper, -(ext / 2 + line_ends.ledge)), &upper_band)
+                });
                 if !inside.is_empty() {
-                    exposed = difference(&exposed, &offset(&inside, -ends));
+                    exposed = difference(&exposed, &offset(inside, -ends));
                 }
             }
             let hide = inner * 85 / 100;
