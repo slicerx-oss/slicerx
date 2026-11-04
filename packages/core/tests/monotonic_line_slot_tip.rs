@@ -447,3 +447,46 @@ fn a_slot_tips_horns_print_in_order_by_their_line_counts() {
     }
     assert!(bad.is_empty(), "{} islands:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// How far in from the outline a top line's center keeps on the stock A1, mm: half the 0.42 mm outer wall to its
+/// center line, then the grid's inset of 0.377 mm from there, on every wall whatever its direction.
+const GRID_INSET: f64 = 0.587;
+
+/// Horn B's lowest line, at the corner of the slot's mouth on the right wall (45 degrees, one side across the lines and
+/// one up the plate), is the first line whose center keeps the grid's inset from both walls: none below it is missing.
+#[test]
+fn a_slot_mouths_corner_keeps_its_lowest_line_from_the_grid_inset() {
+    const SIDE: f64 = 8.0;
+    const EPS: f64 = 0.005;
+    // The slot's high side and the tip, along and across the lines from the island's lower left corner (`notches`).
+    let tc = SIDE * R2 + 0.3;
+    let (tb, tip) = (tc + 0.4, -3.0);
+    // A line t along and s across from that corner keeps the inset from the slot's high side for t >= tb + GRID_INSET
+    // and from the right wall, (t - s) / sqrt 2 = SIDE, for t <= s + sqrt 2 (SIDE - GRID_INSET).
+    let lowest = tb + GRID_INSET - std::f64::consts::SQRT_2 * (SIDE - GRID_INSET) - tip;
+    let mut bad = Vec::new();
+    let mut checked = 0;
+    for name in ["notch", "notchf"] {
+        for (i, isl) in plate(name).iter().enumerate() {
+            let low = isl
+                .lines
+                .iter()
+                .filter(|l| l.above > lowest - 1.0 && l.above < 0.0 && l.pieces.iter().any(|p| p.0 > 0.3))
+                .map(|l| l.above)
+                .fold(f64::INFINITY, f64::min);
+            // A line within a hair of the inset either way could round to either side.
+            if (low - lowest).abs() < EPS || (low - PITCH - lowest).abs() < EPS {
+                continue;
+            }
+            checked += 1;
+            if low < lowest || low - PITCH > lowest {
+                bad.push(format!(
+                    "{name} island {i}: horn B's lowest line at the mouth is {low:.3} mm from the tip, the grid's \
+                     inset allows one from {lowest:.3}"
+                ));
+            }
+        }
+    }
+    assert!(checked >= 70, "only {checked} islands checked");
+    assert!(bad.is_empty(), "{} islands:\n{}", bad.len(), bad.join("\n"));
+}
