@@ -7,8 +7,9 @@
 //! The projects in tests/fixtures/brim-order are Prusa MK4S projects of 10 x 10 x 3 mm boxes in a row along X at
 //! Y 105, on a 0.2 mm first layer, with one skirt loop and a 3 mm outer brim 0.5 mm off the part: `mk4p--o2` has boxes
 //! at X 40 and 125, `mk4p--o3` at X 40, 125 and 210, and `mk4p--touch2` at X 100 and 114 (4 mm apart, so their brims
-//! meet). The Bambu Lab A1 project `a1--c1` from tests/fixtures/skirt-brim has three boxes far apart with the same
-//! skirt and brim.
+//! meet); `mk4p--touch2-two` puts the right box of `mk4p--touch2` on a second filament, and `mk4p--cross2-two` moves
+//! it 6 mm left onto the left box, which has a setting of its own. The Bambu Lab A1 project `a1--c1` from
+//! tests/fixtures/skirt-brim has three boxes far apart with the same skirt and brim.
 
 #![allow(
     clippy::disallowed_methods,
@@ -273,4 +274,67 @@ fn other_projects_and_a_config_that_turns_combining_off_keep_each_brim_before_it
     let name = "mk4p--o3";
     let paths = first_layer_paths(&slice("brim-order", name, Some(r#"{"combine_brims":false}"#)));
     assert_brim_before_its_object(name, &paths, &[40.0, 125.0, 210.0]);
+}
+
+/// The touch2 plate with the right box on a second filament (`mk4p--touch2-two`). The brim is built from the boxes'
+/// outlines alone and printed by the lowest filament before any box: the same loops as `mk4p--touch2`, all on T0, the
+/// two brims merged where they meet, so the plate slices with no crossing paths.
+#[test]
+fn touching_brims_of_two_filaments_merge_into_one_brim_on_the_lowest_filament() {
+    let name = "mk4p--touch2-two";
+    let gcode = slice("brim-order", name, None);
+    let paths = first_layer_paths(&gcode);
+    let first_wall = paths.iter().position(is_wall).expect("a wall");
+    let last_brim = paths.iter().rposition(|p| p.feature == "Brim").expect("a brim");
+    assert!(
+        last_brim < first_wall,
+        "{name}: a brim prints after a wall: {paths:?}"
+    );
+    let brims = |paths: &[Path1]| -> Vec<(i64, i64)> {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "plate coordinates in hundredths of a mm"
+        )]
+        let c = |v: f64| (v * 100.0).round() as i64;
+        paths
+            .iter()
+            .filter(|p| p.feature == "Brim")
+            .map(|p| (c(p.x0), c(p.x1)))
+            .collect()
+    };
+    let one = first_layer_paths(&slice("brim-order", "mk4p--touch2", None));
+    assert_eq!(brims(&paths), brims(&one), "{name}: not the brim of mk4p--touch2");
+    // The tool each brim path prints with.
+    let mut tool = None;
+    let mut tools: Vec<Option<u32>> = Vec::new();
+    for line in gcode.lines() {
+        if let Some(t) = line.strip_prefix('T').and_then(|t| t.trim().parse().ok()) {
+            tool = Some(t);
+        } else if line == ";TYPE:Brim" {
+            tools.push(tool);
+        }
+    }
+    assert!(
+        !tools.is_empty() && tools.iter().all(|t| *t == Some(0)),
+        "{name}: brim tools {tools:?}"
+    );
+}
+
+/// The same two filaments with the right box moved onto the left one and the left one given a setting of its own
+/// (`mk4p--cross2-two`): the boxes slice apart and their walls cross, so the slice is still refused.
+#[test]
+fn two_filament_objects_whose_walls_cross_are_still_refused() {
+    let name = "mk4p--cross2-two";
+    let tmp = TempDir(std::env::temp_dir().join(format!("sx-brim-order-{name}-{}", std::process::id())));
+    std::fs::create_dir_all(&tmp.0).unwrap();
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_sx"))
+        .arg("slice")
+        .arg(fixture("brim-order", name))
+        .args(["--plate", "1", "-o"])
+        .arg(tmp.0.join("out.gcode"))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(3), "{name}: {err}");
+    assert!(err.contains("Paths cross: obj2 and obj1"), "{name}: {err}");
 }

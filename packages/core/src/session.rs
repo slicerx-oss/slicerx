@@ -12009,6 +12009,16 @@ impl SliceSession {
                     finished_of.push(*object);
                 }
             }
+            // A plate that prints every brim before the objects (`brims_first`) prints the whole brim with its lowest
+            // filament, merged by geometry alone: the brim is the same whatever filament each object uses, and brims
+            // of two filaments that meet become one brim, not two laid over each other.
+            if brims_first(cfg) && by_slot.len() > 1 {
+                let mut all = std::mem::take(&mut by_slot).into_iter();
+                if let Some((low, mut areas)) = all.next() {
+                    areas.extend(all.flat_map(|(_, a)| a));
+                    by_slot.insert(low, areas);
+                }
+            }
             for (slot, areas) in by_slot {
                 let loops = crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg));
                 finished.push((slot, self.brims_in_object_order(cfg, loops)));
