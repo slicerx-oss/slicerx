@@ -9946,7 +9946,9 @@ impl SliceSession {
                     let (floating, rest) = match &unsupported {
                         Some(u) => crate::vshell::split(
                             &narrow,
-                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg).inside(outline.as_ref()),
+                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg)
+                                .inside(outline.as_ref())
+                                .beside(bridges.as_ref().map_or(&[][..], |b| b.areas.as_slice())),
                             crate::vshell::floating_width(cfg),
                         ),
                         None => (Shapes::new(), narrow),
