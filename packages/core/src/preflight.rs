@@ -823,11 +823,24 @@ pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<
             crate::firmware::fmt_g(mid)
         ),
     };
+    // Which way helps depends on where the copy lands. A shifted copy lands to the right of the part, so the part
+    // moves left. A mirrored copy lands on the far side of the middle: past the right edge or in a right-side
+    // excluded area, the part sits too far out and moves toward the middle; crossing heads mean the part reaches
+    // past the middle and has to stay on its left.
+    let hint = match mode {
+        CopyMode::Shift(_) | CopyMode::CarriageCopy(_) => format!("move {part} toward the left of the bed"),
+        CopyMode::Mirror(mid) | CopyMode::CarriageMirror(mid) if why == "where the two heads would cross" => {
+            format!("keep {part} left of X{}", crate::firmware::fmt_g(mid))
+        }
+        CopyMode::Mirror(_) | CopyMode::CarriageMirror(_) => {
+            format!("move {part} toward the middle of the bed")
+        }
+    };
     let mut i = Issue::new(
         "copy_off_bed",
         Severity::Error,
         format!(
-            "the start G-code {what}: the copy of the move to X{:.1} Y{:.1} from layer {} ({part}) prints at X{:.1}, {why}, {}; move {part} toward the left of the bed or print without the copy",
+            "the start G-code {what}: the copy of the move to X{:.1} Y{:.1} from layer {} ({part}) prints at X{:.1}, {why}, {}; {hint} or print without the copy",
             past.x,
             past.y,
             past.layer + 1,
@@ -1555,6 +1568,45 @@ mod tests {
             check_copy(&edge, &bed, mirror)[0]
                 .message
                 .contains("in an excluded bed area")
+        );
+    }
+
+    #[test]
+    fn the_copy_refusal_says_which_way_to_move_from_where_the_copy_lands() {
+        let bed = j1_bed();
+        let say = |out: &SliceOutput, mode: CopyMode| check_copy(out, &bed, mode)[0].message.clone();
+        // mirror about 162, part at the left edge: the copy lands at 322.6 in the strip, so move toward the middle
+        let edge = output_with(&[(1.4, 90.0), (5.0, 90.0)], 0.2);
+        assert_eq!(
+            say(&edge, CopyMode::Mirror(162.0)),
+            "the start G-code mirrors every move about X162 (M605 S3, mirror mode): the copy of the move to X1.4 Y90.0 from layer 1 (the parts) prints at X322.6, in an excluded bed area, 2 points in layer 1; move the parts toward the middle of the bed or print without the copy"
+        );
+        // mirror about 162, part reaching past the middle: the heads would cross, so keep it left of the middle
+        let cross = output_with(&[(168.4, 90.0), (172.0, 90.0)], 0.2);
+        assert_eq!(
+            say(&cross, CopyMode::Mirror(162.0)),
+            "the start G-code mirrors every move about X162 (M605 S3, mirror mode): the copy of the move to X168.4 Y90.0 from layer 1 (the parts) prints at X155.6, where the two heads would cross, 2 points in layer 1; keep the parts left of X162 or print without the copy"
+        );
+        // Klipper mirror about 150, part at 145 reaching 154.4
+        let klipper = output_with(&[(154.4, 100.0), (146.0, 100.0)], 0.2);
+        assert_eq!(
+            say(&klipper, CopyMode::CarriageMirror(150.0)),
+            "the start G-code mirrors every move about X150 (SET_DUAL_CARRIAGE MODE=MIRROR, mirror mode): the copy of the move to X154.4 Y100.0 from layer 1 (the parts) prints at X145.6, where the two heads would cross, 1 point in layer 1; keep the parts left of X150 or print without the copy"
+        );
+        // copy and duplicate modes keep sending the part left
+        let off = output_with(&[(200.0, 90.0), (210.0, 90.0)], 0.2);
+        for mode in [CopyMode::Shift(162.0), CopyMode::CarriageCopy(162.0)] {
+            assert!(
+                say(&off, mode)
+                    .ends_with("; move the parts toward the left of the bed or print without the copy"),
+                "{}",
+                say(&off, mode)
+            );
+        }
+        let strip = output_with(&[(150.0, 90.0), (155.0, 90.0)], 0.2);
+        assert!(
+            say(&strip, CopyMode::Shift(162.0))
+                .ends_with("; move the parts toward the left of the bed or print without the copy")
         );
     }
 
