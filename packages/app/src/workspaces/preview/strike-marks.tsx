@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { clock, movesOf, sliderOf, type Timeline } from '../../lib/preview-timeline'
 import { collisionsOf } from '../../plate/heimdall'
 import { collisionTime, jumpTo } from '../../plate/heimdall-jump'
-import { collisionTitle, namesOf } from '../../plate/heimdall-words'
+import { collisionTitle, namesOf } from '@slicerx/ui/heimdall-words'
 import { get, useApp } from '../../state/store'
 
 export { CollisionList } from './collision-list'

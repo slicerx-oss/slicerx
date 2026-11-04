@@ -8,7 +8,7 @@ import { degC } from '../lib/temp'
 import type { Collision, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
 import { PRINTER_MODELS, type PrinterModel } from '@slicerx/printer-catalog'
 import { appName } from '../edition'
-import { closeCallNote, collisionDetail, collisionTitle } from './heimdall-words'
+import { closeCallNote, collisionDetail, collisionTitle } from '@slicerx/ui/heimdall-words'
 
 export interface PreflightInput {
   printer: PrinterInfo
