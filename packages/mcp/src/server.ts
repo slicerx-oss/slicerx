@@ -137,7 +137,9 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       if (out.structured !== undefined || out.text !== undefined) return ok(out.structured ?? {}, out.text)
       return ok({ ok: out.ok !== false, summary: out.summary, ...(out.output !== undefined ? { output: out.output } : {}) })
     })
-  const listed: Tool[] = []
+  // Each tool's listing, with its schemas written out: built at the first tools/list, since converting every schema is
+  // a good part of what starting a server costs and a client that only calls tools never needs it.
+  const listing: (() => Tool)[] = []
   for (const tool of serverTools(ctx, gate)) {
     const read = tool.permission === 'read' && !tool.permissionFor
     const label = PERMISSION_LABELS[tool.permission as keyof typeof PERMISSION_LABELS]
@@ -157,17 +159,18 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       { ...config, inputSchema: tool.input as unknown as z.ZodObject, ...(tool.outputShape ? { outputSchema: tool.outputShape } : {}) },
       (args: unknown, extra: ToolExtra) => (tool.ungated ? ungated(tool, args, extra) : gatedCall(server, gate, tool as PilotTool<unknown>, args, extra.signal, progressOf(extra))),
     )
-    listed.push({
+    listing.push(() => ({
       name: mcpName(tool.name),
       ...config,
       inputSchema: jsonSchema(tool.input, 'input') as Tool['inputSchema'],
       // The SDK client validates structured refusals too; the server still checks successful output against outputShape.
       ...(tool.outputShape ? { outputSchema: jsonSchema(z.union([z.object(tool.outputShape), refusalOutput]), 'output') as Tool['outputSchema'] } : {}),
-    })
+    }))
   }
   // The SDK lists tool schemas in JSON Schema draft-07, where a tuple is `items: [...]`. Model APIs take 2020-12 only
   // and refuse the whole request over one such tool, and 2020-12 is MCP's own default, so the list is written here.
-  if (listed.length > 0) server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed }))
+  let listed: Tool[] | undefined
+  if (listing.length > 0) server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: (listed ??= listing.map((entry) => entry())) }))
 
   server.registerResource(
     'knowledge',
@@ -211,26 +214,30 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ orca_commit: ORCA_COMMIT, settings: store.settingsSchema() }) }] }),
   )
 
-  const docs = listDocs(store.paths)
+  // The guides are listed (each file read for its title) the first time a client asks for one.
+  let docList: ReturnType<typeof listDocs> | undefined
+  const docs = (): ReturnType<typeof listDocs> => (docList ??= listDocs(store.paths))
   server.registerResource(
     'docs',
     new ResourceTemplate('slicerx://docs/{+id}', {
-      list: () => ({ resources: docs.map((d) => ({ uri: `slicerx://docs/${d.id}`, name: d.title, mimeType: 'text/markdown' })) }),
+      list: () => ({ resources: docs().map((d) => ({ uri: `slicerx://docs/${d.id}`, name: d.title, mimeType: 'text/markdown' })) }),
     }),
     { title: `${productName()} guides`, description: 'Install, embedding, theming, printer and Home Assistant setup, and this server', mimeType: 'text/markdown' },
     (uri, vars) => {
-      const d = docs.find((x) => x.id === String(vars['id']))
+      const d = docs().find((x) => x.id === String(vars['id']))
       if (!d) throw new Error(`No doc ${String(vars['id'])}`)
       return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readFileSync(d.path, 'utf8') }] }
     },
   )
 
-  const referenceIndex = docs.find((d) => d.id === 'settings/reference/index')
   server.registerResource(
     'settings-reference',
     'slicerx://settings/reference',
     { title: 'Settings reference', description: `Every setting ${productName()} reads, with links to each group; one entry per key at slicerx://settings/reference/{key}`, mimeType: 'text/markdown' },
-    (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: referenceIndex ? readFileSync(referenceIndex.path, 'utf8') : settingsReference(store) }] }),
+    (uri) => {
+      const referenceIndex = docs().find((d) => d.id === 'settings/reference/index')
+      return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: referenceIndex ? readFileSync(referenceIndex.path, 'utf8') : settingsReference(store) }] }
+    },
   )
 
   server.registerResource(
