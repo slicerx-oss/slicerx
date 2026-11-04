@@ -371,6 +371,13 @@ pub fn read_info(b: &[u8]) -> Result<PreviewInfo> {
     if rd32(b, 0)? != MAGIC {
         return Err(Error::mesh("preview", "not an SXPV buffer"));
     }
+    let version = rd32(b, 4)? & 0xFFFF;
+    if version != u32::from(VERSION) {
+        return Err(Error::mesh(
+            "preview",
+            format!("SXPV version {version} has no v1 tables (expand a v2 buffer with `expand` first)"),
+        ));
+    }
     let flags = rd32(b, 4)? >> 16;
     let segments = rd32(b, 8)? as usize;
     let layers = rd32(b, 12)? as usize;
@@ -411,6 +418,15 @@ pub fn read_info(b: &[u8]) -> Result<PreviewInfo> {
         objects_at,
         layer_lines: extras_at.is_some() && flags & u32::from(FLAG_LAYER_LINES) != 0,
     })
+}
+
+/// The v1 bytes of a v1 or v2 buffer: a v1 buffer as it is, a v2 buffer expanded ([`crate::preview_v2::decode`]).
+pub fn expand(b: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
+    if crate::preview_v2::version(b) == Some(crate::preview_v2::VERSION) {
+        crate::preview_v2::decode(b).map(std::borrow::Cow::Owned)
+    } else {
+        read_info(b).map(|_| std::borrow::Cow::Borrowed(b))
+    }
 }
 
 /// Writes `times` (seconds per layer) into the preview's layer time table, in place. Returns false and leaves the

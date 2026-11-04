@@ -185,6 +185,11 @@ export interface SliceOptions {
   shards?: number
   emitGcode?: boolean
   emitPreview?: boolean
+  /**
+   * The SXPV encoding of the preview: 'v1' (the default) or 'v2', the same toolpaths in about a fifth of the bytes,
+   * in layer order. `readPreview` reads both. A host that cannot write v2 (the browser's shards) sends v1.
+   */
+  previewFormat?: 'v1' | 'v2'
   /** The time of this slice, seconds since 1970 UTC, for the G-code date and time variables some printers' G-code uses. The browser and desktop hosts fill it on every slice. */
   nowUnix?: number
   /** The local offset from UTC in minutes (east is positive) that goes with `nowUnix`. */

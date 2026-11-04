@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import { expandPreview } from '@slicerx/contracts'
 import { resolvedProfile } from '@slicerx/settings'
 import { describe, expect, it } from 'vitest'
 import { resolveSliceConfig } from '../src/config'
@@ -526,6 +527,23 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
     expect(plain).toMatch(/^; layer_height = 0\.2$/m)
     expect(plain).toBe(await gcode({ profiles: ['process:standard'], overrides: { smart_layer: 'quality', wall_generator: 'aegis' } }))
     expect(plain).not.toBe(await gcode({ profiles: ['process:standard'], overrides: { wall_generator: 'classic' } }))
+  })
+
+  it('writes the preview as SXPV v2 only when preview_format asks, the same toolpaths as v1', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const box = join(h.dir, 'box.stl')
+    writeFileSync(box, boxStl(20, 20, 6))
+    const preview = async (format?: 'v1' | 'v2') => {
+      const r = await h.call('slicerx_slice_file', { model: box, profiles: ['machine:bambu-a1'], preview: true, ...(format ? { preview_format: format } : {}) })
+      expect(r.isError, text(r)).toBeFalsy()
+      const b = readFileSync(data<{ preview_path: string }>(r).preview_path)
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
+    }
+    const plain = await preview()
+    const v2 = await preview('v2')
+    expect(new DataView(plain).getUint16(4, true)).toBe(1)
+    expect(new DataView(v2).getUint16(4, true)).toBe(2)
+    expect(Buffer.from(expandPreview(v2)).equals(Buffer.from(plain))).toBe(true)
   })
 
   it("slices with the Bambu preset's supports (off) when no process is named, and with supports when asked", async () => {

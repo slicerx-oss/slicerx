@@ -1,0 +1,105 @@
+{
+ "schemaVersion": 1,
+ "plate": {
+  "objects": [
+   {
+    "id": "a",
+    "name": "a",
+    "mesh": "x",
+    "transform": [
+     0.2,
+     0,
+     0,
+     0,
+     0,
+     0.2,
+     0,
+     0,
+     0,
+     0,
+     0.2,
+     0,
+     100,
+     128,
+     0,
+     1
+    ]
+   },
+   {
+    "id": "b",
+    "name": "b",
+    "mesh": "x",
+    "transform": [
+     0.2,
+     0,
+     0,
+     0,
+     0,
+     0.2,
+     0,
+     0,
+     0,
+     0,
+     0.2,
+     0,
+     156,
+     128,
+     0,
+     1
+    ]
+   }
+  ]
+ },
+ "config": {
+  "layer_height": 0.2,
+  "initial_layer_print_height": 0.2,
+  "wall_loops": 2,
+  "top_shell_layers": 5,
+  "bottom_shell_layers": 3,
+  "sparse_infill_density": 15,
+  "sparse_infill_pattern": "rectilinear",
+  "line_width": 0.42,
+  "infill_wall_overlap": 15,
+  "brim_type": "outer_only",
+  "brim_width": 5,
+  "enable_support": false,
+  "nozzle_diameter": [
+   0.4
+  ],
+  "nozzle_temperature": [
+   220
+  ],
+  "hot_plate_temp": 55,
+  "filament_diameter": 1.75,
+  "filament_density": [
+   1.24
+  ],
+  "printable_area": [
+   [
+    0,
+    0
+   ],
+   [
+    256,
+    0
+   ],
+   [
+    256,
+    256
+   ],
+   [
+    0,
+    256
+   ]
+  ],
+  "printable_height": 250,
+  "gcode_flavor": "marlin2"
+ },
+ "options": {
+  "emitGcode": true,
+  "emitPreview": true
+ },
+ "meshes": {
+  "x": "../../../core/bench/models/x-mark.stl"
+ }
+}

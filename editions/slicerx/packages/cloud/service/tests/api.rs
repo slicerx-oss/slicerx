@@ -618,6 +618,8 @@ async fn slices_a_plate_and_stores_the_result() {
         .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(&preview[..4], b"SXPV");
+    // v1 unless the request asks for v2: apps already out read only v1.
+    assert_eq!(&preview[4..6], &1u16.to_le_bytes());
 
     let (s, _) = h
         .json(Method::GET, &format!("/v1/jobs/{id}"), ASH_TOKEN, None)
@@ -635,6 +637,55 @@ async fn slices_a_plate_and_stores_the_result() {
 
     let (_, list) = h.json(Method::GET, "/v1/jobs", RV_TOKEN, None).await;
     assert_eq!(list.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn stores_a_v2_preview_when_the_request_asks() {
+    let h = harness();
+    let sha = h.upload(RV_TOKEN, &cube_stl()).await;
+    let preview_of = |format: Option<&'static str>| {
+        let mut request = plate(&sha);
+        if let Some(f) = format {
+            request["options"] = json!({ "previewFormat": f });
+        }
+        request
+    };
+    let mut previews = Vec::new();
+    for format in [None, Some("v2")] {
+        let (s, job) = h
+            .json(
+                Method::POST,
+                "/v1/jobs",
+                RV_TOKEN,
+                Some(json!({ "name": "Cube", "request": preview_of(format) })),
+            )
+            .await;
+        assert_eq!(s, StatusCode::ACCEPTED);
+        let id = job["id"].as_str().unwrap().to_owned();
+        h.work().await;
+        let (s, job) = h
+            .json(Method::GET, &format!("/v1/jobs/{id}"), RV_TOKEN, None)
+            .await;
+        assert_eq!(job["status"], "succeeded", "{job}");
+        assert_eq!(s, StatusCode::OK);
+        let (s, preview) = h
+            .call(
+                Method::GET,
+                &format!("/v1/jobs/{id}/preview"),
+                Some(RV_TOKEN),
+                None,
+            )
+            .await;
+        assert_eq!(s, StatusCode::OK);
+        previews.push(preview);
+    }
+    assert_eq!(&previews[0][4..6], &1u16.to_le_bytes(), "v1 by default");
+    assert_eq!(&previews[1][4..6], &2u16.to_le_bytes(), "v2 when asked");
+    assert_eq!(
+        sx_core::preview_v2::decode(&previews[1]).unwrap(),
+        previews[0],
+        "the same toolpaths"
+    );
 }
 
 #[tokio::test]
