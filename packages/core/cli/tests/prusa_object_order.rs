@@ -10,7 +10,8 @@
 //!
 //! The projects in tests/fixtures/brim-order are Prusa MK4S projects of 10 mm cubes with a 3 mm outer brim and one
 //! skirt loop (`mk4p--scatter5-sk0` has none), except `mk4p--shapes3`, two right triangles and a cube turned 45
-//! degrees; each test gives the objects' first layer box centers, which the reader names the paths by.
+//! degrees (`mk4p--shapes3-own` is the same plate with a wall count of object 1's own); each test gives the
+//! objects' first layer box centers, which the reader names the paths by.
 
 #![allow(
     clippy::disallowed_methods,
@@ -36,8 +37,12 @@ impl Drop for TempDir {
 
 /// The G-code of a project sliced with its own settings.
 fn slice(name: &str) -> String {
-    let tmp =
-        TempDir(std::env::temp_dir().join(format!("sx-prusa-object-order-{name}-{}", std::process::id())));
+    // Tests run side by side and may slice the same project, so each slice gets a folder of its own.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = TempDir(
+        std::env::temp_dir().join(format!("sx-prusa-object-order-{name}-{}-{n}", std::process::id())),
+    );
     std::fs::create_dir_all(&tmp.0).unwrap();
     let out = tmp.0.join("out.gcode");
     let o = std::process::Command::new(env!("CARGO_BIN_EXE_sx"))
@@ -275,4 +280,26 @@ fn lines_of_equal_gaps_take_equal_records_in_the_order_they_are_made() {
     assert!(first_layer("mk4p--col3-eq", &column).starts_with("S B3 B2 B1 "));
     let row = [[40.0, 105.0], [125.0, 105.0], [210.0, 105.0]];
     assert!(first_layer("mk4p--o3", &row).starts_with("S B3 B2 B1 "));
+}
+
+/// The objects' own paths of a first layer order (`order`), without the skirt and brims.
+fn objects_only(order: &str) -> String {
+    order
+        .split(' ')
+        .filter(|t| t.starts_with('W'))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn objects_with_settings_of_their_own_stand_at_the_same_points() {
+    // The plate of two triangles and a turned cube again, once as it is and once with a wall count of object 1's
+    // own, so each object slices as a session of its own. Both print the objects in the order the lowest vertices
+    // give, 1 3 2; the box centers would give 1 2 3.
+    let shapes = [[62.617, 86.98], [166.89, 110.61], [170.6, 61.47]];
+    assert_eq!(objects_only(&first_layer("mk4p--shapes3", &shapes)), "W1 W3 W2");
+    assert_eq!(
+        objects_only(&first_layer("mk4p--shapes3-own", &shapes)),
+        "W1 W3 W2"
+    );
 }

@@ -586,20 +586,12 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
     }
     // Numbered by plate object for the order's ties.
     crate::sorting::sort_by_key(&mut runs, |r| plate(r.0));
-    let centers: Vec<[f64; 2]> = runs
-        .iter()
-        .map(|r| {
-            session
-                .footprints()
-                .get(usize::from(plate(r.0)))
-                .map_or([0.0, 0.0], |o| o.center)
-        })
+    let rule = crate::objorder::rule(config);
+    let centers: Vec<[f64; 2]> = runs.iter().map(|r| point(session, &subs, rule, r.0)).collect();
+    let order: Vec<(usize, usize, usize)> = crate::objorder::order_by(rule, &centers)
+        .into_iter()
+        .filter_map(|i| runs.get(i).copied())
         .collect();
-    let order: Vec<(usize, usize, usize)> =
-        crate::objorder::order_by(crate::objorder::rule(config), &centers)
-            .into_iter()
-            .filter_map(|i| runs.get(i).copied())
-            .collect();
     if order.len() != runs.len() {
         return;
     }
@@ -631,6 +623,20 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
     src.runs = new_runs;
 }
 
+/// The point object `k` of the sequence `subs` stands at for the plate's order by `rule`: its footprint's center, or
+/// under `Chain` the lowest vertex of its first layer (`SliceSession::plate_order_point`), the same point a plate
+/// sliced as one session orders it by.
+fn point(session: &SliceSession, subs: &[&SliceSession], rule: crate::objorder::Rule, k: usize) -> [f64; 2] {
+    let Some(sub) = subs.get(k) else {
+        return [0.0, 0.0];
+    };
+    let footprint = session
+        .footprints()
+        .get(usize::from(sub.plate_index()))
+        .map_or([0.0, 0.0], |o| o.center);
+    sub.plate_order_point(rule, footprint)
+}
+
 /// Puts each filament's paths of a merged layer (`groups`, path indexes in the layer's object order) in the order of
 /// that filament's objects alone (`objorder::run_by`), when the layer has several filaments: an object of several
 /// filaments takes its place among each one's objects. Each object's paths keep their order, and the paths of no
@@ -651,15 +657,7 @@ fn in_run_order(
     let mut objects: Vec<usize> = src.runs.iter().map(|r| r.0).collect();
     crate::sorting::sort_by_key(&mut objects, |&k| plate(k));
     objects.dedup();
-    let centers: Vec<[f64; 2]> = objects
-        .iter()
-        .map(|&k| {
-            session
-                .footprints()
-                .get(usize::from(plate(k)))
-                .map_or([0.0, 0.0], |o| o.center)
-        })
-        .collect();
+    let centers: Vec<[f64; 2]> = objects.iter().map(|&k| point(session, &subs, rule, k)).collect();
     let lead = l
         .paths
         .iter()

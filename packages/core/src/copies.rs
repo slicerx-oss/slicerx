@@ -91,14 +91,27 @@ pub(crate) fn slice(
     }
     // Every layer prints the copies one after another in the order of the copies on it (`objorder.rs`), by where
     // each copy stands: the same on every layer with the same copies, and the same in each shard.
+    // Under `Chain` each copy stands at the lowest vertex of its object's first layer, moved with the copy, as on a
+    // plate sliced as one session (`SliceSession::plate_order_point`).
+    let rule = crate::objorder::rule(config);
+    let points: Vec<[f64; 2]> = subs
+        .iter()
+        .map(|s| s.plate_order_point(rule, [f64::NAN, f64::NAN]))
+        .collect();
     let centers = |c: &crate::session::Instance| {
-        session
+        let footprint = session
             .footprints()
             .get(usize::from(c.object))
-            .map_or([0.0, 0.0], |o| o.center)
+            .map_or([0.0, 0.0], |o| o.center);
+        match points.get(c.sub) {
+            Some(p) if rule == crate::objorder::Rule::Chain && !p[0].is_nan() => [
+                p[0] + f64::from(c.shift[0]) / crate::geom::SCALE,
+                p[1] + f64::from(c.shift[1]) / crate::geom::SCALE,
+            ],
+            _ => footprint,
+        }
     };
     let all: Vec<&crate::session::Instance> = session.instances().iter().collect();
-    let rule = crate::objorder::rule(config);
     let copies = in_order(rule, &all, &centers);
     let mut info = crate::output::FirstLayerInfo::default();
     for c in &copies {

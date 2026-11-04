@@ -2614,6 +2614,22 @@ impl SliceSession {
             .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
     }
 
+    /// The point this session's objects stand at for the order of a plate printed as sessions one after another
+    /// (`sequence.rs`, `copies.rs`): under `Chain` the lowest vertex of this session's first layer, the one with the
+    /// largest x of equally low ones, as `order_center` gives an object of a plate sliced as one session; otherwise,
+    /// or with nothing on the first layer, `footprint`.
+    pub(crate) fn plate_order_point(&self, rule: crate::objorder::Rule, footprint: [f64; 2]) -> [f64; 2] {
+        if rule != crate::objorder::Rule::Chain {
+            return footprint;
+        }
+        self.object_slices_at(0)
+            .and_then(|slices| {
+                let all: Shapes = slices.iter().flat_map(|s| s.shapes.iter().cloned()).collect();
+                lowest_vertex(&all)
+            })
+            .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+    }
+
     /// The first layer's brim loops `loops` of a plate of several objects under `Chain` (`objorder.rs`),
     /// put in the order of the objects' brims: each object's loops together and in their own order, a loop round
     /// several objects (brims that meet) with the first of them, and a loop round none with the object nearest it.
