@@ -31,12 +31,31 @@ const outFile = standalone ? join(standalone, 'slicerx-mcp.mjs') : join(pkg, 'di
 // The server itself, loaded by the entry once the compile cache is on (a file beside the entry).
 const mainName = standalone ? 'slicerx-mcp-main.mjs' : 'cli-main.js'
 
+// A bundled JSON file becomes a string the module parses with JSON.parse, instead of one large object literal: V8 reads
+// a string far faster than it compiles the same data as code, and the profiles and the knowledge index are megabytes.
+const JSON_AS_STRING_BYTES = 8 * 1024
+const jsonAsString = {
+  name: 'json-as-string',
+  setup(b) {
+    b.onLoad({ filter: /\.json$/ }, (args) => {
+      const text = readFileSync(args.path, 'utf8')
+      if (text.length < JSON_AS_STRING_BYTES) return undefined
+      return { contents: `export default JSON.parse(${JSON.stringify(JSON.stringify(JSON.parse(text)))})`, loader: 'js' }
+    })
+  },
+}
+
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
 await build({
   entryPoints: standalone ? { 'slicerx-mcp-main': join(pkg, 'src', 'cli.ts') } : { 'cli-main': join(pkg, 'src', 'cli.ts') },
-  // Code splitting keeps dynamic imports in their own chunks. Without it esbuild wraps shared
-  // modules in lazy initializers, and zod's schemas are then used before they exist.
-  ...(standalone ? { outdir: standalone, splitting: true, outExtension: { '.js': '.mjs' }, chunkNames: 'chunks/[name]-[hash]' } : { outdir: join(pkg, 'dist') }),
+  // Code splitting keeps dynamic imports in their own chunks, so a server loads the stock printer profiles only when a
+  // tool reads them. Without it esbuild also wraps shared modules in lazy initializers, and in the self-contained build
+  // zod's schemas are then used before they exist.
+  outdir: standalone ?? join(pkg, 'dist'),
+  splitting: true,
+  chunkNames: 'chunks/[name]-[hash]',
+  ...(standalone ? { outExtension: { '.js': '.mjs' } } : {}),
+  plugins: [jsonAsString],
   bundle: true,
   platform: 'node',
   format: 'esm',
