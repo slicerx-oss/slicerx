@@ -1,0 +1,16 @@
+{
+ "comment": "How the maker's own app prints a brim, for every process tier of every Prusa model and nozzle, where the presets have no key for it: every whole loop the brim width fits, odd counts too (brim_loop_rounding whole), grown from the first layer outline after elephant foot compensation, so the gap to the object stays the brim gap at any compensation (brim_use_efc_outline). A Prusa project read sets the same two. Applied last to resolved/prusa.json by packages/settings/scripts/apply-overlay.ts, which gen-resolved.ts also runs. Values are in the profiles' own format.",
+ "source": {
+  "process": "Prusa stock print presets (0.20mm SPEED) on the MK4 IS, MK4S, MINI IS, XL IS, XL 5T, CORE One and CORE One L"
+ },
+ "filament": {},
+ "machine": {},
+ "process": {},
+ "every_process": {
+  "comment": "Keys the Prusa process presets do not set. brim_loop_rounding: whole, where the settings default rounds down to an even count. brim_use_efc_outline: on, where the settings default grows the brim from the outline before compensation.",
+  "values": {
+   "brim_loop_rounding": "whole",
+   "brim_use_efc_outline": "1"
+  }
+ }
+}

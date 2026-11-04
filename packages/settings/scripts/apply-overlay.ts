@@ -4,8 +4,9 @@
 // shipped Bambu Lab data: filaments/BBL.json and resolved/bambu-lab.json. Run it after anything that writes either file
 // again (gen-resolved.ts runs it on its own output). Applying it twice changes nothing.
 // It also applies packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) to
-// resolved/prusa.json and machine.json, so run it after machine.json is written again too. The list is MAKER_OVERLAYS in
-// js/overlay.ts.
+// resolved/prusa.json and machine.json, so run it after machine.json is written again too, and
+// packages/profiles/overlays/prusa-brim.json (the maker's brim for every Prusa process tier) to resolved/prusa.json. The
+// list is MAKER_OVERLAYS in js/overlay.ts.
 // Run: npx tsx scripts/apply-overlay.ts
 import { readFileSync, writeFileSync } from 'node:fs'
 import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, MAKER_OVERLAYS, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from '../js/overlay'

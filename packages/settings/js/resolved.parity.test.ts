@@ -11,7 +11,7 @@ import { importFlat } from './import'
 import { printerConfig } from './profiles'
 import { resolvedProfile } from './resolved'
 import { sameValue } from './diff'
-import { BBL_OVERLAY, PRUSA_OVERLAY, type MakerOverlay } from './overlay'
+import { BBL_OVERLAY, PRUSA_BRIM_OVERLAY, PRUSA_OVERLAY, type MakerOverlay } from './overlay'
 
 const DIR = process.env['ORCA_RESOLVED_DIR']
 const PRINTERS = ['bambu-p1s', 'bambu-a1', 'bambu-x1-carbon', 'prusa-mk4s', 'creality-k1']
@@ -40,12 +40,15 @@ const OVERLAID = new Set([
   ...Object.keys(OVERLAY.every_process?.values ?? {}),
 ])
 
-/** Keys the MK4 IS overlay sets on purpose for a model and nozzle (packages/profiles/overlays/prusa-mk4is.json). */
+/** The maker's brim keys, set on purpose for every Prusa process tier (packages/profiles/overlays/prusa-brim.json). */
+const PRUSA_BRIM = Object.keys((JSON.parse(readFileSync(new URL(`../../profiles/${PRUSA_BRIM_OVERLAY}`, import.meta.url), 'utf8')) as MakerOverlay).every_process?.values ?? {})
+
+/** Keys the MK4 IS overlay, and the brim overlay on a Prusa model, set on purpose for a model and nozzle (packages/profiles/overlays/prusa-mk4is.json). */
 const PRUSA = JSON.parse(readFileSync(new URL(`../../profiles/${PRUSA_OVERLAY}`, import.meta.url), 'utf8')) as MakerOverlay
 const prusaOverlaid = (id: string, nozzle: number | undefined): Set<string> => {
   const size = nozzle ?? (printerConfig(id)?.nozzle_diameter as number[] | undefined)?.[0]
   const entry = Object.entries(PRUSA.machine[id] ?? {}).find(([n]) => Number(n) === size)?.[1]
-  return new Set(Object.keys(entry?.values ?? {}))
+  return new Set([...Object.keys(entry?.values ?? {}), ...(id.startsWith('prusa-') ? PRUSA_BRIM : [])])
 }
 
 const GCODE = ['machine_start_gcode', 'machine_end_gcode', 'layer_change_gcode', 'before_layer_change_gcode', 'change_filament_gcode', 'machine_pause_gcode', 'time_lapse_gcode', 'template_custom_gcode', 'wrapping_detection_gcode', 'toolchange_gcode']
