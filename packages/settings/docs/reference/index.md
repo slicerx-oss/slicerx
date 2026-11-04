@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 768 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 769 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -17,7 +17,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Profile metadata](process-profile.md): 8 settings
 - [Quality and geometry](process-quality.md): 96 settings
 - [Retraction](process-retraction.md): 2 settings
-- [Special modes](process-special.md): 24 settings
+- [Special modes](process-special.md): 25 settings
 - [Speed](process-speed.md): 23 settings
 - [Strength: walls, shells and infill](process-strength.md): 59 settings
 - [Support](process-support.md): 40 settings
@@ -484,6 +484,7 @@ Alphabetical, each linking to its group file.
 - `nozzle_temperature_range_low`: Nozzle temperature range minimum, [filament/temperature](filament-temperature.md#nozzle_temperature_range_low)
 - `nozzle_type`: Nozzle type, [printer/machine](printer-machine.md#nozzle_type)
 - `nozzle_volume`: Nozzle volume, [printer/machine](printer-machine.md#nozzle_volume)
+- `object_order_rule`: Object order rule, [process/special](process-special.md#object_order_rule)
 - `only_one_wall_first_layer`: Only one wall first layer, [process/quality](process-quality.md#only_one_wall_first_layer)
 - `only_one_wall_top`: Single wall on the top surface, [process/quality](process-quality.md#only_one_wall_top)
 - `ooze_prevention`: Ooze prevention, [process/multimaterial](process-multimaterial.md#ooze_prevention)

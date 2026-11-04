@@ -532,11 +532,31 @@ pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) 
             mapped.insert(k, Value::String(v));
         }
     }
+    brim_on_compensated_outline(&mut mapped);
+    brims_together(&mut mapped);
     edge_on_gap(&mut mapped);
     skirt_from_nominal_brim(&mut mapped);
     brim_whole_loops(&mut mapped);
+    objects_in_a_chain(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
+}
+
+/// A project with a brim width grows its brim from the first layer's outline after elephant foot compensation, so the
+/// brim keeps `brim_separation` from the compensated outer wall whatever the compensation (`brim_use_efc_outline`).
+/// The same as `prusaProjectSettings` in the settings package.
+fn brim_on_compensated_outline(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("brim_use_efc_outline".to_owned(), Value::String("1".to_owned()));
+    }
+}
+
+/// A project with a brim width prints every object's brim on the first layer before any object, and brims that meet
+/// merge into one (`combine_brims`). The same as `prusaProjectSettings` in the settings package.
+fn brims_together(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("combine_brims".to_owned(), Value::String("1".to_owned()));
+    }
 }
 
 /// A project with support on and its own support XY spacing keeps that much room between the part and the outer
@@ -571,6 +591,15 @@ fn skirt_from_nominal_brim(mapped: &mut Map<String, Value>) {
 fn brim_whole_loops(mapped: &mut Map<String, Value>) {
     if mapped.contains_key("brim_width") {
         mapped.insert("brim_loop_rounding".to_owned(), Value::String("whole".to_owned()));
+    }
+}
+
+/// A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
+/// the shortest links between them printed from the end `objorder::chain` picks (`object_order_rule`
+/// `chain`). The same as `prusaProjectSettings` in the settings package.
+fn objects_in_a_chain(mapped: &mut Map<String, Value>) {
+    if mapped.contains_key("brim_width") {
+        mapped.insert("object_order_rule".to_owned(), Value::String("chain".to_owned()));
     }
 }
 

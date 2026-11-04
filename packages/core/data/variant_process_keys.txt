@@ -175,6 +175,7 @@ minimum_sparse_infill_area
 mmu_segmented_region_interlocking_depth
 mmu_segmented_region_max_width
 notes
+object_order_rule
 only_one_wall_first_layer
 only_one_wall_top
 ooze_prevention
