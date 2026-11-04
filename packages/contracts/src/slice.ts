@@ -411,6 +411,18 @@ export interface Collision {
   contactMax?: [number, number, number]
 }
 
+/**
+ * The plate as the collision check saw it, mm, in the machine's coordinates as every collision position is (a plate
+ * that counts from the printable area's front left corner subtracts that corner): the printable area, each plate object
+ * by the id the collisions name it with and the convex hull of its outline from above, and the zones the printer keeps
+ * clear by the ids a collision names them with. Absent from older engines and hosts.
+ */
+export interface CollisionPlate {
+  bed: [number, number][]
+  objects: { id: string; name: string; hull: [number, number][] }[]
+  zones: { id: 'exclusion-area' | 'wrap-check-zone'; outline: [number, number][] }[]
+}
+
 export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' | 'move_object' | 'arrange'
 
 /** A way to clear some of the collisions, with the print time it adds. */
@@ -544,6 +556,8 @@ export interface SliceResult {
   collisions?: Collision[]
   /** Fixes for the collisions. */
   collisionFixes?: CollisionFix[]
+  /** The plate the collisions are on, for a client that draws them: present only with `collisions`. */
+  collisionPlate?: CollisionPlate
   /**
    * A cloud slice of a whole 3MF project that named its plates (`options.plates`): each plate's own result, in the
    * order asked. The rest of this result is the first plate that sliced. Each plate's `result.id` reads its own

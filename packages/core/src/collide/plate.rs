@@ -21,6 +21,15 @@ pub const ZONE_EXCLUSION: u8 = 0;
 /// The corner the nozzle wrap check runs in (`head_wrap_detect_zone`, the A1 family).
 pub const ZONE_WRAP_CHECK: u8 = 1;
 
+/// The id a collision names a keep-out zone of `kind` by.
+pub(crate) fn zone_id(kind: u8) -> &'static str {
+    if kind == ZONE_WRAP_CHECK {
+        "wrap-check-zone"
+    } else {
+        "exclusion-area"
+    }
+}
+
 /// The box around `pts`, grown by `room` on every side: `[x0, y0, x1, y1]`.
 fn bounds(pts: &[[f64; 2]], room: f64) -> [f64; 4] {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];

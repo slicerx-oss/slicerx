@@ -5,7 +5,11 @@
 // so the plate can be uploaded when it is sliced. `cloudRoutedSlicer` puts it
 // in front of the app's slicer, so every model the app loads is kept.
 import {
+  type Collision,
+  type CollisionFix,
+  type CollisionPlate,
   type GcodeExport,
+  type PrimeTowerPlacement,
   type PlateSliceResult,
   type GcodeTarget,
   type MeshHandle,
@@ -130,6 +134,11 @@ function reportResult(id: string, r: Report): SliceResult {
     stageMicros,
     wallMs: r.wallMs,
     warnings,
+    // The collision check's findings go through as the engine wrote them, so the app shows them as for a local slice.
+    ...(r.collisions?.length ? { collisions: r.collisions as unknown as Collision[] } : {}),
+    ...(r.collisionFixes?.length ? { collisionFixes: r.collisionFixes as unknown as CollisionFix[] } : {}),
+    ...(r.collisionPlate ? { collisionPlate: r.collisionPlate as CollisionPlate } : {}),
+    ...(r.primeTower ? { primeTower: r.primeTower as unknown as PrimeTowerPlacement } : {}),
   }
 }
 

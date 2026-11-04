@@ -14,6 +14,7 @@ import { gzip } from 'node:zlib'
 import { MAX_CLOUD_PLATE_NUMBER } from '@slicerx/contracts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
+import { reportCollisions } from './collide'
 import { resolveSliceConfig } from './config'
 import type { DataStore } from './data'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
@@ -183,19 +184,23 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     return reports.map((p) => {
       const links = j.plates?.find((l) => l.plate === p.plate)
       if (p.status !== 'succeeded') return { plate: p.plate, status: p.status, error: p.error }
+      const collisions = reportCollisions(p)
       return {
         plate: p.plate,
         status: p.status,
         layerCount: p.layerCount,
         timeS: p.stats?.timeS,
         grams: p.stats?.filamentG?.reduce((a, b) => a + b, 0),
+        ...(collisions.length ? { collisions } : {}),
         ...(links ? { links: { gcode: absolute(c, links.gcodeUrl), preview: absolute(c, links.previewUrl) } } : {}),
       }
     })
   }
 
   const describe = (c: CloudOptions, j: CloudJob): Record<string, unknown> => {
-    const { plates: _plates, ...result } = j.result ?? {}
+    // The collisions go out as the slice tools give them (named, on the plate), so not again as the engine wrote them.
+    const { plates: _plates, collisions: _hits, collisionPlate: _plate, ...result } = j.result ?? {}
+    const collisions = reportCollisions(j.result)
     const plates = plateList(c, j)
     return {
     id: j.id,
@@ -209,6 +214,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     createdAt: j.createdAt,
     finishedAt: j.finishedAt ?? undefined,
     result: j.result ? result : undefined,
+    ...(collisions.length ? { collisions } : {}),
     ...(plates ? { plates } : {}),
     ...(j.status === 'succeeded'
       ? j.gcodeUrl || j.previewUrl
@@ -288,11 +294,11 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
 
   const jobs = defineTool({
     name: 'cloud.jobs',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. Answers that cloud slicing is not configured when this server has no cloud API.',
+      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. A result with collisions lists them in collisions (for the job\'s own result) and in each plate\'s, as slicerx_slice_file does: the object printing by its id and name, what it meets, the part struck, layers from 1, and the place and region struck in plate mm. Answers that cloud slicing is not configured when this server has no cloud API.',
     input: z.object({ job_id: jobId.optional(), limit: z.number().int().min(1).max(100).default(20) }),
     async run(i) {
       const c = need()
