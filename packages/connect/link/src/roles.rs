@@ -65,9 +65,10 @@ const APP_ONLY: &[&str] = &[
     "watch.huginn",
     "watch.mask",
     "watch.dismiss",
-    // The camera guard: its settings, the empty-plate picture and the frames it keeps.
+    // The camera guard: its settings, the empty-plate picture and the frames it keeps. Its state
+    // (`watch.guardState`: trips, printers it is off for, empty-plate times) carries no frame, so
+    // an agent may read it.
     "watch.guard",
-    "watch.guardState",
     "watch.evidence",
     "watch.plateClear",
     "watch.plateCheck",
@@ -695,6 +696,30 @@ mod tests {
         assert!(sees_broadcast(Role::Watch, "watch.dismissed") && !sees_broadcast(Role::Watch, "bed"));
         assert!(sees_broadcast(Role::Watch, "watch.plate") && !sees_broadcast(Role::App, "watch.plate"));
         assert!(!sees_broadcast(Role::Watch, "watch.guard") && sees_broadcast(Role::App, "watch.guard"));
+    }
+
+    #[test]
+    fn agents_read_the_camera_guard_and_never_set_it() {
+        assert!(allowed(Role::Agent, "watch.guardState"));
+        for m in [
+            "watch.guard",
+            "watch.evidence",
+            "watch.dismiss",
+            "watch.resume",
+            "watch.plateClear",
+            "watch.plateCheck",
+            "watch.plateIgnore",
+            "watch.handCheck",
+            "watch.autoPause",
+            "watch.huginn",
+            "watch.mask",
+        ] {
+            assert!(!allowed(Role::Agent, m), "{m}");
+            assert!(allowed(Role::App, m), "{m}");
+        }
+        assert!(!allowed(Role::Watch, "watch.guardState"));
+        assert!(!partner_allowed("watch.guardState"));
+        assert!(!sees_broadcast(Role::Agent, "watch.guard"));
     }
 
     #[test]

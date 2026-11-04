@@ -764,7 +764,7 @@ export interface LinkHost extends PrinterHost {
     setAutoPause(printerId: string, enabled: boolean): Promise<void>
     /** The camera guard tripped, or a trip was answered (`state: 'clear'`). */
     onGuard(cb: (t: GuardTrip) => void): () => void
-    /** App only: the guard's trips and settings. */
+    /** The guard's trips and settings, with no frame. App and agent connections. */
     guardState(): Promise<GuardState>
     /** App only: the frame behind a printer's trip, or null. `fresh` takes a new still first. */
     evidence(printerId: string, fresh?: boolean): Promise<{ contentType: string; data: Uint8Array; capturedAt: string } | null>
