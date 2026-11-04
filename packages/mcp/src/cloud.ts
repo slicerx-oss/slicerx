@@ -111,6 +111,8 @@ interface CloudAccess {
   maxUploadBytes?: number
 }
 
+const AS_WRITTEN = 'This job was sliced before the cloud kept the plate its collisions are on, so they are as the engine wrote them (result.collisions, and engineCollisions for each plate): positions in machine coordinates, not plate mm, and objects by id only. Slice it again for named collisions on the plate.'
+
 const NOT_INVITED = 'This account is not invited to cloud slicing. Ask the cloud operator to add it to the invite list, or slice on this machine with slicerx_slice_file.'
 const EXPIRY_NOTE = 'G-code and preview links expire 7 days after the job finishes; download them before then.'
 /** A size as people read it: bytes under 1 KB, KB under 0.1 MB, else MB with one decimal (MB of 1024 KB, as the limits count). */
@@ -185,23 +187,28 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
       const links = j.plates?.find((l) => l.plate === p.plate)
       if (p.status !== 'succeeded') return { plate: p.plate, status: p.status, error: p.error }
       const collisions = reportCollisions(p)
+      const raw = (p as { collisions?: unknown[] }).collisions
       return {
         plate: p.plate,
         status: p.status,
         layerCount: p.layerCount,
         timeS: p.stats?.timeS,
         grams: p.stats?.filamentG?.reduce((a, b) => a + b, 0),
-        ...(collisions.length ? { collisions } : {}),
+        ...(collisions?.length ? { collisions } : collisions === null ? { engineCollisions: raw } : {}),
         ...(links ? { links: { gcode: absolute(c, links.gcodeUrl), preview: absolute(c, links.previewUrl) } } : {}),
       }
     })
   }
 
   const describe = (c: CloudOptions, j: CloudJob): Record<string, unknown> => {
-    // The collisions go out as the slice tools give them (named, on the plate), so not again as the engine wrote them.
-    const { plates: _plates, collisions: _hits, collisionPlate: _plate, ...result } = j.result ?? {}
+    // The collisions go out as the slice tools give them (named, on the plate), so not again as the engine wrote them;
+    // a result stored without the plate keeps them as written, in the machine's coordinates.
     const collisions = reportCollisions(j.result)
+    const { plates: _plates, collisionPlate: _plate, ...kept } = j.result ?? {}
+    const { collisions: _hits, ...placed } = kept
+    const result = collisions === null ? kept : placed
     const plates = plateList(c, j)
+    const asWritten = collisions === null || plates?.some((p) => 'engineCollisions' in p)
     return {
     id: j.id,
     name: j.name,
@@ -214,7 +221,8 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     createdAt: j.createdAt,
     finishedAt: j.finishedAt ?? undefined,
     result: j.result ? result : undefined,
-    ...(collisions.length ? { collisions } : {}),
+    ...(collisions?.length ? { collisions } : {}),
+    ...(asWritten ? { collisionsNote: AS_WRITTEN } : {}),
     ...(plates ? { plates } : {}),
     ...(j.status === 'succeeded'
       ? j.gcodeUrl || j.previewUrl
@@ -298,7 +306,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. A result with collisions lists them in collisions (for the job\'s own result) and in each plate\'s, as slicerx_slice_file does: the object printing by its id and name, what it meets, the part struck, layers from 1, and the place and region struck in plate mm. Answers that cloud slicing is not configured when this server has no cloud API.',
+      'Cloud slicing jobs: with job_id, that job\'s status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. A job that named plates of a 3MF also gives the plate it is slicing while it runs, and plates: each plate\'s status, error, time, filament and its own links. A result with collisions lists them in collisions (for the job\'s own result) and in each plate\'s, as slicerx_slice_file does: the object printing by its id and name, what it meets, the part struck, layers from 1, and the place and region struck in plate mm. A job sliced before the cloud kept that plate has no collisions list: its collisions stay as the engine wrote them, in result.collisions and each plate\'s engineCollisions, in machine coordinates with objects by id, and collisionsNote says so. Answers that cloud slicing is not configured when this server has no cloud API.',
     input: z.object({ job_id: jobId.optional(), limit: z.number().int().min(1).max(100).default(20) }),
     async run(i) {
       const c = need()
