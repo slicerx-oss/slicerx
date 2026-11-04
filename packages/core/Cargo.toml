@@ -60,6 +60,15 @@ sx3mf = { path = "../sx3mf" }
 name = "format_read"
 required-features = ["import"]
 
+# These tests use sx-geom, which only the import feature brings in.
+[[test]]
+name = "arrange_layer_one"
+required-features = ["import"]
+
+[[test]]
+name = "threemf_geom"
+required-features = ["import"]
+
 [[bench]]
 name = "slice"
 harness = false
