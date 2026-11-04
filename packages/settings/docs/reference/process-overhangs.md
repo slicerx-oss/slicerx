@@ -153,7 +153,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_1_4_speed`
 
-**Overhang 1 4 speed**
+**Up to 1/4 clear overhang speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
@@ -167,7 +167,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_2_4_speed`
 
-**Overhang 2 4 speed**
+**1/4 to 1/2 clear overhang speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
@@ -181,7 +181,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_3_4_speed`
 
-**Overhang 3 4 speed**
+**1/2 to 3/4 clear overhang speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
@@ -195,7 +195,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_4_4_speed`
 
-**Overhang 4 4 speed**
+**3/4 or more clear overhang speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
