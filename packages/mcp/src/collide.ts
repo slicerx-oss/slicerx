@@ -125,14 +125,17 @@ export function sliceCollisions(hits: readonly SxCollision[], objects: readonly 
 
 /**
  * A cloud report's collisions for a client, as the slice tools answer them: the request's own object ids, which the
- * cloud keeps, named and placed on the plate from the plate the report carries (`collisionPlate`). [] when it has none.
+ * cloud keeps, named and placed on the plate from the plate the report carries (`collisionPlate`). [] when it has
+ * none. A report without `collisionPlate` (stored before the cloud wrote one) gives null: its positions are the
+ * machine's and cannot be moved onto the plate, so the caller passes them on as written.
  */
-export function reportCollisions(report: unknown): SliceCollision[] {
+export function reportCollisions(report: unknown): SliceCollision[] | null {
   const hits = sxCollisions(report)
   if (!hits.length) return []
   const plate = (report as { collisionPlate?: { bed?: [number, number][]; objects?: { id: string; name: string }[] } }).collisionPlate
   const bed = plate?.bed ?? []
-  const origin: [number, number] = bed.length ? [Math.min(...bed.map((p) => p[0])), Math.min(...bed.map((p) => p[1]))] : [0, 0]
+  if (!bed.length) return null
+  const origin: [number, number] = [Math.min(...bed.map((p) => p[0])), Math.min(...bed.map((p) => p[1]))]
   const names = new Map((plate?.objects ?? []).map((o) => [o.id, o.name]))
   return sliceCollisions(hits, [], origin).map(({ index, kind, severity, part, object_id, ...rest }) => {
     const name = names.get(object_id)
