@@ -91,14 +91,28 @@ pub(crate) fn slice(
     }
     // Every layer prints the copies one after another in the order of the copies on it (`objorder.rs`), by where
     // each copy stands: the same on every layer with the same copies, and the same in each shard.
+    // Under `Chain` each copy stands at the lowest vertex of its object's first layer, moved with the copy, as on a
+    // plate sliced as one session (`SliceSession::plate_order_point`).
+    let rule = crate::objorder::rule(config);
+    let points: Vec<[f64; 2]> = subs
+        .iter()
+        .map(|s| s.plate_order_point(rule, [f64::NAN, f64::NAN]))
+        .collect();
     let centers = |c: &crate::session::Instance| {
-        session
+        let footprint = session
             .footprints()
             .get(usize::from(c.object))
-            .map_or([0.0, 0.0], |o| o.center)
+            .map_or([0.0, 0.0], |o| o.center);
+        match points.get(c.sub) {
+            Some(p) if rule == crate::objorder::Rule::Chain && !p[0].is_nan() => [
+                p[0] + f64::from(c.shift[0]) / crate::geom::SCALE,
+                p[1] + f64::from(c.shift[1]) / crate::geom::SCALE,
+            ],
+            _ => footprint,
+        }
     };
     let all: Vec<&crate::session::Instance> = session.instances().iter().collect();
-    let copies = in_order(&all, &centers);
+    let copies = in_order(rule, &all, &centers);
     let mut info = crate::output::FirstLayerInfo::default();
     for c in &copies {
         #[allow(clippy::cast_possible_truncation, reason = "outlines are single precision")]
@@ -142,7 +156,7 @@ pub(crate) fn slice(
         let on = if on.len() == copies.len() {
             on
         } else {
-            in_order(&on, &centers)
+            in_order(rule, &on, &centers)
         };
         for c in &on {
             let Some(l) = outs
@@ -192,15 +206,16 @@ pub(crate) fn slice(
     Ok(out)
 }
 
-/// `copies` in print order on a layer (`objorder::order`), numbered for its ties by their plate objects.
+/// `copies` in print order on a layer by `rule` (`objorder::order_by`), numbered for its ties by their plate objects.
 fn in_order<'a>(
+    rule: crate::objorder::Rule,
     copies: &[&'a crate::session::Instance],
     center: &dyn Fn(&crate::session::Instance) -> [f64; 2],
 ) -> Vec<&'a crate::session::Instance> {
     let mut numbered = copies.to_vec();
     crate::sorting::sort_by_key(&mut numbered, |c| c.object);
     let centers: Vec<[f64; 2]> = numbered.iter().map(|c| center(c)).collect();
-    crate::objorder::order(&centers)
+    crate::objorder::order_by(rule, &centers)
         .into_iter()
         .filter_map(|k| numbered.get(k).copied())
         .collect()

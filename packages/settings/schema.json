@@ -4841,6 +4841,24 @@
    "intent": "effects"
   },
   {
+   "key": "object_order_rule",
+   "section": "process",
+   "type": "enum",
+   "label": "Object order rule",
+   "enumValues": [
+    "origin_last",
+    "chain"
+   ],
+   "mode": "hidden",
+   "group": "special",
+   "invalidates": "paths",
+   "help": "How a layer's objects are put in order: ending at the object nearest the bed's origin, or along a chain of the nearest objects with every brim first. Prusa projects set it when opened; the app does not list it.",
+   "enumLabels": [
+    "End at the object nearest the origin",
+    "A chain of the nearest objects"
+   ]
+  },
+  {
    "key": "preheat_steps",
    "section": "process",
    "type": "int",

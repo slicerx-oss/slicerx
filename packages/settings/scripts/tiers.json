@@ -22,7 +22,7 @@
  },
  "hiddenProcess": [
   "inherits", "print_extruder_id", "print_extruder_variant", "compatible_printers", "compatible_printers_condition", "plugins", "slicing_pipeline_plugin",
-  "print_plugin_config_overrides", "wiping_volumes_extruders", "prime_volume", "initial_layer_flow_ratio", "support_base_edge_inset", "skirt_brim_edge", "brim_loop_rounding",
+  "print_plugin_config_overrides", "wiping_volumes_extruders", "prime_volume", "initial_layer_flow_ratio", "support_base_edge_inset", "skirt_brim_edge", "brim_loop_rounding", "object_order_rule",
   "initial_layer_outer_wall_line_width", "initial_layer_inner_wall_line_width", "initial_layer_sparse_infill_line_width", "initial_layer_internal_solid_infill_line_width", "initial_layer_top_surface_line_width", "initial_layer_support_line_width"
  ],
  "hiddenOther": [
