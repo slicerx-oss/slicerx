@@ -186,8 +186,13 @@ export async function runCloudSlice(
   }
 }
 
-/** What the phone says when a 3MF project is over the hosted upload cap: the phone cannot slice it itself. */
-export const PROJECT_OVER_CAP = 'This project is over the 25 MB cloud limit. Slice it on your computer instead.'
+/**
+ * What the phone says when a 3MF project is over the account's cloud upload limit (`limit`, as the service names it,
+ * such as "10 MB"; each account has its own): the phone cannot slice it itself.
+ */
+export function projectOverCap(limit?: string): string {
+  return `This project is over the ${limit ? `${limit} ` : ''}cloud limit. Slice it on your computer instead.`
+}
 
 /**
  * A cloud refusal in the phone's words. The cloud slicer's own next step, slicing on this device, does not apply on a
@@ -197,7 +202,10 @@ export const PROJECT_OVER_CAP = 'This project is over the 25 MB cloud limit. Sli
 export function phoneCloudError(e: unknown, fileName: string): unknown {
   if (!(e instanceof Error) || e.name === 'AbortError') return e
   const onDevice = / ?Slice on this device instead\.?$/
-  if (/\.3mf$/i.test(fileName) && /over (this account's |the )?cloud upload limit/i.test(e.message)) return new Error(PROJECT_OVER_CAP)
+  if (/\.3mf$/i.test(fileName) && /over (this account's |the )?cloud upload limit/i.test(e.message)) {
+    const limit = /cloud upload limit of ([0-9.]+ (?:MB|KB|bytes))/i.exec(e.message)?.[1]
+    return new Error(projectOverCap(limit))
+  }
   if (/cloud slices for the last 24 hours|more (plate|plates) (in the cloud )?today|this job slices \d+ plates/i.test(e.message) && onDevice.test(e.message)) {
     const text = e.message.replace(onDevice, '')
     return new Error(text.charAt(0).toUpperCase() + text.slice(1))

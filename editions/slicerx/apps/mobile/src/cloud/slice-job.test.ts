@@ -5,7 +5,7 @@
 // transform built from a size alone pushed models off the bed. Without one the cloud
 // slicer centers the real mesh and sets it down.
 import { EASY_GOALS, type PrinterInfo, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
-import { PROJECT_OVER_CAP, estimateOf, phoneCloudError, runCloudSlice, type PhoneModel } from './slice-job'
+import { estimateOf, phoneCloudError, runCloudSlice, type PhoneModel } from './slice-job'
 import { boxStl } from './stl'
 import { createCloudStub } from './stub'
 
@@ -137,10 +137,19 @@ describe('cloud refusals in the phone words', () => {
     for (const m of [
       "A model on this plate is 31.2 MB, over this account's cloud upload limit of 25 MB. Slice on this device instead.",
       "This model is 31.2 MB, over this account's cloud upload limit of 25 MB. Slice on this device instead.",
-      'This model is 31.2 MB, over the cloud upload limit.',
     ])
       expect((phoneCloudError(new Error(m), 'Lantern.3mf') as Error).message).toBe('This project is over the 25 MB cloud limit. Slice it on your computer instead.')
-    expect(PROJECT_OVER_CAP).toBe('This project is over the 25 MB cloud limit. Slice it on your computer instead.')
+    // A refused upload that names no limit says none.
+    expect((phoneCloudError(new Error('This model is 31.2 MB, over the cloud upload limit.'), 'Lantern.3mf') as Error).message).toBe('This project is over the cloud limit. Slice it on your computer instead.')
+  })
+
+  it("keeps the account's own upload limit, which is not always 25 MB", () => {
+    for (const m of [
+      "A model on this plate is 12.4 MB, over this account's cloud upload limit of 10 MB. Slice on this device instead.",
+      "This model is 12.4 MB (11 MB compressed), over this account's cloud upload limit of 10 MB. Slice on this device instead.",
+      'This model is over the cloud upload limit of 10 MB.',
+    ])
+      expect((phoneCloudError(new Error(m), 'Lantern.3mf') as Error).message).toBe('This project is over the 10 MB cloud limit. Slice it on your computer instead.')
   })
 
   it('keeps the plates left from a daily limit, without the step that does not apply on a phone', () => {
@@ -164,5 +173,14 @@ describe('cloud refusals in the phone words', () => {
     await expect(
       runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined),
     ).rejects.toThrow(/^This account has used all 20 cloud slices for the last 24 hours\.$/)
+  })
+
+  it("rejects a project over a 10 MB account's limit with that limit", async () => {
+    const stub = createCloudStub({ stageMs: 0, queueMs: 0 })
+    const over = new Error("This model is 12.4 MB, over this account's cloud upload limit of 10 MB. Slice on this device instead.")
+    const cloud: SlicerHost = { ...stub, slice: () => Promise.reject(over) }
+    await expect(
+      runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined),
+    ).rejects.toThrow(/^This project is over the 10 MB cloud limit\. Slice it on your computer instead\.$/)
   })
 })
