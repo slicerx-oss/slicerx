@@ -235,6 +235,12 @@ const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
 /** A mouse is steadier: a left press held for Select Other stays a hold within this many pixels. */
 const HOLD_SLOP_PX = 4
+/**
+ * A frame that starts this long after the one before, ms, ran late: the browser may still have pointer moves queued
+ * for the page, so a press does not count as held on it, for up to HOLD_LATE_FRAMES frames in a row.
+ */
+const LATE_FRAME_MS = 100
+const HOLD_LATE_FRAMES = 4
 
 /** A ring drag in progress (rotate tool and cut tilt): the turn so far follows the cursor around `center` on the ring's plane, or along its screen tangent when the ring was grabbed edge on. */
 interface RingDrag {
@@ -3645,7 +3651,7 @@ class ViewportImpl implements Viewport {
     // A touch held still this long asks for the menu, as a right click does; it is cleared by a move or a second finger.
     // With Select Other on (`holdPick`), a touch or a left press held still asks for its list instead (`holdpick`).
     // `held` is set once the hold time is up: the press then counts as held on the next frame or at its lift.
-    let press: { x: number; y: number; slop: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null = null
+    let press: { x: number; y: number; slop: number; t0: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null = null
     const stopPress = (): void => {
       if (press) clearTimeout(press.timer)
       press = null
@@ -3781,12 +3787,27 @@ class ViewportImpl implements Viewport {
           x: e.clientX,
           y: e.clientY,
           slop: touch ? LONG_PRESS_SLOP_PX : HOLD_SLOP_PX,
+          t0: performance.now(),
           timer: setTimeout(() => {
             // The browser hands a moving finger or pointer to the page once a frame, so a late frame can still hold a
             // move made before now: the press counts as held on the next frame, or at the lift if that comes first
-            // (it comes after those moves), unless a move has ended it by then.
+            // (it comes after those moves), unless a move has ended it by then. After a long frame the moves can wait
+            // past the next frame too, so while frames come late the hold waits a frame more, a few frames at most.
             const p = press
             if (!p) return
+            // a timer that runs late ran after a long task, which is just when moves are still waiting
+            let last = performance.now()
+            let late = last - p.t0 > LONG_PRESS_MS + LATE_FRAME_MS
+            let waits = HOLD_LATE_FRAMES
+            const settle = (now: number): void => {
+              if (press !== p) return
+              late ||= now - last > LATE_FRAME_MS
+              last = now
+              if (late && waits-- > 0) {
+                late = false
+                requestAnimationFrame(settle)
+              } else p.held?.()
+            }
             p.held = () => {
               if (press !== p) return
               press = null
@@ -3796,7 +3817,7 @@ class ViewportImpl implements Viewport {
               this.dropStillDrag()
               this.emit('holdpick', { screen: [at.clientX, at.clientY], touch, hits: this.patchesOf(under) })
             }
-            requestAnimationFrame(p.held)
+            requestAnimationFrame(settle)
           }, LONG_PRESS_MS),
         }
       } else if (touch) stopPress()
