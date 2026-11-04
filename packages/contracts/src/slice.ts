@@ -26,6 +26,9 @@ export type GcodeFlavor =
   | 'cheetah'
 
 /** Pipeline stages, in order. Settings declare the first stage they invalidate. */
+/** The highest plate number a cloud slice may name in `SliceOptions.plates`. */
+export const MAX_CLOUD_PLATE_NUMBER = 1000
+
 export const SLICE_STAGES = ['layers', 'contours', 'perimeters', 'surfaces', 'infill', 'paths', 'gcode', 'preview'] as const
 export type SliceStage = (typeof SLICE_STAGES)[number]
 
@@ -242,8 +245,9 @@ export interface SliceOptions {
   projectDefaults?: boolean
   /**
    * The cloud slicer only: the plates of a whole 3MF project to slice, from 1, each a slice of its own (the result's
-   * `plates`). Only these plates are sliced, and each counts as one of the account's daily cloud slices. Without it a
-   * project slices its first plate. Local engines do not read it.
+   * `plates`). Only these plates are sliced, and each counts as one of the account's daily cloud slices. Each is a plate
+   * number from 1 to {@link MAX_CLOUD_PLATE_NUMBER}; the service refuses a higher one. Without it a project slices its
+   * first plate. Local engines do not read it.
    */
   plates?: number[]
 }

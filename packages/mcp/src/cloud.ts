@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { promisify } from 'node:util'
 import { gzip } from 'node:zlib'
+import { MAX_CLOUD_PLATE_NUMBER } from '@slicerx/contracts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { resolveSliceConfig } from './config'
@@ -232,7 +233,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
         .min(1)
         .max(32)
         .optional()
-        .describe("3MF only: the plates to slice, from 1, each a slice of its own with its own result; only these are sliced, and each counts as one of the day's cloud slices. Default: the project's first plate"),
+        .describe("3MF only: the plates to slice, plate numbers from 1 to 1000, each a slice of its own with its own result; only these are sliced, and each counts as one of the day's cloud slices. Default: the project's first plate"),
       profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
       overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('Setting keys to values, applied last'),
       name: z.string().min(1).max(120).optional().describe('Job name shown in the job list; default the file name'),
@@ -245,6 +246,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
       if (ext !== '.stl' && ext !== '.3mf') throw new ToolInputError('model: cloud slicing takes STL and 3MF files', 'unsupported_format')
       if (i.plates && ext !== '.3mf') throw new ToolInputError('plates: only a 3MF project has plates', 'invalid_input')
       if (i.plates && new Set(i.plates).size !== i.plates.length) throw new ToolInputError('plates: name each plate once', 'invalid_input')
+      if (i.plates?.some((n) => n > MAX_CLOUD_PLATE_NUMBER)) throw new ToolInputError(`plates: plate numbers go from 1 to ${MAX_CLOUD_PLATE_NUMBER}`, 'invalid_input')
       await deps.profiles.prepare(i.profiles)
       const { explicit, applied } = resolveSliceConfig(deps.store, deps.profiles, i.profiles, i.overrides)
       const bytes = readFileSync(path)
