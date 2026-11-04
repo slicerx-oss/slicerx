@@ -144,6 +144,7 @@
   "overhang_2_4_speed": "Speed for walls that hang out a quarter to half a line width, in mm/s or as a percent of wall speed. 0 keeps the normal wall speed.",
   "overhang_3_4_speed": "Speed for walls that hang out half to three quarters of a line width, in mm/s or as a percent of wall speed. 0 keeps the normal wall speed.",
   "overhang_4_4_speed": "Speed for walls that hang out three quarters of a line width or more, in mm/s or as a percent of wall speed. 0 keeps the normal wall speed.",
+  "overhang_totally_speed": "Speed for wall pieces that hang fully clear of the layer below, in mm/s. 0 uses the bridge speed.",
   "overhang_reverse": "On every other layer, prints walls over an overhang in the opposite direction. This can greatly improve steep overhangs and reduces warping.",
   "overhang_reverse_internal_only": "Reverses only the inner walls on alternate layers, which spreads stress to reduce warping and keeps the outer wall's finish. Good for ABS, ASA and flexible filaments.",
   "overhang_reverse_threshold": "How far a wall must hang out before it is reversed, in mm or as a percent of the line width. 0 reverses on every other layer regardless.",

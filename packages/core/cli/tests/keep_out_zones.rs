@@ -189,6 +189,8 @@ fn a_plate_skirt_round_two_parts_beside_the_a1_corner_is_cut_out_of_it() {
 fn a_plate_skirt_round_two_parts_beside_the_p1s_corner_is_cut_out_of_it() {
     // The same on the P1S's excluded corner: cubes 12 mm right of it and 12 mm behind it. The P1S writes its G-code
     // 2 mm in front of the plate (`extruder_offset`).
+    // Changed again when overhang_totally_speed became a setting with a default: only its line in the settings block,
+    // `; overhang_totally_speed = 0`, was added.
     let c = config("p1s", &serde_json::from_str(SKIRT).unwrap());
     let (out, gcode) = slice("flank-p1s", &c, &[[30.0, 4.0], [4.0, 40.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -286,7 +288,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "982d333254e3a553",
+        "4a18073649617749",
         "the P1S plate's G-code changed"
     );
 }

@@ -446,6 +446,7 @@ overhang_flow_ratio	process	float
 overhang_reverse	process	bool
 overhang_reverse_internal_only	process	bool
 overhang_reverse_threshold	process	floatOrPercent
+overhang_totally_speed	process	floats
 parallel_printheads_bed_exclude_areas	printer	strings
 parallel_printheads_count	printer	int
 parking_pos_retraction	printer	float

@@ -2688,6 +2688,29 @@
    "intent": "quality"
   },
   {
+   "key": "overhang_totally_speed",
+   "section": "process",
+   "type": "floats",
+   "label": "Fully clear overhang speed",
+   "unit": "mm/s",
+   "min": 0,
+   "mode": "expert",
+   "nullable": true,
+   "default": [
+    0
+   ],
+   "group": "overhangs",
+   "invalidates": "gcode",
+   "enabledWhen": [
+    {
+     "key": "enable_overhang_speed",
+     "op": "eq",
+     "value": true
+    }
+   ],
+   "intent": "quality"
+  },
+  {
    "key": "overhang_reverse",
    "section": "process",
    "type": "bool",
