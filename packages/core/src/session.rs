@@ -10280,11 +10280,7 @@ impl SliceSession {
                     let (ext, near) = crate::perimeters::classic_top_start(cfg, w);
                     let edge = ext - overlap;
                     if near > edge {
-                        let strip = perimeters::difference(
-                            &perimeters::offset(shapes, -edge),
-                            &perimeters::offset(shapes, -near),
-                        );
-                        Some((strip, Some(near - edge + 5)))
+                        Some((wall_back_strip(shapes, edge, near), Some(near - edge + 5)))
                     } else if near < edge && top_one_wall && cfg.wall_loops > 1 {
                         let strip = perimeters::difference(
                             &perimeters::offset(shapes, -near),
@@ -10299,10 +10295,7 @@ impl SliceSession {
             // `shapes` put back to the walls' own edge along the outer wall: grown into the strip, or less it.
             let grown_back = |shapes: &Shapes| -> Option<Shapes> {
                 match wall_back.as_ref()? {
-                    (strip, Some(by)) => {
-                        let back = perimeters::intersection(&perimeters::offset(shapes, *by), strip);
-                        Some(perimeters::union_all(&[shapes, &back]))
-                    }
+                    (strip, Some(by)) => Some(grow_back(shapes, strip, *by)),
                     (strip, None) => Some(perimeters::difference(shapes, strip)),
                 }
             };
@@ -12855,6 +12848,27 @@ fn anchored_grid(
     }
 }
 
+/// How far the strip of [`wall_back_strip`] reaches into the surface it grows back, internal units (0.0005 mm).
+const WALL_BACK_PAST: i32 = 5;
+
+/// The strip between the walls' own edge, `edge` in from the outline `shapes`, and where a classic one-wall top's
+/// surface starts, `near` in, internal units. It reaches [`WALL_BACK_PAST`] into the surface: the surface and the
+/// strip are cut from the outline apart, so along an edge that is not along an axis their sides round to whole units
+/// differently and can leave a crack a unit wide between them. A surface grown into the strip across that crack keeps
+/// it as an edge, and the lines found in it, which keep the grid's inset from every edge, would keep it from the crack.
+fn wall_back_strip(shapes: &Shapes, edge: i32, near: i32) -> Shapes {
+    perimeters::difference(
+        &perimeters::offset(shapes, -edge),
+        &perimeters::offset(shapes, -(near + WALL_BACK_PAST)),
+    )
+}
+
+/// `shapes` grown `by` into the strip of [`wall_back_strip`], internal units.
+fn grow_back(shapes: &Shapes, strip: &Shapes, by: i32) -> Shapes {
+    let back = perimeters::intersection(&perimeters::offset(shapes, by), strip);
+    perimeters::union_all(&[shapes, &back])
+}
+
 /// One grid of a surface's lines: the area, the line spacing (scanline units and mm), how far in the lines' ends
 /// keep (internal units), the frame a stretched piece is drawn in, how much wider than the surface's own width the
 /// lines print (mm) and the line left out, if any.
@@ -15303,6 +15317,69 @@ fn zig_lines(
 /// which f32 widens to just under that, hence the slack.
 fn below_bed(min_z: f64) -> bool {
     min_z < -(0.001 + 1e-4)
+}
+
+#[cfg(test)]
+mod wall_back_tests {
+    use super::{grow_back, wall_back_strip};
+    use crate::fm::Fm as _;
+    use crate::perimeters::{self, Shapes};
+    use i_overlay::i_float::int::point::IntPoint;
+
+    /// The area of `shapes`, square internal units.
+    fn area(shapes: &Shapes) -> i64 {
+        (shapes
+            .iter()
+            .flatten()
+            .map(|ring| crate::geom::area2_int(ring.as_slice()))
+            .sum::<i64>()
+            / 2)
+        .abs()
+    }
+
+    /// A trapezoid `size` units tall whose right side leans at `deg` degrees from the plate's x axis.
+    fn leaning(size: i32, deg: f64) -> Shapes {
+        let run = (f64::from(size) / deg.to_radians().m_tan()).round();
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a run of a few mm in internal units"
+        )]
+        let run = run as i32;
+        vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(2 * size + run, 0),
+            IntPoint::new(2 * size, size),
+            IntPoint::new(0, size),
+        ]]]
+    }
+
+    /// The stock A1's outer wall (0.42 mm), with the line ends 0.045 width in and a 15% overlap: the walls' own edge,
+    /// where the surface starts and the grid's inset, internal units.
+    const EXT: i32 = 4_200;
+    const EDGE: i32 = EXT - 630;
+    const NEAR: i32 = EXT - 189;
+    const INSET: i32 = 2_301;
+
+    #[test]
+    fn a_surface_grown_back_along_a_leaning_wall_keeps_the_grid_inset_from_the_wall() {
+        for deg in [30.0, 45.0, 60.0] {
+            for step in 0..24 {
+                let outline = leaning(60_000 + 37 * step, deg);
+                // The surface comes from the wall's center line, as the walls build it, not from the outline at once.
+                let surface = perimeters::offset(&perimeters::offset(&outline, -EXT / 2), -(NEAR - EXT / 2));
+                let strip = wall_back_strip(&outline, EDGE, NEAR);
+                let grown = grow_back(&surface, &strip, NEAR - EDGE + 5);
+                // Where the lines are found: the grid's inset in from the walls' own edge, on every side.
+                let lines_in = perimeters::offset(&grown, -INSET);
+                let want = perimeters::offset(&outline, -(EDGE + INSET + 3));
+                let short = area(&perimeters::difference(&want, &lines_in));
+                assert!(
+                    short < 100_000,
+                    "{deg} degree wall, size step {step}: the lines keep {short} square units less than the grid's inset"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
