@@ -477,6 +477,9 @@ pub struct PrintConfig {
     pub first_layer_widths: FeatureWidths,
     /// Set on the settings [`PrintConfig::for_first_layer`] made from first layer widths per feature.
     pub(crate) on_first_layer: bool,
+    /// Set on the settings [`PrintConfig::for_first_layer`] made from `initial_layer_line_width`, where every line
+    /// prints at that width.
+    pub(crate) first_layer_line: bool,
     /// Percent of the line width.
     pub infill_wall_overlap: f64,
     pub brim_width: f64,
@@ -657,6 +660,7 @@ impl PrintConfig {
             feature_widths: FeatureWidths::default(),
             first_layer_widths: FeatureWidths::default(),
             on_first_layer: false,
+            first_layer_line: false,
             infill_wall_overlap: 15.0,
             brim_width: 5.0,
             skirt_loops: 0,
@@ -1958,6 +1962,7 @@ impl PrintConfig {
             initial_layer: Some(w),
             ..FeatureWidths::default()
         };
+        c.first_layer_line = true;
         c
     }
 
