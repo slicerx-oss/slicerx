@@ -23,7 +23,8 @@ use sx_core::api::{SCHEMA_VERSION, SliceRequest};
 
 use crate::backend::{
     Backend, Bucket, CLOUD_SLICE_SCOPE, CloudQuota, DeliveryState, DeviceKind, Job, JobStatus, LINK_SCOPE,
-    LinkPrinter, MAX_PLATES, NewJob, Principal, daily_limit, job_plates, mesh_path, plate_result_paths,
+    LinkPrinter, MAX_PLATE_NUMBER, MAX_PLATES, NewJob, Principal, daily_limit, job_plates, mesh_path,
+    plate_result_paths,
 };
 use crate::error::{Error, Result};
 use crate::gzip::{Inflate, inflate};
@@ -505,7 +506,8 @@ impl From<Job> for JobView {
     }
 }
 
-/// `options.plates`, when the request names its plates: 1 to [`MAX_PLATES`] plate numbers from 1, each once.
+/// `options.plates`, when the request names its plates: 1 to [`MAX_PLATES`] plate numbers from 1 to
+/// [`MAX_PLATE_NUMBER`], each once.
 fn check_plates(raw: &Value) -> Result<()> {
     let Some(plates) = raw.pointer("/options/plates") else {
         return Ok(());
@@ -522,10 +524,13 @@ fn check_plates(raw: &Value) -> Result<()> {
     }
     let mut seen: Vec<u64> = Vec::with_capacity(list.len());
     for p in list {
-        let Some(n) = p.as_u64().filter(|&n| n >= 1 && u32::try_from(n).is_ok()) else {
-            return Err(Error::BadRequest(
-                "options.plates are plate numbers from 1".into(),
-            ));
+        let Some(n) = p
+            .as_u64()
+            .filter(|&n| (1..=u64::from(MAX_PLATE_NUMBER)).contains(&n))
+        else {
+            return Err(Error::BadRequest(format!(
+                "options.plates are plate numbers from 1 to {MAX_PLATE_NUMBER}"
+            )));
         };
         if seen.contains(&n) {
             return Err(Error::BadRequest(format!("options.plates names plate {n} twice")));

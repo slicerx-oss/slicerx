@@ -74,7 +74,10 @@ export const cloudJob = z.object({
   finishedAt: z.string().nullable(),
   gcodeUrl: z.string().optional(),
   previewUrl: z.string().optional(),
-  /** How many plates the job slices, and the one it is slicing while it runs (a job that names its plates). */
+  /**
+   * How many plates the job slices, and the one it is slicing (a job that names its plates). Once the job finishes,
+   * plateIndex stays at the last plate the worker took up.
+   */
   plateCount: z.number().int().min(1).nullish(),
   plateIndex: z.number().int().min(1).nullish(),
   /** Each sliced plate's downloads, for a job that named its plates. */

@@ -543,3 +543,208 @@ fn sx_cube_stl() -> Vec<u8> {
     }
     out
 }
+
+/// Plate numbers past the cap: one past `i32::MAX`, which `cloud_jobs.plate_index` (an integer) cannot hold, and the
+/// first number past the cap.
+const PAST_THE_CAP: [u64; 2] = [3_000_000_000, 1001];
+
+async fn send(app: &Router, method: Method, uri: &str, token: &str, body: Body) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/json")
+        .body(body)
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let status = res.status();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// Claims and runs jobs until job `id` has run. Other jobs may be queued on a shared stack, and they run too.
+async fn run_until(backend: &dyn Backend, cfg: &WorkerConfig, id: &str) {
+    for _ in 0..20 {
+        let Some(claimed) = backend.claim_job(&cfg.id).await.unwrap() else {
+            break;
+        };
+        let mine = claimed.id == id;
+        worker::process(backend, cfg, claimed).await.unwrap();
+        if mine {
+            return;
+        }
+    }
+    panic!("job {id} was never claimed");
+}
+
+/// A plate number past the cap, on any backend. A job that slipped past the check (queued before it) fails that plate
+/// alone as a plate the project lacks, where the worker's progress write used to fail and the job was claimed again
+/// until it was given up. The service refuses one with `bad_request` before a job is queued.
+async fn a_plate_past_the_cap(app: &Router, backend: &dyn Backend, token: &str, user: &str, worker_id: &str) {
+    let sha = sha256_hex(&lantern());
+    let (s, _) = send(
+        app,
+        Method::PUT,
+        &format!("/v1/meshes/{sha}"),
+        token,
+        Body::from(lantern()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let cfg = WorkerConfig {
+        id: worker_id.to_owned(),
+        idle_poll: Duration::from_millis(10),
+        heartbeat: Duration::from_secs(5),
+    };
+
+    let slipped = backend
+        .insert_job(sx_cloud::backend::NewJob {
+            user_id: user.to_owned(),
+            token_id: None,
+            name: "Lantern".into(),
+            request: request(&sha, Some(json!([2, PAST_THE_CAP[0]]))),
+            target_printer_id: None,
+        })
+        .await
+        .unwrap();
+    run_until(backend, &cfg, &slipped.id).await;
+    let (_, job) = send(
+        app,
+        Method::GET,
+        &format!("/v1/jobs/{}", slipped.id),
+        token,
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    assert_eq!(job["plateIndex"], 2, "the plate past the cap is never taken up");
+    let plates = job["result"]["plates"].as_array().unwrap();
+    assert_eq!(plates[0]["status"], "succeeded", "{job}");
+    assert_eq!(
+        plates[1],
+        json!({ "plate": PAST_THE_CAP[0], "status": "failed", "error": "the project has no plate 3000000000; plate numbers go up to 1000" })
+    );
+
+    for n in PAST_THE_CAP {
+        for plates in [json!([n]), json!([1, n])] {
+            let body = json!({ "name": "Lantern", "request": request(&sha, Some(plates.clone())) });
+            let (s, err) = send(app, Method::POST, "/v1/jobs", token, Body::from(body.to_string())).await;
+            assert_eq!(s, StatusCode::BAD_REQUEST, "{plates}: {err}");
+            assert_eq!(err["error"]["code"], "bad_request", "{plates}");
+            assert_eq!(
+                err["error"]["message"], "options.plates are plate numbers from 1 to 1000",
+                "{plates}"
+            );
+        }
+    }
+    assert_eq!(
+        backend.jobs(user, 10).await.unwrap().len(),
+        1,
+        "nothing was queued but the job that slipped past"
+    );
+
+    let body = json!({ "name": "Lantern", "request": request(&sha, Some(json!([1000]))) });
+    let (s, queued) = send(app, Method::POST, "/v1/jobs", token, Body::from(body.to_string())).await;
+    assert_eq!(
+        s,
+        StatusCode::ACCEPTED,
+        "1000 is the highest plate number: {queued}"
+    );
+    let id = queued["id"].as_str().unwrap();
+    run_until(backend, &cfg, id).await;
+    let (_, job) = send(app, Method::GET, &format!("/v1/jobs/{id}"), token, Body::empty()).await;
+    assert_eq!(job["status"], "failed", "{job}");
+    assert!(
+        job["error"].as_str().unwrap().contains("has no plate 1000"),
+        "{job}"
+    );
+}
+
+#[tokio::test]
+async fn a_plate_past_the_cap_is_refused_and_never_reaches_the_progress_write() {
+    let h = harness();
+    a_plate_past_the_cap(&h.app, h.backend.as_ref(), RV_TOKEN, RV, "test-worker").await;
+}
+
+/// A local or LAN Supabase stack, as `tests/supabase.rs` reads it: skipped unless `SLICERX_SUPABASE_URL` (loopback or
+/// a private address) and `SX_CLOUD_SERVICE_KEY` are set.
+fn stack() -> Option<(String, String)> {
+    let url = std::env::var("SLICERX_SUPABASE_URL")
+        .or_else(|_| std::env::var("SX_CLOUD_SUPABASE_URL"))
+        .ok()?;
+    let key = std::env::var("SX_CLOUD_SERVICE_KEY").ok()?;
+    let host = url.strip_prefix("http://")?.split(':').next()?.to_owned();
+    let private =
+        host == "127.0.0.1" || host == "localhost" || host.starts_with("10.") || host.starts_with("192.168.");
+    private.then_some((url, key))
+}
+
+#[tokio::test]
+async fn a_plate_past_the_cap_is_refused_on_the_stack() {
+    let Some((url, key)) = stack() else {
+        eprintln!("skipped: set SLICERX_SUPABASE_URL and SX_CLOUD_SERVICE_KEY for a local stack");
+        return;
+    };
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let http = reqwest::Client::new();
+    let admin = |method: reqwest::Method, path: &str| {
+        http.request(method, format!("{url}{path}"))
+            .header("apikey", &key)
+            .bearer_auth(&key)
+    };
+    let run = format!("{:08x}", std::process::id());
+    let email = format!("cloud-plates-{run}@example.com");
+    let created: Value = admin(reqwest::Method::POST, "/auth/v1/admin/users")
+        .json(&json!({ "email": email, "email_confirm": true }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let user = created["id"].as_str().expect("user id").to_owned();
+    let token = format!("sxk_{}", sha256_hex(format!("{run}-plates").as_bytes()));
+    for (path, body) in [
+        (
+            "/rest/v1/api_tokens",
+            json!({
+                "user_id": user,
+                "name": "cloud plates test",
+                "prefix": &token[..12],
+                "token_hash": sha256_hex(token.as_bytes()),
+                "scopes": ["cloud_slice"],
+            }),
+        ),
+        ("/rest/v1/rpc/grant_cloud_access", json!({ "p_email": email })),
+    ] {
+        let res = admin(reqwest::Method::POST, path)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "{path}: {}", res.text().await.unwrap());
+    }
+    let backend = Arc::new(sx_cloud::SupabaseBackend::new(&url, &key).unwrap());
+    let app = router(Arc::new(App {
+        backend: backend.clone(),
+        poll_step: Duration::from_millis(200),
+        about: About::default(),
+        trust_forwarded: false,
+    }));
+    let outcome = {
+        let (backend, user) = (backend.clone(), user.clone());
+        let worker_id = format!("test-plates-{run}");
+        tokio::spawn(
+            async move { a_plate_past_the_cap(&app, backend.as_ref(), &token, &user, &worker_id).await },
+        )
+    };
+    // Clean up even when an assertion fails.
+    let result = outcome.await;
+    let _ = backend.delete_user_files(&user).await;
+    let _ = admin(reqwest::Method::DELETE, &format!("/auth/v1/admin/users/{user}"))
+        .send()
+        .await;
+    if let Err(e) = result {
+        std::panic::resume_unwind(e.into_panic());
+    }
+}
