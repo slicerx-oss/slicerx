@@ -286,6 +286,26 @@ describe('cloud slicing a whole 3MF project', () => {
     expect(list[0]?.collisions).toEqual(got.collisions)
   })
 
+  it('passes on as written, and never as plate mm, the collisions of a result stored before it carried its plate', async () => {
+    const svc = mockCloudService()
+    // A delta centered on 0, 0: the engine's positions are the machine's, and without the plate they cannot be moved.
+    const raw = [{ kind: 'keep_out', severity: 'hit', part: 'nozzle', objectId: 'o0-2', hitId: 'exclusion-area', damagedId: 'o0-2', layer: 0, segment: 3, timeS: 12.4, lastLayer: 4, at: [-120, -120, 0.2], point: [-120, -120, 0.2], worstLayer: 0, worstPoint: [-120, -120, 0.2], depthMm: 0, hitHeightMm: 0, contactMin: [-124, -125, 0.2], contactMax: [-118, -116, 1] }]
+    svc.extra = () => ({ collisions: raw })
+    const h = await connect({ cloud: { apiUrl: 'http://127.0.0.1:8787', token: 'sxk_test', fetch: svc.fetch } })
+    const r = await h.call('slicerx_cloud_slice', { model: project(h.dir), plates: [1, 2] })
+    expect(r.isError, text(r)).toBeFalsy()
+    const jobId = data<{ output: { jobId: string } }>(r).output.jobId
+    type Got = { collisions?: unknown; collisionsNote?: string; plates?: (Plate & { collisions?: unknown; engineCollisions?: unknown })[]; result?: Record<string, unknown> }
+    const got = data<{ output: Got }>(await h.call('slicerx_cloud_jobs', { job_id: jobId })).output
+    expect(got.collisions).toBeUndefined()
+    expect(got.result?.['collisions']).toEqual(raw)
+    expect(got.collisionsNote).toMatch(/machine coordinates/)
+    for (const p of got.plates!) {
+      expect(p.collisions).toBeUndefined()
+      expect(p.engineCollisions).toEqual(raw)
+    }
+  })
+
   it('refuses plates the day has no room for, plates of an STL and a plate named twice, before any upload', async () => {
     const svc = mockCloudService()
     svc.access = { invited: true, jobsPerDay: 20, jobsToday: 18, maxUploadBytes: 25 * 1_048_576 }
