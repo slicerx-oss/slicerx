@@ -330,6 +330,22 @@ fn heights_that_meet_rarely_share_only_those_layers() {
 }
 
 #[test]
+fn an_object_with_its_own_layer_height_prints_the_first_layer_at_its_line_width() {
+    // The A1 projects print the first layer at initial_layer_line_width, 0.5 mm, against 0.42 mm above. An object
+    // with its own layer height prints its first layer as an object without one does.
+    let plain = moves(&slice("a1--m0"), "a1--m0");
+    let own = moves(&slice("a1--m2"), "a1--m2");
+    let want = e_per_mm(&plain, 1, 0.2);
+    for k in [1, 2] {
+        let got = e_per_mm(&own, k, 0.2);
+        assert!(
+            (got / want - 1.0).abs() < 0.02,
+            "object {k} on the first layer: {got} mm of filament per mm against {want} without a layer height of its own"
+        );
+    }
+}
+
+#[test]
 fn an_objects_own_first_layer_height_is_not_read_layer_by_layer() {
     for name in ["a1--m3", "mk4p--m3"] {
         let gcode = slice(name);

@@ -146,6 +146,39 @@ fn a_parts_own_inner_wall_width_prints_alone_and_beside_another_object() {
 }
 
 #[test]
+fn on_the_first_layer_a_modifier_prints_the_first_layer_line_width() {
+    // initial_layer_line_width is 0.5 mm: a modifier's own wall, infill or line widths print from the second layer on.
+    // Every line of the first layer is 0.5 mm, the bottom surface's spread a little wider to fill its area.
+    for name in [
+        "modifier-inner.3mf",
+        "modifier-outer.3mf",
+        "modifier-line-width.3mf",
+        "modifier-feature-widths.3mf",
+    ] {
+        let l = layer_at(&gcode(name), 0.2);
+        for kind in ["Outer wall", "Inner wall"] {
+            assert_eq!(l.widths[kind], set(&["0.5"]), "{name}: {kind}");
+        }
+        // The printer's start G-code (its purge line) prints at the first layer's height too.
+        for (kind, widths) in l.widths.iter().filter(|(k, _)| *k != "Custom") {
+            for w in widths {
+                let w: f64 = w.parse().unwrap_or_else(|_| panic!("{name}: {kind} width {w:?}"));
+                assert!((0.5..0.52).contains(&w), "{name}: {kind} at {w} mm");
+            }
+        }
+    }
+}
+
+#[test]
+fn on_the_first_layer_a_modifier_prints_its_own_first_layer_wall_width() {
+    // A modifier that sets initial_layer_inner_wall_line_width to 0.7 mm prints its first layer inner walls at 0.7, as
+    // they are laid out, and the rest of the first layer at the plate's 0.5 mm.
+    let l = layer_at(&gcode("modifier-first-layer-inner.3mf"), 0.2);
+    assert_eq!(l.widths["Inner wall"], set(&["0.5", "0.7"]));
+    assert_eq!(l.widths["Outer wall"], set(&["0.5"]));
+}
+
+#[test]
 fn on_the_first_layer_a_modifier_shares_the_walls_when_its_line_width_matches() {
     // The first layer prints every wall at a region's line width. A modifier that sets only line_width to the first
     // layer's 0.5 mm shares the walls around it there (none along its boundary at x 110), whatever its stored wall
