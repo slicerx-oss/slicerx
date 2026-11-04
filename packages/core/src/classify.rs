@@ -85,6 +85,23 @@ fn meet(a: &Shapes, b: &Shapes) -> Shapes {
     }
 }
 
+/// The part of `piece` grown by `d` internal units that lies outside `inner`. A pocket is small and the layer's
+/// infill area large, so natively only the part of `inner` near the grown piece is cut (see `perimeters::near`).
+fn outside(piece: &Shapes, d: i32, inner: &Shapes) -> Shapes {
+    let grown = perimeters::offset(piece, d);
+    #[cfg(not(target_arch = "wasm32"))]
+    if !grown.is_empty()
+        && let Some(nearby) = perimeters::near(inner, perimeters::bounds(&grown))
+    {
+        return if nearby.is_empty() {
+            perimeters::difference_apart(&grown)
+        } else {
+            perimeters::difference(&grown, &nearby)
+        };
+    }
+    sub(&grown, inner)
+}
+
 /// `a` meeting `b`, reading only the pieces of `a` whose bounds reach `b`'s.
 fn meet_near(a: &Shapes, b: &Shapes) -> Shapes {
     let reach = perimeters::bounds(b);
@@ -389,11 +406,10 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
             let one = std::slice::from_ref(s);
             // Growing only adds area, so a piece already bigger than the minimum stays sparse.
             crate::shells::area_mm2(one) <= min_area
-                && (reach <= 0.0
-                    || crate::shells::area_mm2(&union(
-                        &one.to_vec(),
-                        &sub(&perimeters::offset(&one.to_vec(), mm(reach)), inner),
-                    )) <= min_area)
+                && (reach <= 0.0 || {
+                    let one = one.to_vec();
+                    crate::shells::area_mm2(&union(&one, &outside(&one, mm(reach), inner))) <= min_area
+                })
         });
         shell = union(&shell, &small);
         sparse = big;
