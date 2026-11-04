@@ -120,6 +120,39 @@ fn pyramid() -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
     ])
 }
 
+/// A 24 x 12 x 10 mm block whose +x strip, `w` mm wide, tops out `drop` 0.2 mm layers below the block's top: an L
+/// profile in x and z, extruded along y, with its corner at plate (116, 122).
+fn ledge(w: f32, drop: u32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let low = 10.0 - 0.2 * drop as f32;
+    let profile = [
+        (0.0, 0.0),
+        (24.0, 0.0),
+        (24.0, low),
+        (24.0 - w, low),
+        (24.0 - w, 10.0),
+        (0.0, 10.0),
+    ];
+    let n = profile.len() as u32;
+    let mut positions = Vec::new();
+    for y in [0.0, 12.0] {
+        for &(x, z) in &profile {
+            positions.push([116.0 + x, 122.0 + y, z]);
+        }
+    }
+    let mut triangles = Vec::new();
+    // Both end caps, fanned from the profile's first corner, which sees every other corner.
+    for k in 1..n - 1 {
+        triangles.push([0, k, k + 1]);
+        triangles.push([n, n + k + 1, n + k]);
+    }
+    for k in 0..n {
+        let m = (k + 1) % n;
+        triangles.push([k, n + m, m]);
+        triangles.push([k, n + k, n + m]);
+    }
+    (positions, triangles)
+}
+
 /// The mesh, with the triangles whose middle has x > 0 (plate x > 128) painted filament 2 when `paint`.
 fn mesh(shape: (Vec<[f32; 3]>, Vec<[u32; 3]>), paint: bool) -> Arc<Mesh> {
     let (positions, triangles) = shape;
@@ -553,6 +586,36 @@ fn a_ring_floats_only_with_the_vertical_shell_rule_and_narrow_detection_on() {
     ] {
         let (labels, _, _) = ring_layers(4.0, "classic", &extra);
         assert_eq!(labels, ["solid", "solid", "solid"], "{extra}");
+    }
+}
+
+#[test]
+fn the_solid_beside_a_bridge_over_a_ledge_column_stays_internal_solid_infill() {
+    // A strip 1.6 or 2.4 mm wide whose top sits two layers below the block beside it: its column of solid starts with
+    // an internal bridge at z 8.8 and floats at z 9.0. At z 9.2 the block's first top shell layer bridges the sparse
+    // infill beside the column, and the narrow piece it leaves over the column rests on the column's band below. It
+    // prints internal solid infill (layer 45 counted from 0), with monotonic internal solid infill over grid sparse
+    // infill and one wall on top on or off.
+    for w in [1.6, 2.4] {
+        for one_wall in [false, true] {
+            let (g, _) = slice(
+                ledge(w, 2),
+                false,
+                &json!({"sparse_infill_pattern": "grid", "only_one_wall_top": one_wall}),
+            );
+            let r = read(&g);
+            let case = format!("{w} mm strip, one wall on top {one_wall}");
+            assert!(
+                r.at(FLOATING, 45) < 0.05,
+                "{case}: floating {:.2}",
+                r.at(FLOATING, 45)
+            );
+            assert!(
+                r.at(SOLID, 45) > 0.5,
+                "{case}: internal solid {:.2}",
+                r.at(SOLID, 45)
+            );
+        }
     }
 }
 

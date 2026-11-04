@@ -10,7 +10,9 @@
 //!   solid where it is a sparse line wide, less its internal bridges: [`Below`]) is a floating vertical shell
 //!   when no circle [`floating_width`] wide fits in it; the other narrow pieces stay internal solid infill. Each
 //!   piece is decided on its own. So the first solid layer over an internal bridge rests on it, and the layers
-//!   above that one float where they reach past the solid the surfaces below them ask for.
+//!   above that one float where they reach past the solid the surfaces below them ask for. A piece along an internal
+//!   bridge of its own layer does not float on that band ([`Below::beside`]): the strip a ledge's first top shell
+//!   layer leaves beside its bridge, over the solid column of a strip one or two layers lower.
 //! - With `ensure_vertical_shell_thickness` `partial` a piece does not reach past that solid, so it also rests on the
 //!   sparse infill along its edge, and it floats up to a wider circle ([`floating_width`]).
 //! - With some pairs of internal solid and sparse infill patterns (monotonic over grid among them; [`FLOATS_ON`] is
@@ -312,6 +314,9 @@ pub(crate) struct Below<'a> {
     /// The lower layer's narrow internal solid pieces ([`crate::narrow::split_pieces`]) that are rings (with a hole),
     /// and the strips (the others), worked out when first asked for ([`Below::on_strip`]).
     lower_narrow: std::sync::OnceLock<(Shapes, Shapes)>,
+    /// The internal bridges of the piece's own layer ([`Below::beside`]): a piece along one of them does not float
+    /// on the lower layer's band.
+    own_bridges: &'a [crate::bridging::Bridged],
 }
 
 impl<'a> Below<'a> {
@@ -349,7 +354,33 @@ impl<'a> Below<'a> {
             },
             overlap_only: overlap_only(cfg),
             lower_narrow: std::sync::OnceLock::new(),
+            own_bridges: &[],
         }
+    }
+
+    /// The same, with the internal bridges the piece's own layer prints over the sparse infill below. A narrow piece
+    /// along one of them is what that layer's solid leaves beside the bridge, over the solid column of a ledge one or
+    /// two layers lower (the column under a strip whose top sits just below the part beside it). The column's band
+    /// below holds it up: it stays internal solid infill unless it rests on the sparse infill below as well.
+    pub(crate) fn beside(mut self, own_bridges: &'a [crate::bridging::Bridged]) -> Self {
+        self.own_bridges = own_bridges;
+        self
+    }
+
+    /// True when `one` grown by the hair meets one of the layer's own internal bridges ([`Below::beside`]).
+    fn along_bridge(&self, one: &Shapes) -> bool {
+        if self.own_bridges.is_empty() {
+            return false;
+        }
+        let grown = perimeters::offset(one, EPS);
+        let Some(g) = perimeters::bounds(&grown) else {
+            return false;
+        };
+        self.own_bridges.iter().any(|b| {
+            perimeters::bounds(&b.area)
+                .is_some_and(|a| g[0] <= a[2] && a[0] <= g[2] && g[1] <= a[3] && a[1] <= g[3])
+                && !perimeters::intersection(&grown, &b.area).is_empty()
+        })
     }
 
     /// The same, with a piece resting only on the unsupported area inside `outline`: the infill area fixed-width walls
@@ -430,7 +461,8 @@ impl<'a> Below<'a> {
     /// ([`Below::open`]), so it has to lie over sparse infill the layer below prints, not over a sliver along the wall
     /// where no sparse line fits (the corner of the infill area variable-width walls leave), and the band does not
     /// count; the other two tests are as they are. A piece on a narrow strip below ([`Below::on_strip`]) keeps the
-    /// first two tests as they are for every pattern pair.
+    /// first two tests as they are for every pattern pair. A piece along one of its own layer's internal bridges
+    /// ([`Below::beside`]) does not rest on the band.
     fn floats(&self, one: &Shapes) -> bool {
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
@@ -452,6 +484,7 @@ impl<'a> Below<'a> {
         };
         touch(by, under)
             || (!measured
+                && !self.along_bridge(one)
                 && rests(&perimeters::intersection(
                     &perimeters::offset(one, EPS),
                     self.wide(),
@@ -1308,6 +1341,51 @@ mod tests {
         let fixed = fixed_walls(&cfg).expect("aegis walls read an outline");
         assert!(!fixed.arachne_walls());
         assert!(fixed_walls(&fixed).is_none());
+    }
+
+    #[test]
+    fn a_piece_along_its_own_layers_bridge_does_not_float_on_the_band_below() {
+        // The lower layer: sparse infill from x 0 to 10, and a band from x 10 to 11 that its vertical shell rule alone
+        // makes solid. A narrow piece from x 10.9 to 12 lies over the band's edge and not over the sparse infill.
+        let mut cfg = stock_widths(15.0);
+        cfg.raw.insert(
+            "internal_solid_infill_pattern".into(),
+            serde_json::json!("zig-zag"),
+        );
+        let band: Shapes = vec![vec![rect(10.0, 0.0, 11.0, 10.0)]];
+        let lower = crate::bridging::Facts {
+            inner: vec![vec![rect(0.0, 0.0, 12.0, 10.0)]],
+            sparse: vec![vec![rect(0.0, 0.0, 10.0, 10.0)]],
+            shell: vec![vec![rect(10.0, 0.0, 12.0, 10.0)]],
+            band: crate::shells::Band::Ready(band),
+            ..Default::default()
+        };
+        let u = unsupported(&lower.sparse);
+        let piece = vec![rect(10.9, 0.0, 12.0, 10.0)];
+        let width = floating_width(&cfg);
+        let (f, _) = split(
+            &vec![piece.clone()],
+            &Below::new(&u, Some(&lower), &Shapes::new(), &cfg),
+            width,
+        );
+        assert_eq!(f, vec![piece.clone()], "on the band alone the piece floats");
+        // Its own layer bridges the sparse infill below from x 0 to 10.9: the piece is what the layer's solid leaves
+        // beside that bridge, and it stays internal solid infill.
+        let bridge = [crate::bridging::Bridged {
+            area: vec![vec![rect(0.0, 0.0, 10.9, 10.0)]],
+            angle: 0.0,
+        }];
+        let below = Below::new(&u, Some(&lower), &Shapes::new(), &cfg).beside(&bridge);
+        let (f, r) = split(&vec![piece.clone()], &below, width);
+        assert!(f.is_empty());
+        assert_eq!(r, vec![piece.clone()]);
+        // A bridge elsewhere on the layer leaves it floating.
+        let far = [crate::bridging::Bridged {
+            area: vec![vec![rect(0.0, 20.0, 10.0, 30.0)]],
+            angle: 0.0,
+        }];
+        let below = Below::new(&u, Some(&lower), &Shapes::new(), &cfg).beside(&far);
+        assert_eq!(split(&vec![piece.clone()], &below, width).0, vec![piece]);
     }
 
     fn stock_widths(overlap_percent: f64) -> PrintConfig {
