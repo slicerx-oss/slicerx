@@ -3738,6 +3738,33 @@ async fn a_hand_pauses_at_once_without_confirmation_and_keeps_its_frame() {
         e["result"]["contentType"], "image/jpeg",
         "the frame stays on the hub for the card: {e}"
     );
+    // An agent reads the trip, with no frame in it, and can neither see the frame nor answer it.
+    let mut ag = agent(&link).await;
+    let st = call(&mut ag, 2, "watch.guardState", json!({})).await;
+    assert_eq!(
+        (
+            st["result"]["trips"]["bay-4"]["kind"].as_str(),
+            st["result"]["trips"]["bay-4"]["state"].as_str()
+        ),
+        (Some("hand"), Some("paused")),
+        "{st}"
+    );
+    assert!(!st.to_string().contains("dataBase64"), "{st}");
+    for (id, m) in [
+        (3, "watch.evidence"),
+        (4, "watch.dismiss"),
+        (5, "watch.resume"),
+        (6, "watch.guard"),
+    ] {
+        let r = call(
+            &mut ag,
+            id,
+            m,
+            json!({ "printerId": "bay-4", "kind": "hand", "enabled": false }),
+        )
+        .await;
+        assert_eq!(r["error"]["code"], "forbidden", "{m}: {r}");
+    }
     // "Dismiss, it was me" answers the card; it stays until the print is resumed.
     let _ = call(
         &mut app,

@@ -682,7 +682,7 @@ pub(crate) async fn guard_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     Ok(json!({ "printerId": printer, "enabled": enabled }))
 }
 
-/// `watch.guardState` (app): current trips, printers the guard is off for, and when each
+/// `watch.guardState` (app and agents): current trips, printers the guard is off for, and when each
 /// printer's empty plate was taken.
 pub(crate) fn guard_state_call(b: &Bridge) -> Value {
     let trips: serde_json::Map<String, Value> = lock(&b.hub.guard.trips)
