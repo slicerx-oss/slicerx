@@ -499,7 +499,13 @@ impl Backend for MemoryBackend {
         };
         job.progress = progress.clamp(0.0, 1.0);
         job.stage = Some(stage.to_owned());
-        job.plate_index = plate.and_then(|n| i32::try_from(n).ok());
+        // As the database's integer column does: a plate it cannot hold fails the write.
+        job.plate_index = plate
+            .map(|n| {
+                i32::try_from(n)
+                    .map_err(|_| Error::Backend(format!("plate_index {n} is out of range for integer")))
+            })
+            .transpose()?;
         Ok(true)
     }
 

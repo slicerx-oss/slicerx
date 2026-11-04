@@ -16,7 +16,9 @@ use sx_core::api::{self, ProjectFiles, ProjectPlate, SliceRequest, SliceRun, Vol
 use sx_core::{Mesh, Progress, Stage};
 use tokio::sync::watch;
 
-use crate::backend::{Backend, Bucket, Job, Outcome, mesh_path, plate_result_paths, result_paths};
+use crate::backend::{
+    Backend, Bucket, Job, MAX_PLATE_NUMBER, Outcome, mesh_path, plate_result_paths, result_paths,
+};
 use crate::error::{Error, Result};
 use crate::gzip::{inflate, is_gzip};
 use crate::http::MAX_INFLATED_MESH_BYTES;
@@ -183,6 +185,15 @@ async fn plate_slices(
     for (k, &plate) in plates.iter().enumerate() {
         #[allow(clippy::cast_precision_loss, reason = "at most MAX_PLATES plates")]
         let start = 0.1 + width * k as f32;
+        // The service refuses a plate past the cap. One queued before it did fails alone, as a plate the project
+        // lacks, and is never written to plate_index, which cannot hold a plate past 2147483647.
+        if plate > MAX_PLATE_NUMBER {
+            let error =
+                format!("the project has no plate {plate}; plate numbers go up to {MAX_PLATE_NUMBER}");
+            first_error.get_or_insert_with(|| format!("plate {plate}: {error}"));
+            entries.push(json!({ "plate": plate, "status": "failed", "error": error }));
+            continue;
+        }
         if !backend
             .report_progress(&job.id, &cfg.id, start, "slicing", Some(plate))
             .await?

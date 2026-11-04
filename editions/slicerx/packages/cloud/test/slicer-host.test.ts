@@ -298,6 +298,48 @@ describe('a whole project sliced by plate', () => {
     expect(svc.calls.some((c) => c.path.endsWith('/plates/1/gcode'))).toBe(true)
   })
 
+  /** A sliced project of plates 3, 1 and 4 (4 fails), with each plate's text read so it is kept. */
+  async function slicedProject() {
+    const s = setup()
+    s.svc.failPlates.set(4, 'the project has no plate 4')
+    const h = await s.slicer.loadModel(projectBytes(), 'Lantern.3mf')
+    const r = await s.slicer.slice({ plate: plate([{ id: 'p', name: 'Lantern.3mf', mesh: h.id } as never]), config: {} as never, options: { plates: [3, 1, 4] } })
+    const one = r.plates?.[1]
+    if (one?.status !== 'succeeded') throw new Error('plate 1 slices')
+    await s.slicer.gcodeLineStarts!(r.id)
+    await s.slicer.gcodeLineStarts!(one.result.id)
+    return { ...s, r, ids: [r.id, one.result.id] }
+  }
+
+  /** Nothing of the job is left: no job to read (jobs), no kept text (texts) and no id routed to the cloud (clouded). */
+  async function expectGone({ cloud, slicer, released, svc }: Awaited<ReturnType<typeof slicedProject>>, ids: string[]) {
+    const downloads = svc.calls.filter((c) => c.path.endsWith('/gcode')).length
+    for (const id of ids) {
+      await expect(cloud.getPreview(id)).rejects.toThrow(`no cloud slice ${id}`)
+      await expect(cloud.gcodeBytes!(id, 0, 4)).rejects.toThrow(`no cloud slice ${id}`)
+      // The routed slicer sends the id to the local slicer once the cloud lets go of it.
+      expect((await slicer.getPreview(id)).byteLength).toBe(0)
+    }
+    expect(svc.calls.filter((c) => c.path.endsWith('/gcode'))).toHaveLength(downloads)
+    expect(released).toEqual([])
+  }
+
+  it("lets go of the whole job and every plate's text when the slice's own id is released, as the app and phone do", async () => {
+    const s = await slicedProject()
+    s.slicer.release(s.r.id)
+    await expectGone(s, s.ids)
+  })
+
+  it("lets go of another plate's text alone, then of the whole job with the slice's own id", async () => {
+    const s = await slicedProject()
+    const [first, other] = s.ids as [string, string]
+    s.slicer.release(other)
+    // The other plate's text goes; the slice itself still reads.
+    expect((await s.slicer.getPreview(first)).byteLength).toBeGreaterThan(0)
+    s.slicer.release(first)
+    await expectGone(s, s.ids)
+  })
+
   it('refuses plates the day has no room for before uploading, naming what is left', async () => {
     const { svc, slicer } = setup()
     svc.access = { invited: true, jobsPerDay: 20, jobsToday: 18, maxUploadBytes: 1 << 20 }

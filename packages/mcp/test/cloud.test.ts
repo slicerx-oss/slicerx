@@ -228,6 +228,13 @@ describe('cloud slicing a whole 3MF project', () => {
     expect(text(stl)).toMatch(/only a 3MF project has plates/)
     const twice = await h.call('slicerx_cloud_slice', { model: file, plates: [2, 2] })
     expect(text(twice)).toMatch(/name each plate once/)
+    // The service keeps plate numbers to 1000; cloud_jobs.plate_index could not hold one past 2147483647.
+    for (const n of [3_000_000_000, 1001]) {
+      const cap = await h.call('slicerx_cloud_slice', { model: file, plates: [1, n] })
+      expect(cap.isError).toBe(true)
+      expect(text(cap)).toMatch(/plates: plate numbers go from 1 to 1000/)
+      expect(JSON.stringify(cap)).toContain('invalid_input')
+    }
     expect(svc.uploads.size).toBe(0)
     expect(svc.requests).toHaveLength(0)
     // Two plates fit what is left.

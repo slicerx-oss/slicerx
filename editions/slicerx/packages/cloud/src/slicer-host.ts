@@ -88,6 +88,12 @@ function sliceRef(sliceId: string): { jobId: string; plate?: number } {
   return Number.isInteger(plate) && plate >= 1 ? { jobId: sliceId.slice(0, at), plate } : { jobId: sliceId }
 }
 
+/** The slice id a finished job hands out as the slice itself: its first plate that sliced, for a job that named plates. */
+function resultId(job: CloudJob): string {
+  const first = job.result?.plates?.find((p) => p.status === 'succeeded')
+  return first ? plateSliceId(job.id, first.plate) : job.id
+}
+
 function toResult(job: CloudJob): SliceResult {
   const r = job.result
   if (!r) throw new Error('the cloud job finished without a result')
@@ -337,9 +343,18 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     },
 
     release(id: string) {
-      // A cloud slice has nothing in the local slicer. A plate's slice id lets go of that plate's text only.
+      // A cloud slice has nothing in the local slicer. Another plate's slice id lets go of that plate's text only. The
+      // slice's own id (its first plate, for a job that named plates) is the one the app and phone hold and release,
+      // so it lets go of the whole job and every plate's text.
       texts.delete(id)
-      if (sliceRef(id).plate !== undefined && jobs.has(sliceRef(id).jobId)) return
+      const ref = sliceRef(id)
+      const job = jobs.get(ref.jobId)
+      if (ref.plate !== undefined && job) {
+        if (id !== resultId(job)) return
+        for (const p of job.result?.plates ?? []) texts.delete(plateSliceId(job.id, p.plate))
+        jobs.delete(job.id)
+        return
+      }
       if (jobs.delete(id)) return
       sources.delete(id)
       packed.delete(id)
@@ -374,6 +389,8 @@ async function gcodeText(slicer: SlicerHost, id: string): Promise<Uint8Array> {
 export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
   const { local, cloud } = o
   const clouded = new Set<string>()
+  // Each plate's slice id of a slice that named plates, by the slice's own id, which lets go of them all.
+  const plateIds = new Map<string, string[]>()
   return {
     ...local,
     loadModel: (data, fileName) => cloud.loadModel(data, fileName),
@@ -382,7 +399,9 @@ export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
       if (!o.enabled()) return local.slice(req, opts)
       const r = await cloud.slice(o.prepare ? await o.prepare(req) : req, opts)
       clouded.add(r.id)
-      for (const p of r.plates ?? []) if (p.status === 'succeeded') clouded.add(p.result.id)
+      const ids = (r.plates ?? []).flatMap((p) => (p.status === 'succeeded' ? [p.result.id] : []))
+      for (const id of ids) clouded.add(id)
+      if (ids.length) plateIds.set(r.id, ids)
       return r
     },
     getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),
@@ -405,6 +424,8 @@ export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
       : {}),
     release: (id) => {
       clouded.delete(id)
+      for (const p of plateIds.get(id) ?? []) clouded.delete(p)
+      plateIds.delete(id)
       cloud.release(id)
     },
   }
