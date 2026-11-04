@@ -146,6 +146,22 @@ fn a_parts_own_inner_wall_width_prints_alone_and_beside_another_object() {
 }
 
 #[test]
+fn on_the_first_layer_a_modifier_prints_the_first_layer_line_width() {
+    // initial_layer_line_width is 0.5 mm: a modifier's own wall, infill or line widths print from the second layer on.
+    for name in [
+        "modifier-inner.3mf",
+        "modifier-outer.3mf",
+        "modifier-line-width.3mf",
+        "modifier-feature-widths.3mf",
+    ] {
+        let l = layer_at(&gcode(name), 0.2);
+        for kind in ["Outer wall", "Inner wall"] {
+            assert_eq!(l.widths[kind], set(&["0.5"]), "{name}: {kind}");
+        }
+    }
+}
+
+#[test]
 fn on_the_first_layer_a_modifier_shares_the_walls_when_its_line_width_matches() {
     // The first layer prints every wall at a region's line width. A modifier that sets only line_width to the first
     // layer's 0.5 mm shares the walls around it there (none along its boundary at x 110), whatever its stored wall
