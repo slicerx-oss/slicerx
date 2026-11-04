@@ -1,6 +1,6 @@
 # Process: Special modes
 
-24 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+25 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `calib_flowrate_topinfill_special_order`
 
@@ -163,6 +163,19 @@ Runs the wrapping detection G-code on every layer, on printers that can detect f
 - Used only when: Fuzzy skin (`fuzzy_skin`) is not "none"
 - Tier: Advanced, effects
 - Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
+### `object_order_rule`
+
+**Object order rule**
+
+How a layer's objects are put in order: ending at the object nearest the bed's origin, or along a chain of the nearest objects with every brim first. Prusa projects set it when opened; the app does not list it.
+
+- Type: enum
+- Default: none (the slice works it out when nothing sets it)
+- Values: `origin_last` (End at the object nearest the origin), `chain` (A chain of the nearest objects)
+- Tier: Hidden (profile key)
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `preheat_steps`

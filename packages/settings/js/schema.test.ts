@@ -43,6 +43,7 @@ describe('schema', () => {
     'initial_layer_internal_solid_infill_line_width',
     'initial_layer_top_surface_line_width',
     'initial_layer_support_line_width',
+    'object_order_rule',
     'support_base_edge_inset',
     'chamber_cooling_mode',
   ]

@@ -586,16 +586,9 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
     }
     // Numbered by plate object for the order's ties.
     crate::sorting::sort_by_key(&mut runs, |r| plate(r.0));
-    let centers: Vec<[f64; 2]> = runs
-        .iter()
-        .map(|r| {
-            session
-                .footprints()
-                .get(usize::from(plate(r.0)))
-                .map_or([0.0, 0.0], |o| o.center)
-        })
-        .collect();
-    let order: Vec<(usize, usize, usize)> = crate::objorder::order(&centers)
+    let rule = crate::objorder::rule(config);
+    let centers: Vec<[f64; 2]> = runs.iter().map(|r| point(session, &subs, rule, r.0)).collect();
+    let order: Vec<(usize, usize, usize)> = crate::objorder::order_by(rule, &centers)
         .into_iter()
         .filter_map(|i| runs.get(i).copied())
         .collect();
@@ -630,11 +623,31 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
     src.runs = new_runs;
 }
 
+/// The point object `k` of the sequence `subs` stands at for the plate's order by `rule`: its footprint's center, or
+/// under `Chain` the lowest vertex of its first layer (`SliceSession::plate_order_point`), the same point a plate
+/// sliced as one session orders it by.
+fn point(session: &SliceSession, subs: &[&SliceSession], rule: crate::objorder::Rule, k: usize) -> [f64; 2] {
+    let Some(sub) = subs.get(k) else {
+        return [0.0, 0.0];
+    };
+    let footprint = session
+        .footprints()
+        .get(usize::from(sub.plate_index()))
+        .map_or([0.0, 0.0], |o| o.center);
+    sub.plate_order_point(rule, footprint)
+}
+
 /// Puts each filament's paths of a merged layer (`groups`, path indexes in the layer's object order) in the order of
-/// that filament's objects alone (`objorder::run`), when the layer has several filaments: an object of several
+/// that filament's objects alone (`objorder::run_by`), when the layer has several filaments: an object of several
 /// filaments takes its place among each one's objects. Each object's paths keep their order, and the paths of no
 /// object the layer starts with (the skirt) stay first.
-fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &mut [Vec<usize>]) {
+fn in_run_order(
+    session: &SliceSession,
+    rule: crate::objorder::Rule,
+    l: &LayerPaths,
+    src: &Sources,
+    groups: &mut [Vec<usize>],
+) {
     if groups.len() < 2 || src.runs.len() < 2 {
         return;
     }
@@ -644,15 +657,7 @@ fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &
     let mut objects: Vec<usize> = src.runs.iter().map(|r| r.0).collect();
     crate::sorting::sort_by_key(&mut objects, |&k| plate(k));
     objects.dedup();
-    let centers: Vec<[f64; 2]> = objects
-        .iter()
-        .map(|&k| {
-            session
-                .footprints()
-                .get(usize::from(plate(k)))
-                .map_or([0.0, 0.0], |o| o.center)
-        })
-        .collect();
+    let centers: Vec<[f64; 2]> = objects.iter().map(|&k| point(session, &subs, rule, k)).collect();
     let lead = l
         .paths
         .iter()
@@ -666,7 +671,10 @@ fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &
             continue;
         }
         let mut place: Vec<(usize, usize)> = Vec::new();
-        for (n, j) in crate::objorder::run(&centers, with).into_iter().enumerate() {
+        for (n, j) in crate::objorder::run_by(rule, &centers, with)
+            .into_iter()
+            .enumerate()
+        {
             if let Some(&k) = objects.get(j) {
                 place.push((k, n + 1));
             }
@@ -813,7 +821,7 @@ fn print_layer_as_plate(
         })
         .collect();
     if runs {
-        in_run_order(session, l, src, &mut groups);
+        in_run_order(session, crate::objorder::rule(layer_cfg), l, src, &mut groups);
     }
     // The print's first layer prints with its own line widths, the tower's too.
     let first = matches!(session.plate_tower_layer(layer_cfg, g, start), Some((at, None)) if at.first);

@@ -527,6 +527,12 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // Only a project that gives its first layer height or a width: one with none of them sets nothing of the first layer.
   const reads = (k: string): boolean => ['first_layer_height', 'first_layer_extrusion_width', 'extrusion_width'].includes(k) || Object.values(MAP.firstLayerWidths).some((f) => f.from === k)
   const values: Record<string, unknown> = { ...m.values, ...(Object.keys(raw).some(reads) ? firstLayerWidths(raw, raw, () => true) : {}) }
+  // A project with a brim width grows its brim from the first layer's outline after elephant foot compensation, so the
+  // brim keeps its separation from the compensated outer wall. The same as the engine's project read.
+  if ('brim_width' in values) values['brim_use_efc_outline'] = '1'
+  // A project with a brim width prints every object's brim on the first layer before any object, and brims that meet
+  // merge into one. The same as the engine's project read.
+  if ('brim_width' in values) values['combine_brims'] = '1'
   // A project with support on and its own support XY spacing keeps that much room between the part and the outer base
   // support line's edge, so its outer lines sit half a line width in. The same as the engine's project read.
   if (values['enable_support'] === '1' && 'support_object_xy_distance' in values) values['support_base_edge_inset'] = 'half_width'
@@ -536,6 +542,10 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // A project with a brim width prints every whole loop its width fits, odd counts too. The same as the engine's
   // project read.
   if ('brim_width' in values) values['brim_loop_rounding'] = 'whole'
+  // A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
+  // the shortest links between them printed from the end the engine's order picks. The same as the engine's project
+  // read.
+  if ('brim_width' in values) values['object_order_rule'] = 'chain'
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {
     const list = splitStrings(colors).map((c) => c.trim()).filter((c) => /^#[0-9A-Fa-f]{6}$/.test(c))

@@ -1270,6 +1270,13 @@ impl PrintConfig {
         {
             return Err(bad("brim_loop_rounding"));
         }
+        // Read where the objects of a layer are put in order (`objorder::rule`); checked here so a wrong value is
+        // refused.
+        if let Some(x) = get("object_order_rule")
+            && !matches!(x, Value::String(e) if e == "origin_last" || e == "chain")
+        {
+            return Err(bad("object_order_rule"));
+        }
         if let Some(x) = get("close_fan_the_first_x_layers") {
             let n = num(x).ok_or_else(|| bad("close_fan_the_first_x_layers"))?;
             if !(0.0..=1000.0).contains(&n) {
@@ -2606,6 +2613,7 @@ pub const READ_KEYS: &[&str] = &[
     "brim_width",
     "brim_type",
     "brim_loop_rounding",
+    "object_order_rule",
     "sparse_infill_anchor_max",
     "infill_anchor",
     "infill_anchor_max",

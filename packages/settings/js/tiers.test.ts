@@ -38,6 +38,14 @@ describe('process tiers', () => {
       expect(settingsForTier('process', tier, { filamentCount: 3 }).some((d) => d.key === 'brim_loop_rounding'), tier).toBe(false)
     }
   })
+  it('keeps the slice-only object order rule out of every tier', () => {
+    // A Prusa project sets object_order_rule when it is opened; no settings panel or search lists it.
+    expect(settingDef('object_order_rule')).toMatchObject({ mode: 'hidden', section: 'process', enumValues: ['origin_last', 'chain'] })
+    expect(isVisible(settingDef('object_order_rule')!, { filamentCount: 1 })).toBe(false)
+    for (const tier of ['simple', 'advanced', 'expert'] as const) {
+      expect(settingsForTier('process', tier, { filamentCount: 3 }).some((d) => d.key === 'object_order_rule'), tier).toBe(false)
+    }
+  })
   it('gives every user tier process key an intent', () => {
     const intents = new Set(['quality', 'strength', 'speed', 'supports', 'adhesion', 'multicolor', 'effects', 'output'])
     for (const d of process.filter((x) => ['simple', 'advanced', 'expert'].includes(x.mode))) expect(intents.has(d.intent ?? ''), d.key).toBe(true)
