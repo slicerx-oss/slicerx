@@ -41,6 +41,8 @@ export interface ConnectedBridge {
   hubKey?: string
   /** Keys the hub remembers: partner app keys (Connect your AI agent) and the Devices list (Printer bridge). */
   clients?: BridgeClients
+  /** Partner routes open on the hub (Settings, Devices): listed and closed by the person. Absent on an older hub. */
+  partnerRoutes?: BridgePartnerRoutes
   /** The app link's app side (app-link/host.ts): the desktop app only, never the browser build. */
   appLink?: BridgeAppLink
   /** Runs once when the connection ends: `requested` after close(), false when it dropped. Absent on an older client. */
@@ -77,6 +79,26 @@ export interface RememberedClient {
   createdAt: string
   /** Null for a partner key nobody has used yet. */
   lastSeenAt: string | null
+}
+
+/** One partner route: a partner app's sealed byte stream to its own phone. Sizes and times only. */
+export interface PartnerRouteRow {
+  routeId: string
+  app: string
+  phone: string | null
+  state: 'opening' | 'open'
+  openedAt: number
+  lastAt: number
+  bytesIn: number
+  bytesOut: number
+}
+
+/** The hub's `relay.partnerRoute.list` and `close`, as the app uses them. */
+export interface BridgePartnerRoutes {
+  list(): Promise<PartnerRouteRow[]>
+  close(routeId: string): Promise<void>
+  /** A route opened or closed. */
+  onChanged?(cb: () => void): () => void
 }
 
 /** The hub's `clients.*`, app role only. */
