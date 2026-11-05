@@ -122,4 +122,19 @@ describe('compareConfigs', () => {
     expect(c.groups.flatMap((g) => g.rows).map((r) => r.key).sort()).toEqual(['fan_min_speed', 'nozzle_temperature'])
     expect(c.differ).toBe(2)
   })
+
+  it('keeps a printer list that sets how many extruders there are', () => {
+    const c = compareConfigs(cfg({ nozzle_diameter: [0.4] }), cfg({ nozzle_diameter: [0.4, 0.4] }), { section: 'printer' })
+    expect(c.groups.flatMap((g) => g.rows).map((r) => r.key)).toEqual(['nozzle_diameter'])
+  })
+
+  it('orders the groups in this exact order, and an unlisted group last', () => {
+    expect(SETTING_GROUP_ORDER).toEqual(['quality', 'strength', 'speed', 'motion', 'overhangs', 'support', 'adhesion', 'cooling', 'temperature', 'filament', 'extrusion', 'retraction', 'drying', 'multimaterial', 'special', 'advanced', 'machine', 'gcode', 'profile'])
+    const a = { ...process(), layer_height: 0.2, wall_loops: 2, outer_wall_speed: [200], enable_support: false, brim_width: 5, wipe_tower_x: [15], gcode_comments: false }
+    const b = { ...process(), layer_height: 0.16, wall_loops: 4, outer_wall_speed: [150], enable_support: true, brim_width: 8, wipe_tower_x: [40], gcode_comments: true }
+    const groups = compareConfigs(cfg(a), cfg(b), { section: 'process' }).groups.map((g) => g.group)
+    expect(groups).toEqual([...groups].sort((x, y) => SETTING_GROUP_ORDER.indexOf(x) - SETTING_GROUP_ORDER.indexOf(y)))
+    expect(groups.slice(0, 3)).toEqual(['quality', 'strength', 'speed'])
+    expect(settingGroupRank('zzz')).toBeGreaterThan(settingGroupRank('profile'))
+  })
 })
