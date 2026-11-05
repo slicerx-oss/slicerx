@@ -98,17 +98,19 @@ export async function openProject(read: ProjectRead, profiles: ProfileCatalog, n
   const current = layerConfig(at.values, OPENED_EASY, LAYER_TOUCHED)
   // What the open puts over the printer's settings: a PrusaSlicer project's values (open-project.ts), another
   // project's through the project printer route (project-printer.ts applyProjectSettings).
-  let values = from === 'prusaslicer' ? projectSettingChanges(settings, current as never).taken : projectPrinterChanges(settings, r.match, current as never, at.nozzle).values
+  const changes = from === 'prusaslicer' ? undefined : projectPrinterChanges(settings, r.match, current as never, at.nozzle)
+  let values = changes ? changes.values : projectSettingChanges(settings, current as never).taken
   // Another slicer's project leaves the goal custom, and the plate starts from the goal nearest its layer height.
   const tier = nearestGoalBy({ ...current, ...values }, (g) => at.goalValues[g]?.['layer_height'])
   let printer = opensOn
   if (r.mode === 'switched') {
-    // On the project's printer the app lets go of a value equal to that printer's layer at the goal, so on the move it
-    // takes the person's printer's own value, as any setting the project does not hold does.
+    // On the project's printer the app lets go of a value the project did not change that equals that printer's layer at
+    // the goal, so on the move it takes the person's printer's own value, as any setting the project does not hold does;
+    // a real change (its layer height) goes along.
     const own = await layerFor(opensOn.printer, tier, opensOn.nozzle)
     if (!own) return undefined
     const ownLayer = layerConfig(own.values, OPENED_EASY, LAYER_TOUCHED)
-    values = Object.fromEntries(Object.entries(values).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(ownLayer[k])))
+    values = Object.fromEntries(Object.entries(values).filter(([k, v]) => (changes !== undefined && k in changes.all) || JSON.stringify(v) !== JSON.stringify(ownLayer[k])))
     // The person's printer instead of the project's: the settings made for the project's nozzle stay behind (leaveProjectPrinter).
     const to = await layerFor(r.printer, 'standard', r.nozzle)
     if (!to) return undefined

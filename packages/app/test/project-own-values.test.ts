@@ -20,6 +20,8 @@ const { zip } = await import('../src/export/zip')
 const { goalEasy, goalKeys, resolveConfig } = await import('../src/adapters/config')
 const { setSlot } = await import('../src/filament/slots')
 const { clearProject } = await import('../src/project/new')
+const { sx3mfBytes } = await import('../src/export/actions')
+const { allPlates } = await import('../src/plate/plates')
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
 const host = { kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string, parts: { name: string; slot?: number }[]) => ({ ...handle(name), parts: parts.map((p) => ({ name: p.name, slot: p.slot ?? 1, triangles: 12 })) }) } } as unknown as Host
@@ -40,6 +42,7 @@ const prusaGaps = ['layer_height = 0.12', 'first_layer_height = 0.2', 'support_m
 const A1 = { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' }
 const P1S = { id: 'my-p1s', vendor: 'Bambu Lab', model: 'P1S' }
 const MK4 = { id: 'my-mk4', vendor: 'Prusa Research', model: 'MK4' }
+const MK4S = { id: 'my-mk4s', vendor: 'Prusa Research', model: 'MK4S' }
 type Printer = typeof A1 | null
 
 async function settled(): Promise<void> {
@@ -115,6 +118,29 @@ describe('a project opened on a fresh plate', () => {
     expect(get().goalBase).toBe('fine')
     expect(cfg['support_top_z_distance']).toBe(0.2)
     expect(cfg['support_bottom_z_distance']).toBe(0.2)
+  })
+
+  it('keeps its real changes when the plate moves to a printer whose Fine layer differs', async () => {
+    // 0.12 mm layers equal the P1S Fine layer, but they are the project's change; the MK4S's Fine is not 0.12 mm.
+    await openOn(A1, 'p1s-gaps.3mf', inherited)
+    expect(get().overrides['layer_height']).toBe(0.12)
+    set({ printerId: MK4S.id, printerModel: MK4S })
+    await settled()
+    expect(get().profile?.printerId).toBe('prusa-mk4s')
+    expect(config()['layer_height']).toBe(0.12)
+    expect(config()['support_top_z_distance']).toBe(0.2)
+  })
+
+  it('keeps the goal of our own project reopened as it was', async () => {
+    await openOn(A1, 'prusa-gaps.3mf', prusaFile(prusaGaps))
+    set((s) => ({ overrides: {}, easy: { ...s.easy, ...goalEasy('fine') }, goal: 'fine', goalBase: 'fine', easyTouched: [] }))
+    await settled()
+    const bytes = await sx3mfBytes(allPlates(get()))
+    set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, openNote: null }))
+    await openModelBytes(host, 'mine.sx3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
+    await settled()
+    expect(get().goal).toBe('fine')
+    expect(Object.keys(get().overrides)).toEqual([])
   })
 
   it('keeps its values with no printer until one is added', async () => {
