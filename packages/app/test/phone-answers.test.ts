@@ -2,12 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A paired phone answering the question mimir waits on, the way the pairing host (LAN) and the hub (relay) reach the
 // app: the question shows to phones, a pick or a Cancel goes into pilot.answer as a click would, the first answer wins
-// (a desktop click first, another phone first, a stale card).
+// (a desktop click first, another phone first, a stale card), and the session reads back which phone answered.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { askTool, createPilot, createScriptedClient, DEFAULT_CONFIG, type ScriptStep } from '@slicerx/pilot'
 import { emptyTranscript, foldEvents, startTurn, type Transcript } from '@slicerx/pilot/ui'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hostAppLink } from '../src/app-link/host'
+import { runCall } from '../src/app-link/methods'
 import { setSessionSource } from '../src/app-link/sessions'
 import type { BridgeAppLink } from '../src/link/bridge'
 import { openChoice } from '../src/workspaces/mimir/card-waits'
@@ -83,6 +84,10 @@ describe('phones answering mimir questions, through the pairing host feed', () =
     expect(phoneQuestion().waiting).toBeNull()
     expect(changes.at(-1)).toEqual({ waiting: null, ended: { askId, choiceId: 'other', by: 'phone', name: 'Pocket' } })
 
+    // the session reads back that a phone answered it
+    const s = (await runCall('mimir.session', { id: 's_pick' })) as { turns: { steps: Record<string, unknown>[] }[] }
+    const step = s.turns.at(-1)!.steps.find((x) => x['kind'] === 'choice')
+    expect(step).toMatchObject({ askId, picked: 'other', answeredOn: { kind: 'phone', name: 'Pocket' } })
   })
 
   it('Cancel answers with no pick: the run carries on and mimir reads it as turned down', async () => {
