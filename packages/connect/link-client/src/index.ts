@@ -412,7 +412,7 @@ export interface GuardTrip {
 }
 
 /** Why the remote start rule refuses, as the hub words it. */
-export type RemoteStartReason = 'off' | 'guard_off' | 'plate_missing' | 'plate_stale' | 'plate_failed' | 'plate_not_compared' | 'bed_answer' | 'heat_unknown' | 'chamber' | 'too_hot'
+export type RemoteStartReason = 'off' | 'guard_off' | 'plate_missing' | 'plate_stale' | 'plate_failed' | 'plate_not_compared' | 'plate_frozen' | 'no_answer' | 'bed_answer' | 'heat_pending' | 'heat_unknown' | 'chamber' | 'too_hot' | 'start_late'
 
 /** One printer's remote start setting and its last plate check (no picture). */
 export interface RemoteStartRow {
@@ -421,6 +421,9 @@ export interface RemoteStartRow {
   /** Highest nozzle and bed temperature a start from afar may heat to, in °C. */
   maxNozzleC: number
   maxBedC: number
+  /** The printer catalog's own limits for this model, in °C; the setting never goes above them. Null when the catalog does not know the model. */
+  catalogMaxNozzleC: number | null
+  catalogMaxBedC: number | null
   /** The camera guard watches this printer; without it no plate check can pass. */
   guard: boolean
   /** The last answered plate check, or null. `passes` says whether a start from afar could rely on it now. */
@@ -431,6 +434,8 @@ export interface RemoteStartState {
   printers: RemoteStartRow[]
   /** How old a plate check may be for a start from afar, in seconds. */
   plateWindowSeconds: number
+  /** The longest from an approval from afar to the start command, in seconds. */
+  startWithinSeconds: number
   /** A file that heats a chamber never starts from afar. */
   chamber: 'never'
 }
@@ -463,8 +468,8 @@ export type AgentWork =
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
-  /** Skip one object of the running print (`objects.list` ids). The hub pins the job running when the card is raised. */
-  | { kind: 'skip'; printerId: string; id: string; epoch?: number }
+  /** Skip one object of the running print (`objects.list` ids). `epoch` is the running print's (`bed.state`), and is hashed. */
+  | { kind: 'skip'; printerId: string; id: string; epoch: number }
   /** A connected app's tool a person has to approve, by its bare name (`call_service`). */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
