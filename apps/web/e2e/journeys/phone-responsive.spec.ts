@@ -465,6 +465,12 @@ test.describe('phone', () => {
         await page.waitForTimeout(300)
         expect(await transforms()).toEqual(before)
         expect(await look()).not.toBe(view1)
+        // a finger held still on the selected model is a hold (the menu's press), not a move: drifting after it moves nothing
+        at = await screenOf(page, await middleOf(page, id))
+        await finger(cdp, at, { x: at.x + 40, y: at.y + 10 }, 800, 4)
+        await page.waitForTimeout(300)
+        expect(await transforms()).toEqual(before)
+        expect((await state(page)).selection).toBe(id)
         // a drag that starts on the selected model moves it on the plate
         at = await screenOf(page, await middleOf(page, id))
         const t0 = (await state(page)).plate[0]!.transform
