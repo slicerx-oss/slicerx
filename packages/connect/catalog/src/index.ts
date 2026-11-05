@@ -22,7 +22,7 @@ import { printerWebUiUrl, type WebUiPrinter } from './web-ui.ts'
 
 export type * from './types.ts'
 export { BRANDS, CONNECTION_METHODS, connectionMethod }
-export { isLanHost, printerWebUiUrl, webUiOf, webUiUrl, type WebUiPrinter } from './web-ui.ts'
+export { isLanHost, isRootTld, printerWebUiUrl, webUiOf, webUiUrl, type WebUiPrinter } from './web-ui.ts'
 
 /** Every model, grouped by brand in the order of `BRANDS`. */
 export const PRINTER_MODELS: readonly PrinterModel[] = [
