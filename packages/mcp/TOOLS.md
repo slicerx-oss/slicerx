@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-263 tools.
+264 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -190,6 +190,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_filament` |  |  | start | Load or unload filament: M701 or M702 on Marlin and Prusa firmware, the LOAD_FILAMENT or UNLOAD_FILAMENT macros on Klipper. |
 | `slicerx_printer_gcode` |  |  | start | Send one G-code line to a printer console, such as "G28" or "M106 S128". |
 | `slicerx_printer_history` |  |  | read | Past prints of one printer, newest first, as the printer itself keeps them: file name, result (completed, canceled or failed), start and end time, duration and filament used. |
+| `slicerx_printer_home` |  |  | start | Home every axis of a printer (G28), as the Home button on its Move tab does. |
 | `slicerx_printer_list` |  |  | read | List printers with their state, job progress, loaded filament and machine cost. |
 | `slicerx_printer_match` |  |  | read | Rank the printers that can print a model in a material right now: fit in the build volume, hotend temperature, nozzle hardness for abrasive filament, enclosure need, material already loaded, wait time and machine cost. |
 | `slicerx_printer_pause` |  |  | start | Pause the running print on a printer. |
