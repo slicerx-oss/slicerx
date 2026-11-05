@@ -19,6 +19,8 @@ import { coerce, NIL } from './value'
 export interface ProjectSettings {
   /** Changes against the current settings, in our keys. */
   values: Record<string, SettingValue>
+  /** Every value the project gives that slicing takes, in our keys, the ones equal to the current settings too. */
+  taken: Record<string, SettingValue>
   /** Keys left out on purpose: text, scripts, credentials, printer settings. */
   left: string[]
 }
@@ -61,15 +63,17 @@ export function projectSettingChanges(raw: Record<string, unknown>, current: Pri
   }
   const now = current as unknown as Record<string, SettingValue | undefined>
   const values: Record<string, SettingValue> = {}
+  const taken: Record<string, SettingValue> = {}
   const left: string[] = []
   for (const [key, value] of Object.entries(imported)) {
     if (!takesProjectValue(key, value)) {
       left.push(key)
       continue
     }
+    taken[key] = value
     if (!sameValue(value, now[key])) values[key] = value
   }
-  return { values, left }
+  return { values, taken, left }
 }
 
 export type ProjectPrinterMatch =
@@ -185,20 +189,23 @@ export interface ProjectPrinterChanges {
  */
 export function projectPrinterChanges(settings: Record<string, unknown>, match: ProjectPrinterMatch | null, current: PrintConfig, nozzle: number | undefined): ProjectPrinterChanges {
   // SlicerX's defaults for the keys the project does not set at all (precise outer wall); a value it sets is its own.
-  const { values } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, current)
+  const { values, taken } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, current)
   const now = current as unknown as Record<string, SettingValue | undefined>
+  // The overrides come from every value the project holds (`taken`), also one equal to `current`: the plate then starts
+  // from the goal nearest the project's layer height, or moves to another printer, whose own values would otherwise
+  // replace it (a 0.2 mm support gap became a Fine goal's 0.12 mm). `values` stays the real changes, for the note.
   if (match?.kind !== 'match') {
     const fileNozzle = match?.nozzle ?? Number(first(settings['nozzle_diameter']))
     const sameNozzle = !Number.isFinite(fileNozzle) || nozzle === undefined || sameMm(fileNozzle, nozzle)
     // The engine choices the project did not change print with SlicerX's values here too, as on its own printer and as
     // sx slice <project.3mf> and the MCP read give them, so the same file slices the same everywhere.
     const keeps = keptEngineChoices(settings)
-    const own = Object.fromEntries(Object.entries(values).filter(([k]) => !GCODE_TEXT_KEYS.includes(k) && !keeps.includes(k)))
+    const own = Object.fromEntries(Object.entries(taken).filter(([k]) => !GCODE_TEXT_KEYS.includes(k) && !keeps.includes(k)))
     const ours = Object.fromEntries(keeps.filter((k) => !sameChoice(now[k], SLICERX_KEEP_VALUES[k])).map((k) => [k, SLICERX_KEEP_VALUES[k] as SettingValue]))
     const { kept, dropped } = carryOver({ ...own, ...ours }, [], sameNozzle)
-    return { values: kept, all: values, dropped, keeps, listed: false }
+    // Left out names only real changes: a value equal to the current one loses nothing.
+    return { values: kept, all: values, dropped: dropped.filter((k) => k in values), keeps, listed: false }
   }
-  const only = changedKeys(settings)
   // The process and the filaments are taken whole: the file holds what it was sliced with, the system presets its
   // presets came from (inherits_group) with the person's changes on top, and Bambu Studio opens it as it is. Our
   // profile starts from its own standard process and its own filament, so taking only the listed changes left every
@@ -212,7 +219,9 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
     const section = settingDef(k)?.section
     return !match.asked && (section === 'process' || section === 'filament') && !keeps.has(k)
   }
-  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || whole(k))) : values
+  const only = changedKeys(settings)
+  // A file that does not list its changes counts every key as its own.
+  const applied = Object.fromEntries(Object.entries(taken).filter(([k]) => !only || only.has(k) || whole(k)))
   // One of the person's printers keeps its own G-code, as on any switch to it; the project printer's goes through the review.
   const settingsOnly = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
   return { values: settingsOnly, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined }
