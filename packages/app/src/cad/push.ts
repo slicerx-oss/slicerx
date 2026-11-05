@@ -13,7 +13,7 @@ import { fromGeom, toGeom } from '../geom/client'
 import { applyMat } from './cad-ops'
 import { commitMade } from './commit'
 import { followPush } from './dimensions'
-import { findTriangle, followed, followsOf, keyOfTriangle, onFlatFace, settle, stepName, type StepParams } from '@slicerx/cad-history'
+import { findTriangle, followed, partThrough, followsOf, keyOfTriangle, onFlatFace, settle, stepName, type StepParams } from '@slicerx/cad-history'
 import { applyHistory, nowOf, runReplay } from './history/ops'
 import { reserveStepId, withPushBefore, withStep } from './history/record'
 import { get, markStale, type PlateEntry } from '../state/store'
@@ -152,7 +152,7 @@ async function roundedFrom(entry: PlateEntry, face: PushFace): Promise<{ index: 
   }
   for (let j = 0; j < steps.length; j++) {
     const s = steps[j]!
-    if (s.suppressed || s.part !== face.partIndex || (s.params.op !== 'edge.fillet' && s.params.op !== 'edge.chamfer')) continue
+    if (s.suppressed || partThrough(steps, j, steps.length, s.part) !== face.partIndex || (s.params.op !== 'edge.fillet' && s.params.op !== 'edge.chamfer')) continue
     const q = followed(s, steps).params
     if (q.op !== 'edge.fillet' && q.op !== 'edge.chamfer') continue
     const now = nowOf(s, entry.transform)
@@ -160,7 +160,8 @@ async function roundedFrom(entry: PlateEntry, face: PushFace): Promise<{ index: 
     if (!edges.length) continue
     // The face as it was before that step, where the edge was still sharp.
     const r = await runReplay({ history: { ...h, steps }, before: j })
-    const part = r.before?.[face.partIndex]
+    // the part as that step names it, before any reorder after it
+    const part = r.before?.[s.part]
     if (!part) continue
     const tri = findTriangle(part, entry.transform, face.pick.at, face.frame.normal)
     if (tri < 0) continue

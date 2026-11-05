@@ -4,12 +4,13 @@
 // choices and settings follow their part, the history steps they record (which replay to the same parts), one undo
 // step each, and the app link methods that do the same for a client.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { replayHistory, stepName, type History } from '@slicerx/cad-history'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { APP_LINK_METHODS } from '../src/app-link/methods'
+import { followFor, partThrough, replayHistory, samePart, stepName, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { APP_LINK_METHODS, runCall, useDesignHost } from '../src/app-link/methods'
 import { partAction, readParts } from '../src/app-link/parts'
 import { effectiveSlot } from '../src/filament/slots'
 import { history } from '../src/plate/history'
+import { partOverridesOf } from '../src/plate/object-settings'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { clonedName, clonePart, movePart, orderMoving, reorderParts } from '../src/plate/parts'
 import { bounds, compose, identity } from '../src/plate/transform'
@@ -163,8 +164,8 @@ describe('reorder parts', () => {
     expect(r.parts.map((p) => p.name)).toEqual(['Lid', 'Body', 'Knob'])
   })
 
-  it('marks a parts.order step broken when the part count no longer matches', async () => {
-    const h: History = { version: 1, base: entry().parts, steps: [{ id: 's1', part: -1, transform: entry().transform, params: { op: 'parts.order', order: [1, 0] } }] }
+  it('marks a parts.order step broken when it orders more parts than there are', async () => {
+    const h: History = { version: 1, base: entry().parts, steps: [{ id: 's1', part: -1, transform: entry().transform, params: { op: 'parts.order', order: [3, 2, 1, 0] } }] }
     const r = await replayHistory(noEngine, { history: h })
     expect(r.status[0]!.state).toBe('broken')
   })
@@ -197,5 +198,156 @@ describe('app link', () => {
     await expect(partAction('clone', { object: 'obj', part: 9 }, 'Test client', loader)).rejects.toMatchObject({ code: 'not_found' })
     set({ plate: [{ ...entry(), locked: true }] })
     await expect(partAction('clone', { object: 'obj', part: 0 }, 'Test client', loader)).rejects.toMatchObject({ code: 'refused' })
+  })
+})
+
+describe('instances', () => {
+  const instance = (): PlateEntry => ({ ...entry(), id: 'inst', instanceOf: 'obj', partSettings: {}, transform: compose({ position: [160, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
+
+  it('a clone in an instance makes it an object of its own, with its source settings and the copy\'s', async () => {
+    set({ plate: [entry(), instance()], objectSettings: { obj: { wall_loops: 3 } } })
+    history().clear()
+    await clonePart(loader, 'inst', 1)
+    const inst = get().plate.find((p) => p.id === 'inst')!
+    expect(inst.instanceOf).toBeUndefined()
+    expect(inst.parts.map((p) => p.name)).toEqual(['Body', 'Lid', 'Knob', 'Lid 2'])
+    // what the slice uses for it now: its own part settings, the copy's among them
+    expect(partOverridesOf(get().plate, inst)).toEqual({ Lid: { wall_loops: 5 }, Knob: { sparse_infill_density: '40%' }, 'Lid 2': { wall_loops: 5 } })
+    expect(effectiveSlot(inst, inst.parts[3]!)).toBe(4)
+    expect(inst.paint![3]).toEqual({ seam: { 2: '8' } })
+    expect(get().objectSettings['inst']).toEqual({ wall_loops: 3 })
+    expect(readParts({ object: 'inst' }).parts[3]!.settings).toEqual({ wall_loops: 5 })
+    // the source is as it was
+    expect(names()).toEqual(['Body', 'Lid', 'Knob'])
+    expect(history().state().undo).toBe(1)
+  })
+
+  it('a reorder in an instance does the same; the source and its other copies keep theirs', async () => {
+    set({ plate: [entry(), instance(), { ...instance(), id: 'inst2' }] })
+    await reorderParts(loader, 'inst', [2, 1, 0])
+    const [obj, inst, inst2] = get().plate
+    expect(inst!.instanceOf).toBeUndefined()
+    expect(inst!.parts.map((p) => p.name)).toEqual(['Knob', 'Lid', 'Body'])
+    expect(inst!.paint).toEqual({ 0: { support: { 3: '4' } }, 1: { seam: { 2: '8' } } })
+    expect(partOverridesOf(get().plate, inst!)['Lid']).toEqual({ wall_loops: 5 })
+    expect(obj!.parts.map((p) => p.name)).toEqual(['Body', 'Lid', 'Knob'])
+    expect(inst2!.instanceOf).toBe('obj')
+  })
+
+  it('a clone in a source with copies keeps the copies on the shared settings', async () => {
+    set({ plate: [entry(), instance()] })
+    await clonePart(loader, 'obj', 2)
+    const inst = get().plate.find((p) => p.id === 'inst')!
+    expect(inst.instanceOf).toBe('obj')
+    expect(inst.parts).toHaveLength(3)
+    expect(partOverridesOf(get().plate, inst)['Knob 2']).toEqual({ sparse_infill_density: '40%' })
+  })
+})
+
+describe('clone names and overrides', () => {
+  it('a copy never takes an override left under its new name, and a clone of a clone copies the clone', async () => {
+    set({ plate: [{ ...entry(), slotOverrides: { Lid: 4, 'Body 2': 3 }, partSettings: { ...entry().partSettings, 'Body 2': { wall_loops: 9 } } }] })
+    await clonePart(loader, 'obj', 0)
+    expect(names()).toEqual(['Body', 'Lid', 'Knob', 'Body 2'])
+    expect(entry().slotOverrides).toEqual({ Lid: 4 })
+    expect(entry().partSettings?.['Body 2']).toBeUndefined()
+    await clonePart(loader, 'obj', 1)
+    await clonePart(loader, 'obj', 4)
+    expect(names().slice(4)).toEqual(['Lid 2', 'Lid 3'])
+    expect(entry().partSettings!['Lid 3']).toEqual({ wall_loops: 5 })
+    expect(entry().paint![5]).toEqual({ seam: { 2: '8' } })
+  })
+
+  it('offsets the copy in the object frame, whatever the object transform', async () => {
+    set({ plate: [{ ...entry(), transform: compose({ position: [100, 100, 0], rotation: [0, 0, 90], scale: [2, 1, 1] }) }] })
+    await clonePart(loader, 'obj', 1)
+    const a = bounds([entry().parts[1]!], identity())!
+    const b = bounds([entry().parts[3]!], identity())!
+    expect(b.min[0] - a.min[0]).toBeCloseTo(14)
+  })
+})
+
+describe('guards', () => {
+  it('refuses while the timeline is rolled back, a step is being edited or the plate loads, and changes nothing', async () => {
+    const before = get().plate
+    for (const [patch, words] of [[{ rollback: { index: 0 } }, /end of the timeline/], [{ historyEdit: { objectId: 'obj', index: 0, original: entry() } }, /history/], [{ plateLoading: true }, /loading/]] as const) {
+      set(patch as never)
+      await expect(clonePart(loader, 'obj', 0)).rejects.toThrow(words)
+      await expect(reorderParts(loader, 'obj', [1, 0, 2])).rejects.toThrow(words)
+      set({ rollback: null, historyEdit: null, plateLoading: false })
+    }
+    expect(get().plate).toBe(before)
+  })
+
+  it('refuses an object that changed while the mesh loaded, and leaves the change', async () => {
+    const racing = { loadParts: async (name: string, parts: MeshPart[]) => {
+      set({ plate: get().plate.map((p) => ({ ...p, parts: [...p.parts] })) })
+      return loader.loadParts(name, parts)
+    } }
+    await expect(clonePart(racing, 'obj', 0)).rejects.toThrow(/changed while/)
+    await expect(reorderParts(racing, 'obj', [1, 0, 2])).rejects.toThrow(/changed while/)
+    expect(names()).toEqual(['Body', 'Lid', 'Knob'])
+  })
+})
+
+describe('parts.order across other steps', () => {
+  const step = (id: string, part: number, params: StepParams): Step => ({ id, part, transform: compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }), params })
+  const push = (id: string, part: number, z: number) => step(id, part, { op: 'face.push', at: [0, 0, z], normal: [0, 0, 1], distanceMm: 5 })
+  const order = step('o', -1, { op: 'parts.order', order: [1, 0] })
+
+  it('keeps parts added before it (at a rolled-back marker) after the ordered ones', async () => {
+    const h: History = { version: 1, base: entry().parts, steps: [order] }
+    const r = await replayHistory(noEngine, { history: h })
+    expect(r.status[0]!.state).toBe('done')
+    expect(r.parts.map((p) => p.name)).toEqual(['Lid', 'Body', 'Knob'])
+  })
+
+  it('carries part indices through the order', () => {
+    const steps = [push('p', 0, 10), order]
+    expect(partThrough(steps, 0, 2, 0)).toBe(1)
+    expect(partThrough(steps, 0, 2, 1)).toBe(0)
+    expect(partThrough(steps, 0, 1, 0)).toBe(0)
+    expect(samePart(steps, steps[0]!, push('later', 1, 15))).toBe(true)
+    expect(samePart(steps, steps[0]!, push('later', 0, 15))).toBe(false)
+  })
+
+  it('push, reorder, then a sketch on the pushed top follows the push on the part it is now', () => {
+    const steps = [push('p', 0, 10), order]
+    const sketch = step('s', 1, { op: 'shape.extrude', frame: { origin: [0, 0, 15], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 4, heightMm: 4 }, placement: {}, spec: { distanceMm: 2, operation: 'join' } } as StepParams)
+    expect(followFor(steps, sketch)).toEqual({ step: 'p', distanceMm: 5 })
+    // the reverse: the part now at index 0 was not pushed, so a push there at the same height follows nothing
+    expect(followFor(steps, push('q', 0, 15))).toBeUndefined()
+  })
+})
+
+describe('app link wiring', () => {
+  beforeAll(() => useDesignHost(loader))
+
+  it('runs parts.clone and parts.order through the method table, names the client and undoes from the toast', async () => {
+    const out = (await runCall('parts.clone', { object: 'Box', part: 'Lid' }, { id: 'c', name: 'Test client' })) as { cloned: unknown }
+    expect(out.cloned).toEqual({ index: 3, name: 'Lid 2' })
+    expect(get().toast?.text).toBe('Test client cloned Lid in Box.')
+    const moved = (await runCall('parts.order', { object: 'obj', part: 'Lid 2', to: 0 }, { id: 'c', name: 'Test client' })) as { parts: { name: string }[] }
+    expect(moved.parts.map((p) => p.name)).toEqual(['Lid 2', 'Body', 'Lid', 'Knob'])
+    expect(get().toast?.text).toBe('Test client reordered the parts of Box.')
+    get().toast!.action!.run()
+    expect(names()).toEqual(['Body', 'Lid', 'Knob', 'Lid 2'])
+    expect(((await runCall('parts.list', { object: 'obj' })) as { parts: unknown[] }).parts).toHaveLength(4)
+  })
+
+  it('refuses busy states, ambiguous names, out-of-range moves and mixed inputs with their codes', async () => {
+    for (const patch of [{ rollback: { index: 0 } }, { plateLoading: true }, { dragging: true }, { liveEdit: true }, { historyEdit: { objectId: 'obj', index: 0, original: entry() } }]) {
+      set(patch as never)
+      await expect(runCall('parts.clone', { object: 'obj', part: 0 })).rejects.toMatchObject({ code: 'busy' })
+      set({ rollback: null, plateLoading: false, dragging: false, liveEdit: false, historyEdit: null })
+    }
+    set({ plate: [{ ...entry(), parts: entry().parts.map((p, i) => (i === 2 ? { ...p, name: 'Lid' } : p)) }] })
+    await expect(runCall('parts.clone', { object: 'obj', part: 'Lid' })).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(runCall('parts.order', { object: 'obj', part: 0, to: 3 })).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(runCall('parts.order', { object: 'obj', order: [0, 1, 2], part: 0 })).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(runCall('parts.order', { object: 'obj', part: 'Nope', to: 0 })).rejects.toMatchObject({ code: 'not_found' })
+    await expect(runCall('parts.list', { object: 'Nothing' })).rejects.toMatchObject({ code: 'not_found' })
+    set({ plate: [entry(), { ...entry(), id: 'twin' }] })
+    await expect(runCall('parts.list', { object: 'Box' })).rejects.toMatchObject({ code: 'invalid_input' })
   })
 })

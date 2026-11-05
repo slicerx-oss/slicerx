@@ -75,7 +75,9 @@ export function appPartTools(link: AppLinkCaller | undefined, appName: string): 
     input: appPartInputs[input] as z.ZodType<Record<string, unknown>>,
     ...(input === 'list' ? {} : { approval: async (i: Record<string, unknown>) => ({ title: `Change the parts of ${i['object']}?`, lines: [], actions: [] }) }),
     async run(i) {
-      if (input === 'order' && (i['order'] === undefined) === (i['part'] === undefined || i['to'] === undefined)) throw new ToolInputError('Give order, or part with to', 'invalid_input')
+      const byOrder = i['order'] !== undefined && i['part'] === undefined && i['to'] === undefined
+      const byMove = i['order'] === undefined && i['part'] !== undefined && i['to'] !== undefined
+      if (input === 'order' && !byOrder && !byMove) throw new ToolInputError('Give order, or part with to', 'invalid_input')
       const out = await call(method, i)
       const what = out.cloned ? `cloned as ${out.cloned.name}, ` : input === 'order' ? (out.changed ? 'reordered, ' : 'already in that order, ') : ''
       return { summary: `${out.object.name}: ${what}${out.parts.length} parts read back.`, output: out }

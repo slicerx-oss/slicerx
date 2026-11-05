@@ -3,7 +3,9 @@
 // The parts inside one object: clone a part beside itself, and put the parts in a new order. Each is one store update,
 // so one undo step. Part order is the order of the list only: the slice prints the same either way.
 import type { FaceSurface, MeshFaces, MeshHandle, MeshPart } from '@slicerx/contracts'
-import { get, markStale, set, type PaintData, type PlateEntry } from '../state/store'
+import type { SettingValue } from '@slicerx/contracts'
+import { get, markStale, set, type AppState, type PaintData, type PlateEntry } from '../state/store'
+import { partOverridesOf } from './object-settings'
 import { brandAccent } from '../edition'
 import { bake } from './mesh-ops'
 import { bounds, compose, identity, type Vec3 } from './transform'
@@ -55,6 +57,39 @@ function paintCopied(paint: PaintData | undefined, from: number, to: number): Pa
 }
 
 /**
+ * Refuses a parts edit while the object cannot take one: the timeline rolled back, a step open for editing, a replay
+ * running, or a plate loading. A parts step put in at a rolled-back marker would land before later steps.
+ */
+async function editable(objectId: string): Promise<void> {
+  const s = get()
+  if (s.plateLoading) throw new Error('The plate is still loading. Try again when it is in.')
+  if (s.rollback) throw new Error('Return to the end of the timeline before changing parts.')
+  const { replaying } = await import('../cad/history/ops')
+  if (s.historyEdit?.objectId === objectId || replaying(objectId)) throw new Error('Finish editing this object\'s history before changing its parts.')
+}
+
+/**
+ * Writes the edited object in one store update. An instance stops sharing its source's mesh, as other mesh edits do:
+ * it becomes an object of its own and takes its source's part and object settings, so the slice prints it as shown.
+ */
+function commit(objectId: string, edit: (now: PlateEntry, settings: Record<string, Record<string, SettingValue>>) => PlateEntry, extra: Partial<AppState> = {}): void {
+  const s = get()
+  const now = s.plate.find((p) => p.id === objectId)!
+  const { instanceOf: from, partSettings: _own, ...rest } = now
+  const settings = structuredClone(partOverridesOf(s.plate, now))
+  const next = edit(rest as PlateEntry, settings)
+  const shared = from ? s.objectSettings[from] : undefined
+  set({
+    plate: s.plate.map((p) => (p.id === objectId ? next : p)),
+    ...(shared && !s.objectSettings[objectId] ? { objectSettings: { ...s.objectSettings, [objectId]: { ...shared } } } : {}),
+    ...extra,
+  })
+  markStale()
+}
+
+const withSettings = (settings: Record<string, Record<string, SettingValue>>): Pick<PlateEntry, 'partSettings'> => (Object.keys(settings).length ? { partSettings: settings } : {})
+
+/**
  * Clones part `index` of the object: a copy named "Name 2" with the same filament, its own filament choice, settings
  * and paint, beside the original on X, added after the last part. In a CAD history the copy is a parts.add step, so the
  * timeline stays editable. The copy is picked. Returns its index and name, or null when there is no such part.
@@ -63,6 +98,7 @@ export async function clonePart(host: Loader, objectId: string, index: number, g
   const e = get().plate.find((p) => p.id === objectId)
   const src = e?.parts[index]
   if (!e || !src) return null
+  await editable(objectId)
   const name = clonedName(src.name, e.parts.map((p) => p.name))
   const copy = clonePartMesh(src, name)
   const at = e.parts.length
@@ -73,21 +109,30 @@ export async function clonePart(host: Loader, objectId: string, index: number, g
   // The object as it is now: a rename or a recolor while the mesh loaded stays.
   const now = get().plate.find((p) => p.id === objectId)
   if (!now || now.parts !== e.parts) throw new Error(`${e.name} changed while the clone loaded. Try again.`)
-  const slot = now.slotOverrides?.[src.name]
-  const settings = now.partSettings?.[src.name]
-  const paint = paintCopied(now.paint, index, at)
-  const next: PlateEntry = {
-    ...now,
-    handle,
-    parts,
-    colors: [...now.parts.map((_, i) => colorAt(now, i)), colorAt(now, index)],
-    ...(slot !== undefined ? { slotOverrides: { ...now.slotOverrides, [name]: slot } } : {}),
-    ...(settings ? { partSettings: { ...now.partSettings, [name]: structuredClone(settings) } } : {}),
-    ...(paint ? { paint } : {}),
-    ...(history ? { history } : {}),
-  }
-  set({ plate: get().plate.map((p) => (p.id === objectId ? next : p)), selection: objectId, selectedIds: [objectId], scopePart: { id: objectId, part: name }, settingsScope: 'objects' })
-  markStale()
+  commit(
+    objectId,
+    (o, settings) => {
+      // the copy takes the original's filament choice and settings, and nothing left under its name from before
+      const slots = { ...o.slotOverrides }
+      if (slots[src.name] !== undefined) slots[name] = slots[src.name]!
+      else delete slots[name]
+      if (settings[src.name]) settings[name] = structuredClone(settings[src.name]!)
+      else delete settings[name]
+      const { slotOverrides: _s, paint: _p, history: _h, ...plain } = o
+      const paint = paintCopied(o.paint, index, at)
+      return {
+        ...plain,
+        handle,
+        parts,
+        colors: [...o.parts.map((_, i) => colorAt(o, i)), colorAt(o, index)],
+        ...(Object.keys(slots).length ? { slotOverrides: slots } : {}),
+        ...withSettings(settings),
+        ...(paint ? { paint } : {}),
+        ...(history ? { history } : o.history ? { history: o.history } : {}),
+      }
+    },
+    { selection: objectId, selectedIds: [objectId], scopePart: { id: objectId, part: name }, settingsScope: 'objects' },
+  )
   return { index: at, name }
 }
 
@@ -115,23 +160,24 @@ export async function reorderParts(host: Loader, objectId: string, order: readon
   if (!e) return false
   if (!isPartOrder(order, e.parts.length)) throw new Error(`The new order must list each of the ${e.parts.length} parts once.`)
   if (order.every((k, i) => k === i)) return false
+  await editable(objectId)
   const parts = order.map((k) => e.parts[k]!)
   const history = e.history ? (await import('../cad/history/record')).withStep(e, -1, { op: 'parts.order', order: [...order] }, e.transform, true) : undefined
   const handle = await host.loadParts(e.name, parts)
   guard?.()
   const now = get().plate.find((p) => p.id === objectId)
   if (!now || now.parts !== e.parts) throw new Error(`${e.name} changed while its parts loaded. Try again.`)
-  let paint: PaintData | undefined
-  if (now.paint) {
-    paint = {}
-    order.forEach((k, i) => {
-      if (now.paint![k]) paint![i] = now.paint![k]!
-    })
-  }
-  const { paint: _old, ...rest } = now
-  const next: PlateEntry = { ...rest, handle, parts, colors: order.map((k) => colorAt(now, k)), ...(paint && Object.keys(paint).length ? { paint } : {}), ...(history ? { history } : {}) }
-  set({ plate: get().plate.map((p) => (p.id === objectId ? next : p)) })
-  markStale()
+  commit(objectId, (o, settings) => {
+    let paint: PaintData | undefined
+    if (o.paint) {
+      paint = {}
+      order.forEach((k, i) => {
+        if (o.paint![k]) paint![i] = o.paint![k]!
+      })
+    }
+    const { paint: _old, history: _h, ...rest } = o
+    return { ...rest, handle, parts, colors: order.map((k) => colorAt(o, k)), ...withSettings(settings), ...(paint && Object.keys(paint).length ? { paint } : {}), ...(history ? { history } : o.history ? { history: o.history } : {}) }
+  })
   return true
 }
 
