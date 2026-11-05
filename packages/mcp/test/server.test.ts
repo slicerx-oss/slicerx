@@ -365,6 +365,18 @@ describe('the Prusa Core One L', () => {
   })
 })
 
+describe('the Prusa MK3.5', () => {
+  it('is found by a client and comes with its own machine settings', async () => {
+    const h = await connect()
+    const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query: 'prusa mk3.5' }))
+    expect(hits.output.map((x) => x.id)).toContain('prusa-mk3.5')
+    const p = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:prusa-mk3.5' }))
+    expect(p.config['printable_height']).toBe(210)
+    expect(p.config['printable_area']).toEqual([[0, 0], [250, 0], [250, 210], [0, 210]])
+    expect(p.config['gcode_flavor']).toBe('marlin2')
+  })
+})
+
 describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()

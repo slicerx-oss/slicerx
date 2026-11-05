@@ -21,7 +21,7 @@ import { PRINTER_MODELS } from '@slicerx/printer-catalog'
 import { readdirSync, statSync } from 'node:fs'
 import { ConfirmCard } from '../src/first-run/confirm-card'
 import { Footer } from '../src/first-run/frame'
-import { bedOf, checkConnection, EMPTY_FORM, extruderNozzles, profileIdOf, testBlockers, withHardware, type PrinterForm } from '../src/first-run/printer-form'
+import { bedOf, brandTile, checkConnection, EMPTY_FORM, extruderNozzles, modelsForTile, pickModel, profileIdOf, searchSetup, testBlockers, withHardware, type PrinterForm } from '../src/first-run/printer-form'
 import { adoptFound, blockerHint, connectedText, foundText, TestCard, WhyNotReady, type PrinterController } from '../src/first-run/printer-step'
 import { failureCopy, failureKind } from '../src/first-run/test-failure'
 import { get, set } from '../src/state/store'
@@ -360,6 +360,21 @@ describe('the model grid', () => {
     }
     // Every Bambu Lab printer has one.
     expect(PRINTER_MODELS.filter((m) => m.brand === 'bambu-lab' && !IMAGE_IDS.has(m.id))).toEqual([])
+  })
+
+  it('offers the Prusa MK3.5 under Prusa and in search, with its picture and the maker nozzles', () => {
+    const mk35 = modelsForTile(brandTile('prusa')!).find((m) => m.id === 'prusa-mk3.5')
+    expect(mk35).toMatchObject({ name: 'MK3.5', kinematics: 'bed-slinger', enclosed: false, nozzles: [0.25, 0.4, 0.6, 0.8] })
+    expect(mk35?.filamentSystem).toBeUndefined()
+    expect(searchSetup('mk3.5').models.map((m) => m.id)).toEqual(['prusa-mk3.5'])
+    expect(printerImage('prusa-mk3.5')).toMatch(/printer-images\/prusa-mk3\.5\.webp$/)
+    const r = render(createElement(PrinterPicture, { model: mk35!, brand: 'Prusa Research' }))
+    expect(r.el.querySelector('img')?.getAttribute('alt')).toBe('Prusa Research MK3.5')
+    r.done()
+    const form = pickModel(EMPTY_FORM, 'prusa-mk3.5')
+    expect(form.nozzles).toEqual([{ size: 0.4, other: '', type: 'brass' }])
+    expect(form.connection).toBe('prusalink')
+    expect(profileIdOf(form)).toBe('prusa-mk3.5')
   })
 
   it('falls back to the placeholder when a picture fails to load', () => {
