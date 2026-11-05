@@ -482,7 +482,16 @@ export interface ApiToken {
   /** Client address of the last accepted request, as the service reported it. */
   lastUsedIp?: string
   revokedAt?: string
+  /**
+   * The partner app the member issued this token to (createPartnerToken). A
+   * partner app token has the cloud_slice scope only, always expires, and the
+   * cloud service shows it only the jobs it queued.
+   */
+  partnerApp?: string
 }
+
+/** Longest partner app name, in characters. */
+export const PARTNER_APP_NAME_MAX = 60
 
 export type DevicePlatform = 'ios' | 'android' | 'desktop' | 'web'
 
@@ -565,6 +574,13 @@ export interface AuthClient {
   apiTokens(): Promise<ApiToken[]>
   /** The secret is returned once and never stored in readable form. */
   createApiToken(input: { name: string; scopes: ApiTokenScope[]; expiresInDays?: number | null; rateLimitPerMinute?: number }): Promise<StoreResult<{ token: ApiToken; secret: string }>>
+  /**
+   * Issues a token to a named partner app so it can slice in the cloud on the
+   * member's account and daily limits: cloud_slice only, expiring after 1 to
+   * 365 days (default 90). The secret is returned once; the member hands it to
+   * the app, which keeps it in the device's secure storage.
+   */
+  createPartnerToken(input: { partnerApp: string; expiresInDays?: number }): Promise<StoreResult<{ token: ApiToken; secret: string }>>
   revokeApiToken(id: string): Promise<StoreResult<void>>
   /** Revokes every active token of the member, for example after a leak. */
   revokeAllApiTokens(): Promise<StoreResult<{ revoked: number }>>

@@ -42,3 +42,28 @@ export function revokedLabel(n: number): string {
 export function exportFileName(now: Date = new Date()): string {
   return `slicerx-account-export-${now.toISOString().slice(0, 10)}.json`
 }
+
+/** Tokens the member made for their own tools, without the ones issued to partner apps. */
+export function ownTokens(tokens: readonly ApiToken[]): ApiToken[] {
+  return tokens.filter((t) => !t.partnerApp)
+}
+
+/** Tokens issued to partner apps, by app name and then newest first. */
+export function partnerTokens(tokens: readonly ApiToken[]): ApiToken[] {
+  return tokens.filter((t) => t.partnerApp).sort((a, b) => (a.partnerApp ?? '').localeCompare(b.partnerApp ?? '') || b.createdAt.localeCompare(a.createdAt))
+}
+
+/** How long a partner app token lasts: the choices offered, in days. */
+export const PARTNER_TOKEN_DAYS = [30, 90, 365] as const
+
+export function daysLabel(days: number): string {
+  return days === 365 ? '1 year' : `${days} days`
+}
+
+/** When a token stops working, as people read it. */
+export function expiryLabel(t: Pick<ApiToken, 'expiresAt' | 'revokedAt'>, now: number = Date.now()): string {
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+  if (t.revokedAt) return `revoked ${day(t.revokedAt)}`
+  if (!t.expiresAt) return 'never expires'
+  return Date.parse(t.expiresAt) <= now ? `expired ${day(t.expiresAt)}` : `expires ${day(t.expiresAt)}`
+}
