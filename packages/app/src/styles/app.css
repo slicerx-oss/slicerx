@@ -710,6 +710,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* A tool key reads as a keycap (the keycap radius and type) and still as a select: the chevron, hover, focus and its menu. */
 .ctl-row .sx-select.ctl-key { border-radius: var(--r-xs); font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
 .set-rows > .sx-btn { justify-self: start; margin-top: var(--s-1); }
+/* Controls > 3D mouse: the status line with Connect beside it (below it when narrow), and the sensitivity slider. */
+/* The line keeps its place whether Connect shows or not: it sits at the top, padded to the button's middle. The slider
+   is stacked (label above), so it is a group of its own, 12 px from the switch rows on both sides. */
+.set-rows > .sm-status { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--s-2); margin: 0 0 var(--s-1); }
+.sm-status > p { margin: 0; flex: 1 1 16rem; padding-top: max(0px, calc((var(--h-sm) - 1lh) / 2)); }
+.set-rows > .sm-speed { margin: var(--s-3) 0; }
 .acct-who, .dev-list li, .tok-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .acct-who .min0, .dev-list .min0, .tok-list .min0 { display: grid; gap: 2px; }
 .dev-list, .tok-list { list-style: none; margin: 0; padding: 0; display: grid; }

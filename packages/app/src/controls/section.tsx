@@ -12,6 +12,7 @@ import { BUTTON_LABELS, plainAction, REMAP_OPTIONS } from '../first-run/slicer-s
 import { useLookChoice, useTabLabel } from '../first-run/look'
 import { formatShortcut, isMac } from '../lib/keys'
 import { set } from '../state/store'
+import { SpaceMouseSection } from './spacemouse-section'
 import { ACTION_LABEL, actionLabel, chordOf, groupLabel, FIXED_KEYS, GROUPS, KEY_ACTIONS, keymapFor, type ActionGroup } from './actions'
 import { keymapConflicts, type KeyAction } from '@slicerx/ui'
 
@@ -218,6 +219,7 @@ export function ControlsSection() {
       <h3 id="controls-h">Controls</h3>
       <p className="sx-small sx-muted">Everything starts from the look you chose at setup. Changes here stay with it.</p>
       <Mouse choice={choice} onChange={change} />
+      <SpaceMouseSection />
       <Gizmo choice={choice} onChange={change} />
       <h4 className="set-sub">Keyboard</h4>
       <div className="key-tools">

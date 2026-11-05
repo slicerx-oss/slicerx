@@ -640,6 +640,14 @@ carries `data-loading`.
 | `app-link-preset-allow` | Change preset |
 | `app-link-preset-decline` | Not now |
 
+## Settings: Controls > 3D mouse
+
+| Test id | Control |
+| --- | --- |
+| `space-mouse-settings` | The 3D mouse section in Settings, Controls: Use a 3D mouse, then Sensitivity, the Invert switches and Dominant axis while it is on |
+| `space-mouse-status` | Its status line: off, no device, connected with the device's name, held by another program, or not available in this browser |
+| `space-mouse-connect` | Connect 3D mouse, in a browser with WebHID: asks the browser for the device once; the desktop app finds the device on its own and has no Connect |
+
 ## Print sheet
 
 The bridge refuses everything inside the Print sheet; these ids are for reading it and for the e2e specs.

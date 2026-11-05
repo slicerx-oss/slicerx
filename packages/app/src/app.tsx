@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { AppFeature, Host } from '@slicerx/contracts'
+import { startSpaceMouse } from './viewport/spacemouse'
 import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
@@ -108,6 +109,8 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
     if (have.has(themeIds.dark) && have.has(themeIds.light)) return
     void import('./theme/cache').then((m) => m.cacheThemes(themeIds))
   }, [themeIds, themeCache, userThemes, folderThemes])
+  // The 3D mouse follows its setting from the start, whatever tab opens first (viewport/spacemouse.ts).
+  useEffect(() => startSpaceMouse(), [])
   const active = theme ?? editionTheme(edition, scheme, chosen)
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }))
   // The assistant off means off everywhere: no commands, no mimir tab. Not yet connected keeps both, and the tab answers with scripted replies.

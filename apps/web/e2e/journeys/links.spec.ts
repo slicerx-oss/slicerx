@@ -125,6 +125,43 @@ test('a client reads and sets Toolbar size and reads the 3D view look, over MCP 
   }
 })
 
+// The 3D mouse setting from a client. Each field and every refusal is app-link-look.test.ts and app-look.test.ts; here
+// the real hub, the page's store, the person's switch in Settings and the command line.
+test('a client reads and sets the 3D mouse setting over MCP and the command line, each read back', async ({ page, link }) => {
+  await cleanPlate(page)
+  const agent = await link.agent()
+  const was = await sx.get(page, 'spaceMouse')
+  try {
+    // Turned on from the link, it reads back with the device's status: no device is connected, and no picker opens.
+    const on = await agent.call('app_look_set', { spaceMouse: { enabled: true, sensitivity: 1.5, invert: { zoom: true } } })
+    expect(on.spaceMouse).toMatchObject({ enabled: true, sensitivity: 1.5, invert: { panX: false, panY: false, zoom: true, tilt: false, spin: false }, dominantAxis: false, status: 'none' })
+    expect(await sx.get(page, 'spaceMouse')).toMatchObject({ enabled: true, sensitivity: 1.5, invert: { zoom: true } })
+    // A bad value changes nothing.
+    expect((await agent.raw('app_look_set', { spaceMouse: { sensitivity: 9 } })).isError).toBe(true)
+    expect((await agent.call('app_look')).spaceMouse).toMatchObject({ sensitivity: 1.5 })
+
+    // The person turns Dominant axis on in Settings, Controls; the client reads it back.
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Controls' }).click()
+    const section = dialog.getByTestId('space-mouse-settings')
+    await section.scrollIntoViewIfNeeded()
+    await expect(section.getByRole('switch', { name: 'Invert zoom' })).toBeChecked()
+    await section.getByRole('switch', { name: /Dominant axis/ }).click()
+    await expect.poll(async () => (await agent.call('app_look')).spaceMouse?.dominantAxis).toBe(true)
+    await page.keyboard.press('Escape')
+
+    // The command line: off, and its read-back.
+    const lines = await agent.cli('app_look_set', { spaceMouse: { enabled: false } }, 'app_look')
+    expect(lines.map((l) => l.ok)).toEqual([true, true])
+    expect(lines[0]!.output.output.spaceMouse).toMatchObject({ enabled: false, status: 'off', dominantAxis: true, sensitivity: 1.5 })
+    expect(lines[1]!.output.output.spaceMouse).toMatchObject({ enabled: false, status: 'off' })
+    expect(await sx.get(page, 'spaceMouse')).toMatchObject({ enabled: false })
+  } finally {
+    await sx.set(page, { spaceMouse: was })
+  }
+})
+
 // Both public client paths read the live renderer, including notices emitted before any client reads them.
 // The route and its refusals are app-viewport.test.ts:9/18/25.
 test('a client reads viewport telemetry over MCP and the CLI without changing the view', async ({ page, link }) => {
