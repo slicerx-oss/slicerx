@@ -4,12 +4,16 @@
 //! the names of `packages/pair/src/rpc.ts`. Read: host info, printers, fleets, status, printer
 //! events, stills, the relay quota. Act: pause or cancel through a card, and (phones with the
 //! approve right) answer cards with a decision signed by the phone's identity key. Over the relay a
-//! phone approves only pause and cancel cards; it may deny any card it sees. Starts (agent, queued
-//! or scheduled), resume, raw G-code and adjustments are approved in the app or at the printer, and
-//! a bed answer sent over the relay is ignored. Never remote: `print.local`, `bed.confirmClear`
-//! (the person must be at the printer), resume, uploads and starts, secrets, printer setup,
-//! clients and settings. Approver phones also read and answer the question mimir waits on in the
-//! app (`mimir.questions`, `mimir.answer`), which unlocks nothing on a printer.
+//! phone approves pause, cancel and skip-one-object cards, which only stop extrusion, and a start
+//! (an agent's or partner's print, or a queued plate) only under the remote start rule
+//! (`remote_start.rs`: the printer opted in, a fresh plate check that compared the plate with the
+//! empty-plate picture, the temperature and chamber limits, and the person's signed plate answer).
+//! The phone reads that check with `plate.check`, the still beside the empty-plate picture. It may
+//! deny any card it sees. Scheduled starts, resume, raw G-code and adjustments are approved in the
+//! app or at the printer. Never remote: `print.local`, `bed.confirmClear` (the person must be at
+//! the printer), resume, uploads, secrets, printer setup, clients and settings. Approver phones also
+//! read and answer the question mimir waits on in the app (`mimir.questions`, `mimir.answer`),
+//! which unlocks nothing on a printer.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -312,6 +316,7 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             Ok(crate::app_link::mimir_state(b))
         }
         "mimir.answer" => mimir_answer(b, &pairing, &p).await,
+        "plate.check" => plate_check(b, &pairing, &p).await,
         "pairing.revoke" => {
             // Reply first: removing the pairing ends the session the reply travels on.
             let (b, id) = (b.clone(), pairing.pairing_id.clone());
@@ -527,6 +532,8 @@ fn host_info(b: &Bridge, p: &RemotePairing) -> Reply {
         "camera": true,
         "push": false,
         "mimir": true,
+        // Starts under the remote start rule, with `plate.check` for the card's pictures.
+        "remoteStart": true,
         "rights": {
             "request": p.rights.request,
             "approve": p.rights.approve && p.kind == PeerKind::Phone,
@@ -581,10 +588,141 @@ fn shown_to_phones(kind: Option<&str>) -> bool {
     kind.is_some_and(|k| k != "plugin")
 }
 
-/// Cards a phone may approve over the relay: pausing or stopping a print, nothing that heats,
-/// moves or starts the printer (`docs/safety.md`). Every other card it sees it may only deny.
-fn approvable_remotely(b: &Bridge, id: &str) -> bool {
-    matches!(b.agent_work.kind(id), Some("pause" | "cancel"))
+/// What a phone may do with a card over the relay (`docs/safety.md`).
+#[derive(Debug, PartialEq)]
+enum Remote {
+    /// Pausing, stopping, or skipping one object: it only stops extrusion.
+    Stop,
+    /// A start, under the remote start rule, of a file with these heater targets.
+    Start {
+        printer: String,
+        heat: Option<sx_connect::JobHeat>,
+    },
+    /// Deny only.
+    No,
+}
+
+/// Which kinds of held work a phone approves from afar without the start rule.
+fn stops_only(kind: Option<&str>) -> bool {
+    matches!(kind, Some("pause" | "cancel" | "skip"))
+}
+
+/// Cards a phone may approve over the relay: a stop, or a start under the remote start rule.
+/// Scheduled plates start later with nobody looking, so a plate check now proves nothing: those,
+/// and everything else, the phone may only deny.
+fn approvable_remotely(b: &Bridge, id: &str) -> Remote {
+    let kind = b.agent_work.kind(id);
+    if stops_only(kind) {
+        return Remote::Stop;
+    }
+    if let Some((printer, heat)) = b.agent_work.print_heat(id) {
+        return Remote::Start { printer, heat };
+    }
+    if kind.is_none()
+        && let Some(item) = b.hub.item_for_request(id)
+        && item.start_after_ms.is_none()
+    {
+        let heat = b
+            .hub
+            .job_data(&item.sha256)
+            .and_then(|d| sx_connect::job_heat(&d));
+        return Remote::Start {
+            printer: item.printer_id,
+            heat,
+        };
+    }
+    Remote::No
+}
+
+/// The card's word on a remote start: whether the rule could let a phone approve it once the plate
+/// passes, and if not, why. `None` for a card that starts nothing.
+fn remote_start_view(b: &Bridge, id: &str) -> Option<Value> {
+    let Remote::Start { printer, heat } = approvable_remotely(b, id) else {
+        return None;
+    };
+    let before = crate::remote_start::rule_before_plate(&crate::remote_start::facts(b, &printer, heat));
+    let mut v = json!({
+        "printerId": printer,
+        "enabled": before.is_ok(),
+        "plateWindowSeconds": crate::remote_start::PLATE_PASS_MS / 1000,
+    });
+    if let (Err(why), Some(o)) = (before, v.as_object_mut()) {
+        o.insert("reason".into(), json!(why.reason()));
+        o.insert("message".into(), json!(why.message()));
+    }
+    Some(v)
+}
+
+/// Largest picture on a `plate.check` reply, as base64: two fit in one sealed message.
+const PLATE_PICTURE_B64: usize = 340_000;
+
+/// A picture for the card, shrunk to the remote width, or `None` when it will not fit.
+async fn card_picture(s: crate::watch::Still) -> Option<Value> {
+    let (ct, data) = (s.content_type.clone(), s.data);
+    let small = tokio::task::spawn_blocking(move || {
+        crate::h264::fit_jpeg(&data, crate::remote_cam::MAX_WIDTH, 70)
+            .map_or((ct, data), |j| ("image/jpeg".to_owned(), j))
+    })
+    .await
+    .ok()?;
+    let b64 = STANDARD.encode(&small.1);
+    (b64.len() <= PLATE_PICTURE_B64).then(|| json!({ "contentType": small.0, "dataB64": b64 }))
+}
+
+/// `plate.check {printerId}` (approver phones): runs the camera guard's plate check now and returns
+/// the still beside the person's empty-plate picture, for a start card. Only on a printer with remote
+/// start on. `passes` says whether the rule takes this look, until `passUntil`.
+async fn plate_check(b: &Arc<Bridge>, pairing: &RemotePairing, p: &Value) -> Reply {
+    if !(pairing.kind == PeerKind::Phone && pairing.rights.approve) {
+        return Err(err("forbidden", "this device may not approve"));
+    }
+    let printer = printer_arg(p)?;
+    known_printer(b, &printer).await?;
+    if crate::remote_start::policy(b, &printer).is_none() {
+        return Err(err("forbidden", crate::remote_start::Why::Off.message()));
+    }
+    if !crate::guard::on(b, &printer) {
+        return Err(err("forbidden", crate::remote_start::Why::GuardOff.message()));
+    }
+    let look = crate::guard::look_now(b, &printer).await;
+    let reference = crate::guard::reference(b, &printer);
+    let ended = b.hub.bed(&printer).ended_at_ms;
+    let pass = crate::remote_start::plate_pass(
+        look.as_ref().map(crate::remote_start::Look::from),
+        crate::hub::now_ms(),
+        ended,
+    );
+    let taken_at = reference.as_ref().map(|r| r.captured_at_ms);
+    let mut out = json!({
+        "printerId": printer,
+        "checked": look.is_some(),
+        "passes": pass.is_ok(),
+        "plateWindowSeconds": crate::remote_start::PLATE_PASS_MS / 1000,
+        "still": Value::Null,
+        "reference": Value::Null,
+    });
+    let o = out.as_object_mut().ok_or_else(|| err("failed", "reply"))?;
+    if let Err(why) = &pass {
+        o.insert("reason".into(), json!(why.reason()));
+        o.insert("message".into(), json!(why.message()));
+    }
+    if let Some(l) = look {
+        o.insert("clear".into(), json!(l.clear));
+        o.insert("compared".into(), json!(l.compared));
+        o.insert("checkedAt".into(), json!(l.still.captured_at_ms));
+        if pass.is_ok() {
+            o.insert(
+                "passUntil".into(),
+                json!(l.still.captured_at_ms + crate::remote_start::PLATE_PASS_MS),
+            );
+        }
+        o.insert("still".into(), card_picture(l.still).await.unwrap_or(Value::Null));
+    }
+    if let Some(r) = reference {
+        o.insert("reference".into(), card_picture(r).await.unwrap_or(Value::Null));
+        o.insert("referenceAt".into(), json!(taken_at));
+    }
+    Ok(out)
 }
 
 /// A card as a remote device gets it: the broker's request exactly as the phone signs it, and next
@@ -595,6 +733,9 @@ fn card_view(b: &Bridge, id: &str) -> Option<Value> {
     let mut view = json!({ "request": request, "source": "host" });
     if let (Some(work), Some(o)) = (b.agent_work.summary(id), view.as_object_mut()) {
         o.insert(work_key(&work).into(), work);
+    }
+    if let (Some(rs), Some(o)) = (remote_start_view(b, id), view.as_object_mut()) {
+        o.insert("remoteStart".into(), rs);
     }
     if let (Some(name), Some(o)) = (lock(&b.card_partners).get(id).cloned(), view.as_object_mut()) {
         o.insert("partner".into(), json!(name));
@@ -607,10 +748,11 @@ fn card_view(b: &Bridge, id: &str) -> Option<Value> {
 /// list over one card. Without `work`, such a phone shows the card with no Approve, as for any card it
 /// cannot check.
 fn work_key(summary: &Value) -> &'static str {
-    if summary["kind"] == "plugin" {
-        "connectedAppWork"
-    } else {
-        "work"
+    match summary["kind"].as_str() {
+        Some("plugin") => "connectedAppWork",
+        // A skip, under its own key for the same reason.
+        Some("skip") => "objectWork",
+        _ => "work",
     }
 }
 
@@ -644,6 +786,24 @@ fn decision_bytes(p: &Value) -> Option<Vec<u8>> {
         o.insert("bedClear".into(), json!(true));
     }
     Some(canonical_json(&body).into_bytes())
+}
+
+/// The remote start rule for an approval from afar: the rule on the look the person saw, then a
+/// confirming look now, which must pass too, since the start follows this answer at once.
+async fn remote_start_ok(
+    b: &Arc<Bridge>,
+    printer: &str,
+    heat: Option<sx_connect::JobHeat>,
+    bed_clear: bool,
+) -> Result<(), (&'static str, String)> {
+    use crate::remote_start::{Why, facts, rule};
+    let code = |w: &Why| match w {
+        Why::Off | Why::GuardOff | Why::HeatUnknown | Why::Chamber | Why::TooHot { .. } => "not_supported",
+        _ => "forbidden",
+    };
+    rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))?;
+    let _ = crate::guard::look_now(b, printer).await;
+    rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))
 }
 
 async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p: &Value) -> Reply {
@@ -682,14 +842,26 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         return Err(err("forbidden", "the decision does not match the request"));
     }
     let decision = p.get("decision").and_then(Value::as_str).unwrap_or_default();
-    if decision == "approve" && !approvable_remotely(b, &id) {
-        return Err(err(
-            "not_supported",
-            format!(
-                "approve this in the {} app or at the printer; away from home a phone approves only pausing or stopping a print",
-                crate::app_name()
-            ),
-        ));
+    // The person's plate answer, signed with the decision; a start from afar needs it and a pass.
+    let bed_clear = p.get("bedClear").and_then(Value::as_bool) == Some(true);
+    let mut remote_start = false;
+    if decision == "approve" {
+        match approvable_remotely(b, &id) {
+            Remote::Stop => {}
+            Remote::Start { printer, heat } => {
+                remote_start_ok(b, &printer, heat, bed_clear).await?;
+                remote_start = true;
+            }
+            Remote::No => {
+                return Err(err(
+                    "not_supported",
+                    format!(
+                        "approve this in the {} app or at the printer; away from home a phone approves pausing, stopping or skipping an object, and a start only on a printer with remote start on",
+                        crate::app_name()
+                    ),
+                ));
+            }
+        }
     }
     let device = pairing.peer.get("deviceId").cloned().unwrap_or(Value::Null);
     b.hub.audit(json!({
@@ -701,10 +873,12 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         "deviceId": device,
         "requestHash": hash,
         "sig": p.get("sig"),
+        "remoteStart": remote_start,
     }));
     if decision == "approve" {
-        // A bed answer given from afar is never taken: nobody there can see the plate.
-        let out = crate::hub_rpc::grant(b, broker, &json!({ "requestId": id, "bedClear": false }))
+        // A bed answer given from afar is taken only for a start that passed the remote start rule,
+        // where the camera checked the plate; otherwise nobody there can see it.
+        let out = crate::hub_rpc::grant(b, broker, &json!({ "requestId": id, "bedClear": remote_start }))
             .await
             .map_err(|e| from_rpc(&e))?;
         crate::hub_rpc::resolved(b, &id, true, "phone", None);
@@ -852,6 +1026,19 @@ mod tests {
         for kind in ["print", "resume", "gcode", "adjust", "pause", "cancel"] {
             assert!(shown_to_phones(Some(kind)), "{kind}");
         }
+    }
+
+    #[test]
+    fn a_skip_is_approved_remotely_and_a_start_only_under_the_rule() {
+        // Skipping one object only stops extrusion for it, like pausing or stopping.
+        for kind in ["pause", "cancel", "skip"] {
+            assert!(stops_only(Some(kind)), "{kind}");
+        }
+        for kind in ["print", "resume", "gcode", "adjust", "plugin"] {
+            assert!(!stops_only(Some(kind)), "{kind}");
+        }
+        assert!(!stops_only(None));
+        assert_eq!(work_key(&json!({ "kind": "skip" })), "objectWork");
     }
 
     #[test]

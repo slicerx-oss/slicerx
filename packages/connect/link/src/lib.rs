@@ -44,6 +44,7 @@ mod remote;
 mod remote_cam;
 mod remote_rpc;
 mod remote_rtc;
+mod remote_start;
 mod roles;
 mod rpc;
 pub mod service;

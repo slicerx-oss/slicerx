@@ -685,13 +685,29 @@ pub(crate) fn resolved(b: &Bridge, request_id: &str, granted: bool, via: &str, b
 // ---- the queue ----
 
 async fn raise_card(b: &Arc<Bridge>, item: &QueueItem, now: u64) {
-    let Some(broker) = &b.broker else { return };
+    raise_card_asked(b, item, now, None).await;
+}
+
+/// Raises the card for a queued plate; `asked` names a partner app that asked for it (`queue.start`).
+async fn raise_card_asked(
+    b: &Arc<Bridge>,
+    item: &QueueItem,
+    now: u64,
+    asked: Option<&str>,
+) -> Option<sx_permit::ApprovalRequest> {
+    let broker = b.broker.as_ref()?;
     let name = known_printer(b, &item.printer_id)
         .await
         .unwrap_or_else(|_| item.printer_id.clone());
-    let card = card_for(item, &name, now);
+    let mut card = card_for(item, &name, now);
+    if let Some(partner) = asked {
+        card.lines.insert(0, format!("Asked by {partner}, a partner app"));
+    }
     if broker.register(card.clone()).is_err() {
-        return;
+        return None;
+    }
+    if let Some(partner) = asked {
+        lock(&b.card_partners).insert(card.id.clone(), partner.to_owned());
     }
     if let Some(u) = b.hub.update_item(&item.id, |i| {
         i.request_id = Some(card.id.clone());
@@ -707,6 +723,72 @@ async fn raise_card(b: &Arc<Bridge>, item: &QueueItem, now: u64) {
         crate::push::alert(b, "approval_waiting", Some(&item.printer_id), Some(&card.id));
         b.hub.emit("queue", u.to_json());
     }
+    Some(card)
+}
+
+/// `queue.start {itemId}` (the app, agents and partner apps): asks a person to start a plate that is
+/// already queued, now, ahead of its turn. It raises the plate's card (or returns the one already
+/// waiting); a person approves it in the app, at the printer, or on an approver phone under the
+/// remote start rule (`remote_start.rs`). Nobody who asks can answer it. A scheduled plate keeps its
+/// time, and a printer with a print on it is refused until that print is off the plate.
+pub(crate) async fn queue_start(b: &Arc<Bridge>, partner: Option<&str>, p: &Value) -> Rpc<Value> {
+    let broker = b
+        .broker
+        .as_ref()
+        .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
+    let id = str_arg(p, "itemId")?;
+    let item = b
+        .hub
+        .item(&id)
+        .ok_or_else(|| RpcError::new("not_found", format!("no queue item {id}")))?;
+    if item.state.is_final() {
+        return Err(RpcError::new("bad_state", "this plate already left the queue"));
+    }
+    if item.start_after_ms.is_some() {
+        return Err(RpcError::new(
+            "bad_state",
+            "a scheduled plate starts at its time; its card was raised when it was scheduled",
+        ));
+    }
+    let reply = |item: &QueueItem| {
+        let request = item.request_id.as_deref().and_then(|r| broker.request(r));
+        let mut out = serde_json::Map::new();
+        out.insert("item".into(), item.to_json());
+        if let Some(r) = request {
+            out.insert("request".into(), serde_json::to_value(r).unwrap_or(Value::Null));
+        }
+        Value::Object(out)
+    };
+    match item.state {
+        QueueState::AwaitingApproval if item.request_id.as_deref().is_some_and(|r| broker.is_open(r)) => {
+            return Ok(reply(&item));
+        }
+        QueueState::Approved => return Ok(reply(&item)),
+        _ => {}
+    }
+    let _ = observe(b, &item.printer_id).await;
+    if b.hub.bed(&item.printer_id).state == sx_permit::BedState::Busy {
+        return Err(RpcError::new(
+            "busy",
+            "the printer has a print on it; ask again once that print is off the plate",
+        ));
+    }
+    // An approval that needs the plate confirmed again is asked for anew.
+    let item = b
+        .hub
+        .update_item(&item.id, |i| {
+            i.approval = None;
+            i.request_id = None;
+            i.state = QueueState::Waiting;
+        })
+        .unwrap_or(item);
+    let card = raise_card_asked(b, &item, now_ms(), partner)
+        .await
+        .ok_or_else(|| RpcError::new("failed", "the card could not be raised"))?;
+    b.hub.save_queue();
+    let item = b.hub.item(&item.id).unwrap_or(item);
+    b.hub.audit(json!({ "origin": if partner.is_some() { "partner" } else { "client" }, "action": "queue.start", "itemId": item.id, "requestId": card.id }));
+    Ok(reply(&item))
 }
 
 async fn start_item(b: &Arc<Bridge>, item: &QueueItem) {
