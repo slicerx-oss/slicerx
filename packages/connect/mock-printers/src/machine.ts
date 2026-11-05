@@ -46,6 +46,8 @@ export class MockMachine {
   /** Head position (X, Y, Z), homed axes and the axis range, as Klipper's toolhead reports them. */
   position: [number, number, number] = [100, 100, 10]
   homed = 'xyz'
+  /** The last job was canceled and nothing ran since (Klipper's print_stats then reads `cancelled`). */
+  canceled = false
   readonly axisMin: [number, number, number] = [0, 0, 0]
   readonly axisMax: [number, number, number] = [220, 220, 250]
   relative = false
@@ -100,6 +102,7 @@ export class MockMachine {
     if (!f) throw new MockError(404, `no file ${name}`)
     if (this.state !== 'idle' && this.state !== 'finished' && this.state !== 'error') throw new MockError(409, `state ${this.state}`)
     this.state = 'printing'
+    this.canceled = false
     this.job = { name: f.name, progress: 0, layer: 0, layerCount: 100, timeLeftS: 3600 }
     this.excluded.clear()
     this.message = undefined
@@ -129,6 +132,7 @@ export class MockMachine {
     if (this.job) this.history.unshift({ filename: this.job.name, status: 'cancelled', start_time: Math.floor(Date.now() / 1000), total_duration: 60, filament_used: 100 })
     this.state = 'idle'
     this.job = undefined
+    this.canceled = true
     this.log.push('cancel')
     this.changed()
   }

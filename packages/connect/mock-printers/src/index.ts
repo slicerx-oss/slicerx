@@ -191,6 +191,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       const m = machines.get(b.mock)
       if (!m) return { status: 404 }
       m.state = b.state
+      m.canceled = false
       if (b.state === 'idle') m.job = undefined
       else if (m.job && b.state === 'finished') m.job = { ...m.job, progress: 1, timeLeftS: 0 }
       m.log.push(`set ${b.state}`)
