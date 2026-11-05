@@ -28,7 +28,7 @@ use crate::tls::{bambu_client_config, bambu_lan_config};
 use crate::types::{
     Adjustment, Capabilities, Capability, DiscoveredPrinter, FanKind, Fans, FilamentSlot, Image, JobFile,
     JobKind, LiveUnit, PrinterConfig, PrinterEvent, PrinterLive, PrinterState, PrinterStatus, RemoteFile,
-    Secrets, SlotSetting, StartOptions, Temp, now_iso,
+    Secrets, SlotSetting, StartOptions, Temp, UnitClimate, now_iso,
 };
 use crate::{PrinterConnector, PrinterSession};
 
@@ -660,6 +660,45 @@ fn units_from(
         }
     }
     out
+}
+
+/// What a unit's sensors read, from its entry in a report. `humidity` is a level the printer sends
+/// as 1 wet to 5 dry, flipped here to 1 dry to 5 wet as the maker's apps show it; `humidity_raw`
+/// is the percentage, `temp` degrees C and `dry_time` the minutes of drying left. Values out of
+/// range (an AMS sends some while it powers on) are dropped. An AMS lite has no sensors, and only
+/// an AMS 2 Pro and an AMS HT can dry.
+fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
+    if kind == "ams-lite" {
+        return None;
+    }
+    let num = |k: &str| -> Option<f64> {
+        let v = unit.get(k)?;
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            .filter(|x| x.is_finite())
+    };
+    // Rounded readings of a few digits: the ranges below bound them.
+    #[allow(clippy::cast_possible_truncation)]
+    let whole = |x: f64| x.round() as i64;
+    let c = UnitClimate {
+        humidity_pct: num("humidity_raw")
+            .map(whole)
+            .filter(|h| (1..=100).contains(h))
+            .and_then(|h| u8::try_from(h).ok()),
+        humidity_level: num("humidity")
+            .map(whole)
+            .filter(|h| (1..=5).contains(h))
+            .and_then(|h| u8::try_from(6 - h).ok()),
+        // A unit with no reading sends 0.
+        temp_c: num("temp").filter(|t| *t > 0.0 && *t <= 100.0),
+        drying: matches!(kind, "ams-2-pro" | "ams-ht")
+            .then(|| num("dry_time").map(|m| m > 0.0))
+            .flatten(),
+        dry_minutes_left: num("dry_time")
+            .filter(|m| *m > 0.0 && matches!(kind, "ams-2-pro" | "ams-ht"))
+            .and_then(|m| u32::try_from(whole(m)).ok()),
+    };
+    (c != UnitClimate::default()).then_some(c)
 }
 
 fn external_unit(id: String, tray: &Value, tool: Option<u8>, measured: bool) -> crate::types::FilamentUnit {
@@ -1795,6 +1834,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
                 id: unit_letter(id).to_string(),
                 kind: kind.to_owned(),
                 feeds,
+                climate: unit_climate(unit, kind),
             }
         })
         .collect();
@@ -3112,6 +3152,15 @@ impl PrinterSession for BambuSession {
 
     /// `print.printer_type` from the reports first, as Bambu Studio names the machine (it alone
     /// separates an X1 from an X1 Carbon), then the `get_version` answer.
+    /// The `ota` module's version from the `get_version` answer.
+    fn reported_firmware(&self) -> Option<String> {
+        self.shared
+            .firmware
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     fn reported_model(&self) -> Option<String> {
         let from_report = {
             let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -4169,6 +4218,60 @@ mod tests {
         assert_eq!(
             units,
             [("A", "ams", Some("left")), ("E", "ams-ht", Some("right"))]
+        );
+    }
+
+    #[test]
+    fn ams_units_report_humidity_temperature_and_drying() {
+        let report: Value =
+            serde_json::from_str(include_str!("../../../fixtures/bambu-h2d-pushall.json")).unwrap();
+        let units = status_from_report("h2d", &report).live.unwrap().units.unwrap();
+        let climate = |id: &str| units.iter().find(|u| u.id == id).unwrap().climate.clone();
+        // The printer sends the level 1 wet to 5 dry; it reads 1 dry to 5 wet, as the maker's apps show it.
+        assert_eq!(
+            climate("A"),
+            Some(UnitClimate {
+                humidity_pct: Some(22),
+                humidity_level: Some(2),
+                temp_c: Some(26.0),
+                drying: Some(false),
+                dry_minutes_left: None,
+            })
+        );
+        assert_eq!(
+            climate("E"),
+            Some(UnitClimate {
+                humidity_pct: Some(11),
+                humidity_level: Some(3),
+                temp_c: Some(45.0),
+                drying: Some(true),
+                dry_minutes_left: Some(200),
+            })
+        );
+    }
+
+    #[test]
+    fn a_unit_without_sensors_or_with_power_on_noise_reports_no_climate() {
+        let p = json!({
+            "gcode_state": "IDLE",
+            "ams": { "ams": [
+                // An AMS lite has no humidity sensor.
+                { "id": "0", "info": "1002", "humidity": "5", "temp": "0.0", "tray": [] },
+                // Values out of range while an AMS powers on are dropped; a first AMS cannot dry.
+                { "id": "1", "info": "1001", "humidity": "0", "humidity_raw": "0", "temp": "-20.0", "dry_time": 0, "tray": [] },
+                { "id": "2", "info": "1001", "humidity": "5", "temp": "24.5", "tray": [] },
+            ] },
+        });
+        let units = parse_status("p", &p).live.unwrap().units.unwrap();
+        assert_eq!(units[0].climate, None);
+        assert_eq!(units[1].climate, None);
+        assert_eq!(
+            units[2].climate,
+            Some(UnitClimate {
+                humidity_level: Some(1),
+                temp_c: Some(24.5),
+                ..UnitClimate::default()
+            })
         );
     }
 
