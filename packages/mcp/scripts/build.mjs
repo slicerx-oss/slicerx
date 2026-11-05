@@ -45,6 +45,31 @@ const jsonAsString = {
   },
 }
 
+// In the server's CLI entries, Ajv and the YAML parser load on first use (src/deferred.ts, src/sdk-ajv.ts). The npm
+// build's src/deferred.ts requires yaml from node_modules when first asked, and the launcher points the SDK's import
+// of its Ajv provider at dist/sdk-ajv.js (src/launch.ts). The self-contained build has no node_modules, so both files
+// become require() calls that esbuild bundles as modules that run only when first called, and the SDK's server and
+// client import the stand-in for their provider. The library entries keep the static yaml import, so a host that
+// bundles them takes yaml in.
+const srcFile = (name) => join(pkg, 'src', name)
+const sdkImporter = /[\\/]@modelcontextprotocol[\\/]sdk[\\/]dist[\\/]esm[\\/](?:server|client)[\\/]index\.js$/
+const deferredCli = {
+  name: 'deferred-cli',
+  setup(b) {
+    const replace = (name, contents) =>
+      b.onLoad({ filter: new RegExp(`[\\\\/]${name.replace('.', '\\.')}$`) }, (args) =>
+        args.path === srcFile(name) ? { contents, loader: 'js', resolveDir: dirname(args.path) } : undefined,
+      )
+    if (!standalone) {
+      replace('deferred.ts', "import { createRequire } from 'node:module'\nconst load = createRequire(import.meta.url)\nexport const yaml = () => load('yaml')\n")
+      return
+    }
+    replace('deferred.ts', "export const yaml = () => require('yaml')\n")
+    replace('sdk-ajv-load.ts', "export const sdkAjv = () => require('@modelcontextprotocol/sdk/validation/ajv')\n")
+    b.onResolve({ filter: /^\.\.\/validation\/ajv-provider\.js$/ }, (args) => (sdkImporter.test(args.importer) ? { path: srcFile('sdk-ajv.ts') } : undefined))
+  },
+}
+
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
 await build({
   entryPoints: standalone ? { 'slicerx-mcp-main': join(pkg, 'src', 'cli.ts') } : { 'cli-main': join(pkg, 'src', 'cli.ts') },
@@ -55,7 +80,7 @@ await build({
   splitting: true,
   chunkNames: 'chunks/[name]-[hash]',
   ...(standalone ? { outExtension: { '.js': '.mjs' } } : {}),
-  plugins: [jsonAsString],
+  plugins: [jsonAsString, deferredCli],
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -76,10 +101,24 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  define: { SX_MCP_MAIN: JSON.stringify(`./${mainName}`) },
+  define: { SX_MCP_MAIN: JSON.stringify(`./${mainName}`), ...(standalone ? {} : { SX_MCP_AJV: JSON.stringify('./sdk-ajv.js') }) },
   legalComments: 'inline',
   logLevel: 'warning',
 })
+// The npm build's stand-in for the SDK's Ajv provider: a file of its own, since the SDK's import is pointed at it.
+if (!standalone) {
+  await build({
+    entryPoints: [join(pkg, 'src', 'sdk-ajv.ts')],
+    outfile: join(pkg, 'dist', 'sdk-ajv.js'),
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    external: [...external, ...optional],
+    legalComments: 'inline',
+    logLevel: 'warning',
+  })
+}
 
 // The library entries for hosts that start the server in-process (createContext, createSlicerxServer)
 // and for apps that write MCP client configs (agents).
