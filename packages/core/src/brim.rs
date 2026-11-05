@@ -710,15 +710,16 @@ impl Claims {
         c
     }
 
-    /// One island's brim `areas` (object `object`) less what other objects have claimed; the island's whole areas
-    /// are then claimed for `object`. Areas that meet no other object's claim come back as they are.
-    pub(crate) fn take(&mut self, object: usize, areas: Vec<Shapes>) -> Vec<Shapes> {
+    /// One island's brim `areas` (object `object`) less what other objects have claimed, and whether any was cut;
+    /// the island's whole areas are then claimed for `object`. Areas that meet no other object's claim come back as
+    /// they are.
+    pub(crate) fn take(&mut self, object: usize, areas: Vec<Shapes>) -> (Vec<Shapes>, bool) {
         let Some(own) = areas
             .iter()
             .filter_map(|a| perimeters::bounds(a))
             .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
         else {
-            return areas;
+            return (areas, false);
         };
         let theirs: Vec<&Shapes> = self
             .taken
@@ -727,32 +728,49 @@ impl Claims {
             .map(|(_, _, s)| s)
             .collect();
         let clip = (!theirs.is_empty()).then(|| perimeters::union_all(&theirs));
-        let out: Vec<Shapes> = match &clip {
-            Some(clip) if areas.iter().any(|a| perimeters::overlap(a, clip)) => areas
-                .iter()
-                .map(|a| {
-                    if perimeters::overlap(a, clip) {
-                        perimeters::difference(a, clip)
-                    } else {
-                        a.clone()
-                    }
-                })
-                .collect(),
-            _ => areas.clone(),
+        let (out, cut): (Vec<Shapes>, bool) = match &clip {
+            Some(clip) if areas.iter().any(|a| perimeters::overlap(a, clip)) => (
+                areas
+                    .iter()
+                    .map(|a| {
+                        if perimeters::overlap(a, clip) {
+                            perimeters::difference(a, clip)
+                        } else {
+                            a.clone()
+                        }
+                    })
+                    .collect(),
+                true,
+            ),
+            _ => (areas.clone(), false),
         };
         for a in areas {
             if let Some(b) = perimeters::bounds(&a) {
                 self.taken.push((object, b, a));
             }
         }
-        out
+        (out, cut)
     }
+}
+
+/// The brims that other objects cut short on a layer (by their brims' claims, [`Claims::take`], or by their outlines):
+/// what is left of those brims' areas, and the outlines of the islands they go round.
+pub(crate) struct Cut<'a> {
+    pub(crate) areas: &'a Shapes,
+    pub(crate) outline: &'a Shapes,
 }
 
 /// The brim loops of the areas of one filament: their union without the part (`no_brim_area`), keeping
 /// the pieces that touch the part or each other (Orca: a brim area must contact an island or another
-/// brim), as `tryExPolygonOffset` loops, outermost first.
-pub(crate) fn finish(areas: &[Shapes], bodies: &Shapes, spacing: f64, middle: bool) -> Vec<Ring> {
+/// brim), as `tryExPolygonOffset` loops, outermost first. The loops of brims in `cut` print from the outside in by
+/// their distance from their islands ([`outside_in`]).
+pub(crate) fn finish(
+    areas: &[Shapes],
+    bodies: &Shapes,
+    spacing: f64,
+    middle: bool,
+    cut: Option<&Cut<'_>>,
+) -> Vec<Ring> {
     let sp = mm(spacing);
     let all: Vec<&Shapes> = areas.iter().collect();
     let free = perimeters::difference(&perimeters::union_all(&all), bodies);
@@ -773,13 +791,33 @@ pub(crate) fn finish(areas: &[Shapes], bodies: &Shapes, spacing: f64, middle: bo
             })
             .map(|(_, s)| s.clone())
             .collect();
-    outside_in(area_loops(&kept, sp, middle))
+    outside_in(area_loops(&kept, sp, middle), cut.map(|c| (c, spacing)))
+}
+
+/// The distance from `p` to the segment from `a` to `b`, internal units.
+fn segment_distance(p: IntPoint<i32>, a: IntPoint<i32>, b: IntPoint<i32>) -> f64 {
+    let (px, py) = (f64::from(p.x), f64::from(p.y));
+    let (ax, ay) = (f64::from(a.x), f64::from(a.y));
+    let (dx, dy) = (f64::from(b.x) - ax, f64::from(b.y) - ay);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 {
+        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (px - ax - t * dx).m_hypot(py - ay - t * dy)
 }
 
 /// The brim loops in Orca's print order (`union_pt_chained_outside_in`): the loops nest without crossing, and
 /// each level is printed before the loops inside it, the siblings of a level chained nearest first from the
 /// last loop printed (Orca chains them from no point; its source notes the last point as the better start).
-fn outside_in(loops: Vec<Ring>) -> Vec<Ring> {
+///
+/// The loops of a brim in `cut` (another object cut it short; with the loop spacing, mm) take their place in that
+/// order but print within it from the outside in, depth first. Of the loops under one loop, those of the farthest step
+/// from the brim's island (each loop's farthest point, in whole line spacings) go first, of those the one nearest the
+/// nozzle first, and each is followed by the loops it holds. A loop holds the pieces inside it, so each connected piece
+/// of the cut brim prints whole before the next, and the loop next to the island prints last, right before its walls.
+fn outside_in(loops: Vec<Ring>, cut: Option<(&Cut<'_>, f64)>) -> Vec<Ring> {
     let n = loops.len();
     if n < 2 {
         return loops;
@@ -825,7 +863,43 @@ fn outside_in(loops: Vec<Ring>) -> Vec<Ring> {
     };
     let mut order: Vec<usize> = Vec::with_capacity(n);
     let root_start = first(0);
-    visit(n, root_start, &children, &first, &mut order);
+    match cut {
+        None => {
+            visit(n, root_start, &children, &first, &mut order);
+        }
+        Some((cut, spacing)) => {
+            // The roots in the order the chain gives them; a root inside a cut brim prints its loops from the
+            // outside in, the others as before.
+            let roots = children.get(n).cloned().unwrap_or_default();
+            let ents: Vec<crate::chain::Ent> = roots
+                .iter()
+                .map(|&k| crate::chain::Ent {
+                    first: first(k),
+                    last: first(k),
+                    reversible: false,
+                })
+                .collect();
+            let inside = |p: IntPoint<i32>| {
+                cut.areas.iter().any(|shape| {
+                    shape.first().is_some_and(|c| perimeters::point_in(c, p))
+                        && !shape.iter().skip(1).any(|h| perimeters::point_in(h, p))
+                })
+            };
+            let pieces = Pieces::new(&loops, &children, cut.outline, spacing);
+            for (idx, _) in crate::chain::chain(&ents, root_start) {
+                let Some(&k) = roots.get(idx) else { continue };
+                order.push(k);
+                match loops.get(k).and_then(|r| r.first()) {
+                    Some(&p) if inside(p) => {
+                        pieces.visit(k, p, &mut order);
+                    }
+                    _ => {
+                        visit(k, first(k), &children, &first, &mut order);
+                    }
+                }
+            }
+        }
+    }
     let mut slots: Vec<Option<Ring>> = loops.into_iter().map(Some).collect();
     order
         .into_iter()
@@ -858,6 +932,84 @@ fn visit(
         cur = visit(k, first(k), children, first, order);
     }
     cur
+}
+
+/// The loop tree of a cut brim, with each loop's distance from its island in whole line spacings.
+struct Pieces<'a> {
+    loops: &'a [Ring],
+    children: &'a [Vec<usize>],
+    steps: Vec<i64>,
+}
+
+impl<'a> Pieces<'a> {
+    fn new(loops: &'a [Ring], children: &'a [Vec<usize>], outline: &Shapes, spacing: f64) -> Self {
+        let edges: Vec<(IntPoint<i32>, IntPoint<i32>)> = outline
+            .iter()
+            .flatten()
+            .flat_map(|ring| {
+                ring.iter()
+                    .zip(ring.iter().cycle().skip(1))
+                    .map(|(a, b)| (*a, *b))
+            })
+            .collect();
+        let reach = |r: &Ring| -> f64 {
+            r.iter()
+                .map(|&p| {
+                    edges
+                        .iter()
+                        .map(|&(a, b)| segment_distance(p, a, b))
+                        .fold(f64::MAX, f64::min)
+                })
+                .fold(0.0, f64::max)
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a count of line spacings across a brim"
+        )]
+        let steps = loops
+            .iter()
+            .map(|r| (reach(r) / SCALE / spacing).floor() as i64)
+            .collect();
+        Self {
+            loops,
+            children,
+            steps,
+        }
+    }
+
+    /// Puts the loops under `node` in `order`: farthest step first, and of one step the loop nearest the nozzle (at
+    /// `at`) first, each followed by the loops under it. A brim loop starts at its point nearest the nozzle. Returns
+    /// where the nozzle is last.
+    fn visit(&self, node: usize, at: IntPoint<i32>, order: &mut Vec<usize>) -> IntPoint<i32> {
+        let d2 = |a: IntPoint<i32>, b: IntPoint<i32>| {
+            let (dx, dy) = (i64::from(a.x) - i64::from(b.x), i64::from(a.y) - i64::from(b.y));
+            dx * dx + dy * dy
+        };
+        let Some(kids) = self.children.get(node) else {
+            return at;
+        };
+        let mut left: Vec<usize> = kids.clone();
+        let mut at = at;
+        while !left.is_empty() {
+            let Some(far) = left.iter().filter_map(|&k| self.steps.get(k).copied()).max() else {
+                break;
+            };
+            let next = left
+                .iter()
+                .enumerate()
+                .filter(|(_, k)| self.steps.get(**k) == Some(&far))
+                .filter_map(|(pos, &k)| {
+                    let start = self.loops.get(k)?.iter().copied().min_by_key(|&p| d2(p, at))?;
+                    Some((pos, k, start))
+                })
+                .min_by_key(|&(.., start)| d2(start, at));
+            let Some((pos, k, start)) = next else { break };
+            left.remove(pos);
+            order.push(k);
+            at = self.visit(k, start, order);
+        }
+        at
+    }
 }
 
 #[cfg(test)]
