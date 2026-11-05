@@ -25,6 +25,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.extrude',
   'geom.revolve',
   'geom.loft',
+  'geom.sweep',
   'geom.push_pull',
   'geom.boolean',
   'geom.fillet',
