@@ -814,8 +814,9 @@ async fn dispatch(
             ),
         ));
     }
-    // Agents queue nothing and receive no deliveries, so these lists hold nothing of theirs.
-    if conn.role == Role::Agent && matches!(method, "queue.list" | "inbox.list") {
+    // Agents receive no deliveries, so this list holds nothing of theirs. They read the queue to ask
+    // a person to start a queued plate (`queue.start`), and still never queue one.
+    if conn.role == Role::Agent && method == "inbox.list" {
         return Ok(Value::Array(Vec::new()));
     }
     if !roles::allowed(conn.role, method) {
@@ -860,7 +861,10 @@ async fn dispatch(
         }
         "print.local" => hub_rpc::print_local(b, &p).await,
         m if m.starts_with("bed.") => hub_rpc::bed_call(b, m, &p).await,
+        "queue.start" => hub_rpc::queue_start(b, conn.partner.as_deref(), &p).await,
         m if m.starts_with("queue.") => hub_rpc::queue_call(b, m, &p).await,
+        "remoteStart.get" => crate::remote_start::get_call(b, &p).await,
+        "remoteStart.set" => crate::remote_start::set_call(b, &p).await,
         m if m.starts_with("settings.") => hub_rpc::settings_call(b, m, &p).await,
         m if m.starts_with("clients.") => hub_rpc::clients_call(b, m, &p).await,
         "app.call" => {
@@ -1550,7 +1554,7 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         if !roles::partner_may_ask(req.actions.iter().map(|a| a.action.as_str())) {
             return Err(RpcError::new(
                 "forbidden",
-                "a partner app may ask only to print, pause or cancel",
+                "a partner app may ask only to print, pause, cancel or skip an object",
             ));
         }
         // The card says who asked, in the hub's words, above the partner's own lines.
@@ -1564,7 +1568,10 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         || roles::person_only(req.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())));
     let mut card = serde_json::to_value(&req).unwrap_or(Value::Null);
     // An agent's person-only card carries its work; the hub runs it once a person approves.
-    let work = crate::agent_work::work_arg(p)?;
+    let mut work = crate::agent_work::work_arg(p)?;
+    if let Some(w) = &mut work {
+        w.pin_epoch(b);
+    }
     if let (Some(w), Some(o)) = (&work, card.as_object_mut()) {
         o.insert("work".into(), w.summary());
     }

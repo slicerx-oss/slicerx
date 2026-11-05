@@ -16,8 +16,9 @@
 //!
 //! A partner app (another program the person connects, such as `LayerMate`) holds a named key from
 //! `clients.create` with `partner: true`. It is an agent with less: it calls only [`PARTNER_METHODS`]
-//! and raises cards only to print, pause or cancel. It may pause and cancel on its own card, as an
-//! agent does, since those only stop a print; a print waits for a person and carries its work.
+//! and raises cards only to print, pause, cancel or skip one object, and asks for a queued plate's
+//! card (`queue.start`). It may pause and cancel on its own card, as an agent does, since those only
+//! stop a print; a print or a skip waits for a person and carries its work.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +54,8 @@ const APP_ONLY: &[&str] = &[
     "bed.confirmClear",
     "queue.add",
     "queue.remove",
+    // Whether an approver phone may start this printer from afar is the person's to say.
+    "remoteStart.set",
     "printers.add",
     "printers.remove",
     "printers.authorize",
@@ -311,6 +314,7 @@ const PERSON_ONLY: &[&str] = &[
     "printer.resume",
     "printer.gcode",
     "printer.adjust",
+    "printer.skip",
 ];
 
 /// Whether a card with these `(action, target)` pairs needs a person's answer. Home Assistant
@@ -350,6 +354,7 @@ const PARTNER_METHODS: &[&str] = &[
     "adjust.limits",
     "fleets.list",
     "queue.list",
+    "queue.start",
     "inbox.list",
     "approvals.register",
     "approvals.grant",
@@ -364,12 +369,14 @@ pub(crate) fn partner_allowed(method: &str) -> bool {
     PARTNER_METHODS.contains(&method) && allowed(Role::Agent, method)
 }
 
-/// Card actions a partner may ask a person for: a print (upload and start), pause or cancel.
+/// Card actions a partner may ask a person for: a print (upload and start), pause, cancel, or
+/// skipping one object of the running print.
 const PARTNER_ACTIONS: &[&str] = &[
     "printer.upload",
     "printer.start",
     "printer.pause",
     "printer.cancel",
+    "printer.skip",
 ];
 
 /// Whether a partner may raise a card with these actions.
@@ -812,6 +819,17 @@ mod tests {
         assert!(partner_may_grant(["printer.pause"].into_iter()));
         assert!(partner_may_grant(["printer.cancel"].into_iter()));
         assert!(!partner_may_grant(std::iter::empty()));
+        // A partner asks for a skip or a queued plate's start and never grants either itself.
+        assert!(partner_may_ask(["printer.skip"].into_iter()));
+        assert!(partner_allowed("queue.start"));
+        for a in ["printer.skip", "printer.start"] {
+            assert!(!partner_may_grant([a].into_iter()), "{a}");
+            assert!(person_only([(a, "bay-1")].into_iter()), "{a}");
+        }
+        assert!(!may_answer(Role::Agent, true, true));
+        assert!(allowed(Role::Agent, "remoteStart.get") && allowed(Role::Agent, "queue.start"));
+        assert!(!allowed(Role::Agent, "remoteStart.set") && allowed(Role::App, "remoteStart.set"));
+        assert!(!partner_allowed("remoteStart.set"));
         for a in [
             "printer.upload",
             "printer.start",

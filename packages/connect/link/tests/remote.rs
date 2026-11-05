@@ -32,6 +32,7 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const CODE: &str = "TEST-CODE";
 const AGENT_CODE: &str = "AGNT-CODE";
+const WATCH_CODE: &str = "WTCH-CODE";
 
 const RELAY_SECRET: &[u8] = b"remote test relay secret";
 
@@ -64,6 +65,7 @@ async fn hub_in(state_dir: Option<std::path::PathBuf>) -> Link {
         port: 0,
         fixed_code: Some(CODE.to_owned()),
         fixed_agent_code: Some(AGENT_CODE.to_owned()),
+        fixed_watch_code: Some(WATCH_CODE.to_owned()),
         state_dir,
         // Direct video on loopback: the test machine's firewall may hold back UDP to unsigned test
         // binaries.
@@ -2014,4 +2016,398 @@ async fn mimir_answers_over_the_relay_are_audited_checked_and_kept_from_other_de
         "only the answer the app took is audited"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- remote start with a plate pass, a queued plate's start, and skipping one object from afar ----
+
+/// A camera guard detector that answers every plate check: clear while `clear` is set, a spot otherwise.
+async fn plate_detector(link: &Link, clear: Arc<std::sync::atomic::AtomicBool>) {
+    let mut det = connect_async(format!("ws://127.0.0.1:{}/", link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let pp = pairing::proof_params(&mut det, WATCH_CODE, json!({})).await;
+    let r = call(&mut det, 1, "pair", pp).await;
+    assert_eq!(r["result"]["role"], "watch", "{r}");
+    let r = call(&mut det, 2, "watch.subscribe", json!({ "everyMs": 120_000 })).await;
+    assert!(r["result"]["subscription"].is_number(), "{r}");
+    tokio::spawn(async move {
+        let mut id = 100;
+        while let Some(Ok(m)) = det.next().await {
+            let Message::Text(t) = m else { continue };
+            let v: Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["event"] != "watch.plate" {
+                continue;
+            }
+            let d = &v["data"];
+            let ok = clear.load(std::sync::atomic::Ordering::SeqCst);
+            let mut res =
+                json!({ "checkId": d["checkId"], "printerId": d["printerId"], "clear": ok, "note": "test" });
+            if !ok {
+                res["box"] = json!([0.4, 0.6, 0.45, 0.66]);
+            }
+            id += 1;
+            det.send(Message::text(
+                json!({ "id": id, "method": "watch.plateResult", "params": res }).to_string(),
+            ))
+            .await
+            .unwrap();
+        }
+    });
+}
+
+/// Bay 4 idle on a mock Moonraker, with its empty-plate picture taken.
+async fn idle_bay4_with_plate(s: &mut Setup) -> common::Mocks {
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let cfg = json!({ "id": "bay-4", "name": "Bay 4", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    let r = call(&mut s.app, 10, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "bay-4", "{r}");
+    for _ in 0..100 {
+        let st = call(&mut s.app, 11, "status", json!({ "printerId": "bay-4" })).await;
+        if st["result"]["state"] == "idle" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let r = call(
+        &mut s.app,
+        12,
+        "watch.plateClear",
+        json!({ "printerId": "bay-4" }),
+    )
+    .await;
+    assert!(r["result"]["plateFrom"].is_string(), "{r}");
+    mocks
+}
+
+fn gcode_file(name: &str, text: &str) -> (Value, String) {
+    let data = text.as_bytes();
+    let sha = hex(ring::digest::digest(&ring::digest::SHA256, data).as_ref());
+    (
+        json!({ "name": name, "kind": "gcode", "sha256": sha, "dataBase64": base64::engine::general_purpose::STANDARD.encode(data) }),
+        sha,
+    )
+}
+
+/// An agent's print card for `file` on bay 4, with its work.
+fn print_card(id: &str, file: &Value, sha: &str) -> Value {
+    let h = sx_permit::hash_params;
+    let name = file["name"].as_str().unwrap();
+    json!({
+        "request": agent_card(id, "printer.queue", json!([
+            { "action": "printer.upload", "target": "bay-4", "paramsHash": h(&json!({ "printerId": "bay-4", "name": name, "sha256": sha })) },
+            { "action": "printer.start", "target": "bay-4", "paramsHash": h(&json!({ "printerId": "bay-4", "name": name, "opts": {}, "sha256": sha })) },
+        ])),
+        "work": { "kind": "print", "printerId": "bay-4", "file": file },
+    })
+}
+
+#[tokio::test]
+async fn b4_a_phone_starts_a_print_from_afar_only_on_an_opted_in_printer_after_a_plate_pass() {
+    let mut s = setup().await;
+    let mocks = idle_bay4_with_plate(&mut s).await;
+    let clear = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    plate_detector(&s.link, clear.clone()).await;
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(81);
+    put_peer(&mut s.app, &key, "phone", 81, peer).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let info = phone.call("host.info", json!({})).await;
+    assert_eq!(info["r"]["remoteStart"], true, "{info}");
+
+    let (f, sha) = gcode_file("cube.gcode", "M140 S60\nM104 S210\nG28\nG1 X10 Y10\n");
+    let r = call(
+        &mut s.agent,
+        20,
+        "approvals.register",
+        print_card("rs-1", &f, &sha),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "rs-1")
+        .await;
+    // Off by default: the card says so, and neither the plate check nor the approval goes through.
+    assert_eq!(view["remoteStart"]["enabled"], false, "{view}");
+    assert_eq!(view["remoteStart"]["reason"], "off", "{view}");
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["e"]["code"], "forbidden", "{r}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(
+        r["e"]["code"], "not_supported",
+        "an opted-out printer refuses: {r}"
+    );
+
+    // The setting is the person's: an agent reads it and cannot change it.
+    let r = call(
+        &mut s.agent,
+        21,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let r = call(
+        &mut s.app,
+        22,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true, "maxNozzleC": 400 }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    let r = call(
+        &mut s.app,
+        23,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["enabled"], true, "{r}");
+    assert_eq!(r["result"]["maxNozzleC"], 240, "{r}");
+    let r = call(&mut s.agent, 24, "remoteStart.get", json!({})).await;
+    assert_eq!(r["result"]["printers"][0]["enabled"], true, "{r}");
+    assert_eq!(r["result"]["plateWindowSeconds"], 60, "{r}");
+
+    // On, but no plate check yet: refused.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "forbidden", "a missing plate check refuses: {r}");
+
+    // Something on the plate: the check fails and so does the start.
+    clear.store(false, std::sync::atomic::Ordering::SeqCst);
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], false, "{r}");
+    assert_eq!(r["r"]["reason"], "plate_failed", "{r}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "forbidden", "a failed plate check refuses: {r}");
+
+    // A clear plate: the card shows the still beside the empty-plate picture.
+    clear.store(true, std::sync::atomic::Ordering::SeqCst);
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    assert_eq!(r["r"]["compared"], true, "{r}");
+    assert!(r["r"]["still"]["dataB64"].is_string(), "{r}");
+    assert!(r["r"]["reference"]["dataB64"].is_string(), "{r}");
+    assert!(
+        r["r"]["passUntil"].as_u64().unwrap() > r["r"]["checkedAt"].as_u64().unwrap(),
+        "{r}"
+    );
+    // The person still says the plate is clear, signed with the decision.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "forbidden", "{r}");
+    assert!(
+        !mock_log(&mocks)
+            .await
+            .iter()
+            .any(|l| l.starts_with("upload") || l.starts_with("start ")),
+        "nothing ran yet"
+    );
+
+    // A file that heats past the limit, or a chamber, waits for someone at the printer.
+    let (hot, hot_sha) = gcode_file("hot.gcode", "M104 S260\nM140 S60\n");
+    call(
+        &mut s.agent,
+        25,
+        "approvals.register",
+        print_card("rs-hot", &hot, &hot_sha),
+    )
+    .await;
+    let hv = phone
+        .event("approval.request", |d| d["request"]["id"] == "rs-hot")
+        .await;
+    assert_eq!(hv["remoteStart"]["reason"], "too_hot", "{hv}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &hv["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "not_supported", "{r}");
+
+    // Everything holds: the hub uploads and starts it.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let mut ran = false;
+    for _ in 0..60 {
+        let log = mock_log(&mocks).await;
+        if log.iter().any(|l| l.starts_with("start ")) {
+            ran = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(ran, "{:?}", mock_log(&mocks).await);
+}
+
+#[tokio::test]
+async fn b5_a_queued_plate_asked_for_by_an_agent_starts_from_afar_under_the_same_rule() {
+    let mut s = setup().await;
+    let mocks = idle_bay4_with_plate(&mut s).await;
+    let clear = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    plate_detector(&s.link, clear.clone()).await;
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(82);
+    put_peer(&mut s.app, &key, "phone", 82, peer).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+
+    let (f, _) = gcode_file("plate.gcode", "M140 S55\nM104 S215\nG28\n");
+    let q = call(
+        &mut s.app,
+        30,
+        "queue.add",
+        json!({ "printerId": "bay-4", "file": f, "title": "Plate 2" }),
+    )
+    .await;
+    let item = q["result"]["item"]["id"].as_str().unwrap().to_owned();
+    // An agent reads the queue and asks for the plate's card; it never answers it.
+    let list = call(&mut s.agent, 31, "queue.list", json!({})).await;
+    assert_eq!(list["result"][0]["id"], item.as_str(), "{list}");
+    let r = call(&mut s.agent, 32, "queue.start", json!({ "itemId": item })).await;
+    let request = r["result"]["request"].clone();
+    assert_eq!(request["actions"][0]["action"], "printer.start", "{r}");
+    let r2 = call(&mut s.agent, 33, "queue.start", json!({ "itemId": item })).await;
+    assert_eq!(
+        r2["result"]["request"]["id"], request["id"],
+        "the waiting card comes back: {r2}"
+    );
+    let g = call(
+        &mut s.agent,
+        34,
+        "approvals.grant",
+        json!({ "requestId": request["id"], "bedClear": true }),
+    )
+    .await;
+    assert_eq!(g["error"]["code"], "forbidden", "{g}");
+    let r = call(&mut s.agent, 35, "queue.start", json!({ "itemId": "q-nope" })).await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+
+    // Off by default; then on, with a passing plate check, the phone starts it.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &request, "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "not_supported", "{r}");
+    call(
+        &mut s.app,
+        36,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &request, "approve", true),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let mut started = false;
+    for _ in 0..60 {
+        let l = call(&mut s.app, 37, "queue.list", json!({})).await;
+        if l["result"][0]["state"] == "started" {
+            started = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(started, "{:?}", mock_log(&mocks).await);
+    assert!(mock_log(&mocks).await.iter().any(|l| l.starts_with("start ")));
+}
+
+#[tokio::test]
+async fn b7_a_phone_approves_skipping_one_object_from_afar() {
+    let mut s = setup().await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let cfg = json!({ "id": "bay-4", "name": "Bay 4", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    call(&mut s.app, 10, "printers.add", json!({ "config": cfg })).await;
+    let (f, _) = gcode_file("plate.gcode", "M104 S210\nG28\n");
+    let r = call(
+        &mut s.app,
+        11,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(83);
+    put_peer(&mut s.app, &key, "phone", 83, peer).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+
+    let id = "lid.stl_id_0_copy_0";
+    let actions = json!([{ "action": "printer.skip", "target": "bay-4", "paramsHash": sx_permit::hash_params(&json!({ "printerId": "bay-4", "id": id })) }]);
+    let r = call(
+        &mut s.agent,
+        12,
+        "approvals.register",
+        json!({ "request": agent_card("sk-1", "print.adjust", actions), "work": { "kind": "skip", "printerId": "bay-4", "id": id } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    // The agent that asked cannot answer it.
+    let g = call(
+        &mut s.agent,
+        13,
+        "approvals.grant",
+        json!({ "requestId": "sk-1" }),
+    )
+    .await;
+    assert_eq!(g["error"]["code"], "forbidden", "{g}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "sk-1")
+        .await;
+    // Under its own key, so a phone that predates it lists the card without an Approve.
+    assert!(view.get("work").is_none(), "{view}");
+    assert_eq!(view["objectWork"]["kind"], "skip", "{view}");
+    assert_eq!(view["objectWork"]["id"], id, "{view}");
+    assert!(
+        view["objectWork"]["epoch"].is_u64(),
+        "the hub pinned the job: {view}"
+    );
+    // It only stops extrusion for one object, so no plate check or remote start setting is needed.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let want = format!("gcode EXCLUDE_OBJECT NAME={id}");
+    let mut skipped = false;
+    for _ in 0..60 {
+        if mock_log(&mocks).await.contains(&want) {
+            skipped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(skipped, "{:?}", mock_log(&mocks).await);
 }

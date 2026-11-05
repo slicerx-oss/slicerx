@@ -362,6 +362,15 @@ async fn skip(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         .get("epoch")
         .and_then(Value::as_u64)
         .ok_or_else(|| RpcError::new("bad_request", "epoch (from bed.state) is required"))?;
+    skip_object(b, &printer, &id, epoch).await?;
+    Ok(json!({ "ok": true }))
+}
+
+/// Skips one object of the print running now, in the job of bed epoch `epoch`: the app's click, or a
+/// card a person approved (`Work::Skip`). The approval is the person's, so the hub mints the token
+/// for the exact skip line, as for the click.
+pub(crate) async fn skip_object(b: &Arc<Bridge>, printer: &str, id: &str, epoch: u64) -> Rpc<()> {
+    let (printer, id) = (printer.to_owned(), id.to_owned());
     let st = observe(b, &printer)
         .await
         .filter(|s| s.state != PrinterState::Offline)
@@ -418,7 +427,7 @@ async fn skip(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         b.hub.note_skip(&printer, &id);
         crate::hub_rpc::save(b).await;
     }
-    Ok(json!({ "ok": true }))
+    Ok(())
 }
 
 /// `files.start {printerId, path, opts?, bedClear?, unverifiedOk?}`: print a file already on the
