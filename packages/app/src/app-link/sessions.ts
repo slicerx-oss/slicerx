@@ -9,6 +9,7 @@ import { assistantText } from '@slicerx/contracts'
 import type { PilotEvent, PrintRun, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
 import { openChoice } from '../workspaces/mimir/card-waits'
+import { phoneAnsweredOn } from '../workspaces/mimir/phone-answers'
 import { LinkError } from './methods-error'
 
 export interface SessionSource {
@@ -76,7 +77,10 @@ function compact(turn: Turn, user: { text: string; attachments: string[] } | und
         // Kinds the chat added later (questions, lookups) keep their own fields, minus anything long.
         const { id: _id, ...rest } = b as { id: string; kind: string } & Record<string, unknown>
         if (b.kind === 'think' || b.kind === 'perm') break
-        out.push(JSON.parse(JSON.stringify(rest, (_k, v: unknown) => (typeof v === 'string' ? cut(v, 1_000) : v))) as Record<string, unknown>)
+        const step = JSON.parse(JSON.stringify(rest, (_k, v: unknown) => (typeof v === 'string' ? cut(v, 1_000) : v))) as Record<string, unknown>
+        // a question a paired phone answered says so, with the phone's name
+        const on = b.kind === 'choice' ? phoneAnsweredOn(b.askId) : undefined
+        out.push(on ? { ...step, answeredOn: on } : step)
       }
     }
   }

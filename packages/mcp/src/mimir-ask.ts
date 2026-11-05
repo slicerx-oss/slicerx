@@ -60,10 +60,10 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
   })
   const session = defineTool({
     name: 'mimir.session',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups, and waiting: the question mimir waits on now (its askId, title, question and choices), or null. Without an id, the newest conversation.`,
+    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups (a question answered on the person's paired phone carries answeredOn with the phone's name), and waiting: the question mimir waits on now (its askId, title, question and choices), or null. Without an id, the newest conversation.`,
     input: z.object({ id: z.string().min(1).max(200).optional().describe('A session id from slicerx_mimir_ask; the newest when left out') }),
     async run(i) {
       let id = i.id
