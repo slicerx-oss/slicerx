@@ -7,7 +7,7 @@
 // (apps/desktop/src/host/slicer.ts), so the browser suite tests what the desktop slices.
 import type { GcodeExport, MeshPart, PlateArrangement, PlateCheck, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { readPlateArrangement, readPlateCheck } from '@slicerx/contracts'
-import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
+import { chamberCoolingOf, encodeParts, featureFilamentsOf, sliceClock } from '@slicerx/slicer'
 import { createMeshHost } from './meshes'
 
 type Rec = Record<string, unknown>
@@ -22,6 +22,7 @@ export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
   if (isRec(v['stageMicros'])) for (const [k, x] of Object.entries(v['stageMicros'])) stageMicros[k as SliceStage] = Number(x) || 0
   const fm = v['filamentMap']
   const chamber = chamberCoolingOf(v['chamberCooling'])
+  const featureFilaments = featureFilamentsOf(v['featureFilaments'])
   const collisions = Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as SliceResult['collisions'] & object, collisionFixes: (Array.isArray(v['collisionFixes']) ? v['collisionFixes'] : []) as SliceResult['collisionFixes'] & object } : {}
   return {
     id,
@@ -44,6 +45,7 @@ export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
     ...(isRec(v['varyLayerCost']) ? { varyLayerCost: v['varyLayerCost'] as unknown as NonNullable<SliceResult['varyLayerCost']> } : {}),
     ...(isRec(fm) ? { filamentMap: { extruders: nums(fm['extruders']), nozzles: nums(fm['nozzles']), auto: fm['auto'] === true } } : {}),
     ...(chamber ? { chamberCooling: chamber } : {}),
+    ...(featureFilaments ? { featureFilaments } : {}),
     ...collisions,
   }
 }

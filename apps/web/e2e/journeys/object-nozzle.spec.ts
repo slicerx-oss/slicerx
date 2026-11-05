@@ -76,7 +76,7 @@ test('a box prints with the other nozzle from its chip, and the slice reads back
     await shot(page, 'object-nozzle-map')
 
     await closeSheet(page)
-    // The test host's slice result leaves out featureFilaments, so read the engine's report as the host returns it.
+    // Read the engine's report as the host returns it, each object's nozzle size with it.
     const report = page.waitForResponse((r) => r.request().method() === 'POST' && /\/slices\/[^/]+$/.test(new URL(r.url()).pathname))
     await startSlice(page)
     const sized = ((await (await report).json()) as { featureFilaments?: { nozzleMm?: number }[] }).featureFilaments ?? []

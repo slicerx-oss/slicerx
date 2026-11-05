@@ -140,6 +140,7 @@ function reportResult(id: string, r: Report): SliceResult {
     ...(r.collisionFixes?.length ? { collisionFixes: r.collisionFixes as unknown as CollisionFix[] } : {}),
     ...(r.collisionPlate ? { collisionPlate: r.collisionPlate as CollisionPlate } : {}),
     ...(r.primeTower ? { primeTower: r.primeTower as unknown as PrimeTowerPlacement } : {}),
+    ...(r.featureFilaments?.length ? { featureFilaments: r.featureFilaments.map((f) => ({ object: f.object, name: f.name, ...(f.engineObject ? { engineObject: f.engineObject } : {}), features: f.features, ...(f.nozzleMm ? { nozzleMm: f.nozzleMm } : {}) })) } : {}),
   }
 }
 

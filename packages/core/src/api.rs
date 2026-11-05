@@ -944,6 +944,14 @@ impl FeatureUse {
     }
 }
 
+/// The filaments each object's features printed with in one shard's layers. A browser slice splits the plate into
+/// layer ranges and the page joins the shards' reports, each feature's slots unioned.
+pub fn shard_feature_filaments(out: &SliceOutput, config: &PrintConfig) -> Vec<FeatureFilaments> {
+    let mut used = FeatureUse::default();
+    used.add(out);
+    used.report(config)
+}
+
 /// What a request's config set that the slice did not use.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

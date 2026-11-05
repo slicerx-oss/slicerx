@@ -33,6 +33,8 @@ export interface ShardInfo {
   filamentMap?: FilamentMapInfo | null
   /** The chamber cooling mode the G-code reads, worked out for the whole plate (every shard carries the same). */
   chamberCooling?: ChamberCooling | null
+  /** The filament slots each object's features printed with in this shard's layers (featureFilamentsOf reads it). */
+  featureFilaments?: unknown
   /** By object: the collision check's facts (shard 0 only) and what this shard's moves meet, as numbers for finalize. */
   collide?: { meta: unknown; hits: number[] } | null
 }

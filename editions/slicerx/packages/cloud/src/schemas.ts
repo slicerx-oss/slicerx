@@ -41,6 +41,11 @@ const reportFields = {
     })
     .optional(),
   primeTower: z.looseObject({}).optional(),
+  /** The filament slots each object's features printed with; a report that is not well formed reads as none. */
+  featureFilaments: z
+    .array(z.looseObject({ object: z.string(), name: z.string(), engineObject: z.string().optional(), features: z.record(z.string(), z.array(z.number().int().positive())), nozzleMm: z.number().positive().optional() }))
+    .optional()
+    .catch(undefined),
 }
 
 /** One plate of a job that named its plates (`options.plates`): its report, or why it did not slice. */
