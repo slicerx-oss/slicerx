@@ -70,12 +70,20 @@ export type SketchSegment =
   | { type: 'arc'; to: Vec2; radiusMm: number; clockwise?: boolean; large?: boolean }
   /** Tangent to the previous segment; positive sweepDeg turns left. */
   | { type: 'arc'; radiusMm: number; sweepDeg: number }
+  /** A smooth curve through `points` in order, ending at `to`; flattened within 0.005 mm. */
+  | { type: 'spline'; points: Vec2[]; to: Vec2 }
 
 /**
  * A point of a sketch loop by loop index: a chain's start, the end of segment `seg`, a circle's center, or the center
  * of the arc that is segment `seg`. Loop -1 is the sketch origin, `{ e: -1, at: 'start' }`, held at (0, 0).
  */
-export type SketchPointRef = { e: number; at: 'start' } | { e: number; at: 'to'; seg: number } | { e: number; at: 'center' } | { e: number; at: 'arcCenter'; seg: number }
+export type SketchPointRef =
+  | { e: number; at: 'start' }
+  | { e: number; at: 'to'; seg: number }
+  | { e: number; at: 'center' }
+  | { e: number; at: 'arcCenter'; seg: number }
+  /** Point `i` of a spline: of segment `seg`'s points, or of a closed spline loop's when `seg` is absent. */
+  | { e: number; at: 'point'; seg?: number; i: number }
 /** A line or arc of a loop by loop and segment index; a circle is segment 0. Loop -1 segment 0 is the sketch's X axis, for an angle measured from it. */
 export type SketchCurveRef = { e: number; seg: number }
 
@@ -112,6 +120,8 @@ export type SketchLoop = (
   | { start: Vec2; segments: SketchSegment[] }
   | { type: 'circle'; center: Vec2; diameterMm: number }
   | { points: Vec2[] }
+  /** A closed smooth curve through `points`, 3 or more. */
+  | { type: 'spline'; points: Vec2[] }
 ) & { construction?: true }
 
 /** A face that moved, as face.push reports it (world). Pass it to evaluateDimensions. */

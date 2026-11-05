@@ -141,6 +141,26 @@ describe('finished sketches in the design tools', () => {
     expect(sketches[0]!.constraints?.[1]).toMatchObject({ driven: true, value: 12 })
   })
 
+  it('keeps splines as their points, counts them, and checks their shape', async () => {
+    const loops = [
+      { start: [0, 0], segments: [{ type: 'line', to: [20, 0] }, { type: 'spline', points: [[24, 8], [16, 14]], to: [0, 12] }, { type: 'line', to: [0, 0] }] },
+      { type: 'spline', points: [[5, 3], [8, 4], [6, 7]] },
+    ]
+    const settle = vi.fn(async (k: { loops: unknown[]; constraints: SketchConstraint[] }) => ({ loops: k.loops as SketchItem['loops'], constraints: k.constraints, status: 'ok' as const, dof: 9 }))
+    const { run, sketches } = host(settle)
+    const made = await run('design.sketch', { loops })
+    expect(made.summary).toBe('Sketch 1 is in the timeline, 2 splines')
+    expect(sketches[0]!.loops).toEqual(loops)
+    const cons = [{ type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 0 } }, { type: 'distance', a: { e: 1, at: 'point', i: 0 }, b: { e: 1, at: 'point', i: 2 }, value: 4 }]
+    const solved = await run('design.sketch', { loops, constraints: cons })
+    expect(settle.mock.calls[0]![0]).toEqual({ loops, constraints: cons })
+    expect(solved.summary).toBe('Sketch 2 is in the timeline, 2 splines, 9 degrees of freedom left')
+    const input = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design }).find((t) => t.name === 'design.sketch')!.input
+    expect(input.safeParse({ loops, constraints: cons }).success).toBe(true)
+    expect(input.safeParse({ loops: [{ start: [0, 0], segments: [{ type: 'spline', points: [], to: [1, 1] }] }] }).success).toBe(false)
+    expect(input.safeParse({ loops: [{ type: 'spline', points: [[0, 0], [1, 1]] }] }).success).toBe(false)
+  })
+
   it('refuses constraints that conflict, and constraints on a host that cannot solve', async () => {
     const { run, sketches } = host(async (k) => ({ ...k, status: 'conflict', dof: 0 }))
     await expect(run('design.sketch', { loops: LOOPS, constraints: [{ type: 'diameter', circle: { e: 0, seg: 0 }, value: 12 }] })).rejects.toThrow(/conflict/)
