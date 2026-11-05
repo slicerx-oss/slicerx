@@ -1075,6 +1075,29 @@ pub(crate) async fn settings_call(b: &Arc<Bridge>, method: &str, p: &Value) -> R
     }
 }
 
+/// A partner key's name follows the partner phone name rule (`remote::partner_name`). A name that folds
+/// to an existing partner key's name but is spelled otherwise is refused: two keys that read alike in
+/// Devices would be easy to mix up.
+fn partner_key_name(b: &Bridge, name: &str) -> Rpc<String> {
+    let clean = crate::remote::partner_name(name).ok_or_else(|| {
+        RpcError::new(
+            "bad_request",
+            "a partner app name is 1 to 64 characters with a letter or digit",
+        )
+    })?;
+    let key = crate::remote::partner_key(&clean);
+    if lock(&b.hub.clients)
+        .iter()
+        .any(|c| c.partner && crate::remote::partner_key(&c.name) == key && c.name != clean)
+    {
+        return Err(RpcError::new(
+            "conflict",
+            "another partner app key has a name that reads the same; use exactly the same name or another one",
+        ));
+    }
+    Ok(clean)
+}
+
 pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rpc<Value> {
     match method {
         // A key for an AI agent, a partner app or a detector the person connects from the app
@@ -1106,7 +1129,7 @@ pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rp
             }
             let (key, id) = if partner {
                 b.hub
-                    .remember_partner(name.trim())
+                    .remember_partner(&partner_key_name(b, &name)?)
                     .map_err(|e| RpcError::new("failed", e))?
             } else {
                 b.hub.remember_client(name.trim(), role)

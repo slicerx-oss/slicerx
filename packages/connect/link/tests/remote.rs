@@ -2052,7 +2052,33 @@ async fn partner_desktop(s: &mut Setup, name: &str) -> Ws {
         .0;
     let p = call(&mut ws, 1, "pair", json!({ "clientKey": key })).await;
     assert_eq!(p["result"]["partner"], true, "{p}");
+    link_latest(s, name).await;
     ws
+}
+
+/// The person links each `app` partner phone to the newest `app` partner key in Devices (by key id).
+async fn link_latest(s: &mut Setup, app: &str) {
+    let clients = call(&mut s.app, 62, "clients.list", json!({})).await;
+    let Some(key) = clients["result"]
+        .as_array()
+        .and_then(|c| c.iter().rev().find(|c| c["partner"] == true && c["name"] == app))
+        .map(|c| c["id"].clone())
+    else {
+        return;
+    };
+    let list = call(&mut s.app, 63, "remote.pairings.list", json!({})).await;
+    for p in list["result"].as_array().unwrap() {
+        if p["partner"] == app {
+            let r = call(
+                &mut s.app,
+                64,
+                "remote.pairings.link",
+                json!({ "pairingId": p["pairingId"], "clientId": key }),
+            )
+            .await;
+            assert_eq!(r["result"]["linked"], true, "{r}");
+        }
+    }
 }
 
 /// Saves a partner phone for `app` and opens its session over the relay.
@@ -2067,6 +2093,7 @@ async fn partner_phone(s: &mut Setup, app: &str, seed: u8) -> (Device, String) {
     )
     .await;
     assert_eq!(r["result"]["saved"], true, "{r}");
+    link_latest(s, app).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut phone = Device::open(&s.relay, &key).await.expect("a session");
     // The first request proves the session, so the hub seals for it.
@@ -3524,4 +3551,145 @@ async fn b8_a_phone_never_approves_an_ams_slot_from_afar() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert_eq!(written, 1);
+}
+
+#[tokio::test]
+async fn a_partner_key_opens_routes_only_to_the_phone_the_person_linked_never_by_name() {
+    let mut s = setup().await;
+    sign_in(&mut s).await;
+    // A phone that paired under the same name, but nobody linked it to this key.
+    let key: [u8; 32] = rand_bytes();
+    let pairing_id = ps::b64(&[86; 16]);
+    let r = call(
+        &mut s.app,
+        95,
+        "remote.pairings.put",
+        json!({ "pairingId": pairing_id, "deviceKey": ps::b64(&key), "kind": "phone", "partner": "Example Phone", "peer": identity(86, "Pixel 8"), "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    let created = call(
+        &mut s.app,
+        96,
+        "clients.create",
+        json!({ "name": "Example Phone", "role": "agent", "partner": true }),
+    )
+    .await;
+    let key_id = created["result"]["clientId"].clone();
+    let client_key = created["result"]["clientKey"].as_str().unwrap().to_owned();
+    let mut desktop = connect_async(format!("ws://127.0.0.1:{}/", s.link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let p = call(&mut desktop, 1, "pair", json!({ "clientKey": client_key })).await;
+    assert_eq!(p["result"]["partner"], true, "{p}");
+    let r = call(
+        &mut desktop,
+        97,
+        "relay.partnerRoute.open",
+        json!({ "app": "Example Phone" }),
+    )
+    .await;
+    assert_eq!(
+        r["error"]["code"], "not_found",
+        "a matching name is not a link: {r}"
+    );
+
+    // Linked by the person in Devices: now it opens.
+    let r = call(
+        &mut s.app,
+        98,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": key_id }),
+    )
+    .await;
+    assert_eq!(r["result"]["linked"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let list = phone.call("partnerRoute.list", json!({})).await;
+    assert_eq!(list["r"], json!([]), "{list}");
+    let o = open_route(&mut desktop, &mut phone, "Example Phone").await;
+
+    // Unlinked: its routes close, and it cannot open again. Only partner keys can be linked.
+    let bad = call(
+        &mut s.app,
+        99,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": "client-nope" }),
+    )
+    .await;
+    assert_eq!(bad["error"]["code"], "not_found", "{bad}");
+    let r = call(
+        &mut s.app,
+        100,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": null }),
+    )
+    .await;
+    assert_eq!(r["result"]["linked"], true, "{r}");
+    let c = app_event(&mut desktop, "partnerRoute.closed", |d| {
+        d["routeId"] == o.id.as_str()
+    })
+    .await;
+    assert_eq!(c["reason"], "unpaired", "{c}");
+    let r = call(
+        &mut desktop,
+        101,
+        "relay.partnerRoute.open",
+        json!({ "app": "Example Phone" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+
+    // A key whose name is not the phone's needs the person's explicit yes in Devices.
+    let other = call(
+        &mut s.app,
+        104,
+        "clients.create",
+        json!({ "name": "OtherApp", "role": "agent", "partner": true }),
+    )
+    .await;
+    let other_id = other["result"]["clientId"].clone();
+    let r = call(
+        &mut s.app,
+        105,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": other_id }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "mismatch", "{r}");
+    let r = call(
+        &mut s.app,
+        106,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": other_id, "mismatchOk": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["linked"], true, "{r}");
+    let r = call(
+        &mut s.app,
+        107,
+        "remote.pairings.link",
+        json!({ "pairingId": pairing_id, "clientId": null }),
+    )
+    .await;
+    assert_eq!(r["result"]["linked"], true, "{r}");
+
+    // A look-alike key name is refused; the same name again is fine.
+    let r = call(
+        &mut s.app,
+        102,
+        "clients.create",
+        json!({ "name": "example phone", "role": "agent", "partner": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "conflict", "{r}");
+    let r = call(
+        &mut s.app,
+        103,
+        "clients.create",
+        json!({ "name": "Example Phone", "role": "agent", "partner": true }),
+    )
+    .await;
+    assert!(r["result"]["clientKey"].is_string(), "{r}");
 }
