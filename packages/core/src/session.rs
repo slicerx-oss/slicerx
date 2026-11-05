@@ -10106,7 +10106,7 @@ impl SliceSession {
                 // piece, as Orca does.
                 let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
                 let (normal, narrow) = if bambu {
-                    crate::narrow::split_pieces(&shell_area)
+                    crate::narrow::split_pieces(&shell_area, crate::narrow::corner_reach(cfg))
                 } else if matches!(
                     solid_name,
                     "monotonic" | "monotonicline" | "rectilinear" | "alignedrectilinear"
