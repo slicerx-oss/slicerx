@@ -45,7 +45,7 @@ const SEND: ReadonlySet<string> = new Set(['run.target', 'printer.list', 'printe
 
 /** What each set's tool description says it holds. */
 export const TURN_SET_WORDS: Record<TurnSet, string> = {
-  build: 'start a new part: the dimension sheet, the plan, sketches extruded or revolved into solids, holes, fillets, chamfers, shells, booleans, and reading the part back',
+  build: 'start a new part: the dimension sheet, the plan, sketches extruded, revolved or lofted into solids, holes, fillets, chamfers, shells, booleans, and reading the part back',
   shape: 'shape a part further: push and pull faces, mirror, pattern, split, subtract, emboss text, cut, hollow, repair, and measure it',
   edit: 'change a part already built: open it, its timeline and steps, its sketches, pick faces and edges, undo and redo',
   app: 'slicing, settings and profiles, the project and plate, the knowledge base, the app commands, and sending a sliced plate to a printer',
