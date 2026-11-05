@@ -9,9 +9,13 @@ A partner app key has the agent role with tighter limits:
 - It reads printers, their status and camera stills, and prepares a file for a printer.
 - It can pause or cancel a print. Like an AI agent, it raises a card for that and answers it itself, since those only stop a print.
 - It can ask to print a sliced plate. The card shows up in SlicerX and on the user's paired phones, with "Asked by <your app's name>, a partner app" on top, and nothing prints until the user approves it there.
+- It can ask to start a plate that is already in SlicerX's queue (`queue.start {itemId}`, item ids from `queue.list`). The hub raises that plate's card, says your app asked, and starts the plate once the user approves.
+- It can ask to skip one object of the running print (a card with the `printer.skip` action and the work `{kind: "skip", printerId, id}`, the id from `objects.list`). Only that object stops printing.
 - Over remote access it can only ask to pause or cancel, and the user answers those.
 
-It can't approve a print or any card other than its own pause and cancel cards, and it can't resume a print or send G-code, change a running print (temperatures, fans, speed, AMS slots), switch Home Assistant devices, or touch the user's settings, keys, printers, connected apps or other devices. The bridge refuses those calls with `forbidden`.
+A paired phone away from home can approve the pause, cancel and skip cards, and a print or queued start only when the user turned remote start on for that printer and the camera's plate check passed moments before (see Remote start below).
+
+It can't approve a print, a queued start, a skip or any card other than its own pause and cancel cards, and it can't resume a print or send G-code, change a running print (temperatures, fans, speed, AMS slots), switch Home Assistant devices, or touch the user's settings, keys, printers, connected apps or other devices. The bridge refuses those calls with `forbidden`.
 
 ## Getting a key
 
@@ -49,6 +53,10 @@ link.partner // true
 ```
 
 `hubKey` is the contents of `hub-key.pub`. Ask for a print with `link.approvals.registerWork(card, { kind: 'print', printerId, file })` and listen with `link.onApprovalDone`. The card's actions have to match the work exactly, the same as for an AI agent. To pause or cancel, register a card with just that action, grant it with `link.approvals.grant`, and pass the token to `link.pause` or `link.cancel`.
+
+## Remote start
+
+A start card your app raises can be approved on the user's phone away from home only when the user allowed it for that printer, in SlicerX's printer controls under Remote start (off by default). Then the phone shows the camera's picture of the plate beside the user's empty-plate picture, and the bridge lets the start through only when its camera guard compared them and found the plate clear in the last 60 seconds, the file heats the nozzle and bed no higher than the limits the user set (240 and 80 degrees Celsius unless changed) and heats no chamber, and the user ticked that the plate is clear. Read the setting with `link.remoteStart.get(printerId?)` or the MCP tool `slicerx_remote_start_policy`; your app can't change it.
 
 ## When the key stops working
 

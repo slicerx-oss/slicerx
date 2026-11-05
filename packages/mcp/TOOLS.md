@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-261 tools.
+263 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -181,7 +181,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_pending_approvals` | Pending approvals | core | read, ungated | List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in SlicerX or on the phone, and how those went once the hub ran them. |
 | `slicerx_plan_settings` | Plan settings | settings | read, ungated | Work out which settings to change for a filament, printer, nozzle and print intent. |
 | `slicerx_prepare_script_replacement` | Prepare a stock-script replacement | core | read, ungated | Prepare an inspectable replacement with verified stock for an explicitly selected printer. |
-| `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. |
+| `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, pause, or skip one object. |
 | `slicerx_print_watch_status` | Print watch status | printers | read, ungated | Read the print watch's settings for each printer (or one, with printerId) as the SlicerX hub holds them: autoPause, the person's standing permission for the watch to pause that printer on a failure; huginn, whether huginn's second look (one camera frame to the connected assistant account) confirms a finding first; pausesOnFailure, true only when both are on, since the watch pauses only a confirmed finding of 0.8 or more; bedMask, whether the person drew a bed mask; watchedNow, whether the hub hands the printer's frames to the detector now (it prints and has a camera); guard, whether the camera guard watches the printer; guardTrip, its current trip (kind hand or plate, state paused, alert, blocked or clear, at, and when the guard could tell box, note, confidence, answered); and guardPlate, when its empty-plate picture was taken. |
 | `slicerx_printer_add` |  |  | printer_config | Adds the printer to SlicerX with its profile, nozzle and connection. |
 | `slicerx_printer_cancel` |  |  | start | Cancel the running print. |
@@ -195,6 +195,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_pause` |  |  | start | Pause the running print on a printer. |
 | `slicerx_printer_profile_search` |  |  | read | Searches the printer profile library by vendor or model text and returns profile ids with the nozzle sizes each profile has. |
 | `slicerx_printer_queue` |  |  | start | Send a sliced plate to a printer and start it, once the user approves in the app. |
+| `slicerx_printer_queue_start` | Start a queued plate | printers | queue | Ask a person to start a plate that is already in the SlicerX hub's queue, now. |
 | `slicerx_printer_resume` |  |  | start | Resume a paused print. |
 | `slicerx_printer_set_temperature` |  |  | start | Set a nozzle, bed or chamber target temperature on a printer (0 turns the heater off). |
 | `slicerx_printer_setup` |  |  | read | Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. |
@@ -235,6 +236,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_split_parts` |  |  | slice | Split an object to parts, as Split to parts does in the app: each separate body of its model becomes a part of the same object, which keeps its id, place, rotation, scale and settings. |
 | `slicerx_region_modifiers` |  |  | slice | Settings for a goal only where it matters, such as strong screw holes without slowing the whole part. |
 | `slicerx_remap_toolheads` | Remap toolheads in a G-code file | core | read, ungated | Move the logical tools of a sliced Snapmaker U1 G-code file onto other physical toolheads, with no printer connected: every tool selection (T), indexed temperature (M104, M109, M116 and M900 T), INDEX= on SM_PRINT_PREEXTRUDE_FILAMENT and SM_PRINT_FLOW_CALIBRATE, and EXTRUDER=extruderN moves together, and comments stay as they are. |
+| `slicerx_remote_start_policy` | Remote start policy | printers | read, ungated | Read whether a paired phone away from home may approve starting a print on each printer (or one, with printerId), as the SlicerX hub holds it. |
 | `slicerx_remove_from_fleet` | Remove a printer from a fleet | fleets | read, ungated | Remove a printer from a fleet. |
 | `slicerx_rename_fleet` | Rename a fleet | fleets | read, ungated | Rename a fleet. |
 | `slicerx_resume_from_layer` |  |  | read | Plan a restart after a failed print with the part still on the bed. |
