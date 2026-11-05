@@ -74,6 +74,7 @@ export function usePocketPilot() {
     },
     approve: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
     deny: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
+    answer: (askId: string, choiceId: string | null) => pilot.answer?.(askId, choiceId) ?? Promise.reject(new Error('mimir is not waiting on a question')),
     setPolicy: (p: PermissionPolicy) => set({ policy: p }),
   }
 }

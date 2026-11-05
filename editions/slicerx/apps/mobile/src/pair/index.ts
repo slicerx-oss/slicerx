@@ -12,9 +12,9 @@ import type { PairedCamera } from '../camera/feed'
 import type { PushRegistrar } from '../notify/push'
 import type { JoinRequestView, PairedHostView, PairingScreenProps, PairingStage } from '../screens/pairing-screen'
 import { lazyCamera, lazyPush } from './lazy'
-import { pairService, type ComputerApproval, type ComputerResolved, type HostState, type PairService } from './service'
+import { pairService, type ComputerApproval, type ComputerQuestion, type ComputerResolved, type HostState, type PairService } from './service'
 
-export type { ComputerApproval, ComputerResolved } from './service'
+export type { ComputerApproval, ComputerQuestion, ComputerResolved } from './service'
 export { sendSlice, sliceOnComputer, type ComputerSliceOutcome } from './computer'
 export type PairingController = Omit<PairingScreenProps, 'onBack' | 'now'>
 
@@ -245,4 +245,27 @@ export function watchResolvedApprovals(pocket: PocketHost, cb: (r: ComputerResol
 /** The ids of the requests a paired computer still lists for this phone. Rejects when it cannot be reached. */
 export async function openComputerApprovals(pocket: PocketHost, pairingId: string): Promise<string[]> {
   return (await pairService(pocket)).openApprovals(pairingId)
+}
+
+/** The question mimir waits on in SlicerX on each paired computer that offers it to this phone. */
+export function watchComputerQuestions(pocket: PocketHost, cb: (q: ComputerQuestion) => void): () => void {
+  let stop = () => undefined as void
+  let live = true
+  void pairService(pocket).then((svc) => {
+    if (live) stop = svc.onQuestion(cb)
+  })
+  return () => {
+    live = false
+    stop()
+  }
+}
+
+/** Reads a computer's question again, for a missed event. */
+export async function readComputerQuestion(pocket: PocketHost, pairingId: string): Promise<import('@slicerx/pair').MimirState> {
+  return (await pairService(pocket)).mimirQuestions(pairingId)
+}
+
+/** Answers a computer's question: a choice id, or null for Cancel. Call only from the card's buttons. */
+export async function answerComputerQuestion(pocket: PocketHost, pairingId: string, q: import('@slicerx/pair').MimirQuestion, choiceId: string | null): Promise<void> {
+  await (await pairService(pocket)).mimirAnswer(pairingId, q, choiceId)
 }
