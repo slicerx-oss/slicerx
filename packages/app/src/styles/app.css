@@ -1307,7 +1307,6 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
   /* It opens over the plate chips and the view, so its surface is solid: nothing behind it reads through. */
   .dock[data-phone] .dock-body { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 1; display: grid; gap: 8px; padding: 10px 14px 12px; border-radius: var(--r-md); background: var(--ink-1); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--shadow-pop); }
   .dock-opts { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
-  .dock-opts .sx-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .dock[data-phone] .dock-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
 }
 
