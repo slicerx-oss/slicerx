@@ -6,10 +6,12 @@
 //!
 //! Protocol (one JSON object per WebSocket text frame), as in `packages/pair/README.md`:
 //! client `auth`, `sub`, `unsub`, `send`, plus `quota`; relay `msg`, `error`, plus replies to
-//! `auth` and `quota`. See README.md next to this crate.
+//! `auth` and `quota`. Partner routes add client `partner.open` and `partner.close` and relay
+//! `partner.closed` (partner.rs). See README.md next to this crate.
 
 pub mod auth;
 mod month;
+pub mod partner;
 pub mod quota;
 pub mod route;
 
@@ -31,6 +33,7 @@ use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use crate::auth::{AuthError, Session, Verifier};
+use crate::partner::{Charge, Closed, OpenError, Partners};
 use crate::quota::{Bucket, Limits, Meter, MeterKey, Refusal, TierLimits};
 
 /// The WebSocket path the relay serves.
@@ -109,6 +112,9 @@ pub struct Stats {
     pub frames: u64,
     pub bytes: u64,
     pub refused: u64,
+    /// Partner routes open now, and the bytes all partner routes carried.
+    pub partner_routes: usize,
+    pub partner_bytes: u64,
 }
 
 struct Conn {
@@ -146,6 +152,7 @@ struct State {
     frames: u64,
     bytes: u64,
     refused: u64,
+    partners: Partners,
 }
 
 impl State {
@@ -175,6 +182,10 @@ struct Frame<'a> {
     route: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     token: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    up: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    down: Option<Cow<'a, str>>,
 }
 
 struct Shared {
@@ -243,14 +254,16 @@ pub fn spawn(listener: TcpListener, cfg: RelayConfig) -> std::io::Result<RelayHa
                 last_log = tokio::time::Instant::now();
                 let st = s.stats();
                 eprintln!(
-                    "sx-relay: {} connections, {} accounts online, {} routes, {} queued bytes, {} frames, {} bytes, {} refused",
+                    "sx-relay: {} connections, {} accounts online, {} routes, {} queued bytes, {} frames, {} bytes, {} refused, {} partner routes, {} partner bytes",
                     st.connections,
                     st.accounts_online,
                     st.routes,
                     st.queued_bytes,
                     st.frames,
                     st.bytes,
-                    st.refused
+                    st.refused,
+                    st.partner_routes,
+                    st.partner_bytes
                 );
             }
         }
@@ -264,6 +277,15 @@ pub fn spawn(listener: TcpListener, cfg: RelayConfig) -> std::io::Result<RelayHa
 
 fn error(code: &str, message: &str) -> String {
     json!({ "op": "error", "code": code, "message": message }).to_string()
+}
+
+/// A refusal about one partner route. It names the route only to the connection that used it.
+fn partner_error(code: &str, scope: Option<&str>, route: &str, message: &str) -> String {
+    let mut v = json!({ "op": "error", "code": code, "route": route, "message": message });
+    if let (Some(s), Some(o)) = (scope, v.as_object_mut()) {
+        o.insert("scope".into(), json!(s));
+    }
+    v.to_string()
 }
 
 fn refusal(r: Refusal) -> String {
@@ -305,6 +327,8 @@ impl Shared {
             frames: st.frames,
             bytes: st.bytes,
             refused: st.refused,
+            partner_routes: st.partners.len(),
+            partner_bytes: st.partners.bytes,
         }
     }
 
@@ -496,6 +520,9 @@ impl Shared {
                 st.wide.remove(&w);
             }
         }
+        for up in st.partners.owned_by(id) {
+            self.close_partner(&mut st, &up, Closed::OwnerGone);
+        }
     }
 
     fn handle(&self, id: u64, text: &str) {
@@ -558,6 +585,30 @@ impl Shared {
                 let r = self.quota(&mut st, id, now);
                 self.reply(&mut st, id, r);
             }
+            Some("partner.open") => match (f.up.as_deref(), f.down.as_deref()) {
+                (Some(up), Some(down)) => self.partner_open(&mut st, id, up, down, now),
+                _ => self.refuse(
+                    &mut st,
+                    id,
+                    error("bad_request", "partner.open needs up and down"),
+                ),
+            },
+            Some("partner.close") => match f.up.as_deref() {
+                Some(up) if st.partners.get(up).is_some_and(|p| p.owner == id) => {
+                    self.close_partner(&mut st, up, Closed::Closed);
+                }
+                Some(up) => self.refuse(
+                    &mut st,
+                    id,
+                    partner_error(
+                        "forbidden",
+                        None,
+                        up,
+                        "not a partner route this connection opened",
+                    ),
+                ),
+                None => self.refuse(&mut st, id, error("bad_request", "partner.close needs up")),
+            },
             _ => self.refuse(&mut st, id, error("bad_request", "unknown op")),
         }
         if st.refused == refused_before
@@ -605,6 +656,10 @@ impl Shared {
         for r in account_routes {
             Self::unsubscribe(st, id, &r);
         }
+        // Partner routes belong to an account; without one they close.
+        for up in st.partners.owned_by(id) {
+            self.close_partner(st, &up, Closed::SignedOut);
+        }
         self.reply(
             st,
             id,
@@ -648,7 +703,13 @@ impl Shared {
             self.refuse(st, id, error("too_large", "body too large"));
             return;
         }
-        if !route::allowed(to, Self::account(st, id, now)) {
+        let len = body.len() as u64;
+        let partner = route::is_partner(to);
+        if partner {
+            if !self.partner_check(st, id, to, len, now) {
+                return;
+            }
+        } else if !route::allowed(to, Self::account(st, id, now)) {
             self.refuse(st, id, error("forbidden", "route not allowed"));
             return;
         }
@@ -656,7 +717,6 @@ impl Shared {
             return;
         };
         let tier = *self.tier(&key);
-        let len = body.len() as u64;
         let subs: Vec<u64> = st
             .routes
             .get(to)
@@ -670,6 +730,9 @@ impl Shared {
         if let Err(r) = charged {
             self.refuse(st, id, refusal(r));
             return;
+        }
+        if partner {
+            st.partners.commit(to, len, now);
         }
         st.frames += 1;
         st.bytes += len;
@@ -741,7 +804,16 @@ impl Shared {
     }
 
     fn subscribe(&self, st: &mut State, id: u64, route: &str, now: u64) {
-        if !route::allowed(route, Self::account(st, id, now)) {
+        let partner = route::is_partner(route);
+        if partner && !st.partners.is_open(route) {
+            self.refuse(
+                st,
+                id,
+                partner_error("forbidden", None, route, "partner route is not open"),
+            );
+            return;
+        }
+        if !partner && !route::allowed(route, Self::account(st, id, now)) {
             self.refuse(st, id, error("forbidden", "route not allowed"));
             return;
         }
@@ -753,7 +825,7 @@ impl Shared {
         }
         // A pairing route has one or two listeners; many would multiply every frame sent to it.
         if new
-            && route::is_opaque(route)
+            && (route::is_opaque(route) || partner)
             && st
                 .routes
                 .get(route)
@@ -862,8 +934,137 @@ impl Shared {
             "framesPerSecond": tier.frames_per_second,
             "bytesPerMinute": tier.bytes_per_minute,
             "maxBody": self.cfg.limits.max_body,
+            "partner": self.partner_quota(st, id, now),
         })
         .to_string()
+    }
+
+    /// The partner route caps and this connection's account use of them, for `quota`.
+    fn partner_quota(&self, st: &State, id: u64, now: u64) -> serde_json::Value {
+        let lim = &self.cfg.limits.partner;
+        let account = Self::account(st, id, now);
+        json!({
+            "routes": account.map_or(0, |a| st.partners.count(a)),
+            "maxRoutes": lim.routes_per_account,
+            "usedToday": account.map_or(0, |a| st.partners.account_used(a, now)),
+            "capPerDay": lim.bytes_per_account_per_day,
+            "routeCapPerDay": lim.bytes_per_route_per_day,
+            "idleSeconds": lim.idle_ms / 1000,
+        })
+    }
+
+    /// `partner.open {up, down}`: a signed-in connection opens a pair of partner routes.
+    fn partner_open(&self, st: &mut State, id: u64, up: &str, down: &str, now: u64) {
+        let lim = self.cfg.limits.partner;
+        let account = Self::account(st, id, now).map(str::to_owned);
+        match st.partners.open(&lim, id, account.as_deref(), up, down, now) {
+            Ok(()) => self.reply(
+                st,
+                id,
+                json!({ "op": "partner.open", "ok": true, "up": up }).to_string(),
+            ),
+            Err(e) => {
+                let (code, scope, message) = match e {
+                    OpenError::NotSignedIn => ("forbidden", None, "partner routes need a signed-in account"),
+                    OpenError::BadRoute => ("bad_request", None, "up and down are two different pr: routes"),
+                    OpenError::InUse => ("forbidden", None, "that partner route is open already"),
+                    OpenError::TooMany => (
+                        "rate_limited",
+                        Some("partner_routes"),
+                        "too many partner routes open for this account",
+                    ),
+                    OpenError::AccountCap => (
+                        "rate_limited",
+                        Some("partner_day"),
+                        "partner route traffic for today is used up; it resets at midnight UTC",
+                    ),
+                };
+                self.refuse(st, id, partner_error(code, scope, up, message));
+            }
+        }
+    }
+
+    /// Checks a frame on a partner route against its caps, closing what it runs past. True when it
+    /// may go on to the sender's own meter.
+    fn partner_check(&self, st: &mut State, id: u64, to: &str, len: u64, now: u64) -> bool {
+        let lim = self.cfg.limits.partner;
+        match st.partners.check(&lim, to, len, now) {
+            Ok(()) => true,
+            Err(Charge::NotOpen) => {
+                self.refuse(
+                    st,
+                    id,
+                    partner_error("forbidden", None, to, "partner route is not open"),
+                );
+                false
+            }
+            Err(Charge::CloseRoute(why)) => {
+                let (code, scope, message) = if why == Closed::Idle {
+                    ("forbidden", None, "partner route closed: idle too long")
+                } else {
+                    (
+                        "rate_limited",
+                        Some("partner_route_day"),
+                        "this partner route carried its bytes for today",
+                    )
+                };
+                self.refuse(st, id, partner_error(code, scope, to, message));
+                self.close_partner(st, to, why);
+                false
+            }
+            Err(Charge::CloseAccount) => {
+                self.refuse(
+                    st,
+                    id,
+                    partner_error(
+                        "rate_limited",
+                        Some("partner_day"),
+                        to,
+                        "partner route traffic for today is used up; it resets at midnight UTC",
+                    ),
+                );
+                if let Some(account) = st.partners.get(to).map(|p| p.account.clone()) {
+                    st.partners.exhaust(&lim, &account, now);
+                    for up in st.partners.of_account(&account) {
+                        self.close_partner(st, &up, Closed::AccountCap);
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Closes a partner route (by its `up` or `down`): everyone on either route and the connection
+    /// that opened it hear `partner.closed` with the reason, and frames still queued for it go.
+    fn close_partner(&self, st: &mut State, route: &str, why: Closed) {
+        let Some(p) = st.partners.close(route) else {
+            return;
+        };
+        let mut told = HashSet::new();
+        for r in [&p.up, &p.down] {
+            let subs: Vec<u64> = st
+                .routes
+                .remove(r.as_str())
+                .map(|s| s.into_iter().collect())
+                .unwrap_or_default();
+            for sub in subs {
+                if let Some(c) = st.conns.get_mut(&sub) {
+                    c.subs.remove(r.as_str());
+                }
+                let text = json!({ "op": "partner.closed", "route": r, "reason": why.reason() }).to_string();
+                self.reply(st, sub, text);
+                told.insert(sub);
+            }
+            if let Some(q) = st.queues.remove(r.as_str()) {
+                for m in q {
+                    st.unqueued(&m);
+                }
+            }
+        }
+        if !told.contains(&p.owner) {
+            let text = json!({ "op": "partner.closed", "route": p.up, "reason": why.reason() }).to_string();
+            self.reply(st, p.owner, text);
+        }
     }
 
     fn sweep(&self) {
@@ -887,6 +1088,10 @@ impl Shared {
         for id in ids {
             self.demote_expired(&mut st, id, now);
         }
+        for up in st.partners.idle(&lim.partner, now) {
+            self.close_partner(&mut st, &up, Closed::Idle);
+        }
+        st.partners.sweep_days(now);
         let per_min = u64::from(lim.new_connections_per_minute);
         st.dialers.retain(|_, b| !b.idle(per_min, 60_000, now));
         st.meters.retain(|_, m| !m.forgettable(now));

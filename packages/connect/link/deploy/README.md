@@ -69,6 +69,8 @@ Limits (defaults in `packages/connect/relay/src/quota.rs`):
 | Bytes a minute | 20 MB | 5 MB |
 | Bytes a month, sent plus received | 5 GB | 1 GB |
 
+Partner routes (a partner app's byte stream to its own phone, signed-in accounts only): 4 open at once per account, 50 MB per route and 200 MB per account in a UTC day, closed after 5 minutes idle. Set them with `--partner-routes`, `--partner-route-bytes`, `--partner-account-bytes` and `--partner-idle-secs` in `sx-relay.service` (see `packages/connect/relay/README.md`, "Partner routes"). Each partner route byte also counts against the account's monthly total above.
+
 For everyone: 30 new connections a minute per address, bodies up to 1.5 MB, 256 routes per connection, 64 queued frames per route for up to 10 minutes, 256 MB queued in all, 20,000 connections in all. A connection that stops reading with 8 MB waiting is closed.
 
 Cost: the VM is about 5 EUR a month with 20 TB of traffic included; traffic above that is about 1 EUR per TB.
