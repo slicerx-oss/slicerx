@@ -105,6 +105,9 @@ pub(crate) struct Link {
     /// The question mimir waits on in the app, as the app last said (`appLink.mimirState`), for
     /// approver phones. Gone with the app's connection.
     mimir: StdMutex<Option<Value>>,
+    /// Whether the app says a chat that can take an answer is open (`live` in
+    /// `appLink.mimirState`). A chat that goes away reads as closed on phones, never as an answer.
+    mimir_closed: std::sync::atomic::AtomicBool,
 }
 
 impl Link {
@@ -117,6 +120,7 @@ impl Link {
         if was_host {
             *host = None;
             *lock(&self.mimir) = None;
+            self.mimir_closed.store(false, Ordering::Relaxed);
         }
         drop(host);
         lock(&self.calls).retain(|_, (h, _)| *h != conn);
@@ -388,7 +392,7 @@ const MAX_MIMIR_STATE: usize = 16 * 1024;
 /// mimir's question state for approver phones (`mimir.questions` in the pair protocol): `live`
 /// while the app hosts the link, and the question it waits on.
 pub(crate) fn mimir_state(b: &Bridge) -> Value {
-    let live = lock(&b.app_link.host).is_some();
+    let live = lock(&b.app_link.host).is_some() && !b.app_link.mimir_closed.load(Ordering::Relaxed);
     let waiting = if live {
         lock(&b.app_link.mimir).clone().unwrap_or(Value::Null)
     } else {
@@ -449,13 +453,20 @@ fn mimir_state_from_app(b: &Bridge, conn: u64, p: &Value) -> Rpc<Value> {
             ));
         }
     };
+    let live = match p.get("live") {
+        None | Some(Value::Null) => true,
+        Some(Value::Bool(on)) => *on,
+        Some(_) => return Err(RpcError::new("bad_request", "live is true or false")),
+    };
+    let waiting = if live { waiting } else { Value::Null };
     let ended = match p.get("ended") {
         None | Some(Value::Null) => None,
         Some(v @ Value::Object(_)) if v.to_string().len() <= 1024 => Some(v.clone()),
         Some(_) => return Err(RpcError::new("bad_request", "ended is an object")),
     };
     *lock(&link.mimir) = (!waiting.is_null()).then(|| waiting.clone());
-    let mut ev = json!({ "live": true, "waiting": waiting });
+    link.mimir_closed.store(!live, Ordering::Relaxed);
+    let mut ev = json!({ "live": live, "waiting": waiting });
     if let (Some(e), Some(o)) = (ended, ev.as_object_mut()) {
         o.insert("ended".into(), e);
     }
