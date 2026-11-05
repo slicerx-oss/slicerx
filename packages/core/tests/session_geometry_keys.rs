@@ -201,8 +201,9 @@ const KEYED: &[&str] = &[
     "filament_multitool_ramming",
     "filament_multitool_ramming_volume",
     "enable_filament_ramming",
-    // A smooth timelapse prints the prime tower on every layer.
+    // A smooth timelapse prints the prime tower on every layer, on a Bambu Lab printer (its model or flavor).
     "timelapse_type",
+    "gcode_flavor",
     "wall_direction",
     "scarf_angle_threshold",
     "scarf_overhang_threshold",

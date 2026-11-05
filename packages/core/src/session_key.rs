@@ -160,7 +160,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "gap_infill_speed",
     "gcode_add_line_number",
     "gcode_comments",
-    "gcode_flavor",
     "gcode_label_objects",
     "gcode_skip_config_block",
     "grab_length",
