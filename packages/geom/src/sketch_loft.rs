@@ -29,12 +29,12 @@ pub struct Profile {
 }
 
 /// A ring in 3D with the plane it lies on.
-struct Section {
-    ring: Vec<V3>,
+pub(crate) struct Section {
+    pub(crate) ring: Vec<V3>,
     /// The ring's points in its own plane, in the same order.
-    flat: Vec<V2>,
-    frame: Frame,
-    center: V3,
+    pub(crate) flat: Vec<V2>,
+    pub(crate) frame: Frame,
+    pub(crate) center: V3,
 }
 
 /// The solid through `profiles` in order: ruled sides from each profile to the next and flat caps on the first and
@@ -105,39 +105,31 @@ fn frame_of(p: &Profile) -> Result<Frame> {
 
 /// The profile's one closed ring, counterclockwise in its plane.
 fn ring_of(k: usize, loops: &[Loop]) -> Result<Vec<V2>> {
-    let no = k + 1;
+    one_ring(loops, "loft").map_err(|why| Error::invalid("profiles", format!("profile {}: {why}", k + 1)))
+}
+
+/// The one closed ring of a `verb` ("loft", "sweep") profile, counterclockwise in its plane, or why there is none.
+pub(crate) fn one_ring(loops: &[Loop], verb: &str) -> std::result::Result<Vec<V2>, String> {
     let c = sketch::check(loops);
     if let Some(i) = c.issues.into_iter().next() {
-        return Err(Error::invalid("profiles", format!("profile {no}: {}", i.message)));
+        return Err(i.message);
     }
     let mut polys: Vec<Polygon> = c.polygons;
     let Some(mut poly) = polys.pop() else {
-        return Err(Error::invalid(
-            "profiles",
-            format!("profile {no}: nothing to loft"),
-        ));
+        return Err(format!("nothing to {verb}"));
     };
     if !polys.is_empty() {
-        return Err(Error::invalid(
-            "profiles",
-            format!(
-                "profile {no}: a loft profile is one closed loop, not {}",
-                polys.len() + 1
-            ),
+        return Err(format!(
+            "a {verb} profile is one closed loop, not {}",
+            polys.len() + 1
         ));
     }
     if !poly.holes.is_empty() {
-        return Err(Error::invalid(
-            "profiles",
-            format!("profile {no}: a loft profile has no holes yet"),
-        ));
+        return Err(format!("a {verb} profile has no holes yet"));
     }
     poly.normalize_orientation();
     if poly.outer.len() > MAX_RING {
-        return Err(Error::invalid(
-            "profiles",
-            format!("profile {no}: more than {MAX_RING} points once its arcs are flattened"),
-        ));
+        return Err(format!("more than {MAX_RING} points once its arcs are flattened"));
     }
     Ok(poly.outer)
 }
@@ -190,7 +182,7 @@ fn resample(ring: &[V2], n: usize) -> Vec<V2> {
     out
 }
 
-fn centroid(ring: &[V3]) -> V3 {
+pub(crate) fn centroid(ring: &[V3]) -> V3 {
     let s = ring.iter().fold([0.0; 3], |acc, &p| vec3::add(acc, p));
     vec3::scale(s, 1.0 / ring.len().max(1) as f64)
 }
@@ -255,12 +247,14 @@ fn least_twist(a: &Section, b: &Section) -> usize {
 }
 
 /// The mesh: one vertex per ring point, two triangles per quad of sides, the caps clipped in their planes. A side
-/// quad that is flat is a plane face; each span's other sides are one face with no known surface.
+/// quad that is flat is a plane face; each span's other sides are one face with no known surface. Every ring winds
+/// counterclockwise about the way the solid goes from it, and only the first and last rings' planes and flat points
+/// are used (for the caps).
 #[allow(
     clippy::cast_possible_truncation,
     reason = "ring and profile counts are capped far below 2^32"
 )]
-fn build(sections: &[Section], size: f64) -> Result<TriMesh> {
+pub(crate) fn build(sections: &[Section], size: f64) -> Result<TriMesh> {
     let n = sections[0].ring.len();
     let mut m = TriMesh::default();
     let mut faces = Faces::default();
