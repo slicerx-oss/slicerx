@@ -621,7 +621,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description:
-      'Sweep one closed sketch profile along an open path to make a solid: the profile keeps its place and turn relative to the path (it does not twist about it), with straight sides between path points and flat ends. The path is an open chain of lines and arcs on a plane, or points in space; it must not cross itself, bend tighter than the profile can follow, or start along the profile\'s plane. The profile does not need to sit on the path. As a new body, joined to a target or cut from it. With "design" it adds a step to the design (read it back with slicerx_design_steps and slicerx_geom_info); with no design it writes the result as an STL.',
+      'Sweep one closed sketch profile along an open path to make a solid: the profile keeps its place and turn relative to the path (it does not twist about it), with straight sides between path points and flat ends. The path is an open chain of lines and arcs on a plane, or points in space; it must not cross itself, bend tighter than the profile can follow, or start within 1 degree of parallel to the profile\'s plane. The profile does not need to sit on the path. As a new body, joined to a target or cut from it. With "design" it adds a step to the design (read it back with slicerx_design_steps and slicerx_geom_info); with no design it writes the result as an STL.',
     input: z.object({
       profile: z.object({ frame: frameSchema.optional(), loops }).optional().describe('The profile: one closed loop of lines and arcs (or a circle) on its plane, as for slicerx_geom_revolve. Holes are not supported yet'),
       path: sweepPath.optional(),
