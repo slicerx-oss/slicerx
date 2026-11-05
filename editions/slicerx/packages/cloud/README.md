@@ -28,7 +28,7 @@ The service links `sx-core` directly, the same engine the desktop app and the CL
 
 `sx-cloud` runs the API, the workers, or both (`SX_CLOUD_ROLE=all|api|worker`). Workers claim jobs from the `cloud_jobs` queue with `claim_cloud_job` (`FOR UPDATE SKIP LOCKED`), so any number of worker processes can share one database. A worker that stops sending heartbeats for 120 s loses its job to another worker. After three claims the job fails.
 
-Every route except `/healthz` and `/v1/about` needs `Authorization: Bearer <credential>`. The credential is either the access token of a signed-in Supabase session, which may call every route and lets the app and the mobile app work without creating a token, or an `sxk_` API token resolved once per request with `resolve_api_token`. Tokens need the `cloud_slice` scope for meshes and jobs and the `link` scope for the device and delivery routes a bridge uses. A missing or unknown credential is 401; a token without the route's scope is 403. Each token request counts against the token's per-minute limit (`resolve_api_token` with `p_report_limit`); over it the answer is 429 with `Retry-After`. The caller's address is recorded as the token's last use.
+Every route except `/healthz` and `/v1/about` needs `Authorization: Bearer <credential>`. The credential is either the access token of a signed-in Supabase session, which may call every route and lets the app and the mobile app work without creating a token, or an `sxk_` API token resolved once per request with `resolve_api_token`. Tokens need the `cloud_slice` scope for meshes and jobs and the `link` scope for the device and delivery routes a bridge uses. A missing, unknown, expired or revoked credential is 401; a token without the route's scope is 403. A partner app token (`create_partner_token` in `0032_partner_tokens.sql`, issued by the person to a named app in Settings, Account, Partner apps) has `cloud_slice` only and slices on the person's account and daily limits, but it sees only the jobs it queued (another job is 404), cannot name a `targetPrinterId` (403 `forbidden`), and `/v1/access` gives it `partnerApp`, the app's name. `docs/integrators/cloud-slice.md` is the API as a partner app calls it. Each token request counts against the token's per-minute limit (`resolve_api_token` with `p_report_limit`); over it the answer is 429 with `Retry-After`. The caller's address is recorded as the token's last use.
 
 | Route | Does |
 | --- | --- |
@@ -78,6 +78,7 @@ Public settings come from the edition config through `sx-edition-config` (`docs/
 | `SX_SCAN_BLOCKLIST` | | a text file of SHA-256 hashes the library refuses |
 | `SX_CLOUD_TRUST_FORWARDED` | | `1` behind a proxy that sets `X-Forwarded-For` |
 | `SX_CLOUD_DEV_TOKEN` | | memory backend only: a token with both scopes for a local test user |
+| `SX_CLOUD_DEV_PARTNER_TOKEN` | | memory backend only: a partner app token (`Local partner app`) for the same test user |
 
 ### Run it
 
@@ -151,7 +152,7 @@ Every call returns `CloudResult<T>`, `{ ok: true, value }` or `{ ok: false, code
 ## Tests
 
 ```
-cargo test -p sx-cloud                            # API, worker, progress, delivery, invite list, rate limit and purge rules on the memory backend
+cargo test -p sx-cloud                            # API, worker, progress, delivery, invite list, rate limit, partner app token and purge rules on the memory backend
 pnpm --filter @slicerx/cloud test                 # 25 tests; includes the real binary when target/debug/sx-cloud exists
 supabase test db                                  # supabase/tests/cloud.test.sql (39) and cloud_access.test.sql (25), pgTAP
 ```

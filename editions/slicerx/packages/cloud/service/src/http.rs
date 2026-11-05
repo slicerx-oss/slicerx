@@ -177,6 +177,7 @@ async fn authenticate(parts: &Parts, app: &App, scope: &str) -> Result<Principal
         return Ok(Principal {
             user_id: grant.user_id,
             token_id: Some(grant.token_id),
+            partner_app: grant.partner_app,
         });
     }
     let user_id = app
@@ -187,6 +188,7 @@ async fn authenticate(parts: &Parts, app: &App, scope: &str) -> Result<Principal
     Ok(Principal {
         user_id,
         token_id: None,
+        partner_app: None,
     })
 }
 
@@ -261,8 +263,10 @@ impl FromRequestParts<Arc<App>> for Member {
 
 /// Whether the caller is invited, with the limits and today's use, so a
 /// client can explain a refusal before it uploads anything.
+/// A partner app token also gets the app's name it was issued to, so the app
+/// can show the person which account and grant it slices on.
 async fn access(State(app): State<Arc<App>>, Member(who): Member) -> Result<Json<Value>> {
-    Ok(Json(match app.backend.cloud_quota(&who.user_id).await? {
+    let mut body = match app.backend.cloud_quota(&who.user_id).await? {
         Some(q) => json!({
             "invited": true,
             "jobsPerDay": q.jobs_per_day,
@@ -270,7 +274,22 @@ async fn access(State(app): State<Arc<App>>, Member(who): Member) -> Result<Json
             "maxUploadBytes": q.max_upload_bytes,
         }),
         None => json!({ "invited": false }),
-    }))
+    };
+    if let Some(name) = &who.partner_app {
+        body["partnerApp"] = json!(name);
+    }
+    Ok(Json(body))
+}
+
+/// The caller's job `id`. A job the caller may not see is not found, whether
+/// it is another account's or, for a partner app token, one it did not queue.
+async fn visible_job(app: &App, who: &Principal, id: &str) -> Result<Job> {
+    uuid_param(id, "job")?;
+    app.backend
+        .job(&who.user_id, id)
+        .await?
+        .filter(|j| who.sees(j))
+        .ok_or(Error::NotFound("job"))
 }
 
 async fn about(State(app): State<Arc<App>>) -> Json<About> {
@@ -617,6 +636,12 @@ async fn create_job(
     Slicer(who, quota): Slicer,
     Json(body): Json<CreateJob>,
 ) -> Result<(StatusCode, Json<JobView>)> {
+    // A partner app gets the G-code back and sends it through its own printer link, where the person approves.
+    if who.partner_app.is_some() && body.target_printer_id.is_some() {
+        return Err(Error::Forbidden(
+            "a partner app token slices only; it cannot send a job to a printer".into(),
+        ));
+    }
     // The database enforces this too; checking first saves the mesh lookups. Every plate counts.
     if let Some(why) = daily_limit(quota, 1) {
         return Err(Error::Limit(why));
@@ -668,7 +693,10 @@ async fn list_jobs(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<JobView>>> {
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
-    let jobs = app.backend.jobs(&who.user_id, limit).await?;
+    let jobs = match (&who.partner_app, &who.token_id) {
+        (Some(_), Some(token)) => app.backend.token_jobs(&who.user_id, token, limit).await?,
+        _ => app.backend.jobs(&who.user_id, limit).await?,
+    };
     Ok(Json(jobs.into_iter().map(JobView::from).collect()))
 }
 
@@ -677,13 +705,7 @@ async fn get_job(
     Slicer(who, _): Slicer,
     Path(id): Path<String>,
 ) -> Result<Json<JobView>> {
-    uuid_param(&id, "job")?;
-    let job = app
-        .backend
-        .job(&who.user_id, &id)
-        .await?
-        .ok_or(Error::NotFound("job"))?;
-    Ok(Json(job.into()))
+    Ok(Json(visible_job(&app, &who, &id).await?.into()))
 }
 
 async fn cancel_job(
@@ -691,13 +713,9 @@ async fn cancel_job(
     Slicer(who, _): Slicer,
     Path(id): Path<String>,
 ) -> Result<Json<JobView>> {
-    uuid_param(&id, "job")?;
+    visible_job(&app, &who, &id).await?;
     let canceled = app.backend.cancel_job(&who.user_id, &id).await?;
-    let job = app
-        .backend
-        .job(&who.user_id, &id)
-        .await?
-        .ok_or(Error::NotFound("job"))?;
+    let job = visible_job(&app, &who, &id).await?;
     if !canceled && job.status != JobStatus::Canceled {
         return Err(Error::Conflict("the job has already finished".into()));
     }
@@ -705,12 +723,7 @@ async fn cancel_job(
 }
 
 async fn download(app: &App, who: &Principal, id: &str, gcode: bool) -> Result<Response> {
-    uuid_param(id, "job")?;
-    let job = app
-        .backend
-        .job(&who.user_id, id)
-        .await?
-        .ok_or(Error::NotFound("job"))?;
+    let job = visible_job(app, who, id).await?;
     let path = if gcode { job.gcode_path } else { job.preview_path };
     let path = path.ok_or(Error::NotFound("result"))?;
     let bytes = app
@@ -744,11 +757,7 @@ async fn download_plate(app: &App, who: &Principal, id: &str, plate: &str, gcode
         .ok()
         .filter(|&n| n >= 1)
         .ok_or_else(|| Error::BadRequest("the plate must be a number from 1".into()))?;
-    let job = app
-        .backend
-        .job(&who.user_id, id)
-        .await?
-        .ok_or(Error::NotFound("job"))?;
+    let job = visible_job(app, who, id).await?;
     if job.status != JobStatus::Succeeded || job.gcode_path.is_none() || !sliced_plates(&job).contains(&plate)
     {
         return Err(Error::NotFound("result"));
