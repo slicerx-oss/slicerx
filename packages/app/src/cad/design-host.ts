@@ -21,7 +21,7 @@ import { applyHistory, runReplay } from './history/ops'
 import { exactSolids } from './history/exact-flag'
 import { finishSketch, sketchById } from './sketches'
 import { settle } from './sketch-dimension'
-import { splineCurveRefs } from './sketch-constraints'
+import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
@@ -170,6 +170,9 @@ export function appDesignHost(loader: Loader): DesignHost {
       if (!drawn) throw Object.assign(new Error('The loops could not be read as lines, arcs, splines and circles.'), { code: 'invalid_input' })
       const onSpline = splineCurveRefs(drawn, s.constraints)
       if (onSpline.length) throw Object.assign(new Error(`constraints ${JSON.stringify(onSpline)} name a spline as a curve; a spline's points take point constraints, its curve none yet`), { code: 'invalid_input' })
+      // a constraint the solve would leave out is refused rather than kept unenforced
+      const gone = toSolver(drawn, s.constraints).map.dropped
+      if (gone.length) throw Object.assign(new Error(`constraints ${JSON.stringify(gone)} name points or curves the sketch does not have`), { code: 'invalid_input' })
       const r = await settle(drawn, s.constraints)
       return { loops: toLoops(r.sketch), constraints: r.constraints, status: r.solved.status, dof: r.solved.dof }
     },

@@ -88,7 +88,8 @@ function circlePoints(center: V2, r: number): V2[] {
 export function segPath(c: Chain, i: number): V2[] {
   const s = c.segs[i]!
   const from = segStart(c, i)
-  if (s.kind === 'spline') return c.smooth ? splinePoints([c.start, ...s.points], true) : splinePoints([from, ...s.points, s.to], false)
+  // one the engine refuses draws through its points, and the sketch check says why
+  if (s.kind === 'spline') return c.smooth ? (splinePoints([c.start, ...s.points], true) ?? [c.start, ...s.points, c.start]) : (splinePoints([from, ...s.points, s.to], false) ?? [from, ...s.points, s.to])
   return s.kind === 'line' ? [from, s.to] : arcPoints(from, s.through, s.to)
 }
 
@@ -821,6 +822,7 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
       continue
     }
     if ('type' in l && l.type === 'spline') {
+      if (!Array.isArray(l.points)) return null
       const [first, ...rest] = l.points
       if (!first || rest.length < 2) return null
       out.push({ kind: 'chain', start: pt(first[0], first[1]), segs: [{ kind: 'spline', points: rest.map((q) => pt(q[0], q[1])), to: pt(first[0], first[1]) }], closed: true, smooth: true, ...k })
@@ -837,7 +839,7 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
     let at: V2 = l.start
     for (const g of l.segments) {
       if (g.type === 'line' && 'to' in g && g.to) segs.push({ kind: 'line', to: pt(g.to[0], g.to[1]) })
-      else if (g.type === 'spline') segs.push({ kind: 'spline', points: g.points.map((q) => pt(q[0], q[1])), to: pt(g.to[0], g.to[1]) })
+      else if (g.type === 'spline' && 'to' in g && g.to && Array.isArray(g.points) && g.points.length) segs.push({ kind: 'spline', points: g.points.map((q) => pt(q[0], q[1])), to: pt(g.to[0], g.to[1]) })
       else if (g.type === 'arc' && 'through' in g && g.through && 'to' in g && g.to) segs.push({ kind: 'arc', to: pt(g.to[0], g.to[1]), through: pt(g.through[0], g.through[1]) })
       else if (g.type === 'arc' && 'center' in g && g.center && 'sweepDeg' in g && typeof g.sweepDeg === 'number') {
         const c = g.center
