@@ -431,6 +431,73 @@ fn union(p: &mut [u32], a: u32, b: u32) {
     }
 }
 
+/// Faces of a cut found from the mesh alone, its slivers joined to the planes they lie on. A cut leaves triangles of
+/// next to no height along its seams (and rounding to f32 tilts them), whose normals say nothing, so recognition
+/// makes them faces of their own and they part a face the cut left whole (the top of a block around a hole) into
+/// pieces. Each sliver joins the plane of a neighbor it lies on, and the pieces of one plane that then meet are one
+/// face again.
+#[cfg(feature = "cad")]
+pub(crate) fn recognize_cut(mesh: &TriMesh) -> Faces {
+    let mut f = recognize(mesh);
+    let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+    let tol = (size * 1e-6).max(1e-6);
+    let sliver: Vec<bool> = mesh
+        .triangles
+        .iter()
+        .map(|&t| {
+            // the height over its longest side
+            let [a, b, c] = mesh.corners(t);
+            let long = [vec3::sub(b, a), vec3::sub(c, b), vec3::sub(a, c)]
+                .map(vec3::len)
+                .into_iter()
+                .fold(0.0, f64::max);
+            vec3::len(vec3::tri_normal(a, b, c)) < tol * long
+        })
+        .collect();
+    if !sliver.contains(&true) {
+        return f;
+    }
+    let mut edges: HashMap<(u32, u32), Vec<u32>> = HashMap::with_capacity(mesh.triangles.len() * 2);
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        for j in 0..3 {
+            let (a, b) = (tri[j], tri[(j + 1) % 3]);
+            edges.entry((a.min(b), a.max(b))).or_default().push(t as u32);
+        }
+    }
+    // in passes, so a run of slivers joins from its ends inward
+    let mut settled: Vec<bool> = sliver.iter().map(|s| !s).collect();
+    loop {
+        let mut changed = false;
+        let open: Vec<usize> = (0..settled.len()).filter(|&t| !settled[t]).collect();
+        for t in open {
+            let tri = mesh.triangles[t];
+            let corners = mesh.corners(tri);
+            let face = (0..3)
+                .flat_map(|j| {
+                    let (a, b) = (tri[j], tri[(j + 1) % 3]);
+                    edges[&(a.min(b), a.max(b))].iter().copied()
+                })
+                .filter(|&o| o as usize != t && settled[o as usize])
+                .map(|o| f.ids[o as usize])
+                .find(|&id| match f.table[id as usize] {
+                    Surface::Plane { normal, offset } => corners
+                        .iter()
+                        .all(|&p| (vec3::dot(normal, p) - offset).abs() < tol),
+                    _ => false,
+                });
+            if let Some(id) = face {
+                f.ids[t] = id;
+                settled[t] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    merge_meeting_planes(mesh, f)
+}
+
 /// Joins faces that lie on the same plane and meet across an edge (two blocks united side by side have one top).
 #[must_use]
 pub fn merge_meeting_planes(mesh: &TriMesh, f: Faces) -> Faces {
@@ -533,6 +600,117 @@ pub(crate) fn fresh_keys(n: usize) -> Vec<u64> {
         scope.next += 1;
         (0..n as u64).map(|i| key(scope.salt, scope.next, i)).collect()
     })
+}
+
+/// The faces of `out`, a cut of `from` (a subtract). Where `from` has faces, a triangle on one of them stays on it,
+/// and what `from` knew about it holds. Its surface: one found before an earlier answer rounded the corners to f32
+/// holds, where the rounded corners may no longer fit it (a hole's wall). Its key: a face that is all that is left of
+/// a face of `from` keeps that face's key, so a later step's reference to it holds when an earlier step changes; a
+/// face the cut split into pieces gets 0 (no key), so a reference to one of them goes by its place. The faces the cut
+/// made are found from the mesh and get keys of the current step. No keys when neither `from` has them nor a step
+/// is keying (`with_key_salt`).
+#[cfg(feature = "cad")]
+pub(crate) fn faces_after_cut(from: &TriMesh, out: &TriMesh) -> Faces {
+    let mut found = recognize_cut(out);
+    let Some(old) = from.faces.as_ref().filter(|f| f.fit(from)) else {
+        found.keys = fresh_keys(found.table.len());
+        return found;
+    };
+    let on = faces_under(from, old, out);
+    // a face: triangles on one face of `from`, or on one found face the cut made, joined across their edges
+    let n = out.triangles.len();
+    let label = |t: usize| on[t].map_or((false, found.ids[t]), |o| (true, o));
+    let mut parent: Vec<u32> = (0..n as u32).collect();
+    let mut edges: HashMap<(u32, u32), u32> = HashMap::with_capacity(n * 2);
+    for (t, tri) in out.triangles.iter().enumerate() {
+        for j in 0..3 {
+            let (a, b) = (tri[j], tri[(j + 1) % 3]);
+            match edges.get(&(a.min(b), a.max(b))) {
+                Some(&o) if label(o as usize) == label(t) => union(&mut parent, o, t as u32),
+                Some(_) => {}
+                None => {
+                    edges.insert((a.min(b), a.max(b)), t as u32);
+                }
+            }
+        }
+    }
+    let mut faces = Faces::default();
+    let mut ids: HashMap<u32, u32> = HashMap::new();
+    let mut from_face: Vec<Option<u32>> = Vec::new();
+    for (t, &under) in on.iter().enumerate() {
+        let r = root(&mut parent, t as u32);
+        let id = *ids.entry(r).or_insert_with(|| {
+            let mine = found.table[found.ids[t] as usize];
+            faces.table.push(match under.map(|o| old.table[o as usize]) {
+                Some(Surface::Other) | None => mine,
+                Some(theirs) => theirs,
+            });
+            from_face.push(under);
+            (faces.table.len() - 1) as u32
+        });
+        faces.ids.push(id);
+    }
+    let fresh = fresh_keys(faces.table.len());
+    if old.keys.is_empty() || old.keys.len() != old.table.len() {
+        faces.keys = fresh;
+        return faces;
+    }
+    let mut pieces: HashMap<u32, usize> = HashMap::new();
+    for &o in from_face.iter().flatten() {
+        *pieces.entry(o).or_default() += 1;
+    }
+    faces.keys = from_face
+        .iter()
+        .enumerate()
+        .map(|(id, was)| match *was {
+            Some(o) if pieces[&o] == 1 => old.keys[o as usize],
+            Some(_) => 0,
+            None => fresh.get(id).copied().unwrap_or(0),
+        })
+        .collect();
+    faces
+}
+
+/// The face of `from` (with faces `old`) under the middle of each triangle of `out`, if any: one pass over `from`,
+/// each of its triangles trying only the middles in its span along x.
+#[cfg(feature = "cad")]
+fn faces_under(from: &TriMesh, old: &Faces, out: &TriMesh) -> Vec<Option<u32>> {
+    let mut mids: Vec<(usize, V3)> = out
+        .triangles
+        .iter()
+        .enumerate()
+        .map(|(t, &tri)| {
+            let [a, b, c] = out.corners(tri);
+            (t, vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0))
+        })
+        .collect();
+    mids.sort_by(|p, q| p.1[0].total_cmp(&q.1[0]));
+    let tol = (from.bounds().map_or(1.0, |b| b.diagonal()) * 1e-6).max(1e-5);
+    let mut under = vec![None::<u32>; out.triangles.len()];
+    for (t, &tri) in from.triangles.iter().enumerate() {
+        let [a, b, c] = from.corners(tri);
+        let Some(nm) = vec3::normalize(vec3::tri_normal(a, b, c)) else {
+            continue;
+        };
+        let lo = a[0].min(b[0]).min(c[0]) - tol;
+        let hi = a[0].max(b[0]).max(c[0]) + tol;
+        let start = mids.partition_point(|m| m.1[0] < lo);
+        for &(k, p) in mids[start..].iter().take_while(|m| m.1[0] <= hi) {
+            let inside = |u: V3, v: V3| {
+                vec3::dot(vec3::cross(vec3::sub(v, u), vec3::sub(p, u)), nm)
+                    >= -tol * vec3::len(vec3::sub(v, u))
+            };
+            if under[k].is_none()
+                && vec3::dot(vec3::sub(p, a), nm).abs() < tol
+                && inside(a, b)
+                && inside(b, c)
+                && inside(c, a)
+            {
+                under[k] = Some(old.ids[t]);
+            }
+        }
+    }
+    under
 }
 
 /// Gives a mesh that came in without face keys the keys of a history's base, in face order (inside

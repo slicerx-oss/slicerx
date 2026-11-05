@@ -49,7 +49,7 @@ A push or pull of a face that a fillet or chamfer in the history rounds does not
 | Push and pull | step `face.push`, face pick |
 | Sketch extrude, shape, text and SVG on a face | step `shape.extrude` with the typed shape, sketch or SVG, and its `pattern` when it is repeated (one step for every copy); "New body" starts a new object with history |
 | Sketch revolve | step `sketch.revolve` |
-| Subtract a shape (hole from the top) | step `subtract`, the solid kept in world coordinates of its transform; the result keeps the object's frame instead of being stood up again |
+| Subtract a shape (hole from the top) | step `subtract`, the solid kept in world coordinates of its transform; the result keeps the object's frame instead of being stood up again; the engine sends the cut's faces, so the hole tool and the thread tool find a hole it made, and a face the cut left whole keeps its key while a split one is found again by its place |
 | Hollow, repair, simplify | steps `hollow`, `repair`, `simplify` on every part (simplify ratio is editable) |
 | Merge objects, add a part | step `parts.add`: the added meshes, in this object's frame, are stored with the history; the other object's own history is not kept |
 | Array merged into one object | step `array.merged`; copies (instances) are not mesh edits and record nothing |

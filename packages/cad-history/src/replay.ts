@@ -53,9 +53,6 @@ interface Flat {
   primitive?: PrimitiveSpec
 }
 
-/** Positions rounded to f32, as the app keeps them (Float32Array). */
-const asStored = (p: ArrayLike<number>): number[] => Array.from(p, Math.fround)
-
 const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: { ...m.faces, ids: Array.from(m.faces.ids) } } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
 
 /** What a step that changed a painted part's triangles notes. */
@@ -322,11 +319,10 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         break
       }
       case 'subtract': {
-        const world = bakeMesh(part, s.transform)
-        // in world space as the tool sends it: baked to f32 (plate/mesh-ops.ts bake)
-        const r = (await call('subtract', { mesh: { positions: asStored(world.positions), indices: world.indices }, solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number }
+        // as the tool sends it: the part with its transform, answered in the part's frame with the cut's faces
+        const r = (await call('subtract', { mesh: item(part), solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number }
         if (!(r.removedVolumeMm3 > 0)) throw new Broken('The shape no longer reaches the part.')
-        out[i] = local(r.mesh, part)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'hollow':

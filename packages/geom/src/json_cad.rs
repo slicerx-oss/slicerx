@@ -50,13 +50,13 @@ use serde_json::{Value, json};
 #[cfg(feature = "cad")]
 use std::collections::HashMap;
 
-struct Item {
+pub(crate) struct Item {
     mesh: TriMesh,
     transform: Mat4,
 }
 
 impl Item {
-    fn world(&self) -> TriMesh {
+    pub(crate) fn world(&self) -> TriMesh {
         if self.transform == IDENTITY {
             self.mesh.clone()
         } else {
@@ -64,7 +64,7 @@ impl Item {
         }
     }
 
-    fn to_local(&self, m: &TriMesh) -> Result<TriMesh> {
+    pub(crate) fn to_local(&self, m: &TriMesh) -> Result<TriMesh> {
         if self.transform == IDENTITY {
             return Ok(m.clone());
         }
@@ -89,7 +89,7 @@ fn item(v: &Value, key: &str, files: FileLoader<'_>) -> Result<Item> {
     Ok(Item { mesh, transform })
 }
 
-fn item_field(req: &Value, key: &str, files: FileLoader<'_>) -> Result<Item> {
+pub(crate) fn item_field(req: &Value, key: &str, files: FileLoader<'_>) -> Result<Item> {
     let v = req
         .get(key)
         .ok_or_else(|| Error::invalid("request", format!("missing \"{key}\"")))?;
