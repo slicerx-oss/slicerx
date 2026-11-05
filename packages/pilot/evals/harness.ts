@@ -291,7 +291,7 @@ export interface EvalEnvOptions {
   printRun?: PrintRunHost
 }
 
-export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport'>>
+export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport' | 'localNetwork'>>
 
 export function createEvalEnv(opts: EvalEnvOptions) {
   const kb = evalKb()

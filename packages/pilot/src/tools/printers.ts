@@ -362,7 +362,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, job progress, loaded filament and machine cost. webUi is the address of the printer\'s own web page (Mainsail, Fluidd, OctoPrint, PrusaLink, Duet Web Control) on the local network, or null when it has none; give it to the person to open. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
+    description: 'List printers with their state, job progress, loaded filament and machine cost. webUi is the address of the printer\'s own web page (Mainsail, Fluidd, OctoPrint, PrusaLink, Duet Web Control) on the local network, or null when it has none or this device is away from that network (through a relay); give it to the person to open. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
     input: z.object({
       fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
       detail: z.enum(['summary', 'full']).default('summary'),
@@ -371,6 +371,8 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     async run(i, ctx) {
       const sel = await resolvePrinters(ctx, { fleet: i.fleet })
       const printers = (await ctx.host.printers.list()).filter((p) => sel.ids.includes(p.id))
+      // A printer's own page is offered only on its network; through a relay its local address opens elsewhere.
+      const home = ctx.host.localNetwork ? await ctx.host.localNetwork().catch(() => false) : true
       const statuses = await Promise.all(printers.map((p) => ctx.host.printers.status(p.id).catch(() => null)))
       // What each printer reports wrong now (an HMS code, a print error), so a stop shows here and not only on its screen.
       const issues = await Promise.all(printers.map((p, k) => (statuses[k] ? currentIssues(ctx.host.printers, p.id) : Promise.resolve([]))))
@@ -399,7 +401,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           model: p.model,
           plugin: p.plugin,
           // The printer's own web page (Mainsail, Fluidd, OctoPrint...), for the person to open; null when it has none.
-          webUi: printerWebUi({ ...p, model: p.model || statuses[k]?.model || '' }),
+          webUi: home ? printerWebUi({ ...p, model: p.model || statuses[k]?.model || '' }) : null,
           machineRatePerHour: shared.machineRates.get(p.id) ?? null,
           status: full ? (statuses[k] ?? { state: 'offline' }) : brief(statuses[k]),
           // Whether the camera guard can watch it; unknown while the printer does not answer.
