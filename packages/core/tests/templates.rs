@@ -166,3 +166,47 @@ fn the_head_wrap_zone_is_tested_against_the_first_layer_outline() {
         "false"
     );
 }
+
+/// A printer with two nozzles of different sizes: `nozzle_diameter[n]` is the size of the nozzle filament `n`
+/// (0-based) prints with, as the two-nozzle start G-code reads it for each extruder, and `[nozzle_diameter]` the size
+/// of the first filament's nozzle.
+#[test]
+fn each_filament_reads_the_size_of_its_own_nozzle() {
+    let mesh = sx_core::Mesh::load(
+        &std::fs::read(format!("{}/bench/models/x-mark.stl", env!("CARGO_MANIFEST_DIR"))).unwrap(),
+        "x-mark.stl",
+    )
+    .unwrap();
+    let mut config = sx_core::PrintConfig::from_value(&serde_json::json!({
+        "nozzle_diameter": ["0.4", "0.6"],
+        "single_extruder_multi_material": true,
+        "filament_map_mode": "Manual",
+        "filament_map": [2, 1],
+    }))
+    .unwrap();
+    let mut out = sx_core::slice(
+        &sx_core::Plate::single(mesh),
+        &config,
+        &sx_core::SliceOptions::default(),
+    )
+    .unwrap();
+    out.tool_count = 2;
+    let render =
+        |c: &sx_core::PrintConfig, t: &str| sx_core::api::render_gcode_template(c, &out, t, 5).unwrap();
+    // Filament 1 prints on the right (0.6), filament 2 on the left (0.4).
+    assert_eq!(
+        render(
+            &config,
+            "{nozzle_diameter[0]}|{nozzle_diameter[1]}|[nozzle_diameter]"
+        ),
+        "0.6|0.4|0.6"
+    );
+    // Nozzles of one size read that size for every filament, as before.
+    config
+        .raw
+        .insert("nozzle_diameter".into(), serde_json::json!(["0.4", "0.4"]));
+    assert_eq!(
+        render(&config, "{nozzle_diameter[0]}|{nozzle_diameter[1]}"),
+        "0.4|0.4"
+    );
+}

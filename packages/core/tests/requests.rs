@@ -6688,3 +6688,87 @@ fn a_spiral_timelapse_block_that_moves_the_head_keeps_its_retraction_and_lift() 
         assert!(moves_up(&before, top), "layer {i}: {before:?}");
     }
 }
+
+/// Two 20 mm boxes, 6 mm tall, the right one moved to filament 2, on a printer with a nozzle per filament of the sizes
+/// given and a layer height per nozzle.
+fn two_nozzle_request(sizes: Value, extra: Value) -> SliceRequest {
+    let mut config = json!({
+        "brim_width": 0,
+        "single_extruder_multi_material": false,
+        "nozzle_diameter": sizes,
+        "layer_height": [0.2, 0.3],
+        "initial_layer_print_height": 0.2,
+        "line_width": "0",
+        "outer_wall_line_width": "0",
+        "inner_wall_line_width": "0",
+    });
+    if let (Some(c), Some(e)) = (config.as_object_mut(), extra.as_object()) {
+        c.extend(e.clone());
+    }
+    serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "mesh": "box", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1]},
+            {"id": "b", "mesh": "box", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 140,100,0,1], "slotOverrides": {"box": 2}},
+        ]},
+        "config": config,
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap()
+}
+
+#[test]
+fn per_nozzle_sizes_and_layer_heights_ride_the_request() {
+    let b = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
+    let load = move |_: &str| Ok(b.clone());
+    let run = common::run_request(&two_nozzle_request(json!([0.4, 0.6]), json!({})), &load).unwrap();
+    assert_valid(&run);
+    // The left box at 0.2 mm, the right at 0.3 mm over the shared first layer: the union of their tops.
+    let z: Vec<i64> = run
+        .report
+        .layer_z
+        .iter()
+        .map(|&v| (f64::from(v) * 1000.0).round() as i64)
+        .collect();
+    let mut want: Vec<i64> = (1..=30).map(|k| k * 200).collect();
+    want.extend((1..20).map(|k| 200 + k * 300));
+    want.sort_unstable();
+    want.dedup();
+    assert_eq!(z, want);
+    let report = serde_json::to_value(&run.report).unwrap();
+    let nozzles: Vec<Value> = report["featureFilaments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["nozzleMm"].clone())
+        .collect();
+    assert_eq!(nozzles, vec![json!(0.4), json!(0.6)]);
+}
+
+#[test]
+fn an_automatic_filament_map_on_nozzles_of_different_sizes_slices_at_one_height_and_warns() {
+    let b = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
+    let load = move |_: &str| Ok(b.clone());
+    let req = two_nozzle_request(
+        json!([0.4, 0.6]),
+        json!({"printer_model": "Bambu Lab H2D", "single_extruder_multi_material": true,
+               "filament_map_mode": "Auto For Flush"}),
+    );
+    let run = common::run_request(&req, &load).unwrap();
+    // Both boxes on the first nozzle's 0.2 mm layers.
+    let z: Vec<i64> = run
+        .report
+        .layer_z
+        .iter()
+        .map(|&v| (f64::from(v) * 1000.0).round() as i64)
+        .collect();
+    assert_eq!(z, (1..=30).map(|k| k * 200).collect::<Vec<i64>>());
+    assert!(
+        run.report
+            .warnings
+            .iter()
+            .any(|w| w.message.starts_with("Set the filament map by hand")
+                && w.message.contains("filament_map")),
+        "{:?}",
+        run.report.warnings
+    );
+}
