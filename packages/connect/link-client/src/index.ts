@@ -534,6 +534,19 @@ export interface AppLinkCall {
   client: { id: string; name: string }
 }
 
+/** A paired phone's answer to the question mimir waits on, handed to the app (`appLink.phoneAnswer`). Answer it with `reply`. */
+export interface AppLinkPhoneAnswer {
+  callId: number
+  answer: { sessionId: string; askId: string; choiceId: string | null }
+  phone: { deviceId: string | null; name: string }
+}
+
+/** mimir's question as the app hands it to approver phones (`mimir.questions` in the pair protocol). */
+export interface AppLinkMimirState {
+  waiting: { v: number; sessionId: string; askId: string; title: string; question: string; choices: { id: string; label: string }[]; at: number } | null
+  ended?: { askId: string; choiceId: string | null; by: 'app' | 'phone'; name?: string }
+}
+
 /** The hub asks the person whether a client may use the open project. */
 export interface AppLinkAsk {
   askId: number
@@ -656,6 +669,10 @@ export interface LinkHost extends PrinterHost {
     onAskEnded(cb: (askId: number) => void): () => void
     reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string; details?: Record<string, unknown> }): Promise<void>
     answer(askId: number, decision: AppLinkDecision): Promise<void>
+    /** Paired phones answering mimir's question; reply with `reply(callId, ...)`. Only the link's host hears them. */
+    onPhoneAnswer(cb: (a: AppLinkPhoneAnswer) => void): () => void
+    /** Tells approver phones what mimir waits on now. Only the link's host may. */
+    mimirState(state: AppLinkMimirState): Promise<void>
     grants(): Promise<AppLinkGrant[]>
     revoke(clientId: string): Promise<void>
   }
@@ -931,6 +948,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const linkCallListeners = new Set<(c: AppLinkCall) => void>()
   const linkAskListeners = new Set<(a: AppLinkAsk) => void>()
   const linkAskEndedListeners = new Set<(askId: number) => void>()
+  const linkPhoneAnswerListeners = new Set<(a: AppLinkPhoneAnswer) => void>()
   const findingListeners = new Set<(f: { printerId: string; kind: string; confidence: number; note?: string; at: string }) => void>()
   const guardListeners = new Set<(t: GuardTrip) => void>()
   const alertListeners = new Set<(a: HubAlert) => void>()
@@ -1015,6 +1033,10 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'appLink.ask' && msg.data) {
       for (const cb of linkAskListeners) cb(msg.data as unknown as AppLinkAsk)
+      return
+    }
+    if (msg.event === 'appLink.phoneAnswer' && msg.data) {
+      for (const cb of linkPhoneAnswerListeners) cb(msg.data as unknown as AppLinkPhoneAnswer)
       return
     }
     if (msg.event === 'appLink.askEnded' && msg.data) {
@@ -1303,6 +1325,11 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       },
       reply: async (callId, out) => void (await call('appLink.reply', { callId, ...out })),
       answer: async (askId, decision) => void (await call('appLink.answer', { askId, decision })),
+      onPhoneAnswer: (cb) => {
+        linkPhoneAnswerListeners.add(cb)
+        return () => void linkPhoneAnswerListeners.delete(cb)
+      },
+      mimirState: async (state) => void (await call('appLink.mimirState', { ...state })),
       grants: () => call<AppLinkGrant[]>('appLink.grants'),
       revoke: async (clientId) => void (await call('appLink.revoke', { clientId })),
     },

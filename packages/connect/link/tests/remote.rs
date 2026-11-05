@@ -1539,3 +1539,183 @@ async fn n3_two_apps_on_one_hub_never_remove_each_others_phones() {
         "no untagged phones are left, and app B's are not this caller's: {r}"
     );
 }
+
+/// An app connection from the desktop window's origin, paired with the app code, so it may host
+/// the app link.
+async fn desktop_window(link: &Link) -> Ws {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+    let mut req = format!("ws://127.0.0.1:{}/", link.addr().port())
+        .into_client_request()
+        .unwrap();
+    req.headers_mut()
+        .insert("origin", "tauri://localhost".parse().unwrap());
+    let mut ws = connect_async(req).await.unwrap().0;
+    let pp = pairing::proof_params(&mut ws, CODE, json!({})).await;
+    let r = call(&mut ws, 1, "pair", pp).await;
+    assert_eq!(r["result"]["paired"], true, "{r}");
+    let r = call(&mut ws, 2, "appLink.host", json!({})).await;
+    assert!(r["result"].is_object(), "{r}");
+    ws
+}
+
+fn question(ask: &str) -> Value {
+    json!({ "v": 1, "sessionId": "s_1", "askId": ask, "title": "Confirm the part", "question": "Is this the one?", "choices": [{ "id": "same", "label": "Yes" }, { "id": "other", "label": "No" }], "at": 1 })
+}
+
+#[tokio::test]
+async fn an_approver_phone_answers_mimirs_question_through_the_app_and_nobody_else_can() {
+    let mut s = setup().await;
+    let key: [u8; 32] = rand_bytes();
+    put(&mut s.app, &key, "phone", 71).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let info = phone.call("host.info", json!({})).await;
+    assert_eq!(info["r"]["mimir"], true, "{info}");
+
+    // The app is closed: nothing is live, and an answer cannot be taken.
+    let st = phone.call("mimir.questions", json!({})).await;
+    assert_eq!(st["r"], json!({ "live": false, "waiting": null }), "{st}");
+    let closed = phone
+        .call(
+            "mimir.answer",
+            json!({ "v": 1, "sessionId": "s_1", "askId": "a1", "choiceId": "same" }),
+        )
+        .await;
+    assert_eq!(closed["e"]["code"], "unavailable", "{closed}");
+
+    // The app opens and mimir asks: the phone hears it and reads it back.
+    let mut win = desktop_window(&s.link).await;
+    let r = call(
+        &mut win,
+        10,
+        "appLink.mimirState",
+        json!({ "waiting": question("a1") }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let ev = phone
+        .event("mimir.question", |d| d["waiting"]["askId"] == "a1")
+        .await;
+    assert_eq!(ev["live"], true);
+    let st = phone.call("mimir.questions", json!({})).await;
+    assert_eq!(st["r"]["waiting"], question("a1"), "{st}");
+
+    // Only the app that hosts the link says what mimir waits on.
+    let r = call(&mut s.app, 11, "appLink.mimirState", json!({ "waiting": null })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let r = call(&mut s.agent, 12, "appLink.mimirState", json!({ "waiting": null })).await;
+    assert!(r["error"].is_object(), "{r}");
+
+    // A wrong version never reaches the app.
+    let v2 = phone
+        .call(
+            "mimir.answer",
+            json!({ "v": 2, "sessionId": "s_1", "askId": "a1", "choiceId": "same" }),
+        )
+        .await;
+    assert_eq!(v2["e"]["code"], "bad_request", "{v2}");
+
+    // The phone picks: the app gets the answer with the phone's name, takes it, and the phone hears it end.
+    let id = phone
+        .fire(
+            "mimir.answer",
+            json!({ "v": 1, "sessionId": "s_1", "askId": "a1", "choiceId": "other" }),
+        )
+        .await;
+    let asked = app_event(&mut win, "appLink.phoneAnswer", |_| true).await;
+    assert_eq!(
+        asked["answer"],
+        json!({ "sessionId": "s_1", "askId": "a1", "choiceId": "other" })
+    );
+    assert_eq!(asked["phone"]["name"], "Pocket");
+    let r = call(
+        &mut win,
+        13,
+        "appLink.reply",
+        json!({ "callId": asked["callId"], "ok": true, "value": {} }),
+    )
+    .await;
+    assert_eq!(r["result"]["delivered"], true, "{r}");
+    let replies = phone.replies(&[id]).await;
+    assert_eq!(replies[0]["r"], json!({ "answered": true }), "{replies:?}");
+    call(&mut win, 14, "appLink.mimirState", json!({ "waiting": null, "ended": { "askId": "a1", "choiceId": "other", "by": "phone", "name": "Pocket" } })).await;
+    let ev = phone
+        .event("mimir.question", |d| d["ended"]["askId"] == "a1")
+        .await;
+    assert_eq!(ev["waiting"], Value::Null);
+    assert_eq!(ev["ended"]["by"], "phone");
+
+    // Cancel goes as a null choice; a late answer the app refuses comes back not_found.
+    call(
+        &mut win,
+        15,
+        "appLink.mimirState",
+        json!({ "waiting": question("a2") }),
+    )
+    .await;
+    let id = phone
+        .fire(
+            "mimir.answer",
+            json!({ "v": 1, "sessionId": "s_1", "askId": "a2", "choiceId": null }),
+        )
+        .await;
+    let asked = app_event(&mut win, "appLink.phoneAnswer", |_| true).await;
+    assert_eq!(asked["answer"]["choiceId"], Value::Null);
+    call(
+        &mut win,
+        16,
+        "appLink.reply",
+        json!({ "callId": asked["callId"], "ok": false, "code": "not_found", "message": "gone" }),
+    )
+    .await;
+    let replies = phone.replies(&[id]).await;
+    assert_eq!(replies[0]["e"]["code"], "not_found", "{replies:?}");
+
+    // A phone without the approve right, and an agent over the relay, read and answer nothing.
+    let key2: [u8; 32] = rand_bytes();
+    let pid = ps::b64(&[72; 16]);
+    let r = call(
+        &mut s.app,
+        17,
+        "remote.pairings.put",
+        json!({ "pairingId": pid, "deviceKey": ps::b64(&key2), "kind": "phone", "peer": identity(72, "Kid"), "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut kid = Device::open(&s.relay, &key2).await.expect("a session");
+    let q = kid.call("mimir.questions", json!({})).await;
+    assert_eq!(q["e"]["code"], "forbidden", "{q}");
+    let a = kid
+        .call(
+            "mimir.answer",
+            json!({ "v": 1, "sessionId": "s_1", "askId": "a2", "choiceId": "same" }),
+        )
+        .await;
+    assert_eq!(a["e"]["code"], "forbidden", "{a}");
+    let key3: [u8; 32] = rand_bytes();
+    put(&mut s.app, &key3, "agent", 73).await;
+    let mut agent = Device::open(&s.relay, &key3).await.expect("a session");
+    let a = agent
+        .call(
+            "mimir.answer",
+            json!({ "v": 1, "sessionId": "s_1", "askId": "a2", "choiceId": "same" }),
+        )
+        .await;
+    assert_eq!(a["e"]["code"], "forbidden", "{a}");
+    // And no local agent reaches it through the app link.
+    let r = call(
+        &mut s.agent,
+        18,
+        "app.call",
+        json!({ "method": "mimir.answer", "args": {} }),
+    )
+    .await;
+    assert!(r["error"].is_object(), "{r}");
+
+    // The app closes: the phone hears mimir is no longer live.
+    drop(win);
+    let ev = phone.event("mimir.question", |d| d["live"] == false).await;
+    assert_eq!(ev["waiting"], Value::Null);
+    let st = phone.call("mimir.questions", json!({})).await;
+    assert_eq!(st["r"], json!({ "live": false, "waiting": null }), "{st}");
+}
