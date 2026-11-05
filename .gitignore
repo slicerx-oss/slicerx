@@ -21,7 +21,7 @@ apps/desktop/src-tauri/gen/*
 !apps/desktop/src-tauri/gen/.gitkeep
 packages/core/web/pkg/
 .vercel/
-test-results/
+test-results*/
 playwright-report/
 apps/desktop/src-tauri/resources/mcp/*
 !apps/desktop/src-tauri/resources/mcp/.gitkeep

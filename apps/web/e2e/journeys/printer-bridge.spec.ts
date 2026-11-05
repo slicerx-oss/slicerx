@@ -1446,3 +1446,83 @@ test("Remote start: the printer's controls turn it on with its limits, and a cli
     await admin.remoteStart.set('voron', false)
   }
 })
+
+// B2: a partner phone (another company's phone app) pairs under its app name, shows in Devices with an approve switch
+// that starts off, and Revoke cuts it off. The phone is @slicerx/pair in this process, reaching the hub's LAN listener.
+test('Partner phone: pairs under its app name, listed in Devices, approve and send opt-in, and Revoke cuts it off', async ({ page }) => {
+  const pair = await import('../../../../packages/pair/src/index.ts')
+  await paired(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const nav = page.getByRole('navigation', { name: 'Settings sections' })
+  await nav.getByRole('button', { name: 'Phone access' }).click()
+  const sw = page.getByRole('switch', { name: /Phone access on this network/ })
+  if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click()
+  await expect(page.getByText(/^Listening on/)).toBeVisible({ timeout: 15_000 })
+  await nav.getByRole('button', { name: 'Printer bridge' }).click()
+  await page.getByTestId('partner-phone-pair').click()
+  const dialog = page.getByRole('dialog', { name: 'Pair a partner phone' })
+  await dialog.getByTestId('partner-phone-name').fill('Example Phone')
+  await dialog.getByTestId('partner-phone-make').click()
+  const link = (await dialog.getByRole('img', { name: 'Pairing QR code' }).getAttribute('data-link')) ?? ''
+  expect(link).toMatch(/^slicerx:\/\/pair#v=1&/)
+
+  // The partner app on the phone, under the same name. Throwaway identity and store, this test only.
+  const env = pair.defaultEnv
+  const identity = pair.createIdentity(env, 'Pixel 8', 'android')
+  const store = pair.memoryPairingStore()
+  const client = pair.createPairClient({ env, identity, store, relays: [], socket: (u: string) => new WebSocket(u) as never, partner: 'Example Phone' })
+  // The hub advertises this machine's network addresses; the test phone on the same machine reaches it on loopback.
+  const port = /[#&]l=ws%3A%2F%2F[^&]*%3A(\d+)%2Fpair/.exec(link)?.[1]
+  expect(port, link).toBeTruthy()
+  const local = `${link.replace(/&l=[^&]*/g, '')}&l=${encodeURIComponent(`ws://127.0.0.1:${port}/pair`)}`
+  const flow = await client.pair(local)
+  const digits = await flow.sas
+  await expect(dialog.getByLabel('Digits to compare')).toHaveText(digits)
+  await expect(dialog).toContainText('Example Phone on a phone wants to pair as a partner phone')
+  await expect(dialog.getByTestId('partner-phone-approve')).toHaveAttribute('aria-checked', 'false')
+  await expect(dialog.getByTestId('partner-phone-send')).toHaveAttribute('aria-checked', 'false')
+  flow.confirm()
+  await dialog.getByTestId('pair-match').click()
+  expect((await flow.result).ok).toBe(true)
+  await expect(dialog.getByRole('status')).toHaveText('Example Phone on Pixel 8 is paired.')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  // Listed under Devices as a partner phone, not under Paired phones. It may not approve or send yet.
+  const row = page.getByTestId('partner-phones').locator('li', { hasText: 'Example Phone' })
+  await expect(row).toContainText('Partner phone on Pixel 8')
+  const approve = row.getByTestId('partner-phone-approve-row')
+  const send = row.getByTestId('partner-phone-send-row')
+  await expect(approve).toHaveAttribute('aria-checked', 'false')
+  await expect(send).toHaveAttribute('aria-checked', 'false')
+  // Without Remote access the hub holds no partner phones, so there is no key to link it to yet.
+  await expect(row.getByTestId('partner-phone-key')).toBeDisabled()
+  const [host] = await client.hosts()
+  let conn = await client.connect(host?.pairingId ?? '', { via: 'lan' })
+  expect(conn.info.partner).toBe('Example Phone')
+  expect(conn.info.rights.approve).toBe(false)
+  await expect(conn.mimirQuestions()).rejects.toMatchObject({ code: 'forbidden' })
+  expect((await conn.printers()).map((p) => p.id)).toContain('voron')
+  await expect(conn.library()).rejects.toMatchObject({ code: 'forbidden' })
+  conn.close()
+
+  // The person lets it approve; the phone reads the new right when it connects again.
+  await approve.click()
+  await expect(approve).toHaveAttribute('aria-checked', 'true')
+  await send.click()
+  await expect(send).toHaveAttribute('aria-checked', 'true')
+  conn = await client.connect(host?.pairingId ?? '', { via: 'lan' })
+  expect(conn.info.rights.approve).toBe(true)
+  expect(conn.info.rights.send).toBe(true)
+  expect(Array.isArray(await conn.library())).toBe(true)
+  const closed = new Promise<void>((r) => conn.onClose(() => r()))
+
+  // Revoke: the row goes, the open connection closes, and the phone cannot connect again.
+  await row.getByTestId('partner-phone-revoke').click()
+  await expect(row).toHaveCount(0)
+  await closed
+  await expect(client.connect(host?.pairingId ?? '', { via: 'lan' })).rejects.toThrow()
+  await nav.getByRole('button', { name: 'Phone access' }).click()
+  await expect(page.getByRole('switch', { name: /Phone access on this network/ })).toBeVisible()
+  await sw.click()
+  await page.keyboard.press('Escape')
+})
