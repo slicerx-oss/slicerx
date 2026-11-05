@@ -4,7 +4,7 @@
 // Node. The wasm is a separate file found with new URL(..., import.meta.url), the pattern Vite and other bundlers copy
 // as an asset, so it can be rebuilt with ../build.sh and replaced on its own. No Node imports here: browsers load this.
 // In Node, a capped load reads a file: URL through process.getBuiltinModule instead (wasmBytes).
-import { OUT_OF_MEMORY, readStep, type Occt, type ReadOptions, type StepQuality, type StepRead } from './read.ts'
+import { OUT_OF_MEMORY, readCad, type Occt, type ReadOptions, type StepQuality, type StepRead } from './read.ts'
 
 /** Default cap on the memory OpenCASCADE may use for one file, in MB: what the Node path and the app's browser worker both pass. */
 export const STEP_MAX_MEMORY_MB = 2048
@@ -90,9 +90,10 @@ export async function loadOcct(opts: LoadOptions = {}): Promise<Occt & { outOfMe
       return {}
     }
   }
+  // OpenCASCADE's IGES reader prints a line about every file it reads; the caller gets the read instead.
+  args.print = () => undefined
   if (cap !== undefined) {
     // An aborted read prints its reason; the caller gets a StepError instead.
-    args.print = () => undefined
     args.printErr = () => undefined
   }
   const occt = (await Promise.race([init(args), failure])) as Occt & { outOfMemory?: boolean }
@@ -101,19 +102,22 @@ export async function loadOcct(opts: LoadOptions = {}): Promise<Occt & { outOfMe
 }
 
 export interface StepReader {
-  /** Reads a STEP file. Throws StepError. After any error the module may be in any state: close it and load again. */
+  /**
+   * Reads a STEP or an IGES file, told apart by its bytes, else by `name` (cadFormat). Throws StepError. After any error
+   * the module may be in any state: close it and load again.
+   */
   read(bytes: Uint8Array, opts?: { name?: string; quality?: StepQuality } & ReadOptions): StepRead
   /** Drops this reader's module, so its memory can go. */
   close(): void
 }
 
-/** Loads OpenCASCADE and returns a reader for STEP files (browser, worker or Node). */
+/** Loads OpenCASCADE and returns a reader for STEP and IGES files (browser, worker or Node). */
 export async function loadStepReader(opts: LoadOptions = {}): Promise<StepReader> {
   let occt: Occt | null = await loadOcct(opts)
   return {
     read(bytes, o = {}) {
       if (!occt) throw new Error('This STEP reader was closed. Load a new one.')
-      return readStep(occt, bytes, o.name ?? 'model.step', o.quality ?? 'normal', o.appName === undefined ? {} : { appName: o.appName })
+      return readCad(occt, bytes, o.name ?? 'model.step', o.quality ?? 'normal', o.appName === undefined ? {} : { appName: o.appName })
     },
     close() {
       occt = null

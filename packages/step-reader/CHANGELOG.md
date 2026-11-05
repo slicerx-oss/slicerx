@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reads IGES files (`.igs`, `.iges`) with the same OpenCASCADE build, into the same output as a STEP file: objects of touching bodies, names, body colors, millimeters whatever unit the file declares, and notes. `loadStepReader().read`, `readStepInWorker` and `readStepFileInWorker` take either format, told apart by the bytes, else by the name. New exports: `readIges`, `readCad`, `cadFormat` and `igesUnit`. An IGES file of loose trimmed surfaces and no solids, which many CAD programs write, becomes a body per group of touching surfaces with a note, where a STEP file of loose faces only is still refused. Two new `StepError` codes: `not_iges`, and `iges_compressed` for the compressed IGES form. The wasm is unchanged.
+- `loadOcct` keeps OpenCASCADE's standard output quiet with or without a memory cap. Its IGES reader prints a line for every file.
 - `loadOcct` with `maxMemoryMb` and a `file:` URL in `wasm` reads the wasm from disk in Node. Before, it fetched the URL, and Node's `fetch` does not read `file:` URLs, so the load failed with `fetch failed`. Without a cap the Emscripten glue already read the file itself. Browsers and workers still fetch every URL.
 
 ## 0.2.7

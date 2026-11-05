@@ -6,7 +6,7 @@ npm install @slicerx/step-reader
 
 The integrator kit has it as its own tarball, beside the server's: `npm install ./kit/slicerx-step-reader.tgz`. `@slicerx/mcp` loads it for `slicerx_step_read` when it is installed beside it.
 
-Reads STEP files (AP203, AP214 and AP242) into triangle meshes in millimeters, in a browser, a worker or Node. It is the reader the SlicerX app uses, on Open CASCADE Technology 7.6.1 compiled to WebAssembly. The package is opt-in because of its size: about 3.2 MB to download and 7.9 MB installed, almost all of it the wasm.
+Reads STEP files (AP203, AP214 and AP242) and IGES files (`.igs`, `.iges`) into triangle meshes in millimeters, in a browser, a worker or Node. It is the reader the SlicerX app uses, on Open CASCADE Technology 7.6.1 compiled to WebAssembly. The package is opt-in because of its size: about 3.2 MB to download and 7.9 MB installed, almost all of it the wasm.
 
 What a read gives you:
 
@@ -14,6 +14,7 @@ What a read gives you:
 - Positions in millimeters whatever unit the file declares, centered on the origin in double precision.
 - A body's color as `#rrggbb` when the file colors its solid (face colors are not read).
 - Open shells and loose faces left out when the file has solids, with a note saying so.
+- An IGES file of loose trimmed surfaces and no solids, as many CAD programs write IGES, read as a body per group of touching surfaces, with a note saying so. The surfaces are joined, not sewn: a mesh repair closes the seams between them. A STEP file with loose faces only is refused.
 - Notes for the person ("Converted from inches to millimeters.").
 
 ## Use
@@ -23,6 +24,7 @@ import { loadStepReader, toObj, toStl, stepInfo, StepError } from '@slicerx/step
 
 const reader = await loadStepReader()
 try {
+  // STEP or IGES, told apart by the bytes, else by the name
   const read = reader.read(bytes, { name: 'bracket.step', quality: 'normal' })
   const obj = toObj(read) // `o` per object, `g` per body; colored bodies get vertex colors
   const stl = toStl(read) // binary STL; colored bodies get facet colors (bit 15 set, 5 bits a channel)
@@ -35,7 +37,9 @@ try {
 
 `quality` is the chord tolerance: `coarser` 0.05 mm, `normal` 0.01 mm, `finer` 0.003 mm, with 0.5 rad on angles. A model over 2,000,000 triangles is meshed again at 0.05 mm, and refused if it is still over. Messages are meant to follow the file name. Pass `appName` to `read` to name your app in them.
 
-`StepError.code` is one of `empty`, `not_step`, `step_xml`, `too_large` (over 100 MB), `no_solids`, `too_detailed`, `unreadable`, `out_of_memory` and `timeout`.
+`StepError.code` is one of `empty`, `not_step`, `step_xml`, `not_iges`, `iges_compressed` (the compressed IGES form; save it as a regular IGES file), `too_large` (over 100 MB), `no_solids`, `too_detailed`, `unreadable`, `out_of_memory` and `timeout`.
+
+With a loaded module of your own (`loadOcct`), `readStep` and `readIges` read one format each, and `readCad` picks by `cadFormat(bytes, name)`: a file starting with `ISO-10303-21` is STEP, one whose first record is marked `S` or `G` in column 73 is IGES, and otherwise the name decides (`.step`, `.stp`, `.igs`, `.iges`). `stepUnit` and `igesUnit` give the length unit a file declares.
 
 ### Servers and untrusted files
 
@@ -46,6 +50,8 @@ import { readStepFileInWorker } from '@slicerx/step-reader/node'
 
 const read = await readStepFileInWorker('/models/bracket.step', { name: 'bracket.step', timeoutMs: 60_000, maxMemoryMb: 1024 })
 ```
+
+`readStepFileInWorker` and `readStepInWorker` read IGES files too, with the same caps.
 
 The deadline defaults to a minute plus 2 s per megabyte, the memory OpenCASCADE may grow to defaults to 2048 MB, and files over 100 MB are refused before they are read. Each read loads the wasm afresh.
 
