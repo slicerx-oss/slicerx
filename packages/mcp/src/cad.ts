@@ -171,6 +171,19 @@ const loop = z
 
 const loops = z.array(loop).min(1).max(256)
 
+// The sketch tools other than slicerx_geom_revolve check their loops and frame against the same schemas, but theirs
+// only point there: spelling them out in each tool would cost a small local model's context several times over.
+function against<T extends z.ZodTypeAny>(full: T) {
+  return (v: unknown, ctx: z.RefinementCtx) => {
+    const r = full.safeParse(v)
+    if (!r.success) for (const e of r.error.issues) ctx.addIssue({ code: 'custom', message: e.message, path: e.path })
+  }
+}
+const loopsRef = z.array(z.unknown()).min(1).max(256).superRefine(against(loops)).describe('Closed loops as for slicerx_geom_revolve')
+const frameRef = z.unknown().superRefine(against(frameSchema)).describe('As for slicerx_geom_revolve')
+type Loops = z.infer<typeof loops>
+type Frame = z.infer<typeof frameSchema>
+
 const sketchEntity = z.discriminatedUnion('type', [
   z.object({ type: z.literal('line'), a: z.number().int().min(0), b: z.number().int().min(0) }),
   z.object({ type: z.literal('circle'), center: z.number().int().min(0), radius: z.number().positive().describe('Where the solve starts, mm') }),
@@ -186,7 +199,11 @@ const sketchConstraint = z
   .describe('Fields by type: a, b (points, or lines and circles by entity index), point, line, circle, value (mm, or degrees for angle)')
 
 // a finished sketch's constraints name its loops: points by loop, place and segment, lines and circles by loop and segment
-const loopPoint = z.object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter', 'point']), seg: z.number().int().min(0).optional(), i: z.number().optional() })
+const loopPoint = z
+  .object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter', 'point']), seg: z.number().int().min(0).optional(), i: z.number().int().min(0).optional() })
+  .superRefine((p, ctx) => {
+    if (p.at === 'point' && p.i === undefined) ctx.addIssue({ code: 'custom', message: 'a spline point needs i', path: ['i'] })
+  })
 const loopCurve = z.object({ e: z.number().int().min(-1), seg: z.number().int().min(0) })
 const loopConstraint = z
   .object({ type: z.enum(SKETCH_CONSTRAINTS), driven: z.literal(true).optional(), expr: z.string().max(200).optional() })
@@ -202,7 +219,7 @@ const shape = z
     z.object({ type: z.literal('slot'), lengthMm: z.number().positive(), widthMm: z.number().positive() }),
     z.object({ type: z.literal('polygon'), sides: z.number().int().min(3).max(256), diameterMm: z.number().positive(), fit: z.enum(['inscribed', 'circumscribed']).optional() }),
     z.object({ type: z.literal('text'), text: z.string().min(1).max(200), sizeMm: z.number().positive(), letterSpacingMm: z.number().optional(), lineSpacing: z.number().positive().optional(), align: z.enum(['left', 'center', 'right']).optional() }),
-    z.object({ type: z.literal('sketch'), loops }),
+    z.object({ type: z.literal('sketch'), loops: loopsRef }),
     z.object({ type: z.literal('svg'), svg: z.string().min(1).max(2_000_000), widthMm: z.number().positive(), toleranceMm: z.number().positive().optional() }),
   ])
   .describe('What to extrude, in the plane: rectangle, circle, slot, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
@@ -216,9 +233,10 @@ const edgeRef = z
 function splinesOk(loops: readonly object[]): void {
   loops.forEach((l, n) => {
     if ('type' in l && l.type === 'spline' && 'points' in l && Array.isArray(l.points) && l.points.length < 3) throw new ToolInputError(`loops[${n}]: a closed spline needs 3 or more points`)
-    const segs = 'segments' in l && Array.isArray(l.segments) ? (l.segments as { type?: string; points?: unknown[] }[]) : []
+    const segs = 'segments' in l && Array.isArray(l.segments) ? (l.segments as { type?: string; points?: unknown[]; to?: unknown }[]) : []
     segs.forEach((g, k) => {
       if (g.type === 'spline' && !g.points?.length) throw new ToolInputError(`loops[${n}].segments[${k}]: a spline needs 1 or more points before to`)
+      if (g.type === 'spline' && !('to' in g && g.to)) throw new ToolInputError(`loops[${n}].segments[${k}]: a spline needs its end as to`)
     })
   })
 }
@@ -342,6 +360,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
+  // a spline the engine cannot draw (repeated points, too sharp a bend, too many points) never reaches the timeline
+  const splinesDraw = async (l: Loops): Promise<void> => {
+    if (!splines(l)) return
+    const out = await engine('sketch.check', { loops: l })
+    const bad = (Array.isArray(out['issues']) ? (out['issues'] as { loop: number; kind: string; message: string }[]) : []).filter((x) => ['zeroLength', 'tooSmall', 'tooDense'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {})))
+    if (bad.length) throw new ToolInputError(`loops: ${bad.map((x) => x.message).join(' ')}`)
+  }
+
   const faces = defineTool({
     name: 'geom.faces',
     version: '1.2.0',
@@ -435,8 +461,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. Positions are as typed; slicerx_geom_sketch_solve solves constraints first.',
-    input: z.object({ loops }),
+    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which are holes, the filled area, and each problem with its loop and segment.',
+    input: z.object({ loops: loopsRef }),
     async run(i) {
       const out = deps.designs && !deps.files.engine ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
       return { ok: out['ok'] === true, summary: out['ok'] === true ? `The sketch is closed, ${String(out['areaMm2'])} mm2` : `The sketch has ${Array.isArray(out['issues']) ? out['issues'].length : 0} problem(s)`, output: out }
@@ -471,9 +497,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description:
-      'Edit sketch loops as the sketch tools do, and get the loops back: "intersect" lists where segments cross; "trim" takes off the piece of a segment around a point, back to the nearest crossings (a curve that crosses nothing goes whole); "extend" runs an open loop\'s end segment on to the nearest curve; "mirror" adds copies of picked loops across a line; "pattern" adds copies along a step or round a center. Loops and segments count from 0. `from` gives, for each loop back, the loops it came from (a trim joins what is left to open chains its ends meet, and closes it when the ends meet). Intersect, trim and extend refuse splines. Pass the loops on to slicerx_design_sketch or slicerx_geom_extrude.',
+      'Edit sketch loops and get them back (loops and segments from 0, `from` naming each result\'s source loops): intersect lists crossings, trim takes off the piece around a point, extend runs an open end on to the next curve, mirror and pattern add copies; intersect, trim and extend refuse splines.',
     input: z.object({
-      loops,
+      loops: loopsRef,
       op: z.enum(['intersect', 'trim', 'extend', 'mirror', 'pattern']),
       loop: z.number().int().min(0).optional().describe('trim and extend: the loop'),
       segment: z.number().int().min(0).optional().describe('trim: the segment'),
@@ -526,11 +552,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description:
-      'Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines, arcs and splines, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target, or cut from it. With "design" it adds a step to the design (a new body becomes a new part; join and cut work on "part") and returns the design; with a model it writes the result as an STL ("mesh") and the extruded solid ("tool"), with volume, bounds and whether it is watertight.',
+      'Extrude a shape on the bed, a plane or a picked face as a new body, joined to a target or cut from it: with "design" a step (join and cut work on "part"), with a model an STL with volume, bounds and watertightness.',
     input: z.object({
       shape: shape.optional(),
-      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch); its plane and loops are the shape, so leave shape and frame out. The step names the sketch'),
-      frame: frameSchema.optional(),
+      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of shape and frame'),
+      frame: frameRef.optional(),
       placement: z.object({ center: vec2.optional(), rotationDeg: z.number().optional() }).optional().describe('Where the shape sits in the plane: center [u, v] and rotation, degrees'),
       distance_mm: z.number().positive().max(10_000),
       extent: z.enum(['oneSide', 'symmetric', 'twoSides']).default('oneSide').describe('oneSide: distance_mm out from the plane; symmetric: distance_mm to each side; twoSides: distance_mm and distance2_mm'),
@@ -547,11 +573,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'
       if (i.sketch !== undefined && (i.shape || i.frame)) throw new ToolInputError('sketch: the sketch gives the shape and plane; leave shape and frame out')
+      const f = i.frame as Frame | undefined
+      if (i.shape?.type === 'sketch') splinesOk(i.shape.loops as Loops)
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
         const k = i.sketch !== undefined ? finished(i.sketch) : null
-        const frame = k ? k.frame : frameOf(i.frame)
+        const frame = k ? k.frame : frameOf(f)
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: i.name })
@@ -560,7 +588,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
       if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
-      const out = await call('shape.extrude', { shape: i.shape, ...plane(i.frame), ...(i.placement ? { placement: i.placement } : {}), spec, ...(await target(i.target, i.operation)) })
+      const out = await call('shape.extrude', { shape: i.shape, ...plane(f), ...(i.placement ? { placement: i.placement } : {}), spec, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} a ${i.shape.type} ${i.distance_mm} mm`, output: out }
     },
   })
@@ -570,10 +598,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.3.0',
     source: 'command',
     permission: 'slice',
-    description: 'Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. With "design" it adds a step to the design; with no design it writes the result as an STL.',
+    description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
     input: z.object({
       loops: loops.optional(),
-      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch); its plane and loops are the shape, so leave shape and frame out. The step names the sketch'),
+      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id instead of loops and frame'),
       frame: frameSchema.optional(),
       axis: z.object({ point: vec2, direction: vec2 }).describe('The axis in the sketch plane, [u, v]'),
       angle_deg: z.number().positive().max(360).default(360),
@@ -585,6 +613,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     }),
     async run(i) {
       if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
+      if (i.loops) splinesOk(i.loops)
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
@@ -705,24 +734,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.2.0',
     source: 'command',
     permission: 'slice',
-    description: `Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines, arcs and splines on the bed, any plane or a picked face. With constraints (dimensions among them) the sketch is solved first, as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch is kept driven (it reports the size). Returns the sketch's id and name, and with constraints the degrees of freedom left and which dimensions are driven; pass the id as sketch to slicerx_geom_extrude or slicerx_geom_revolve with a design to make a feature from it. Works on the project open in the app, through the app link.`,
-    input: z.object({ loops, frame: frameSchema.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
+    description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve.`,
+    input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
     async run(i) {
-      splinesOk(i.loops)
+      const loopsIn = i.loops as Loops
+      splinesOk(loopsIn)
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
-      const frame = frameOf(i.frame)
+      await splinesDraw(loopsIn)
+      const frame = frameOf(i.frame as Frame | undefined)
       if (!i.constraints?.length) {
-        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: i.loops }))
-        return { summary: `${k.name} is in the timeline${splines(i.loops)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
+        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }))
+        return { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
       }
       if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
-      const solved = await host.settleSketch(plain({ loops: i.loops, constraints: i.constraints as unknown as SketchConstraint[] }))
+      const solved = await host.settleSketch(plain({ loops: loopsIn, constraints: i.constraints as unknown as SketchConstraint[] }))
       if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
       const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }))
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
-      return { summary: `${k.name} is in the timeline${splines(i.loops)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
+      return { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
     },
   })
 
