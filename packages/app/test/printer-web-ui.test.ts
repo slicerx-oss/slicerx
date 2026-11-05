@@ -48,11 +48,32 @@ describe('the web page address of a printer in the fleet', () => {
   })
 
   it('refuses anything that is not a local printer page before it reaches the shell', async () => {
-    for (const url of ['http://8.8.8.8/', 'https://example.com/', 'http://user@192.168.1.20/', 'http://192.168.1.20/?x=1', 'javascript:alert(1)']) await openPrinterPage(url)
+    // Names a browser reads as IPv4 numbers and octal octets are public addresses there (8.8.8.8, 8.0.0.1).
+    for (const url of ['http://8.8.8.8/', 'https://example.com/', 'http://user@192.168.1.20/', 'http://192.168.1.20/?x=1', 'javascript:alert(1)', 'http://134744072/', 'http://0x08080808/', 'http://010.0.0.1/', 'http://[::ffff:192.168.1.1]/']) await openPrinterPage(url)
     expect(opened).toEqual([])
     expect(get().toast?.text).toContain('not on your local network')
     await openPrinterPage('http://192.168.1.20/')
     expect(opened).toEqual(['http://192.168.1.20/'])
+  })
+
+  it('opens a printer saved with capitals, a long IPv6 form or TLS', async () => {
+    const urls = [webUiFor({ ...VORON, host: 'Voron.LOCAL' }), webUiFor({ ...VORON, host: 'FD00:0::5' }), webUiFor({ ...OCTO, port: 443, tls: true })]
+    expect(urls).toEqual(['http://voron.local/', 'http://[fd00::5]/', 'https://192.168.1.30/'])
+    for (const url of urls) await openPrinterPage(url!)
+    expect(opened).toEqual(urls)
+  })
+
+  it('shows the link to copy when the shell refuses, and opens a tab where there is no shell', async () => {
+    registerPrinterPageOpener(async () => {
+      throw new Error('refused')
+    })
+    await openPrinterPage('http://192.168.1.20/')
+    expect(get().toast).toMatchObject({ tone: 'warn', action: { label: 'Copy link' } })
+    registerPrinterPageOpener(null)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    await openPrinterPage('http://192.168.1.20/')
+    expect(open).toHaveBeenCalledWith('http://192.168.1.20/', '_blank', 'noopener')
+    open.mockRestore()
   })
 })
 
