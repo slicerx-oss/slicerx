@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Reading STEP files in Node, for servers and command line tools: each file is read in a worker thread of its own with
+// Reading STEP and IGES files in Node, for servers and command line tools: each file is read in a worker thread of its own with
 // a deadline, an input size cap and a cap on the memory OpenCASCADE may grow to. A file that hangs the parser or asks
 // for gigabytes ends that worker, never the calling process. The answer comes back as a StepRead, typed StepError on
 // failure.
 import { readFile, stat } from 'node:fs/promises'
 import { Worker } from 'node:worker_threads'
 import { STEP_MAX_MEMORY_MB } from './load.ts'
-import { STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead } from './read.ts'
+import { cadFormat, STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead } from './read.ts'
 
 export { stepInfo, toObj, toStl, type ObjOptions, type StepBounds, type StepInfo } from './convert.ts'
-export { STEP_ERROR_CODES, STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead, type StepUnit } from './read.ts'
+export { cadFormat, STEP_ERROR_CODES, STEP_MAX_MB, StepError, type CadFormat, type StepErrorCode, type StepQuality, type StepRead, type StepUnit } from './read.ts'
 
 export { STEP_MAX_MEMORY_MB }
 
@@ -20,7 +20,7 @@ export function stepDeadlineMs(bytes: number): number {
 }
 
 export interface NodeReadOptions {
-  /** The file's name, which names the objects. Default model.step. */
+  /** The file's name, which names the objects and tells IGES from STEP when the bytes do not. Default model.step. */
   name?: string
   quality?: StepQuality
   appName?: string
@@ -44,12 +44,14 @@ function workerUrl(): URL {
   return new URL(import.meta.url.endsWith('.ts') ? './node-worker.ts' : './node-worker.js', import.meta.url)
 }
 
-const tooLarge = (bytes: number, capMb: number) => new StepError('too_large', `is ${Math.round(bytes / 1024 / 1024)} MB. STEP files up to ${capMb} MB can be opened.`)
+/** A refusal by size, naming the format the head of the file or its name gives. */
+const tooLarge = (size: number, capMb: number, head: Uint8Array, name: string | undefined) =>
+  new StepError('too_large', `is ${Math.round(size / 1024 / 1024)} MB. ${cadFormat(head, name) === 'iges' ? 'IGES' : 'STEP'} files up to ${capMb} MB can be opened.`)
 
-/** Reads STEP bytes in a worker thread. Throws StepError. */
+/** Reads STEP or IGES bytes in a worker thread, told apart by the bytes, else by `name`. Throws StepError. */
 export function readStepInWorker(bytes: Uint8Array, opts: NodeReadOptions = {}): Promise<StepRead> {
   const capMb = Math.min(opts.maxInputMb ?? STEP_MAX_MB, STEP_MAX_MB)
-  if (bytes.length > capMb * 1024 * 1024) return Promise.reject(tooLarge(bytes.length, capMb))
+  if (bytes.length > capMb * 1024 * 1024) return Promise.reject(tooLarge(bytes.length, capMb, bytes, opts.name))
   const timeoutMs = opts.timeoutMs ?? stepDeadlineMs(bytes.length)
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerUrl(), {
@@ -94,10 +96,10 @@ export function readStepInWorker(bytes: Uint8Array, opts: NodeReadOptions = {}):
   })
 }
 
-/** Reads a STEP file from disk in a worker thread, refusing it by size before reading it. Throws StepError. */
+/** Reads a STEP or IGES file from disk in a worker thread, refusing it by size before reading it. Throws StepError. */
 export async function readStepFileInWorker(path: string, opts: NodeReadOptions = {}): Promise<StepRead> {
   const capMb = Math.min(opts.maxInputMb ?? STEP_MAX_MB, STEP_MAX_MB)
   const size = (await stat(path)).size
-  if (size > capMb * 1024 * 1024) throw tooLarge(size, capMb)
+  if (size > capMb * 1024 * 1024) throw tooLarge(size, capMb, new Uint8Array(0), opts.name)
   return readStepInWorker(new Uint8Array(await readFile(path)), opts)
 }
