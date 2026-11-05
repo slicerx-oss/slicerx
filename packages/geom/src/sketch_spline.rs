@@ -102,6 +102,10 @@ pub enum Dense {
 
 /// the points after the first along the spline through `pts`, at most `budget` of them
 pub fn flatten_all(pts: &[V2], closed: bool, budget: usize) -> Result<Vec<V2>, Dense> {
+    // each span takes a step at least
+    if pts.len().saturating_sub(usize::from(!closed)) > budget {
+        return Err(Dense::Budget);
+    }
     let mut out = Vec::new();
     for (k, b) in spans(pts, closed).iter().enumerate() {
         let n = steps(b).ok_or(Dense::Span(k))?;
@@ -251,6 +255,7 @@ mod tests {
         let ok = [[0.0, 0.0], [10.0, 5.0], [20.0, 0.0]];
         let n = flatten_all(&ok, false, usize::MAX).unwrap().len();
         assert_eq!(flatten_all(&ok, false, n - 1), Err(Dense::Budget));
+        assert_eq!(flatten_all(&ok, false, n).map(|f| f.len()), Ok(n));
     }
 
     #[test]

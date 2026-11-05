@@ -385,3 +385,75 @@ fn every_edit_near_a_spline_keeps_it_or_refuses() {
     );
     close(&json!([p["loops"][3]["segments"][1]["to"]]), &[[0.0, -10.0]]);
 }
+
+#[test]
+fn refusals_name_the_users_points_and_plain_rings_keep_their_room() {
+    let sharp = json!([{ "start": [0, 0], "segments": [
+        { "type": "spline", "points": [[90_000, 0]], "to": [90_000, 10] },
+        { "type": "line", "to": [0, 0] },
+    ]}]);
+    assert!(
+        first_issue(&sharp).1.contains("after its start"),
+        "{:?}",
+        first_issue(&sharp)
+    );
+    let end = json!([{ "start": [0, 0], "segments": [
+        { "type": "spline", "points": [[5, 5], [10, 0]], "to": [10, 0] }, { "type": "line", "to": [0, 0] }]}]);
+    assert!(
+        first_issue(&end).1.contains("(its end)"),
+        "{:?}",
+        first_issue(&end)
+    );
+    let one = json!([{ "type": "spline", "points": [[1, 1]] }]);
+    assert!(
+        first_issue(&one).1.contains("3 or more points"),
+        "{:?}",
+        first_issue(&one)
+    );
+    // two spline segments of a chain share the loop's room
+    let zig = |x0: f64, rows: usize| -> Vec<[f64; 2]> {
+        (1..rows)
+            .map(|i| {
+                #[allow(clippy::cast_precision_loss, reason = "small counts")]
+                let x = x0 + i as f64 * 2.0;
+                [x, if i % 2 == 0 { 200.0 } else { -200.0 }]
+            })
+            .collect()
+    };
+    let one_seg = sx_geom::sketch_spline::flatten_all(
+        &[vec![[0.0, 0.0]], zig(0.0, 200), vec![[400.0, 0.0]]].concat(),
+        false,
+        usize::MAX,
+    )
+    .unwrap()
+    .len();
+    assert!(
+        one_seg < sx_geom::sketch::RING_POINTS && 2 * one_seg > sx_geom::sketch::RING_POINTS,
+        "{one_seg}"
+    );
+    let two = json!([{ "start": [0, 0], "segments": [
+        { "type": "spline", "points": zig(0.0, 200), "to": [400, 0] },
+        { "type": "spline", "points": zig(400.0, 200), "to": [800, 0] },
+        { "type": "line", "to": [0, 0] },
+    ]}]);
+    let (kind, message) = first_issue(&two);
+    assert_eq!(kind, "tooDense", "{message}");
+    assert!(message.contains("65536 points"), "{message}");
+    // many plain point rings are not held to the sketch budget, which only splines can reach
+    let rings: Vec<Value> = (0..70)
+        .map(|k| {
+            let c = f64::from(k) * 100.0;
+            json!({ "points": on_circle(4096, 40.0, 0.0, TAU).iter().map(|p| [p[0] + c, p[1]]).collect::<Vec<_>>() })
+        })
+        .collect();
+    let c = run("sketch.check", &json!({ "loops": rings }));
+    assert!(
+        c["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["kind"] != "tooDense"),
+        "{}",
+        c["issues"]
+    );
+}
