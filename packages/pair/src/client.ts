@@ -12,7 +12,7 @@ import { grantSignatureValid, introducedDeviceKey, introducedPairingId, issueGra
 import { joinOverPipe, type JoinResult } from './handshake'
 import { NO_RIGHTS, type DeviceIdentity, type PairingRecord, type PairingStore } from './identity'
 import { introRoute, isLocalUrl, OFFER_TTL_MS, offerRoutes, pairingRoutes, parsePairingInput, type OfferInfo } from './offer'
-import { createRpcPeer, PairError, type ApprovalView, type CameraQuality, type EventMap, type EventName, type HostInfo, type JobTarget, type JobUpdate, type LibraryEntry, type PushPrefs, type RemoteQuota, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
+import { createRpcPeer, MIMIR_QUESTION_V, PairError, type ApprovalView, type MimirQuestion, type MimirState, type CameraQuality, type EventMap, type EventName, type HostInfo, type JobTarget, type JobUpdate, type LibraryEntry, type PushPrefs, type RemoteQuota, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
 import type { DevicePlatform, Endpoints, PublicIdentity, Rights } from './schema'
 import { openSession, SessionError } from './session'
 import { openSocket, pipeFromSocket, relayPipe, type Pipe, type RelayConnection, type SocketFactory } from './transport'
@@ -100,6 +100,10 @@ export interface HostConnection {
   /** Pause, resume or cancel the current print. Needs an approval. */
   control(printerId: string, action: 'pause' | 'resume' | 'cancel'): Promise<{ jobId: string; requestId: string }>
   approvals(): Promise<ApprovalView[]>
+  /** The question mimir waits on in SlicerX on the computer. Rejects with `not_supported` on a computer from before it existed. */
+  mimirQuestions(): Promise<MimirState>
+  /** Answers mimir's waiting question: a choice id, or null to cancel it. Call only from the question card's buttons. */
+  mimirAnswer(q: Pick<MimirQuestion, 'sessionId' | 'askId'>, choiceId: string | null): Promise<void>
   /** The relay quota of the computer's hub; null when it is not on the relay. */
   quota(): Promise<RemoteQuota | null>
   /** Call only from the approve button of the approval card. */
@@ -447,6 +451,10 @@ export function createPairClient(o: PairClientOptions): PairClient {
       control: (printerId, action) => rpc.call('jobs.control', { printerId, action }),
       approvals: () => rpc.call('approvals.list', {}),
       quota: () => rpc.call('remote.quota', {}),
+      mimirQuestions: () => rpc.call('mimir.questions', {}),
+      async mimirAnswer(q, choiceId) {
+        await rpc.call('mimir.answer', { v: MIMIR_QUESTION_V, sessionId: q.sessionId, askId: q.askId, choiceId })
+      },
       async approve(v, o) {
         await rpc.call('approvals.decide', signDecision(me, v.request, 'approve', env.now(), o?.bedClear === true))
       },

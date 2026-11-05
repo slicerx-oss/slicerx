@@ -16,7 +16,7 @@ import { checkGrant, grantHash, introducedDeviceKey, introducedPairingId } from 
 import { offererOnHello, offerOverPipe, createOffererState, type HandshakeKeys, type OfferResult } from './handshake'
 import { ALL_RIGHTS, type DeviceIdentity, type PairingRecord, type PairingStore } from './identity'
 import { createShortCode, introRoute, offerFromShortCode, offerLink, offerRoutes, OFFER_TTL_MS, pairingRoutes } from './offer'
-import { createRpcPeer, MAX_FRAME_B64, PairError, type ApprovalView, type PushPrefs, type JobState, type DecideParams, type JobTarget, type LibraryEntry, type Method, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
+import { createRpcPeer, MAX_FRAME_B64, MIMIR_QUESTION_V, PairError, type ApprovalView, type MimirAnswerParams, type MimirEnded, type MimirState, type PushPrefs, type JobState, type DecideParams, type JobTarget, type LibraryEntry, type Method, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
 import { parseFrame, type DevicePlatform, type Endpoints, type FrameOf, type JoinerConfirm, type PublicIdentity, type Rights } from './schema'
 import { acceptSession, initCurrent, verifyInit, type HostChannel } from './session'
 import { relayPipe, type Pipe, type RelayConnection } from './transport'
@@ -51,6 +51,29 @@ export interface ApprovalFeed {
   decide(requestId: string, decision: ApprovalDecision, by: { deviceId: string; name: string }): Promise<void>
 }
 
+/**
+ * mimir's question cards in the desktop app, which approver phones may answer. `answer` must do exactly what a click
+ * on the card does: the first answer wins. It rejects with an error whose `code` is `not_found` when the question is
+ * no longer waiting, `bad_request` for a choice the question does not offer, or anything else when the app cannot take it.
+ */
+export interface QuestionFeed {
+  state(): MimirState
+  /** Fires on every change; `ended` names the question that stopped waiting, and who answered it. */
+  onChange(cb: (s: MimirState & { ended?: MimirEnded }) => void): () => void
+  answer(a: { sessionId: string; askId: string; choiceId: string | null }, by: { deviceId: string; name: string }): Promise<void>
+}
+
+/** One answer a phone gave to a mimir question. Nothing is signed: an answer unlocks nothing on a printer. */
+export interface MimirAnswerAudit {
+  askId: string
+  sessionId: string
+  /** null: the phone canceled the question. */
+  choiceId: string | null
+  deviceId: string
+  deviceName: string
+  at: number
+}
+
 export interface HostServices {
   printers?: PrinterHost
   /** The approval broker. `grant` is called only after a person approved. */
@@ -59,6 +82,8 @@ export interface HostServices {
   cloudSlicer?: PairSlicer
   library?: { list(): Promise<LibraryEntry[]> }
   approvalFeed?: ApprovalFeed
+  /** mimir's question cards, for approver phones. */
+  questionFeed?: QuestionFeed
   /** Live camera and single stills for phones. `LinkHost.camera` from @slicerx/link-client fits. */
   camera?: PairCameraSource
   /** The hub's push registrations (sx-link `push.*`). `LinkHost.push` from @slicerx/link-client fits. */
@@ -186,6 +211,8 @@ export interface PairHost {
     onResolved(cb: (requestId: string, decision: 'approve' | 'deny' | 'expired') => void): () => void
   }
   audit(): ApprovalAudit[]
+  /** Answers phones gave to mimir's questions, oldest first. */
+  answerAudit(): MimirAnswerAudit[]
   close(): void
 }
 
@@ -269,6 +296,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
   const remoteFiles = new Map<string, { pairingId: string; remote: RemoteFile }>()
   const running = new Map<string, { pairingId: string; ctrl: AbortController }>()
   const auditLog: ApprovalAudit[] = []
+  const answerLog: MimirAnswerAudit[] = []
   const changed = new Set<() => void>()
   const jobRequestCbs = new Set<(v: ApprovalView) => void>()
   const jobResolvedCbs = new Set<(id: string, d: 'approve' | 'deny' | 'expired') => void>()
@@ -559,6 +587,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
           printers: svc.printers !== undefined,
           camera: svc.camera !== undefined,
           push: svc.push !== undefined,
+          mimir: svc.questionFeed !== undefined,
           rights: rec.rights,
         }
       case 'printers.list':
@@ -649,6 +678,12 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
       case 'remote.quota':
         // This host is not on the relay itself; the hub's relay quota comes from sx-link.
         return null
+      case 'mimir.questions':
+        need(s, 'approve')
+        if (!svc.questionFeed) throw new PairError('not_supported', 'This computer cannot take answers to mimir questions')
+        return svc.questionFeed.state()
+      case 'mimir.answer':
+        return answerFromPhone(need(s, 'approve'), p as MimirAnswerParams)
     }
   }
 
@@ -1020,6 +1055,30 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     return {}
   }
 
+  async function answerFromPhone(rec: PairingRecord, p: MimirAnswerParams): Promise<{ answered: true }> {
+    const feed = svc.questionFeed
+    if (!feed) throw new PairError('not_supported', 'This computer cannot take answers to mimir questions')
+    if (p.v !== MIMIR_QUESTION_V) throw new PairError('bad_request', `This computer reads answers of version ${MIMIR_QUESTION_V}`)
+    try {
+      await feed.answer({ sessionId: p.sessionId, askId: p.askId, choiceId: p.choiceId }, { deviceId: rec.peer.deviceId, name: rec.peer.name })
+    } catch (e) {
+      const code = (e as { code?: unknown }).code
+      if (code === 'not_found') throw new PairError('not_found', 'This question was already answered or is no longer waiting')
+      if (code === 'bad_request') throw new PairError('bad_request', 'That is not one of the question\'s answers')
+      throw new PairError('unavailable', 'SlicerX on this computer could not take the answer')
+    }
+    answerLog.push({ askId: p.askId, sessionId: p.sessionId, choiceId: p.choiceId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, at: env.now() })
+    return { answered: true }
+  }
+
+  if (svc.questionFeed) {
+    feedOffs.push(
+      svc.questionFeed.onChange((state) => {
+        for (const x of approverSessions()) x.rpc.emit('mimir.question', state)
+      }),
+    )
+  }
+
   if (svc.approvalFeed) {
     const feed = svc.approvalFeed
     feedOffs.push(
@@ -1193,6 +1252,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
       },
     },
     audit: () => auditLog.map((a) => ({ ...a })),
+    answerAudit: () => answerLog.map((a) => ({ ...a })),
     close() {
       for (const sid of [...sessions.keys()]) closeSession(sid)
       for (const rel of relays) for (const off of rel.routes.values()) off()
