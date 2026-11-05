@@ -128,7 +128,7 @@ describe('the scope rule for parts', () => {
   })
 
   it('names what is in scope in general terms', () => {
-    for (const s of ['outlines of lines, arcs and circles', 'extruded or turned around one axis', 'lofted through sections or swept along a path', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
+    for (const s of ['outlines of lines, arcs, circles and smooth splines through points', 'extruded or turned around one axis', 'lofted through sections or swept along a path', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
   })
 
   it('names the kinds of shape that are out of scope in general terms', () => {
