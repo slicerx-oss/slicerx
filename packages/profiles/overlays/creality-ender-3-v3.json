@@ -1,0 +1,23 @@
+{
+ "comment": "The first layer and support line widths of the maker's process presets for the plain Creality Ender-3 V3 with the 0.4 mm nozzle, which has no resolved presets, so its tiers take SlicerX's process with these rows of process-speeds.json over it: 0.5 mm first layer lines and 0.42 mm support lines, where SlicerX's process leaves both automatic. Applied to process-speeds.json by packages/settings/scripts/apply-overlay.ts. Values are in the profiles' own format, by the preset's name in process-speeds.json.",
+ "source": {
+  "process": "Creality Ender-3 V3 stock process presets for the 0.4 mm nozzle (0.20mm Standard, 0.24mm Draft, 0.12mm Fine)"
+ },
+ "filament": {},
+ "machine": {},
+ "process": {},
+ "process_presets": {
+  "OrcaSlicer/Creality/0.20mm Standard @Creality Ender-3 V3": {
+   "initial_layer_line_width": "0.5",
+   "support_line_width": "0.42"
+  },
+  "OrcaSlicer/Creality/0.24mm Draft @Creality Ender-3 V3": {
+   "initial_layer_line_width": "0.5",
+   "support_line_width": "0.42"
+  },
+  "OrcaSlicer/Creality/0.12mm Fine @Creality Ender-3 V3": {
+   "initial_layer_line_width": "0.5",
+   "support_line_width": "0.42"
+  }
+ }
+}
