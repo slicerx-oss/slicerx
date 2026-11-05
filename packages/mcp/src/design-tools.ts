@@ -9,7 +9,9 @@ import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
+import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
+import { MAX_FILAMENTS } from './filaments'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -29,10 +31,10 @@ export interface DesignFiles {
   /** The parts of a model (an STL path, URL or sample: name) to start a design from. */
   model(from: string, name: string): Promise<HistoryMesh[]>
   /**
-   * The objects of a 3MF to open as designs, with their history when they have one, and the reader's notes on what it
-   * skipped or read another way.
+   * The objects of a 3MF to open as designs, with their history when they have one, painted from its textures when
+   * asked, and the reader's notes on what it skipped or read another way.
    */
-  open(path: string): Promise<{ designs: { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]; notes: string[] }>
+  open(path: string, texture?: TextureOpen): Promise<{ designs: { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[]; texture?: TextureSummary }[]; notes: string[] }>
   /** Writes the design as a 3MF project; `fileName` without folders, the design's name when absent. */
   save(d: Design, fileName: string | undefined): Promise<{ path: string; bytes: number }>
 }
@@ -274,17 +276,26 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
       `Open the objects of any 3MF project (${productName()}, Bambu Studio, Orca) as designs, one per object. An object with a ${productName()} CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named. \`notes\` says what the file reader skipped or read another way, such as paint in a newer format, as the app's open note does.`,
-    input: z.object({ path: z.string().min(1).describe('Path of the .3mf file') }),
+    input: z.object({
+      path: z.string().min(1).describe('Path of the .3mf file'),
+      texture: z
+        .object({
+          filaments: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).min(1).max(MAX_FILAMENTS).describe('Filament colors as #rrggbb, slot 1 first'),
+          mode: z.enum(['nearest', 'palette']).default('nearest').describe('nearest: each texture color to the nearest filament; palette: as many colors as filaments, picked from the texture'),
+        })
+        .optional()
+        .describe("Paint the parts from the 3MF's textures (texture2d groups) as color paint: each bit of surface gets a filament, and the one with the most area becomes the part's own"),
+    }),
     async run(i) {
-      const { designs: found, notes } = await files.open(i.path)
+      const { designs: found, notes } = await files.open(i.path, i.texture)
       if (!found.length) throw new ToolInputError(`${i.path} has no printed parts to open`)
       const opened = []
-      for (const f of found) opened.push({ ...designSummary(await designs.create(f.name, f.history?.base ?? f.base, f.history, f.transform)), fromHistory: f.history !== undefined, ...(f.skipped.length ? { leftOut: f.skipped } : {}) })
+      for (const f of found) opened.push({ ...designSummary(await designs.create(f.name, f.history?.base ?? f.base, f.history, f.transform)), fromHistory: f.history !== undefined, ...(f.skipped.length ? { leftOut: f.skipped } : {}), ...(f.texture ? { texture: f.texture } : {}) })
       return { summary: `Opened ${plural(opened.length, 'design')}${notes.length ? `. ${notesLine(notes)}` : ''}`, output: { designs: opened, ...(notes.length ? { notes } : {}) } }
     },
   })

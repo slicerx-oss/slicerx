@@ -12,4 +12,8 @@ export const appPaintPreviewInput = appPaintReadInput.extend({
   max_depth: z.number().int().min(0).max(10).optional(),
 })
 export const appPaintApplyInput = z.object({ preview: z.string().min(1) })
+export const appPaintFromTextureInput = z.object({
+  object: z.string().min(1),
+  mode: z.enum(['nearest', 'palette']).default('nearest').describe('nearest: each color to the nearest filament; palette: filament colors picked from the texture (only when no filament color is set by hand or by the printer)'),
+})
 export const appPaintClearInput = appPaintReadInput.extend({ revision: z.string().min(1) })

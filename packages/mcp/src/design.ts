@@ -230,18 +230,55 @@ function paintOf(p: EnginePart['paint']): PaintTexts | undefined {
  * it, the others start from their printed parts (in their object's space, slots and paint kept) with no steps yet.
  * Modifiers and other volumes are left out and named.
  */
-export async function readDesigns(engine: EngineCall, buf: Buffer, label: string): Promise<OpenedDesign[]> {
-  return (await readDesignFile(engine, buf, label)).designs
+/** Color paint from a 3MF's textures for the designs it opens: the filament colors (slot 1 first) and how to map to them. */
+export interface TextureOpen {
+  filaments: string[]
+  mode?: 'nearest' | 'palette'
 }
 
-/** An object of a 3MF to open as a design (readDesigns). */
-export type OpenedDesign = { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }
+/** What the texture painted on one opened design (sx-geom paint.texture). */
+export interface TextureSummary {
+  colors: number[]
+  slots: { slot: number; areaMm2: number }[]
+  palette?: string[]
+  notes: string[]
+}
+
+interface TextureReply extends TextureSummary {
+  textured: boolean
+  parts: { slot: number | null; paint: Record<string, string> }[]
+  palette: string[]
+}
+
+/** Paints the parts of one object from the 3MF's textures; the summary, or undefined when nothing there is textured. */
+async function paintFromTexture(engine: EngineCall, base64: string, parts: HistoryMesh[], texture: TextureOpen): Promise<TextureSummary | undefined> {
+  const reply = (await engine('paint.texture', { source: { threemf: { base64 } }, parts: parts.map((p) => ({ positions: p.positions, indices: p.indices })), filaments: texture.filaments, mode: texture.mode ?? 'nearest' })) as TextureReply
+  if (!reply.textured) return undefined
+  reply.parts.forEach((r, i) => {
+    const p = parts[i]
+    if (!p || r.slot === null) return
+    p.slot = r.slot
+    // the texture's paint takes the place of the part's color paint
+    const { color: _old, ...rest } = p.paint ?? {}
+    const paint = Object.keys(r.paint).length ? { ...rest, color: Object.fromEntries(Object.entries(r.paint).map(([k, v]) => [Number(k), v])) } : rest
+    if (Object.keys(paint).length) p.paint = paint
+    else delete p.paint
+  })
+  return { colors: reply.colors, slots: reply.slots, ...(reply.palette.length ? { palette: reply.palette } : {}), notes: reply.notes }
+}
+
+export async function readDesigns(engine: EngineCall, buf: Buffer, label: string, texture?: TextureOpen): Promise<OpenedDesign[]> {
+  return (await readDesignFile(engine, buf, label, texture)).designs
+}
+
+/** An object of a 3MF to open as a design (readDesigns), with what its texture painted when asked. */
+export type OpenedDesign = { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[]; texture?: TextureSummary }
 
 /**
  * The objects of a 3MF as designs to open (readDesigns), with the engine reader's notes on what it skipped or read
  * another way (a painting in a newer facets JSON version, a part type it does not know), each once.
  */
-export async function readDesignFile(engine: EngineCall, buf: Buffer, label: string): Promise<{ designs: OpenedDesign[]; notes: string[] }> {
+export async function readDesignFile(engine: EngineCall, buf: Buffer, label: string, texture?: TextureOpen): Promise<{ designs: OpenedDesign[]; notes: string[] }> {
   const zip = readZip(buf, label)
   // Only whether it is there: a main model can be larger than a text read takes, and the engine reads it below.
   if (!zip.names().includes('3D/3dmodel.model')) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
@@ -267,12 +304,21 @@ export async function readDesignFile(engine: EngineCall, buf: Buffer, label: str
     }
     return parts.length ? [{ id: String(o.id), name, transform: fileMatrix(o.transform, unitScale), parts, skipped }] : []
   })
+  const painted = new Map<string, TextureSummary>()
+  if (texture) {
+    const base64 = buf.toString('base64')
+    for (const o of objects) {
+      const t = await paintFromTexture(engine, base64, o.parts, texture)
+      if (t) painted.set(o.id, t)
+    }
+  }
   const files = new Map<string, Uint8Array>()
   for (const n of zip.names()) if (n.startsWith('Metadata/slicerx_history')) files.set(n, zip.read(n) ?? new Uint8Array())
   const histories = parseHistories(files, new Set(objects.map((o) => o.id)))
   const designs = objects.map((o) => {
     const h = histories.get(o.id)
-    return { name: o.name, transform: o.transform, ...(h ? { history: h } : {}), base: o.parts, skipped: o.skipped }
+    const t = painted.get(o.id)
+    return { name: o.name, transform: o.transform, ...(h ? { history: h } : {}), base: o.parts, skipped: o.skipped, ...(t ? { texture: t } : {}) }
   })
   const notes = [...new Set((Array.isArray(read.notes) ? read.notes : []).filter((n): n is string => typeof n === 'string' && n.trim() !== '').map((n) => n.trim()))]
   return { designs, notes }
@@ -284,8 +330,8 @@ export function designFiles(policy: PathPolicy, engine: EngineCall): DesignFiles
     async model(from, name) {
       return [stlMesh(readFileSync(await resolveModel(policy, from)), name)]
     },
-    async open(path) {
-      return readDesignFile(engine, readFileSync(await resolveModel(policy, path)), path)
+    async open(path, texture) {
+      return readDesignFile(engine, readFileSync(await resolveModel(policy, path)), path, texture)
     },
     async save(d, fileName) {
       const dir = join(policy.outDir, 'designs')

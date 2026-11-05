@@ -12,6 +12,7 @@ import { getPaintBus, subscribePaintBus } from '../../plate/tools'
 import { Swatch } from '../../parts'
 import { MoreButton, useMore } from '../../shell/more'
 import { useApp } from '../../state/store'
+import { TextureRow } from './texture-row'
 
 const LAYERS = [
   { value: 'color', label: 'Color' },
@@ -98,6 +99,7 @@ export function PaintPanel() {
           Clear {brush.layer}
         </Button>
       </div>
+      {color ? <TextureRow entry={selected} /> : null}
     </Block>
   )
 }
