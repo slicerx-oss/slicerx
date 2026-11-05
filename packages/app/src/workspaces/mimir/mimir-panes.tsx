@@ -37,6 +37,7 @@ import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
 import { cardWaits, openChoice } from './card-waits'
+import { setPhoneCards, syncPhoneQuestion } from './phone-answers'
 import './mimir.css'
 import './mimir-phone.css'
 
@@ -183,6 +184,21 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     })
     return () => setMimirCards(null)
   }, [sessionId, live, pilot])
+  // a paired phone with the approve right answers the question card the way a click on it does (phone-answers.ts)
+  useEffect(() => {
+    if (!live) return
+    setPhoneCards({
+      sessionId: () => sessionId,
+      open: () => openChoice(shown.current),
+      picked: (askId) => {
+        for (const turn of shown.current.turns) for (const b of turn.blocks) if (b.kind === 'choice' && b.askId === askId) return b.picked
+        return undefined
+      },
+      answer: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.reject(new Error('No question here')),
+    })
+    return () => setPhoneCards(null)
+  }, [sessionId, live, pilot])
+  useEffect(() => syncPhoneQuestion(), [transcript])
   // Ask mimir in the command bar hands its words over as a message once mimir can take it; each distinct one runs once
   const prompt = useApp((s) => s.pilotPrompt)
   const consumed = useRef<string | null>(null)

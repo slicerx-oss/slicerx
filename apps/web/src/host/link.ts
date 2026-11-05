@@ -79,6 +79,9 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
             onAskEnded: (cb) => link.appLink.onAskEnded(cb),
             reply: (id, out) => link.appLink.reply(id, out),
             answer: (id, d) => link.appLink.answer(id, d),
+            ...(typeof (link.appLink as { onPhoneAnswer?: unknown }).onPhoneAnswer === 'function'
+              ? { onPhoneAnswer: (cb: Parameters<typeof link.appLink.onPhoneAnswer>[0]) => link.appLink.onPhoneAnswer(cb), mimirState: (st: Parameters<typeof link.appLink.mimirState>[0]) => link.appLink.mimirState(st) }
+              : {}),
             grants: () => link.appLink.grants(),
             revoke: (id) => link.appLink.revoke(id),
           } satisfies NonNullable<ConnectedBridge['appLink']>,
