@@ -2003,13 +2003,15 @@ pub(crate) fn plan_layer_paths(
             }
             b.width_mm = base_width;
         }
-        // With first layer widths per feature the skirt prints at the first layer's line width, whichever region's work
-        // carries it.
+        // On the print's first layer the skirt and the brim print at the first layer's line width they are laid out
+        // at, whichever region's work carries them: a modifier or part with a first layer width of its own does not
+        // reach them.
         let work_width = b.width_mm;
-        if cfg.on_first_layer && !w.skirt.is_empty() {
-            #[allow(clippy::cast_possible_truncation, reason = "a line width is small")]
-            let skirt_width = cfg.line_width as f32;
-            b.width_mm = skirt_width;
+        #[allow(clippy::cast_possible_truncation, reason = "a line width is small")]
+        let first_width =
+            (cfg.first_layer && (cfg.on_first_layer || w.width.is_some())).then_some(cfg.line_width as f32);
+        if let Some(v) = first_width.filter(|_| !w.skirt.is_empty()) {
+            b.width_mm = v;
         }
         for (i, c) in w.skirt.iter().enumerate() {
             if i == 0 && layer == 0 {
@@ -2022,7 +2024,7 @@ pub(crate) fn plan_layer_paths(
                 b.push_loop(w.tool, Feature::Skirt, speed, &c.points);
             }
         }
-        b.width_mm = work_width;
+        b.width_mm = first_width.unwrap_or(work_width);
         // On a first layer with brims of several objects, an object's brim prints right before its first island
         // (below); the loops of objects with no island in this work print here.
         let island_object = |isl: &IslandWalls| -> Option<usize> {
@@ -2049,6 +2051,7 @@ pub(crate) fn plan_layer_paths(
         for (c, _) in w.brim.iter().zip(&waiting).filter(|(_, wait)| !**wait) {
             b.push_loop(w.tool, Feature::Brim, speeds.brim, c);
         }
+        b.width_mm = work_width;
         let support_speed = |speed: f64| {
             #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
             let v = if layer == 0 && crate::raft::layers_asked(cfg) == 0 {
@@ -2317,7 +2320,10 @@ pub(crate) fn plan_layer_paths(
                 let object = island_object(isl);
                 for ((c, o), wait) in w.brim.iter().zip(&w.brim_of).zip(waiting.iter_mut()) {
                     if *wait && Some(*o) == object {
+                        let keep = b.width_mm;
+                        b.width_mm = first_width.unwrap_or(keep);
                         b.push_loop(w.tool, Feature::Brim, speeds.brim, c);
+                        b.width_mm = keep;
                         *wait = false;
                     }
                 }

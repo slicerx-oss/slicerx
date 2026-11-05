@@ -480,6 +480,9 @@ pub struct PrintConfig {
     /// Set on the settings [`PrintConfig::for_first_layer`] made from `initial_layer_line_width`, where every line
     /// prints at that width.
     pub(crate) first_layer_line: bool,
+    /// Set on every settings [`PrintConfig::for_first_layer`] made: the print's first layer, whose modifiers and parts
+    /// print their own first layer settings too.
+    pub(crate) first_layer: bool,
     /// Percent of the line width.
     pub infill_wall_overlap: f64,
     pub brim_width: f64,
@@ -661,6 +664,7 @@ impl PrintConfig {
             first_layer_widths: FeatureWidths::default(),
             on_first_layer: false,
             first_layer_line: false,
+            first_layer: false,
             infill_wall_overlap: 15.0,
             brim_width: 5.0,
             skirt_loops: 0,
@@ -1947,6 +1951,7 @@ impl PrintConfig {
             };
             c.layer_height = self.initial_layer_print_height;
             c.on_first_layer = true;
+            c.first_layer = true;
             return c;
         }
         let Some(w) = self.feature_widths.initial_layer else {
@@ -1954,6 +1959,7 @@ impl PrintConfig {
             if self.initial_layer_width_unset() {
                 c.feature_widths.support = None;
             }
+            c.first_layer = true;
             return c;
         };
         let mut c = self.clone();
@@ -1963,6 +1969,7 @@ impl PrintConfig {
             ..FeatureWidths::default()
         };
         c.first_layer_line = true;
+        c.first_layer = true;
         c
     }
 
