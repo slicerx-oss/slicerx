@@ -22,6 +22,7 @@ exportOrcaProfile(config, { name, section, inherits? }), mergeConfigs(...configs
 validate(config): SettingIssue[]                   // checkValues + checkConflicts, errors first, fixes suggested only
 isEnabled(def, config), disabledKeys(config)
 diffConfigs(before, after, { easy? }): ConfigDiffEntry[]   // earliest slice stage first, one plain reason per key
+compareConfigs(a, b, { section?, all?, names? }): ConfigComparison   // two presets side by side: differing settings by group, labels and both values
 toSettingsPlan(from, to, before, after, { sources?, easy? }): SettingsPlan
 planSettings(from: SetupRef, to: SetupRef, base?: PrintConfig, opts?: PlanOptions): SettingsPlan   // material, printer or nozzle switch, and goals
 applyPlan(config, plan): PrintConfig
