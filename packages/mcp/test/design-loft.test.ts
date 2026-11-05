@@ -76,6 +76,13 @@ describe('loft as a design step', () => {
     const both = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)] }, { frame: level(10), loops: [square(10)] }], sketches: ['s1', 's2'] })
     expect(both.isError).toBe(true)
     expect(text(both)).toMatch(/profiles or sketches, not both/)
+    // the schema only points at revolve's frame and loops, so the tool still checks them as revolve does
+    const noSize = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [{ type: 'circle', center: [0, 0] }] }, { frame: level(10), loops: [square(10)] }] })
+    expect(noSize.isError).toBe(true)
+    expect(text(noSize)).toMatch(/profiles\W+0\W+loops\W+0/)
+    const noNormal = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)] }, { frame: { origin: [0, 0, 10] }, loops: [square(10)] }] })
+    expect(noNormal.isError).toBe(true)
+    expect(text(noNormal)).toMatch(/profiles\W+1\W+frame\W+normal/)
     expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
   }, 60_000)
 })

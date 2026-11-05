@@ -565,17 +565,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  const loftProfile = z.object({ frame: frameSchema.optional(), loops }).describe('One section of the loft: closed loops on a plane, as for slicerx_geom_revolve. Each profile is one closed loop (holes are not supported yet)')
+  // A profile is checked against the same frame and loops as slicerx_geom_revolve, but its schema only points there:
+  // spelling them out again would cost a small local model's context the size of a second revolve.
+  const profileShape = z.object({ frame: frameSchema.optional(), loops })
+  const loftProfile = z
+    .object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).min(1).max(256) })
+    .superRefine((p, ctx) => {
+      const r = profileShape.safeParse(p)
+      if (!r.success) for (const e of r.error.issues) ctx.addIssue({ code: 'custom', message: e.message, path: e.path })
+    })
+    .describe('One closed loop on a plane: frame and loops as for slicerx_geom_revolve')
   const loft = defineTool({
     name: 'geom.loft',
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Loft a solid through 2 to 64 closed sketch profiles in order, each one closed loop of lines and arcs (or a circle) on its own plane: straight sides from each profile to the next and flat ends. Profiles are matched corner to corner with the least twist, so a square lofts to a circle cleanly; neighboring profiles must not touch or cross each other\'s plane. As a new body, joined to a target or cut from it. With "design" it adds a step to the design (read it back with slicerx_design_steps and slicerx_geom_info); with no design it writes the result as an STL.',
+      'Loft a solid through 2 to 64 closed profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane.',
     input: z.object({
-      profiles: z.array(loftProfile).min(2).max(64).optional().describe('The profiles in loft order, each {"frame":{...},"loops":[...]}; a profile with no frame is on the bed'),
-      sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids from slicerx_design_timeline (or slicerx_design_sketch) in loft order, instead of profiles; their planes and loops are copied into the step'),
+      profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
+      sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids in loft order, instead of profiles'),
       operation,
       target: modelArg.optional().describe('The model to join to or cut from'),
       design: designArg.optional(),
@@ -588,13 +597,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((f) => ({ frame: frameOf(f.frame), loops: f.loops }))
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p) => profileShape.parse(p)).map((f) => ({ frame: frameOf(f.frame), loops: f.loops }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
-      const profiles = i.profiles!.map((f) => ({ ...plane(f.frame), loops: f.loops }))
+      const profiles = i.profiles!.map((p) => profileShape.parse(p)).map((f) => ({ ...plane(f.frame), loops: f.loops }))
       const out = await call('sketch.loft', { profiles, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} through ${profiles.length} profiles`, output: out }
     },
