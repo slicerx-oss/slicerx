@@ -5,6 +5,7 @@
 // it, and it goes back to 0 when the selection changes or a project opens (store.ts). The view draws it (setExplode);
 // what it drew is read back here for the app link, kept out of the view's module so the link does not load the view.
 import { EXPLODE_AXES, clampSpread, type ExplodeAxis, type Vec3 } from '@slicerx/contracts/explode'
+import { cadShown, showsDesign } from '../state/model-mode'
 import { get, selectedIds, set, type AppState } from '../state/store'
 
 export { EXPLODE_AXES, type ExplodeAxis }
@@ -15,16 +16,23 @@ export function explodeTargets(s: Pick<AppState, 'plate' | 'selection' | 'select
   return s.plate.filter((p) => chosen.has(p.id) && p.parts.length > 1).map((p) => p.id)
 }
 
+/** Whether the plate view draws the slice's toolpaths in place of the models: then there is nothing to spread. The bar and the view both ask this. */
+export function toolpathsDrawn(s: Pick<AppState, 'workspace' | 'modelMode' | 'sliceLook' | 'preview'>): boolean {
+  return s.workspace === 'prepare' && !(showsDesign(s) && cadShown()) && s.sliceLook === 'toolpaths' && s.preview !== null
+}
+
 /** Whether the Spread control shows: something to spread, and the plate drawn as models (not as the slice's toolpaths). */
 export function explodeShown(s: Pick<AppState, 'plate' | 'selection' | 'selectedIds'>, toolpaths: boolean): boolean {
   return !toolpaths && explodeTargets(s).length > 0
 }
 
 /** What the view is asked to draw, or null for every part at home. */
-export function explodeSpec(s: Pick<AppState, 'plate' | 'selection' | 'selectedIds' | 'explode'>, toolpaths: boolean): { ids: string[]; spread: number; axis: ExplodeAxis } | null {
+export function explodeSpec(s: Pick<AppState, 'plate' | 'selection' | 'selectedIds' | 'explode'>, toolpaths: boolean): { ids: string[]; spread: number; axis: ExplodeAxis; parts: Record<string, number> } | null {
   if (toolpaths || s.explode.spread <= 0) return null
   const ids = explodeTargets(s)
-  return ids.length ? { ids, spread: s.explode.spread, axis: s.explode.axis } : null
+  // the parts each prints: its volumes (modifiers, blockers, negative parts) are drawn after them and stay with it
+  const parts = Object.fromEntries(s.plate.filter((p) => ids.includes(p.id)).map((p) => [p.id, p.parts.length]))
+  return ids.length ? { ids, spread: s.explode.spread, axis: s.explode.axis, parts } : null
 }
 
 /** Sets the spread (0 to 100 percent, whole numbers) and, when given, the axis. Not an edit of the project. */

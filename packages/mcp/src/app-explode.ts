@@ -15,6 +15,10 @@ export interface AppExplode {
   axis: ExplodeAxis
   /** The selected objects with 2 parts or more: the ones the spread moves apart. */
   targets: { id: string; name: string; parts: number }[]
+  /** Whether the view draws the spread now: false while the slice's toolpaths stand in for the models or an edit tool is open. */
+  shown: boolean
+  /** An edit tool is open and keeps the parts where they print; explode_set refuses a spread until it ends. */
+  held: boolean
   /** Offsets the view draws each spread object's parts at, bed mm, part 0 first; null while no 3D view is up. */
   drawn: Record<string, [number, number, number][]> | null
 }
@@ -40,7 +44,8 @@ const AXIS_WORDS: Record<ExplodeAxis, string> = { radial: 'radially', x: 'along 
 export function explodeSummary(e: AppExplode): string {
   if (!e.targets.length) return `Nothing to spread: no selected object has 2 parts or more (axis ${e.axis}).`
   const names = e.targets.map((t) => `${t.name} (${t.parts} parts)`).join(', ')
-  return e.spread > 0 ? `Spread ${e.spread} percent ${AXIS_WORDS[e.axis]}: ${names}.` : `Drawn whole (spread 0, axis ${e.axis}): ${names}.`
+  if (e.spread > 0) return `Spread ${e.spread} percent ${AXIS_WORDS[e.axis]}: ${names}.${e.shown ? '' : ' Not drawn now: the view shows the toolpaths or an edit tool is open.'}`
+  return `Drawn whole (spread 0, axis ${e.axis}): ${names}.${e.held ? ' An edit tool is open, so the parts stay where they print.' : ''}`
 }
 
 export function appExplodeTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
@@ -49,7 +54,7 @@ export function appExplodeTools(link: AppLinkCaller | undefined, appName: string
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read ${appName}'s exploded view, the Spread control over the 3D view: spread (0 to 100 percent), axis (radial, x, y or z), targets (the selected objects with 2 parts or more, which it moves apart) and drawn (the offsets the view draws each target's parts at, bed mm, part 0 first; null while no 3D view is up). Display only: it never changes the project, the slice or the undo history, and it goes back to 0 when the selection changes. Reads through the app link.`,
+    description: `Read ${appName}'s exploded view, the Spread control over the 3D view: spread (0 to 100 percent), axis (radial, x, y or z), targets (the selected objects with 2 parts or more, which it moves apart; their modifier and other volumes stay with them), shown (whether the view draws it now), held (an edit tool keeps the parts where they print) and drawn (the offsets the view draws each target's parts at, bed mm, part 0 first; null while no 3D view is up). Display only: it never changes the project, the slice or the undo history, and it goes back to 0 when the selection changes. Reads through the app link.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'explode.get', {})
@@ -61,7 +66,7 @@ export function appExplodeTools(link: AppLinkCaller | undefined, appName: string
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Set ${appName}'s exploded view the way the person does with the Spread control over the 3D view: spread (0 to 100 percent) moves the parts of the selected objects with 2 parts or more apart, and axis picks the direction (radial: out from the middle; x, y: along that bed axis in order; z: the lowest part stays and the others rise). Select the object first (slicerx_app_ui_select). Display only: the project, the slice and the undo history never see it. Returns the exploded view read back, with the offsets the view draws.`,
+    description: `Set ${appName}'s exploded view the way the person does with the Spread control over the 3D view: spread (0 to 100 percent) moves the parts of the selected objects with 2 parts or more apart, and axis picks the direction (radial: out from the middle; x, y: along that bed axis in order; z: the lowest part stays and the others rise). Select the object first (slicerx_app_ui_select). Refused (busy) while the view shows the slice toolpaths or an edit tool is open, since editing puts the parts back where they print. Display only: the project, the slice and the undo history never see it. Returns the exploded view read back, with the offsets the view draws.`,
     input: z
       .object({
         spread: z.number().min(0).max(100).optional().describe('How far apart the parts are drawn, 0 to 100 percent'),

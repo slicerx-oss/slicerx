@@ -415,6 +415,10 @@ export interface PathPick {
 
 export interface ViewportEvents {
   pick: PickEvent
+  /** The exploded view went back to 0 by itself: an edit tool turned on (`tool`) or a drag of a model or its handles began (`drag`). */
+  explodeoff: { reason: 'tool' | 'drag' }
+  /** An edit tool started (`held`) or the last one ended holding the parts where they print; setExplode draws nothing while held. */
+  explodehold: { held: boolean }
   /**
    * Prepare: a right click that did not drag, a touch held still, or Shift+F10 and the menu key (`key`, at the middle
    * of the view, for what is selected). What is under the point comes as a pick reports it; `screen` is the client
@@ -617,10 +621,14 @@ export interface Viewport {
   /**
    * Exploded view, for display only: the parts of each object in `ids` (with 2 parts or more) are drawn moved out from
    * one another by `spread` percent (0 to 100) along `axis` (radial: out from the object's middle; x, y, z: along that
-   * bed axis, in order). The objects' transforms, picking and everything read from them stay as they were. Null or a
-   * spread of 0 puts every part back. It follows the objects through setTransforms and setPlate.
+   * bed axis, in order). `parts` says how many of an object's first parts spread (the rest, its volumes, stay home).
+   * It is for looking: picks report points where the parts print, boxes and drops measure the parts at home, an edit
+   * tool turned on holds the parts home (`explodehold`) and a drag of a model or its handles drops the spread first
+   * (`explodeoff`). Null or a spread of 0 puts every part back. It follows the objects through setTransforms and setPlate.
    */
-  setExplode?(spec: { ids: readonly string[]; spread: number; axis: 'radial' | 'x' | 'y' | 'z' } | null): void
+  setExplode?(spec: { ids: readonly string[]; spread: number; axis: 'radial' | 'x' | 'y' | 'z'; parts?: Readonly<Record<string, number>> } | null): void
+  /** Whether an edit tool holds the parts where they print now (lay on face, paint, brim, probe, cut, push, sketch, edge preview, a picked face). */
+  explodeHeld?(): boolean
   /** The offsets the exploded view draws each object's parts at now, bed mm, one per part; objects drawn whole are left out. */
   exploded?(): Record<string, [number, number, number][]>
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void

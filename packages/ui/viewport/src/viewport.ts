@@ -198,6 +198,9 @@ interface EdgeTrack {
 /** How far, in screen pixels, a press moves before a move becomes one the edge hook hears about. */
 const EDGE_START_PX = 4
 
+/** How far, in screen pixels, a press may move and still be a click. */
+const CLICK_SLOP_PX = 5
+
 /** The ease of a part settling back: a small overshoot, as a released spring. */
 const easeBack = (t: number): number => {
   const c = 1.4
@@ -225,6 +228,8 @@ interface Drag {
   live: boolean
   /** The edge hook's view of this move: not asked yet (undefined), declined or not a move (null), or following. */
   edge?: EdgeTrack | null
+  /** What the press hit, where it prints: a press that ends as a click picks this, not what lies there afterwards. */
+  hit: PickHit
 }
 
 export function createViewport(canvas: HTMLCanvasElement, opts: ViewportOptions = {}): Viewport {
@@ -268,7 +273,10 @@ interface RingDrag {
 interface PickHit {
   entry: ObjectEntry
   part: number
+  /** Where the part prints (a spread part's hit mapped back): everything reported or edited uses this. */
   point: Vector3
+  /** Where the ray met the part as drawn, for the camera only (the orbit pivot). */
+  drawn: Vector3
   face: number
   dir: Vector3
   /** Distance from the eye along the ray, for `pickAll`. */
@@ -320,6 +328,8 @@ class ViewportImpl implements Viewport {
   /** The exploded view asked for (setExplode), and the offsets it drew each object's parts at, bed mm. */
   private explode: ExplodeSpec | null = null
   private explodedAt = new Map<string, [number, number, number][]>()
+  /** The edit tools on now that keep the parts where they print (holdExplode). */
+  private readonly explodeHolds = new Set<string>()
   private readonly listeners = new Map<keyof ViewportEvents, Set<Listener>>()
   private readonly frameMs = new Ring()
   private readonly renderMs = new Ring()
@@ -1669,10 +1679,48 @@ class ViewportImpl implements Viewport {
 
   setExplode(spec: ExplodeSpec | null): void {
     const was = this.explode
-    this.explode = spec && spec.spread > 0 && spec.ids.length ? { ids: [...spec.ids], spread: spec.spread, axis: spec.axis } : null
+    const wanted = spec && spec.spread > 0 && spec.ids.length ? { ids: [...spec.ids], spread: spec.spread, axis: spec.axis, ...(spec.parts ? { parts: { ...spec.parts } } : {}) } : null
+    // An edit tool is on: the parts stay where they print, and the host hears the spread is 0 again.
+    if (wanted && this.explodeHolds.size) {
+      this.explode = null
+      if (was) {
+        this.applyExplode()
+        this.objectsMoved()
+      }
+      this.emit('explodeoff', { reason: 'tool' })
+      return
+    }
+    this.explode = wanted
     if (!was && !this.explode) return
     this.applyExplode()
     this.objectsMoved()
+  }
+
+  /** Whether an edit tool holds the parts where they print (the exploded view waits until it ends). */
+  explodeHeld(): boolean {
+    return this.explodeHolds.size > 0
+  }
+
+  /**
+   * Spread is for looking: an edit tool (`reason` while `on`) puts the parts back where they print before it acts, and
+   * the view draws no spread until every tool that holds it has ended.
+   */
+  private holdExplode(reason: string, on: boolean): void {
+    const was = this.explodeHolds.size > 0
+    if (on) this.explodeHolds.add(reason)
+    else this.explodeHolds.delete(reason)
+    const now = this.explodeHolds.size > 0
+    if (now) this.dropExplode('tool')
+    if (now !== was) this.emit('explodehold', { held: now })
+  }
+
+  /** A drag of a model, its arrows, rings or handles starts from where the parts print: the spread goes to 0 first. */
+  private dropExplode(reason: 'tool' | 'drag'): void {
+    if (!this.explode) return
+    this.explode = null
+    this.applyExplode()
+    this.objectsMoved()
+    this.emit('explodeoff', { reason })
   }
 
   exploded(): Record<string, [number, number, number][]> {
@@ -1685,11 +1733,12 @@ class ViewportImpl implements Viewport {
     const on = new Set(spec?.ids ?? [])
     const next = new Map<string, [number, number, number][]>()
     for (const [id, o] of this.objects) {
-      if (spec && on.has(id) && o.parts.length > 1) next.set(id, applyExplode(o, spec.spread, spec.axis))
+      // volumes (modifiers, blockers, negative parts) come after the parts and stay with the object
+      const count = Math.min(o.parts.length, spec?.parts?.[id] ?? o.parts.length)
+      if (spec && on.has(id) && count > 1) next.set(id, applyExplode(o, spec.spread, spec.axis, count))
       else if (this.explodedAt.has(id) || o.parts.some((p) => p.mesh.position.lengthSq() > 0)) applyExplode(o, 0, 'radial')
     }
-    // parked objects go back home too, so one that returns is drawn whole
-    for (const { entry } of this.parked.values()) if (entry.parts.some((p) => p.mesh.position.lengthSq() > 0)) applyExplode(entry, 0, 'radial')
+    // a parked object that comes back is in `objects` again by now, so the loop above draws it whole
     this.explodedAt = next
   }
 
@@ -1757,6 +1806,7 @@ class ViewportImpl implements Viewport {
   }
 
   setEdgePreview(preview: EdgePreviewSpec | null): void {
+    this.holdExplode('edge', preview !== null)
     this.edgeView.set(preview)
     this.invalidate()
   }
@@ -1768,6 +1818,7 @@ class ViewportImpl implements Viewport {
   }
 
   setProbeFaces(on: boolean): void {
+    this.holdExplode('probefaces', on)
     this.probeFaces = on
     if (!on && this.tool === 'probe') this.hoverFace(null)
   }
@@ -1839,12 +1890,16 @@ class ViewportImpl implements Viewport {
 
   /** Model's picked edges as solid bars, and the hovered one fainter, in the pick color. */
   setPickedEdges(picked: readonly MarkLine[], hover: readonly MarkLine[] = []): void {
+    // a picked edge is drawn and measured where its part prints, as a picked face is
+    this.holdExplode('edges', picked.length > 0)
     if (this.edgeMarks.set(picked, hover, (p) => this.mmPerPx(p))) this.invalidate()
   }
 
   /** The faces picked in Model, each the patch around a triangle: a light fill and its outline in the pick color, so the
    *  face keeps its shading and anything on it stays readable. */
   setSelectedFaces(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void {
+    // a picked face is drawn and measured on its part where it prints
+    this.holdExplode('faces', faces.length > 0)
     for (const o of this.pickedFaces) {
       o.removeFromParent()
       o.geometry.dispose()
@@ -2016,6 +2071,8 @@ class ViewportImpl implements Viewport {
 
   setTool(tool: PlateTool): void {
     this.tool = tool
+    // lay on face, paint, brim ears and the probe (measure and the Model tools) act on the parts where they print
+    this.holdExplode('tool', tool === 'face' || tool === 'paint' || tool === 'brim' || tool === 'probe')
     if (tool !== 'brim' && this.brim.setHover(null)) this.invalidate()
     if (tool !== 'face' && tool !== 'probe') this.hoverFace(null)
     this.painter.setActive(tool === 'paint')
@@ -2085,6 +2142,7 @@ class ViewportImpl implements Viewport {
     this.updateGizmo()
     const kind = this.gizmo.hit(ray)
     if (!kind) return false
+    this.dropExplode('drag')
     t.obj.updateMatrixWorld(true)
     const b = this.controlsMap.gizmo.scale
     this.scaleDrag = {
@@ -2230,11 +2288,22 @@ class ViewportImpl implements Viewport {
   private groupMinZ(entries: readonly ObjectEntry[]): number {
     let z = Infinity
     const toBed = this.stage.bedMatrix().invert()
-    for (const o of entries) {
-      o.group.updateMatrixWorld(true)
-      z = Math.min(z, new Box3().setFromObject(o.group, true).applyMatrix4(toBed).min.z)
-    }
+    for (const o of entries) z = Math.min(z, this.homeBox(o, true).applyMatrix4(toBed).min.z)
     return z
+  }
+
+  /**
+   * The object's box in the scene with its parts where they print, whatever the exploded view draws: every edit and
+   * every number reported reads this, never the parts' spread positions. `precise` measures the vertices.
+   */
+  private homeBox(o: ObjectEntry, precise = false): Box3 {
+    const moved = o.parts.filter((p) => p.mesh.position.lengthSq() > 0).map((p) => [p, p.mesh.position.clone()] as const)
+    for (const [p] of moved) p.mesh.position.set(0, 0, 0)
+    o.group.updateMatrixWorld(true)
+    const b = new Box3().setFromObject(o.group, precise)
+    for (const [p, at] of moved) p.mesh.position.copy(at)
+    if (moved.length) o.group.updateMatrixWorld(true)
+    return b
   }
 
   // ---------- move arrows ----------
@@ -2301,6 +2370,7 @@ class ViewportImpl implements Viewport {
     const t = this.moveTarget()
     const axis = t ? this.arrowUnder(ray, handleReach(e)) : null
     if (!t || !axis) return false
+    this.dropExplode('drag')
     this.settleNow?.()
     const { o, d } = this.bedRay(ray)
     const { origin } = this.arrowLayout(t)
@@ -2488,6 +2558,7 @@ class ViewportImpl implements Viewport {
     const t = this.rotateTarget()
     const axis = t ? this.ringUnder(ray, handleReach(e)) : null
     if (!t || !axis) return false
+    this.dropExplode('drag')
     const { o, d } = this.bedRay(ray)
     const l = this.ringLayout(t)
     const dir = this.ringAxesOf(t)[axis]
@@ -2559,8 +2630,7 @@ class ViewportImpl implements Viewport {
     } else {
       // A turn about a tilted axis puts the model back on the bed, as Orca does after a rotation.
       if (Math.abs(d.dir[2]) < 0.9999) {
-        g.updateMatrixWorld(true)
-        const b = new Box3().setFromObject(g, true).applyMatrix4(this.stage.bedMatrix().invert())
+        const b = this.homeBox(d.entry, true).applyMatrix4(this.stage.bedMatrix().invert())
         if (!b.isEmpty()) g.matrix.elements[14] = (g.matrix.elements[14] ?? 0) - b.min.z
         g.matrixWorldNeedsUpdate = true
       }
@@ -2630,6 +2700,7 @@ class ViewportImpl implements Viewport {
   // ---------- cut plane ----------
 
   setCutPlane(cut: CutPlaneSpec | null): void {
+    this.holdExplode('cut', cut !== null)
     const entry = cut ? this.objects.get(cut.objectId) : undefined
     if (!cut || !entry) {
       if (!this.cut && !this.cutPreview.entry) return
@@ -2802,6 +2873,7 @@ class ViewportImpl implements Viewport {
   // ---------- push and pull ----------
 
   setPush(push: PushSpec | null): void {
+    this.holdExplode('push', push !== null)
     const before = this.push
     this.push = push
     if (!push) {
@@ -2910,6 +2982,7 @@ class ViewportImpl implements Viewport {
   // ---------- sketch ----------
 
   setSketch(scene: SketchScene | null): void {
+    this.holdExplode('sketch', scene !== null)
     if (!scene && !this.sketchLayer.scene) return
     if (!scene) this.sketchDrag = null
     this.sketchLayer.set(scene)
@@ -3249,7 +3322,7 @@ class ViewportImpl implements Viewport {
   facePickAt(objectId: string, partIndex: number, triangle: number): FacePick | null {
     const entry = this.objects.get(objectId)
     if (!entry) return null
-    return this.faceFromHit({ entry, part: partIndex, face: triangle, point: new Vector3(), dir: new Vector3() })?.pick ?? null
+    return this.faceFromHit({ entry, part: partIndex, face: triangle, point: new Vector3(), drawn: new Vector3(), dir: new Vector3() })?.pick ?? null
   }
 
   /** Highlights the face patch under the cursor (tool `face`). Null clears it. */
@@ -3886,7 +3959,9 @@ class ViewportImpl implements Viewport {
     }
     const toHit = (h: Intersection): PickHit | null => {
       const entry = this.objects.get(h.object.userData.objectId as string)
-      return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone(), depth: h.distance } : null
+      // a part drawn spread apart reports the point where it prints: its own frame, through the object's
+      const point = h.object.position.lengthSq() > 0 ? entry?.group.localToWorld(h.object.worldToLocal(h.point.clone())) ?? h.point : h.point
+      return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point, drawn: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone(), depth: h.distance } : null
     }
     const pick = (e: { clientX: number; clientY: number }): PickHit | null => {
       const h = rayHits(e, false)[0]
@@ -3994,7 +4069,7 @@ class ViewportImpl implements Viewport {
       const d0 = this.drag
       if (d0 && d0.pointerType === 'touch' && e.pointerType === 'touch' && e.pointerId !== d0.pointerId) return pinchFromMove(d0)
       const p0 = pick(e)
-      const action = this.routeDrag(e, () => p0?.point ?? null)
+      const action = this.routeDrag(e, () => p0?.drawn ?? null)
       down = { x: e.clientX, y: e.clientY }
       if (this.mode !== 'prepare') return
       stopPress()
@@ -4157,6 +4232,7 @@ class ViewportImpl implements Viewport {
       const sel = this.selectedEntries()
       const together = sel.length > 1 && sel.some((o) => o.id === p.entry.id)
       if (!together) this.selectIds([p.entry.id])
+      // the spread stays until the press turns into a drag (onMove, past CLICK_SLOP_PX): a click picks what it was on
       this.settleNow?.()
       const bh = bedHit(e)
       if (!bh) return
@@ -4181,6 +4257,7 @@ class ViewportImpl implements Viewport {
         at: [e.clientX, e.clientY],
         // on a phone a finger moves the model only once it is past the tap slop; anything else moves it at once
         live: !moveWaitsForSlop(e.pointerType, this.movable),
+        hit: p,
       }
       this.controls.enabled = false
       el.setPointerCapture(e.pointerId)
@@ -4269,7 +4346,8 @@ class ViewportImpl implements Viewport {
       if (!d) {
         if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) queueSolid(e)
         if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces) || (this.pickFaces && this.tool !== 'probe')) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
-        if (this.pickEdges && this.tool !== 'probe' && this.mode === 'prepare' && e.buttons === 0) {
+        // edges light and win where they print, so hovering them waits while the parts are drawn spread
+        if (this.pickEdges && !this.explode && this.tool !== 'probe' && this.mode === 'prepare' && e.buttons === 0) {
           const h = pick(e)
           const key = h && h.face >= 0 ? `${h.entry.id}:${h.part}:${h.face}:${Math.round(h.point.x * 4)}:${Math.round(h.point.y * 4)}:${Math.round(h.point.z * 4)}` : ''
           if (key !== this.edgeHoverAt) {
@@ -4293,6 +4371,8 @@ class ViewportImpl implements Viewport {
         if (!touchMoveStarted(d.press, d.at)) return
         d.live = true
       }
+      // past the click slop the press is a drag of the model: it moves the parts where they print
+      if (this.explode && Math.hypot(e.clientX - d.press[0], e.clientY - d.press[1]) >= CLICK_SLOP_PX) this.dropExplode('drag')
       const bed = this.stage.bed
       const m = new Matrix4().fromArray(d.start)
       if (d.kind === 'move') {
@@ -4413,13 +4493,16 @@ class ViewportImpl implements Viewport {
         return
       }
       const d = this.drag
+      // a press on a model that ends as a click picks what the press was on
+      let pressed: PickHit | null = null
       if (d) {
         this.drag = null
         this.controls.enabled = true
         // Model with faces or edges in the pick filter: a press that never moved is a click, and picks what is under it.
         // A finger that never went past the tap slop is a tap the same way.
-        const click = !d.live || ((this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5)
+        const click = !d.live || ((this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < CLICK_SLOP_PX)
         if (click) {
+          pressed = d.hit
           if (d.edge) this.edgeHook?.cancel()
           // put back any sub-click nudge the drag made
           if (d.group) this.endGroup(d.group, true)
@@ -4454,7 +4537,7 @@ class ViewportImpl implements Viewport {
         return
       }
       if (moved >= 5 || e.button !== 0) return
-      const p = pick(e)
+      const p = pressed ?? pick(e)
       // Model's edge picks and the modeling tools: a click on an outline edge, or just past it, misses the model, so the
       // nearest hit a few pixels away goes along for the edge pick (only on a miss, so a click costs no more otherwise).
       const nearHit = !p && this.mode === 'prepare' && (this.tool === 'probe' || this.pickEdges) ? pickNear(e) : null
@@ -4464,7 +4547,8 @@ class ViewportImpl implements Viewport {
       // an origin plane counts when nothing solid is in front of it
       setRay(e)
       const op = this.originPlanes.at(ray)
-      const onPlane = op && (!p || op.distance < p.point.distanceTo(ray.ray.origin)) ? op.plane : null
+      // depth along the ray: the point reported is where the part prints, which a spread may have moved
+      const onPlane = op && (!p || op.distance < (p.depth ?? p.point.distanceTo(ray.ray.origin))) ? op.plane : null
       // a finished sketch under the click, while a tool picks them
       const sketch = this.tool === 'probe' ? this.finishedAt(e) : null
       this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY], ...(near ? { near } : {}), ...(sketch ? { sketch } : {}) })
@@ -4609,19 +4693,15 @@ class ViewportImpl implements Viewport {
 
   /** Object bounds in bed coordinates (x, y in mm; z up). */
   private bedBox(o: ObjectEntry): Box3 {
-    const group: Group = o.group
-    group.updateMatrixWorld(true)
-    const b = new Box3().setFromObject(group)
-    return b.applyMatrix4(this.stage.bedMatrix().invert())
+    return this.homeBox(o).applyMatrix4(this.stage.bedMatrix().invert())
   }
 
   dropToBed(ids?: readonly string[]): Record<string, number[]> {
     const out: Record<string, number[]> = {}
     for (const o of this.objects.values()) {
       if (ids && !ids.includes(o.id)) continue
-      o.group.updateMatrixWorld(true)
       // precise: a turned part's loose box reaches below its lowest vertex and would leave it floating
-      const z = new Box3().setFromObject(o.group, true).applyMatrix4(this.stage.bedMatrix().invert()).min.z
+      const z = this.homeBox(o, true).applyMatrix4(this.stage.bedMatrix().invert()).min.z
       if (!Number.isFinite(z) || Math.abs(z) < 1e-4) continue
       o.group.matrix.elements[14] = (o.group.matrix.elements[14] ?? 0) - z
       o.group.matrixWorldNeedsUpdate = true
