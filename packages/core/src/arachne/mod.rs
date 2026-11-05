@@ -559,9 +559,12 @@ pub(crate) fn island_walls_or(
     one_wall_layer: bool,
     usual: Option<&dyn Fn() -> Option<crate::shells::Walls>>,
 ) -> crate::shells::Walls {
+    // The beads' spacings on this layer: under variable layer heights it can be thinner or thicker than
+    // `layer_height` in the settings, and the paths add back this layer's rounded edges, so the walls print at
+    // the widths they are placed for.
     let (spacing_0, spacing_x) = (
-        cfg.spacing_for(cfg.outer_wall_width()),
-        cfg.spacing_for(cfg.inner_wall_width()),
+        cfg.spacing_at(cfg.outer_wall_width(), layer_height),
+        cfg.spacing_at(cfg.inner_wall_width(), layer_height),
     );
     let w = crate::geom::mm(cfg.line_width);
     // Precise outer wall (Orca default, only with inner walls printed first).
@@ -1023,8 +1026,8 @@ pub(crate) mod reference {
         one_wall_layer: bool,
     ) -> (Vec<perimeters::IslandWalls>, Shapes) {
         let (spacing_0, spacing_x) = (
-            cfg.spacing_for(cfg.outer_wall_width()),
-            cfg.spacing_for(cfg.inner_wall_width()),
+            cfg.spacing_at(cfg.outer_wall_width(), layer_height),
+            cfg.spacing_at(cfg.inner_wall_width(), layer_height),
         );
         let w = crate::geom::mm(cfg.line_width);
         let precise_order = crate::tower::flag_or(cfg, "precise_outer_wall", true)

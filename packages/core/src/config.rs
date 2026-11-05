@@ -1988,7 +1988,15 @@ impl PrintConfig {
     }
 
     pub fn spacing_for(&self, width: f64) -> f64 {
-        (width - self.layer_height * (1.0 - std::f64::consts::FRAC_PI_4)).max(width * 0.5)
+        self.spacing_at(width, self.layer_height)
+    }
+
+    /// [`PrintConfig::spacing_for`] on a layer `layer_height` mm thick, which variable layer heights (`smart_layer`,
+    /// a project's layer height ranges) can make thinner or thicker than the configured `layer_height`. A bead's
+    /// width is its spacing plus the rounded edges of the layer it prints on, so a bead laid out at the spacing of
+    /// another height prints wider or narrower than the width it was placed for.
+    pub fn spacing_at(&self, width: f64, layer_height: f64) -> f64 {
+        (width - layer_height * (1.0 - std::f64::consts::FRAC_PI_4)).max(width * 0.5)
     }
 
     /// What the infill area's overlap with the walls (`infill_wall_overlap`, and the first and the last layer's
