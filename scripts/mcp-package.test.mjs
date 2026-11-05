@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Packs the kit by default; SX_MCP_TARBALL selects an existing kit tarball.
+// Packs the kit by default; SX_MCP_TARBALL selects an existing kit tarball. Also builds the self-contained server to
+// check that both built servers serve --http.
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -57,8 +60,58 @@ test('packed CLI, library and MCP handshake report the package version', async (
     client = new Client({ name: 'package-version-test', version: '1.0.0' })
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [cli, '--printers', 'off'], stderr: 'pipe' }))
     assert.equal(client.getServerVersion().version, expected)
+    // Both built servers, the packed npm one and the self-contained one, serve streamable HTTP with --http.
+    const standalone = join(work, 'standalone')
+    execFileSync(process.execPath, [join(pkg, 'scripts/build.mjs'), '--standalone', standalone], { stdio: 'pipe', timeout: 240_000 })
+    for (const entry of [cli, join(standalone, 'slicerx-mcp.mjs')]) await httpSmoke(entry)
   } finally {
     await client?.close()
     rmSync(work, { recursive: true, force: true })
   }
 })
+
+/** Starts `entry` with --http on a free loopback port and a token, checks initialize, tools/list and a wrong token,
+ * then stops that server. */
+async function httpSmoke(entry) {
+  const port = await new Promise((ok, fail) => {
+    const probe = createServer().once('error', fail)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address()
+      probe.close(() => ok(port))
+    })
+  })
+  const token = randomBytes(32).toString('hex')
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('SLICERX_')))
+  const server = spawn(process.execPath, [entry, '--http', '--port', String(port), '--printers', 'off', '--no-urls'], { env: { ...env, SLICERX_MCP_TOKEN: token }, stdio: ['ignore', 'ignore', 'pipe'] })
+  try {
+    await new Promise((ok, fail) => {
+      let err = ''
+      server.stderr.setEncoding('utf8').on('data', (d) => {
+        err += d
+        if (err.includes('listening on')) ok()
+      })
+      server.once('exit', (code) => fail(new Error(`${entry} exited with ${code} before listening: ${err}`)))
+    })
+    const url = `http://127.0.0.1:${port}/mcp`
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` }
+    const post = (body, extra = {}) => fetch(url, { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) })
+    // A reply comes as JSON or as one server-sent event.
+    const reply = async (res) => {
+      const text = await res.text()
+      const data = text.split('\n').find((line) => line.startsWith('data: '))
+      return JSON.parse(data ? data.slice(6) : text)
+    }
+    const init = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'package-http-test', version: '1.0.0' } } })
+    assert.equal(init.status, 200, `${entry} initialize`)
+    assert.equal((await reply(init)).result?.serverInfo?.name, 'slicerx-mcp-server')
+    const session = { 'mcp-session-id': init.headers.get('mcp-session-id'), 'mcp-protocol-version': '2025-06-18' }
+    await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, session)
+    const list = await post({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, session)
+    assert.equal(list.status, 200, `${entry} tools/list`)
+    assert.ok((await reply(list)).result?.tools?.length > 100, `${entry} lists its tools`)
+    const refused = await post({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, { ...session, authorization: 'Bearer wrong' })
+    assert.equal(refused.status, 401, `${entry} refuses a wrong token`)
+  } finally {
+    server.kill()
+  }
+}
