@@ -9,6 +9,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Host, MeshHandle, PrinterInfo, SettingValue } from '@slicerx/contracts'
 import { importFlat } from '@slicerx/settings'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const { openModelBytes } = await import('../src/state/actions')
 const { profileReady, startProfileSync } = await import('../src/state/profile-sync')
@@ -34,7 +37,7 @@ const cube = (() => {
 })()
 const model = (app: string) => `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">${app}</metadata><resources><object id="1" type="model">${cube}</object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 110 110 0"/></build></model>`
 const bambuFile = (settings: Record<string, unknown>) => zip([{ name: '3D/3dmodel.model', data: model('BambuStudio-02.08.04.61') }, { name: 'Metadata/project_settings.config', data: JSON.stringify(settings) }])
-/** A PrusaSlicer project of one cube; `object` is the cube's own settings, in PrusaSlicer's keys. */
+/** Another slicer's project of one cube; `object` is the cube's own settings, in that slicer's keys. */
 const prusaFile = (lines: string[], object: Record<string, string> = {}) => zip([{ name: '3D/3dmodel.model', data: model('PrusaSlicer-2.9.6') }, { name: 'Metadata/Slic3r_PE.config', data: lines.map((l) => `; ${l}`).join('\n') }, ...(Object.keys(object).length ? [{ name: 'Metadata/Slic3r_PE_model.config', data: `<?xml version="1.0" encoding="UTF-8"?><config><object id="1" instances_count="1"><metadata type="object" key="name" value="cube"/>${Object.entries(object).map(([k, v]) => `<metadata type="object" key="${k}" value="${v}"/>`).join('')}<volume firstid="0" lastid="11"><metadata type="volume" key="name" value="cube"/><metadata type="volume" key="volume_type" value="ModelPart"/></volume></object></config>` }] : [])])
 
 const P1S_ID = { printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'Bambu Lab P1S', nozzle_diameter: ['0.4'] }
@@ -146,7 +149,8 @@ describe('a project opened on a fresh plate', () => {
 
   it('keeps its real changes on a printer of the person and on one with no profile', async () => {
     const unknown = bambuFile({ printer_settings_id: 'Workshop Printer 0.4 nozzle', printer_model: 'Workshop Printer', nozzle_diameter: ['0.4'], layer_height: '0.12', enable_support: '1', support_top_z_distance: '0.2', support_bottom_z_distance: '0.2', different_settings_to_system: ['enable_support;layer_height', '', ''] })
-    const cases: [Uint8Array, { printers?: PrinterInfo[] }][] = [[inherited, { printers: [BAY_2] }], [unknown, {}]]
+    // from a plate on Fine, whose layer height equals the project's, so only the Standard layer tells it is a change
+    const cases: [Uint8Array, { goal: 'fine'; printers?: PrinterInfo[] }][] = [[inherited, { goal: 'fine', printers: [BAY_2] }], [unknown, { goal: 'fine' }]]
     for (const [bytes, opts] of cases) {
       const cfg = await openOn(A1, 'gaps.3mf', bytes, {}, opts)
       expect(get().goalBase).toBe('fine')
@@ -179,6 +183,8 @@ describe('a project opened on a fresh plate', () => {
     await settled()
     expect(get().goal).toBe('fine')
     expect(Object.keys(get().overrides)).toEqual([])
+    // nothing applied, though it differs from Standard
+    expect(get().openNote?.text ?? '').not.toMatch(/Applied/)
   })
 
   it('keeps its values with no printer until one is added', async () => {
@@ -223,6 +229,27 @@ describe("a project's values equal to the layer it lands on", () => {
     set((s) => ({ overrides: { ...s.overrides, wall_loops: 5 } }))
     clearProject()
     expect(get().overrides['wall_loops']).toBe(5)
+  })
+
+  it("opened from a plate on Fine, take the next printer's values as the MCP server does", async () => {
+    // A P1S project of P1S Standard values changes nothing against Standard, so none of it is pinned on the move to the
+    // MK4S, whatever goal the plate was on, and the plate slices as slicerx_slice_file does on machine:prusa-mk4s.
+    const bytes = await standardProject()
+    await openOn(A1, 'p1s-standard.3mf', bytes, {}, { goal: 'fine' })
+    set({ printerId: MK4S.id, printerModel: MK4S })
+    await settled()
+    const speeds = ['default_acceleration', 'outer_wall_acceleration', 'outer_wall_speed', 'inner_wall_speed', 'sparse_infill_speed', 'travel_speed']
+    expect(pinnedOf([...KEYS, ...speeds])).toEqual([])
+    const { DataStore, resolveDataPaths } = await import('../../mcp/src/data')
+    const { ProfileCatalog } = await import('../../mcp/src/profiles')
+    const { openProject } = await import('../../mcp/src/project-open')
+    const { readProjectFile } = await import('../../mcp/src/projectfile')
+    const path = join(mkdtempSync(join(tmpdir(), 'project-own-values-')), 'p1s-standard.3mf')
+    writeFileSync(path, bytes)
+    const profiles = new ProfileCatalog(new DataStore(resolveDataPaths()))
+    await profiles.prepare(['machine:prusa-mk4s'])
+    const mcp = (await openProject(readProjectFile(path), profiles, ['machine:prusa-mk4s'], undefined))!.config
+    for (const k of [...KEYS, ...speeds]) expect(config()[k], k).toEqual(mcp[k])
   })
 
   it("leave a person's own override equal to the project's to come back on New project", async () => {
