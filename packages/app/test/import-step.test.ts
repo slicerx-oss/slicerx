@@ -123,8 +123,8 @@ describe('adding IGES files to the plate', () => {
     expect(s[0]).toBeCloseTo(50.8, 2)
     expect(s[1]).toBeCloseTo(25.4, 2)
     expect(s[2]).toBeCloseTo(6.35, 2)
-    // The engine's repair closes the seams between the surfaces.
-    expect(get().openNote?.text).toMatch(/^bracket-inch\.iges: Converted from inches to millimeters\. The file has surfaces and no solids, so they were joined into one body\. Repaired: closed \d+ holes\.$/)
+    // The reader sews the surfaces into a closed solid, so the engine's repair has nothing to close.
+    expect(get().openNote?.text).toBe('bracket-inch.iges: Converted from inches to millimeters. The file has surfaces and no solids, so they were sewn into one solid.')
   })
 
   it('adds nothing when the file is not IGES', async () => {

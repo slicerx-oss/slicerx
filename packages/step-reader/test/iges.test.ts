@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Reading IGES files: the same OpenCASCADE build reads them (ReadIgesFile) and they come out in the shape a STEP read
 // has: objects of touching bodies, names, colors, millimeters and notes. A file of loose trimmed surfaces, the way
-// many CAD programs write IGES, is read as bodies of surfaces rather than refused. The fixtures come from
-// fixtures/make-iges-fixtures.py.
+// many CAD programs write IGES, is sewn into closed solids where the surfaces close, and the rest are kept as open
+// bodies rather than refused. The fixtures come from fixtures/make-iges-fixtures.py.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -22,6 +22,36 @@ function size(positions: Float64Array): number[] {
     }
   }
   return hi.map((h, k) => h - lo[k]!)
+}
+
+/**
+ * Whether a body's mesh is closed and consistently oriented once vertices at the same place are joined: every edge
+ * is used once in each direction. Also gives the enclosed volume (positive when the triangles face out).
+ */
+function closedMesh(positions: Float64Array, indices: Uint32Array): { closed: boolean; volume: number } {
+  const ids = new Map<string, number>()
+  const id = (v: number) => {
+    const key = [0, 1, 2].map((k) => Math.round(positions[v * 3 + k]! * 1e5)).join(',')
+    if (!ids.has(key)) ids.set(key, ids.size)
+    return ids.get(key)!
+  }
+  const edges = new Map<string, number>()
+  let volume = 0
+  let degenerate = 0
+  for (let t = 0; t < indices.length; t += 3) {
+    const [a, b, c] = [indices[t]!, indices[t + 1]!, indices[t + 2]!]
+    const v = [a, b, c].map(id)
+    if (new Set(v).size < 3) degenerate++
+    for (let k = 0; k < 3; k++) {
+      const key = `${v[k]}>${v[(k + 1) % 3]}`
+      edges.set(key, (edges.get(key) ?? 0) + 1)
+    }
+    const p = (i: number) => [positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!]
+    const [p0, p1, p2] = [p(a), p(b), p(c)]
+    volume += (p0[0]! * (p1[1]! * p2[2]! - p1[2]! * p2[1]!) - p0[1]! * (p1[0]! * p2[2]! - p1[2]! * p2[0]!) + p0[2]! * (p1[0]! * p2[1]! - p1[1]! * p2[0]!)) / 6
+  }
+  const closed = degenerate === 0 && [...edges].every(([key, n]) => n === 1 && edges.get(key.split('>').reverse().join('>')) === 1)
+  return { closed, volume }
 }
 
 /** An IGES file of `records`, each padded to 72 columns and given its section letter and sequence number. */
@@ -90,28 +120,65 @@ describe('reading IGES files', () => {
     expect(read.triangles).toBe(328)
   })
 
-  it('joins a file of loose surfaces into a body, converts inches and says both', () => {
+  it('sews a file of loose surfaces into a closed solid, converts inches and says both', () => {
     const read = readIges(occt, file('bracket-inch.iges'), 'bracket-inch.iges')
     expect(read.unit).toBe('inch')
     expect(read.objects.map((o) => [o.name, o.bodies.map((b) => b.name)])).toEqual([['bracket-inch', ['bracket-inch']]])
-    const s = size(read.objects[0]!.bodies[0]!.positions)
+    const body = read.objects[0]!.bodies[0]!
+    const s = size(body.positions)
     expect(s[0]).toBeCloseTo(50.8, 3)
     expect(s[1]).toBeCloseTo(25.4, 3)
     expect(s[2]).toBeCloseTo(6.35, 3)
-    expect(read.notes).toEqual(['Converted from inches to millimeters.', 'The file has surfaces and no solids, so they were joined into one body.'])
+    expect(read.notes).toEqual(['Converted from inches to millimeters.', 'The file has surfaces and no solids, so they were sewn into one solid.'])
     expect(read.triangles).toBeGreaterThan(100)
+    // Watertight, facing out, and holding the bracket's volume: the block less its four rounded corners and the hole,
+    // each of radius 1/8 inch.
+    const r = 0.125 * 25.4
+    const want = 50.8 * 25.4 * 6.35 - 4 * (r * r - (Math.PI * r * r) / 4) * 6.35 - Math.PI * r * r * 6.35
+    const mesh = closedMesh(body.positions, body.indices)
+    expect(mesh.closed).toBe(true)
+    expect(mesh.volume / want).toBeCloseTo(1, 2)
   })
 
-  it('joins loose surfaces into a body per group of touching ones', () => {
+  it('sews loose surfaces into a solid per group that closes', () => {
     // Twelve loose faces, six to a cube, the cubes 20 mm apart.
     const read = readIges(occt, file('cubes-faces.igs'), 'cubes-faces.igs')
     expect(read.objects.map((o) => [o.name, o.bodies.map((b) => [b.name, b.indices.length / 3])])).toEqual([
       ['cubes-faces 1', [['cubes-faces 1', 12]]],
       ['cubes-faces 2', [['cubes-faces 2', 12]]],
     ])
-    for (const o of read.objects) expect(size(o.bodies[0]!.positions).map((v) => Math.round(v * 1000) / 1000)).toEqual([10, 10, 10])
-    expect(read.notes).toEqual(['The file has surfaces and no solids, so they were joined into 2 bodies.'])
+    for (const o of read.objects) {
+      const b = o.bodies[0]!
+      expect(size(b.positions).map((v) => Math.round(v * 1000) / 1000)).toEqual([10, 10, 10])
+      const mesh = closedMesh(b.positions, b.indices)
+      expect(mesh.closed).toBe(true)
+      expect(mesh.volume).toBeCloseTo(1000, 6)
+    }
+    expect(read.notes).toEqual(['The file has surfaces and no solids, so they were sewn into 2 solids.'])
     expect(read.unit).toBe('millimeter')
+  })
+
+  it('closes a small gap at a tolerance scaled to the model, and keeps surfaces that do not close as an open body', () => {
+    // A 100 mm box whose top sits 0.005 mm above its sides, and one with no top, 50 mm apart.
+    const read = readIges(occt, file('boxes-gap-open.igs'), 'boxes-gap-open.igs')
+    expect(read.objects.map((o) => o.bodies.map((b) => b.name))).toEqual([['boxes-gap-open 1'], ['boxes-gap-open 2']])
+    const [sewn, open] = read.objects.map((o) => o.bodies[0]!)
+    const closed = closedMesh(sewn!.positions, sewn!.indices)
+    expect(closed.closed).toBe(true)
+    expect(closed.volume).toBeCloseTo(1_000_000, -2)
+    // Sewing meets the gap halfway.
+    const height = size(sewn!.positions)[2]!
+    expect(height).toBeGreaterThan(100)
+    expect(height).toBeLessThan(100.005)
+    // Five faces of the open box, still joined into one body.
+    expect(closedMesh(open!.positions, open!.indices).closed).toBe(false)
+    expect(size(open!.positions).map((v) => Math.round(v * 1000) / 1000)).toEqual([100, 100, 100])
+    expect(read.notes).toEqual(['The file has surfaces and no solids, so they were sewn into one solid.', 'Surfaces that do not close were joined into one more body.'])
+  })
+
+  it('reads the solids of a file that has them as closed meshes, as before', () => {
+    const read = readIges(occt, file('assembly.igs'), 'assembly.igs')
+    for (const b of read.objects.flatMap((o) => o.bodies)) expect(closedMesh(b.positions, b.indices).closed).toBe(true)
   })
 
   it('meshes coarser and finer on request', () => {

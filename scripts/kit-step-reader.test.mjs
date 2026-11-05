@@ -54,7 +54,7 @@ test('the kit has the STEP reader as its own tarball, in the manifest and SHA256
   console.log(`kit: ${step.file} ${bytes.length} bytes, ${mcp.file} ${statSync(join(kit, mcp.file)).size} bytes`)
 
   const reader = unpack(join(kit, step.file))
-  for (const f of ['NOTICE', 'SOURCE.md', 'README.md', 'LICENSE-APACHE', 'LICENSE-occt-import-js.txt', 'LICENSE-occt.txt', 'OCCT_LGPL_EXCEPTION.txt', 'LICENSE-emscripten.txt', 'LICENSE-musl.txt', 'LICENSE-libcxx.txt', 'build.sh', 'source-archive.sh', 'patches/0001-mesh-kind.patch', 'dist/node.js', 'dist/node-worker.js', 'dist/occt-import-js.mjs', 'dist/occt-import-js.wasm']) {
+  for (const f of ['NOTICE', 'SOURCE.md', 'README.md', 'LICENSE-APACHE', 'LICENSE-occt-import-js.txt', 'LICENSE-occt.txt', 'OCCT_LGPL_EXCEPTION.txt', 'LICENSE-emscripten.txt', 'LICENSE-musl.txt', 'LICENSE-libcxx.txt', 'build.sh', 'source-archive.sh', 'patches/0001-mesh-kind.patch', 'patches/0002-sew-iges-faces.patch', 'dist/node.js', 'dist/node-worker.js', 'dist/occt-import-js.mjs', 'dist/occt-import-js.wasm']) {
     assert.ok(reader.names.includes(f), `the reader tarball has ${f}`)
   }
   assert.equal(JSON.parse(readFileSync(join(reader.root, 'package.json'), 'utf8')).version, step.version)

@@ -6,8 +6,10 @@
 //
 // - Solids are kept. Open shells and loose faces are construction or reference geometry in most CAD exports and are
 //   left out when the file has solids; a file with shells only keeps them (a mesh repair closes them). A STEP file
-//   with loose faces only is refused. An IGES file with loose faces only keeps them, joined into a body per group of
-//   touching faces: many CAD programs write IGES as trimmed surfaces with no solid at all.
+//   with loose faces only is refused. Many CAD programs write IGES as trimmed surfaces with no solid at all, so in an
+//   IGES file of loose faces only OpenCASCADE sews the faces together first (patches/0002-sew-iges-faces.patch):
+//   each group that closes comes out a solid, and the faces that do not close are kept, joined into a body per group
+//   of touching faces.
 // - Bodies whose boxes touch or overlap stay together as one object with a part per body, in place (a bolt in its
 //   bracket). Bodies apart from the rest become objects of their own.
 // - Chord tolerance 0.01 mm and 0.5 rad, measured on the NIST test models and our own parts: under a second for most
@@ -17,7 +19,10 @@
 
 export interface OcctMesh {
   name?: string
-  /** solid, shell or faces (added by our patch, patches/0001-mesh-kind.patch). */
+  /**
+   * solid, shell or faces (added by our patch, patches/0001-mesh-kind.patch), or sewn: a solid OpenCASCADE sewed from
+   * an IGES file's loose faces (patches/0002-sew-iges-faces.patch).
+   */
   kind?: string
   /** The shape's color, 0 to 1 per channel, when the file gives one. */
   color?: ArrayLike<number>
@@ -407,8 +412,11 @@ function read(f: Format, occt: Occt, file: Uint8Array, fileName: string, quality
     const solids = all.filter((m) => m.kind === 'solid')
     const shells = all.filter((m) => m.kind === 'shell' || m.kind === undefined || m.kind === '')
     const faces = all.filter((m) => m.kind === 'faces')
-    const joined = !solids.length && !shells.length && f.keepFaces ? joinFaces(faces) : []
-    return { all, solids, shells, faces, joined, keep: solids.length ? solids : shells.length ? shells : joined }
+    // Sewing happens only in a file of loose faces, so sewn solids come with no other solids or shells.
+    const loose = !solids.length && !shells.length && f.keepFaces
+    const sewn = loose ? all.filter((m) => m.kind === 'sewn') : []
+    const joined = loose ? joinFaces(faces) : []
+    return { all, solids, shells, faces, sewn, joined, keep: solids.length ? solids : shells.length ? shells : [...sewn, ...joined] }
   }
   let u = used(r)
   if (u.all.length === 0) throw NOTHING(app, f.word)
@@ -421,7 +429,12 @@ function read(f: Format, occt: Occt, file: Uint8Array, fileName: string, quality
   }
   const total = triangles(u.keep)
   if (total > STEP_MAX_TRIANGLES) throw new StepError('too_detailed', `is too detailed: ${total.toLocaleString('en-US')} triangles at ${tol} mm, more than the ${STEP_MAX_TRIANGLES.toLocaleString('en-US')} ${app} can add at once.`)
-  if (u.joined.length) {
+  if (u.sewn.length) {
+    const n = u.sewn.length
+    notes.push(`The file has surfaces and no solids, so they were sewn into ${n === 1 ? 'one solid' : `${n} solids`}.`)
+    const open = u.joined.length
+    if (open) notes.push(`Surfaces that do not close were joined into ${open === 1 ? 'one more body' : `${open} more bodies`}.`)
+  } else if (u.joined.length) {
     const n = u.joined.length
     notes.push(`The file has surfaces and no solids, so they were joined into ${n === 1 ? 'one body' : `${n} bodies`}.`)
   } else {
@@ -459,7 +472,8 @@ export function readStep(occt: Occt, file: Uint8Array, fileName: string, quality
 
 /**
  * Reads an IGES file into objects and bodies in millimeters, in the shape readStep gives. A file of loose surfaces and
- * no solids becomes a body per group of touching surfaces. Throws StepError with a plain reason and a code.
+ * no solids is sewn into solids where the surfaces close; the rest become a body per group of touching surfaces.
+ * Throws StepError with a plain reason and a code.
  */
 export function readIges(occt: Occt, file: Uint8Array, fileName: string, quality: StepQuality = 'normal', opts: ReadOptions = {}): StepRead {
   return read(IGES, occt, file, fileName, quality, opts)
