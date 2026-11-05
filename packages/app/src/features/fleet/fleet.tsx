@@ -30,6 +30,8 @@ import { askToNotify, guardHub, notePlate, useGuard } from './guard'
 import { GuardCard } from './guard-card'
 import { ObicoRepaste, offersRepaste, REPASTE_LABEL, repasteCardText } from './obico-repaste'
 import { spoolLeft } from '../../filament/left'
+import { openPrinterPage } from '../../lib/links'
+import { WEB_UI_LABEL, webUiFor, webUiTip } from './web-ui'
 import './wall.css'
 
 const DeviceDialog = lazy(() => import('./device-dialog').then((m) => ({ default: m.DeviceDialog })))
@@ -418,6 +420,7 @@ function TileMenu({ r, groups, disabled = false, onView, onRepaste }: { r: Fleet
   const st = r.status
   const exportOnly = isExportOnly(r)
   const kind = wallKind(r)
+  const webUi = webUiFor(r)
   const close = (then: () => void) => () => {
     setMenu(false)
     then()
@@ -470,6 +473,11 @@ function TileMenu({ r, groups, disabled = false, onView, onRepaste }: { r: Fleet
             <MenuItem icon="printer" onClick={close(() => setDevice(true))}>
               Controls and files
             </MenuItem>
+            {webUi ? (
+              <MenuItem icon="external" data-testid="printer-card-web-ui" onClick={close(() => void openPrinterPage(webUi))} {...tipAttrs(webUiTip(webUi))}>
+                {WEB_UI_LABEL}
+              </MenuItem>
+            ) : null}
             {kind === 'ready' && slice.status === 'done' ? (
               <MenuItem icon="send-to-printer" onClick={close(() => void sendToPrinter(host, r))}>
                 {plateName ? `Print ${plateName}` : 'Print the plate'}

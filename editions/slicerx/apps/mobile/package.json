@@ -28,6 +28,7 @@
     "@slicerx/link-client": "workspace:*",
     "@slicerx/pair": "workspace:*",
     "@slicerx/pilot": "workspace:*",
+    "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
     "@slicerx/store": "workspace:*",
     "@slicerx/ui": "workspace:*",
