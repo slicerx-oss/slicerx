@@ -12,7 +12,7 @@ import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, layerConfig, mat
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { slotConfig } from '../filament/slot-config'
-import { profileReady, slotsOf } from '../state/profile-sync'
+import { profileReady, standardLayerValues } from '../state/profile-sync'
 import { isExportOnly } from '../lib/hand-printers'
 import { gcodeValues, reviewOpenedGcode } from '../state/project-gcode'
 import { recognizedScript } from './script-review'
@@ -257,12 +257,8 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
  * against, whatever goal the plate is on, as the MCP server measures them. Null without a printer layer.
  */
 export async function standardLayer(): Promise<Record<string, SettingValue> | null> {
-  await profileReady()
-  const s = get()
-  if (!s.printerModel || !s.profile) return null
-  const { buildProfileLayer } = await import('../adapters/profile')
-  const layer = await buildProfileLayer({ printer: s.printerModel, tier: 'standard', slots: slotsOf(s), nozzle: s.profile.nozzle })
-  return layer ? layerConfig(layer.values, { ...EASY_DEFAULTS, varyLayerHeight: false }, new Set(['smartLayer', 'varyLayerHeight'])) : null
+  const values = await standardLayerValues()
+  return values && get().profile ? layerConfig(values, { ...EASY_DEFAULTS, varyLayerHeight: false }, new Set(['smartLayer', 'varyLayerHeight'])) : null
 }
 
 /** The keys a project's settings change against the Standard layer (`standardLayer`), its real changes; null without one. */
