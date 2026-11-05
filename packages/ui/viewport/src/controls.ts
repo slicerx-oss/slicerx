@@ -275,6 +275,16 @@ export function moveWaitsForSlop(pointerType: string, moves: ModelMoves): boolea
   return pointerType === 'touch' && moves === 'selected'
 }
 
+/**
+ * Whether a drag on a model may take it past the bed's edges to another plate (the host's edge drag). Not a finger on a
+ * phone ('selected'): there the model moves on the plate, and its X and Y move arrows take it past an edge. The edge drag
+ * eases the view out and slides it toward the edge the model heads for, which on a view framed close on a small model
+ * brought the plate's edge under a finger that had barely moved.
+ */
+export function dragMayLeaveBed(pointerType: string, moves: ModelMoves): boolean {
+  return !(pointerType === 'touch' && moves === 'selected')
+}
+
 /** A press on the plate, as the move rule reads it. */
 export interface PlatePress {
   /** The model under the press, or null for empty space (which always turns the view). */

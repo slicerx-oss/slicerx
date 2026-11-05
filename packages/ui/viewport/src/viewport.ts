@@ -59,7 +59,7 @@ import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
 import { FEATURE_COLORS, SCENE, resolveTheme, viewportThemeOf, type ResolvedTheme, type UiThemeLike, type ViewportTheme } from './palette'
 import { summarizePreview, type PreviewSummary } from './summary'
-import { CONTROL_PRESETS, buttonName, modifiersOf, orbitCodeFor, moveWaitsForSlop, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
+import { CONTROL_PRESETS, buttonName, dragMayLeaveBed, modifiersOf, orbitCodeFor, moveWaitsForSlop, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
@@ -3315,7 +3315,7 @@ class ViewportImpl implements Viewport {
   /** Starts the edge hook on a move drag once the pointer has gone a few pixels; null when there is no hook or it declined. */
   private moveEdge(d: Drag, e: { clientX: number; clientY: number }): EdgeTrack | null {
     if (d.edge !== undefined) return d.edge
-    if (!this.edgeHook || d.kind !== 'move' || this.mode !== 'prepare') return (d.edge = null)
+    if (!this.edgeHook || d.kind !== 'move' || this.mode !== 'prepare' || !dragMayLeaveBed(d.pointerType, this.movable)) return (d.edge = null)
     if (Math.hypot(e.clientX - d.press[0], e.clientY - d.press[1]) < EDGE_START_PX) return null
     const tx = d.start[12] ?? 0
     const ty = d.start[13] ?? 0
