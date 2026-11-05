@@ -3,11 +3,11 @@
 import type { CompareRow } from '@slicerx/settings'
 import { Button, Select, Switch, tipAttrs } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
-import { useApp } from '../state/store'
+import { toast, useApp } from '../state/store'
 import { appName } from '../edition'
-import { comparePreset, copyValue, parentFor, parentSide, stockFor, undoCopy, whole, type CompareSide } from './compare'
+import { comparePreset, CopyChanged, copyValue, parentFor, parentSide, stockFor, undoCopy, whole, type CompareSide, type CopyRecord } from './compare'
 import { KIND_LABEL, KINDS, reportPresetError } from './presets'
-import type { PresetKind, UserPreset } from './store'
+import type { PresetKind } from './store'
 
 /** `6 lines only in A1 quiet, 2 only in Stock`: how a G-code setting's two texts differ, line by line. */
 function linesText(l: NonNullable<CompareRow['lines']>, a: string, b: string): string {
@@ -28,7 +28,7 @@ export function ComparePanel() {
   const [aId, setA] = useState('')
   const [withId, setWith] = useState('')
   const [all, setAll] = useState(false)
-  const [undo, setUndo] = useState<{ before: UserPreset; key: string }[]>([])
+  const [undo, setUndo] = useState<{ rec: CopyRecord; label: string }[]>([])
   const [parent, setParent] = useState<{ of: string; side: CompareSide | null; failed?: boolean } | null>(null)
   const a = list.find((p) => p.id === aId)
   const other = withId.startsWith('preset:') ? list.find((p) => p.id === withId.slice('preset:'.length)) : undefined
@@ -73,13 +73,14 @@ export function ComparePanel() {
   }
   const copy = (r: CompareRow) => {
     if (!a || !base || !side) return
-    void copyValue(a.id, r.key, side.config, base).then((before) => before && setUndo((u) => [...u, { before, key: r.key }]), reportPresetError)
+    void copyValue(a.id, r.key, side.config, base).then((rec) => rec && setUndo((u) => [...u, { rec, label: r.label }]), reportPresetError)
   }
   const undoLast = () => {
     const last = undo[undo.length - 1]
     if (!last) return
     setUndo((u) => u.slice(0, -1))
-    void undoCopy(last.before, last.key).catch(reportPresetError)
+    // Only the copied setting goes back, and only while it still holds the copied value: a later change stays.
+    void undoCopy(last.rec).catch((e: unknown) => (e instanceof CopyChanged ? toast(`${last.label} in ${last.rec.name} changed after that copy, so it was not put back.`, 'info') : reportPresetError(e)))
   }
   const parentState = withId === 'parent' && a && parent?.of === `${a.kind}:${a.inherits}` && parent.side === null ? (parent.failed ? 'failed' : 'missing') : null
   const missingParent = parentState !== null
@@ -178,7 +179,7 @@ export function ComparePanel() {
                       {g.rows.map((r) => (
                         <tr key={r.key} data-testid="preset-compare-row" data-key={r.key} data-differs={r.differs ? 'true' : undefined}>
                           <th scope="row">
-                            {/* Labels only: the key stays in data-key on the row, for tests and the agent bridge. */}
+                            {/* Labels only: the key stays in data-key on the row, for tests and integrators. */}
                             <span className="cmp-label">
                               {r.label}
                             </span>

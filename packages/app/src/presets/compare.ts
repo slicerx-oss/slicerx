@@ -66,38 +66,70 @@ function followOnPlate(p: UserPreset, key: string, value: SettingValue | undefin
   markStale()
 }
 
-// Copies and undos write one at a time, each reading the preset after the one before has landed, so two quick presses
-// never build on the same old values and lose one of them.
+// Copies, undos and the reload of the list run one at a time, each reading the preset after the one before has landed,
+// so two quick presses never build on the same old values and lose one of them.
 let writes: Promise<unknown> = Promise.resolve()
-function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+/** Runs `fn` after every preset write queued before it, and before any queued after. */
+export function presetWrite<T>(fn: () => Promise<T>): Promise<T> {
   const run = writes.then(fn, fn)
   writes = run.catch(() => undefined)
   return run
 }
 
+/** One copied setting: the preset, the key, the value the preset had before (absent: none of its own) and after. */
+export interface CopyRecord {
+  id: string
+  name: string
+  key: string
+  was?: SettingValue
+  now?: SettingValue
+}
+
+/** An undo that would undo something else: the preset is gone, or its setting no longer holds the copied value. */
+export class CopyChanged extends Error {}
+
+/** A check run in the queue right before a write, such as the app link's busy refusal; it throws to stop the write. */
+type Check = (p: UserPreset) => void
+
+const keyOnly = (values: Record<string, SettingValue>, key: string, v: SettingValue | undefined): Record<string, SettingValue> => {
+  const out = { ...values }
+  if (v === undefined) delete out[key]
+  else out[key] = structuredClone(v)
+  return out
+}
+
 /**
  * Copies `key`'s value from `from` into preset `id`, whose values go over `base` (its stock settings, `stockFor`). A
- * value equal to what the preset gets without it is dropped from the preset rather than kept as a change. Returns the
- * preset as it was, for `undoCopy`.
+ * value equal to what the preset gets without it is dropped from the preset rather than kept as a change. Returns what
+ * `undoCopy` needs to put that one setting back.
  */
-export function copyValue(id: string, key: string, from: PrintConfig, base: PrintConfig): Promise<UserPreset | null> {
-  return oneAtATime(async () => {
+export function copyValue(id: string, key: string, from: PrintConfig, base: PrintConfig, check?: Check): Promise<CopyRecord | null> {
+  return presetWrite(async () => {
     const before = get().userPresets.find((p) => p.id === id)
     if (!before) return null
+    check?.(before)
     const value = from[key]
-    const values = { ...before.values }
-    if (value === undefined || sameValue(value, base[key])) delete values[key]
-    else values[key] = structuredClone(value)
-    const after = await updatePreset(id, { values, ...(before.easy ? { easy: before.easy } : {}) })
-    if (after) followOnPlate(after, key, values[key])
-    return structuredClone(before)
+    const now = value === undefined || sameValue(value, base[key]) ? undefined : value
+    const after = await updatePreset(id, { values: keyOnly(before.values, key, now), ...(before.easy ? { easy: before.easy } : {}) })
+    if (after) followOnPlate(after, key, after.values[key])
+    const was = before.values[key]
+    return { id, name: before.name, key, ...(was !== undefined ? { was: structuredClone(was) } : {}), ...(now !== undefined ? { now: structuredClone(now) } : {}) }
   })
 }
 
-/** Puts back a preset as `copyValue` found it. */
-export function undoCopy(before: UserPreset, key: string): Promise<void> {
-  return oneAtATime(async () => {
-    const after = await updatePreset(before.id, { values: before.values, ...(before.easy ? { easy: before.easy } : {}) })
-    if (after) followOnPlate(after, key, before.values[key])
+/**
+ * Puts back the one setting a copy changed, leaving every other setting of the preset as it is now. Refused with
+ * CopyChanged when the preset is gone or that setting no longer holds the copied value.
+ */
+export function undoCopy(rec: CopyRecord, check?: Check): Promise<UserPreset> {
+  return presetWrite(async () => {
+    const cur = get().userPresets.find((p) => p.id === rec.id)
+    if (!cur) throw new CopyChanged(`${rec.name} is gone`)
+    if (!sameValue(cur.values[rec.key], rec.now)) throw new CopyChanged(`${rec.name} changed that setting again after the copy`)
+    check?.(cur)
+    const after = await updatePreset(rec.id, { values: keyOnly(cur.values, rec.key, rec.was), ...(cur.easy ? { easy: cur.easy } : {}) })
+    if (!after) throw new CopyChanged(`${rec.name} is gone`)
+    followOnPlate(after, rec.key, after.values[rec.key])
+    return after
   })
 }

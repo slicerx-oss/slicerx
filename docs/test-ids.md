@@ -575,6 +575,10 @@ carries `data-loading`.
 | `app-link-sheet` | A client's dimension sheet, for the person to confirm; the agent bridge refuses its buttons |
 | `app-link-sheet-confirm` | Build with these sizes |
 | `app-link-sheet-decline` | Not now |
+| `app-link-preset` | A client's change to a saved preset (a copied setting, or that copy put back), asked each time; the agent bridge refuses its buttons |
+| `app-link-preset-what` | The change it asks about: the setting, the preset and the value |
+| `app-link-preset-allow` | Change preset |
+| `app-link-preset-decline` | Not now |
 
 ## Print sheet
 
