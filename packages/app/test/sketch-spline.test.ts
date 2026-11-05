@@ -8,10 +8,11 @@ import { historyFiles, parseHistories, type History, type SketchLoop, type StepP
 import { describe, expect, it } from 'vitest'
 import { runReplay } from '../src/cad/history/ops'
 import { withStep } from '../src/cad/history/record'
-import { fitKey, fromSolver, pointKey, splineCurveRefs, toSolver } from '../src/cad/sketch-constraints'
-import { pointAt } from '../src/cad/sketch-dimension'
-import { fromLoops, handles, moveHandle, profileRings, reverseChain, toLoops, type Chain } from '../src/cad/sketch-model'
-import { SPLINE_TOL_MM, splinePoints } from '../src/cad/sketch-spline'
+import { appDesignHost } from '../src/cad/design-host'
+import { afterReverse, fitKey, fromSolver, pointKey, splineCurveRefs, toSolver, type SketchConstraint } from '../src/cad/sketch-constraints'
+import { pointAt, settle } from '../src/cad/sketch-dimension'
+import { fromLoops, handles, moveHandle, profileRings, reverseChain, segPath, tangentAtEnd, toLoops, type Chain } from '../src/cad/sketch-model'
+import { flattenSpan, RING_POINTS, span, SPLINE_TOL_MM, splineEndDir, splinePoints } from '../src/cad/sketch-spline'
 import { geom } from '../src/geom/client'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
@@ -66,11 +67,77 @@ describe('splines in the drawing', () => {
     expect(splineCurveRefs(drawn, [{ type: 'horizontal', line: { e: 0, seg: 0 } }, { type: 'tangent', a: { e: 0, seg: 0 }, b: { e: 0, seg: 1 } }])).toEqual([1])
   })
 
+  it('leaves a spline it cannot read for the caller to name, and draws a refused one through its points', () => {
+    // no end, no points: fromLoops says it cannot read it rather than throwing in the view
+    expect(fromLoops([{ start: [0, 0], segments: [{ type: 'spline', points: [[5, 5], [10, 0]] } as never] }])).toBeNull()
+    expect(fromLoops([{ start: [0, 0], segments: [{ type: 'spline', to: [10, 0] } as never] }])).toBeNull()
+    expect(fromLoops([{ type: 'spline' } as never])).toBeNull()
+    // a span past the step limit is refused, as the engine refuses it, and the drawing falls back to straight sides
+    expect(flattenSpan(span([-90000, 0], [0, 0], [90000, 0], [90000, 10]))).toBeNull()
+    const sharp: Chain = { kind: 'chain', start: [0, 0], segs: [{ kind: 'spline', points: [[90000, 0]], to: [90000, 10] }], closed: false }
+    expect(splinePoints([[0, 0], [90000, 0], [90000, 10]], false)).toBeNull()
+    expect(segPath(sharp, 0)).toEqual([[0, 0], [90000, 0], [90000, 10]])
+    // past the point budget
+    const ok = splinePoints([[0, 0], [10, 5], [20, 0]], false)!
+    expect(splinePoints([[0, 0], [10, 5], [20, 0]], false, ok.length - 2)).toBeNull()
+    expect(RING_POINTS).toBe(65536)
+  })
+
+  it('leaves a spline along its end, for a tangent arc after it', () => {
+    const c: Chain = { kind: 'chain', start: [0, 0], segs: [{ kind: 'line', to: [10, 0] }, { kind: 'spline', points: [[20, 4]], to: [24, 14] }], closed: false }
+    const d = tangentAtEnd(c)!
+    const pts = segPath(c, 1)
+    const a = pts[pts.length - 2]!
+    const b = pts[pts.length - 1]!
+    const e: Vec2 = [(b[0] - a[0]) / Math.hypot(b[0] - a[0], b[1] - a[1]), (b[1] - a[1]) / Math.hypot(b[0] - a[0], b[1] - a[1])]
+    expect(d[0] * e[0] + d[1] * e[1]).toBeGreaterThan(0.999)
+    expect(d[1]).toBeGreaterThan(Math.abs(d[0]) * 0.5)
+    expect(splineEndDir([[10, 0], [20, 4], [24, 14]])).toEqual(d)
+  })
+
+  it('turns spline point references round with their chain', () => {
+    const cons: SketchConstraint[] = [
+      { type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 0 } },
+      { type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 1 } },
+      { type: 'fix', point: { e: 1, at: 'point', seg: 1, i: 0 } },
+    ]
+    expect(afterReverse(cons, 0, 3, [0, 2, 0])).toEqual([
+      { type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 1 } },
+      { type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 0 } },
+      { type: 'fix', point: { e: 1, at: 'point', seg: 1, i: 0 } },
+    ])
+    expect(afterReverse([{ type: 'fix', point: { e: 0, at: 'point', seg: 0, i: 2 } }], 0, 2, [3, 0])).toEqual([{ type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 0 } }])
+  })
+
+  it('solves spline points under point constraints', async () => {
+    const drawn = fromLoops([D])!
+    const cons: SketchConstraint[] = [
+      { type: 'fix', point: { e: 0, at: 'start' } },
+      { type: 'horizontalDistance', a: { e: 0, at: 'start' }, b: { e: 0, at: 'point', seg: 1, i: 0 }, value: 20 },
+    ]
+    const r = await settle(drawn, cons)
+    expect(r.solved.status).toBe('ok')
+    // five free points (start, two corners, two spline points) less the fix and the distance
+    expect(r.solved.dof).toBe(7)
+    const p = pointAt(r.sketch, { e: 0, at: 'point', seg: 1, i: 0 })!
+    expect(p[0]).toBeCloseTo(20, 6)
+  })
+
+  it('refuses constraints on a spline curve, and ones the solve would leave out, before they reach the timeline', async () => {
+    const host = appDesignHost({ loadParts: async () => ({ id: 'h', hash: 'h', name: 'h', triangles: 0, bboxMm: [0, 0, 0], openEdges: 0, parts: [] }) })
+    const tangent = [{ type: 'tangent', a: { e: 0, seg: 0 }, b: { e: 0, seg: 1 } }] as SketchConstraint[]
+    await expect(host.settleSketch!({ loops: [D], constraints: tangent })).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringMatching(/name a spline as a curve/) })
+    // a closed spline loop's points go by i alone; one given a segment is not in the sketch
+    const stray = [{ type: 'fix', point: { e: 0, at: 'point', seg: 0, i: 1 } }] as SketchConstraint[]
+    await expect(host.settleSketch!({ loops: [BLOB], constraints: stray })).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringMatching(/does not have/) })
+    expect(pointAt(fromLoops([BLOB])!, { e: 0, at: 'point', seg: 0, i: 1 })).toBeNull()
+  })
+
   it('draws the same curve the engine flattens', async () => {
     const c = await geom().call<{ ok: boolean; polygons: { outer: Vec2[] }[] }>('sketch.check', { loops: [BLOB] })
     expect(c.ok).toBe(true)
     const engine = c.polygons[0]!.outer
-    const ours = splinePoints(BLOB.type === 'spline' ? BLOB.points : [], true).slice(0, -1)
+    const ours = splinePoints(BLOB.type === 'spline' ? BLOB.points : [], true)!.slice(0, -1)
     expect(ours.length).toBe(engine.length)
     for (const p of ours) expect(Math.min(...engine.map((q) => Math.hypot(q[0] - p[0], q[1] - p[1])))).toBeLessThan(1e-9)
     expect(SPLINE_TOL_MM).toBe(0.005)
@@ -108,6 +175,27 @@ describe('splines in the design history', () => {
     expect(again.parts.length).toBe(first.parts.length)
     expect(Array.from(again.parts[0]!.positions)).toEqual(Array.from(first.parts[0]!.positions))
     expect(Array.from(again.parts[0]!.indices)).toEqual(Array.from(first.parts[0]!.indices))
-    expect(again.parts[0]!.indices.length).toBeGreaterThan(boxMesh(40, 20, 5).indices.length)
+    // the box, the spline blob extruded 4 mm and the spline profile turned round, none of them overlapping
+    const ring = (pts: Vec2[]) => pts.reduce((a, p, k) => a + (p[0] * pts[(k + 1) % pts.length]![1] - pts[(k + 1) % pts.length]![0] * p[1]) / 2, 0)
+    const blob = splinePoints(BLOB.type === 'spline' ? BLOB.points : [], true)!.slice(0, -1)
+    const side = [[0, 0] as Vec2, [0, 8] as Vec2, ...splinePoints([[0, 8], [3, 6], [4, 3], [3, 0]], false)!.slice(1, -1)]
+    const a = ring(side)
+    const cx = side.reduce((t, p, k) => t + (p[0] + side[(k + 1) % side.length]![0]) * (p[0] * side[(k + 1) % side.length]![1] - side[(k + 1) % side.length]![0] * p[1]), 0) / (6 * a)
+    const want = 40 * 20 * 5 + Math.abs(ring(blob)) * 4 + 2 * Math.PI * Math.abs(cx) * Math.abs(a)
+    const v = volume(again.parts[0]!)
+    expect(Math.abs(v - want) / want).toBeLessThan(5e-3)
+    const zs = Array.from(again.parts[0]!.positions).filter((_, k) => k % 3 === 2)
+    expect(Math.max(...zs)).toBeCloseTo(13, 3)
   })
 })
+
+/** A closed mesh's volume, from the triangles' signed tetrahedra. */
+function volume(m: { positions: ArrayLike<number>; indices: ArrayLike<number> }): number {
+  const p = m.positions
+  let v = 0
+  for (let k = 0; k + 2 < m.indices.length; k += 3) {
+    const [a, b, c] = [m.indices[k]! * 3, m.indices[k + 1]! * 3, m.indices[k + 2]! * 3]
+    v += (p[a]! * (p[b + 1]! * p[c + 2]! - p[b + 2]! * p[c + 1]!) - p[a + 1]! * (p[b]! * p[c + 2]! - p[b + 2]! * p[c]!) + p[a + 2]! * (p[b]! * p[c + 1]! - p[b + 1]! * p[c]!)) / 6
+  }
+  return Math.abs(v)
+}
