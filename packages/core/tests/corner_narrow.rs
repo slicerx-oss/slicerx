@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Narrow internal solid infill on a Bambu Lab printer: a piece keeps its lines when it holds a 6 mm circle.
+//! Narrow internal solid infill at a corner, on a Bambu Lab printer: a piece keeps its lines when it holds a 6 mm
+//! circle, and the corner of a ring holds a wider circle than the ring's straight sides do.
 //!
 //! The shapes: a 30 mm square box 2 mm tall under a block to z 4 over the hole outline, so the box's top at z 2 is a
 //! band W wide (the stock P1S request with classic walls and zig-zag internal solid infill; layers 1.6 and 1.8 lie
 //! under that band).
+//! - Strip: the block covers the box from x = W on, a straight band W wide. It keeps its lines from W 5.5 and prints
+//!   beads at 5.45, the 6 mm width test.
+//! - Sharp ring: a square hole with sharp corners. Its corners hold 1.17 times the band's width, so the ring keeps its
+//!   lines from W 4.55, where the straight band alone would not.
+//! - Ring round a hole with 1 mm round corners: the solid reaches past the hole's edge further than that, so it is
+//!   the sharp ring again.
 //! - Ring with round outer and hole corners (hole 4 mm, outer 4 mm plus W): a band of one width all round, with no
-//!   corner, decided like a straight band on every layer however finely the arcs are cut.
-
+//!   corner, decided like the strip on every layer however finely the arcs are cut.
 #![allow(
     clippy::disallowed_methods,
     clippy::cast_precision_loss,
@@ -82,6 +88,21 @@ fn step(outer: &[[f64; 2]], hole: &[[f64; 2]]) -> Arc<Mesh> {
         }],
         ..Mesh::default()
     })
+}
+
+fn strip(w: f64) -> Arc<Mesh> {
+    step(
+        &rounded(0.0, 0.0, 30.0, 30.0, 0.0, 1),
+        &[[w, 0.0], [30.0, 0.0], [30.0, 30.0], [w, 30.0]],
+    )
+}
+
+/// A square ring `w` wide round a hole whose corners are rounded at `r`.
+fn ring(w: f64, r: f64) -> Arc<Mesh> {
+    step(
+        &rounded(0.0, 0.0, 30.0, 30.0, 0.0, 1),
+        &rounded(w, w, 30.0 - w, 30.0 - w, r, 18),
+    )
 }
 
 /// A ring `w` wide of one width all round: hole corners rounded at `r`, outer corners at `r + w`, `segs` chords to
@@ -166,6 +187,24 @@ fn lines(mesh: Arc<Mesh>) -> bool {
     let (a, b) = (lines_at(&g, 1.6), lines_at(&g, 1.8));
     assert_eq!(a, b, "z 1.6 and 1.8 disagree");
     a
+}
+
+#[test]
+fn a_sharp_ring_keeps_its_lines_where_its_corners_hold_the_circle() {
+    // The straight band is narrow under W 5.5: the strip prints beads at 5.45 and lines at 5.5.
+    assert!(!lines(strip(5.45)));
+    assert!(lines(strip(5.5)));
+    // The sharp ring's corners hold the circle from W 4.55; at 4.5 it is still narrow.
+    assert!(!lines(ring(4.5, 0.0)));
+    assert!(lines(ring(4.6, 0.0)));
+    assert!(lines(ring(5.0, 0.0)));
+}
+
+#[test]
+fn a_ring_round_a_slightly_rounded_hole_is_the_sharp_ring() {
+    // The solid reaches past the hole's edge further than 1 mm, so its own corner is sharp.
+    assert!(!lines(ring(4.5, 1.0)));
+    assert!(lines(ring(4.8, 1.0)));
 }
 
 #[test]
