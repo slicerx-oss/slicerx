@@ -52,6 +52,27 @@ fn first_tower(l: &LayerPaths) -> Option<usize> {
     l.paths.iter().position(|p| p.feature == Feature::PrimeTower)
 }
 
+/// A smooth timelapse (`timelapse_type` 1) on a Bambu Lab printer: each layer's shot parks the head off the part, and
+/// the layer then starts on the prime tower, which takes the ooze before anything prints on the part. Not in spiral
+/// vase or when printing by object, where the stock templates take no shot.
+pub(crate) fn smooth(cfg: &PrintConfig) -> bool {
+    crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+        && (cfg.raw_number("timelapse_type", 0.0) - 1.0).abs() < 0.5
+        && !crate::firmware::truthy(cfg, "spiral_mode")
+        && !cfg.print_by_object()
+}
+
+/// True when a smooth timelapse prints the prime tower on every layer, with one filament or several: [`smooth`] with
+/// the tower on (`enable_prime_tower`). With the tower off the shots are taken where a traditional timelapse takes them.
+pub(crate) fn smooth_tower(cfg: &PrintConfig) -> bool {
+    smooth(cfg) && crate::tower::flag(cfg, "enable_prime_tower")
+}
+
+/// The note for a smooth timelapse with the prime tower turned off.
+pub(crate) const SMOOTH_WITHOUT_TOWER: &str = "Smooth timelapse needs the prime tower to wipe the nozzle after each \
+     shot. The prime tower is off, so the shots are taken as in a traditional timelapse. Turn on the prime tower for \
+     a smooth timelapse";
+
 /// Where the timelapse block of layer `l` goes, or None when there is none. On a Bambu Lab printer the block
 /// exists even without `time_lapse_gcode`: it carries the layer's object mask.
 pub(crate) fn timelapse_spot(
@@ -84,7 +105,7 @@ fn shoots(cfg: &PrintConfig, tower: bool) -> (bool, bool) {
     let i3 = cfg.raw.get("printer_structure").and_then(|v| v.as_str()) == Some("i3");
     let two_nozzles =
         matches!(cfg.raw.get("nozzle_diameter"), Some(serde_json::Value::Array(a)) if a.len() > 1);
-    // A smooth timelapse (type 1) shoots at the prime tower, which Orca's tower writer handles.
+    // A smooth timelapse (type 1) shoots at the start of the layer, which then starts on the prime tower.
     let tower_shot = tower && (cfg.raw_number("timelapse_type", 0.0) - 1.0).abs() < 0.5;
     let traditional = !tower_shot && ((i3 && !crate::firmware::truthy(cfg, "spiral_mode")) || two_nozzles);
     (i3, traditional)
@@ -249,6 +270,27 @@ mod tests {
             wrapping_spot(&cfg(&[("wrapping_detection_gcode", json!("G39.4"))]), &l),
             None
         );
+    }
+
+    #[test]
+    fn a_smooth_timelapse_needs_a_bambu_lab_printer_printing_by_layer() {
+        let a1 = [
+            ("printer_model", json!("Bambu Lab A1")),
+            ("timelapse_type", json!("1")),
+            ("enable_prime_tower", json!(true)),
+        ];
+        assert!(smooth_tower(&cfg(&a1)));
+        let with = |extra: (&str, serde_json::Value)| {
+            let mut pairs = a1.to_vec();
+            pairs.push(extra);
+            cfg(&pairs)
+        };
+        assert!(!smooth_tower(&with(("enable_prime_tower", json!(false)))));
+        assert!(smooth(&with(("enable_prime_tower", json!(false)))));
+        assert!(!smooth(&with(("timelapse_type", json!("0")))));
+        assert!(!smooth(&with(("spiral_mode", json!(true)))));
+        assert!(!smooth(&with(("print_sequence", json!("by object")))));
+        assert!(!smooth(&with(("printer_model", json!("Prusa MK4S")))));
     }
 
     #[test]
