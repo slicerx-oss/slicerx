@@ -28,6 +28,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("render", ""),
     ("paint.select", ""),
     ("paint.regions", ""),
+    ("paint.texture", "texture"),
     ("section", ""),
     ("cut", ""),
     ("split", ""),
@@ -124,6 +125,7 @@ fn has(feature: &str) -> bool {
         "calib" => cfg!(feature = "calib"),
         "hollow" => cfg!(feature = "hollow"),
         "formats" => cfg!(feature = "formats"),
+        "texture" => cfg!(feature = "texture"),
         "brep" => cfg!(feature = "brep"),
         _ => false,
     }
@@ -188,6 +190,8 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
         "render" => render_op(req, files),
         "paint.select" => paint_select_op(req, files),
         "paint.regions" => paint_regions_op(req, files),
+        #[cfg(feature = "texture")]
+        "paint.texture" => crate::json_texture::paint_texture_op(req, files),
         "info" => {
             let m = mesh_field(req, "mesh", files)?;
             Ok(info(&m))
