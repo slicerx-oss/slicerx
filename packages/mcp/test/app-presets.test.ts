@@ -10,7 +10,7 @@ describe('saved preset tools', () => {
   it('reads as reads and copies as edits, forwarding the arguments as given', async () => {
     const call = vi.fn(async (method: string) => (method === 'presets.list' ? { presets: [] } : method === 'presets.compare' ? { preset: { name: 'A' }, with: { name: 'B' }, differ: 1, groups: [] } : method === 'presets.copy' ? { preset: { name: 'A' }, label: 'Layer height', value: 0.12, from: 'B', undoId: 'pu_1' } : { preset: { name: 'A' }, key: 'layer_height', value: 0.2 }))
     const tools = appPresetTools({ call } as unknown as AppLinkCaller, 'SlicerX')
-    expect(tools.map((t) => [t.name, t.permission])).toEqual([['app.presets', 'read'], ['app.preset_compare', 'read'], ['app.preset_copy', 'profile'], ['app.preset_undo', 'profile']])
+    expect(tools.map((t) => [t.name, t.permission])).toEqual([['app.presets', 'read'], ['app.preset_compare', 'read'], ['app.preset_copy', 'slice'], ['app.preset_undo', 'slice']])
     const [list, compare, copy, undo] = tools
     await list!.run(list!.input.parse({ kind: 'filament' }) as never, {} as never)
     expect(call).toHaveBeenLastCalledWith('presets.list', { kind: 'filament' })
