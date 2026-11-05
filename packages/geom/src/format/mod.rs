@@ -3,6 +3,8 @@
 //! model files as plain data
 
 pub(crate) mod json;
+#[cfg(feature = "texture")]
+pub(crate) mod texture3mf;
 pub mod threemf;
 mod xml;
 mod zip;
