@@ -121,6 +121,7 @@ export type Database = {
           last_used_at: string | null
           last_used_ip: unknown
           name: string
+          partner_app: string | null
           prefix: string
           rate_limit_per_minute: number
           revoked_at: string | null
@@ -135,6 +136,7 @@ export type Database = {
           last_used_at?: string | null
           last_used_ip?: unknown
           name: string
+          partner_app?: string | null
           prefix: string
           rate_limit_per_minute?: number
           revoked_at?: string | null
@@ -149,6 +151,7 @@ export type Database = {
           last_used_at?: string | null
           last_used_ip?: unknown
           name?: string
+          partner_app?: string | null
           prefix?: string
           rate_limit_per_minute?: number
           revoked_at?: string | null
@@ -1605,6 +1608,15 @@ export type Database = {
           token: string
         }[]
       }
+      create_partner_token: {
+        Args: { p_expires_in_days?: number; p_partner_app: string }
+        Returns: {
+          expires_at: string
+          id: string
+          prefix: string
+          token: string
+        }[]
+      }
       creator_dashboard: {
         Args: never
         Returns: {
@@ -1695,6 +1707,7 @@ export type Database = {
         Returns: {
           allowed: boolean
           limit_per_minute: number
+          partner_app: string
           remaining: number
           retry_after_s: number
           scopes: string[]
