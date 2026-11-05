@@ -5,7 +5,7 @@
 // diffConfigs, and G-code text from the line diff a project's G-code review uses, so a compare never disagrees with
 // either. The app's Compare presets and the MCP's slicerx_preset_compare both read this.
 import type { PrintConfig, SettingDef, SettingSection, SettingUnit, SettingValue } from '@slicerx/contracts/settings'
-import { diffConfigs, formatValue } from './diff'
+import { diffConfigs, formatValue, sameValue } from './diff'
 import { GCODE_TEXT_KEYS, gcodeLineCount, gcodeTextDiff, normalizeGcode } from './gcode-review'
 import { settingDef, settingsFor } from './schema'
 
@@ -75,6 +75,13 @@ function listed(def: SettingDef | undefined, section: SettingSection | undefined
   return def !== undefined && (!section || def.section === section) && def.mode !== 'hidden' && def.group !== 'network'
 }
 
+/** A list that repeats one value (one per filament slot or extruder) is that value, as formatValue writes it. */
+const one = (v: SettingValue | undefined): SettingValue | undefined => {
+  if (!Array.isArray(v) || v.length === 0) return v
+  const items = v as unknown[]
+  return items.every((x) => JSON.stringify(x) === JSON.stringify(items[0])) ? ([items[0]] as SettingValue) : v
+}
+
 const textOf = (v: SettingValue | undefined): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) ? (v as unknown[]).map((x) => String(x ?? '')).join('\n') : undefined)
 
 function gcodeText(v: SettingValue | undefined): string {
@@ -112,6 +119,8 @@ export function compareConfigs(a: PrintConfig, b: PrintConfig, opts: CompareOpti
       continue
     }
     if (!listed(def, section)) continue
+    // Only the number of slots differs: [70, 70] and [70] are the same setting.
+    if (sameValue(one(d.before), one(d.after))) continue
     // G-code text that differs only in line endings, trailing spaces or blank lines is the same text, as in the review.
     if (GCODE.has(d.key) && normalizeGcode(textOf(d.before) ?? '') === normalizeGcode(textOf(d.after) ?? '')) continue
     differing.add(d.key)
