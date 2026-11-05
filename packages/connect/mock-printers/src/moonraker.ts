@@ -11,7 +11,8 @@ export function moonrakerStatus(m: MockMachine): Record<string, unknown> {
   const stats: Record<string, string> = { idle: 'standby', printing: 'printing', paused: 'paused', finished: 'complete', error: 'error', preparing: 'printing', offline: 'standby' }
   const st: Record<string, unknown> = {
     print_stats: {
-      state: stats[m.state] ?? 'standby',
+      // Klipper keeps a canceled job's state until the next print.
+      state: m.state === 'idle' && m.canceled ? 'cancelled' : (stats[m.state] ?? 'standby'),
       filename: m.job?.name ?? '',
       print_duration: m.job ? m.job.progress * 3600 : 0,
       message: m.message ?? '',
