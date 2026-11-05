@@ -11,6 +11,9 @@ import {
   type RemoteQuota,
   type ApprovalView,
   type HostConnection,
+  type MimirEnded,
+  type MimirQuestion,
+  type MimirState,
   type PairClient,
   type PairedHost,
   type PairedPrinterHost,
@@ -51,6 +54,17 @@ export interface ComputerResolved {
   via?: 'app' | 'phone' | 'partner' | 'agent' | undefined
 }
 
+/** A paired computer's word on the question mimir waits on there (approver phones only). */
+export interface ComputerQuestion {
+  pairingId: string
+  hostName: string
+  live: boolean
+  waiting: MimirQuestion | null
+  ended?: MimirEnded | undefined
+  /** False once the connection dropped. */
+  reachable?: boolean | undefined
+}
+
 export interface PairService {
   client: PairClient
   enabled: boolean
@@ -70,6 +84,12 @@ export interface PairService {
   onResolved(cb: (r: ComputerResolved) => void): () => void
   /** The ids of the requests a computer still lists for this phone to decide. */
   openApprovals(pairingId: string): Promise<string[]>
+  /** The question mimir waits on, from computers that offer it to this phone. */
+  onQuestion(cb: (q: ComputerQuestion) => void): () => void
+  /** Reads a computer's question again. Rejects with `not_supported` on a computer from before it existed. */
+  mimirQuestions(pairingId: string): Promise<MimirState>
+  /** Answers a computer's question: a choice id, or null for Cancel. Call only from the card's buttons. */
+  mimirAnswer(pairingId: string, q: MimirQuestion, choiceId: string | null): Promise<void>
 }
 
 /** The edition config names the relay by its https URL; the relay itself speaks WebSocket. */
@@ -133,6 +153,12 @@ async function createService(pocket: PocketHost): Promise<PairService> {
   const changed = new Set<() => void>()
   const approvalCbs = new Set<(a: ComputerApproval) => void>()
   const resolvedCbs = new Set<(r: ComputerResolved) => void>()
+  const questionCbs = new Set<(q: ComputerQuestion) => void>()
+  const tellQuestion = (q: ComputerQuestion) => {
+    for (const cb of [...questionCbs]) cb(q)
+  }
+  /** A computer that hands this phone its mimir questions: it says so, and this phone may approve there. */
+  const asks = (conn: HostConnection) => conn.info.mimir === true && conn.info.rights.approve
   const notify = () => {
     for (const cb of [...changed]) cb()
   }
@@ -150,8 +176,16 @@ async function createService(pocket: PocketHost): Promise<PairService> {
         conn.onClose(() => {
           live.delete(pairingId)
           setOnline(pairingId, false)
+          if (asks(conn)) tellQuestion({ pairingId, hostName: conn.info.identity.name, live: false, waiting: null, reachable: false })
           void reload()
         })
+        if (asks(conn)) {
+          conn.on('mimir.question', (st) => tellQuestion({ pairingId, hostName: conn.info.identity.name, ...st }))
+          conn.mimirQuestions().then(
+            (st) => tellQuestion({ pairingId, hostName: conn.info.identity.name, ...st }),
+            () => undefined,
+          )
+        }
         conn.on('approval.request', async (view) => {
           // Requests the printer adapter raised for this phone are answered by the adapter itself.
           if (await printerHosts.get(pairingId)?.ownsSettled(view.request.id)) return
@@ -254,6 +288,16 @@ async function createService(pocket: PocketHost): Promise<PairService> {
     },
     async openApprovals(pairingId) {
       return (await (await connection(pairingId)).approvals()).map((v) => v.request.id)
+    },
+    onQuestion(cb) {
+      questionCbs.add(cb)
+      return () => questionCbs.delete(cb)
+    },
+    async mimirQuestions(pairingId) {
+      return (await connection(pairingId)).mimirQuestions()
+    },
+    async mimirAnswer(pairingId, q, choiceId) {
+      await (await connection(pairingId)).mimirAnswer(q, choiceId)
     },
   }
   void service.refresh()

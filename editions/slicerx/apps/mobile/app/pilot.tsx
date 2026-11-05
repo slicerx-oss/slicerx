@@ -35,6 +35,7 @@ export default function PilotRoute() {
       onStop={p.stop}
       onApprove={p.approve}
       onDeny={p.deny}
+      onAnswer={p.answer}
       // Past sessions are listed; reopening one needs the session log store (not on the phone yet).
       onOpenSession={() => undefined}
       onNewSession={p.newSession}
