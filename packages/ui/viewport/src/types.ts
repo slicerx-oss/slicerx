@@ -614,6 +614,15 @@ export interface Viewport {
   selectedObjects?(): string[]
   /** Move objects without rebuilding geometry. */
   setTransforms(transforms: Record<string, number[]>): void
+  /**
+   * Exploded view, for display only: the parts of each object in `ids` (with 2 parts or more) are drawn moved out from
+   * one another by `spread` percent (0 to 100) along `axis` (radial: out from the object's middle; x, y, z: along that
+   * bed axis, in order). The objects' transforms, picking and everything read from them stay as they were. Null or a
+   * spread of 0 puts every part back. It follows the objects through setTransforms and setPlate.
+   */
+  setExplode?(spec: { ids: readonly string[]; spread: number; axis: 'radial' | 'x' | 'y' | 'z' } | null): void
+  /** The offsets the exploded view draws each object's parts at now, bed mm, one per part; objects drawn whole are left out. */
+  exploded?(): Record<string, [number, number, number][]>
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void
   setRenderMode(mode: RenderMode): void
   /**

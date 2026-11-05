@@ -1,0 +1,20 @@
+/* The Spread control over the view (explode-bar.tsx): one floating bar in the view's top left column. */
+.explode-bar { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border-radius: var(--r-md); font-size: var(--fs-md); color: var(--fg); }
+.explode-label { flex: none; font-weight: var(--fw-medium); }
+.explode-bar .explode-range { flex: none; width: 160px; height: 28px; }
+/* room for "100%" at all times, so the slider and the options never shift as the value changes */
+.explode-value { flex: none; width: 4.5ch; text-align: right; font: var(--fw-medium) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
+.explode-axis { flex: none; }
+.explode-axis > button { min-width: 32px; }
+/* Slice on a desktop: the plate toolbar sits at the top middle of the view (top 56 px at most, 40 px tall), so the bar
+   starts under it and never runs beneath it, wherever the toolbar is placed. */
+:root:not([data-phone]) .studio:not([data-model-mode]) .explode-bar { margin-top: var(--s-7); }
+
+/* Phone: the label, the value and the options on the first row, the slider the full width under them, every target
+   44 px tall. */
+:root[data-phone] .explode-bar { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "label value axis" "range range range"; row-gap: 0; column-gap: var(--s-2); padding: var(--s-1) var(--s-2) 0 var(--s-3); width: min(100%, 320px); }
+:root[data-phone] .explode-label { grid-area: label; }
+:root[data-phone] .explode-value { grid-area: value; text-align: left; }
+:root[data-phone] .explode-axis { grid-area: axis; justify-self: end; }
+:root[data-phone] .explode-axis > button { height: 40px; min-width: 44px; }
+:root[data-phone] .explode-bar .explode-range { grid-area: range; width: 100%; height: 44px; }
