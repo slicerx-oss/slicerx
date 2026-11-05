@@ -179,7 +179,7 @@ export function extrudeShape(req: ExtrudeRequest, signal?: AbortSignal) {
 // Sketches: closed loops of lines, arcs and circles on a face frame (or the bed). No constraint
 // solver: the engine checks what was typed and names the loop and segment of each problem.
 
-export type SketchIssueKind = 'open' | 'zeroLength' | 'selfCrossing' | 'loopsCross' | 'badArc' | 'tooSmall'
+export type SketchIssueKind = 'open' | 'zeroLength' | 'selfCrossing' | 'loopsCross' | 'badArc' | 'tooSmall' | 'tooDense'
 
 export interface SketchIssue {
   /** Counts from 0. */
