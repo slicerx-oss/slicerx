@@ -176,7 +176,7 @@ impl<'a> Zip<'a> {
         Ok(out)
     }
 
-    /// the entry in pieces as it inflates, so a big model part is never whole in memory
+    /// the entry in pieces as it inflates, so a reader can work on a big model part without first holding it whole
     pub fn stream(&self, name: &str, mut sink: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
         let (e, raw) = self.raw(name)?;
         match e.method {
