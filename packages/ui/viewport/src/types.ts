@@ -15,6 +15,7 @@ import type { Guides } from './guides'
 import type { DimensionMark, FinishedSketch, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
 import type { ControlsMap, ControlsPresetId } from './controls'
+import type { SpaceFrame, SpaceMouseSettings } from './spacemouse'
 import type { UiThemeLike, ViewportTheme } from './palette'
 
 export type Backend = 'auto' | 'webgl2' | 'webgpu'
@@ -820,6 +821,14 @@ export interface Viewport {
   setTheme(theme?: ViewportTheme | UiThemeLike): void
   setControls(controls: ControlsPresetId | ControlsMap): void
   getControls(): ControlsMap
+  /** 3D mouse: on or off, sensitivity, inverted axes and dominant axis mode. Off by default. */
+  setSpaceMouse(settings: Partial<SpaceMouseSettings>): void
+  getSpaceMouse(): SpaceMouseSettings
+  /**
+   * The 3D mouse's latest six axes in raw counts (parseSpaceReport); the camera pans, zooms and orbits by them on each
+   * frame while the cap stays pushed. Ignored while the 3D mouse is off.
+   */
+  spaceMouseInput(frame: SpaceFrame): void
   getCamera(): CameraState
   setCamera(state: Partial<CameraState>, opts?: { animate?: boolean }): void
 

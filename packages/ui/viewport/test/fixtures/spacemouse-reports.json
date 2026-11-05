@@ -1,0 +1,16 @@
+{
+  "about": "Synthetic 3D mouse input reports built from the device's public HID layout (no recording from real hardware). Each hex string is one raw read: the report id byte, then the report. Values are signed 16-bit little-endian counts.",
+  "separate": [
+    { "note": "push right, half way: tx 175", "hex": "01af0000000000" },
+    { "note": "twist, full: rz -350", "hex": "0200000000a2fe" },
+    { "note": "left button down", "hex": "0301" },
+    { "note": "left button up", "hex": "0300" },
+    { "note": "right button down", "hex": "0302" },
+    { "note": "battery level, ignored", "hex": "1764" },
+    { "note": "let go: translation", "hex": "01000000000000" },
+    { "note": "let go: rotation", "hex": "02000000000000" }
+  ],
+  "combined": [
+    { "note": "one report with all six axes: tx -350, ty 350, tz -20, rx 100, ry -1, rz 0", "hex": "01a2fe5e01ecff6400ffff0000" }
+  ]
+}

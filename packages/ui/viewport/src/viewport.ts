@@ -60,6 +60,8 @@ import { layerTopsProblems } from './layerheights'
 import { FEATURE_COLORS, SCENE, resolveTheme, viewportThemeOf, type ResolvedTheme, type UiThemeLike, type ViewportTheme } from './palette'
 import { summarizePreview, type PreviewSummary } from './summary'
 import { CONTROL_PRESETS, buttonName, dragMayLeaveBed, modifiersOf, orbitCodeFor, moveWaitsForSlop, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
+import { SpaceDrive } from './space-drive'
+import type { SpaceFrame, SpaceMouseSettings } from './spacemouse'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
@@ -353,6 +355,8 @@ class ViewportImpl implements Viewport {
   /** The host's selection while some of its objects are not built yet. */
   private readonly hostSelection = new HostSelection()
   private controlsMap: ControlsMap = CONTROL_PRESETS.slicerx
+  /** 3D mouse input, moved into the camera each frame (space-drive.ts). */
+  private readonly space = new SpaceDrive()
   private spaceDown = false
   private projection: Projection = 'perspective'
   private display: DisplayStyle = 'edges'
@@ -840,6 +844,8 @@ class ViewportImpl implements Viewport {
     // A camera on its way to a view (a preset, a fit, the reframe after a plate swap) is a short transition, drawn at
     // full quality like a still frame; only motion a person drives follows the motion budget.
     let transition = this.rig.step(now)
+    // A 3D mouse moves the camera every frame it is pushed, like a drag a person holds.
+    if (this.stepSpaceMouse(now)) transition = false
     let moving = transition || this.cameraMoved
     this.cameraMoved = false
     // Real motion from the update comes back through the change event, which ignores changes that move nothing.
@@ -898,7 +904,44 @@ class ViewportImpl implements Viewport {
     // A reveal still waiting on the plate's first frame needs the tick after it to start. A fade-in needs every frame to
     // its end: drawing clears dirty, and a still view asks for no frame after it.
     const revealNext = revealing || (this.reveal !== null && !this.reveal.started && this.veil === null && !this.hold.waiting)
-    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext || fading) this.kick()
+    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext || fading || this.space.active) this.kick()
+  }
+
+  // ---------- 3D mouse ----------
+
+  /** The 3D mouse settings: on or off, speed, inverted axes and dominant axis mode (spacemouse.ts). */
+  setSpaceMouse(settings: Partial<SpaceMouseSettings>): void {
+    this.space.set(settings)
+  }
+
+  getSpaceMouse(): SpaceMouseSettings {
+    return this.space.settings
+  }
+
+  /**
+   * The device's latest six axes, in raw counts, from each of its motion reports (parseSpaceReport). The camera moves
+   * on the next frames for as long as the cap stays pushed.
+   */
+  spaceMouseInput(frame: SpaceFrame): void {
+    if (this.space.input(frame, performance.now())) this.kick()
+  }
+
+  /**
+   * One frame of 3D mouse motion. Orbits turn around the orbit center the look's controls use (the selection when they
+   * orbit it). With reduced motion the view follows the cap with no smoothing. True when the camera moved.
+   */
+  private stepSpaceMouse(now: number): boolean {
+    if (this.cameraHeld) {
+      this.space.stop()
+      return false
+    }
+    const moved = this.space.step(now, this.rig, {
+      heightPx: this.canvas.clientHeight,
+      reduced: reducedMotion(),
+      pivot: () => this.orbitPivot(),
+    })
+    if (moved) this.cameraMoved = true
+    return moved
   }
 
   /**
@@ -3834,10 +3877,15 @@ class ViewportImpl implements Viewport {
     const key = name === 'left' ? 'LEFT' : name === 'middle' ? 'MIDDLE' : 'RIGHT'
     this.controls.mouseButtons[key] = code
     if (action === 'rotate') {
-      const pivot = this.controlsMap.freeCamera ? hit() : this.controlsMap.orbitAround === 'selection' ? this.selectionCenter() : null
+      const pivot = this.controlsMap.freeCamera ? hit() : this.orbitPivot()
       if (pivot) this.rig.retargetToDepthOf(pivot)
     }
     return action
+  }
+
+  /** What an orbit turns around: the selection's center when the look's controls orbit it, else null (keep the center). */
+  private orbitPivot(): Vector3 | null {
+    return this.controlsMap.orbitAround === 'selection' ? this.selectionCenter() : null
   }
 
   private selectionCenter(): Vector3 | null {
