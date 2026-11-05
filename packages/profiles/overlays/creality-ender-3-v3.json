@@ -1,5 +1,5 @@
 {
- "comment": "The first layer and support line widths of the maker's process presets for the plain Creality Ender-3 V3 with the 0.4 mm nozzle, which has no resolved presets, so its tiers take SlicerX's process with these rows of process-speeds.json over it: 0.5 mm first layer lines and 0.42 mm support lines, where SlicerX's process leaves both automatic. Applied to process-speeds.json by packages/settings/scripts/apply-overlay.ts. Values are in the profiles' own format, by the preset's name in process-speeds.json.",
+ "comment": "The first layer and support line widths of the maker's process presets for the plain Creality Ender-3 V3 with the 0.4 mm nozzle, for SlicerX's own process route, which takes SlicerX's process with these rows of process-speeds.json over it on the 0.4 mm nozzle (processConfig and profileConfig, and process_config in Rust; the app's printer layer, preset import parents and the MCP server's tiers read the resolved presets): 0.5 mm first layer lines and 0.42 mm support lines, where SlicerX's process leaves both automatic. Applied to process-speeds.json by packages/settings/scripts/apply-overlay.ts. Values are in the profiles' own format, by the preset's name in process-speeds.json.",
  "source": {
   "process": "Creality Ender-3 V3 stock process presets for the 0.4 mm nozzle (0.20mm Standard, 0.24mm Draft, 0.12mm Fine)"
  },

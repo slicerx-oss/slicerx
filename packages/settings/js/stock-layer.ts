@@ -10,7 +10,7 @@ import { isCompatibleWithPrinter, type PrinterContext } from './compat'
 import { settingDefault } from './defaults'
 import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, type VendorFile } from './filaments'
 import { filamentConfig, gcodeStatus, listFilamentProfiles, printerConfig, printerProfile, processConfig } from './profiles'
-import { resolvedProfile } from './resolved'
+import { noStockNozzle, resolvedProfile } from './resolved'
 
 export interface SlotFilament {
   /** Material type: PLA, PETG, TPU. */
@@ -266,6 +266,9 @@ async function layerMachine(printerId: string, tier: EasyGoal, nozzle: number): 
   const exact = await resolvedProfile(printerId, tier, nozzle)
   const resolved = exact ?? (nozzle !== defaultNozzle ? await resolvedProfile(printerId, tier) : undefined)
   const base = printerConfig(printerId, nozzle) as Record<string, SettingValue>
+  // A nozzle the maker's stock profiles have no machine preset for takes none of the resolved presets: our own machine,
+  // filament and process, as for a printer without resolved presets.
+  if (noStockNozzle(printerId, nozzle)) return { exact: undefined, resolved: undefined, base, machine: { ...base } }
   // Orca's Bambu Lab presets leave out Bambu Studio's clearance keys (extruder_clearance_max_radius and
   // extruder_clearance_dist_to_rod: 73 and 56.5 mm on the A1); heimdall needs them, so they come from the maker's own
   // machine settings where the preset has none.

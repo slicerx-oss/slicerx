@@ -6,6 +6,20 @@
 import type { PrintConfig } from '@slicerx/contracts/settings'
 import { printerProfile } from './profiles'
 
+/**
+ * Nozzles the catalog offers for a printer (`<printer id> <size>`) that the maker's stock profiles have no machine preset
+ * for, with the reason. A dump cannot have them, so scripts/gen-resolved.ts does not ask for them, and the app's printer
+ * layer prints them as if the printer had no resolved presets: SlicerX's process, machine and filament.
+ */
+export const NO_STOCK_NOZZLE: Readonly<Record<string, string>> = {
+  'creality-ender-3-v3 0.8': 'no stock machine preset',
+}
+
+/** Why a printer's nozzle has no stock machine preset, or undefined when it has one (or is not listed). */
+export function noStockNozzle(printerId: string, nozzle: number): string | undefined {
+  return NO_STOCK_NOZZLE[`${printerId} ${nozzle}`]
+}
+
 interface TierDiff { set: Record<string, unknown>; unset: string[] }
 interface ResolvedPart {
   orca: { vendor: string; profile: string; process?: string; filament?: string; filamentId?: string } | null

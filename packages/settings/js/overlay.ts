@@ -8,8 +8,10 @@
 // packages/profiles/overlays/prusa-brim.json gives every Prusa process tier the maker's brim: whole loops, grown from the
 // compensated first layer outline. packages/profiles/overlays/prusa-first-layer.json gives the Prusa MK4 and MINI the first
 // layer line width and elephant foot compensation of the maker's Input Shaper print presets, for every nozzle and tier.
-// packages/profiles/overlays/creality-ender-3-v3.json gives the plain Creality Ender-3 V3, which has no resolved presets, the
-// first layer and support line widths of the maker's process presets, in its rows of process-speeds.json.
+// packages/profiles/overlays/creality-ender-3-v3.json gives the plain Creality Ender-3 V3 the first layer and support line
+// widths of the maker's process presets in its rows of process-speeds.json, which SlicerX's own process route reads on the
+// 0.4 mm nozzle (processConfig and profileConfig, and process_config in Rust). The app's printer layer, preset import
+// parents and the MCP server's tiers read the model's resolved presets instead, with the same widths.
 // scripts/gen-resolved.ts applies them before writing, and scripts/apply-overlay.ts applies them to the shipped files, so
 // a regeneration of any of these files keeps them. Applying one twice changes nothing.
 import { sameValue } from './diff'
@@ -35,8 +37,8 @@ export interface MakerOverlay {
   every_process?: { comment?: string; values: Raw }
   /**
    * Values for the maker's process presets in process-speeds.json, by the preset's name there
-   * (`OrcaSlicer/Creality/0.20mm Standard @Creality Ender-3 V3`), raw: for a model with no resolved presets, whose
-   * tiers on the 0.4 mm nozzle take these rows over SlicerX's process.
+   * (the stock 0.20mm Standard preset of the plain Ender-3 V3), raw: SlicerX's own process route (processConfig)
+   * takes these rows over SlicerX's process for the model's tiers on the 0.4 mm nozzle.
    */
   process_presets?: Record<string, Raw>
 }
