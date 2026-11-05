@@ -232,7 +232,8 @@ function paintOf(p: EnginePart['paint']): PaintTexts | undefined {
  */
 export async function readDesigns(engine: EngineCall, buf: Buffer, label: string): Promise<{ name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]> {
   const zip = readZip(buf, label)
-  if (zip.text('3D/3dmodel.model') === undefined) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
+  // Only whether it is there: a main model can be larger than a text read takes, and the engine reads it below.
+  if (!zip.names().includes('3D/3dmodel.model')) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
   let read: { unitScale?: number; objects?: EngineObject[] }
   try {
     read = (await engine('format.read3mf', { data: { base64: buf.toString('base64') } })) as typeof read
