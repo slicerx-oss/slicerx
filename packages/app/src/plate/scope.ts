@@ -4,7 +4,7 @@
 // the scope (own, inherited from the plate, or mixed across a selection) and writes through it to the object and part
 // overrides in plate/object-settings.ts.
 import type { SettingValue } from '@slicerx/contracts'
-import type { AppState, PlateEntry } from '../state/store'
+import { markStale, set, type AppState, type PlateEntry } from '../state/store'
 import { inStep } from './history'
 import { countSettings } from './easy-groups'
 import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting, sourceId } from './object-settings'
@@ -45,7 +45,7 @@ export function scopeValue(s: Pick<AppState, 'plate' | 'objectSettings'>, plate:
 }
 
 /** Instances share their source's settings, so a selection writes once per source. */
-function targets(plate: readonly PlateEntry[], ids: readonly string[]): PlateEntry[] {
+export function targets(plate: readonly PlateEntry[], ids: readonly string[]): PlateEntry[] {
   const seen = new Set<string>()
   const out: PlateEntry[] = []
   for (const p of plate) {
@@ -59,6 +59,24 @@ function targets(plate: readonly PlateEntry[], ids: readonly string[]): PlateEnt
 /** Sets or, with undefined, resets a setting in a scope. The plate scope is the caller's: it writes the print settings. */
 export function setScoped(s: Pick<AppState, 'plate'>, scope: SettingsScope, key: string, value: SettingValue | undefined): void {
   setScopedMany(s, scope, [[key, value]])
+}
+
+/** A plate setting as the settings panel edits it: the plate's own value, or with undefined back to the Easy value. */
+export function setPlateOverride(key: string, value: SettingValue | undefined): void {
+  setPlateOverrides([[key, value]])
+}
+
+/** Several plate settings at once, as setPlateOverride sets one. */
+export function setPlateOverrides(entries: readonly (readonly [string, SettingValue | undefined])[]): void {
+  set((s) => {
+    const next = { ...s.overrides }
+    for (const [key, value] of entries) {
+      if (value === undefined) delete next[key]
+      else next[key] = value
+    }
+    return { overrides: next }
+  })
+  markStale()
 }
 
 /** Several settings in a scope as one undo step, for every target: an Easy choice sets a few keys at once. */

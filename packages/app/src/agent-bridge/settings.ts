@@ -3,10 +3,10 @@
 // The print settings panel for an agent: open a tab, open or close its sections, and pin or unpin settings, the way
 // a person does, then read the panel back (workspaces/prepare/settings-view.ts).
 import type { SettingIntent } from '@slicerx/contracts'
-import { resolveSlots } from '../filament/slots'
+import { FEATURE_FILAMENT_KEYS } from '../plate/feature-filaments'
 import { get, set } from '../state/store'
 import { SECTIONS } from '../workspaces/prepare/setting-sections'
-import { EDITABLE_PROCESS, offeredTabs, settingsView } from '../workspaces/prepare/settings-view'
+import { bridgeTabs, EDITABLE_PROCESS, settingsView } from '../workspaces/prepare/settings-view'
 import { BridgeError } from './dom'
 
 type Args = Record<string, unknown>
@@ -20,7 +20,7 @@ const strings = (v: unknown, name: string): string[] => {
 /** Opens a tab, opens or closes sections of the tab shown, and pins or unpins settings; returns the panel as read back. */
 export function setSettingsView(a: Args): Record<string, unknown> {
   const s = get()
-  const offered = offeredTabs(Math.max(1, resolveSlots(s).filter((r) => r.used).length))
+  const { offered } = bridgeTabs(s)
   let tab = s.settingsTab
   if (a['tab'] !== undefined) {
     const t = offered.find((x) => x.id === a['tab'] || x.label.toLowerCase() === String(a['tab']).toLowerCase())
@@ -37,9 +37,14 @@ export function setSettingsView(a: Args): Record<string, unknown> {
     if (!d) throw new BridgeError('not_found', `no print setting ${name}`)
     return d.key
   }
+  // An old pin of a feature filament setting can still be taken off; a new one cannot be made.
+  const pinnable = (key: string) => {
+    if (FEATURE_FILAMENT_KEYS.has(key)) throw new BridgeError('invalid_input', `${key} is set in the Color tab's feature filament table and cannot be pinned`)
+    return key
+  }
   const open = strings(a['open'], 'open').map(section)
   const close = strings(a['close'], 'close').map(section)
-  const pin = strings(a['pin'], 'pin').map(setting)
+  const pin = strings(a['pin'], 'pin').map(setting).map(pinnable)
   const unpin = strings(a['unpin'], 'unpin').map(setting)
   set((st) => {
     const sections = { ...st.settingsSections }
