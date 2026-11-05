@@ -21,7 +21,7 @@ export interface DeviceHub {
     issues(printerId: string): Promise<PrinterIssue[]>
     objects(printerId: string): Promise<PrintObject[]>
     jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
-    home(printerId: string): Promise<void>
+    home(printerId: string, o?: { plateClear?: boolean }): Promise<void>
     /** `epoch` is the bed epoch read with the list, so a click never skips in a later print. */
     skipObject(printerId: string, id: string, epoch: number): Promise<void>
     startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean }): Promise<unknown>
@@ -85,7 +85,15 @@ export function jogBlockedReason(state: PrinterState): string | null {
   if (state === 'idle' || state === 'finished') return null
   if (state === 'offline') return 'The printer is not reachable.'
   if (state === 'error') return 'The printer reports an error. Clear it on the printer first.'
-  return 'The head only moves by hand while the printer is idle.'
+  return 'The head moves by hand only while the printer is idle or finished.'
+}
+
+/** Why the printer cannot home now, or null. Mirrors the hub: idle or finished only. */
+export function homeBlockedReason(state: PrinterState): string | null {
+  if (state === 'idle' || state === 'finished') return null
+  if (state === 'offline') return 'The printer is not reachable.'
+  if (state === 'error') return 'The printer reports an error. Clear it on the printer first.'
+  return 'The printer homes only while it is idle or finished.'
 }
 
 /** Why a file cannot be started now, or null. */
@@ -167,14 +175,13 @@ export async function startStored(
 export type HomeAnswer = { kind: 'homed' } | { kind: 'ask-bed' } | { kind: 'error'; message: string }
 
 /**
- * Homes the printer. Homing Z lowers the nozzle to the plate, so on a finished printer the hub refuses with
- * `bed_check` until the plate is known clear; the caller asks, and calls again with `plateClear` once the person said
- * so, which records the answer on the hub first.
+ * Homes the printer. Homing Z lowers the nozzle to the plate, so when the last print may still be on it (finished, or
+ * canceled straight back to idle) the hub refuses with `bed_check`; the caller asks, and calls again with `plateClear`
+ * once the person said so. That answer goes with this home only, so the next print start still asks about the plate.
  */
 export async function homePrinter(hub: DeviceHub, printerId: string, plateClear = false): Promise<HomeAnswer> {
   try {
-    if (plateClear) await hub.bed.confirmClear(printerId)
-    await hub.device.home(printerId)
+    await (plateClear ? hub.device.home(printerId, { plateClear: true }) : hub.device.home(printerId))
     return { kind: 'homed' }
   } catch (e) {
     if ((e as { code?: string } | null)?.code === 'bed_check') return { kind: 'ask-bed' }
