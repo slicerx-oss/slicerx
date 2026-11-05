@@ -41,6 +41,7 @@ const BUILDERS: ReadonlySet<string> = new Set([
   'design.roll',
   'geom.extrude',
   'geom.revolve',
+  'geom.loft',
   'geom.push_pull',
   'geom.boolean',
   'geom.fillet',

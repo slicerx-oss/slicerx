@@ -75,6 +75,8 @@ pub mod sketch_corner;
 #[cfg(feature = "cad")]
 pub mod sketch_edit;
 #[cfg(feature = "cad")]
+pub mod sketch_loft;
+#[cfg(feature = "cad")]
 pub mod sketch_solve;
 pub mod solids;
 pub mod split;

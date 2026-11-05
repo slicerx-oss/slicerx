@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// CAD tools on the sx-geom engine: sketch and extrude, revolve, push and pull,
+// CAD tools on the sx-geom engine: sketch and extrude, revolve, loft, push and pull,
 // booleans, fillet and chamfer, and the face and edge lookups a client needs to
 // target them. Each tool is one engine op (docs/cad-fillet.md and
 // docs/build-on-the-engine.md describe the JSON), run like the other geom tools.
@@ -565,6 +565,41 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const loftProfile = z.object({ frame: frameSchema.optional(), loops }).describe('One section of the loft: closed loops on a plane, as for slicerx_geom_revolve. Each profile is one closed loop (holes are not supported yet)')
+  const loft = defineTool({
+    name: 'geom.loft',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Loft a solid through 2 to 64 closed sketch profiles in order, each one closed loop of lines and arcs (or a circle) on its own plane: straight sides from each profile to the next and flat ends. Profiles are matched corner to corner with the least twist, so a square lofts to a circle cleanly; neighboring profiles must not touch or cross each other\'s plane. As a new body, joined to a target or cut from it. With "design" it adds a step to the design (read it back with slicerx_design_steps and slicerx_geom_info); with no design it writes the result as an STL.',
+    input: z.object({
+      profiles: z.array(loftProfile).min(2).max(64).optional().describe('The profiles in loft order, each {"frame":{...},"loops":[...]}; a profile with no frame is on the bed'),
+      sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids from slicerx_design_timeline (or slicerx_design_sketch) in loft order, instead of profiles; their planes and loops are copied into the step'),
+      operation,
+      target: modelArg.optional().describe('The model to join to or cut from'),
+      design: designArg.optional(),
+      part: partArg,
+      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+    }),
+    async run(i) {
+      if (!i.profiles === !i.sketches) throw new ToolInputError(i.profiles ? 'sketches: give profiles or sketches, not both' : 'profiles: give 2 or more profiles, or finished sketch ids as sketches')
+      const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Lofted'
+      if (i.design) {
+        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
+        const d = designOf(i.design)
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((f) => ({ frame: frameOf(f.frame), loops: f.loops }))
+        const params: StepParams = plain({ op: 'sketch.loft', profiles, operation: i.operation, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        return stepOut(d, verb)
+      }
+      if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
+      const profiles = i.profiles!.map((f) => ({ ...plane(f.frame), loops: f.loops }))
+      const out = await call('sketch.loft', { profiles, operation: i.operation, ...(await target(i.target, i.operation)) })
+      return { summary: `${verb} through ${profiles.length} profiles`, output: out }
+    },
+  })
+
   const sketch = defineTool({
     name: 'design.sketch',
     version: '1.1.0',
@@ -1034,5 +1069,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, loft, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }

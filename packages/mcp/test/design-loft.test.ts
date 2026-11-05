@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// A client lofts through closed profiles on their own planes: a new body from a square to a circle, a tapered post
+// joined to a base, each a step that replays from the saved 3MF, and the input the loft refuses.
+import { describe, expect, it } from 'vitest'
+import { connect, data, text } from './helpers'
+import { useGeomEngine } from './geom-engine'
+
+type V3 = [number, number, number]
+interface Summary {
+  design: string
+  steps: number
+  sizeMm: V3
+  minMm: V3
+  volumeMm3: number
+  parts: { name: string; sizeMm: V3; minMm: V3; volumeMm3: number }[]
+}
+interface Row {
+  name: string
+  op: string
+  state: string
+}
+
+const geom = useGeomEngine('design-loft-replies')
+const engine = (op: string, request: unknown): Promise<unknown> => geom.engine(op, request)
+
+const square = (s: number) => ({ points: [[-s / 2, -s / 2], [s / 2, -s / 2], [s / 2, s / 2], [-s / 2, s / 2]] })
+const level = (z: number) => ({ origin: [0, 0, z], normal: [0, 0, 1] })
+
+describe('loft as a design step', () => {
+  it('lofts a new body and a joined post, and replays both from the saved file', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Vase foot' })).design
+    const vase = await ok('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(20)] }, { frame: level(30), loops: [{ type: 'circle', center: [0, 0], diameterMm: 10 }] }], name: 'Neck' })
+    expect(vase.parts).toHaveLength(1)
+    expect(vase.parts[0]?.name).toBe('Neck')
+    expect(vase.sizeMm[0]).toBeCloseTo(20, 3)
+    expect(vase.sizeMm[2]).toBeCloseTo(30, 3)
+    expect(vase.volumeMm3).toBeGreaterThan(30 * 78.5)
+    expect(vase.volumeMm3).toBeLessThan(30 * 400)
+
+    // A 30 x 30 x 5 mm base, then a post tapering from 20 to 10 mm square over 10 mm, joined on top of it.
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 30 }, distance_mm: 5, name: 'Base' })
+    const post = await ok('slicerx_geom_loft', { design: d, part: 1, operation: 'join', profiles: [{ frame: level(5), loops: [square(20)] }, { frame: level(15), loops: [square(10)] }] })
+    expect(post.parts).toHaveLength(2)
+    expect(post.parts[1]?.volumeMm3).toBeCloseTo(4500 + (10 / 3) * (400 + 100 + 200), 1)
+    expect(post.parts[1]?.sizeMm[2]).toBeCloseTo(15, 3)
+
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.op)).toEqual(['sketch.loft', 'shape.extrude', 'sketch.loft'])
+    expect(steps.map((s) => s.name)).toEqual(['Loft, 2 profiles', 'Rectangle extrude 5 mm', 'Loft, 2 profiles'])
+    expect(steps.every((s) => s.state === 'done')).toBe(true)
+
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(3)
+    expect(again.volumeMm3).toBeCloseTo(post.volumeMm3, 1)
+  }, 60_000)
+
+  it('refuses profiles that cross and input it cannot use, and leaves the design as it was', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'X' })).output.design
+    const crossing = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)] }, { frame: { origin: [0, 0, 2], normal: [1, 0, 0.2] }, loops: [square(30)] }] })
+    expect(crossing.isError).toBe(true)
+    expect(text(crossing)).toMatch(/profiles 1 and 2 touch or cross/)
+    const holed = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10), square(4)] }, { frame: level(10), loops: [square(10)] }] })
+    expect(holed.isError).toBe(true)
+    expect(text(holed)).toMatch(/profile 1: a loft profile has no holes yet/)
+    const one = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)] }] })
+    expect(one.isError).toBe(true)
+    const both = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)] }, { frame: level(10), loops: [square(10)] }], sketches: ['s1', 's2'] })
+    expect(both.isError).toBe(true)
+    expect(text(both)).toMatch(/profiles or sketches, not both/)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
+  }, 60_000)
+})
