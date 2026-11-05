@@ -20,6 +20,7 @@ import listFleets from './list-fleets'
 import listProfiles from './list-profiles'
 import listSettingDefaults from './list-setting-defaults'
 import openInApp from './open-in-app'
+import partnerDevices from './partner-devices'
 import partnerRoutes from './partner-routes'
 import pendingApprovals from './pending-approvals'
 import planSettings from './plan-settings'
@@ -34,6 +35,7 @@ import printerTunnel from './printer-tunnel'
 import projectLayerMarkAdd from './project-layer-mark-add'
 import projectLayerMarkRemove from './project-layer-mark-remove'
 import projectLayerMarks from './project-layer-marks'
+import pushStatus from './push-status'
 import remapToolheads from './remap-toolheads'
 import remoteStartPolicy from './remote-start-policy'
 import removeFromFleet from './remove-from-fleet'
@@ -47,4 +49,4 @@ import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, arrangeFile, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, partnerRoutes, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSetSlot, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, arrangeFile, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, partnerDevices, partnerRoutes, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSetSlot, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, pushStatus, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
