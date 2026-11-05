@@ -14,6 +14,15 @@ pub fn is_opaque(route: &str) -> bool {
     route.len() == ROUTE_CHARS && route.bytes().all(b64url)
 }
 
+/// Partner routes: `pr:` and a 43 character base64url capability. A signed-in connection opens one
+/// (`partner.open`) for a partner app's byte stream; until then, and after it closes, nobody may use it.
+pub const PARTNER_PREFIX: &str = "pr:";
+
+/// Whether `route` has the shape of a partner route. Whether it is open is the relay's state.
+pub fn is_partner(route: &str) -> bool {
+    route.strip_prefix(PARTNER_PREFIX).is_some_and(is_opaque)
+}
+
 /// The account id of an `acct:<id>:join` route (with up to two 22 character suffixes), if it is one.
 pub fn account_of(route: &str) -> Option<&str> {
     let rest = route.strip_prefix("acct:")?;
@@ -60,6 +69,18 @@ mod tests {
         assert!(!allowed(&R[1..], None));
         assert!(!allowed(&format!("{R}A"), None));
         assert!(!allowed(&format!("{}=", &R[1..]), None));
+    }
+
+    #[test]
+    fn partner_routes_have_their_own_prefix_and_are_never_plain_routes() {
+        let p = format!("pr:{R}");
+        assert!(is_partner(&p));
+        assert!(!is_partner(R));
+        assert!(!is_partner(&format!("pr:{}", &R[1..])));
+        assert!(!is_partner(&format!("px:{R}")));
+        // Without the relay's open record a partner route is refused like any other bad route.
+        assert!(!allowed(&p, None));
+        assert!(!allowed(&p, Some("user-1")));
     }
 
     #[test]
