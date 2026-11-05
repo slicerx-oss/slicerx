@@ -289,5 +289,5 @@ Object order on a layer: ending at the object nearest the bed's origin, or a cha
 - Default: "0"
 - Values: `0` (Traditional), `1` (Smooth)
 - Tier: Expert, effects
-- Changing it redoes: preview only
+- Changing it redoes: paths
 - mimir class: edit (may change in a plate override)

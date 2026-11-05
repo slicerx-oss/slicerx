@@ -133,6 +133,11 @@ export function sxStopped(r: Pick<RunResult, 'code' | 'signal' | 'timedOut'>, li
   return undefined
 }
 
+/** `v` to two decimals, for mm and degrees read back to a client. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100
+}
+
 function scalar(v: SettingValue | undefined): number | undefined {
   const x = Array.isArray(v) ? v[0] : v
   if (typeof x === 'number') return x
@@ -356,6 +361,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
         featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
+        primeTower?: { x?: number; y?: number; width?: number; depth?: number; angle?: number } | null
         projectPlates?: { plates?: number; sliced?: number }[]
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
@@ -386,6 +392,15 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
             source: out.chamberCooling.source === 'derived' ? 'derived' as const : 'config' as const,
             ...(out.chamberCooling.filaments?.length ? { filaments: out.chamberCooling.filaments.map(String) } : {}),
             text: String(out.chamberCooling.text ?? ''),
+          },
+        } : {}),
+        ...(out.primeTower && [out.primeTower.x, out.primeTower.y, out.primeTower.width, out.primeTower.depth].every((v) => typeof v === 'number') ? {
+          prime_tower: {
+            x: round2(out.primeTower.x ?? 0),
+            y: round2(out.primeTower.y ?? 0),
+            width: round2(out.primeTower.width ?? 0),
+            depth: round2(out.primeTower.depth ?? 0),
+            angle: round2(out.primeTower.angle ?? 0),
           },
         } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),

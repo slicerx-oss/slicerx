@@ -170,6 +170,7 @@
  ],
  "stage_overrides": {
   "enable_arc_fitting": "gcode",
+  "timelapse_type": "paths",
   "top_surface_pattern": "infill",
   "bottom_surface_pattern": "infill"
  },

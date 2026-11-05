@@ -1816,6 +1816,13 @@ impl SliceSession {
         if config.enable_support {
             warnings.extend(support_slot_warnings(config));
         }
+        if crate::timelapse::smooth(config) && !crate::tower::flag(config, "enable_prime_tower") {
+            warnings.push(SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: crate::timelapse::SMOOTH_WITHOUT_TOWER.to_owned(),
+                layer: None,
+            });
+        }
         if config.enable_support
             && config.support.manual
             && !painted_supports.iter().any(|(_, s)| *s == 1)
@@ -1933,11 +1940,15 @@ impl SliceSession {
         // A tower is only worth its filament where a layer changes tools inside itself. Changes
         // between layers purge into infill and support instead (`prime_tower_always` keeps the
         // tower for them too, as Orca does).
-        let tower_top = if crate::tower::flag(config, "prime_tower_always") {
-            any_top
-        } else {
-            within_top
-        };
+        let tower_top = tower_reach(
+            config,
+            plan.count(),
+            if crate::tower::flag(config, "prime_tower_always") {
+                any_top
+            } else {
+                within_top
+            },
+        );
         let tower_shape = match tower_top {
             Some(t) => crate::tower::place(
                 config,
@@ -3065,11 +3076,15 @@ impl SliceSession {
             &crate::toolorder::Choice::of(config, self.tool_count),
         );
         self.tool_order = order;
-        self.tower_top = if crate::tower::flag(config, "prime_tower_always") {
-            any_top
-        } else {
-            within_top
-        };
+        self.tower_top = tower_reach(
+            config,
+            self.plan.count(),
+            if crate::tower::flag(config, "prime_tower_always") {
+                any_top
+            } else {
+                within_top
+            },
+        );
         self.place_tower(config)?;
         self.keep_tower_for_purges(config, any_top)
     }
@@ -3919,7 +3934,10 @@ impl SliceSession {
     /// plate's changes. The objects' sessions keep their own settings and plans and leave the tower to the plate,
     /// which `sequence.rs` prints over their paths.
     fn plan_plate_tools(&mut self, config: &PrintConfig) -> Result<()> {
-        if !self.instances.is_empty() || self.followers.is_empty() || self.plate_slots().len() < 2 {
+        if !self.instances.is_empty()
+            || self.followers.is_empty()
+            || (self.plate_slots().len() < 2 && !crate::timelapse::smooth_tower(config))
+        {
             return Ok(());
         }
         let layers: Vec<Vec<Option<u32>>> = if self.interleaved.is_empty() {
@@ -4017,6 +4035,7 @@ impl SliceSession {
                 }
             }
         }
+        let top = tower_reach(config, u32::try_from(layers.len()).unwrap_or(u32::MAX), top);
         // Each plate layer's height and top, from the first object that prints on it.
         let slot = |g: usize| -> (f64, f64) {
             layers
@@ -11669,6 +11688,8 @@ impl SliceSession {
     ///   after its rows; with no change into it, by the filament the layer starts on before the first change when
     ///   it is of the block's category, else with the wall.
     /// - A layer without a change prints its wall and fill in one piece with the filament it holds.
+    /// - With a smooth timelapse the layer starts on the tower: what the filament the layer starts on prints there
+    ///   (the wall, and the fill no change goes into) comes before its first work, on every layer up to the top.
     fn type1_tower_turns<W: TowerTurn>(
         &self,
         cfg: &PrintConfig,
@@ -11718,7 +11739,14 @@ impl SliceSession {
                 && (!changes.is_empty() || !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")));
         // The last work of the filament the layer starts on, before its first change.
         let lead_end = changes.first().and_then(|c| c.0.checked_sub(1));
-        let wall_place = if let Some(&(i0, _)) = changes.first() {
+        // A smooth timelapse starts the layer on the tower, after its shot: what the filament the layer starts on
+        // prints there (the wall, and the fill of what no change fills) comes first.
+        let smooth = crate::timelapse::smooth_tower(cfg);
+        let wall_place = if let Some(before) = lead_end.filter(|_| smooth) {
+            Place::Before(before)
+        } else if smooth && changes.is_empty() {
+            Place::After(0)
+        } else if let Some(&(i0, _)) = changes.first() {
             let wall = plan.wall;
             let into =
                 |keep: &dyn Fn(u8) -> bool| changes.iter().find(|c| keep(c.1)).map(|c| Place::After(c.0));
@@ -11869,9 +11897,14 @@ impl SliceSession {
                 }
             }
         }
-        if !before.is_empty()
-            && let Some(work) = lead_end.and_then(|k| works.get_mut(k))
-        {
+        if before.is_empty() {
+            return;
+        }
+        if smooth {
+            if let Some(work) = works.first_mut() {
+                work.tower().splice(0..0, before);
+            }
+        } else if let Some(work) = lead_end.and_then(|k| works.get_mut(k)) {
             work.tower_after().splice(0..0, before);
         }
     }
@@ -11974,7 +12007,8 @@ impl SliceSession {
         out.changes_before =
             self.changes_before(self.object_print.get(layer as usize).copied().unwrap_or(layer));
         out.held_before = self.held_before(self.object_print.get(layer as usize).copied().unwrap_or(layer));
-        if self.tool_count > 1 {
+        // One filament has a tower only for a smooth timelapse.
+        if self.tool_count > 1 || self.tower_top.is_some() {
             // A plate that prints its objects from sessions of their own prints one tower over all of them.
             let tower = if self.plate_tools.is_some() {
                 None
@@ -14746,6 +14780,17 @@ fn held_in(map: Option<&crate::nozzles::Map>, orders: &[Vec<u8>], p: usize) -> V
         }
     }
     held
+}
+
+/// The highest layer the prime tower prints on: `top`, the last layer a change needs it on, or with a smooth
+/// timelapse ([`crate::timelapse::smooth_tower`]) the last of the `layers` layers, since every layer's shot ends on
+/// the tower.
+fn tower_reach(config: &PrintConfig, layers: u32, top: Option<u32>) -> Option<u32> {
+    if crate::timelapse::smooth_tower(config) {
+        layers.checked_sub(1).max(top)
+    } else {
+        top
+    }
 }
 
 #[allow(
