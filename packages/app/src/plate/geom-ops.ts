@@ -9,7 +9,7 @@ import { fromGeom, geom, toGeom, type GeomMesh } from '../geom/client'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
 import { commitMade } from '../cad/commit'
 import { selectedEntry } from './select'
-import { bake, invert } from './mesh-ops'
+import { bake } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
 import { bounds, compose, dropToBed, identity, multiply, type Box, type Mat4, type Vec3 } from './transform'
 import { modelPlace } from './edit'
@@ -286,19 +286,19 @@ export async function subtractFromSelected(host: Loader, spec: HoleSpec): Promis
       ? { type: 'cylinder', origin: [cx, cy, top - h], axis: [0, 0, 1], diameterMm: spec.sizeMm, heightMm: h }
       : { type: 'box', min: [cx - spec.sizeMm / 2, cy - spec.sizeMm / 2, top - h], max: [cx + spec.sizeMm / 2, cy + spec.sizeMm / 2, top] }
   let removed = 0
-  const parts: MeshPart[] = []
-  for (const p of world) {
-    const r = await geom().call<{ mesh: GeomMesh; removedVolumeMm3: number }>('subtract', { mesh: toGeom(p), solids: [solid] })
-    parts.push(fromGeom(r.mesh, p.name, p.slot))
+  // The engine cuts each part in bed coordinates and answers in the object's own frame, so the history's other steps
+  // keep their place (only the drop to the bed moves it). The faces come with the answer, found before its corners
+  // were rounded, so the hole and thread tools find a hole this made.
+  const local: MeshPart[] = []
+  for (const p of e.parts) {
+    const r = await geom().call<{ mesh: GeomMesh; removedVolumeMm3: number }>('subtract', { mesh: { mesh: toGeom(p), transform: e.transform }, solids: [solid] })
+    local.push(fromGeom(r.mesh, p.name, p.slot))
     removed += r.removedVolumeMm3
   }
   if (removed <= 0) {
     toast('The shape does not reach the object. Move it or make it deeper.', 'warn')
     return 'Nothing removed.'
   }
-  // Back in the object's own frame, so the history's other steps keep their place; only the drop to the bed moves it.
-  const back = invert(e.transform)
-  const local = parts.map((p) => bake(p, back))
   const label = spec.shape === 'cylinder' ? `Hole ${spec.sizeMm} mm` : `Box cut ${spec.depthMm} mm`
   const dropped = await replace(host, e, local, dropToBed(local, e.transform), { params: { op: 'subtract', solids: [solid], label }, start: true })
   const msg = `Removed ${(removed / 1000).toFixed(2)} cm3.${paintNote(dropped)}`
