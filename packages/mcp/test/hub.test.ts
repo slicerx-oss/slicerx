@@ -182,17 +182,41 @@ describe('person-only work through a scripted hub', () => {
     const r = await h.call('slicerx_printer_home', { printerId: 'bay-4' })
     expect(data<{ status: string }>(r).status).toBe('needs_person')
     const reg = hub.sent().find((s) => s.method === 'approvals.register')
-    expect(reg?.params['work']).toEqual({ kind: 'gcode', printerId: 'bay-4', line: 'G28' })
-    const card = reg?.params['request'] as { title: string; lines: string[] }
+    // The hub runs its own home rules when the person approves (printer state and plate), not a bare G28.
+    expect(reg?.params['work']).toEqual({ kind: 'home', printerId: 'bay-4' })
+    const card = reg?.params['request'] as { title: string; lines: string[]; actions: { action: string; paramsHash: string }[] }
     expect(card.title).toBe('Home all axes of bay-4?')
     expect(card.lines.join(' ')).toMatch(/plate is clear/)
+    expect(card.actions).toEqual([{ action: 'printer.gcode', target: 'bay-4', paramsHash: await hashParams({ printerId: 'bay-4', line: 'G28' }) }])
+  })
 
-    const busy = scriptedHub({ ok: true }, true, { printer, status: { ...status, state: 'printing' } })
-    const b = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: busy.WS })
-    const refused = await b.call('slicerx_printer_home', { printerId: 'bay-4' })
-    expect(refused.isError).toBe(true)
-    expect(text(refused)).toMatch(/only while the printer is idle or finished/)
-    expect(busy.sent().some((s) => s.method === 'approvals.register')).toBe(false)
+  it.each([
+    ['idle', true],
+    ['finished', true],
+    ['printing', false],
+    ['paused', false],
+    ['preparing', false],
+    ['error', false],
+    ['offline', false],
+  ] as const)('a client asks to home a printer that is %s: card made %s', async (state, made) => {
+    const hub = scriptedHub({ ok: true }, true, { printer, status: { ...status, state } })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    const r = await h.call('slicerx_printer_home', { printerId: 'bay-4' })
+    expect(hub.sent().some((s) => s.method === 'approvals.register')).toBe(made)
+    if (made) expect(data<{ status: string }>(r).status).toBe('needs_person')
+    else {
+      expect(r.isError).toBe(true)
+      expect(text(r)).toMatch(/only while the printer is idle or finished/)
+    }
+  })
+
+  it('reports the hub refusing a home card approved after a print started', async () => {
+    const hub = scriptedHub({ ok: false, code: 'bad_state', message: 'the printer homes only while it is idle or finished' })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    await h.call('slicerx_printer_home', { printerId: 'bay-4' })
+    await settle()
+    const p = data<{ pending: { status: string; code?: string }[] }>(await h.call('slicerx_pending_approvals'))
+    expect(p.pending[0]).toMatchObject({ status: 'failed', code: 'bad_state' })
   })
 
   it('reads the firmware and each filament unit\'s humidity and drying back from printer status', async () => {

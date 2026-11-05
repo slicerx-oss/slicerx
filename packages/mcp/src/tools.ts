@@ -8,7 +8,7 @@ import { assistantText } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import type { ApprovalToken, PrinterHost } from '@slicerx/contracts'
-import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
+import { defineTool, type AgentWork, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DataStore } from './data'
 import { MODEL_EXTENSIONS, resolveModel, type PathPolicy } from './models'
@@ -64,8 +64,14 @@ function gcodeTool<I extends { printerId: string }>(spec: {
   summary(i: I): string
   /** A line the card shows under what it sends. */
   note?: string
-  /** Throws when the printer may not take the lines now; checked before a card is made and again before they are sent. */
+  /**
+   * Throws when the printer may not take the lines now. Checked before a card is made, and again by `run` before an
+   * in-process send. Over sx-link the hub sends the approved line itself, so a rule that must hold at send time
+   * belongs in the hub's own work kind (`work`).
+   */
   ready?(i: I, ctx: ToolContext): Promise<void>
+  /** The work the hub runs once a person approves, when it has its own kind with its own checks (`home`). */
+  work?(i: I): AgentWork
 }): PilotTool<I> {
   const plan = async (i: I, ctx: ToolContext): Promise<string[]> => {
     await spec.ready?.(i, ctx)
@@ -84,7 +90,7 @@ function gcodeTool<I extends { printerId: string }>(spec: {
       const lines = await plan(i, ctx)
       const line = lines[0]
       if (lines.length !== 1 || !line) throw new Error('Send one G-code line at a time so a person can approve each.')
-      return { kind: 'gcode', printerId: i.printerId, line }
+      return spec.work?.(i) ?? { kind: 'gcode', printerId: i.printerId, line }
     },
     async approval(i, ctx) {
       const lines = await plan(i, ctx)
@@ -341,6 +347,8 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
       if (st.state !== 'idle' && st.state !== 'finished') throw new Error(`${i.printerId} is ${st.state}; it homes only while the printer is idle or finished.`)
     },
     lines: () => ['G28'],
+    // The hub checks the printer state and the plate again when the person approves, under the printer lock.
+    work: (i) => ({ kind: 'home', printerId: i.printerId }),
     title: (i) => `Home all axes of ${i.printerId}?`,
     note: 'Homing lowers the nozzle to the plate; make sure the plate is clear.',
     summary: (i) => `${i.printerId}: homing`,
