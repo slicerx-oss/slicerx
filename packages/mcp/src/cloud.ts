@@ -109,6 +109,8 @@ interface CloudAccess {
   jobsPerDay?: number
   jobsToday?: number
   maxUploadBytes?: number
+  /** Set for a partner app token: the app's name the person issued it to. */
+  partnerApp?: string
 }
 
 const AS_WRITTEN = 'This job was sliced before the cloud kept the plate its collisions are on, so they are as the engine wrote them (result.collisions, and engineCollisions for each plate): positions in machine coordinates, not plate mm, and objects by id only. Slice it again for named collisions on the plate.'
@@ -165,7 +167,12 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     const code = err?.error?.code
     const why = err?.error?.message ?? `it answered ${res.status}`
     if (res.status === 403 && code === 'not_invited') throw new ToolInputError(NOT_INVITED, 'not_invited')
-    if (res.status === 401 || res.status === 403) throw new ToolInputError(`The cloud service refused the token (${why}). It needs an sxk_ token with the cloud_slice scope.`, 'auth_failed')
+    if (res.status === 401)
+      throw new ToolInputError(
+        `The cloud service refused the token (${why}): it is unknown, expired or revoked. Ask the person for a new sxk_ token with the cloud_slice scope (a partner app token from their account settings, under Partner apps, works) and replace the stored one.`,
+        'auth_failed',
+      )
+    if (res.status === 403) throw new ToolInputError(`The cloud service refused the request (${why}). It needs an sxk_ token with the cloud_slice scope.`, 'auth_failed')
     if (res.status === 413) {
       // The service says the size and the limit; a bare 413 says neither, so name the size here.
       const said = err?.error?.message ? why.replace(/[^.!?]$/, '$&.') : `The model is ${body?.size ?? 'too large'}, over the cloud upload limit.`
@@ -319,5 +326,35 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     },
   })
 
-  return [slice, jobs] as PilotTool<never>[]
+  const access = defineTool({
+    name: 'cloud.access',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      "Read back what the cloud token this server holds may do, before slicing: whether the account is invited to cloud slicing, its cloud slices per rolling 24 hours, how many it used and has left, the largest upload, and, for a partner app token, the app's name the person issued it to. A partner app token slices on the person's own account and limits, sees only the jobs it queued, and cannot send a job to a printer. Sends nothing but the read. Answers that cloud slicing is not configured when this server has no cloud API.",
+    input: z.object({}),
+    async run() {
+      const c = need()
+      const a = (await (await request(c, 'GET', '/v1/access')).json()) as CloudAccess
+      const left = a.jobsPerDay !== undefined && a.jobsToday !== undefined ? Math.max(0, a.jobsPerDay - a.jobsToday) : undefined
+      const who = a.partnerApp ? `partner app token for ${a.partnerApp}` : 'account token'
+      return {
+        summary: a.invited ? `Cloud slicing: ${who}, ${left ?? 'unknown'} of ${a.jobsPerDay ?? 'unknown'} slices left today` : `Cloud slicing: ${who}, account not invited`,
+        output: {
+          invited: a.invited,
+          ...(a.jobsPerDay !== undefined ? { slicesPerDay: a.jobsPerDay } : {}),
+          ...(a.jobsToday !== undefined ? { slicesToday: a.jobsToday } : {}),
+          ...(left !== undefined ? { slicesLeft: left } : {}),
+          ...(a.maxUploadBytes !== undefined ? { maxUploadBytes: a.maxUploadBytes, maxUpload: sizeText(a.maxUploadBytes) } : {}),
+          ...(a.partnerApp ? { partnerApp: a.partnerApp } : {}),
+          jobsVisible: a.partnerApp ? 'own' : 'account',
+          canSendToPrinter: false,
+          ...(a.invited ? {} : { note: NOT_INVITED }),
+        },
+      }
+    },
+  })
+
+  return [slice, jobs, access] as PilotTool<never>[]
 }
