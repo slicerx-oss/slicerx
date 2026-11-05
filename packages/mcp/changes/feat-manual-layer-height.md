@@ -1,0 +1,3 @@
+### Added
+
+- `slicerx_app_layer_profile` 1.0.0 reads a plate's own layer heights in the running app (the shown plate, or `plate` by number or id): `mode` (`own`, `sleipnir` or `fixed`), `profile` as [height above the bed mm, layer height mm] points or null, the printer's `limits` (`min_mm`, `max_mm`, `first_layer_mm`), the plate's `top_mm`, the `layers` the profile gives, `layer_height_mm` and a `revision`. `slicerx_project_layer_profile` 1.0.0 sets one (`action: set` with `points`) or clears it (`action: reset`), as one toolbar Undo step, and returns it read back. Heights outside the printer's limits are refused with `invalid_input`. Both need the app link; the app link gains `layers.profile.get` (read) and `layers.profile.edit` (edit).
