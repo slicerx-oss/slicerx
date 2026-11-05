@@ -22,11 +22,13 @@
 //!
 //! A Prusa project orders its objects by another rule (`object_order_rule` `chain`, which the project read
 //! sets): the same chain of shortest links, built with no object held to one link, printed from one of its ends
-//! (`chain`). On the first layer every object's brim prints before the objects, each object's loops together, in the
-//! objects' order, except on a plate of two objects, where the brims and the objects each have a rule of their own
-//! (`pair_brims`, `pair_objects`). Under this rule each object stands at the lowest point of its first layer outline,
-//! the rightmost of equally low ones (`SliceSession::order_center`). The parts that are the current rule rather than a settled one say so ("Current
-//! rule"), so they are easy to find and change.
+//! (`chain`). Under this rule each object stands at the middle of its first layer outline's box
+//! (`SliceSession::order_center`). On the first layer every object's brim prints before the objects, each object's
+//! loops together, in a chain of their own: for its brim each object stands at the lowest point of its first layer
+//! outline, the rightmost of equally low ones (`SliceSession::brims_in_object_order`). Objects of one size give both
+//! points the same distances, so their brims and objects print in one order. On a plate of two objects the brims and
+//! the objects each have a rule of their own (`pair_brims`, `pair_objects`). The parts that are the current rule
+//! rather than a settled one say so ("Current rule"), so they are easy to find and change.
 
 use crate::geom::SCALE;
 
@@ -89,7 +91,7 @@ pub(crate) enum Rule {
     /// The path ends at the object nearest the bed's origin (`origin_last`, also when the key is unset).
     OriginLast,
     /// A chain of the nearest objects with no object held to one link, printed from the end `chain` picks, and the
-    /// brims print first in the same order (`chain`, a Prusa project's).
+    /// brims print first in a chain of their own (`chain`, a Prusa project's).
     Chain,
 }
 
@@ -111,8 +113,8 @@ pub(crate) fn order_by(rule: Rule, centers: &[[f64; 2]]) -> Vec<usize> {
     }
 }
 
-/// The order the brims of the objects whose centers are `centers` print in on the first layer, by `rule`, as
-/// indexes into `centers`. With three or more objects it is the objects' order.
+/// The order the brims of the objects whose points are `centers` print in on the first layer, by `rule`, as
+/// indexes into `centers`. With three or more objects it is the order `order_by` gives the same points.
 pub(crate) fn brim_order(rule: Rule, centers: &[[f64; 2]]) -> Vec<usize> {
     match (rule, centers) {
         (Rule::Chain, [a, b]) => pair_brims(*a, *b),

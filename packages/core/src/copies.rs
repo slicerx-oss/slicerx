@@ -91,7 +91,7 @@ pub(crate) fn slice(
     }
     // Every layer prints the copies one after another in the order of the copies on it (`objorder.rs`), by where
     // each copy stands: the same on every layer with the same copies, and the same in each shard.
-    // Under `Chain` each copy stands at the lowest vertex of its object's first layer, moved with the copy, as on a
+    // Under `Chain` each copy stands at the middle of its object's first layer box, moved with the copy, as on a
     // plate sliced as one session (`SliceSession::plate_order_point`).
     let rule = crate::objorder::rule(config);
     let points: Vec<[f64; 2]> = subs
