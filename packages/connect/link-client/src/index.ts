@@ -467,6 +467,8 @@ export type AgentWork =
   | { kind: 'print'; printerId: string; file: JobFile; opts?: StartOptions }
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
+  /** Home every axis under the hub's home rules (printer state and plate), checked when the person approves. */
+  | { kind: 'home'; printerId: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
   /** Skip one object of the running print (`objects.list` ids). `epoch` is the running print's (`bed.state`), and is hashed. */
   | { kind: 'skip'; printerId: string; id: string; epoch: number }
@@ -858,7 +860,8 @@ export interface LinkHost extends PrinterHost {
     issues(printerId: string): Promise<PrinterIssue[]>
     objects(printerId: string): Promise<PrintObject[]>
     jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
-    home(printerId: string): Promise<void>
+    /** `plateClear`: the person's answer to the plate question, for this home only. */
+    home(printerId: string, o?: { plateClear?: boolean }): Promise<void>
     skipObject(printerId: string, id: string, epoch: number): Promise<void>
     startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean; plateOk?: boolean }): Promise<LocalPrintResult>
   }
@@ -1532,7 +1535,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       issues: (printerId) => call<PrinterIssue[]>('issues.list', { printerId }),
       objects: (printerId) => call<PrintObject[]>('objects.list', { printerId }),
       jog: async (printerId, axis, distanceMm, feedMmMin) => void (await call('jog', { printerId, axis, distanceMm, ...(feedMmMin ? { feedMmMin } : {}) })),
-      home: async (printerId) => void (await call('home', { printerId })),
+      home: async (printerId, o) => void (await call('home', { printerId, ...(o?.plateClear ? { plateClear: true } : {}) })),
       skipObject: async (printerId, id, epoch) => void (await call('objects.skip', { printerId, id, epoch })),
       startFile: (printerId, path, o = {}) =>
         call<LocalPrintResult>('files.start', { printerId, path, ...(o.opts ? { opts: o.opts } : {}), ...(o.bedClear ? { bedClear: true } : {}), ...(o.unverifiedOk ? { unverifiedOk: true } : {}), ...(o.plateOk ? { plateOk: true } : {}) }),

@@ -152,6 +152,8 @@ export type AgentWork =
   | { kind: 'gcode'; printerId: string; line: string }
   /** Skip one object of the running print; `epoch` is the running print's bed epoch from the hub, and is hashed. */
   | { kind: 'skip'; printerId: string; id: string; epoch: number }
+  /** Home every axis under the hub's home rules (printer state and plate), checked when the person approves. */
+  | { kind: 'home'; printerId: string }
   /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 

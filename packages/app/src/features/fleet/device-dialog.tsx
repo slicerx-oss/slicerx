@@ -9,7 +9,7 @@ import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, homePrinter, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  bedKnownClear, deviceError, deviceHub, filamentText, homeBlockedReason, homePrinter, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
   type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
@@ -86,6 +86,9 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
   const [busy, setBusy] = useState(false)
   const [askPlate, setAskPlate] = useState(false)
   const blocked = jogBlockedReason(status.state)
+  const homeBlocked = homeBlockedReason(status.state)
+  // One line for the tab: the shared cause (offline, an error), or both rules when the printer is busy.
+  const moveNote = blocked && homeBlocked && blocked !== homeBlocked ? 'The head moves and homes only while the printer is idle or finished.' : (blocked ?? homeBlocked)
   // A confirm asked for one state never applies once the printer has moved on.
   useEffect(() => setAskPlate(false), [status.state])
   const home = async (plateClear: boolean) => {
@@ -115,7 +118,7 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
     <section aria-label="Move the head">
       <p className="sx-small">Moves the head by hand, 0.1 to 10 mm a step. Home the printer first if it refuses.</p>
       <div className="calib-act">
-        <Button size="sm" disabled={busy || blocked !== null || askPlate} onClick={() => void home(false)} tip={{ title: 'Home', body: 'Moves every axis to its end stop, so the printer knows where the head is.', ...(blocked ? { reason: blocked } : {}) }}>
+        <Button size="sm" disabled={busy || homeBlocked !== null || askPlate} onClick={() => void home(false)} tip={{ title: 'Home', body: 'Moves every axis to its end stop, so the printer knows where the head is.', ...(homeBlocked ? { reason: homeBlocked } : {}) }}>
           Home
         </Button>
       </div>
@@ -141,7 +144,7 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
         {btn('z', -1, 'Z -')}
         {btn('z', 1, 'Z +')}
       </div>
-      {blocked ? <p className="sx-small warn">{blocked}</p> : null}
+      {moveNote ? <p className="sx-small warn">{moveNote}</p> : null}
     </section>
   )
 }
