@@ -16,6 +16,7 @@ import { equalBytes, frame, fromB64url, fromUtf8, toB64url, utf8 } from './bytes
 import { dh, dhKeyPair, kdf, mac, open, sasDigits, seal, sha256, sign, verifySig, type KeyPair, type PairEnv } from './crypto'
 import type { DeviceIdentity } from './identity'
 import { offerProofKey, type OfferInfo } from './offer'
+import { partnerKey } from './partner'
 import {
   JoinerConfirm,
   OffererConfirm,
@@ -36,8 +37,9 @@ export interface HandshakeKeys {
   offererKey: Uint8Array
 }
 
-function deriveKeys(offerId: Uint8Array, eJ: Uint8Array, commit: Uint8Array, eO: Uint8Array, nO: Uint8Array, nJ: Uint8Array, shared: Uint8Array): HandshakeKeys {
-  const transcript = sha256(frame('transcript', offerId, eJ, commit, eO, nO, nJ))
+function deriveKeys(offerId: Uint8Array, eJ: Uint8Array, commit: Uint8Array, eO: Uint8Array, nO: Uint8Array, nJ: Uint8Array, shared: Uint8Array, partner?: string): HandshakeKeys {
+  // A partner pairing mixes the partner name in under its own label, so its digits and keys differ from a plain one.
+  const transcript = sha256(partner === undefined ? frame('transcript', offerId, eJ, commit, eO, nO, nJ) : frame('transcript partner', offerId, eJ, commit, eO, nO, nJ, partnerKey(partner)))
   const okm = kdf(shared, transcript, 'pair keys', 96)
   return {
     transcript,
@@ -51,6 +53,10 @@ function deriveKeys(offerId: Uint8Array, eJ: Uint8Array, commit: Uint8Array, eO:
 
 const commitTo = (offerId: Uint8Array, eJ: Uint8Array, nJ: Uint8Array) => sha256(frame('commit', offerId, eJ, nJ))
 
+/** The hello MAC. A partner hello proves it knows the partner name as well as the offer secret. */
+const helloMac = (proofKey: Uint8Array, o: Uint8Array, eJ: Uint8Array, commit: Uint8Array, name: string, platform: string, partner: string | undefined) =>
+  partner === undefined ? mac(proofKey, 'hello', o, eJ, commit, name, platform) : mac(proofKey, 'hello partner', o, eJ, commit, name, platform, partnerKey(partner))
+
 const CONFIRM_JOINER = 1
 const CONFIRM_OFFERER = 2
 
@@ -63,6 +69,8 @@ export interface JoinerCtx {
   nonce: Uint8Array
   commit: Uint8Array
   proofKey: Uint8Array
+  /** The partner app name this phone pairs under, when it is a partner phone. */
+  partner?: string
 }
 
 /**
@@ -70,16 +78,16 @@ export interface JoinerCtx {
  * since the reviewer needs a name before any keys exist; QR and code pairings keep the name inside
  * the encrypted confirm, away from the relay.
  */
-export function startJoin(env: PairEnv, offer: OfferInfo, announce?: { name: string; platform: DevicePlatform }): { ctx: JoinerCtx; hello: FrameOf<'hello'> } {
+export function startJoin(env: PairEnv, offer: OfferInfo, announce?: { name: string; platform: DevicePlatform }, partner?: string): { ctx: JoinerCtx; hello: FrameOf<'hello'> } {
   const eph = dhKeyPair(env)
   const nonce = env.random(32)
   const commit = commitTo(offer.offerId, eph.publicKey, nonce)
   const proofKey = offerProofKey(offer)
   const o = toB64url(offer.offerId)
-  const m = mac(proofKey, 'hello', offer.offerId, eph.publicKey, commit, announce?.name ?? '', announce?.platform ?? '')
+  const m = helloMac(proofKey, offer.offerId, eph.publicKey, commit, announce?.name ?? '', announce?.platform ?? '', partner)
   return {
-    ctx: { offer, eph, nonce, commit, proofKey },
-    hello: { k: 'hello', v: 1, o, e: toB64url(eph.publicKey), c: toB64url(commit), m: toB64url(m), ...(announce ? { name: announce.name, platform: announce.platform } : {}) },
+    ctx: { offer, eph, nonce, commit, proofKey, ...(partner !== undefined ? { partner } : {}) },
+    hello: { k: 'hello', v: 1, o, e: toB64url(eph.publicKey), c: toB64url(commit), m: toB64url(m), ...(announce ? { name: announce.name, platform: announce.platform } : {}), ...(partner !== undefined ? { p: 1 as const } : {}) },
   }
 }
 
@@ -99,7 +107,7 @@ export function joinerOnChallenge(ctx: JoinerCtx, ch: FrameOf<'challenge'>): Ste
   } catch {
     return { ok: false, reason: 'protocol' }
   }
-  const keys = deriveKeys(ctx.offer.offerId, ctx.eph.publicKey, ctx.commit, eO, nO, ctx.nonce, shared)
+  const keys = deriveKeys(ctx.offer.offerId, ctx.eph.publicKey, ctx.commit, eO, nO, ctx.nonce, shared, ctx.partner)
   return { ok: true, keys, reveal: { k: 'reveal', o: toB64url(ctx.offer.offerId), n: toB64url(ctx.nonce) } }
 }
 
@@ -115,12 +123,14 @@ export interface OffererState {
   failures: number
   /** Set by the first hello with a valid proof: an offer serves one joiner. */
   consumed: boolean
+  /** The partner app name this offer was made for: only a partner phone that knows it may pair, and only it. */
+  partner?: string
 }
 
 export const MAX_PROOF_FAILURES = 5
 
-export function createOffererState(env: PairEnv, secret: Uint8Array | null, offerId: Uint8Array, ttlMs: number): OffererState {
-  return { offerId, secret, eph: dhKeyPair(env), expiresAt: env.now() + ttlMs, failures: 0, consumed: false }
+export function createOffererState(env: PairEnv, secret: Uint8Array | null, offerId: Uint8Array, ttlMs: number, partner?: string): OffererState {
+  return { offerId, secret, eph: dhKeyPair(env), expiresAt: env.now() + ttlMs, failures: 0, consumed: false, ...(partner !== undefined ? { partner } : {}) }
 }
 
 export interface OffererCtx {
@@ -140,8 +150,10 @@ export function offererOnHello(env: PairEnv, st: OffererState, hello: FrameOf<'h
   const commit = fromB64url(hello.c)
   const m = fromB64url(hello.m)
   if (!o || !eJ || !commit || !m || !equalBytes(o, st.offerId)) return { ok: false, reason: 'protocol' }
+  // A partner offer pairs partner phones only, and a plain offer plain phones only: the person chose which.
+  if ((hello.p === 1) !== (st.partner !== undefined)) return { ok: false, reason: 'protocol' }
   const proofKey = offerProofKey({ offerId: st.offerId, secret: st.secret })
-  if (!equalBytes(m, mac(proofKey, 'hello', o, eJ, commit, hello.name ?? '', hello.platform ?? ''))) {
+  if (!equalBytes(m, helloMac(proofKey, o, eJ, commit, hello.name ?? '', hello.platform ?? '', st.partner))) {
     st.failures += 1
     return { ok: false, reason: 'bad_proof' }
   }
@@ -171,7 +183,7 @@ export function offererOnReveal(ctx: OffererCtx, reveal: FrameOf<'reveal'>): Ste
   } catch {
     return { ok: false, reason: 'protocol' }
   }
-  return { ok: true, keys: deriveKeys(ctx.st.offerId, ctx.eJ, ctx.commit, ctx.st.eph.publicKey, ctx.nonce, nJ, shared) }
+  return { ok: true, keys: deriveKeys(ctx.st.offerId, ctx.eJ, ctx.commit, ctx.st.eph.publicKey, ctx.nonce, nJ, shared, ctx.st.partner) }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,8 +220,8 @@ function identityValid(id: PublicIdentity, sig: string, keys: HandshakeKeys, joi
   return verifySig(pub, joiner ? 'pair joiner' : 'pair offerer', keys.transcript, s) && id.deviceId === toB64url(sha256(pub).slice(0, 16))
 }
 
-export function sealJoinerConfirm(ctx: JoinerCtx, keys: HandshakeKeys, identity: DeviceIdentity, accountId?: string): FrameOf<'confirm'> {
-  const payload: JoinerConfirm = { identity: identity.public, sig: identityProof(identity, keys, true), ...(accountId ? { accountId } : {}) }
+export function sealJoinerConfirm(ctx: JoinerCtx, keys: HandshakeKeys, identity: DeviceIdentity, accountId?: string, partner?: string): FrameOf<'confirm'> {
+  const payload: JoinerConfirm = { identity: identity.public, sig: identityProof(identity, keys, true), ...(accountId ? { accountId } : {}), ...(partner !== undefined ? { partner } : {}) }
   return sealConfirm(keys, true, ctx.offer.offerId, payload)
 }
 
@@ -267,10 +279,12 @@ export interface JoinParams {
   timeoutMs?: number
   /** How long to wait for the challenge. Short for QR and code pairing, where the host answers at once. */
   answerTimeoutMs?: number
+  /** Pair as a partner phone under this partner app name (partner.ts). */
+  partner?: string
 }
 
 export function joinOverPipe(pipe: Pipe, p: JoinParams): JoinAttempt {
-  const { ctx, hello } = startJoin(p.env, p.offer, p.announce ? { name: p.identity.public.name, platform: p.identity.public.platform } : undefined)
+  const { ctx, hello } = startJoin(p.env, p.offer, p.announce ? { name: p.identity.public.name, platform: p.identity.public.platform } : undefined, p.partner)
   const o = hello.o
   const sas = deferred<string>()
   const result = deferred<JoinResult>()
@@ -301,7 +315,7 @@ export function joinOverPipe(pipe: Pipe, p: JoinParams): JoinAttempt {
   const trySendConfirm = () => {
     if (keys && userConfirmed && !sentConfirm) {
       sentConfirm = true
-      pipe.send(JSON.stringify(sealJoinerConfirm(ctx, keys, p.identity, p.accountId)))
+      pipe.send(JSON.stringify(sealJoinerConfirm(ctx, keys, p.identity, p.accountId, p.partner)))
     }
   }
 

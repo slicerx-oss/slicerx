@@ -39,7 +39,16 @@ export type PublicIdentity = z.infer<typeof PublicIdentity>
  * What a paired device may do on a host. `request` sends slices and print jobs, `approve`
  * decides approval requests, `introduce` vouches for another device of the same account.
  */
-export const Rights = z.object({ request: z.boolean(), approve: z.boolean(), introduce: z.boolean() })
+export const Rights = z.object({
+  request: z.boolean(),
+  approve: z.boolean(),
+  introduce: z.boolean(),
+  /**
+   * Partner phones only: send prints (uploads, slicing, jobs, starting a stored file, resume) and read the library.
+   * Absent for our own phones, which `request` covers. A partner phone without it only asks to pause or stop.
+   */
+  send: z.boolean().optional(),
+})
 export type Rights = z.infer<typeof Rights>
 
 const LanUrl = z.string().max(120).regex(/^wss?:\/\//)
@@ -59,6 +68,8 @@ export const HelloFrame = z.object({
   m: Key32,
   name: Label.optional(),
   platform: DevicePlatform.optional(),
+  /** A partner phone's hello. The partner name itself is never sent in clear; the MAC proves the phone knows it. */
+  p: z.literal(1).optional(),
 })
 export const ChallengeFrame = z.object({ k: z.literal('challenge'), o: Id16, e: Key32, n: Key32, m: Key32 })
 export const RevealFrame = z.object({ k: z.literal('reveal'), o: Id16, n: Key32 })
@@ -106,7 +117,7 @@ export const AcceptFrame = z.object({ k: z.literal('accept'), v: z.number().int(
 /** Ciphertext frames. 1 MiB of ciphertext covers the largest upload chunk with room to spare. */
 export const DataFrame = z.object({ k: z.literal('data'), s: Id16, c: z.number().int().nonnegative(), x: b64Blob(1024 * 1024) })
 /** Unauthenticated hint that the host does not know the route. Clients treat it as "try later", never as a revocation. */
-export const RefuseFrame = z.object({ k: z.literal('refuse'), s: Id16, reason: z.enum(['unknown', 'busy', 'update']) })
+export const RefuseFrame = z.object({ k: z.literal('refuse'), s: Id16, reason: z.enum(['unknown', 'busy', 'update', 'quota']) })
 
 export const Frame = z.discriminatedUnion('k', [
   HelloFrame,
@@ -140,7 +151,13 @@ export function parseFrame(text: string): Frame | null {
 // ---------------------------------------------------------------------------
 // Handshake confirm payloads (inside the AEAD)
 
-export const JoinerConfirm = z.object({ identity: PublicIdentity, sig: Sig64, accountId: z.string().max(64).optional() })
+export const JoinerConfirm = z.object({
+  identity: PublicIdentity,
+  sig: Sig64,
+  accountId: z.string().max(64).optional(),
+  /** A partner phone's app name, as it shows it. It must match the offer's name (partnerKey) or the pairing fails. */
+  partner: z.string().min(1).max(64).optional(),
+})
 export type JoinerConfirm = z.infer<typeof JoinerConfirm>
 
 export const OffererConfirm = z.object({

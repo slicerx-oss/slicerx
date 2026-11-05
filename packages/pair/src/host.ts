@@ -14,9 +14,10 @@ import { verifyDecision } from './approval'
 import { watchAccountJoins, type JoinRequest } from './account'
 import { checkGrant, grantHash, introducedDeviceKey, introducedPairingId } from './grant'
 import { offererOnHello, offerOverPipe, createOffererState, type HandshakeKeys, type OfferResult } from './handshake'
+import { MAX_PARTNER_PHONES, partnerKey, partnerName } from './partner'
 import { ALL_RIGHTS, type DeviceIdentity, type PairingRecord, type PairingStore } from './identity'
 import { createShortCode, introRoute, offerFromShortCode, offerLink, offerRoutes, OFFER_TTL_MS, pairingRoutes } from './offer'
-import { createRpcPeer, MAX_FRAME_B64, MIMIR_QUESTION_V, PairError, type ApprovalView, type MimirAnswerParams, type MimirEnded, type MimirState, type PushPrefs, type JobState, type DecideParams, type JobTarget, type LibraryEntry, type Method, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
+import { createRpcPeer, MAX_FRAME_B64, MIMIR_QUESTION_V, PairError, type ApprovalView, type MimirAnswerParams, type PartnerPushParams, type MimirEnded, type MimirState, type PushPrefs, type JobState, type DecideParams, type JobTarget, type LibraryEntry, type Method, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
 import { parseFrame, type DevicePlatform, type Endpoints, type FrameOf, type JoinerConfirm, type PublicIdentity, type Rights } from './schema'
 import { acceptSession, initCurrent, verifyInit, type HostChannel } from './session'
 import { relayPipe, type Pipe, type RelayConnection } from './transport'
@@ -95,6 +96,13 @@ export interface PairPushHub {
   /** `tag` is the pairing id, so revoking the pairing removes the phone's token. */
   register(reg: { token: string; platform: 'ios' | 'android'; prefs: PushPrefs; tag?: string }): Promise<void>
   unregister(by: { token?: string; tag?: string }): Promise<unknown>
+  /**
+   * A partner phone's own push registration (sx-link `push.registerPartner`), tagged with its pairing id and partner
+   * name. Absent on a hub from before partner pushes: partner phones then hear `not_supported`.
+   */
+  registerPartner?(reg: PartnerPushParams & { tag: string; partner: string; approvals: boolean }): Promise<void>
+  /** Tells the hub whether a partner phone (by tag) may approve now, so approval alerts follow Devices at once. */
+  partnerApprovals?(tag: string, approvals: boolean): Promise<void>
 }
 
 export interface HostLimits {
@@ -151,6 +159,8 @@ export interface PairedDevice {
   accountLinked: boolean
   introducedBy?: string
   online: boolean
+  /** The partner app name, for a partner phone. */
+  partner?: string
 }
 
 export type HostPairingResult = { ok: true; device: PairedDevice } | { ok: false; reason: string }
@@ -158,6 +168,8 @@ export type HostPairingResult = { ok: true; device: PairedDevice } | { ok: false
 export interface HostPairingAttempt {
   deviceName: string
   platform?: DevicePlatform
+  /** The partner app name the offer was made for, on a partner offer. */
+  partner?: string
   sas: Promise<string>
   /** The person saw matching digits. Rights default to request and approve, plus introduce when the account is linked. */
   confirm(rights?: Rights): void
@@ -187,7 +199,11 @@ export interface ApprovalAudit {
 
 export interface PairHost {
   readonly identity: PublicIdentity
-  createOffer(opts?: { ttlMs?: number }): HostOffer
+  /**
+   * `partner`: an offer for a partner phone under this app name (partner.ts). Only a phone that pairs under the same
+   * name can use it, and it starts without the approve right.
+   */
+  createOffer(opts?: { ttlMs?: number; partner?: string }): HostOffer
   /** A LAN connection (from sx-link or the desktop app's listener). */
   handlePipe(pipe: Pipe): void
   /** Serves offers, pairings and introductions through the relay. Returns a detach function. */
@@ -339,6 +355,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     accountLinked: accountId !== null && r.accountId === accountId,
     ...(r.introducedBy ? { introducedBy: [...records.values()].find((x) => x.peer.deviceId === r.introducedBy)?.peer.name ?? 'another device' } : {}),
     online: [...sessions.values()].some((s) => s.pairingId === r.pairingId && s.confirmed),
+    ...(r.partner !== undefined ? { partner: r.partner } : {}),
   })
 
   function sessionsOf(pairingId: string): Session[] {
@@ -368,19 +385,26 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
   // -------------------------------------------------------------------------
   // Offers
 
-  function defaultRights(): Rights {
+  function defaultRights(partner?: string): Rights {
+    // A partner phone sees printers and cameras and asks to pause or stop; it approves and sends nothing until the
+    // person turns that on for it, and never vouches for other devices.
+    if (partner !== undefined) return { request: true, approve: false, introduce: false, send: false }
     return { request: true, approve: true, introduce: accountId !== null }
   }
 
-  async function completePairing(res: OfferResult, rights: Rights): Promise<HostPairingResult> {
+  async function completePairing(res: OfferResult, rights: Rights, partner?: string): Promise<HostPairingResult> {
     if (!res.ok) return { ok: false, reason: res.reason }
+    if (partner !== undefined && partnerCount() >= MAX_PARTNER_PHONES) return { ok: false, reason: `This computer keeps at most ${MAX_PARTNER_PHONES} partner phones. Remove one in Devices first.` }
+    // The transcript already binds the name; the phone's own spelling is kept when it is the same name.
+    const shown = partner === undefined ? undefined : res.joiner.partner !== undefined && partnerKey(res.joiner.partner) === partnerKey(partner) ? (partnerName(res.joiner.partner) ?? partner) : partner
     const r: PairingRecord = {
       pairingId: res.keys.pairingId,
       peer: res.joiner.identity,
       deviceKey: toB64url(res.keys.deviceKey),
       rights,
       createdAt: env.now(),
-      ...(accountId && res.joiner.accountId === accountId ? { accountId } : {}),
+      ...(accountId && res.joiner.accountId === accountId && shown === undefined ? { accountId } : {}),
+      ...(shown !== undefined ? { partner: shown } : {}),
     }
     await savePairing(r)
     return { ok: true, device: view(r) }
@@ -392,7 +416,8 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
       pipe.send(JSON.stringify({ k: 'abort', o: hello.o, reason: r.reason }))
       return null
     }
-    let rights = defaultRights()
+    const partner = st.partner
+    let rights = defaultRights(partner)
     const attempt = offerOverPipe(pipe, r.ctx, r.challenge, {
       identity: me,
       buildConfirm: async (_j: JoinerConfirm, _k: HandshakeKeys) => ({
@@ -404,13 +429,15 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     return {
       deviceName: attempt.joinerName ?? 'Phone',
       ...(attempt.joinerPlatform ? { platform: attempt.joinerPlatform } : {}),
+      ...(partner !== undefined ? { partner } : {}),
       sas: attempt.sas,
       confirm(chosen) {
-        if (chosen) rights = chosen
+        // A partner phone never introduces devices, whatever the caller passes, and sends only when asked to.
+        if (chosen) rights = partner === undefined ? chosen : { ...chosen, introduce: false, send: chosen.send === true }
         attempt.confirm()
       },
       reject: () => attempt.reject('mismatch'),
-      result: attempt.result.then((res) => completePairing(res, rights)),
+      result: attempt.result.then((res) => completePairing(res, rights, partner)),
     }
   }
 
@@ -539,7 +566,18 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
   // -------------------------------------------------------------------------
   // Requests from phones
 
-  function need(s: Session, right: keyof Rights): PairingRecord {
+  function partnerCount(): number {
+    return [...records.values()].filter((r) => r.partner !== undefined).length
+  }
+
+  /** Sending prints and reading the library: `request`, and for a partner phone also `send`, which the person turns on. */
+  function needSend(s: Session): PairingRecord {
+    const rec = need(s, 'request')
+    if (rec.partner !== undefined && rec.rights.send !== true) throw new PairError('forbidden', 'This partner app may not send prints or read the library. Turn that on in Devices.')
+    return rec
+  }
+
+  function need(s: Session, right: 'request' | 'approve' | 'introduce'): PairingRecord {
     const rec = records.get(s.pairingId)
     if (!rec) throw new PairError('forbidden', 'This device is no longer paired')
     if (!rec.rights[right]) throw new PairError('forbidden', `This device may not ${right === 'request' ? 'send jobs' : right === 'approve' ? 'approve' : 'introduce devices'}`)
@@ -589,6 +627,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
           push: svc.push !== undefined,
           mimir: svc.questionFeed !== undefined,
           rights: rec.rights,
+          ...(rec.partner !== undefined ? { partner: rec.partner } : {}),
         }
       case 'printers.list':
         return printers().list()
@@ -638,11 +677,23 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
       case 'push.unregister':
         await svc.push?.unregister({ token: String(p['token']) })
         return {}
+      case 'push.registerPartner': {
+        // Only a partner phone registers this way, and only for itself: the tag is its own pairing.
+        if (rec.partner === undefined) throw new PairError('forbidden', 'Only a partner phone registers a partner push token')
+        if (!svc.push?.registerPartner) throw new PairError('not_supported', 'This computer cannot send alerts to partner apps')
+        await svc.push.registerPartner({ ...(p as PartnerPushParams), tag: s.pairingId, partner: rec.partner, approvals: rec.rights.approve })
+        return {}
+      }
+      case 'push.unregisterPartner':
+        if (rec.partner === undefined) throw new PairError('forbidden', 'Only a partner phone has a partner push token')
+        await svc.push?.unregister({ tag: s.pairingId })
+        return {}
       case 'library.list':
+        needSend(s)
         if (!svc.library) return []
         return (await svc.library.list()).slice(0, 2000)
       case 'slice.start':
-        need(s, 'request')
+        needSend(s)
         return startSlice(s, p as { source: SliceSource; where: 'host' | 'cloud'; printerId?: string; options?: SliceOptions })
       case 'slice.cancel': {
         const run = running.get(String(p['sliceId']))
@@ -650,22 +701,24 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
         return {}
       }
       case 'upload.begin':
-        need(s, 'request')
+        needSend(s)
         return beginUpload(s, p as Parameters<typeof beginUpload>[1])
       case 'upload.chunk':
-        need(s, 'request')
+        needSend(s)
         return uploadChunk(s, p as { uploadId: string; offset: number; data: string })
       case 'upload.finish':
-        need(s, 'request')
+        needSend(s)
         return finishUpload(s, String(p['uploadId']))
       case 'jobs.send':
-        need(s, 'request')
+        needSend(s)
         return sendJob(s, rec, p as { sliceId: string; target: JobTarget; start: boolean; opts?: StartOptions })
       case 'jobs.start':
-        need(s, 'request')
+        needSend(s)
         return startFile(s, rec, p as { fileRef: string; opts?: StartOptions })
       case 'jobs.control':
-        need(s, 'request')
+        // Pause and cancel only ask; a resume restarts a print, so a partner phone needs the send right for it.
+        if ((p as { action?: unknown }).action === 'resume') needSend(s)
+        else need(s, 'request')
         return control(s, rec, p as { printerId: string; action: 'pause' | 'resume' | 'cancel' })
       case 'approvals.list':
         return approvalsFor(rec)
@@ -1043,6 +1096,11 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const request = job?.state === 'pending' ? job.request : svc.approvalFeed?.pending().find((r) => r.id === p.requestId)
     if (!request) throw new PairError('not_found', 'This request was already decided or has expired')
     if (!verifyDecision(rec.peer.signPub, request, p)) throw new PairError('forbidden', 'The decision does not match the request')
+    // A partner phone approves only pausing or stopping a print, as any phone does away from home: a print it
+    // sends, or anything else, waits for a person on this computer. It may still deny any card.
+    if (rec.partner !== undefined && p.decision === 'approve' && !request.actions.every((a) => a.action === 'printer.pause' || a.action === 'printer.cancel')) {
+      throw new PairError('forbidden', 'A partner phone approves only pausing or stopping a print; approve this on the computer')
+    }
     const audit = () => auditLog.push({ requestId: p.requestId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, decision: p.decision, at: env.now(), requestHash: p.requestHash, sig: p.sig })
     if (job) {
       audit()
@@ -1128,14 +1186,17 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     identity: me.public,
     createOffer(opts = {}) {
       const ttl = opts.ttlMs ?? OFFER_TTL_MS
+      const partner = opts.partner === undefined ? undefined : partnerName(opts.partner)
+      if (partner === null) throw new PairError('bad_request', 'The partner name needs 1 to 64 characters with a letter or digit')
+      if (partner !== undefined && partnerCount() >= MAX_PARTNER_PHONES) throw new PairError('busy', `This computer keeps at most ${MAX_PARTNER_PHONES} partner phones. Remove one in Devices first.`)
       const group: OfferGroup = { consumed: false, canceled: false, attemptCbs: new Set(), relayPipes: [] }
       const qrId = env.random(16)
       const secret = env.random(32)
-      const qr = createOffererState(env, secret, qrId, ttl)
+      const qr = createOffererState(env, secret, qrId, ttl, partner)
       const code = createShortCode(env.random)
       const codeOffer = offerFromShortCode(code, endpoints.relay)
       if (!codeOffer?.secret) throw new Error('Short code generation failed')
-      const byCode = createOffererState(env, codeOffer.secret, codeOffer.offerId, ttl)
+      const byCode = createOffererState(env, codeOffer.secret, codeOffer.offerId, ttl, partner)
       offers.set(toB64url(qrId), { st: qr, group })
       offers.set(toB64url(codeOffer.offerId), { st: byCode, group })
       for (const rel of relays) {
@@ -1222,10 +1283,13 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     async setRights(pairingId, rights) {
       const rec = records.get(pairingId)
       if (!rec) return
-      const next = { ...rec, rights }
+      // A partner phone never introduces devices.
+      const next = { ...rec, rights: rec.partner === undefined ? rights : { ...rights, introduce: false, send: rights.send === true } }
       await o.store.put(next)
       records.set(pairingId, next)
-      for (const s of sessionsOf(pairingId)) s.rpc.emit('pairing.rights', { rights })
+      for (const s of sessionsOf(pairingId)) s.rpc.emit('pairing.rights', { rights: next.rights })
+      // The hub sends approval alerts to a partner phone only while it may approve.
+      if (rec.partner !== undefined) await svc.push?.partnerApprovals?.(pairingId, next.rights.approve).catch(() => undefined)
       notifyChanged()
     },
     setEndpoints(next) {
