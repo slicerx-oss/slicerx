@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml } from 'yaml'
+import { yaml } from './deferred'
 import type { SettingDef } from '@slicerx/contracts'
 import { SETTINGS, settingDef } from '@slicerx/settings'
 
@@ -130,7 +130,7 @@ const parsedYaml = new Map<string, { text: string; data: unknown }>()
 function parseYamlFile(file: string, text: string): unknown {
   const hit = parsedYaml.get(file)
   if (hit?.text === text) return structuredClone(hit.data)
-  const data: unknown = parseYaml(text)
+  const data: unknown = yaml().parse(text)
   parsedYaml.set(file, { text, data: structuredClone(data) })
   return data
 }
