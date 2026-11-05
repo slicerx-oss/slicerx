@@ -4852,7 +4852,7 @@
    "mode": "hidden",
    "group": "special",
    "invalidates": "paths",
-   "help": "How a layer's objects are ordered: ending at the object nearest the bed's origin, or a chain of the nearest objects, brims first; with the chain a later part prints where two parts in one filament overlap. The Prusa project read sets it; a request may too.",
+   "help": "Object order on a layer: ending at the object nearest the bed's origin, or a chain of the nearest objects with brims first, where a later part prints over an overlap in one filament. The Prusa project read sets it, and a request may too.",
    "enumLabels": [
     "End at the object nearest the origin",
     "A chain of the nearest objects"
