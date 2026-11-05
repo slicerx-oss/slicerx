@@ -70,4 +70,4 @@ The bridge also keeps at most 4 routes open in all, and a chunk is at most 256 K
 
 ## What the user sees
 
-The user sees every open route in SlicerX, Settings, Printer bridge, Devices: your app's name, the phone, how long it has been open and the bytes in and out, with Close. Closing it there ends it at once. Removing your phone's pairing or your key ends its routes too. The bridge and the relay keep sizes and times only, never your bytes. AI agents connected to the bridge can read the same list (`slicerx_partner_routes`), and none of them can open or close a route.
+The user sees every open route in SlicerX, Settings, Printer bridge, Devices: your app's name, the phone, how long it has been open and the bytes in and out, with End route, which closes it at once. Removing your phone's pairing or your key ends its routes too. The bridge and the relay keep sizes and times only, never your bytes. AI agents connected to the bridge can read the same list (`slicerx_partner_routes`), and none of them can open or close a route.
