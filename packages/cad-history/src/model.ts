@@ -381,6 +381,32 @@ export function followField(list: readonly Follow[]): Pick<Step, 'follow'> {
 const parallel = (a: Vec3, b: Vec3) => Math.abs(dot(a, b)) > 0.999
 
 /**
+ * Part `part` as the step at `from` names it, in the index space of the step at `to` (later, or `steps.length` for
+ * the parts as they are now): carried through the parts.order steps between them. -1 (every part) stays -1.
+ */
+export function partThrough(steps: readonly Step[], from: number, to: number, part: number): number {
+  let k = part
+  for (let i = Math.max(0, from); i < Math.min(to, steps.length) && k >= 0; i++) {
+    const s = steps[i]!
+    if (s.suppressed || s.params.op !== 'parts.order') continue
+    const at = s.params.order.indexOf(k)
+    if (at >= 0) k = at
+  }
+  return k
+}
+
+/** Whether two steps work on the same part (or one works on every part), each step's index read in its own place. */
+export function samePart(steps: readonly Step[], a: Step, b: Step): boolean {
+  if (a.part === -1 || b.part === -1) return true
+  const at = (s: Step) => {
+    const i = steps.findIndex((x) => x.id === s.id)
+    return i < 0 ? steps.length : i
+  }
+  const [ia, ib] = [at(a), at(b)]
+  return ia <= ib ? partThrough(steps, ia, ib, a.part) === b.part : partThrough(steps, ib, ia, b.part) === a.part
+}
+
+/**
  * Which end faces of earlier steps on the same part a new step's references lie on, so replays move
  * them when those steps change. A push or a sketch follows the latest one its reference lies on. An
  * edge follows every one an end lies on (the top and the front of a block, say), one per direction:
@@ -396,7 +422,7 @@ export function followFor(steps: readonly Step[], s: Step): Step['follow'] | und
   const out: Follow[] = []
   for (let i = steps.length - 1; i >= 0; i--) {
     const prev = steps[i]!
-    if (prev.suppressed || (prev.part !== s.part && prev.part !== -1 && s.part !== -1)) continue
+    if (prev.suppressed || (s.part !== -1 && prev.part !== -1 && partThrough(steps, i, steps.length, prev.part) !== s.part)) continue
     const cap = capOf(followed(prev, steps))
     if (!cap) continue
     const on = local.flatMap((q, k) => (Math.abs(dot([q[0] - cap.point[0], q[1] - cap.point[1], q[2] - cap.point[2]], cap.normal)) < 0.01 && !taken[k]!.some((n) => parallel(n, cap.normal)) ? [k] : []))

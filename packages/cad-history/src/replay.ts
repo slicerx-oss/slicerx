@@ -239,8 +239,9 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
   // A new order changes no geometry, so it runs the same on meshes and on exact solids.
   if (p.op === 'parts.order') {
-    if (p.order.length !== parts.length) throw new Broken(`This step orders ${p.order.length} parts, and the object has ${parts.length} here.`)
-    return p.order.map((k) => parts[k]!)
+    // parts a step before it added since (a clone or a shape put in at the rolled-back marker) stay after the ordered ones
+    if (p.order.length > parts.length) throw new Broken(`This step orders ${p.order.length} parts, and the object has ${parts.length} here.`)
+    return [...p.order.map((k) => parts[k]!), ...parts.slice(p.order.length)]
   }
   if (exact && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     const done = await exactStep(

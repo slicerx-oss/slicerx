@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The parts of an object for an agent over the app link (parts.list, .clone and .order, the MCP server's app_parts
-// tools): each edit is one undo step, the person sees a toast naming the agent with Undo, and the parts read back.
+// The parts of an object for a connected client over the app link (parts.list, .clone and .order, the MCP server's
+// app_parts tools): each edit is one undo step, the person sees a toast naming the client with Undo, and the parts read
+// back.
 import { appPartInputs, type AppParts } from '@slicerx/mcp/toolset'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { stepName } from '@slicerx/cad-history'
 import { effectiveSlot } from '../filament/slots'
 import { history } from '../plate/history'
+import { partOverridesOf } from '../plate/object-settings'
 import { clonePart, isPartOrder, orderMoving, reorderParts } from '../plate/parts'
 import { bounds, identity } from '../plate/transform'
 import { get, toast, type AppState, type PlateEntry } from '../state/store'
@@ -57,7 +59,8 @@ function state(s: AppState, e: PlateEntry): AppParts {
         slot: effectiveSlot(e, p),
         triangles: p.indices.length / 3,
         painted: [...new Set([...layers(p.paint), ...layers(e.paint?.[i])])].sort(),
-        settings: structuredClone(e.partSettings?.[p.name] ?? {}),
+        // what the slice uses: an instance prints with its source's part settings
+        settings: structuredClone(partOverridesOf(s.plate, e)[p.name] ?? {}),
         boundsMm: b ? { min: b.min.map(round), max: b.max.map(round) } : null,
       }
     }),
@@ -71,7 +74,7 @@ export function readParts(args: Record<string, unknown>): AppParts {
   return state(s, object(s, i.object))
 }
 
-/** An agent never changes what the person locked or is changing right now. */
+/** A client never changes what the person locked or is changing right now. */
 async function editable(name: string): Promise<{ e: PlateEntry; guard: () => void }> {
   const { replaying } = await import('../cad/history/ops')
   const s = get()
@@ -110,7 +113,7 @@ export async function partAction(action: 'clone' | 'order', args: Record<string,
   const i = input('order', args)
   const { e, guard } = await editable(i.object)
   const moving = i.part !== undefined && i.to !== undefined
-  if (moving === (i.order !== undefined)) throw new LinkError('invalid_input', 'Give order, or part with to')
+  if (!(moving ? i.order === undefined : i.order !== undefined && i.part === undefined && i.to === undefined)) throw new LinkError('invalid_input', 'Give order, or part with to')
   if (moving && i.to! >= e.parts.length) throw new LinkError('invalid_input', `to is an index from 0 to ${e.parts.length - 1}`)
   const order = moving ? orderMoving(e.parts.length, partIndex(e, i.part!), i.to!) : i.order!
   if (!isPartOrder(order, e.parts.length)) throw new LinkError('invalid_input', `order lists each of the ${e.parts.length} part indices once, from 0`)
