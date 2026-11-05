@@ -267,6 +267,14 @@ export function touchMoveStarted(press: readonly [number, number], at: readonly 
   return Math.hypot(at[0] - press[0], at[1] - press[1]) > TOUCH_MOVE_SLOP_PX
 }
 
+/**
+ * Whether a press that moves a model waits for the tap slop before the model moves: only a finger on a phone ('selected'),
+ * where a tap selects and a hold opens a menu. A tablet's finger, a pen or a mouse moves the model from the first pixel.
+ */
+export function moveWaitsForSlop(pointerType: string, moves: ModelMoves): boolean {
+  return pointerType === 'touch' && moves === 'selected'
+}
+
 /** A press on the plate, as the move rule reads it. */
 export interface PlatePress {
   /** The model under the press, or null for empty space (which always turns the view). */
