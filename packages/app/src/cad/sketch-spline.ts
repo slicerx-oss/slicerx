@@ -9,9 +9,8 @@ import type { Vec2 as V2 } from '@slicerx/cad-history'
 export const SPLINE_TOL_MM = 0.005
 /** Most steps one span may take; a span that needs more is refused, as the engine refuses it. */
 export const SPLINE_MAX_STEPS = 1024
-/** Most points one loop and one sketch may have once flattened, as in the engine. */
+/** Most points one loop may have once flattened, counted as the engine counts them. The engine's sketch-wide limit is left to its check. */
 export const RING_POINTS = 65_536
-export const SKETCH_POINTS = 262_144
 
 const len = (a: V2): number => Math.hypot(a[0], a[1])
 const knot = (a: V2, b: V2): number => Math.max(Math.sqrt(len([b[0] - a[0], b[1] - a[1]])), 1e-12)
