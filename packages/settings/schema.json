@@ -5027,7 +5027,7 @@
    "default": "0",
    "group": "special",
    "pilot": "edit",
-   "invalidates": "preview",
+   "invalidates": "paths",
    "enumValues": [
     "0",
     "1"

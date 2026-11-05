@@ -395,9 +395,10 @@ fn wipe_off_keeps_the_line_before_the_lift() {
     check_blocks(&g, 6000, 10000);
 }
 
-/// The smooth timelapse type writes what the traditional one does (no tower layout yet).
+/// The smooth timelapse type keeps the block's travel accelerations. With the prime tower off it writes what the
+/// traditional one does; with the tower on, the layer starts on the tower (`smooth_timelapse.rs`).
 #[test]
-fn smooth_timelapse_matches_traditional() {
+fn smooth_timelapse_without_the_tower_matches_traditional() {
     // The settings block at the end of the file names the type; everything else is the same.
     let moves = |g: &str| -> Vec<String> {
         g.lines()
@@ -405,9 +406,14 @@ fn smooth_timelapse_matches_traditional() {
             .map(str::to_owned)
             .collect()
     };
-    let smooth = slice(a1(&json!({"timelapse_type": "1"})));
+    let off = json!({"timelapse_type": "1", "enable_prime_tower": false});
+    let smooth = slice(a1(&off));
     check_blocks(&smooth, 6000, 10000);
-    assert_eq!(moves(&smooth), moves(&slice(a1(&json!({})))));
+    assert_eq!(
+        moves(&smooth),
+        moves(&slice(a1(&json!({"enable_prime_tower": false}))))
+    );
+    check_blocks(&slice(a1(&json!({"timelapse_type": "1"}))), 6000, 10000);
 }
 
 /// Two filaments. The lift before each tool change runs at the layer's travel acceleration. Lines after the
