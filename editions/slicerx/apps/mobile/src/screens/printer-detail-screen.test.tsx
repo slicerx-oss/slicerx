@@ -107,12 +107,26 @@ it('shows the job stage with the job, not as a problem', async () => {
 it('opens the web interface of a printer that has one, and offers none otherwise', async () => {
   const openUrl = jest.fn()
   const voron = { ...idle, info: { ...idle.info, vendor: 'Voron', model: 'Voron 2.4 350', plugin: 'moonraker', host: '192.168.1.20' } }
-  const { rerender } = await render(<PrinterDetailScreen {...props({ printer: voron, openUrl })} />)
+  const { rerender } = await render(<PrinterDetailScreen {...props({ printer: voron, openUrl, network: 'home' })} />)
   expect(screen.getByText('http://192.168.1.20/')).toBeOnTheScreen()
   await fireEvent.press(screen.getByTestId('open-web-ui'))
   expect(openUrl).toHaveBeenCalledWith('http://192.168.1.20/')
-  await rerender(<PrinterDetailScreen {...props({ printer: { ...voron, info: { ...voron.info, host: 'printer.example.com' } }, openUrl })} />)
+  await rerender(<PrinterDetailScreen {...props({ printer: { ...voron, info: { ...voron.info, host: 'printer.example.com' } }, openUrl, network: 'home' })} />)
   expect(screen.queryByTestId('open-web-ui')).toBeNull()
-  await rerender(<PrinterDetailScreen {...props({ printer: { ...idle, info: { ...idle.info, plugin: 'bambu-lan', host: '192.168.1.21' } }, openUrl })} />)
+  await rerender(<PrinterDetailScreen {...props({ printer: { ...idle, info: { ...idle.info, plugin: 'bambu-lan', host: '192.168.1.21' } }, openUrl, network: 'home' })} />)
   expect(screen.queryByTestId('open-web-ui')).toBeNull()
+})
+
+// Through the relay the printer's local address would open on whatever network the phone is on.
+it('offers no web interface link away from home, through the relay', async () => {
+  const openUrl = jest.fn()
+  const voron = { ...idle, info: { ...idle.info, vendor: 'Voron', model: 'Voron 2.4 350', plugin: 'moonraker', host: '192.168.1.20' } }
+  const { rerender } = await render(<PrinterDetailScreen {...props({ printer: voron, openUrl, network: 'away' })} />)
+  expect(screen.queryByTestId('open-web-ui')).toBeNull()
+  expect(screen.queryByText('http://192.168.1.20/')).toBeNull()
+  expect(screen.getByText('Available on your home network')).toBeOnTheScreen()
+  // Until the phone knows how it is connected, nothing shows.
+  await rerender(<PrinterDetailScreen {...props({ printer: voron, openUrl })} />)
+  expect(screen.queryByTestId('open-web-ui')).toBeNull()
+  expect(screen.queryByTestId('web-ui-away')).toBeNull()
 })

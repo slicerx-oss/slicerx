@@ -45,7 +45,10 @@ pub fn printer_page(url: &str) -> bool {
         let Some((h, after)) = v6.split_once(']') else {
             return false;
         };
-        if !(after.is_empty() || after.strip_prefix(':').is_some_and(valid_port)) {
+        // Brackets hold an IPv6 address and nothing else.
+        if h.parse::<std::net::Ipv6Addr>().is_err()
+            || !(after.is_empty() || after.strip_prefix(':').is_some_and(valid_port))
+        {
             return false;
         }
         h
@@ -56,7 +59,26 @@ pub fn printer_page(url: &str) -> bool {
             None => authority,
         }
     };
-    !host.contains('%') && sx_link::is_lan_host(host)
+    !host.contains('%') && sx_link::is_lan_host(host) && !root_tld(host)
+}
+
+/// The top-level domains of the DNS root zone, from the printer catalog's list (one file for the app and the shell).
+fn root_tlds() -> &'static std::collections::HashSet<&'static str> {
+    static SET: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    SET.get_or_init(|| {
+        let file = include_str!("../../../../packages/connect/catalog/src/root-tlds.ts");
+        file.split('`')
+            .nth(1)
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect()
+    })
+}
+
+/// A single label that is a root-zone TLD, such as `ai`: it can resolve on the internet, so it gets no page.
+fn root_tld(host: &str) -> bool {
+    let h = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
+    !h.contains('.') && root_tlds().contains(h.as_str())
 }
 
 fn valid_port(p: &str) -> bool {
@@ -94,6 +116,22 @@ mod tests {
         }
     }
 
+    /// The single labels the app links to and the root-zone TLDs it does not, from the table the app's rule runs too.
+    #[test]
+    fn single_labels_follow_the_shared_table() {
+        let table: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../packages/connect/fixtures/lan-hosts.json"
+        ))
+        .unwrap();
+        for (key, want) in [("allowed", true), ("refused", false)] {
+            for h in table["webLink"][key].as_array().unwrap() {
+                let url = format!("http://{}/", h.as_str().unwrap());
+                assert_eq!(printer_page(&url), want, "{url}");
+            }
+        }
+        assert!(root_tlds().len() > 1400);
+    }
+
     #[test]
     fn anything_else_is_refused_before_the_browser() {
         for bad in [
@@ -125,6 +163,15 @@ mod tests {
             "http://8.8.8.8./",
             "http://[::ffff:192.168.1.1]/",
             "http://EVIL.COM/",
+            "http://printer../",
+            "http://[voron.local]/",
+            "http://[127.0.0.1]/",
+            "http://0X7F000001/",
+            "http://192.168.1.20:80:90/",
+            "http://192.168.1.20\\@8.8.8.8/",
+            "http://voron.local%2e/",
+            "http://ai/",
+            "http://COM./",
         ] {
             assert!(
                 open_with(bad, |_| panic!("{bad} reached the opener")).is_err(),
