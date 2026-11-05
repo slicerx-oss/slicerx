@@ -86,7 +86,7 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     const here = s.printerModel ? `the ${s.printerModel.model}` : 'the generic bed'
     const left = dropped.length ? ` Left out, made for a ${mm(fileNozzle)} nozzle: ${labels(dropped)}.` : ''
     const keptNote = keeps.filter((k) => k in all).map((k) => ` ${SLICERX_KEEPS[k]!}`).join('')
-    const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}${keptNote}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}${keptNote}`
+    const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}${keptNote}` : `Applied ${Object.keys(kept).filter((k) => k in all).length} settings from ${source}.${left}${keptNote}`
     return { keys: Object.keys(kept), note }
   }
   const keeps = new Set(changes.keeps)
@@ -156,11 +156,11 @@ const same = (a: SettingValue | undefined, b: SettingValue | undefined): boolean
  * else a line and the button that switches to it. The printer leads, since it is what the person acts on; the file is
  * in Details.
  */
-export function projectPrinterNote(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>): PrinterNote | null {
+export function projectPrinterNote(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, changed = Object.keys(applied).length): PrinterNote | null {
   const s = get()
   const offer = projectPrinterOffer(matchProjectPrinter(settings), { profileId: s.printerModel ? (s.profile?.printerId ?? null) : null, ...(s.profile ? { nozzle: s.profile.nozzle } : {}) })
   if (!offer || offer.kind === 'same') return null
-  const n = Object.keys(applied).length
+  const n = changed
   const did = n ? ` Applied ${settingsCount(n)} on ${plateOn(s, printers)}.` : ` Opened on ${plateOn(s, printers)}.`
   const details = `From ${source}.`
   if (offer.kind === 'unknown') return { text: `Made for ${offer.name}, which ${appName()} has no profile for.${did}`, details }
@@ -205,9 +205,12 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
   const before = get().overrides
   const match = await switchToProjectPrinter(source, settings, printers)
   if (match?.kind !== 'match') return
-  const changes = projectSettingChanges(settings, resolveConfig(get().easy, get().overrides)).values
-  const values = Object.fromEntries(Object.entries(changes).filter(([k]) => !edited.has(k)))
+  // Every value the project holds, so the nearest goal below does not replace one equal to this printer's; the note
+  // counts the real changes.
+  const { values: changes, taken } = projectSettingChanges(settings, resolveConfig(get().easy, get().overrides))
+  const values = Object.fromEntries(Object.entries(taken).filter(([k]) => !edited.has(k)))
   const keys = Object.keys(values)
+  const changed = keys.filter((k) => k in changes).length
   set((s) => {
     const overrides = { ...s.overrides, ...values }
     const was: Record<string, SettingValue | null> = { ...prior }
@@ -219,12 +222,30 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
       projectSettings: { source, keys: [...new Set([...(ps?.source === source ? ps.keys : []), ...keys])], prior: was },
     }
   })
+  // A value equal to the layer the plate now sits on is let go, as on the open, and is no longer the project's, so New
+  // project leaves a later edit to it alone; a person's own stays. With no printer layer the values stay.
+  await profileReady()
+  set((s) => {
+    if (!s.profile || !s.projectSettings) return {}
+    const layer = resolveConfig(s.easy, {}) as unknown as Record<string, SettingValue | undefined>
+    const overrides = { ...s.overrides }
+    const was = { ...s.projectSettings.prior }
+    const gone = new Set<string>()
+    for (const k of keys) {
+      if (before[k] !== undefined || !(k in overrides) || !same(overrides[k], layer[k])) continue
+      // the person had no value of their own here (before is empty), so there is nothing for New project to give back
+      delete overrides[k]
+      delete was[k]
+      gone.add(k)
+    }
+    return { overrides, projectSettings: { ...s.projectSettings, keys: s.projectSettings.keys.filter((k) => !gone.has(k)), prior: was } }
+  })
   // The open already said the project has its own G-code; the slice still asks, now against this printer's.
   await reviewOpenedGcode(source, settings, { quiet: true })
   markStale()
   const on = match.own ? match.own.name : `${match.model} ${mm(match.nozzle)}`
   const kept = edited.size ? ` Kept ${settingsCount(edited.size)} you changed.` : ''
-  openNote(`Switched to ${on}.${keys.length ? ` Applied ${settingsCount(keys.length)} from the project.` : ''}${kept}`, CHANGE_PRINTER, { details: `From ${source}.`, wrap: true })
+  openNote(`Switched to ${on}.${changed ? ` Applied ${settingsCount(changed)} from the project.` : ''}${kept}`, CHANGE_PRINTER, { details: `From ${source}.`, wrap: true })
 }
 
 /** The nozzle a printer slices with: what it reports, else what was chosen for it, else its model's default. */
