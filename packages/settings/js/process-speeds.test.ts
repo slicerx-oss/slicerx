@@ -19,7 +19,7 @@ const num = (c: unknown, k: string): number[] => ((c as Record<string, unknown>)
 describe('process tier speeds', () => {
   it('follow the maker for each printer and tier', () => {
     const models = listPrinterProfiles().map((p) => p.id).filter((id) => processSpeedSource(id, 'standard'))
-    expect(models).toHaveLength(65)
+    expect(models).toHaveLength(66)
     expect(PROCESS_SPEED_SOURCES.bambuStudio).toMatch(/^[0-9a-f]{7,}$/)
     expect(processSpeedSource('bambu-p2s', 'fine')).toBe('Bambu Studio/BBL/0.12mm High Quality @BBL P2S')
     expect(processSpeedSource('bambu-p2s', 'strong')).toBe(processSpeedSource('bambu-p2s', 'standard'))
@@ -32,6 +32,10 @@ describe('process tier speeds', () => {
     expect(processSpeedSource('bambu-h3c', 'fine')).toBe('Bambu Studio/BBL/0.12mm High Quality @BBL H3C')
     expect(processSpeedSource('bambu-h3c', 'extra_fine')).toBe('Bambu Studio/BBL/0.08mm High Quality @BBL H3C')
     expect(num(processConfig('standard', 0.4, 'bambu-h3c'), 'outer_wall_speed')[0]).toBe(200)
+    // The MK3.5's 0.4 mm presets run 0.10 to 0.20 mm, so its draft is the 0.20 mm High Flow preset.
+    expect(processSpeedSource('prusa-mk3.5', 'standard')).toMatch(/\/Prusa\/0\.20mm Standard @MK3\.5$/)
+    expect(processSpeedSource('prusa-mk3.5', 'draft')).toMatch(/\/Prusa\/0\.20mm High Flow @MK3\.5$/)
+    expect(processSpeedSource('prusa-mk3.5', 'fine')).toMatch(/\/Prusa\/0\.10mm Speed @MK3\.5$/)
   })
   it('puts the tuned quality values on the Fine tier of the P2S and H2 family only', () => {
     const p2s = processConfig('fine', 0.4, 'bambu-p2s') as unknown as Record<string, unknown>

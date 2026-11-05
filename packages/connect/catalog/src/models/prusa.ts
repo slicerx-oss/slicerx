@@ -31,6 +31,7 @@ export const PRUSA: PrinterModel[] = [
   }),
   prusa({ id: 'prusa-mk4', name: 'MK4', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(250, 210, 220), nozzles: NOZZLES, filamentSystem: 'mmu' }),
   prusa({ id: 'prusa-mk3.9', name: 'MK3.9', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(250, 210, 210), nozzles: NOZZLES, filamentSystem: 'mmu' }),
+  prusa({ id: 'prusa-mk3.5', name: 'MK3.5', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(250, 210, 210), nozzles: NOZZLES }),
   prusa({ id: 'prusa-mini-plus', name: 'MINI+', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(180, 180, 180), nozzles: [0.25, 0.4, 0.6] }),
   prusa({ id: 'prusa-core-one', name: 'Core One', kinematics: 'corexy', enclosed: true, buildVolume: rect(250, 220, 270), nozzles: NOZZLES, filamentSystem: 'mmu' }),
   prusa({ id: 'prusa-core-one-l', name: 'Core One L', kinematics: 'corexy', enclosed: true, buildVolume: rect(300, 300, 331), nozzles: [0.4, 0.5, 0.6, 0.8] }),
