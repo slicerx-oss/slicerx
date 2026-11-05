@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { CONTROL_PRESETS, CONTROL_PRESET_IDS, dragStartsOnModel, moveWaitsForSlop, orbitCodeFor, pressMovesModel, touchMoveStarted, type PlatePress, resolveDrag, resolveWheel, wheelKind, withRemap, type ControlsPresetId, type Modifiers } from '../src/controls'
+import { CONTROL_PRESETS, CONTROL_PRESET_IDS, dragMayLeaveBed, dragStartsOnModel, moveWaitsForSlop, orbitCodeFor, pressMovesModel, touchMoveStarted, type PlatePress, resolveDrag, resolveWheel, wheelKind, withRemap, type ControlsPresetId, type Modifiers } from '../src/controls'
 
 const none: Modifiers = { shift: false, ctrl: false, alt: false, space: false }
 const wheel = (o: Partial<{ deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; shiftKey: boolean }>) => ({ deltaX: 0, deltaY: 100, deltaMode: 0, ctrlKey: false, shiftKey: false, ...o })
@@ -127,6 +127,14 @@ describe('a press on the plate', () => {
     expect(moveWaitsForSlop('pen', true)).toBe(false)
     expect(moveWaitsForSlop('mouse', 'selected')).toBe(false)
     expect(moveWaitsForSlop('mouse', true)).toBe(false)
+  })
+
+  it('a finger on a phone moves the model on the plate only; its arrows, a tablet finger, a pen or a mouse may take it past an edge', () => {
+    expect(dragMayLeaveBed('touch', 'selected')).toBe(false)
+    expect(dragMayLeaveBed('touch', true)).toBe(true)
+    expect(dragMayLeaveBed('pen', true)).toBe(true)
+    expect(dragMayLeaveBed('mouse', true)).toBe(true)
+    expect(dragMayLeaveBed('mouse', 'selected')).toBe(true)
   })
 
   it('a finger that stays within 8 px is a tap or a hold, not a move', () => {
