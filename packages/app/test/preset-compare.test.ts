@@ -5,8 +5,8 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { sameValue } from '@slicerx/settings'
-import { comparable, comparePreset, copyValue, parentFor, parentSide, stockFor, undoCopy, whole } from '../src/presets/compare'
-import { applyPreset } from '../src/presets/presets'
+import { comparable, comparePreset, CopyChanged, copyValue, parentFor, parentSide, stockFor, undoCopy, whole } from '../src/presets/compare'
+import { applyPreset, updatePreset } from '../src/presets/presets'
 import { ComparePanel } from '../src/presets/compare-panel'
 import { memoryStore, setPresetStore, type UserPreset } from '../src/presets/store'
 import { get, set } from '../src/state/store'
@@ -71,7 +71,7 @@ describe('compare presets', () => {
     // B leaves walls at stock, so copying it drops A's change instead of storing the stock value.
     await copyValue('a', 'wall_loops', b, base)
     expect('wall_loops' in get().userPresets.find((p) => p.id === 'a')!.values).toBe(false)
-    await undoCopy(before!, 'layer_height')
+    await undoCopy(before!)
     expect(get().userPresets.find((p) => p.id === 'a')!.values['layer_height']).toBe(0.2)
   })
 
@@ -79,7 +79,7 @@ describe('compare presets', () => {
     set({ userPresets: [preset('a', 'filament', { nozzle_temperature: [231] }), preset('b', 'filament', { nozzle_temperature: [205] })], activePresets: { filament: 'a' }, overrides: { nozzle_temperature: [231], wall_loops: 4 } })
     const before = await copyValue('a', 'nozzle_temperature', whole(get().userPresets[1]!, stockFor(get().userPresets[1]!)), stockFor(get().userPresets[0]!))
     expect(get().overrides).toEqual({ nozzle_temperature: [205], wall_loops: 4 })
-    await undoCopy(before!, 'nozzle_temperature')
+    await undoCopy(before!)
     expect(get().overrides).toEqual({ nozzle_temperature: [231], wall_loops: 4 })
   })
 
@@ -95,7 +95,7 @@ describe('compare presets', () => {
     applyPreset('a')
     expect(get().overrides[key]).toEqual(side.config[key])
     expect(comparePreset(get().userPresets[0]!, stock, side).groups.flatMap((g) => g.rows).some((r) => r.key === key)).toBe(false)
-    await undoCopy(before!, key)
+    await undoCopy(before!)
     expect(key in get().userPresets[0]!.values).toBe(false)
   })
 
@@ -107,8 +107,27 @@ describe('compare presets', () => {
     expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6 })
     const before = (await copyValue('a', 'sparse_infill_density', { ...b, sparse_infill_density: 40 }, base))!
     // Undo, then a copy sent before the undo's write lands: the copy builds on the undone preset.
-    await Promise.all([undoCopy(before, 'sparse_infill_density'), copyValue('a', 'top_shell_layers', { ...b, top_shell_layers: 9 }, base)])
+    await Promise.all([undoCopy(before), copyValue('a', 'top_shell_layers', { ...b, top_shell_layers: 9 }, base)])
     expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6, top_shell_layers: 9 })
+  })
+
+  it('puts back only the copied setting, keeping a later change to another one', async () => {
+    set({ userPresets: [preset('a', 'process', { layer_height: 0.2 }), preset('b', 'process', { layer_height: 0.12 })] })
+    const base = stockFor(get().userPresets[0]!)
+    const rec = (await copyValue('a', 'layer_height', whole(get().userPresets[1]!, base), base))!
+    // A later change elsewhere in the preset, here a save over it from the Presets list.
+    await updatePreset('a', { values: { layer_height: 0.12, wall_loops: 7 } })
+    await undoCopy(rec)
+    expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.2, wall_loops: 7 })
+  })
+
+  it('refuses to put back a setting that changed again after the copy', async () => {
+    set({ userPresets: [preset('a', 'process', { layer_height: 0.2 }), preset('b', 'process', { layer_height: 0.12 })] })
+    const base = stockFor(get().userPresets[0]!)
+    const rec = (await copyValue('a', 'layer_height', whole(get().userPresets[1]!, base), base))!
+    await updatePreset('a', { values: { layer_height: 0.16 } })
+    await expect(undoCopy(rec)).rejects.toBeInstanceOf(CopyChanged)
+    expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.16 })
   })
 
   it('compares only presets of the same kind', () => {

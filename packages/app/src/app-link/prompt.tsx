@@ -10,6 +10,7 @@ import { Button, Dialog } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { appName } from '../edition'
 import { answerAsk, useLinkAsks, type LinkAsk } from './host'
+import { usePresetAsks, type PresetAsk } from './preset-asks'
 import { answerClientSheet, useWaitingSheets, type ClientSheet } from './sheets'
 import './prompt.css'
 
@@ -19,9 +20,51 @@ export const ARM_MS = 800
 export function AppLinkPrompt() {
   const ask = useLinkAsks()[0]
   const sheet = useWaitingSheets()[0]
-  // A new question is a new dialog: its buttons arm again. A client's sheet waits behind a question.
+  const preset = usePresetAsks()[0]
+  // A new question is a new dialog: its buttons arm again. A preset change and a client's sheet wait behind a question.
   if (ask) return <Question key={ask.askId} ask={ask} />
+  if (preset) return <PresetQuestion key={preset.id} ask={preset} />
   return sheet ? <SheetQuestion key={sheet.sheet.id} item={sheet} /> : null
+}
+
+/** A client's change to a saved preset: asked each time, since the grant covers only the open project. */
+function PresetQuestion({ ask }: { ask: PresetAsk }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setArmed(true), ARM_MS)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <Dialog
+      open
+      onClose={() => ask.answer(false)}
+      title="An agent wants to change a saved preset"
+      testId="app-link-preset"
+      splitFooter
+      footer={
+        <>
+          <Button variant="ghost" disabled={!armed} onClick={() => ask.answer(false)} data-testid="app-link-preset-decline" data-agent-refuse>
+            Not now
+          </Button>
+          <Button disabled={!armed} onClick={() => ask.answer(true)} data-testid="app-link-preset-allow" data-agent-refuse>
+            Change preset
+          </Button>
+        </>
+      }
+    >
+      <p>
+        An agent you connected, which calls itself <b>{ask.client.name}</b>, asks to change a preset you saved. Presets are not part of the open project, so it asks each time.
+      </p>
+      <p data-testid="app-link-preset-what">
+        <b>{ask.title}</b>
+      </p>
+      {ask.lines.map((l) => (
+        <p key={l} className="sx-muted">
+          {l}
+        </p>
+      ))}
+    </Dialog>
+  )
 }
 
 /** A client's sheet: the sizes it will build from, for the person to confirm or set aside. */

@@ -4,13 +4,18 @@
 // them (kind, name, parent, how many settings, which are in use); presets.compare compares one with another of its kind,
 // its parent or the stock settings, with the same rows the panel lists (labels, keys, both values); presets.copy copies
 // one setting's value from the second side into the preset, as the panel's copy button does, and answers with an undo
-// id; presets.undo puts that copy back. Copies are edits: the hub lets only a client with the edit grant make them. No
-// preset is created, renamed, deleted or applied, and nothing else about a preset changes.
-import type { PrintConfig } from '@slicerx/contracts'
+// id; presets.undo puts that one setting back. Copies are edits: the hub lets only a client with the edit grant make
+// them, and since presets are not part of the open project the grant covers, each copy and undo also asks the person
+// in the app (preset-asks.ts) and the person is told who changed what. No preset is created, renamed, deleted or
+// applied, and nothing else about a preset changes.
+import type { PrintConfig, SettingValue } from '@slicerx/contracts'
 import type { ConfigComparison } from '@slicerx/settings'
 import { appName } from '../edition'
-import { get } from '../state/store'
-import { comparePreset, copyValue, parentFor, parentSide, stockFor, undoCopy, whole, type CompareSide } from '../presets/compare'
+import { get, toast } from '../state/store'
+import { comparePreset, CopyChanged, copyValue, parentFor, parentSide, presetWrite, stockFor, undoCopy, whole, type CompareSide, type CopyRecord } from '../presets/compare'
+import { formatValue, settingDef } from '@slicerx/settings'
+import { askPresetWrite } from './preset-asks'
+import type { LinkClient } from './methods'
 import { loadPresets } from '../presets/presets'
 import type { PresetKind, UserPreset } from '../presets/store'
 import { LinkError } from './methods-error'
@@ -29,8 +34,8 @@ export interface LinkPreset {
 
 const listed = (p: UserPreset): LinkPreset => ({ id: p.id, kind: p.kind, name: p.name, ...(p.inherits ? { parent: p.inherits } : {}), settings: Object.keys(p.values).length, inUse: get().activePresets[p.kind] === p.id })
 
-/** A copy the client may put back, by id: the preset as it was, and the preset as the copy left it. */
-const undos = new Map<string, { before: UserPreset; key: string; updatedAt: number }>()
+/** A copy the client may put back, by id. */
+const undos = new Map<string, { rec: CopyRecord; label: string }>()
 const UNDO_KEEP = 50
 let undoSeq = 0
 
@@ -76,9 +81,26 @@ async function sides(a: UserPreset, args: Record<string, unknown>): Promise<{ ba
   return { base, side: { name: b.name, config: whole(b, stockFor(b)) }, with: b.id }
 }
 
-export async function presetCall(method: string, args: Record<string, unknown>): Promise<unknown> {
-  // The list is read where the panel reads it, so a preset saved a moment ago is there.
-  await loadPresets()
+/**
+ * A preset in use is followed by the plate, so writing it changes the plate's settings: refused while the plate loads,
+ * slices or is being edited, as a project settings edit is.
+ */
+function notBusy(p: UserPreset): void {
+  if (get().activePresets[p.kind] !== p.id) return
+  const s = get()
+  if (s.plateLoading || s.historyEdit || s.rollback || s.dragging || s.liveEdit || s.slice.status === 'running') throw new LinkError('busy', `${p.name} is in use; finish the current load, slice or edit before changing it`)
+}
+
+/** A value as the settings panel writes it; absent is the value the preset gets from the stock settings. */
+function shown(p: UserPreset, key: string, v: SettingValue | undefined): string {
+  const def = settingDef(key)
+  return v === undefined ? `${formatValue(def, stockFor(p)[key])} (stock)` : formatValue(def, v)
+}
+
+export async function presetCall(method: string, args: Record<string, unknown>, client: LinkClient = { id: '', name: 'An agent' }): Promise<unknown> {
+  // The list is read where the panel reads it, so a preset saved a moment ago is there; in the write queue, so a reload
+  // never lands under a copy in flight and rolls it back.
+  await presetWrite(() => loadPresets())
   if (method === 'presets.list') {
     only(args, ['kind'], method)
     const kind = args['kind']
@@ -104,27 +126,41 @@ export async function presetCall(method: string, args: Record<string, unknown>):
     const { base, side } = await sides(a, args)
     const row = comparePreset(a, base, side).groups.flatMap((g) => g.rows).find((r) => r.key === key)
     if (!row) throw new LinkError('invalid_input', `${key} does not differ between ${a.name} and ${side.name}, or is not a ${a.kind} setting; presets.compare lists what differs`)
-    const before = await copyValue(a.id, key, side.config, base)
+    notBusy(a)
+    const yes = await askPresetWrite(client, `Set ${row.label} in ${a.name} to ${row.bText}?`, [`It is ${row.aText} now, and ${side.name} has ${row.bText}.`])
+    if (!yes) throw new LinkError('refused', `The person declined: ${a.name} was not changed`, { reason: 'declined' })
+    const rec = await copyValue(a.id, key, side.config, base, notBusy)
     const after = get().userPresets.find((p) => p.id === a.id)
-    if (!before || !after) throw new LinkError('not_found', `${a.name} is gone from ${appName()}`)
+    if (!rec || !after) throw new LinkError('not_found', `${a.name} is gone from ${appName()}`)
     const undoId = `pu_${++undoSeq}`
-    undos.set(undoId, { before, key, updatedAt: after.updatedAt })
+    undos.set(undoId, { rec, label: row.label })
     while (undos.size > UNDO_KEEP) undos.delete(undos.keys().next().value!)
-    return { preset: listed(after), key, label: row.label, value: after.values[key] ?? null, from: side.name, undoId }
+    toast(`${client.name} changed ${row.label} in ${after.name}.`, 'info')
+    // value is what the preset gives now; kept says whether the preset holds it as its own change or gets it from stock.
+    return { preset: listed(after), key, label: row.label, value: whole(after, stockFor(after))[key] ?? null, kept: key in after.values, from: side.name, undoId }
   }
   if (method === 'presets.undo') {
     only(args, ['undoId'], method)
     const id = text(args, 'undoId', 40)
     const u = id ? undos.get(id) : undefined
     if (!u) throw new LinkError('not_found', 'No copy to put back with that undoId; it was put back already, or the app restarted')
-    const now = get().userPresets.find((p) => p.id === u.before.id)
-    if (!now) throw new LinkError('not_found', `${u.before.name} is gone from ${appName()}`)
-    // A preset changed again since the copy is not put back over that change.
-    if (now.updatedAt !== u.updatedAt) throw new LinkError('refused', `${now.name} changed after that copy, so putting it back would undo the later change too`)
+    const cur = get().userPresets.find((p) => p.id === u.rec.id)
+    if (!cur) throw new LinkError('not_found', `${u.rec.name} is gone from ${appName()}`)
+    notBusy(cur)
+    const yes = await askPresetWrite(client, `Put ${u.label} in ${cur.name} back to ${shown(cur, u.rec.key, u.rec.was)}?`, [`It is ${shown(cur, u.rec.key, cur.values[u.rec.key])} now, from an earlier change by this agent.`])
+    if (!yes) throw new LinkError('refused', `The person declined: ${cur.name} was not changed`, { reason: 'declined' })
+    let after: UserPreset
+    try {
+      // Only that setting goes back, and only while it still holds the copied value; checked in the write queue.
+      after = await undoCopy(u.rec, notBusy)
+    } catch (e) {
+      if (e instanceof CopyChanged) throw new LinkError('refused', `${e.message}, so putting it back would undo a later change`, { reason: 'changed' })
+      throw e
+    }
+    // Gone once it worked, so a failed write can be tried again.
     undos.delete(id!)
-    await undoCopy(u.before, u.key)
-    const after = get().userPresets.find((p) => p.id === u.before.id)!
-    return { preset: listed(after), key: u.key, value: after.values[u.key] ?? null }
+    toast(`${client.name} put back ${u.label} in ${after.name}.`, 'info')
+    return { preset: listed(after), key: u.rec.key, value: whole(after, stockFor(after))[u.rec.key] ?? null, kept: u.rec.key in after.values }
   }
   throw new LinkError('not_found', `${appName()} has no app link method ${method}`)
 }
