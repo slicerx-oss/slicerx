@@ -662,11 +662,15 @@ fn units_from(
     out
 }
 
+/// The longest drying time a unit reads as, in minutes (24 h).
+const MAX_DRY_MINUTES: f64 = 1440.0;
+
 /// What a unit's sensors read, from its entry in a report. `humidity` is a level the printer sends
 /// as 1 wet to 5 dry, flipped here to 1 dry to 5 wet as the maker's apps show it; `humidity_raw`
 /// is the percentage, `temp` degrees C and `dry_time` the minutes of drying left. Values out of
-/// range (an AMS sends some while it powers on) are dropped. An AMS lite has no sensors, and only
-/// an AMS 2 Pro and an AMS HT can dry.
+/// range (an AMS sends some while it powers on) are dropped, and so is a drying time past a day
+/// (`MAX_DRY_MINUTES`), which no unit runs. An AMS lite has no sensors, and only an AMS 2 Pro and an
+/// AMS HT can dry.
 fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
     if kind == "ams-lite" {
         return None;
@@ -695,7 +699,7 @@ fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
             .then(|| num("dry_time").map(|m| m > 0.0))
             .flatten(),
         dry_minutes_left: num("dry_time")
-            .filter(|m| *m > 0.0 && matches!(kind, "ams-2-pro" | "ams-ht"))
+            .filter(|m| *m > 0.0 && *m <= MAX_DRY_MINUTES && matches!(kind, "ams-2-pro" | "ams-ht"))
             .and_then(|m| u32::try_from(whole(m)).ok()),
     };
     (c != UnitClimate::default()).then_some(c)
@@ -1450,7 +1454,9 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
                 })
         })
         .or_else(|| pause_step.map(str::to_owned));
-    let mut live = parse_live(p, &slot_ids);
+    // An A1 or A1 mini takes only an AMS lite; older firmware sends no `info` to tell it apart.
+    let a1_only = model_from_report(p).is_some_and(|m| m.starts_with("A1"));
+    let mut live = parse_live(p, &slot_ids, a1_only);
     if let Some(s) = job_step {
         live.get_or_insert_with(Box::default).stage = Some(s.to_owned());
     }
@@ -1690,6 +1696,16 @@ pub(crate) fn fit_to_model(st: &mut PrinterStatus, model: &str, seen: FanSeen) {
     if !shows_chamber_temperature(model) {
         st.chamber = None;
     }
+    // An A1 or A1 mini takes only an AMS lite, which has no sensors: a unit read as a first AMS
+    // (no `info` and no printer type in the report) is one.
+    if model.starts_with("A1") {
+        for u in st.live.iter_mut().flat_map(|l| l.units.iter_mut().flatten()) {
+            if u.kind == "ams" {
+                "ams-lite".clone_into(&mut u.kind);
+                u.climate = None;
+            }
+        }
+    }
     let (Some(has), Some(live)) = (model_fans(model), st.live.as_mut()) else {
         return;
     };
@@ -1755,7 +1771,8 @@ fn fans_of(p: &Value) -> Option<Fans> {
 /// light is `lights_report`'s `chamber_light`. The slot feeding now is the current extruder's
 /// `snow` on H2 printers (state bits 4 to 7 pick the extruder), else `ams.tray_now`, as
 /// Bambu Studio reads it.
-fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
+/// `a1_only` says every unit without its own kind is an AMS lite (an A1 or A1 mini), as in `units_from`.
+fn parse_live(p: &Value, slots: &[String], a1_only: bool) -> Option<Box<PrinterLive>> {
     let fans = fans_of(p);
     let light = p
         .get("lights_report")
@@ -1826,6 +1843,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
                 Some(3) => "ams-2-pro",
                 Some(4) => "ams-ht",
                 Some(1) => "ams",
+                _ if a1_only => "ams-lite",
                 _ if id >= 128 => "ams-ht",
                 _ => "ams",
             };
@@ -4273,6 +4291,79 @@ mod tests {
                 ..UnitClimate::default()
             })
         );
+    }
+
+    #[test]
+    fn an_a1_on_older_firmware_reads_its_unit_as_an_ams_lite_without_climate() {
+        // No `info` on the unit: only the model tells an AMS lite apart, from the report's printer type or
+        // from the version answer.
+        let p = json!({
+            "gcode_state": "IDLE", "printer_type": "N2S",
+            "ams": { "ams": [ { "id": "0", "humidity": "5", "temp": "0.0", "tray": [] } ] },
+        });
+        let u = parse_status("a1", &p).live.unwrap().units.unwrap();
+        assert_eq!((u[0].kind.as_str(), u[0].climate.clone()), ("ams-lite", None));
+        let p = json!({
+            "gcode_state": "IDLE",
+            "ams": { "ams": [ { "id": "0", "humidity": "5", "temp": "0.0", "tray": [] } ] },
+        });
+        let mut st = parse_status("a1", &p);
+        fit_to_model(&mut st, "A1 mini", FanSeen::default());
+        let u = st.live.unwrap().units.unwrap();
+        assert_eq!((u[0].kind.as_str(), u[0].climate.clone()), ("ams-lite", None));
+    }
+
+    #[test]
+    fn unit_readings_out_of_range_or_malformed_are_dropped() {
+        let one = |unit: Value| {
+            let p = json!({ "gcode_state": "IDLE", "ams": { "ams": [ unit ] } });
+            parse_status("p", &p).live.unwrap().units.unwrap()[0]
+                .climate
+                .clone()
+        };
+        let pro = |extra: Value| {
+            let mut u = json!({ "id": "0", "info": "1003", "tray": [] });
+            u.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            one(u)
+        };
+        assert_eq!(
+            pro(json!({ "humidity_raw": "100" })).unwrap().humidity_pct,
+            Some(100)
+        );
+        assert_eq!(
+            pro(json!({ "humidity_raw": "21.6" })).unwrap().humidity_pct,
+            Some(22)
+        );
+        for bad in [
+            json!({ "humidity_raw": "101" }),
+            json!({ "humidity": "6" }),
+            json!({ "temp": "100.5" }),
+            json!({ "humidity_raw": "wet" }),
+            json!({ "humidity_raw": null }),
+            json!({ "temp": "NaN" }),
+            json!({ "temp": "inf" }),
+            json!({ "dry_time": -5 }),
+        ] {
+            let c = pro(bad.clone());
+            assert!(
+                c.as_ref().is_none_or(|c| c.humidity_pct.is_none()
+                    && c.humidity_level.is_none()
+                    && c.temp_c.is_none()
+                    && c.dry_minutes_left.is_none()),
+                "{bad}: {c:?}"
+            );
+        }
+        // A first AMS cannot dry, whatever it sends.
+        let ams =
+            one(json!({ "id": "0", "info": "1001", "temp": "25", "dry_time": 30, "tray": [] })).unwrap();
+        assert_eq!((ams.drying, ams.dry_minutes_left), (None, None));
+        // A dry time past a day is not a reading: drying, with no time left shown.
+        let ht = one(json!({ "id": "128", "info": "1004", "dry_time": 90000, "tray": [] })).unwrap();
+        assert_eq!((ht.drying, ht.dry_minutes_left), (Some(true), None));
+        let ht = one(json!({ "id": "128", "info": "1004", "dry_time": 1440, "tray": [] })).unwrap();
+        assert_eq!(ht.dry_minutes_left, Some(1440));
     }
 
     #[test]
