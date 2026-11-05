@@ -5,7 +5,8 @@
 //! text and fall back to their 25% defaults. A small perimeter speed in the list form presets use (`["80%"]`) fell
 //! back to half the outer wall speed. Every other percent setting the engine reads gets the same check below: "N%",
 //! `["N%"]`, N and `[N]` print the same G-code, and N prints unlike the setting left out. The scarf overhang threshold
-//! is checked where it is read, in `scarf.rs`.
+//! is checked where it is read, in `scarf.rs`. The thin feature warning read a minimum feature size in the list form
+//! (`["100%"]`) as its 25% default.
 
 mod common;
 
@@ -548,4 +549,74 @@ fn wipe_tower_extra_flow_reads_a_percent_sign() {
 #[test]
 fn wipe_tower_extra_spacing_reads_a_percent_sign() {
     percent_reads_as_its_number(&mk4_tower(), "wipe_tower_extra_spacing", 150);
+}
+
+/// A box from `lo` to `hi`, mm, as one part named `name`.
+fn box_part(name: &str, lo: [f32; 3], hi: [f32; 3]) -> MeshPart {
+    let mut positions = Vec::new();
+    for z in [lo[2], hi[2]] {
+        for (x, y) in [(lo[0], lo[1]), (hi[0], lo[1]), (hi[0], hi[1]), (lo[0], hi[1])] {
+            positions.push([x, y, z]);
+        }
+    }
+    let mut triangles = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+    for k in 0..4u32 {
+        let n = (k + 1) % 4;
+        triangles.push([k, n, 4 + n]);
+        triangles.push([k, 4 + n, 4 + k]);
+    }
+    MeshPart {
+        name: name.into(),
+        slot: 1,
+        color: None,
+        positions,
+        triangles,
+        paint: Vec::new(),
+        support_paint: Vec::new(),
+        seam_paint: Vec::new(),
+        fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
+    }
+}
+
+/// The thin feature warnings of the 20 mm cube beside a 0.3 mm fin 10 mm long, with Arachne walls and a minimum
+/// feature size of `size`.
+fn thin_warnings(size: &Value) -> Vec<String> {
+    let mesh = Arc::new(Mesh {
+        name: "fin".into(),
+        parts: vec![
+            box_part("block", [0.0, 0.0, 0.0], [20.0, 20.0, 6.0]),
+            box_part("fin", [25.0, 5.0, 0.0], [25.3, 15.0, 6.0]),
+        ],
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{
+            "id": "a", "name": "a", "mesh": "a",
+            "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 110, 0, 1],
+        }]},
+        "config": {"brim_width": 0, "wall_generator": "arachne", "min_feature_size": size},
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &|_: &str| Ok(Arc::clone(&mesh))).unwrap();
+    run.report
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("too thin"))
+        .map(|w| w.message.clone())
+        .collect()
+}
+
+#[test]
+fn min_feature_size_reads_a_percent_in_a_list_for_the_thin_feature_warning() {
+    // 100% of the 0.4 mm nozzle: the 0.3 mm fin is too thin, as text, in a list, or as the number. At 25% it prints.
+    for size in [json!(["100%"]), json!("100%"), json!(100), json!([100])] {
+        let got = thin_warnings(&size);
+        assert!(
+            got.iter().any(|m| m.contains("thinner than 0.40 mm")),
+            "{size}: {got:?}"
+        );
+    }
+    assert!(thin_warnings(&json!("25%")).is_empty());
 }
