@@ -8,6 +8,8 @@
 // packages/profiles/overlays/prusa-brim.json gives every Prusa process tier the maker's brim: whole loops, grown from the
 // compensated first layer outline. packages/profiles/overlays/prusa-first-layer.json gives the Prusa MK4 and MINI the first
 // layer line width and elephant foot compensation of the maker's Input Shaper print presets, for every nozzle and tier.
+// packages/profiles/overlays/creality-ender-3-v3.json gives the plain Creality Ender-3 V3, which has no resolved presets, the
+// first layer and support line widths of the maker's process presets, in its rows of process-speeds.json.
 // scripts/gen-resolved.ts applies them before writing, and scripts/apply-overlay.ts applies them to the shipped files, so
 // a regeneration of any of these files keeps them. Applying one twice changes nothing.
 import { sameValue } from './diff'
@@ -31,6 +33,12 @@ export interface MakerOverlay {
    * values: what the maker's app does where its presets have no key at all.
    */
   every_process?: { comment?: string; values: Raw }
+  /**
+   * Values for the maker's process presets in process-speeds.json, by the preset's name there
+   * (`OrcaSlicer/Creality/0.20mm Standard @Creality Ender-3 V3`), raw: for a model with no resolved presets, whose
+   * tiers on the 0.4 mm nozzle take these rows over SlicerX's process.
+   */
+  process_presets?: Record<string, Raw>
 }
 
 interface TierDiff { set: Raw; unset: string[] }
@@ -47,16 +55,20 @@ export const PRUSA_OVERLAY = 'overlays/prusa-mk4is.json'
 export const PRUSA_BRIM_OVERLAY = 'overlays/prusa-brim.json'
 /** The first layer line width and elephant foot compensation of the MK4 and MINI print presets, relative to packages/profiles. */
 export const PRUSA_FIRST_LAYER_OVERLAY = 'overlays/prusa-first-layer.json'
+/** The first layer and support line widths of the plain Ender-3 V3's process presets, relative to packages/profiles. */
+export const CREALITY_V3_OVERLAY = 'overlays/creality-ender-3-v3.json'
 
 /**
  * Every maker overlay, in the order they apply: the brand whose resolved file it writes, the vendor filament file it
- * writes, and whether it also writes the printer settings in machine.json.
+ * writes, whether it also writes the printer settings in machine.json, and whether it writes process presets in
+ * process-speeds.json.
  */
-export const MAKER_OVERLAYS: readonly { path: string; brand: string; filaments?: string; machineJson: boolean }[] = [
+export const MAKER_OVERLAYS: readonly { path: string; brand: string; filaments?: string; machineJson: boolean; processSpeeds?: boolean }[] = [
   { path: BBL_OVERLAY, brand: 'bambu-lab', filaments: 'filaments/BBL.json', machineJson: false },
   { path: PRUSA_OVERLAY, brand: 'prusa', machineJson: true },
   { path: PRUSA_BRIM_OVERLAY, brand: 'prusa', machineJson: false },
   { path: PRUSA_FIRST_LAYER_OVERLAY, brand: 'prusa', machineJson: false },
+  { path: CREALITY_V3_OVERLAY, brand: 'creality', machineJson: false, processSpeeds: true },
 ]
 
 const defaults = defaultConfig() as Raw
@@ -154,6 +166,24 @@ export function applyFilamentOverlay(file: VendorData, overlay: MakerOverlay): v
     const diff = fam?.variants[variant]
     if (!fam || diff === undefined) throw new Error(`overlay: no filament preset ${name}`)
     for (const [k, v] of Object.entries(values)) diff[k] = v
+  }
+}
+
+/** process-speeds.json: the makers' process presets by name, raw, and the preset each model's tier takes. */
+export interface SpeedsFile { presets: Record<string, Raw>; models: Record<string, Record<string, string>> }
+
+/**
+ * Applies the overlay's process preset values to process-speeds.json, in place and raw, keeping each preset's keys
+ * sorted as the file has them. Every value must be a setting the schema knows.
+ */
+export function applyProcessPresetOverlay(file: SpeedsFile, overlay: MakerOverlay): void {
+  for (const [name, values] of Object.entries(overlay.process_presets ?? {})) {
+    const preset = file.presets[name]
+    if (!preset) throw new Error(`overlay: no process preset ${name} in process-speeds.json`)
+    for (const [k, v] of Object.entries(values)) {
+      if (!typed(k, v)) throw new Error(`overlay: ${k} is not a setting the schema knows`)
+      put(preset, k, v)
+    }
   }
 }
 

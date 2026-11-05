@@ -56,6 +56,7 @@ fn table() -> BTreeMap<String, String> {
         "prusa-mk4s",
         "prusa-core-one",
         "creality-k1",
+        "creality-ender-3-v3",
         "elegoo-neptune-4",
         "snapmaker-u1",
         "voron-2.4-300",
@@ -75,6 +76,7 @@ fn table() -> BTreeMap<String, String> {
         ("prusa-mk4s", "petg", Some("strong")),
         ("voron-2.4-300", "tpu_95a", Some("draft")),
         ("flsun-v400", "abs", None),
+        ("creality-ender-3-v3", "pla", Some("standard")),
     ] {
         t.insert(
             format!("merged {printer} {filament} {}", process.unwrap_or("")),

@@ -112,13 +112,13 @@ function goldenTable(): Record<string, string> {
       t[`label ${pr.id} ${n}`] = fnv(pr.label)
     }
   }
-  for (const printer of ['bambu-p2s', 'bambu-h2d', 'bambu-h2s', 'bambu-x1-carbon', 'bambu-a1', 'prusa-mk4s', 'prusa-core-one', 'creality-k1', 'elegoo-neptune-4', 'snapmaker-u1', 'voron-2.4-300', 'flsun-v400', 'generic-klipper']) {
+  for (const printer of ['bambu-p2s', 'bambu-h2d', 'bambu-h2s', 'bambu-x1-carbon', 'bambu-a1', 'prusa-mk4s', 'prusa-core-one', 'creality-k1', 'creality-ender-3-v3', 'elegoo-neptune-4', 'snapmaker-u1', 'voron-2.4-300', 'flsun-v400', 'generic-klipper']) {
     for (const pr of listProcessPresets(0.4, printer)) {
       t[`process ${pr.id} 0.4 ${printer}`] = hash(processConfig(pr.id, 0.4, printer))
       t[`label ${pr.id} 0.4 ${printer}`] = fnv(pr.label)
     }
   }
-  for (const [printer, filament, process] of [['bambu-x1-carbon', 'pla', 'fine'], ['prusa-mk4s', 'petg', 'strong'], ['voron-2.4-300', 'tpu_95a', 'draft'], ['flsun-v400', 'abs', undefined]] as const) {
+  for (const [printer, filament, process] of [['bambu-x1-carbon', 'pla', 'fine'], ['prusa-mk4s', 'petg', 'strong'], ['voron-2.4-300', 'tpu_95a', 'draft'], ['flsun-v400', 'abs', undefined], ['creality-ender-3-v3', 'pla', 'standard']] as const) {
     t[`merged ${printer} ${filament} ${process ?? ''}`] = hash(profileConfig({ printer, filament, ...(process ? { process } : {}) }))
   }
   return t
