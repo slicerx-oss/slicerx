@@ -11,7 +11,9 @@ import type { ApprovalToken, PrinterHost } from '@slicerx/contracts'
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DataStore } from './data'
-import { resolveModel, type PathPolicy } from './models'
+import { MODEL_EXTENSIONS, resolveModel, type PathPolicy } from './models'
+import { addStepModel } from './step-project'
+import { STEP_EXTENSIONS } from './toolbox/step-read'
 import type { ProfileCatalog } from './profiles'
 import { readStlPositions, splitBodies } from './mesh'
 import { placementTools } from './placement'
@@ -135,19 +137,30 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const add = defineTool({
     name: 'project.add_model',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. New objects go on plate 1. A file that holds several separate bodies loads as one object by default; bodies "parts" keeps them as one object with a part per body, "objects" loads an object per body. The answer lists each new object with its part count.',
+      'Load an STL, STEP or IGES model (absolute path or http(s) URL) into the open project, with a number of copies. New objects go on plate 1. A file that holds several separate bodies loads as one object by default; bodies "parts" keeps them as one object with a part per body, "objects" loads an object per body. The answer lists each new object with its part count. A STEP or IGES file (.step, .stp, .igs or .iges, read with the optional STEP reader as slicerx_step_read reads it) loads an object per object of the file with a part per body; with body_colors apply (the default) each colored body prints with the filament slicerx_step_read plans for its color against the project\'s filaments, and the filaments it needs are added; the answer lists each part\'s filament and the filaments added, and slicerx_project_show reads them back.',
     input: z.object({
-      model: z.string().min(1).describe('Absolute path or http(s) URL of an STL file, or a built-in test model such as sample:cube-20'),
+      model: z.string().min(1).describe('Absolute path or http(s) URL of an STL, STEP or IGES file, or a built-in test model such as sample:cube-20'),
       copies: z.number().int().min(1).max(200).default(1),
-      bodies: z.enum(['auto', 'parts', 'objects']).default('auto').describe('A file of several separate bodies: auto (one object, as before), parts (one object, a part per body) or objects (an object per body)'),
+      bodies: z.enum(['auto', 'parts', 'objects']).default('auto').describe('A file of several separate bodies: auto (one object, as before), parts (one object, a part per body) or objects (an object per body). A STEP or IGES file always loads an object per object of the file.'),
+      body_colors: z.enum(['apply', 'ignore']).default('apply').describe("A STEP or IGES file's body colors: apply puts each colored body on a filament of its color, adding filaments as needed; ignore loads every body on filament 1"),
     }),
     async run(i) {
       const project = need()
-      const path = await resolveModel(deps.policy, i.model)
+      const path = await resolveModel(deps.policy, i.model, [...MODEL_EXTENSIONS, ...STEP_EXTENSIONS])
+      if ((STEP_EXTENSIONS as readonly string[]).includes(extname(path).toLowerCase())) {
+        const step = await addStepModel(project, deps.slicer, path, i.copies, i.body_colors)
+        const name = path.split(/[\\/]/).pop() ?? 'model'
+        const parts = step.objects.reduce((n, o) => n + o.parts, 0)
+        const added = step.filaments_added.length ? `; added ${step.filaments_added.length === 1 ? 'filament' : 'filaments'} ${step.filaments_added.map((f) => f.filament).join(', ')} for its colors` : ''
+        return {
+          summary: `Added ${name} (${step.objects.length} ${step.objects.length === 1 ? 'object' : 'objects'}, ${parts} ${parts === 1 ? 'part' : 'parts'}) x${i.copies}${added}`,
+          output: { object: step.objects[0], objects: step.objects, object_count: step.objects.length, part_count: parts, filaments_added: step.filaments_added, project: project.describe() },
+        }
+      }
       const bytes = readFileSync(path)
       const name = path.split(/[\\/]/).pop() ?? 'model.stl'
       const bodies = i.bodies === 'auto' || extname(name).toLowerCase() !== '.stl' ? [] : splitBodies(readStlPositions(bytes))
