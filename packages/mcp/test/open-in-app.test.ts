@@ -26,7 +26,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   }
 })
 
-const TYPES = '.sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp or .gcode'
+const TYPES = '.sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp, .igs, .iges or .gcode'
 const DESKTOP = resolve(__dirname, '../../../apps/desktop/src-tauri')
 
 describe('open in the app', () => {
@@ -55,6 +55,14 @@ describe('open in the app', () => {
     expect(calls).toEqual(files.map((f) => ['cmd', '/c', 'start', '""', f]))
   })
 
+  it('hands an IGES model to the opener, as .igs or .iges in any case', async () => {
+    const files = ['bracket.igs', 'bracket.iges', 'HOUSING.IGS'].map((name) => join(dir, name))
+    for (const f of files) writeFileSync(f, 'S0000001')
+    const calls: string[][] = []
+    for (const f of files) await openInApp(f, async (cmd, args) => void calls.push([cmd, ...args]), 'linux')
+    expect(calls).toEqual(files.map((f) => ['xdg-open', f]))
+  })
+
   it('opens what the desktop app takes from the system: its accept list and its file associations', () => {
     const accepted = /const EXTENSIONS: \[&str; \d+\] = \[([^\]]*)\]/.exec(readFileSync(join(DESKTOP, 'src/opened.rs'), 'utf8'))?.[1]
     const fromShell = [...(accepted ?? '').matchAll(/"(\w+)"/g)].map((m) => `.${m[1]}`)
@@ -76,7 +84,7 @@ describe('open in the app', () => {
     const run = async () => {
       throw new Error('should not run')
     }
-    for (const name of ['notes.txt', 'part.igs', 'plate.json', 'plate.gco']) {
+    for (const name of ['notes.txt', 'part.dxf', 'plate.json', 'plate.gco']) {
       const file = join(dir, name)
       writeFileSync(file, 'x')
       await expect(openInApp(file, run)).rejects.toMatchObject({ code: 'unsupported_format', message: `${name} is not a file the app opens (${TYPES})` })
@@ -97,18 +105,18 @@ describe('slicerx_open_in_app over MCP', () => {
   beforeEach(() => void spawned.splice(0))
   afterEach(() => void vi.unstubAllGlobals())
 
-  it('says which types it opens, STEP among them', async () => {
+  it('says which types it opens, STEP and IGES among them', async () => {
     const h = await connect()
     const tool = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_open_in_app')
     expect(tool?.description).toContain(`(${TYPES})`)
-    expect(tool?.description).toMatch(/A STEP file \(\.step or \.stp\)/)
+    expect(tool?.description).toMatch(/A STEP file \(\.step or \.stp\) or an IGES file \(\.igs or \.iges\)/)
     expect(JSON.stringify(tool?.inputSchema)).toContain(`a ${TYPES} file`)
   })
 
   it('hands each type the app opens to the app through the system opener', async () => {
     const h = await connect()
     const names = APP_OPENS.map((ext) => `part${ext}`)
-    expect(names).toEqual(['part.sx3mf', 'part.3mf', 'part.sxlock', 'part.stl', 'part.obj', 'part.amf', 'part.step', 'part.stp', 'part.gcode'])
+    expect(names).toEqual(['part.sx3mf', 'part.3mf', 'part.sxlock', 'part.stl', 'part.obj', 'part.amf', 'part.step', 'part.stp', 'part.igs', 'part.iges', 'part.gcode'])
     for (const name of names) {
       const file = join(h.dir, name)
       writeFileSync(file, 'ISO-10303-21;')
@@ -139,12 +147,12 @@ describe('slicerx_open_in_app over MCP', () => {
 
   it('refuses another type as unsupported_format, lists the types it opens, and starts nothing', async () => {
     const h = await connect()
-    for (const ext of ['.txt', '.json', '.igs']) {
+    for (const ext of ['.txt', '.json', '.dxf']) {
       const file = join(h.dir, `part${ext}`)
       writeFileSync(file, 'x')
       const r = await h.call('slicerx_open_in_app', { file })
       expect(r.isError).toBe(true)
-      expect(data(r)).toMatchObject({ error: { code: 'unsupported_format', message: `Unsupported model type "${ext}". Use .sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp, .gcode.` } })
+      expect(data(r)).toMatchObject({ error: { code: 'unsupported_format', message: `Unsupported model type "${ext}". Use .sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp, .igs, .iges, .gcode.` } })
     }
     expect(spawned).toEqual([])
   })

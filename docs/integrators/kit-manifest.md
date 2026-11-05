@@ -6,7 +6,7 @@ Run `node scripts/pack-integrator-kit.mjs <kit-folder>` to build a kit. Install 
 npm install ./kit/slicerx-viewport.tgz ./kit/slicerx-embed.tgz ./kit/slicerx-mcp.tgz
 ```
 
-Install this tarball too to read STEP files (`slicerx_step_read`, `@slicerx/step-reader`). It is optional and about 3 MB, so apps that don't read STEP files leave it out:
+Install this tarball too to read STEP and IGES files (`slicerx_step_read`, `@slicerx/step-reader`). It is optional and about 3 MB, so apps that don't read those files leave it out:
 
 ```sh
 npm install ./kit/slicerx-step-reader.tgz

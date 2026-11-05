@@ -7,7 +7,7 @@ import { runCommand } from '../commands/registry'
 import { openModelBytes } from '../state/actions'
 import { toast } from '../state/store'
 
-const MODEL = /\.(stl|3mf|sx3mf|obj|amf|step|stp)$/i
+const MODEL = /\.(stl|3mf|sx3mf|obj|amf|step|stp|igs|iges)$/i
 
 export function modelFilesOf(e: Pick<ClipboardEvent, 'clipboardData'>): File[] {
   return [...(e.clipboardData?.files ?? [])].filter((f) => MODEL.test(f.name))

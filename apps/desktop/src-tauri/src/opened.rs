@@ -14,8 +14,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::files::{FileRef, OpenFiles};
 
 /// What the app opens. Everything else the system passes is ignored.
-const EXTENSIONS: [&str; 9] = [
-    "stl", "3mf", "sx3mf", "sxlock", "gcode", "obj", "amf", "step", "stp",
+const EXTENSIONS: [&str; 11] = [
+    "stl", "3mf", "sx3mf", "sxlock", "gcode", "obj", "amf", "step", "stp", "igs", "iges",
 ];
 const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
 
@@ -1100,6 +1100,7 @@ mod tests {
         assert_eq!(name_from("https://example.com/m/.hidden.stl"), None);
         assert_eq!(name_from("https://example.com/"), None);
         assert!(wanted(Path::new("a.SX3MF")) && wanted(Path::new("b.sxlock")));
+        assert!(wanted(Path::new("part.igs")) && wanted(Path::new("PART.IGES")));
     }
 
     use std::net::IpAddr;

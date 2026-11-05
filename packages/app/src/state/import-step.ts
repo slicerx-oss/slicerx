@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// STEP files for the import path: the bytes go to a worker of their own (step-worker.ts) that meshes
+// STEP and IGES files for the import path: the bytes go to a worker of their own (step-worker.ts) that meshes
 // them with OpenCASCADE, and come back as OBJ for the geometry engine. The worker ends after a failure
 // and after a minute without work, which hands its memory back.
 //
@@ -47,7 +47,7 @@ function spell(ms: number): string {
 export const stepCanceledReason = 'was not opened: reading it was canceled.'
 export const stepTimedOutReason = (ms: number): string =>
   `took longer than ${spell(ms)} to read, so reading it was stopped. It may be too detailed or damaged. Try exporting it again from your CAD program.`
-export const stepBehindReason = 'was not opened: the STEP file before it took too long to read. Open it again.'
+export const stepBehindReason = 'was not opened: the file before it took too long to read. Open it again.'
 
 interface Pending {
   name: string
@@ -128,7 +128,7 @@ export function registerStepWasm(source: () => Promise<string>): void {
   wasmUrl = undefined
 }
 
-/** Meshes a STEP file in the worker. Errors are plain reasons meant to follow the file name. */
+/** Meshes a STEP or IGES file in the worker. Errors are plain reasons meant to follow the file name. */
 export const convertStep: StepConverter = ({ name, data, quality = 'normal' }) =>
   new Promise((resolve, reject) => {
     const id = ++seq

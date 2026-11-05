@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// slicerx_step_read, driven the way a client drives it: list it, read a STEP file back (objects, bodies, colors,
+// slicerx_step_read, driven the way a client drives it: list it, read a STEP or IGES file back (objects, bodies, colors,
 // triangle counts, boxes), write it as STL or OBJ into the output folder and feed that file to another tool, and get
 // typed step_ refusals for files the reader refuses. Without @slicerx/step-reader installed the call says how to
 // install it.
@@ -18,7 +18,7 @@ type Info = { file: string; unit: string; triangles: number; objects: { name: st
 async function withServer(run: (h: Awaited<ReturnType<typeof connect>>, call: (args: Record<string, unknown>) => Promise<CallToolResult>) => Promise<void>) {
   const h = await connect()
   try {
-    for (const f of ['assembly.step', 'assembly-colors.step', 'bracket-inch.stp', 'bracket-inch-bom.stp', 'empty.step']) copyFileSync(join(fixtures, f), join(h.dir, f))
+    for (const f of ['assembly.step', 'assembly-colors.step', 'bracket-inch.stp', 'bracket-inch-bom.stp', 'empty.step', 'assembly.igs', 'bracket-inch.iges']) copyFileSync(join(fixtures, f), join(h.dir, f))
     await run(h, async (args) => (await h.client.callTool({ name: 'slicerx_step_read', arguments: args })) as CallToolResult)
   } finally {
     await h.client.close()
@@ -35,7 +35,9 @@ describe('slicerx_step_read', () => {
       expect(tool).toBeDefined()
       expect(Object.keys(tool!.inputSchema.properties ?? {}).sort()).toEqual(['model', 'output', 'quality'])
       expect(tool!.outputSchema).toBeDefined()
-      expect(tool!.description).not.toMatch(/IGES/i)
+      expect(tool!.title).toBe('Read a STEP or IGES file')
+      expect(tool!.description).toMatch(/or an IGES file \(\.igs or \.iges\)/)
+      expect(tool!.description).toMatch(/step_not_iges, step_iges_compressed/)
     })
   })
 
@@ -68,6 +70,60 @@ describe('slicerx_step_read', () => {
       expect(info.objects.map((o) => [o.name, o.bodies.map((b) => [b.name, b.triangles, b.bounds])])).toEqual([
         ['bracket-inch-bom', plain.objects[0]!.bodies.map((b) => [b.name, b.triangles, b.bounds])],
       ])
+    })
+  })
+
+  it('reads an IGES file back in the same shape: objects, bodies, colors, units and notes', async () => {
+    await withServer(async (h, call) => {
+      const r = await call({ model: join(h.dir, 'assembly.igs') })
+      expect(r.isError, text(r)).toBeFalsy()
+      const info = data<Info>(r)
+      expect(info.unit).toBe('millimeter')
+      expect(info.triangles).toBe(328)
+      expect(info.objects.map((o) => [o.name, o.bodies.map((b) => [b.name, b.color])])).toEqual([
+        ['assembly', [['base', '#ff0000'], ['post', null]]],
+        ['cube', [['cube', '#0040ff']]],
+      ])
+      const surfaces = data<Info & { notes: string[] }>(await call({ model: join(h.dir, 'bracket-inch.iges'), output: 'stl' }))
+      expect(surfaces.unit).toBe('inch')
+      expect(surfaces.notes).toEqual(['Converted from inches to millimeters.', 'The file has surfaces and no solids, so they were joined into one body.'])
+      const b = surfaces.objects[0]!.bodies[0]!.bounds
+      expect(b.max.map((v, k) => Math.round((v - b.min[k]!) * 1000) / 1000)).toEqual([50.8, 25.4, 6.35])
+      // The STL it writes is a model the other tools take.
+      expect(readFileSync(surfaces.output!.path).readUInt32LE(80)).toBe(surfaces.triangles)
+      const est = (await h.client.callTool({ name: 'slicerx_estimate_file', arguments: { model: surfaces.output!.path } })) as CallToolResult
+      expect(est.isError, text(est)).toBeFalsy()
+    })
+  })
+
+  it('refuses a broken IGES file with typed step_ codes', async () => {
+    await withServer(async (h, call) => {
+      writeFileSync(join(h.dir, 'not.igs'), 'solid x\nendsolid x\n')
+      writeFileSync(join(h.dir, 'packed.iges'), `${'x'.padEnd(72)}C0000001\n`)
+      writeFileSync(join(h.dir, 'blank.iges'), '')
+      for (const [file, code] of [
+        ['not.igs', 'step_not_iges'],
+        ['packed.iges', 'step_iges_compressed'],
+        ['blank.iges', 'step_empty'],
+      ] as const) {
+        const r = await call({ model: join(h.dir, file) })
+        expect(r.isError).toBe(true)
+        expect(text(r)).toMatch(new RegExp(`^Error: ${code}: ${file.replace('.', '\\.')} `))
+        expect(data(r)).toMatchObject({ error: { code, details: { step_code: code.slice(5) } } })
+      }
+    })
+  })
+
+  it('asks for a newer reader when the installed one reads STEP only', async () => {
+    // A reader from before IGES support: everything but cadFormat.
+    const { cadFormat: _, ...older } = await import('@slicerx/step-reader/node')
+    stepModule.load = async () => older as never
+    await withServer(async (h, call) => {
+      const r = await call({ model: join(h.dir, 'assembly.igs') })
+      expect(data(r)).toMatchObject({ error: { code: 'not_supported', details: { install: 'npm install ./kit/slicerx-step-reader.tgz' } } })
+      expect(text(r)).toMatch(/reads STEP files only/)
+      // STEP files still read with it.
+      expect((await call({ model: join(h.dir, 'assembly.step') })).isError).toBeFalsy()
     })
   })
 

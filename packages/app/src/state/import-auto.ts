@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Opens an STL, OBJ, AMF or STEP through the geometry engine's automatic import: every mesh is
+// Opens an STL, OBJ, AMF, STEP or IGES through the geometry engine's automatic import: every mesh is
 // repaired, the unit is detected (inch or meter files are scaled to millimeters, with a toast that
 // undoes it) and a file with several loose bodies becomes several objects. Meshes arrive unscaled; the
-// scale is the object's transform, so undoing it is one edit. A STEP file is meshed first in a worker
-// of its own (import-step.ts) and arrives in millimeters, since STEP declares its unit.
+// scale is the object's transform, so undoing it is one edit. A STEP or IGES file is meshed first in a
+// worker of its own (import-step.ts) and arrives in millimeters, since both formats declare their unit.
 import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import { isBinaryStl, sameMesh, scanStl } from '../export/stl-scan'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
@@ -22,18 +22,21 @@ import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
 import { bodyCount, multiBodyChoice, regroup, severalShells, willAsk } from './multi-body'
 
-export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step'
-type MeshFormat = Exclude<AutoFormat, 'step'>
+export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step' | 'iges'
+type MeshFormat = Exclude<AutoFormat, 'step' | 'iges'>
 
 /** File names the automatic import opens. */
-export const AUTO_FILE = /\.(stl|obj|amf|step|stp)$/i
+export const AUTO_FILE = /\.(stl|obj|amf|step|stp|igs|iges)$/i
 
 export function autoFormatOf(name: string): AutoFormat | null {
   const m = AUTO_FILE.exec(name)
   if (!m) return null
   const ext = m[1]!.toLowerCase()
-  return ext === 'stp' ? 'step' : (ext as AutoFormat)
+  return ext === 'stp' ? 'step' : ext === 'igs' ? 'iges' : (ext as AutoFormat)
 }
+
+/** STEP and IGES: CAD files the STEP reader meshes before the engine's import. */
+const isCad = (f: AutoFormat): f is 'step' | 'iges' => f === 'step' || f === 'iges'
 
 export function toBase64(data: ArrayBuffer | Uint8Array): string {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
@@ -204,12 +207,12 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
 }
 
 /**
- * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP reader (a
+ * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP and IGES reader (a
  * test passes its own). Returns the ids of the new objects. Nothing is added when any step fails.
  */
 export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter, scope?: OpenScope, cross: CrossingRunner = crossingEngine): Promise<string[]> {
   const format = autoFormatOf(name)
-  if (!format) throw new Error(`${name} is not an STL, OBJ, AMF or STEP file`)
+  if (!format) throw new Error(`${name} is not an STL, OBJ, AMF, STEP or IGES file`)
   // One undo step for the object shown at once and the engine's import that may replace it.
   const token = {}
   const edit = (fn: () => void) => inStep(token, () => (scope ? scope.run(fn) : fn()))
@@ -221,14 +224,14 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     started = run(file)
     started.catch(() => undefined)
   }
-  if (format !== 'step' && !(format === 'stl' && isBinaryStl(new Uint8Array(data)))) start({ bytes: new Uint8Array(data), name, format })
+  if (!isCad(format) && !(format === 'stl' && isBinaryStl(new Uint8Array(data)))) start({ bytes: new Uint8Array(data), name, format })
   const quick = format === 'stl' ? await showQuick(host, name, data, edit, (stlMesh) => start({ stlMesh, name, format })) : null
   // A binary STL the page could not read (a corner that is not a number) goes to the import as a file after all.
-  if (format !== 'step' && !started) start({ bytes: new Uint8Array(data), name, format })
+  if (!isCad(format) && !started) start({ bytes: new Uint8Array(data), name, format })
   let stepNotes: string[] = []
   let result: AutoImport
   try {
-    if (format === 'step') {
+    if (isCad(format)) {
       const convert = step ?? (await stepConverter())
       let mesh
       try {

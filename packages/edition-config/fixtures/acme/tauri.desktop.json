@@ -103,6 +103,14 @@
       },
       {
         "ext": [
+          "igs",
+          "iges"
+        ],
+        "name": "IGES model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
           "sx3mf"
         ],
         "name": "Acme Slicer 3MF file",

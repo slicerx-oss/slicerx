@@ -4,7 +4,7 @@
 
 An `.sx3mf` file is a 3MF project. It holds the full project exactly as a 3MF would: geometry, plates, per-object settings, color assignments and thumbnails, in the layout Bambu Studio and OrcaSlicer use. The only addition is a few `sx:` metadata entries in the root model part that name the library model, its creator and the account that exported the file. The geometry is never changed, so any 3MF reader opens an `.sx3mf` once its extension is `.3mf`.
 
-SlicerX saves and exports projects and models as `.sx3mf`. G-code and `.gcode.3mf` exist only as print output. Import reads 3MF, STL, OBJ, AMF, STEP (`.step`, `.stp`) and `.sx3mf`.
+SlicerX saves and exports projects and models as `.sx3mf`. G-code and `.gcode.3mf` exist only as print output. Import reads 3MF, STL, OBJ, AMF, STEP (`.step`, `.stp`), IGES (`.igs`, `.iges`) and `.sx3mf`.
 
 A locked project (`.sxlock`, `SPEC-sxlock.md`) is an `.sx3mf` encrypted for one SlicerX account.
 

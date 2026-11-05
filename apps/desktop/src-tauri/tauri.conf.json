@@ -96,6 +96,14 @@
       },
       {
         "ext": [
+          "igs",
+          "iges"
+        ],
+        "name": "IGES model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
           "sx3mf"
         ],
         "name": "SlicerX 3MF file",
