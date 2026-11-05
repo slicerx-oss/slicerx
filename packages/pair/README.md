@@ -4,6 +4,14 @@ Pairs a phone with SlicerX on a desktop or in a browser, then lets the phone bro
 
 The threat model is in [SECURITY.md](SECURITY.md).
 
+## Install
+
+```sh
+npm install @slicerx/pair
+```
+
+The package is published as ES modules with type declarations. Its only dependencies are `zod` and the `@noble` crypto libraries.
+
 ## Entry points
 
 | Import | Gives | Runs in |
@@ -13,7 +21,7 @@ The threat model is in [SECURITY.md](SECURITY.md).
 | `@slicerx/pair/client` | `createPairClient` | the phone app |
 | `@slicerx/pair/relay` | `createMemoryRelay`, `RELAY_LIMITS`, `routeAllowed` | tests, and the reference for the hosted relay |
 
-The package is plain TypeScript. Its crypto comes from `@noble/curves`, `@noble/hashes` and `@noble/ciphers`, which have no native parts, so the same code runs in browsers, Node, Tauri webviews and React Native.
+Its crypto comes from `@noble/curves`, `@noble/hashes` and `@noble/ciphers`, which have no native parts, so the same code runs in browsers, Node, Tauri webviews and React Native.
 
 ## Pairing
 
@@ -49,6 +57,12 @@ Pairings are listed and revocable on both sides: `host.devices()`, `host.revoke(
 ### Rights
 
 Each pairing carries `{ request, approve, introduce }`. `request` sends slices and jobs, `approve` decides approval requests, and `introduce` vouches for a new device of the same account. The host's copy is the one that counts; the phone gets it from `host.info` for its UI. By default a phone gets `request` and `approve`, and `introduce` too when the pairing is linked to the account.
+
+## Partner phones
+
+Another company's phone app can pair as a phone under its own name. The person picks Pair a partner phone in SlicerX and types the app's name; the app passes the same name to `createPairClient({ partner: 'Example Phone', ... })`. The host makes the offer with `host.createOffer({ partner: 'Example Phone' })`. The name is bound into the pairing: the hello proves the phone knows it, and it goes into the transcript the six digits come from, so a code made for one name pairs no other app and no plain phone. It never travels in clear.
+
+The name labels the pairing; it is not proof of who made the app, and the person decides what to trust. A partner phone gets `request` (see printers and cameras, ask to pause or stop) and neither `approve` nor `send` until the person turns them on (`host.setRights`), and never `introduce`. Even with `approve` it approves only pause and cancel cards, and `send` gates uploads, slicing, jobs, resume and the library. At most 8 partner phones are kept per host. `host.devices()` and `client.hosts()` carry `partner`, and so does `host.info`. It registers its own push token with `conn.push.registerPartner({ provider, token, platform, prefs, gateway? })`: `expo` tokens go through Expo to the partner's own Expo project, and `apns` or `fcm` tokens go to the partner's own gateway. SlicerX never holds the partner's push keys. The whole flow, with limits, is in [docs/integrators/partner-phone.md](../../docs/integrators/partner-phone.md).
 
 ## Account link
 
@@ -225,3 +239,7 @@ pnpm --filter @slicerx/pair test
 
 - Done and tested: pairing by QR link, short code and account; LAN and relay transports; sessions; rights; revocation on both sides; introductions; phone uploads; host and cloud slicing hooks; print jobs through approvals, including through sx-link and its broker; phone approvals of Pilot requests.
 - Needs other packages: the hosted relay and the account device list (cloud, store), host wiring in the web and desktop apps (studio), and the Expo screens (mobile).
+
+## License
+
+Apache-2.0. See [LICENSE-APACHE](LICENSE-APACHE) and [NOTICE](NOTICE).
