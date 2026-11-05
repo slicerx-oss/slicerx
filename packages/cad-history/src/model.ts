@@ -48,6 +48,8 @@ export type StepParams =
   | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number; faceKey?: number }
   | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
   | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
+  /** A solid through closed sketch profiles in order, each one loop on its own plane (the bed when frame is absent). */
+  | { op: 'sketch.loft'; profiles: LoftProfile[]; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -70,6 +72,12 @@ export type StepParams =
   | { op: 'paint'; layer: PaintLayer; state: number; target: PaintTarget; maxDepth?: number }
 
 export type StepOp = StepParams['op']
+
+/** One section of a loft: closed sketch loops on a plane. */
+export interface LoftProfile {
+  frame?: FaceFrame
+  loops: SketchLoop[]
+}
 
 export type SolidSpec =
   | { type: 'cylinder'; origin: Vec3; axis: Vec3; diameterMm: number; heightMm: number }
@@ -561,6 +569,8 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
     }
     case 'sketch.revolve':
       return `Sketch revolve ${n2(p.angleDeg ?? 360)}°`
+    case 'sketch.loft':
+      return `${p.operation === 'cut' ? 'Loft cut' : 'Loft'}, ${p.profiles.length} profiles`
     case 'subtract':
       return p.label
     case 'hollow':

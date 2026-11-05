@@ -24,6 +24,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.sketch_check',
   'geom.extrude',
   'geom.revolve',
+  'geom.loft',
   'geom.push_pull',
   'geom.boolean',
   'geom.fillet',
