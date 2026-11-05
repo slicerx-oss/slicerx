@@ -1404,6 +1404,56 @@ pub fn snaps(frame: &Frame, outline: &[Polygon], meshes: &[TriMesh], near_mm: f6
 #[allow(clippy::float_cmp, reason = "typed values come back exactly")]
 mod tests {
     use super::*;
+
+    fn unit(d: V2) -> V2 {
+        let l = len2(d);
+        [d[0] / l, d[1] / l]
+    }
+
+    fn near(a: V2, b: V2) -> bool {
+        (a[0] - b[0]).abs() < 1e-12 && (a[1] - b[1]).abs() < 1e-12
+    }
+
+    #[test]
+    fn an_open_chain_starts_and_ends_along_its_own_curves() {
+        let one = |seg: Segment| Loop {
+            start: Some([10.0, 0.0]),
+            segments: vec![seg],
+            ..Loop::default()
+        };
+        let ends = |lp: &Loop| {
+            let c = open_chain(0, lp).unwrap();
+            (unit(c.start_dir), unit(c.end_dir), *c.pts.last().unwrap())
+        };
+        let line = Segment {
+            kind: "line".into(),
+            to: Some([20.0, 0.0]),
+            ..Segment::default()
+        };
+        let (s, e, _) = ends(&one(line));
+        assert!(near(s, [1.0, 0.0]) && near(e, [1.0, 0.0]), "{s:?} {e:?}");
+        let arc = |sweep_deg: f64| Segment {
+            kind: "arc".into(),
+            center: Some([0.0, 0.0]),
+            sweep_deg: Some(sweep_deg),
+            ..Segment::default()
+        };
+        // counterclockwise from (10, 0) to (0, 10): leaves going +y, arrives going -x
+        let (s, e, end) = ends(&one(arc(90.0)));
+        assert!(near(s, [0.0, 1.0]) && near(e, [-1.0, 0.0]), "{s:?} {e:?}");
+        assert!(near(end, [0.0, 10.0]), "{end:?}");
+        // clockwise from (10, 0) to (0, -10): leaves going -y, arrives going -x
+        let (s, e, end) = ends(&one(arc(-90.0)));
+        assert!(near(s, [0.0, -1.0]) && near(e, [-1.0, 0.0]), "{s:?} {e:?}");
+        assert!(near(end, [0.0, -10.0]), "{end:?}");
+        // an open polyline of points runs along its first and last sides
+        let poly = Loop {
+            points: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 5.0]],
+            ..Loop::default()
+        };
+        let (s, e, _) = ends(&poly);
+        assert!(near(s, [1.0, 0.0]) && near(e, [0.0, 1.0]), "{s:?} {e:?}");
+    }
     use serde_json::json;
 
     fn loops(v: serde_json::Value) -> Vec<Loop> {

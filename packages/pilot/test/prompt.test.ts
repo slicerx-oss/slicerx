@@ -134,7 +134,10 @@ describe('the scope rule for parts', () => {
   it('names the kinds of shape that are out of scope in general terms', () => {
     for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted or organic', 'curving freely in two directions', 'fit the curves of a body', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
     // lofts and sweeps have their own tools, so they are not turned down
-    for (const s of ['(a loft)', 'swept along a curved path in space']) expect(SCOPE_LINE).not.toContain(s)
+    const out = SCOPE_LINE.slice(SCOPE_LINE.indexOf('Out of scope'), SCOPE_LINE.indexOf('For those'))
+    expect(out).not.toMatch(/loft|swept|sweep|varies in shape/i)
+    expect(systemPrompt()).toContain('geom.loft through two or more closed profiles on their own planes')
+    expect(systemPrompt()).toContain('geom.sweep carrying one closed profile along an open path')
   })
 
   it('turns such a request down before any build or size question, with a buildable version offered', () => {
