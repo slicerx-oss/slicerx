@@ -111,7 +111,20 @@ function towerReach(w: number, d: number, deg: number, margin: number): [number,
 }
 
 /**
- * The room the prime tower takes when the plate prints in two or more filaments, in plate coordinates: the tower, its
+ * A smooth timelapse (`timelapse_type` 1) on a Bambu Lab printer with the prime tower on: the engine prints the tower on
+ * every layer then, with one filament too (packages/core/src/timelapse.rs `smooth_tower`). Not in spiral vase or when
+ * printing by object, where no smooth shots are taken.
+ */
+export function smoothTimelapseTower(cfg: Readonly<Record<string, unknown>>): boolean {
+  const c = cfg as Record<string, SettingValue>
+  const model = text(c['printer_model'])
+  const bambu = text(c['gcode_flavor']) === 'bambu' || model.startsWith('Bambu Lab')
+  return bambu && num(c['timelapse_type'], 0) === 1 && flag(c['enable_prime_tower']) && !flag(c['spiral_mode']) && text(c['print_sequence']) !== 'by object'
+}
+
+/**
+ * The room the prime tower takes when the plate prints in two or more filaments, or with a smooth timelapse
+ * (smoothTimelapseTower), in plate coordinates: the tower, its
  * brim and 1 mm, the room the engine keeps objects' first layers out of (they keep their own brim and 1 mm more). The
  * size is what the last slice gave the tower, else `prime_tower_width` square. A hand placed tower is a fixed place
  * nothing may print on (`keepOut`). While the engine picks the spot (auto, the default), arrange keeps room for it at
@@ -120,7 +133,7 @@ function towerReach(w: number, d: number, deg: number, margin: number): [number,
  * the plate.
  */
 export function towerRoomOf(cfg: Record<string, SettingValue>, tools: number, plate: PlateArea, tower?: TowerState): { keepOut: Rect[]; towerRoom: Rect[] } {
-  if (tools < 2 || !flag(cfg['enable_prime_tower'])) return { keepOut: [], towerRoom: [] }
+  if ((tools < 2 && !smoothTimelapseTower(cfg)) || !flag(cfg['enable_prime_tower'])) return { keepOut: [], towerRoom: [] }
   const auto = tower ? tower.auto : cfg['prime_tower_auto_position'] === undefined || flag(cfg['prime_tower_auto_position'])
   // The configuration places the tower on the machine; the plate counts from the printable area's corner.
   const [ox, oy] = plate.origin
@@ -162,7 +175,7 @@ export function clearanceRadius(cfg: Record<string, SettingValue>): number {
 
 /**
  * The margins of a plate: what prints round each object (print-margins.ts), the spacing of a plate printed by object,
- * and the prime tower's place or room for a plate printed in `tools` filaments.
+ * and the prime tower's place or room for a plate printed in `tools` filaments (or with a smooth timelapse).
  */
 export function plateMargins(cfg: Record<string, SettingValue>, tools: number, plate: PlateArea, tower?: TowerState) {
   // Printing by object, arrange keeps the clearance the by-object check holds the plate to between objects.

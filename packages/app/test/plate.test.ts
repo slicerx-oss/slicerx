@@ -242,4 +242,15 @@ describe('object settings', () => {
     expect(plateLayerHeightConflict(get(), undefined, { ...tower, enable_prime_tower: false })).toBeNull()
     expect(plateLayerHeightConflict(get(), undefined, { ...tower, print_sequence: 'by object' })).toBeNull()
   })
+
+  it('a smooth timelapse on a Bambu Lab printer prints the tower with one filament, so the layer heights must match', async () => {
+    const { setObjectSetting, plateLayerHeightConflict } = await import('../src/plate/object-settings')
+    set({ plate: [entry('a'), entry('b')], objectSettings: {} })
+    setObjectSetting('b', 'layer_height', 0.12)
+    const smooth = { layer_height: 0.2, enable_prime_tower: true, print_sequence: 'by layer', printer_model: 'Bambu Lab A1', timelapse_type: '1' }
+    expect(plateLayerHeightConflict(get(), undefined, smooth)).toMatch(/different layer heights.*prime tower/)
+    expect(plateLayerHeightConflict(get(), undefined, { ...smooth, timelapse_type: '0' })).toBeNull()
+    expect(plateLayerHeightConflict(get(), undefined, { ...smooth, enable_prime_tower: false })).toBeNull()
+    expect(plateLayerHeightConflict(get(), undefined, { ...smooth, printer_model: 'Prusa MK4S' })).toBeNull()
+  })
 })

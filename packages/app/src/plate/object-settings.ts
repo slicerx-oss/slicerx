@@ -7,6 +7,7 @@ import type { SettingValue, SliceWarning } from '@slicerx/contracts'
 import { get, markStale, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { effectiveSlot, mapSlot } from '../filament/slots'
 import { plateSequence } from './plate-sequence'
+import { smoothTimelapseTower } from '@slicerx/settings/arrange-room'
 
 export const sourceId = (p: Pick<PlateEntry, 'id' | 'instanceOf'>) => p.instanceOf ?? p.id
 
@@ -53,13 +54,14 @@ export function setPartSetting(objectId: string, part: string, key: string, valu
 /**
  * layerHeightConflict for plate `meta` with its print sequence, layer height and prime tower from `config`, the plate's
  * settings as the slice resolves them (the person's changes and an opened project's settings included). The tower prints
- * when it is on and the plate's objects print more than one filament.
+ * when it is on and the plate's objects print more than one filament, or with a smooth timelapse on a Bambu Lab printer.
  */
 export function plateLayerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'>, meta: PlateMeta | undefined, config: Readonly<Record<string, unknown>>): string | null {
   const layer = config['layer_height']
   const slots = new Set<number>()
   for (const p of s.plate) if (p.printable !== false) for (const part of p.parts) slots.add(mapSlot(meta, effectiveSlot(p, part)))
-  const tower = switchOn(config['enable_prime_tower']) && slots.size > 1
+  // A smooth timelapse on a Bambu Lab printer prints the tower with one filament too.
+  const tower = switchOn(config['enable_prime_tower']) && (slots.size > 1 || smoothTimelapseTower(config))
   return layerHeightConflict(s, plateSequence(meta, config), typeof layer === 'number' ? layer : 0.2, tower)
 }
 
