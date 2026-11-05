@@ -215,6 +215,11 @@ describe('a design built step by step', () => {
     expect(builtPart(rows[1]!)).toEqual({ id: 'box-with-lid', name: 'Box with lid', kind: 'part', sizeMm: [40, 30, 20], built: true })
     // the part generator's card is unchanged: a design step is no maker
     expect(createdPart(rows[1]!)).toBeNull()
+    // a loft or a sweep leaves the part card like any other build step
+    for (const tool of ['geom.loft', 'geom.sweep']) {
+      const row = { ...rows[1]!, tool }
+      expect(builtPart(row), tool).toEqual({ id: 'box-with-lid', name: 'Box with lid', kind: 'part', sizeMm: [40, 30, 20], built: true })
+    }
     // a read after the build leaves the card at the newest build step
     render(<TranscriptView transcript={boxWithLid({ last: { tool: 'design.steps', ok: true } })} showThinking={false} approvals={approvals} parts={handlers()} />)
     expect(screen.getByTestId('mimir-part').textContent).toContain('90 x 30 x 20 mm')
