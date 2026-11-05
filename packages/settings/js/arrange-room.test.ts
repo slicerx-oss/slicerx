@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, KEEP_OUT_GAP_MM, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, shiftKeep, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
+import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, KEEP_OUT_GAP_MM, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, shiftKeep, smoothTimelapseTower, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
 import { printerConfig } from './index'
 import { settingDefault } from './defaults'
 import { settingNumber } from './print-margins'
@@ -160,5 +160,27 @@ describe('a prime tower whose width the config leaves out', () => {
     expect(settingNumber({}, 'prime_tower_width')).toBe(settingDefault('prime_tower_width'))
     expect(room({})).toEqual(room({ prime_tower_width: settingDefault('prime_tower_width') }))
     expect(room({})[0]!.w).toBeCloseTo(Number(settingDefault('prime_tower_width')) + 2 * (3 + MARGIN_SAFETY_MM), 9)
+  })
+})
+
+describe('the prime tower of a smooth timelapse', () => {
+  const a1 = { printer_model: 'Bambu Lab A1', enable_prime_tower: true, prime_tower_auto_position: true, wipe_tower_x: 15, wipe_tower_y: 220, prime_tower_width: 35, timelapse_type: '1' }
+  it('takes room with one filament on a Bambu Lab printer, as the engine prints it then', () => {
+    expect(smoothTimelapseTower(a1)).toBe(true)
+    expect(plateMargins(a1, 1, plate).towerRoom).toHaveLength(1)
+    // The same room two filaments get.
+    expect(plateMargins(a1, 1, plate).towerRoom).toEqual(plateMargins(a1, 2, plate).towerRoom)
+  })
+  it('takes none with one filament for a traditional timelapse, the tower off, spiral vase, by object or another printer', () => {
+    for (const cfg of [
+      { ...a1, timelapse_type: '0' },
+      { ...a1, enable_prime_tower: false },
+      { ...a1, spiral_mode: true },
+      { ...a1, print_sequence: 'by object' },
+      { ...a1, printer_model: 'Prusa MK4S' },
+    ]) {
+      expect(smoothTimelapseTower(cfg), JSON.stringify(cfg)).toBe(false)
+      expect(plateMargins(cfg as never, 1, plate).towerRoom, JSON.stringify(cfg)).toEqual([])
+    }
   })
 })

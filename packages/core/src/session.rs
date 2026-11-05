@@ -38,6 +38,9 @@ const NO_ENFORCERS: &str =
 /// Support enforcers on a plate with support turned off.
 const ENFORCERS_UNUSED: &str = "Support enforcers are on the plate but support is off, so they print no support; turn on supports to use them";
 /// Why support printed on the object's layers although the settings ask for layers of its own height.
+/// [`SUPPORT_ON_OBJECT_LAYERS`] for one filament, whose tower is there for a smooth timelapse.
+const SUPPORT_ON_SMOOTH_TOWER: &str = "Support prints on the model's layers because this print uses a prime tower for \
+     its smooth timelapse.";
 const SUPPORT_ON_OBJECT_LAYERS: &str = "Support prints on the model's layers because this print uses a prime tower. That saves a filament change on every support layer.";
 
 /// A plate's first object as its own session saw itself: bounds, footprints, object settings and interleave flag
@@ -4423,7 +4426,11 @@ impl SliceSession {
         }
         self.push_warning(SliceWarning {
             code: WarningCode::UnsupportedSetting,
-            message: SUPPORT_ON_OBJECT_LAYERS.to_owned(),
+            message: if self.tool_count < 2 {
+                SUPPORT_ON_SMOOTH_TOWER.to_owned()
+            } else {
+                SUPPORT_ON_OBJECT_LAYERS.to_owned()
+            },
             layer: None,
         });
         false
@@ -4706,13 +4713,16 @@ impl SliceSession {
             return out;
         };
         // The prime tower keeps rising through support layers up to its last object layer; it is
-        // only walled here, as no filament changes on a support layer.
-        if self.tool_count > 1
+        // only walled here, as no filament changes on a support layer. A smooth timelapse walls it on every
+        // layer, one filament or several, since each layer's shot ends on the tower.
+        let smooth = crate::timelapse::smooth_tower(cfg);
+        if (self.tool_count > 1 || smooth)
             && self.plate_tools.is_none()
             && let Some(b) = below
             && self.tower_top.is_some_and(|t| b < t)
-            && crate::tower::flag_or(cfg, "prime_tower_outline", true)
-            && !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")
+            && (smooth
+                || (crate::tower::flag_or(cfg, "prime_tower_outline", true)
+                    && !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")))
             && let Some(tower) = self.tower(cfg)
         {
             let tower = self.tower_origin.map_or(tower, |o| tower.at(o));
@@ -11734,14 +11744,16 @@ impl SliceSession {
             }
             was = w.tool();
         }
+        // A smooth timelapse starts the layer on the tower, after its shot: what the filament the layer starts on
+        // prints there (the wall, and the fill of what no change fills) comes first, and the wall prints on every
+        // layer whatever the outline settings say, so the shot always has a tower to wipe on.
+        let smooth = crate::timelapse::smooth_tower(cfg);
         let walled = first
+            || smooth
             || (crate::tower::flag_or(cfg, "prime_tower_outline", true)
                 && (!changes.is_empty() || !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")));
         // The last work of the filament the layer starts on, before its first change.
         let lead_end = changes.first().and_then(|c| c.0.checked_sub(1));
-        // A smooth timelapse starts the layer on the tower, after its shot: what the filament the layer starts on
-        // prints there (the wall, and the fill of what no change fills) comes first.
-        let smooth = crate::timelapse::smooth_tower(cfg);
         let wall_place = if let Some(before) = lead_end.filter(|_| smooth) {
             Place::Before(before)
         } else if smooth && changes.is_empty() {
