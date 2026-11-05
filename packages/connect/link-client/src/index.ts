@@ -512,7 +512,62 @@ export interface RemoteQuota {
   framesPerSecond?: number
   bytesPerMinute?: number
   maxBody?: number
+  /** The relay's partner route caps and this account's use of them today (UTC). Absent on an older relay. */
+  partner?: PartnerRouteRelayCaps
 }
+
+/** The relay's caps on partner routes (sx-relay `--partner-*`), and the account's use of them. */
+export interface PartnerRouteRelayCaps {
+  /** Partner routes this account has open on the relay now, and the most it may. */
+  routes: number
+  maxRoutes: number
+  /** Partner route bytes this account moved today (UTC), and the daily cap over all its routes. */
+  usedToday: number
+  capPerDay: number
+  /** Bytes one route may carry in a UTC day, both directions. */
+  routeCapPerDay: number
+  /** A route that carries nothing this long closes. */
+  idleSeconds: number
+}
+
+/** One partner route as the hub lists it: sizes and times, never the bytes or the relay routes. */
+export interface PartnerRoute {
+  routeId: string
+  /** The partner app, by the name its partner key was made with. */
+  app: string
+  pairingId: string
+  /** The phone's name, as it paired. */
+  phone: string | null
+  state: 'opening' | 'open'
+  /** Unix milliseconds. */
+  openedAt: number
+  lastAt: number
+  /** Payload bytes from the phone, and to it. */
+  bytesIn: number
+  bytesOut: number
+  /** Frames on the route that were not its sealed bytes, refused and dropped. */
+  refused: number
+}
+
+export interface PartnerRouteList {
+  routes: PartnerRoute[]
+  caps: { maxRoutes: number; maxChunkBytes: number; relay: PartnerRouteRelayCaps | null }
+}
+
+/** Why a partner route closed. */
+export type PartnerRouteClosedReason =
+  | 'closed'
+  | 'closed_by_owner'
+  | 'desktop_gone'
+  | 'unpaired'
+  | 'remote_off'
+  | 'idle'
+  | 'route_cap'
+  | 'account_cap'
+  | 'signed_out'
+  | 'relay_closed'
+  | 'relay_refused'
+  | 'relay_timeout'
 
 export interface RemoteStatus {
   enabled: boolean
@@ -707,7 +762,7 @@ export interface LinkHost extends PrinterHost {
     /** The relay's quota as the hub hears it: on connect, every five minutes and after `quota()`. */
     onQuota(cb: (q: RemoteQuota) => void): () => void
     pairings: {
-      put(p: { pairingId: string; deviceKey: string; kind: 'phone' | 'agent'; peer: PairIdentity; rights?: { request?: boolean; approve?: boolean } }): Promise<{ saved: boolean }>
+      put(p: { pairingId: string; deviceKey: string; kind: 'phone' | 'agent' | 'partner_phone'; peer: PairIdentity; rights?: { request?: boolean; approve?: boolean }; /** A partner phone's partner app, by its key's name. */ partner?: string }): Promise<{ saved: boolean }>
       remove(pairingId: string): Promise<{ removed: boolean }>
       list(): Promise<{ pairingId: string; kind: 'phone' | 'agent'; peer: PairIdentity; rights: { request: boolean; approve: boolean }; addedAt: number; clientId?: string }[]>
       /**
@@ -719,6 +774,24 @@ export interface LinkHost extends PrinterHost {
     }
     /** A phone removed itself over the relay (`pairing.revoke`); forget it here too. */
     onPairingRevoked(cb: (pairingId: string) => void): () => void
+  }
+  /**
+   * Partner routes (docs/integrators/partner-route.md): a partner app's sealed byte stream to its own
+   * paired phone over the relay. A partner key opens, sends on and closes its own; the app lists and
+   * closes any (Settings, Devices); an agent lists them. The route carries bytes only, never a hub method.
+   */
+  partnerRoutes: {
+    list(): Promise<PartnerRouteList>
+    close(routeId: string): Promise<{ closed: boolean }>
+    /** Partner key only. Resolves once the relay accepted the route. */
+    open(app: string, pairingId?: string): Promise<{ routeId: string; app: string; pairingId: string; state: 'open' }>
+    /** Partner key only, on a route this connection opened. At most `caps.maxChunkBytes` per call. */
+    send(routeId: string, data: Uint8Array): Promise<{ sent: number }>
+    /** Bytes from the phone, on a route this connection opened. */
+    onData(cb: (routeId: string, data: Uint8Array) => void): () => void
+    onClosed(cb: (routeId: string, reason: PartnerRouteClosedReason) => void): () => void
+    /** The app: a route opened or closed (ids and names only). */
+    onChanged(cb: (c: { routeId: string; app: string; state: 'open' | 'closed' }) => void): () => void
   }
   /**
    * The device page. `files`, `history`, `issues` and `objects` only read. `jog`, `skipObject` and
@@ -946,6 +1019,9 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const approvalDoneListeners = new Set<(d: ApprovalDone) => void>()
   const dismissedListeners = new Set<(d: { printerId: string; kind: string; at: string }) => void>()
   const quotaListeners = new Set<(q: RemoteQuota) => void>()
+  const routeDataListeners = new Set<(routeId: string, data: Uint8Array) => void>()
+  const routeClosedListeners = new Set<(routeId: string, reason: PartnerRouteClosedReason) => void>()
+  const routeChangedListeners = new Set<(c: { routeId: string; app: string; state: 'open' | 'closed' }) => void>()
   const revokedListeners = new Set<(pairingId: string) => void>()
   const linkCallListeners = new Set<(c: AppLinkCall) => void>()
   const linkAskListeners = new Set<(a: AppLinkAsk) => void>()
@@ -1024,6 +1100,21 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'watch.frame' && msg.data) {
       for (const cb of watchFrameListeners) cb(msg.data as Record<string, unknown>)
+      return
+    }
+    if ((msg.event === 'partnerRoute.data' || msg.event === 'partnerRoute.closed') && msg.data) {
+      const d = msg.data as { routeId?: unknown; data?: unknown; reason?: unknown }
+      if (typeof d.routeId !== 'string') return
+      if (msg.event === 'partnerRoute.data' && typeof d.data === 'string') {
+        const bytes = base64ToBytes(d.data)
+        for (const cb of routeDataListeners) cb(d.routeId, bytes)
+      } else if (msg.event === 'partnerRoute.closed') {
+        for (const cb of routeClosedListeners) cb(d.routeId, d.reason as PartnerRouteClosedReason)
+      }
+      return
+    }
+    if (msg.event === 'partnerRoute.changed' && msg.data) {
+      for (const cb of routeChangedListeners) cb(msg.data as unknown as { routeId: string; app: string; state: 'open' | 'closed' })
       return
     }
     if (msg.event === 'remote.quota' && msg.data) {
@@ -1334,6 +1425,24 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       mimirState: async (state) => void (await call('appLink.mimirState', { ...state })),
       grants: () => call<AppLinkGrant[]>('appLink.grants'),
       revoke: async (clientId) => void (await call('appLink.revoke', { clientId })),
+    },
+    partnerRoutes: {
+      list: () => call<PartnerRouteList>('relay.partnerRoute.list'),
+      close: (routeId) => call<{ closed: boolean }>('relay.partnerRoute.close', { routeId }),
+      open: (app, pairingId) => call('relay.partnerRoute.open', { app, ...(pairingId ? { pairingId } : {}) }),
+      send: (routeId, data) => call<{ sent: number }>('relay.partnerRoute.send', { routeId, data: bytesToBase64(data) }),
+      onData: (cb) => {
+        routeDataListeners.add(cb)
+        return () => void routeDataListeners.delete(cb)
+      },
+      onClosed: (cb) => {
+        routeClosedListeners.add(cb)
+        return () => void routeClosedListeners.delete(cb)
+      },
+      onChanged: (cb) => {
+        routeChangedListeners.add(cb)
+        return () => void routeChangedListeners.delete(cb)
+      },
     },
     clients: {
       create: (name, role, opts) => call('clients.create', { name, role, ...(opts?.remote ? { remote: true } : {}), ...(opts?.partner ? { partner: true } : {}) }),

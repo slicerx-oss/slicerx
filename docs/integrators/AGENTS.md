@@ -36,6 +36,7 @@ The other files in this folder:
 - [quickstart.md](quickstart.md): the reference for every tool, option, result field and error code.
 - [restyle-icons-and-loops.md](restyle-icons-and-loops.md): edition colors for tool icons, tooltip loops and sketch glyphs, with separate light and dark values, defaults and checks.
 - [partner-app-key.md](partner-app-key.md): how an app on the same computer reaches the user's printers through SlicerX's bridge, with a key the user makes in SlicerX and can revoke.
+- [partner-route.md](partner-route.md): how a partner's desktop app and its own phone app trade bytes over SlicerX's relay, with the caps that apply and how the user sees and closes a route.
 - [mimir-cloud.md](mimir-cloud.md): how an app that runs its own mimir chat calls SlicerX's hosted model proxy: register, messages, quota, refusals and testing.
 - [your-own-mimir.md](your-own-mimir.md): how an edition shapes its mimir under `ai.brain`: voice, knowledge, tool groups, routing, cloud step-up and memory, and how to read it back.
 - [connected-apps.md](connected-apps.md): the user's Spoolman, Home Assistant and BamBuddy through SlicerX's bridge: the MCP tools an agent reads them with, what needs an approval or a person, and how a new connected app is added. A runnable sample is in `connected-apps/`.
