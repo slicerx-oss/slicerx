@@ -15,6 +15,7 @@ const VERB: Record<SideEffectAction, string> = {
   'printer.cancel': 'Stop the print on',
   'printer.gcode': 'Run a G-code line on',
   'printer.adjust': 'Change the running print on',
+  'printer.skip': 'Skip an object on',
   'printer.config': 'Change settings on',
   'plugin.call': 'Run a tool of',
   'profile.write': 'Change the saved profile',
@@ -24,7 +25,7 @@ const VERB: Record<SideEffectAction, string> = {
 }
 
 /** Most important first: the question names the action that does the most. */
-const ORDER: SideEffectAction[] = ['printer.start', 'printer.cancel', 'printer.gcode', 'printer.adjust', 'printer.config', 'printer.resume', 'printer.pause', 'printer.upload', 'profile.write', 'project.replace', 'plugin.call', 'share.publish', 'share.notify']
+const ORDER: SideEffectAction[] = ['printer.start', 'printer.cancel', 'printer.gcode', 'printer.adjust', 'printer.config', 'printer.resume', 'printer.skip', 'printer.pause', 'printer.upload', 'profile.write', 'project.replace', 'plugin.call', 'share.publish', 'share.notify']
 
 /** Requests the requester described itself. A phone's own job and a click on the computer are not. */
 export function describedByRequester(r: Pick<ApprovalRequest, 'origin'>, source: 'pilot' | 'pair' | 'host'): boolean {
@@ -56,15 +57,28 @@ export function forDisplay(request: ApprovalRequest, source: 'pilot' | 'pair' | 
 }
 
 /** Said on a card the phone may not approve over the relay. */
-export const AT_HOME = 'Approve this at home or in SlicerX. Over the internet this phone can only approve pausing or stopping a print'
+export const AT_HOME = 'Approve this at home or in SlicerX. Over the internet this phone can approve pausing, stopping or skipping an object, and a start only on a printer with remote start on'
+
+/** The hub's word on a start card: whether it could let this phone approve it from afar (`remoteStart` on the view). */
+export interface RemoteStartWord {
+  enabled: boolean
+  message?: string | undefined
+}
 
 /**
- * Over the relay the phone answers only pause and stop cards. Starts, resume, G-code and changes to a
- * running print are approvable from the phone on the home network only, so the card offers no Approve.
- * Deny always works.
+ * Over the relay the phone answers pause, stop and skip-one-object cards, and a start only when the computer's
+ * hub says remote start could let it through (the printer opted in, the file within its limits); the card then
+ * asks for a fresh plate check. Resume, G-code and changes to a running print are approvable from the phone on
+ * the home network only, so the card offers no Approve. Deny always works.
  */
-export function relayBlock(request: Pick<ApprovalRequest, 'actions'>, via: 'lan' | 'relay'): string | undefined {
+export function relayBlock(request: Pick<ApprovalRequest, 'actions'>, via: 'lan' | 'relay', remoteStart?: RemoteStartWord): string | undefined {
   if (via !== 'relay') return undefined
-  const ok = request.actions.length > 0 && request.actions.every((a) => a.action === 'printer.pause' || a.action === 'printer.cancel')
-  return ok ? undefined : AT_HOME
+  const stops = request.actions.length > 0 && request.actions.every((a) => a.action === 'printer.pause' || a.action === 'printer.cancel' || a.action === 'printer.skip')
+  if (stops) return undefined
+  const starts = request.actions.some((a) => a.action === 'printer.start')
+  const others = request.actions.every((a) => a.action === 'printer.start' || a.action === 'printer.upload')
+  if (starts && others && remoteStart) return remoteStart.enabled ? undefined : remoteStart.message ? `${AT_HOME}. ${capital(remoteStart.message)}` : AT_HOME
+  return AT_HOME
 }
+
+const capital = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`

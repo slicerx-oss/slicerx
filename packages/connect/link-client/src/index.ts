@@ -411,6 +411,30 @@ export interface GuardTrip {
   answeredBy?: 'dismissed' | 'clear' | 'fine' | 'off'
 }
 
+/** Why the remote start rule refuses, as the hub words it. */
+export type RemoteStartReason = 'off' | 'guard_off' | 'plate_missing' | 'plate_stale' | 'plate_failed' | 'plate_not_compared' | 'bed_answer' | 'heat_unknown' | 'chamber' | 'too_hot'
+
+/** One printer's remote start setting and its last plate check (no picture). */
+export interface RemoteStartRow {
+  printerId: string
+  enabled: boolean
+  /** Highest nozzle and bed temperature a start from afar may heat to, in °C. */
+  maxNozzleC: number
+  maxBedC: number
+  /** The camera guard watches this printer; without it no plate check can pass. */
+  guard: boolean
+  /** The last answered plate check, or null. `passes` says whether a start from afar could rely on it now. */
+  plateCheck: { checkedAt: string; clear: boolean | null; compared: boolean; passes: boolean; reason: RemoteStartReason | null } | null
+}
+
+export interface RemoteStartState {
+  printers: RemoteStartRow[]
+  /** How old a plate check may be for a start from afar, in seconds. */
+  plateWindowSeconds: number
+  /** A file that heats a chamber never starts from afar. */
+  chamber: 'never'
+}
+
 /** What the guard knows: current trips, printers it is off for, empty-plate picture times, and whether a detector is connected. */
 export interface GuardState {
   trips: Record<string, GuardTrip>
@@ -439,6 +463,8 @@ export type AgentWork =
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
+  /** Skip one object of the running print (`objects.list` ids). The hub pins the job running when the card is raised. */
+  | { kind: 'skip'; printerId: string; id: string; epoch?: number }
   /** A connected app's tool a person has to approve, by its bare name (`call_service`). */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
@@ -646,7 +672,21 @@ export interface LinkHost extends PrinterHost {
     add(printerId: string, file: JobFile, opts?: { startOptions?: StartOptions; startAfter?: string; title?: string }): Promise<{ item: QueueItem; request?: ApprovalRequest }>
     list(): Promise<QueueItem[]>
     remove(id: string): Promise<void>
+    /**
+     * Asks a person to start a plate already in the queue, now: the hub raises its card (or returns the one
+     * waiting). App, agents and partner apps; only a person answers it. `busy` while a print is on the plate,
+     * `bad_state` for a scheduled plate or one that left the queue.
+     */
+    start(itemId: string): Promise<{ item: QueueItem; request?: ApprovalRequest }>
     onChange(cb: (item: QueueItem | { id: string; removed: true }) => void): () => void
+  }
+  /**
+   * Remote start: whether an approver phone may start a print on a printer from afar after a fresh plate
+   * check. `get` for the app and agents; `set` for the app only (audited). Off by default.
+   */
+  remoteStart: {
+    get(printerId?: string): Promise<RemoteStartState>
+    set(printerId: string, enabled: boolean, limits?: { maxNozzleC?: number; maxBedC?: number }): Promise<RemoteStartRow>
   }
   /** Alerts for push notifications: job finished, failed, paused, a card waiting. */
   onAlert(cb: (a: HubAlert) => void): () => void
@@ -1301,10 +1341,15 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
         call<{ item: QueueItem; request?: ApprovalRequest }>('queue.add', { printerId, file: encodeFile(file), ...(o.startOptions ? { opts: o.startOptions } : {}), ...(o.startAfter ? { startAfter: o.startAfter } : {}), ...(o.title ? { title: o.title } : {}) }),
       list: () => call<QueueItem[]>('queue.list'),
       remove: async (id) => void (await call('queue.remove', { id })),
+      start: (itemId) => call<{ item: QueueItem; request?: ApprovalRequest }>('queue.start', { itemId }),
       onChange: (cb) => {
         queueListeners.add(cb)
         return () => void queueListeners.delete(cb)
       },
+    },
+    remoteStart: {
+      get: (printerId) => call<RemoteStartState>('remoteStart.get', printerId ? { printerId } : {}),
+      set: (printerId, enabled, limits = {}) => call<RemoteStartRow>('remoteStart.set', { printerId, enabled, ...limits }),
     },
     onAlert: (cb) => {
       alertListeners.add(cb)

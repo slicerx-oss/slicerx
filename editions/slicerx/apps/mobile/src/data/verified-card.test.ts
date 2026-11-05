@@ -46,6 +46,19 @@ describe('over the relay', () => {
     for (const a of ['printer.start', 'printer.resume', 'printer.gcode', 'printer.config', 'printer.upload'] as const) expect(relayBlock(act(a), 'relay')).toBe(AT_HOME)
     expect(relayBlock({ actions: [] }, 'relay')).toBe(AT_HOME)
   })
+  it('offers Approve for skipping an object, which only stops extrusion', () => {
+    expect(relayBlock(act('printer.skip'), 'relay')).toBeUndefined()
+  })
+  it('offers Approve for a start only when the hub says remote start could let it through', () => {
+    const print = { ...base, actions: [{ action: 'printer.upload' as const, target: 'bay-2', paramsHash: 'a' }, { action: 'printer.start' as const, target: 'bay-2', paramsHash: 'b' }] }
+    expect(relayBlock(print, 'relay')).toBe(AT_HOME)
+    expect(relayBlock(print, 'relay', { enabled: true })).toBeUndefined()
+    expect(relayBlock(act('printer.start'), 'relay', { enabled: true })).toBeUndefined()
+    expect(relayBlock(print, 'relay', { enabled: false, message: 'remote start is off for this printer' })).toBe(`${AT_HOME}. Remote start is off for this printer`)
+    // The word covers starts only: a resume or a G-code line stays at home.
+    expect(relayBlock(act('printer.resume'), 'relay', { enabled: true })).toBe(AT_HOME)
+    expect(relayBlock(act('printer.gcode'), 'relay', { enabled: true })).toBe(AT_HOME)
+  })
   it('changes nothing at home', () => {
     expect(relayBlock(act('printer.start'), 'lan')).toBeUndefined()
   })

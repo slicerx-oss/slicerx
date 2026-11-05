@@ -12,6 +12,9 @@ import { Txt } from '../text'
 import { font, t } from '../theme'
 import { useApproval } from '../use-approval'
 import { fmtClock, fmtCountdown, type ApprovalResolution } from './model'
+import { PlateCheckView, type PlateCheckSource } from './plate-check'
+
+export type { PlateCheckSource }
 
 export interface ApprovalCardProps {
   request: ApprovalRequest
@@ -31,6 +34,8 @@ export interface ApprovalCardProps {
   answered?: string | undefined
   /** Line above the title. Defaults to mimir's; a computer's own requests name the computer. */
   heading?: string | undefined
+  /** A start approved away from home: the plate check, whose pass Approve waits for. */
+  plate?: PlateCheckSource | undefined
   /** Clock source, for tests. */
   now?: () => number
 }
@@ -47,7 +52,7 @@ function resolvedText(r: ApprovalResolution): { text: string; ok: boolean } {
   return { text: 'Denied. Nothing was sent', ok: false }
 }
 
-export function ApprovalCard({ request, resolution, actionable, onApprove, onDeny, requestedBy, blocked, code, answered, heading = 'mimir needs your approval', now = Date.now }: ApprovalCardProps) {
+export function ApprovalCard({ request, resolution, actionable, onApprove, onDeny, requestedBy, blocked, code, answered, heading = 'mimir needs your approval', plate, now = Date.now }: ApprovalCardProps) {
   const live = resolution === null && actionable && answered === undefined
   const expiresAt = Date.parse(request.expiresAt)
   const [shownAt] = useState(now)
@@ -57,6 +62,8 @@ export function ApprovalCard({ request, resolution, actionable, onApprove, onDen
   const device = useApproval()
   const asksBed = startsPrint(request)
   const [bedClear, setBedClear] = useState(false)
+  // Until when a plate check lets this start through, for a start approved away from home.
+  const [passUntil, setPassUntil] = useState<number | null>(null)
 
   useEffect(() => {
     if (!live) return undefined
@@ -68,6 +75,7 @@ export function ApprovalCard({ request, resolution, actionable, onApprove, onDen
   const total = Number.isNaN(expiresAt) ? null : Math.max(1, expiresAt - shownAt)
   const expired = left !== null && left <= 0
   const busy = device.busy || denying
+  const plateHolds = plate !== undefined && (passUntil === null || passUntil <= clock)
 
   const done = resolution ? resolvedText(resolution) : null
   return (
@@ -116,6 +124,7 @@ export function ApprovalCard({ request, resolution, actionable, onApprove, onDen
           {blocked}
         </Txt>
       ) : null}
+      {live && plate && !blocked ? <PlateCheckView source={plate} onPass={setPassUntil} now={now} /> : null}
       {live && asksBed && !blocked ? (
         <View style={{ paddingHorizontal: 16 }}>
           <SwitchRow title="The build plate is clear" detail="And the right plate is on the printer" value={bedClear} onChange={setBedClear} testID="approval-bed-clear" />
@@ -131,7 +140,7 @@ export function ApprovalCard({ request, resolution, actionable, onApprove, onDen
                 icon="approve"
                 block
                 busy={device.busy}
-                disabled={busy || expired || (asksBed && !bedClear)}
+                disabled={busy || expired || (asksBed && !bedClear) || plateHolds}
                 testID="approval-approve"
                 onPress={() => {
                   setNote(null)
