@@ -12,6 +12,14 @@ use tauri::{AppHandle, Emitter, Manager, State, Window, WindowEvent};
 #[derive(Default)]
 pub struct Unsaved(AtomicBool);
 
+impl Unsaved {
+    /// What the page last said, cleared: a page that stopped (recover.rs) can no longer say it, and the reloaded
+    /// one says it again once it has work to lose.
+    pub fn take(&self) -> bool {
+        self.0.swap(false, Ordering::Relaxed)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum OnClose {
     /// Let the window close; the app exits with its last window.

@@ -37,6 +37,7 @@ mod platform;
 mod prefs;
 mod presets;
 mod probe;
+mod recover;
 mod slicing;
 mod themes;
 mod updates;
@@ -72,9 +73,10 @@ fn main() {
     // A test build (debug, or with the agent bridge) has the feed's config but never uses it (updates::TEST_BUILD).
     let updates_on = updates::checks(updates::configured(context.config()), updates::TEST_BUILD);
     let builder = tauri::Builder::default();
-    // A web view whose content process died is reported and loaded again (macOS only reports this).
+    // A web view whose content process died is reported and loaded again (recover.rs). tauri reports this on macOS;
+    // Windows and Linux are watched from setup.
     #[cfg(target_os = "macos")]
-    let builder = builder.on_web_content_process_terminate(crash::webview_terminated);
+    let builder = builder.on_web_content_process_terminate(recover::webview_terminated);
     let builder = builder
         // First, so a second launch (a double-clicked file, an "Open in" link) reaches this one instead of opening another app.
         // Links go to the deep link plugin through the feature; files arrive as arguments.
@@ -137,6 +139,7 @@ fn main() {
                 let _ = w.set_background_color(Some(tauri::window::Color(r, g, b, 255)));
             }
             crash::set_dir(app.handle());
+            recover::watch(app.handle());
             #[cfg(all(windows, not(debug_assertions)))]
             if let Some(w) = tauri::Manager::get_webview_window(app, "main") {
                 crash::disable_browser_keys(&w);
@@ -215,6 +218,7 @@ fn main() {
             crash::crash_take,
             crash::crash_ack,
             crash::crash_test_panic,
+            recover::crash_recovery_take,
             platform::shell_arch,
             #[cfg(feature = "pilot")]
             chatgpt::open_external,

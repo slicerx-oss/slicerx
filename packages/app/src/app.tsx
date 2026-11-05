@@ -40,7 +40,7 @@ import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
 import { usePhoneRoot } from './lib/phone-layout'
-import { startCrashCapture } from './bugs/crash'
+import { nativeCrashHost, startCrashCapture } from './bugs/crash'
 import { needsAgreement } from './first-run/agreement-check'
 import { onboardingRerun } from './first-run/onboarding'
 import { hasLegacySetupPrinters, withHandPrinters } from './lib/hand-printers'
@@ -228,15 +228,19 @@ function Shell() {
     void import('./project/autosave').then((m) => {
       if (gone) return
       stop = m.startAutosave()
-      void m.findRecovery().then((r) => {
-        if (r && !gone && m.nothingToLose()) set({ projectsDialog: 'recover' })
+      void m.findRecovery().then(async (r) => {
+        // After the desktop shell reloaded a window whose view stopped, the work comes back without asking.
+        const crash = (await nativeCrashHost()?.recovery?.().catch(() => null)) ?? null
+        if (gone) return
+        if (crash) void import('./project/view-crash').then((v) => v.recoverAfterViewCrash(host, crash, r))
+        else if (r && m.nothingToLose()) set({ projectsDialog: 'recover' })
       })
     })
     return () => {
       gone = true
       stop()
     }
-  }, [])
+  }, [host])
   const projectsOpen = useApp((s) => s.projectsDialog !== null)
   const unsavedOpen = useApp((s) => s.unsavedPrompt !== null)
   const multiBodyOpen = useApp((s) => s.multiBodyPrompt !== null)
