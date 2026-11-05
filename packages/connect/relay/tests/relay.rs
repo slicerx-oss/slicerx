@@ -444,3 +444,218 @@ async fn m4_only_relay_tokens_sign_in_and_the_account_tier_ends_with_the_token()
         "an expired connection hears nothing on the account route"
     );
 }
+
+fn pr(c: char) -> String {
+    format!("pr:{}", c.to_string().repeat(43))
+}
+
+async fn signed_in(r: &RelayHandle, account: &str) -> Ws {
+    let mut ws = dial(r).await;
+    op(
+        &mut ws,
+        json!({ "op": "auth", "token": token(account, NOW + 7 * 86_400_000) }),
+    )
+    .await;
+    assert_eq!(next(&mut ws).await.unwrap()["ok"], true);
+    ws
+}
+
+/// Reads frames until one with `op`, skipping others.
+async fn until(ws: &mut Ws, op_name: &str) -> Value {
+    for _ in 0..20 {
+        let v = next(ws).await.unwrap_or_else(|| panic!("no {op_name}"));
+        if v["op"] == op_name {
+            return v;
+        }
+    }
+    panic!("no {op_name}");
+}
+
+fn partner_limits() -> Limits {
+    let fast = TierLimits {
+        frames_per_second: 1000,
+        ..Limits::default().anonymous
+    };
+    Limits {
+        anonymous: fast,
+        account: TierLimits {
+            frames_per_second: 1000,
+            ..Limits::default().account
+        },
+        partner: sx_relay::quota::PartnerLimits {
+            routes_per_account: 2,
+            bytes_per_route_per_day: 100,
+            bytes_per_account_per_day: 150,
+            idle_ms: 60_000,
+        },
+        ..Limits::default()
+    }
+}
+
+#[tokio::test]
+async fn partner_routes_open_signed_in_carry_bytes_and_close_for_everyone_on_them() {
+    let (r, _clock) = start(partner_limits()).await;
+    let (up, down) = (pr('a'), pr('b'));
+
+    // Nobody uses a partner route that is not open, and only a signed-in connection opens one.
+    let mut phone = dial(&r).await;
+    op(&mut phone, json!({ "op": "sub", "route": down })).await;
+    let e = next(&mut phone).await.unwrap();
+    assert_eq!(
+        (e["code"].as_str(), e["route"].as_str()),
+        (Some("forbidden"), Some(down.as_str()))
+    );
+    op(&mut phone, json!({ "op": "send", "to": up, "body": "x" })).await;
+    assert_eq!(next(&mut phone).await.unwrap()["code"], "forbidden");
+    op(
+        &mut phone,
+        json!({ "op": "partner.open", "up": up, "down": down }),
+    )
+    .await;
+    assert_eq!(next(&mut phone).await.unwrap()["code"], "forbidden");
+
+    let mut hub = signed_in(&r, "user-1").await;
+    op(&mut hub, json!({ "op": "partner.open", "up": up, "down": down })).await;
+    assert_eq!(
+        next(&mut hub).await.unwrap(),
+        json!({ "op": "partner.open", "ok": true, "up": up })
+    );
+    op(&mut hub, json!({ "op": "sub", "route": up })).await;
+    op(&mut phone, json!({ "op": "sub", "route": down })).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Bytes go both ways, untouched.
+    op(&mut phone, json!({ "op": "send", "to": up, "body": "sealed-up" })).await;
+    assert_eq!(next(&mut hub).await.unwrap()["body"], "sealed-up");
+    op(
+        &mut hub,
+        json!({ "op": "send", "to": down, "body": "sealed-down" }),
+    )
+    .await;
+    assert_eq!(next(&mut phone).await.unwrap()["body"], "sealed-down");
+    assert_eq!(r.stats().partner_routes, 1);
+    assert_eq!(r.stats().partner_bytes, 20);
+
+    // The quota answer carries the partner caps and the account's use.
+    op(&mut hub, json!({ "op": "quota" })).await;
+    let q = until(&mut hub, "quota").await;
+    assert_eq!(q["partner"]["routes"], 1, "{q}");
+    assert_eq!(q["partner"]["maxRoutes"], 2, "{q}");
+    assert_eq!(q["partner"]["usedToday"], 20, "{q}");
+    assert_eq!(q["partner"]["routeCapPerDay"], 100, "{q}");
+    assert_eq!(q["partner"]["idleSeconds"], 60, "{q}");
+
+    // Only the connection that opened it closes it; then everyone on it hears why.
+    op(&mut phone, json!({ "op": "partner.close", "up": up })).await;
+    assert_eq!(next(&mut phone).await.unwrap()["code"], "forbidden");
+    op(&mut hub, json!({ "op": "partner.close", "up": up })).await;
+    assert_eq!(
+        next(&mut phone).await.unwrap(),
+        json!({ "op": "partner.closed", "route": down, "reason": "closed" })
+    );
+    assert_eq!(
+        next(&mut hub).await.unwrap(),
+        json!({ "op": "partner.closed", "route": up, "reason": "closed" })
+    );
+    op(&mut phone, json!({ "op": "send", "to": up, "body": "late" })).await;
+    assert_eq!(next(&mut phone).await.unwrap()["code"], "forbidden");
+    assert_eq!(next(&mut hub).await, None);
+    assert_eq!(r.stats().partner_routes, 0);
+}
+
+#[tokio::test]
+async fn partner_routes_close_at_their_caps_when_idle_and_with_their_owner() {
+    let (r, clock) = start(partner_limits()).await;
+    let mut hub = signed_in(&r, "user-1").await;
+    let mut phone = dial(&r).await;
+
+    // At most two open per account.
+    for (u, d) in [('a', 'b'), ('c', 'd')] {
+        op(
+            &mut hub,
+            json!({ "op": "partner.open", "up": pr(u), "down": pr(d) }),
+        )
+        .await;
+        assert_eq!(next(&mut hub).await.unwrap()["ok"], true);
+    }
+    op(
+        &mut hub,
+        json!({ "op": "partner.open", "up": pr('e'), "down": pr('f') }),
+    )
+    .await;
+    let e = next(&mut hub).await.unwrap();
+    assert_eq!(
+        (e["code"].as_str(), e["scope"].as_str()),
+        (Some("rate_limited"), Some("partner_routes"))
+    );
+
+    // A route past its bytes for the day closes for everyone on it.
+    op(&mut phone, json!({ "op": "sub", "route": pr('b') })).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    op(
+        &mut hub,
+        json!({ "op": "send", "to": pr('b'), "body": "x".repeat(90) }),
+    )
+    .await;
+    assert_eq!(next(&mut phone).await.unwrap()["op"], "msg");
+    op(
+        &mut hub,
+        json!({ "op": "send", "to": pr('b'), "body": "x".repeat(20) }),
+    )
+    .await;
+    let e = until(&mut hub, "error").await;
+    assert_eq!(e["scope"], "partner_route_day", "{e}");
+    assert_eq!(
+        next(&mut phone).await.unwrap(),
+        json!({ "op": "partner.closed", "route": pr('b'), "reason": "route_cap" })
+    );
+    assert_eq!(until(&mut hub, "partner.closed").await["reason"], "route_cap");
+
+    // The account's day (150) closes every one of its routes, and no new one opens today.
+    op(
+        &mut hub,
+        json!({ "op": "send", "to": pr('d'), "body": "y".repeat(61) }),
+    )
+    .await;
+    let e = until(&mut hub, "error").await;
+    assert_eq!(e["scope"], "partner_day", "{e}");
+    assert_eq!(until(&mut hub, "partner.closed").await["reason"], "account_cap");
+    op(
+        &mut hub,
+        json!({ "op": "partner.open", "up": pr('g'), "down": pr('h') }),
+    )
+    .await;
+    assert_eq!(until(&mut hub, "error").await["scope"], "partner_day");
+
+    // The next UTC day opens again; a route that carries nothing for the idle timeout is dropped.
+    clock.advance(86_400_000);
+    r.sweep();
+    op(
+        &mut hub,
+        json!({ "op": "partner.open", "up": pr('g'), "down": pr('h') }),
+    )
+    .await;
+    assert_eq!(until(&mut hub, "partner.open").await["ok"], true);
+    clock.advance(60_000);
+    r.sweep();
+    assert_eq!(
+        until(&mut hub, "partner.closed").await,
+        json!({ "op": "partner.closed", "route": pr('g'), "reason": "idle" })
+    );
+
+    // A route whose owner goes away closes too.
+    op(
+        &mut hub,
+        json!({ "op": "partner.open", "up": pr('i'), "down": pr('j') }),
+    )
+    .await;
+    assert_eq!(until(&mut hub, "partner.open").await["ok"], true);
+    op(&mut phone, json!({ "op": "sub", "route": pr('j') })).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    drop(hub);
+    assert_eq!(
+        until(&mut phone, "partner.closed").await,
+        json!({ "op": "partner.closed", "route": pr('j'), "reason": "owner_gone" })
+    );
+    assert_eq!(r.stats().partner_routes, 0);
+}
