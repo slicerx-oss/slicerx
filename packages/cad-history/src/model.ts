@@ -50,6 +50,8 @@ export type StepParams =
   | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
   /** A solid through closed sketch profiles in order, each one loop on its own plane (the bed when frame is absent). */
   | { op: 'sketch.loft'; profiles: LoftProfile[]; operation?: 'new' | 'join' | 'cut'; name?: string }
+  /** A solid swept from one closed sketch profile along an open path, the profile keeping its turn relative to the path. */
+  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -79,6 +81,13 @@ export type StepOp = StepParams['op']
 export interface LoftProfile {
   frame?: FaceFrame
   loops: SketchLoop[]
+}
+
+/** The path of a sweep: one open chain of lines and arcs on a plane (the bed when frame is absent), or points in space. */
+export interface SweepPath {
+  frame?: FaceFrame
+  loops?: SketchLoop[]
+  points?: Vec3[]
 }
 
 export type SolidSpec =
@@ -599,6 +608,8 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
       return `Sketch revolve ${n2(p.angleDeg ?? 360)}°`
     case 'sketch.loft':
       return `${p.operation === 'cut' ? 'Loft cut' : 'Loft'}, ${p.profiles.length} profiles`
+    case 'sketch.sweep':
+      return p.operation === 'cut' ? 'Sweep cut' : 'Sweep'
     case 'subtract':
       return p.label
     case 'hollow':
