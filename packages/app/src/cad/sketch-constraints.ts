@@ -49,7 +49,27 @@ const namesAxis = (c: SketchConstraint): boolean => Object.values(c).some((v) =>
 
 const namesOrigin = (c: SketchConstraint): boolean => Object.values(c).some((v) => !!v && typeof v === 'object' && (v as { e?: number }).e === -1)
 
-export const pointKey = (r: SketchPointRef): string => ('seg' in r ? `${r.e}:${r.at}:${r.seg}` : `${r.e}:${r.at}`)
+export const pointKey = (r: SketchPointRef): string => (r.at === 'point' ? fitKey(r.e, r.seg, r.i) : 'seg' in r ? `${r.e}:${r.at}:${r.seg}` : `${r.e}:${r.at}`)
+
+/** A spline point's key: point `i` of segment `seg`, or of a closed spline loop (its start is point 0). */
+export const fitKey = (e: number, seg: number | undefined, i: number): string => (seg === undefined ? `${e}:point:${i}` : `${e}:point:${seg}:${i}`)
+
+/** Where spline point `j` of segment `k` of a chain is keyed: a smooth chain counts its start as point 0. */
+const chainFitKey = (i: number, e: Extract<Entity, { kind: 'chain' }>, k: number, j: number): string => (e.smooth ? fitKey(i, undefined, j + 1) : fitKey(i, k, j))
+
+/** The constraints that name a spline as a curve; splines take point constraints only. */
+export function splineCurveRefs(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): number[] {
+  return constraints.flatMap((c, k) =>
+    Object.values(c).some((v) => {
+      if (!v || typeof v !== 'object' || 'at' in v || !('seg' in v)) return false
+      const r = v as SketchCurveRef
+      const e = sketch[r.e]
+      return e?.kind === 'chain' && e.segs[r.seg]?.kind === 'spline'
+    })
+      ? [k]
+      : [],
+  )
+}
 export const curveKey = (r: SketchCurveRef): string => `${r.e}:${r.seg}`
 
 /** The solver sketch for a drawing and its constraints. */
@@ -77,6 +97,13 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
       const last = e.closed && k === e.segs.length - 1
       const to = last ? start : add(s.to, `${i}:to:${k}`)
       if (last) point.set(`${i}:to:${k}`, start)
+      if (s.kind === 'spline') {
+        // its points are free solver points with no curve between them: point constraints only
+        if (e.smooth) point.set(fitKey(i, undefined, 0), start)
+        s.points.forEach((q, j) => add(q, chainFitKey(i, e, k, j)))
+        from = to
+        return
+      }
       const arc = s.kind === 'arc' ? arcThrough(points[from]!, s.through, s.to) : null
       curve.set(`${i}:${k}`, entities.length)
       if (arc) {
@@ -155,6 +182,7 @@ export function fromSolver(sketch: readonly Entity[], solved: Pick<Solved, 'poin
       const a = from
       from = to
       if (s.kind === 'line') return { ...s, to }
+      if (s.kind === 'spline') return { ...s, to, points: s.points.map((q, j) => at(chainFitKey(i, e, k, j), q)) }
       const was = arcThrough(segStartOf(e, k), s.through, s.to)
       const c = was ? at(`${i}:arcCenter:${k}`, was.center) : null
       return { ...s, to, through: c && was ? arcMiddle(c, a, to, was.sweep > 0) : s.through }
@@ -202,11 +230,12 @@ export function curveStates(sketch: readonly Entity[], constraints: readonly Ske
       out.set(`${i}:0`, state([map.point.get(`${i}:center`)!], k))
       return
     }
-    e.segs.forEach((_, k) => {
+    e.segs.forEach((s, k) => {
       const a = map.point.get(k === 0 ? `${i}:start` : `${i}:to:${k - 1}`)!
       const b = map.point.get(`${i}:to:${k}`)!
       const c = map.point.get(`${i}:arcCenter:${k}`)
-      out.set(`${i}:${k}`, state(c === undefined ? [a, b] : [a, b, c]))
+      const fits = s.kind === 'spline' ? s.points.map((_, j) => map.point.get(chainFitKey(i, e, k, j))!) : []
+      out.set(`${i}:${k}`, state(c === undefined ? [a, b, ...fits] : [a, b, c]))
     })
   })
   return out
@@ -260,8 +289,11 @@ export function afterLoopChange(constraints: readonly SketchConstraint[], e: num
   return out
 }
 
-/** Constraints after chain `e` (of `n` segments) was turned round, so its points and segments count from the other end. */
-export function afterReverse(constraints: readonly SketchConstraint[], e: number, n: number): SketchConstraint[] {
+/**
+ * Constraints after chain `e` (of `n` segments) was turned round, so its points and segments count from the other end.
+ * `fits` is each segment's count of spline points, as it was.
+ */
+export function afterReverse(constraints: readonly SketchConstraint[], e: number, n: number, fits: readonly number[] = []): SketchConstraint[] {
   const flip = (r: unknown): unknown => {
     if (!r || typeof r !== 'object' || (r as { e?: number }).e !== e) return r
     const x = r as SketchPointRef | SketchCurveRef
@@ -269,6 +301,7 @@ export function afterReverse(constraints: readonly SketchConstraint[], e: number
       if (x.at === 'start') return { e, at: 'to', seg: n - 1 }
       if (x.at === 'to') return x.seg === n - 1 ? { e, at: 'start' } : { e, at: 'to', seg: n - 2 - x.seg }
       if (x.at === 'arcCenter') return { e, at: 'arcCenter', seg: n - 1 - x.seg }
+      if (x.at === 'point' && x.seg !== undefined) return { e, at: 'point', seg: n - 1 - x.seg, i: (fits[x.seg] ?? 0) - 1 - x.i }
       return x
     }
     return { e, seg: n - 1 - x.seg }
@@ -289,6 +322,12 @@ function pointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
   if (e.kind === 'circle') return r.at === 'center' ? e.center : null
   if (r.at === 'start') return e.start
   if (r.at === 'to') return e.segs[r.seg]?.to ?? null
+  if (r.at === 'point') {
+    const s = e.segs[r.seg ?? 0]
+    if (s?.kind !== 'spline') return null
+    if (r.seg === undefined) return e.smooth ? (r.i === 0 ? e.start : (s.points[r.i - 1] ?? null)) : null
+    return s.points[r.i] ?? null
+  }
   return null
 }
 
@@ -485,6 +524,7 @@ function middleOf(sketch: readonly Entity[], r: SketchCurveRef): V2 | null {
   const s = e.segs[r.seg]
   if (!s) return null
   if (s.kind === 'arc') return s.through
+  if (s.kind === 'spline' && s.points.length) return s.points[Math.floor(s.points.length / 2)]!
   const a = segStartOf(e, r.seg)
   return [(a[0] + s.to[0]) / 2, (a[1] + s.to[1]) / 2]
 }
