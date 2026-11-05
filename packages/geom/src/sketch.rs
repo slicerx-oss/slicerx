@@ -365,8 +365,8 @@ fn spline_points(
                 s,
                 IssueKind::ZeroLength,
                 format!(
-                    "Loop {name}: {what} has the same point twice in a row (point {}).",
-                    j + 1
+                    "Loop {name}: {what} has the same point twice in a row ({}).",
+                    point_name(s, j, n)
                 ),
                 Some(pts[i]),
             ));
@@ -375,13 +375,23 @@ fn spline_points(
     Ok(pts.to_vec())
 }
 
+// a segment's spline runs from the segment's start through its points to its end; a closed loop's points count from 1
+fn point_name(s: Option<usize>, j: usize, n: usize) -> String {
+    match s {
+        None => format!("point {}", j + 1),
+        Some(_) if j == 0 => "its start".to_string(),
+        Some(_) if j + 1 == n => "its end".to_string(),
+        Some(_) => format!("its point {j}"),
+    }
+}
+
 fn too_dense(l: usize, s: Option<usize>, d: sketch_spline::Dense, at: V2) -> Issue {
     let name = l + 1;
     let message = match (d, s) {
         (sketch_spline::Dense::Span(k), Some(s)) => format!(
-            "Loop {name}: spline segment {} bends too sharply after its point {} to draw within {} mm; spread its points out.",
+            "Loop {name}: spline segment {} bends too sharply after {} to draw within {} mm; spread its points out.",
             s + 1,
-            k + 1,
+            point_name(Some(s), k, usize::MAX),
             sketch_spline::TOL_MM
         ),
         (sketch_spline::Dense::Span(k), None) => format!(
@@ -483,16 +493,16 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
         });
     }
     if lp.kind.as_deref() == Some("spline") {
-        let pts = spline_points(l, None, &lp.points, true)?;
-        if pts.len() < 3 {
+        if lp.points.len() < 3 {
             return Err(issue(
                 l,
                 None,
                 IssueKind::TooSmall,
                 format!("Loop {name}: a closed spline needs 3 or more points."),
-                pts.first().copied(),
+                lp.points.first().copied(),
             ));
         }
+        let pts = spline_points(l, None, &lp.points, true)?;
         let mut ring =
             sketch_spline::flatten_all(&pts, true, RING_POINTS).map_err(|d| too_dense(l, None, d, pts[0]))?;
         ring.rotate_right(1);
@@ -661,6 +671,10 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                         Some(pos),
                     ));
                 };
+                // every span takes a step at least, so too many points is refused before any are copied
+                if sg.points.len() >= RING_POINTS.saturating_sub(pts.len()) {
+                    return Err(too_dense(l, Some(s), sketch_spline::Dense::Budget, pos));
+                }
                 let mut through = vec![pos];
                 through.extend(&sg.points);
                 through.push(to);
@@ -838,7 +852,8 @@ fn rings_of(loops: &[Loop], issues: &mut Vec<Issue>) -> Vec<(usize, Ring)> {
             continue;
         }
         let r = flatten(l, lp);
-        if let Ok(r) = &r {
+        // only splines can multiply their points, so plain rings stay within what the tools accept
+        if let (Ok(r), true) = (&r, has_spline(lp)) {
             total += r.pts.len();
             if total > SKETCH_POINTS {
                 issues.push(issue(

@@ -182,7 +182,7 @@ A loop is closed when its last segment ends within 0.001 mm of `start`. Loops in
 - `polygons`: the filled region (Polygon[]),
 - `areaMm2`,
 - `loops`: per loop `{index, role: "outer" | "hole", areaMm2, lengthMm}`,
-- `issues`: `{loop, segment, kind, message, at?}`. `loop` and `segment` count from 0; the message counts from 1 for people, for example "Loop 1: segment 4 crosses segment 2." Kinds: `open`, `zeroLength`, `selfCrossing`, `loopsCross`, `badArc`, `tooSmall`.
+- `issues`: `{loop, segment, kind, message, at?}`. `loop` and `segment` count from 0; the message counts from 1 for people, for example "Loop 1: segment 4 crosses segment 2." Kinds: `open`, `zeroLength`, `selfCrossing`, `loopsCross`, `badArc`, `tooSmall`, `tooDense` (a spline that bends too sharply to draw within 0.005 mm, with its segment, or a loop or sketch past its point budget once drawn).
 
 It does not throw for bad geometry, only for a request it cannot read.
 
