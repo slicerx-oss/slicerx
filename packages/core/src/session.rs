@@ -6538,12 +6538,7 @@ impl SliceSession {
         const SHOWN: usize = 3;
         let arachne = cfg.arachne_walls();
         let min_mm = if arachne {
-            let v = match cfg.raw.get("min_feature_size") {
-                Some(serde_json::Value::Number(n)) => n.as_f64(),
-                Some(serde_json::Value::String(t)) => t.trim().trim_end_matches('%').trim().parse().ok(),
-                _ => None,
-            };
-            v.unwrap_or(25.0) / 100.0 * cfg.nozzle_diameter
+            cfg.raw_number("min_feature_size", 25.0) / 100.0 * cfg.nozzle_diameter
         } else {
             cfg.outer_wall_width()
         };
