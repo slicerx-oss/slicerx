@@ -26,10 +26,10 @@ export function pointAt(sketch: Sketch, r: SketchPointRef): V2 | null {
   if (r.at === 'start') return e.start
   if (r.at === 'to') return e.segs[r.seg]?.to ?? null
   if (r.at === 'point') {
-    // a smooth chain's point 0 is its start
     const s = e.segs[r.seg ?? 0]
-    if (s?.kind !== 'spline') return null
-    if (r.seg === undefined) return e.smooth ? (r.i === 0 ? e.start : (s.points[r.i - 1] ?? null)) : null
+    // a smooth chain's points go by i alone, a segment's by seg and i
+    if (s?.kind !== 'spline' || (r.seg === undefined) !== !!e.smooth || !Number.isInteger(r.i)) return null
+    if (r.seg === undefined) return r.i === 0 ? e.start : (s.points[r.i - 1] ?? null)
     return s.points[r.i] ?? null
   }
   if (r.at === 'arcCenter') {
