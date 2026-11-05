@@ -58,15 +58,9 @@ pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
     let tangents: Vec<V3> = (0..m - 1)
         .map(|k| vec3::normalize(vec3::sub(pts[k + 1], pts[k])).unwrap_or([0.0, 0.0, 1.0]))
         .collect();
-    let facing = vec3::dot(frame.w, t_start);
-    if facing.abs() < MIN_START_DEG.to_radians().m_sin() {
-        return Err(Error::invalid(
-            "profile",
-            format!(
-                "the profile's plane is parallel to the path where the path starts (within {MIN_START_DEG} degree); turn the profile to face along the path"
-            ),
-        ));
-    }
+    let facing = across(t_start, frame.w, 0.0)?;
+    // the side lines leave along the first chord, which a flattened arc turns from its own start
+    across(tangents[0], frame.w, facing)?;
     // every ring winds counterclockwise about the way the sweep goes
     if facing < 0.0 {
         flat.reverse();
@@ -116,6 +110,7 @@ pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
     let tail = |v: V3| turned(v, last, t_end);
     let (fo, fu, fv, fw) = (tail(fo), tail(fu), tail(fv), tail(fw));
     let end_origin = vec3::add(pts[m - 1], fo);
+    across(last, fw, facing)?;
     rings.push(onto(&offs, pts[m - 1], last, end_origin, fw));
 
     sides_forward(&rings, &pts, &tangents, eps)?;
@@ -166,6 +161,21 @@ fn sides_forward(rings: &[Vec<V3>], pts: &[V3], tangents: &[V3], eps: f64) -> Re
         }
     }
     Ok(())
+}
+
+/// How far `dir` runs across the plane facing `normal`. Fails when that is within `MIN_START_DEG` of along the plane,
+/// or the other way from `side` (any way when `side` is 0).
+fn across(dir: V3, normal: V3, side: f64) -> Result<f64> {
+    let d = vec3::dot(dir, normal);
+    if d.abs() < MIN_START_DEG.to_radians().m_sin() || d * side < 0.0 {
+        return Err(Error::invalid(
+            "profile",
+            format!(
+                "the profile's plane is parallel to the path where the path starts (within {MIN_START_DEG} degree); turn the profile to face along the path"
+            ),
+        ));
+    }
+    Ok(d)
 }
 
 /// The points where the side lines through `at + offs[j]` along `dir` meet the plane through `origin` facing `normal`.
@@ -530,6 +540,72 @@ mod tests {
         );
     }
 
+    /// How many positions of `m` lie on the plane through `at` facing `normal`, within `reach` of `at`.
+    fn on_plane(m: &TriMesh, at: V3, normal: V3, reach: f64) -> usize {
+        m.positions
+            .iter()
+            .filter(|&&p| {
+                let d = vec3::sub(p, at);
+                vec3::dot(d, normal).abs() < 1e-9 && vec3::len(d) < reach
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_clockwise_quarter_arc_keeps_both_caps_square() {
+        // a 10 mm circle at x = 20, facing -y, carried clockwise round the origin to y = -20
+        let (r, big) = (5.0, 20.0);
+        let f = FaceFrame::for_normal([big, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let m = sweep(
+            &on(f, circle([0.0, 0.0], 2.0 * r)),
+            &chain([big, 0.0], vec![arc([0.0, 0.0], -90.0)]),
+        )
+        .unwrap();
+        closed(&m);
+        let ring = sketch::circle_steps(r);
+        let n = sketch::circle_steps(big) / 4;
+        let exact = ngon(ring, r) * 2.0 * big * (PI / 4.0 / n as f64).m_sin() * n as f64;
+        assert!(
+            (m.volume() - exact).abs() < 1e-6 * exact,
+            "{} vs {exact}",
+            m.volume()
+        );
+        // the start cap is the profile on y = 0, the end cap lies on x = 0
+        assert_eq!(on_plane(&m, [20.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.0), ring);
+        assert_eq!(on_plane(&m, [0.0, -20.0, 0.0], [1.0, 0.0, 0.0], 6.0), ring);
+    }
+
+    #[test]
+    fn clockwise_arcs_at_both_ends_of_a_chain_keep_the_caps_square() {
+        // clockwise round the origin to (0, -20), a line to (-10, -20), then clockwise round (-10, -10) to (-20, -10)
+        let r = 5.0;
+        let f = FaceFrame::for_normal([20.0, 0.0, 0.0], [0.0, -1.0, 0.0]).unwrap();
+        let path = chain(
+            [20.0, 0.0],
+            vec![
+                arc([0.0, 0.0], -90.0),
+                line([-10.0, -20.0]),
+                arc([-10.0, -10.0], -90.0),
+            ],
+        );
+        let m = sweep(&on(f, circle([0.0, 0.0], 2.0 * r)), &path).unwrap();
+        closed(&m);
+        let ring = sketch::circle_steps(r);
+        assert_eq!(on_plane(&m, [20.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.0), ring);
+        // the end arrives going +y, so its cap lies on y = -10
+        assert_eq!(on_plane(&m, [-20.0, -10.0, 0.0], [0.0, 1.0, 0.0], 6.0), ring);
+        let quarter = |big: f64| {
+            let n = sketch::circle_steps(big) / 4;
+            2.0 * big * (PI / 4.0 / n as f64).m_sin() * n as f64
+        };
+        let exact = ngon(ring, r) * (quarter(20.0) + 10.0 + quarter(10.0));
+        assert!(
+            (m.volume() - exact).abs() < 1e-6 * exact,
+            "{} vs {exact}",
+            m.volume()
+        );
+    }
+
     #[test]
     fn the_profile_does_not_twist_along_a_path_in_space() {
         // a bent path that leaves its plane: the profile turns only as the path turns
@@ -670,6 +746,16 @@ mod tests {
         assert_eq!(
             err(&sq, &points(&[[0.0, 0.0, 0.0], [0.0, 0.0, 5.0], [0.0, 0.0, 5.0]])),
             "path: point 3 is on the point before it"
+        );
+        // facing 1.5 degrees across the arc's own start, but only 0.25 degrees across its first chord
+        let a = 1.5f64.to_radians();
+        let f = FaceFrame::for_normal([20.0, 0.0, 0.0], [a.m_cos(), a.m_sin(), 0.0]).unwrap();
+        assert_eq!(
+            err(
+                &on(f, circle([0.0, 0.0], 10.0)),
+                &chain([20.0, 0.0], vec![arc([0.0, 0.0], 10.0)]),
+            ),
+            "profile: the profile's plane is parallel to the path where the path starts (within 1 degree); turn the profile to face along the path"
         );
         // a 10 mm circle round a 3 mm bend: the inside sides would cross
         let f = FaceFrame::for_normal([3.0, 0.0, 0.0], [0.0, 1.0, 0.0]).unwrap();
