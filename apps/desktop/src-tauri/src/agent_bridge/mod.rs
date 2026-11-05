@@ -358,7 +358,7 @@ pub fn openable(path: &Path) -> Result<(), ToolError> {
     if !crate::opened::wanted(path) {
         return Err(ToolError::new(
             "invalid_input",
-            "the app opens STL, 3MF, SX3MF, SXLOCK, G-code, OBJ, AMF and STEP files",
+            "the app opens STL, 3MF, SX3MF, SXLOCK, G-code, OBJ, AMF, STEP and IGES files",
         ));
     }
     Ok(())
@@ -541,6 +541,15 @@ mod tests {
         std::fs::write(&text, b"hi").unwrap();
         assert!(openable(&model).is_ok());
         assert_eq!(openable(&text).unwrap_err().code, "invalid_input");
+        assert!(
+            openable(&text)
+                .unwrap_err()
+                .message
+                .contains("STEP and IGES files")
+        );
+        let iges = dir.join("part.igs");
+        std::fs::write(&iges, b"S0000001").unwrap();
+        assert!(openable(&iges).is_ok());
         assert_eq!(openable(&dir.join("missing.stl")).unwrap_err().code, "not_found");
         assert_eq!(openable(Path::new("cube.stl")).unwrap_err().code, "invalid_input");
         assert_eq!(openable(&dir).unwrap_err().code, "not_found");

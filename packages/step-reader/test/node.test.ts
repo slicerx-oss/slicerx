@@ -105,6 +105,8 @@ describe('IGES files in a worker thread', () => {
     writeFileSync(path, file('bracket-inch.iges'))
     expect((await readStepFileInWorker(path, { name: 'bracket.iges' })).unit).toBe('inch')
     await expect(readStepFileInWorker(path, { name: 'bracket.iges', maxInputMb: 0.01 })).rejects.toMatchObject({ code: 'too_large', message: 'is 0 MB. IGES files up to 0.01 MB can be opened.' })
+    // Without a name, the path's own name says it is IGES.
+    await expect(readStepFileInWorker(path, { maxInputMb: 0.01 })).rejects.toMatchObject({ code: 'too_large', message: 'is 0 MB. IGES files up to 0.01 MB can be opened.' })
   })
 
   it('stops an IGES read at its deadline and at the memory cap', async () => {

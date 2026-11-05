@@ -127,6 +127,23 @@ describe('reading IGES files', () => {
     expect(toObj(readIges(occt, Uint8Array.from([0xef, 0xbb, 0xbf, ...file('assembly.igs')]), 'a.igs'))).toBe(plain)
   })
 
+  it('reads a file of records without line breaks that ends in a newline, with its unit', () => {
+    const flat = new TextDecoder('latin1').decode(file('bracket-inch.iges')).replace(/\r?\n/g, '')
+    for (const end of ['\n', '\r\n']) {
+      const bytes = text(flat + end)
+      expect(igesUnit(bytes)).toBe('inch')
+      const read = readIges(occt, bytes, 'bracket-inch.iges')
+      expect(read.unit).toBe('inch')
+      expect(read.notes[0]).toBe('Converted from inches to millimeters.')
+    }
+  })
+
+  it('names objects without the extension when the name and the bytes disagree', () => {
+    expect(readCad(occt, file('assembly.igs'), 'assembly.step').objects.map((o) => o.name)).toEqual(['assembly', 'cube'])
+    expect(readCad(occt, file('bracket-inch.iges'), 'model.step').objects.map((o) => o.name)).toEqual(['model'])
+    expect(readCad(occt, file('bracket-inch.stp'), 'bracket.igs').objects.map((o) => o.name)).toEqual(['bracket'])
+  })
+
   it('reads the same through readCad and a loaded reader, whatever the file is called', async () => {
     const want = toObj(readIges(occt, file('assembly.igs'), 'assembly.igs'))
     expect(toObj(readCad(occt, file('assembly.igs'), 'assembly.igs'))).toBe(want)
