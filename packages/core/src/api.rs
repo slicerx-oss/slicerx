@@ -35,6 +35,7 @@ pub use crate::config::{GcodeFlavor, InfillPattern, PrintConfig};
 pub use crate::error::{Error, Result};
 pub use crate::gcode::{EmitOptions, GcodeStats, emit_gcode, emit_gcode_with};
 pub use crate::mesh::{Mesh, MeshPart, Placement};
+pub use crate::nozzles::{auto_map_warning, tower_one_height};
 pub use crate::output::{
     Feature, LayerPaths, PathInfo, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode,
 };
@@ -398,9 +399,8 @@ pub struct ObjectSpec {
     /// as `mesh`. They take the object's transform unless they carry their own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<VolumeSpec>,
-    /// Setting overrides for this object, Orca keys. The engine slices the
-    /// plate with one config, so every object must carry the same overrides
-    /// (or the plate has one object); differing ones are an error.
+    /// Setting overrides for this object, setting keys. Objects may differ: each one whose settings differ from the
+    /// others' is sliced with its own.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub settings: BTreeMap<String, serde_json::Value>,
     /// Painted brim ears for `brim_type` = `painted`: x, y, z in the space of `mesh` (z at or under the
@@ -769,7 +769,7 @@ fn collision_plate(
 
 /// The filaments one object's features printed with, read from the sliced paths: what the slice resolved each
 /// feature to after the plate's, the object's, its parts' and modifiers' settings, height ranges and paint.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureFilaments {
     /// The object's id in the request.
@@ -779,6 +779,10 @@ pub struct FeatureFilaments {
     /// the rest), with the filament slots its paths printed with, 1-based and ascending. A feature a height range
     /// or a modifier moves to another filament lists both.
     pub features: BTreeMap<String, Vec<u8>>,
+    /// The size of the nozzle the object printed with, mm, on a printer whose nozzles are of different sizes; absent
+    /// when they are all one size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nozzle_mm: Option<f64>,
 }
 
 /// The filaments each object's features print with, gathered from the sliced paths range by range.
@@ -815,13 +819,27 @@ impl FeatureUse {
         }
     }
 
-    fn report(&self) -> Vec<FeatureFilaments> {
+    fn report(&self, config: &PrintConfig) -> Vec<FeatureFilaments> {
+        let sized = crate::nozzles::per_nozzle(config);
         self.objects
             .iter()
             .zip(&self.used)
             .map(|((id, name), used)| FeatureFilaments {
                 object: id.clone(),
                 name: name.clone(),
+                nozzle_mm: sized
+                    .then(|| {
+                        // An object prints with one nozzle size: any filament it printed with names it.
+                        let slot = (0..=254u8).find(|&t| {
+                            used.iter().any(|words| {
+                                words
+                                    .get(usize::from(t / 64))
+                                    .is_some_and(|w| w >> (t % 64) & 1 == 1)
+                            })
+                        })?;
+                        Some(crate::nozzles::nozzle_of_slot(config, slot + 1).mm)
+                    })
+                    .flatten(),
                 features: Feature::ALL
                     .iter()
                     .zip(used)
@@ -2082,11 +2100,8 @@ pub fn check_plate(
     let timer = crate::platform::Timer::start();
     let (config, issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
-    let lone = match plate.objects.as_slice() {
-        [o] => o.settings.clone(),
-        _ => serde_json::Value::Null,
-    };
-    let (config, _) = with_lone_settings(config, issues, &lone)?;
+    let (lone, lone_nozzle) = lone_of(&plate, &config)?;
+    let (config, _) = with_lone_settings(config, issues, &lone, lone_nozzle)?;
     let (session, _) = plan_session(req, &plate, &config)?;
     let zones = crate::collide::plate::zones(&config)
         .iter()
@@ -2324,8 +2339,11 @@ pub struct Prepared {
     session: SliceSession,
     /// A lone object's own settings, which are the plate's (see [`with_lone_settings`]); null otherwise.
     lone_settings: serde_json::Value,
-    /// Each object's own settings from its file and the request, by name ([`object_setting_issues`]).
-    object_settings: Vec<(String, serde_json::Value)>,
+    /// The extruder whose nozzle a lone object prints with when it is not the first one's size.
+    lone_nozzle: Option<usize>,
+    /// Each object's own settings from its file and the request, by name, with the extruder whose nozzle it prints
+    /// with when that is not the first one's size ([`object_setting_issues`]).
+    object_settings: Vec<(String, serde_json::Value, Option<usize>)>,
 }
 
 impl Prepared {
@@ -2364,11 +2382,8 @@ pub fn prepare_with(
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_PLATE);
-    let lone_settings = match plate.objects.as_slice() {
-        [o] => o.settings.clone(),
-        _ => serde_json::Value::Null,
-    };
-    let (config, _) = with_lone_settings(config, issues, &lone_settings)?;
+    let (lone_settings, lone_nozzle) = lone_of(&plate, &config)?;
+    let (config, _) = with_lone_settings(config, issues, &lone_settings, lone_nozzle)?;
     let session = build_session_with(req, &plate, &config, progress)?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
@@ -2378,11 +2393,18 @@ pub fn prepare_with(
         .objects
         .iter()
         .filter(|o| !o.settings.is_null())
-        .map(|o| (o.name.clone(), o.settings.clone()))
-        .collect();
+        .map(|o| {
+            Ok((
+                o.name.clone(),
+                o.settings.clone(),
+                crate::session::object_nozzle(o, &config)?,
+            ))
+        })
+        .collect::<Result<_>>()?;
     Ok(Prepared {
         session,
         lone_settings,
+        lone_nozzle,
         object_settings,
     })
 }
@@ -2394,7 +2416,12 @@ fn with_lone_settings(
     mut config: PrintConfig,
     mut config_issues: Vec<crate::preflight::Issue>,
     lone_settings: &serde_json::Value,
+    lone_nozzle: Option<usize>,
 ) -> Result<(PrintConfig, Vec<crate::preflight::Issue>)> {
+    // A lone object on a nozzle of another size than the first prints the plate with that nozzle's settings.
+    if let Some(e) = lone_nozzle {
+        config = config.for_nozzle(e)?;
+    }
     if !lone_settings.is_null() {
         // As the request's own settings go in: a value the engine cannot use leaves that setting as the config has it.
         config.apply_value_lenient(lone_settings)?;
@@ -2408,17 +2435,30 @@ fn with_lone_settings(
     Ok((config, config_issues))
 }
 
-/// The values in objects' own settings (`(name, settings)` each) that the engine cannot use over `config`, each with
+/// A lone object's own settings and the extruder whose nozzle it prints with when not the first one's size; null and
+/// none when the plate has several objects.
+fn lone_of(plate: &Plate, config: &PrintConfig) -> Result<(serde_json::Value, Option<usize>)> {
+    Ok(match plate.objects.as_slice() {
+        [o] => (o.settings.clone(), crate::session::object_nozzle(o, config)?),
+        _ => (serde_json::Value::Null, None),
+    })
+}
+
+/// The values in objects' own settings (`(name, settings, nozzle)` each) that the engine cannot use over `config`
+/// (over its nozzle's settings when it prints with another size than the first), each with
 /// its object's name; each object then slices with the rest of its settings. With `listed` false the first refuses the
 /// slice instead, naming the key and the object, as a value in the request's config does ([`request_config_report`]).
 pub fn object_setting_issues(
     config: &PrintConfig,
-    objects: &[(String, serde_json::Value)],
+    objects: &[(String, serde_json::Value, Option<usize>)],
     listed: bool,
 ) -> Result<Vec<crate::config::ConfigIssue>> {
     let mut out = Vec::new();
-    for (name, settings) in objects {
-        let mut c = config.clone();
+    for (name, settings, nozzle) in objects {
+        let mut c = match nozzle {
+            Some(e) => config.for_nozzle(*e)?,
+            None => config.clone(),
+        };
         if listed {
             for mut issue in c.apply_value_lenient(settings)? {
                 issue.object = Some(name.clone());
@@ -2470,8 +2510,12 @@ fn run_prepared_timed(
             reason: config_report.lines().join("; "),
         });
     }
-    let (mut config, mut config_issues) =
-        with_lone_settings(config, config_issues, &held.get().lone_settings)?;
+    let (mut config, mut config_issues) = with_lone_settings(
+        config,
+        config_issues,
+        &held.get().lone_settings,
+        held.get().lone_nozzle,
+    )?;
     let session = &held.get().session;
     if !config.variant_sources.is_empty() {
         config = session.mapped_config(&config).into_owned();
@@ -2651,10 +2695,17 @@ fn run_prepared_timed(
             report.warnings.push(w.clone());
         }
     }
+    if let Some(message) = crate::nozzles::auto_map_warning(&config) {
+        report.warnings.push(SliceWarning {
+            code: WarningCode::UnsupportedSetting,
+            message,
+            layer: None,
+        });
+    }
     if !config_report.is_empty() || config_report.walls.is_some() || !config_report.warnings.is_empty() {
         report.config_report = Some(config_report);
     }
-    report.feature_filaments = feature_use.report();
+    report.feature_filaments = feature_use.report(&config);
     if want_preview {
         let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
         run.preview = if refs.len() == 1 {
@@ -3130,7 +3181,7 @@ mod tests {
         let (config, issues) = request_config_checked(&req).unwrap();
         let plate = build_plate(&req, &|_| Ok(mesh.clone())).unwrap();
         let lone = plate.objects[0].settings.clone();
-        let (config, _) = with_lone_settings(config, issues, &lone).unwrap();
+        let (config, _) = with_lone_settings(config, issues, &lone, None).unwrap();
         let (session, _) = plan_session(&req, &plate, &config).unwrap();
         assert_eq!(session.layer_tops().len(), 50);
         assert_eq!((session.tool_after(24), session.tool_after(25)), (2, 4));

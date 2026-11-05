@@ -2136,6 +2136,47 @@ impl PrintConfig {
         self.for_extruder(crate::nozzles::extruder_of_slot(self, slot))
     }
 
+    /// This config for an object printed with extruder `e`'s nozzle on a printer whose nozzles differ in size
+    /// ([`crate::nozzles::nozzle_of_object`]): the nozzle size is `e`'s, and the line widths and the layer height take
+    /// `e`'s entry where the settings give one per extruder, so automatic and percent widths follow its nozzle. The
+    /// layer height limits (`min_layer_height`, `max_layer_height`) are `e`'s too. A width or layer height given as one
+    /// number applies to every nozzle as given. The printer's per-extruder lists (sizes, speeds, retraction) stay
+    /// whole: the paths still read their filament's extruder from them.
+    pub fn for_nozzle(&self, e: usize) -> Result<Self> {
+        let n = crate::nozzles::extruders(self);
+        let mut c = self.clone();
+        c.nozzle_diameter = crate::nozzles::size_of(self, e);
+        let pick = |v: &Value| match v {
+            Value::Array(a) if a.len() == n => a.get(e).cloned().unwrap_or(Value::Null),
+            other => other.clone(),
+        };
+        let own: serde_json::Map<String, Value> = NOZZLE_KEYS
+            .iter()
+            .filter_map(|&k| Some((k.to_owned(), pick(self.raw.get(k)?))))
+            .collect();
+        c.apply_flat_value(&Value::Object(own))?;
+        c.check_layer_height()?;
+        Ok(c)
+    }
+
+    /// The line widths, by key, that [`Self::for_nozzle`]'s object prints with and that were set as a length (not
+    /// automatic or a percent of the nozzle) far from its nozzle: under 0.6 or over 2 times its size.
+    pub(crate) fn widths_far_from_nozzle(&self) -> Vec<(&'static str, f64)> {
+        let d = self.nozzle_diameter;
+        NOZZLE_KEYS
+            .iter()
+            .filter(|k| k.ends_with("line_width"))
+            .filter_map(|&k| {
+                let v = self.raw.get(k)?;
+                let set = num(v).filter(|w| *w > 0.0)?;
+                if first_text(v).is_some_and(|t| t.trim().ends_with('%')) {
+                    return None;
+                }
+                (set < 0.6 * d - 1e-9 || set > 2.0 * d + 1e-9).then_some((k, set))
+            })
+            .collect()
+    }
+
     /// This config as filament `slot` prints it: each retraction setting the filament overrides
     /// ([`FILAMENT_OVERRIDES`]) replaces the printer's value. Borrowed when the filament overrides nothing.
     pub fn for_filament(&self, slot: u8) -> std::borrow::Cow<'_, PrintConfig> {
@@ -2825,6 +2866,27 @@ pub const DEFAULT_DENSITY: f64 = 1.24;
 /// Automatic line width as a multiple of the nozzle diameter.
 pub const AUTO_WIDTH_RATIO: f64 = 1.125;
 
+/// What [`PrintConfig::for_nozzle`] reads per nozzle: the layer height limits, the layer height and the line widths.
+const NOZZLE_KEYS: [&str; 17] = [
+    "min_layer_height",
+    "max_layer_height",
+    "layer_height",
+    "line_width",
+    "outer_wall_line_width",
+    "inner_wall_line_width",
+    "sparse_infill_line_width",
+    "internal_solid_infill_line_width",
+    "top_surface_line_width",
+    "support_line_width",
+    "initial_layer_line_width",
+    "initial_layer_outer_wall_line_width",
+    "initial_layer_inner_wall_line_width",
+    "initial_layer_sparse_infill_line_width",
+    "initial_layer_internal_solid_infill_line_width",
+    "initial_layer_top_surface_line_width",
+    "initial_layer_support_line_width",
+];
+
 /// What a width of 0 means for the top surface: the nozzle diameter itself (Orca's and Bambu
 /// Studio's `Flow::auto_extrusion_width`).
 pub const AUTO_NOZZLE_WIDTH_RATIO: f64 = 1.0;
@@ -3057,6 +3119,61 @@ pub(crate) fn athena_spacing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn for_nozzle_takes_its_nozzles_size_widths_and_layer_height() {
+        use serde_json::json;
+        let c = PrintConfig::from_value(&json!({
+            "nozzle_diameter": [0.4, 0.6],
+            "line_width": "0",
+            "outer_wall_line_width": "110%",
+            "inner_wall_line_width": [0.45, 0.62],
+            "top_surface_line_width": 0.42,
+            "layer_height": [0.2, 0.3],
+            "max_layer_height": [0.28, 0.42],
+        }))
+        .unwrap();
+        let n = c.for_nozzle(1).unwrap();
+        assert!((n.nozzle_diameter - 0.6).abs() < 1e-9);
+        assert!((n.line_width - 0.675).abs() < 1e-9, "{}", n.line_width);
+        assert!((n.feature_widths.outer_wall.unwrap() - 0.66).abs() < 1e-9);
+        assert!((n.feature_widths.inner_wall.unwrap() - 0.62).abs() < 1e-9);
+        // A width set as one length is that length on every nozzle.
+        assert!((n.feature_widths.top_surface.unwrap() - 0.42).abs() < 1e-9);
+        assert!((n.layer_height - 0.3).abs() < 1e-9);
+        assert!((n.raw_number("max_layer_height", 0.0) - 0.42).abs() < 1e-9);
+        // The printer's per-extruder sizes stay whole for the paths.
+        assert_eq!(n.raw.get("nozzle_diameter"), Some(&json!([0.4, 0.6])));
+        // The first nozzle is the plate's settings.
+        let f = c.for_nozzle(0).unwrap();
+        assert!((f.nozzle_diameter - 0.4).abs() < 1e-9 && (f.layer_height - 0.2).abs() < 1e-9);
+        assert!((f.line_width - c.line_width).abs() < 1e-12);
+    }
+
+    #[test]
+    fn for_nozzle_refuses_a_layer_taller_than_its_nozzle() {
+        use serde_json::json;
+        let c = PrintConfig::from_value(&json!({"nozzle_diameter": [0.6, 0.25], "layer_height": [0.3, 0.3]}))
+            .unwrap();
+        let e = c.for_nozzle(1).unwrap_err().to_string();
+        assert!(e.contains("0.25 mm nozzle"), "{e}");
+    }
+
+    #[test]
+    fn widths_far_from_the_nozzle_are_the_lengths_set_by_hand() {
+        use serde_json::json;
+        let c = PrintConfig::from_value(&json!({
+            "nozzle_diameter": [0.4, 0.8],
+            "line_width": "0",
+            "outer_wall_line_width": 0.42,
+            "inner_wall_line_width": "150%",
+            "sparse_infill_line_width": 1.0,
+        }))
+        .unwrap()
+        .for_nozzle(1)
+        .unwrap();
+        assert_eq!(c.widths_far_from_nozzle(), vec![("outer_wall_line_width", 0.42)]);
+    }
 
     #[test]
     fn per_extruder_values_read_their_first_slot() {
