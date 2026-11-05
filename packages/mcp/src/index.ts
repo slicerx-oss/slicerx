@@ -32,6 +32,7 @@ import { mimirBrainTools } from './mimir-brain'
 import { mimirRunTools } from './mimir-run'
 import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
+import { appPresetTools } from './app-presets'
 import { appUiTools } from './app-ui'
 import { appSketchTools } from './app-sketch'
 import { appModelPushTools } from './app-model-push'
@@ -254,7 +255,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
   // The first tool of a name is the one served, so the extra tools go first and replace base tools of the same name.
   // Listed last, they lost to the CAD tools the server adds only when it finds sx-geom, so they worked on some machines.
-  const tools = [...(opts.extraTools ?? []), ...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...ui, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...vault].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...(opts.extraTools ?? []), ...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...ui, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...appPresetTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...vault].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
