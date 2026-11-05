@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { Kinematics, PrinterModel } from '../types.ts'
-import { FIND_KLIPPER, FIND_QIDI, find, rect, round } from './util.ts'
+import { FIND_KLIPPER, FIND_QIDI, QIDI_WEB_UI, find, rect, round } from './util.ts'
 
 /** Nozzle sizes offered for Voron builds. */
 const VORON_NOZZLES = [0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0]
@@ -31,7 +31,7 @@ const klipper = (m: Omit<PrinterModel, 'connections' | 'nozzleCount' | 'defaultN
 
 /** A QIDI printer on stock firmware, with the nozzles OrcaSlicer has profiles for. */
 const qidi = (id: string, name: string, buildVolume: PrinterModel['buildVolume']): PrinterModel =>
-  klipper({ id, brand: 'qidi', name, kinematics: 'corexy', enclosed: true, buildVolume, nozzles: [0.2, 0.4, 0.6, 0.8], find: FIND_QIDI })
+  klipper({ id, brand: 'qidi', name, kinematics: 'corexy', enclosed: true, buildVolume, nozzles: [0.2, 0.4, 0.6, 0.8], find: FIND_QIDI, webUi: QIDI_WEB_UI })
 
 export const KLIPPER: PrinterModel[] = [
   voron('voron-0.1', 'Voron 0.1', 'corexy', 120, 120, 120),
@@ -51,6 +51,7 @@ export const KLIPPER: PrinterModel[] = [
     buildVolume: rect(245, 245, 240),
     nozzles: [0.4, 0.6],
     find: FIND_QIDI,
+    webUi: QIDI_WEB_UI,
   }),
   klipper({
     id: 'qidi-x-plus-4',
@@ -61,6 +62,7 @@ export const KLIPPER: PrinterModel[] = [
     buildVolume: rect(305, 305, 280),
     nozzles: [0.4, 0.6],
     find: FIND_QIDI,
+    webUi: QIDI_WEB_UI,
   }),
   // Build volumes from OrcaSlicer 2.4.2's QIDI machine profiles (printable_area, printable_height).
   qidi('qidi-x-max-3', 'X-Max 3', rect(325, 325, 315)),

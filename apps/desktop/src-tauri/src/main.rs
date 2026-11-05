@@ -36,6 +36,8 @@ mod pairdoc;
 mod platform;
 mod prefs;
 mod presets;
+#[cfg(feature = "connect")]
+mod printer_page;
 mod probe;
 mod recover;
 mod slicing;
@@ -203,6 +205,8 @@ fn main() {
             pairdoc::pair_doc_write,
             #[cfg(feature = "connect")]
             bambu_connect::bambu_connect_open,
+            #[cfg(feature = "connect")]
+            printer_page::printer_page_open,
             #[cfg(feature = "connect")]
             firewall::firewall_inbound,
             #[cfg(feature = "connect")]

@@ -102,3 +102,17 @@ it('shows the job stage with the job, not as a problem', async () => {
   expect(screen.getByTestId('printer-job-stage')).toHaveTextContent('Calibrating flow dynamics')
   expect(screen.queryByTestId('printer-message')).toBeNull()
 })
+
+// A printer that serves its own web page links to it; it opens in the phone's browser. Bambu Lab printers serve none.
+it('opens the web interface of a printer that has one, and offers none otherwise', async () => {
+  const openUrl = jest.fn()
+  const voron = { ...idle, info: { ...idle.info, vendor: 'Voron', model: 'Voron 2.4 350', plugin: 'moonraker', host: '192.168.1.20' } }
+  const { rerender } = await render(<PrinterDetailScreen {...props({ printer: voron, openUrl })} />)
+  expect(screen.getByText('http://192.168.1.20/')).toBeOnTheScreen()
+  await fireEvent.press(screen.getByTestId('open-web-ui'))
+  expect(openUrl).toHaveBeenCalledWith('http://192.168.1.20/')
+  await rerender(<PrinterDetailScreen {...props({ printer: { ...voron, info: { ...voron.info, host: 'printer.example.com' } }, openUrl })} />)
+  expect(screen.queryByTestId('open-web-ui')).toBeNull()
+  await rerender(<PrinterDetailScreen {...props({ printer: { ...idle, info: { ...idle.info, plugin: 'bambu-lan', host: '192.168.1.21' } }, openUrl })} />)
+  expect(screen.queryByTestId('open-web-ui')).toBeNull()
+})

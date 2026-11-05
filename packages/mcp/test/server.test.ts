@@ -300,6 +300,15 @@ describe('printers (demo fleet)', () => {
     expect(JSON.stringify(short).length).toBeLessThan(JSON.stringify(full).length * 0.6)
   })
 
+  it('gives each printer its web page, null where the saved host is off the local network', async () => {
+    const h = await connect()
+    const rows = data<{ output: { id: string; plugin: string; webUi?: string | null }[] }>(await h.call('slicerx_printer_list')).output
+    // Every row has the field. The demo fleet sits on a documentation range (192.0.2.x), so even its PrusaLink and
+    // Moonraker printers, which serve a page, get no link.
+    expect(rows.every((r) => r.webUi === null)).toBe(true)
+    expect(rows.some((r) => r.plugin === 'moonraker')).toBe(true)
+  })
+
   it('manages fleets without approval and logs each edit', async () => {
     const h = await connect()
     const list = data<{ fleets: { id: string; printerIds: string[] }[] }>(await h.call('slicerx_list_fleets'))

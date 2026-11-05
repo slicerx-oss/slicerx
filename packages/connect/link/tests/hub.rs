@@ -4203,6 +4203,27 @@ async fn mock_state(mocks: &common::Mocks) -> String {
         .to_owned()
 }
 
+/// The list carries the port saved for a printer's connection, which the app needs for the link to a page the
+/// connection's own server serves (a print server on port 5000, say). A printer saved without one lists none.
+#[tokio::test]
+async fn the_list_carries_the_saved_port() {
+    let link = hub(None).await;
+    let mut ws = paired(&link).await;
+    let cfg =
+        json!({ "id": "octo", "name": "Octo", "plugin": "octoprint", "host": "192.168.1.30", "port": 5001 });
+    let r = call(&mut ws, 2, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "octo", "{r}");
+    let cfg = json!({ "id": "pi", "name": "Pi", "plugin": "octoprint", "host": "192.168.1.31" });
+    let r = call(&mut ws, 3, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "pi", "{r}");
+
+    let r = call(&mut ws, 4, "list", json!({})).await;
+    let list = r["result"].as_array().unwrap();
+    let by = |id: &str| list.iter().find(|p| p["id"] == id).unwrap().clone();
+    assert_eq!(by("octo")["port"], 5001, "{r}");
+    assert!(by("pi").get("port").is_none(), "{r}");
+}
+
 /// A printer reached through an Obico tunnel, as the app adds it after the paste box: the tunnel host only,
 /// the tunnel's access under credentialRef. Nothing here reaches Obico: no credential is stored, so the hub
 /// never opens the tunnel.

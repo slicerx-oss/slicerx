@@ -6,6 +6,7 @@
 import { cameraGuardOf, developerModeRemedies, developerModeSure, duplicateTargets, followsSlotMap, matchSlots, NEEDS_DEVELOPER_MODE, pluginHas, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type MapFilament, type MapSlot, type PrinterHost, type PrinterInfo, type PrinterStatus, type SliceStats, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
+import { printerWebUi } from '@slicerx/printer-catalog'
 import { chosenOptions, mergeOptions, optionLabel, optionLines, SEND_OPTION_IDS, supportedOptions, unsupportedOptions, type SendOptionChoices, type SendOptionId, type SendOptionSpec } from '@slicerx/printer-catalog/send-options'
 import { ASSISTANT_NAME } from '../name'
 import { fmtDuration, fmtGrams, type SlicedPlate, type ToolShared } from '../shared'
@@ -361,7 +362,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, job progress, loaded filament and machine cost. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
+    description: 'List printers with their state, job progress, loaded filament and machine cost. webUi is the address of the printer\'s own web page (Mainsail, Fluidd, OctoPrint, PrusaLink, Duet Web Control) on the local network, or null when it has none; give it to the person to open. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
     input: z.object({
       fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
       detail: z.enum(['summary', 'full']).default('summary'),
@@ -397,6 +398,8 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           vendor: p.vendor,
           model: p.model,
           plugin: p.plugin,
+          // The printer's own web page (Mainsail, Fluidd, OctoPrint...), for the person to open; null when it has none.
+          webUi: printerWebUi({ ...p, model: p.model || statuses[k]?.model || '' }),
           machineRatePerHour: shared.machineRates.get(p.id) ?? null,
           status: full ? (statuses[k] ?? { state: 'offline' }) : brief(statuses[k]),
           // Whether the camera guard can watch it; unknown while the printer does not answer.

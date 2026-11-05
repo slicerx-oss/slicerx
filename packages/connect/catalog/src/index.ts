@@ -18,9 +18,11 @@ import { PRUSA } from './models/prusa.ts'
 import { SNAPMAKER } from './models/snapmaker.ts'
 import { ULTIMAKER } from './models/ultimaker.ts'
 import type { Brand, ConnectionId, ConnectionMethod, FilamentSystem, Kinematics, PrinterModel } from './types.ts'
+import { printerWebUiUrl, type WebUiPrinter } from './web-ui.ts'
 
 export type * from './types.ts'
 export { BRANDS, CONNECTION_METHODS, connectionMethod }
+export { isLanHost, printerWebUiUrl, webUiOf, webUiUrl, type WebUiPrinter } from './web-ui.ts'
 
 /** Every model, grouped by brand in the order of `BRANDS`. */
 export const PRINTER_MODELS: readonly PrinterModel[] = [
@@ -70,6 +72,23 @@ const SYSTEM_NAMES: Readonly<Record<FilamentSystem, string>> = { ams: 'AMS', mmu
 export function filamentUnitName(modelName: string, system: FilamentSystem): string {
   const m = PRINTER_MODELS.find((x) => x.name === modelName && x.filamentSystem === system)
   return m?.filamentUnit ?? SYSTEM_NAMES[system]
+}
+
+/** The catalog model of a saved printer, matched on its brand and model name. Undefined when unsure. */
+export function modelFor(p: { vendor: string; model: string }): PrinterModel | undefined {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const vendor = norm(p.vendor)
+  const want = norm(p.model)
+  const pool = PRINTER_MODELS.filter((m) => vendor.startsWith(norm(m.brand)) || norm(m.brand).startsWith(vendor))
+  return pool.find((m) => norm(m.name) === want) ?? pool.find((m) => norm(m.name).startsWith(want) || want.startsWith(norm(m.name)))
+}
+
+/**
+ * The address of a saved printer's own web page (Mainsail, Fluidd, OctoPrint, Duet Web Control, PrusaLink), for a
+ * link that opens it in the browser. Null when it serves none SlicerX knows of, or its host is not on the local network.
+ */
+export function printerWebUi(p: WebUiPrinter & { vendor: string; model: string }): string | null {
+  return printerWebUiUrl(p, modelFor(p))
 }
 
 export function modelsForBrand(brandId: string): PrinterModel[] {

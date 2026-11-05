@@ -6,7 +6,7 @@
 import { formatDuration } from '../lib/preview-stats'
 import { degC } from '../lib/temp'
 import type { Collision, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
-import { PRINTER_MODELS, type PrinterModel } from '@slicerx/printer-catalog'
+import { modelFor, type PrinterModel } from '@slicerx/printer-catalog'
 import { appName } from '../edition'
 import { closeCallNote, collisionDetail, collisionTitle } from '@slicerx/ui/heimdall-words'
 
@@ -48,11 +48,7 @@ const num = (v: SettingValue | undefined): number | null => {
 
 /** The catalog model for a printer, matched on brand and model name. Undefined when unsure. */
 export function catalogModel(p: Pick<PrinterInfo, 'vendor' | 'model'>): PrinterModel | undefined {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
-  const vendor = norm(p.vendor)
-  const want = norm(p.model)
-  const pool = PRINTER_MODELS.filter((m) => vendor.startsWith(norm(m.brand)) || norm(m.brand).startsWith(vendor))
-  return pool.find((m) => norm(m.name) === want) ?? pool.find((m) => norm(m.name).startsWith(want) || want.startsWith(norm(m.name)))
+  return modelFor(p)
 }
 
 /** G-code flavors each connection's firmware takes. */
