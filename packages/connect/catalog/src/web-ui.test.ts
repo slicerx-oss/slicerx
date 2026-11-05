@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The link to a printer's own web page: where each connection and model serves it, and which hosts get one.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { CONNECTION_METHODS, PRINTER_MODELS, isLanHost, modelById, modelFor, printerWebUi, printerWebUiUrl, webUiUrl } from './index.ts'
 
@@ -46,20 +47,51 @@ test('a saved port moves a page served by the connection itself, not a Klipper p
   assert.equal(printerWebUi({ ...at('moonraker', '192.168.1.50', { port: 7125 }), vendor: 'QIDI', model: 'X-Max 3' }), 'http://192.168.1.50:10088/')
 })
 
+// The bridge's is_lan_host (sx-link, src/net.rs) runs the same table.
+const HOSTS = JSON.parse(readFileSync(new URL('../../fixtures/lan-hosts.json', import.meta.url), 'utf8')) as { lan: string[]; notLan: string[] }
+
+test('the host rule is the bridge\'s, from the table both run', () => {
+  for (const ok of HOSTS.lan) assert.ok(isLanHost(ok), ok)
+  for (const bad of HOSTS.notLan) assert.ok(!isLanHost(bad), bad)
+})
+
 test('a host outside the local network never gets a link', () => {
-  for (const host of ['8.8.8.8', '100.64.0.1', '172.32.0.1', 'example.com', 'printer.example.org', '192.168.1.5.nip.io', 'evil.com/x.local', 'a@192.168.1.5', '2001:db8::1', 'fe80::1%en0', '', '1.2.3']) {
+  for (const host of HOSTS.notLan) {
     assert.equal(printerWebUiUrl(at('moonraker', host)), null, host)
     assert.equal(webUiUrl(host, 80), null, host)
   }
+  // Names a browser reads as IPv4 numbers, and octal octets: 8.8.8.8, 127.0.0.1 and 8.0.0.1 there.
+  for (const host of ['134744072', '0x08080808', '0x7f000001', '010.0.0.1', '172.016.0.1']) assert.equal(webUiUrl(host, 80), null, host)
   // Through a tunnel the host is the tunnel's, so there is no page on this network.
   assert.equal(printerWebUiUrl(at('octoprint', '192.168.1.30', { tunnel: 'obico' })), null)
   assert.equal(printerWebUiUrl({ plugin: 'moonraker' }), null)
 })
 
-test('the host rule is the bridge\'s: private, loopback and link-local addresses, and local names', () => {
-  for (const ok of ['192.168.1.20', '10.0.0.5', '172.16.4.4', '127.0.0.1', '169.254.1.1', 'voron.local', 'voron.local.', 'printer', '::1', 'fd00::5', 'fe80::1', 'bay-1.lan', 'pi.home.arpa']) assert.ok(isLanHost(ok), ok)
-  for (const bad of ['8.8.8.8', '172.32.0.1', 'example.com', 'printer.example.org', '2001:db8::1', '', 'fe80::1%en0', '256.1.1.1']) assert.ok(!isLanHost(bad), bad)
+test('the address is written as a browser writes it, so the open check matches it', () => {
+  assert.equal(webUiUrl('VORON.LOCAL', 80), 'http://voron.local/')
+  assert.equal(webUiUrl('voron.local.', 80), 'http://voron.local/')
   assert.equal(webUiUrl('fd00::5', 7125), 'http://[fd00::5]:7125/')
+  assert.equal(webUiUrl('FD00:0:0::5', 80), 'http://[fd00::5]/')
+  assert.equal(webUiUrl('fe80:0:0:0:0:0:0:1', 80), 'http://[fe80::1]/')
+  assert.equal(webUiUrl('::1', 80), 'http://[::1]/')
+  assert.equal(webUiUrl('fd00:1:0:1::1', 80), 'http://[fd00:1:0:1::1]/')
+  for (const host of [...HOSTS.lan, 'Pi.Home.Arpa']) {
+    const url = webUiUrl(host, 8080)!
+    assert.equal(new URL(url).href, url, host)
+  }
+})
+
+test('a connection over TLS links its own page as https', () => {
+  assert.equal(printerWebUiUrl({ plugin: 'prusalink', host: '192.168.1.31', tls: true }), 'https://192.168.1.31:80/')
+  assert.equal(printerWebUiUrl({ plugin: 'octoprint', host: 'octopi.local', port: 443, tls: true }), 'https://octopi.local/')
+  // TLS on Moonraker is the API's; Mainsail and Fluidd stay on plain http.
+  assert.equal(printerWebUiUrl({ plugin: 'moonraker', host: '192.168.1.20', tls: true }), 'http://192.168.1.20/')
+})
+
+test('a printer with no model name matches no model', () => {
+  assert.equal(modelFor({ vendor: 'Creality', model: '' }), undefined)
+  assert.equal(modelFor({ vendor: '', model: 'K2 Plus' }), undefined)
+  assert.equal(printerWebUi({ ...at('moonraker', '192.168.1.60'), vendor: 'Creality', model: '' }), 'http://192.168.1.60/')
 })
 
 test('ports and paths are checked before a link is made', () => {

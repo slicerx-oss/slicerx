@@ -93,6 +93,8 @@ export interface PrinterInfo {
   host?: string
   /** The port saved for the connection, when one was set. */
   port?: number
+  /** True when the connection uses TLS. */
+  tls?: boolean
   nozzleCount: number
   filamentSystem?: 'ams' | 'mmu' | 'toolchanger'
   /** Reached through this remote tunnel instead of the local network; `host` is then the tunnel host. */
