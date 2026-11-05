@@ -359,7 +359,7 @@ describe('a message to mimir with files, through a scripted hub', () => {
       seen.push({ method, args })
       if (method === 'mimir.ask') return { sessionId: 's_1', said: args['message'], attachments: (args['files'] as { name: string; type: string }[]).map((f) => ({ name: f.name, type: f.type, bytes: 1 })) }
       if (method === 'mimir.sessions') return { sessions: [{ id: 's_1' }] }
-      return { id: 's_1', turns: [{ said: 'Make a bracket for this', attachments: ['sketch.png', 'bracket.pdf'], steps: [{ kind: 'said', text: 'I can see the drawing.' }] }] }
+      return { id: 's_1', turns: [{ said: 'Make a bracket for this', attachments: ['sketch.png', 'bracket.pdf'], steps: [{ kind: 'said', text: 'I can see the drawing.' }, { kind: 'choice', askId: 'ask_1', title: 'Confirm the part', question: 'This one?', choices: [{ id: 'same', label: 'Yes' }], picked: 'same', answeredOn: { kind: 'phone', name: 'Pocket' } }] }] }
     })
     const h = await connect(opts(hub))
     const asked = await h.call('slicerx_mimir_ask', { message: 'Make a bracket for this', files: [join(dir, 'sketch.png'), join(dir, 'bracket.pdf')] })
@@ -368,6 +368,8 @@ describe('a message to mimir with files, through a scripted hub', () => {
     expect(seen[0]).toEqual({ method: 'mimir.ask', args: { message: 'Make a bracket for this', files: [{ name: 'sketch.png', type: 'image/png', data: png.toString('base64') }, { name: 'bracket.pdf', type: 'application/pdf', data: pdf.toString('base64') }] } })
     const back = await h.call('slicerx_mimir_session', {})
     expect(data<{ output: { turns: { attachments: string[] }[] } }>(back).output.turns[0]!.attachments).toEqual(['sketch.png', 'bracket.pdf'])
+    // a question answered on the person's phone keeps saying so through the tool
+    expect(data<{ output: { turns: { steps: Record<string, unknown>[] }[] } }>(back).output.turns[0]!.steps[1]).toMatchObject({ kind: 'choice', picked: 'same', answeredOn: { kind: 'phone', name: 'Pocket' } })
     expect(seen.map((s) => s.method)).toEqual(['mimir.ask', 'mimir.sessions', 'mimir.session'])
   })
 
