@@ -198,7 +198,7 @@ export function PrepareObjects() {
         ) : (
           <div className="objs-empty" data-testid="objects-list">
             <p>Nothing on the plate yet.</p>
-            <p className="sx-small sx-muted">Drop STL, 3MF or STEP files anywhere.</p>
+            <p className="sx-small sx-muted">Drop STL, 3MF, STEP or IGES files anywhere.</p>
           </div>
         )
       ) : (

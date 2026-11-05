@@ -448,7 +448,7 @@ export async function emptyPlateSaysSo(page: Page): Promise<void> {
   await setState(page, { plate: [], selection: null, selectedIds: [] })
   const card = page.locator('[data-section="objects"]')
   await expect(card).toContainText('Nothing on the plate yet.')
-  await expect(card).toContainText('Drop STL, 3MF or STEP files anywhere.')
+  await expect(card).toContainText('Drop STL, 3MF, STEP or IGES files anywhere.')
   await expect(card.getByTestId('objects-add-model')).toBeVisible()
   await sidebarDone(page)
 }
