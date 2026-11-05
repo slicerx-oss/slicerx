@@ -596,7 +596,10 @@ fn brim_whole_loops(mapped: &mut Map<String, Value>) {
 
 /// A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
 /// the shortest links between them printed from the end `objorder::chain` picks (`object_order_rule`
-/// `chain`). The same as `prusaProjectSettings` in the settings package.
+/// `chain`). The same as `prusaProjectSettings` in the settings package. `chain` is the marker for the Prusa project
+/// rules: this read sets it; a request may too. It turns on both that order and, where two parts of an object in one
+/// filament overlap, the later part printing the overlap (`SliceSession` part regions). A third Prusa-only behavior
+/// gets a key of its own.
 fn objects_in_a_chain(mapped: &mut Map<String, Value>) {
     if mapped.contains_key("brim_width") {
         mapped.insert("object_order_rule".to_owned(), Value::String("chain".to_owned()));

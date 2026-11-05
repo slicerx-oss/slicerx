@@ -1183,3 +1183,331 @@ fn a_prusaslicer_projects_first_layer_skirt_and_support_print_their_own_widths()
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+/// Each inner wall width printed above the first layer in each band of plate x between `cuts`, moves within 0.3 mm of
+/// a cut left out (the walls a region lays along its own edge), by the move's middle; moves right of the last cut
+/// count only up to `end`.
+fn inner_walls_by_band(gcode: &str, cuts: &[f64], end: f64) -> Vec<std::collections::BTreeSet<String>> {
+    let mut out = vec![std::collections::BTreeSet::new(); cuts.len() + 1];
+    let (mut layer, mut kind, mut width) = (0, String::new(), String::new());
+    let mut at = 0.0_f64;
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if let Some(w) = l.strip_prefix(";WIDTH:") {
+            w.clone_into(&mut width);
+        } else if ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|p| l.starts_with(p)) {
+            let to = l
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .find_map(|f| f.strip_prefix('X'))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(at);
+            let mid = f64::midpoint(at, to);
+            if layer > 1
+                && kind == "Inner wall"
+                && l.contains(" E")
+                && mid < end
+                && cuts.iter().all(|c| (mid - c).abs() > 0.3)
+            {
+                out[cuts.iter().filter(|c| mid > **c).count()].insert(width.clone());
+            }
+            at = to;
+        }
+    }
+    out
+}
+
+/// The extrusion of each feature on the first layer, mm of filament, skirt left out.
+fn first_layer_extrusion(gcode: &str) -> std::collections::BTreeMap<String, f64> {
+    let mut out = std::collections::BTreeMap::<String, f64>::new();
+    let (mut layer, mut kind) = (0, String::new());
+    let (mut relative, mut e0) = (true, 0.0_f64);
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+            continue;
+        }
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            continue;
+        }
+        let code = l.split(';').next().unwrap_or("").trim();
+        let e = code
+            .split_whitespace()
+            .skip(1)
+            .find_map(|f| f.strip_prefix('E'))
+            .and_then(|v| v.parse::<f64>().ok());
+        if code.starts_with("M82") {
+            relative = false;
+        } else if code.starts_with("M83") {
+            relative = true;
+        } else if code.starts_with("G92") {
+            if let Some(e) = e {
+                e0 = e;
+            }
+        } else if ["G1 ", "G2 ", "G3 "].iter().any(|p| code.starts_with(p))
+            && let Some(e) = e
+        {
+            let de = if relative { e } else { e - e0 };
+            if !relative {
+                e0 = e;
+            }
+            let moves = code.contains(" X") || code.contains(" Y");
+            if layer == 1 && de > 0.0 && moves && kind != "Skirt" {
+                *out.entry(kind.clone()).or_default() += de;
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn a_prusa_projects_later_part_owns_where_two_parts_overlap() {
+    // One object of two 20 mm boxes in file order, at x 0 to 20 and 15 to 35, overlapping on 15 to 20; one of them
+    // sets 0.55 mm inner walls. The later part owns the overlap whether or not it has settings of its own: with the
+    // setting on the later part 0.55 prints from x 15 on, and on the earlier part only up to x 15, the later part
+    // printing the project's 0.45 mm over the overlap.
+    let mut wrong = Vec::new();
+    let cut = [115.0];
+    for (name, want, bottom, inner) in [
+        ("vol-overlap-later-own.3mf", ["0.45", "0.55"], 43.79, 10.39),
+        ("vol-overlap-earlier-own.3mf", ["0.55", "0.45"], 43.94, 10.23),
+    ] {
+        let g = gcode(&widths(name));
+        for (band, (got, want)) in inner_walls_by_band(&g, &cut, 200.0).iter().zip(want).enumerate() {
+            if got.len() != 1 || !got.contains(want) {
+                wrong.push(format!("{name}: band {band} inner walls {got:?}, not {want}"));
+            }
+        }
+        // The first layer's bottom and inner walls cover the parts' areas as split.
+        let e = first_layer_extrusion(&g);
+        for (kind, want) in [("Bottom surface", bottom), ("Inner wall", inner)] {
+            let got = e.get(kind).copied().unwrap_or(0.0);
+            if (got - want).abs() > 0.05 {
+                wrong.push(format!("{name}: first layer {kind} E {got:.2}, not {want}"));
+            }
+        }
+    }
+    // A later part without settings prints with its object's own (0.5 mm), not the project's (0.45 mm): alone, and
+    // beside a second object.
+    for name in [
+        "vol-overlap-earlier-own-obj05.3mf",
+        "vol-overlap-earlier-own-obj05-beside.3mf",
+    ] {
+        let got = inner_walls_by_band(&gcode(&widths(name)), &cut, 136.0);
+        for (band, (got, want)) in got.iter().zip(["0.55", "0.5"]).enumerate() {
+            if got.len() != 1 || !got.contains(want) {
+                wrong.push(format!("{name}: band {band} inner walls {got:?}, not {want}"));
+            }
+        }
+    }
+    // A modifier volume still wins over both parts where it reaches: 0.6 mm over x 10 to 25.
+    let got = inner_walls_by_band(
+        &gcode(&widths("vol-overlap-earlier-own-mod06.3mf")),
+        &[110.0, 125.0],
+        200.0,
+    );
+    for (band, (got, want)) in got.iter().zip(["0.55", "0.6", "0.45"]).enumerate() {
+        if got.len() != 1 || !got.contains(want) {
+            wrong.push(format!("mod06: band {band} inner walls {got:?}, not {want}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// The inner wall moves printed at each layer height (`;Z:`), counted by the band of plate x between `cuts` their
+/// middle falls in; moves within 0.3 mm of a cut are left out, and moves right of the last cut count only up to `end`.
+fn inner_walls_by_z(gcode: &str, cuts: &[f64], end: f64) -> Vec<(f64, Vec<usize>)> {
+    let mut out: Vec<(f64, Vec<usize>)> = Vec::new();
+    let mut kind = String::new();
+    let mut at = 0.0_f64;
+    for l in gcode.lines() {
+        if let Some(z) = l.strip_prefix(";Z:").and_then(|z| z.trim().parse::<f64>().ok()) {
+            out.push((z, vec![0; cuts.len() + 1]));
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|p| l.starts_with(p)) {
+            let to = l
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .find_map(|f| f.strip_prefix('X'))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(at);
+            let mid = f64::midpoint(at, to);
+            if kind == "Inner wall"
+                && l.contains(" E")
+                && mid < end
+                && cuts.iter().all(|c| (mid - c).abs() > 0.3)
+                && let Some((_, bands)) = out.last_mut()
+            {
+                bands[cuts.iter().filter(|c| mid > **c).count()] += 1;
+            }
+            at = to;
+        }
+    }
+    out
+}
+
+#[test]
+fn a_prusa_projects_later_part_without_settings_takes_a_height_range() {
+    // The two boxes of `vol-overlap-earlier-own.3mf`, x 100 to 120 with 0.55 mm inner walls and then x 115 to 135
+    // with no settings, and a height range of one wall loop from z 1 to 2 mm (`Metadata/layer_config_ranges.xml`).
+    // The later part owns x 115 on with the object's settings and the range's over them, so inside the range it
+    // prints no inner walls there; above and below it prints the project's three.
+    let layers = inner_walls_by_z(
+        &gcode(&widths("vol-overlap-earlier-own-range.3mf")),
+        &[115.0],
+        136.0,
+    );
+    let mut wrong = Vec::new();
+    let (mut inside, mut outside) = (0, 0);
+    for (z, bands) in &layers {
+        let later = bands[1];
+        if *z > 1.05 && *z < 1.95 {
+            inside += 1;
+            if later != 0 {
+                wrong.push(format!(
+                    "z {z}: {later} inner wall moves over the later part inside the range"
+                ));
+            }
+        } else if (*z > 0.25 && *z < 0.95) || (*z > 2.05 && *z < 2.95) {
+            outside += 1;
+            if later == 0 {
+                wrong.push(format!(
+                    "z {z}: no inner walls over the later part outside the range"
+                ));
+            }
+        }
+    }
+    assert!(
+        inside > 5 && outside > 5,
+        "{inside} layers inside, {outside} outside"
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Each inner wall printed above the first layer in each band of plate x between `cuts`, as its tool and width; moves
+/// within 0.3 mm of a cut are left out, and moves right of the last cut count only up to `end`. A width comment can
+/// follow the unretract that starts a tool's first move, so only moves in X or Y count.
+fn inner_wall_tools_by_band(
+    gcode: &str,
+    cuts: &[f64],
+    end: f64,
+) -> Vec<std::collections::BTreeSet<(u32, String)>> {
+    let mut out = vec![std::collections::BTreeSet::new(); cuts.len() + 1];
+    let (mut layer, mut kind, mut width, mut tool) = (0, String::new(), String::new(), 0_u32);
+    let mut at = 0.0_f64;
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+        } else if let Some(t) = l
+            .strip_prefix('T')
+            .and_then(|t| t.split_whitespace().next())
+            .and_then(|t| t.parse().ok())
+        {
+            tool = t;
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if let Some(w) = l.strip_prefix(";WIDTH:") {
+            w.clone_into(&mut width);
+        } else if ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|p| l.starts_with(p)) {
+            let to = l
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .find_map(|f| f.strip_prefix('X'))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(at);
+            let mid = f64::midpoint(at, to);
+            if layer > 1
+                && kind == "Inner wall"
+                && l.contains(" E")
+                && (l.contains(" X") || l.contains(" Y"))
+                && mid < end
+                && cuts.iter().all(|c| (mid - c).abs() > 0.3)
+            {
+                out[cuts.iter().filter(|c| mid > **c).count()].insert((tool, width.clone()));
+            }
+            at = to;
+        }
+    }
+    out
+}
+
+#[test]
+fn a_prusa_projects_later_part_in_another_filament_leaves_the_overlap_as_before() {
+    // A guard: it passes before the later-part rule and must keep passing. The two boxes of
+    // `vol-overlap-earlier-own.3mf` in two filaments: x 100 to 120 with 0.55 mm inner walls in extruder 2 (T1), then
+    // x 115 to 135 with no settings in extruder 1 (T0). The later part takes its overlap only in the earlier part's
+    // filament, so here the overlap keeps the higher slot's filament and the earlier part's settings: T1 with 0.55 mm
+    // up to x 120, then T0 with the project's 0.45 mm.
+    let got = inner_wall_tools_by_band(
+        &gcode(&widths("vol-overlap-earlier-own-two.3mf")),
+        &[115.0, 120.0],
+        136.0,
+    );
+    let want = [(1, "0.55"), (1, "0.55"), (0, "0.45")];
+    let mut wrong = Vec::new();
+    for (band, (got, (tool, width))) in got.iter().zip(want).enumerate() {
+        if got.len() != 1 || !got.contains(&(tool, width.to_owned())) {
+            wrong.push(format!(
+                "band {band}: inner walls (tool, width) {got:?}, not T{tool} {width}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_prusa_projects_later_part_keeps_its_overlap_out_of_another_filaments_region() {
+    // A guard: it passes before the later-part rule and must keep passing. The two boxes of
+    // `vol-overlap-earlier-own.3mf`, both in extruder 1 (T0): x 100 to 120 with 0.55 mm inner walls, then x 115 to 135
+    // with no settings. A third box without settings in extruder 2 (T1) covers x 110 to 126, the overlap included,
+    // and the higher slot wins there. The second box takes its overlap from the first only in extruder 1, so inside
+    // the third box the first box keeps its settings over its whole footprint: T1 with 0.55 mm up to x 120, overlap
+    // included, then T1 with the project's 0.45 mm, then T0 with 0.45 mm.
+    let got = inner_wall_tools_by_band(
+        &gcode(&widths("vol-overlap-third-filament.3mf")),
+        &[110.0, 115.0, 120.0, 126.0],
+        136.0,
+    );
+    let want = [(0, "0.55"), (1, "0.55"), (1, "0.55"), (1, "0.45"), (0, "0.45")];
+    let mut wrong = Vec::new();
+    for (band, (got, (tool, width))) in got.iter().zip(want).enumerate() {
+        if got.len() != 1 || !got.contains(&(tool, width.to_owned())) {
+            wrong.push(format!(
+                "band {band}: inner walls (tool, width) {got:?}, not T{tool} {width}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_prusa_projects_later_part_takes_its_overlap_only_from_its_own_object() {
+    // A guard: it passes before the later-part rule and must keep passing. Two objects placed overlapping, sliced
+    // together: object 1 is a box at x 100 to 120 with 0.55 mm inner walls. Object 2 has a box with 0.5 mm walls at x
+    // 155 to 165, then a box without settings at x 115 to 135, over object 1 from x 115 to 120. The later part takes
+    // area only from the parts before it in its own object, so object 1's 0.55 mm walls reach x 120, and object 2's
+    // plain box prints the project's 0.45 mm beyond.
+    let got = inner_walls_by_band(
+        &gcode(&widths("vol-overlap-other-object.3mf")),
+        &[115.0, 120.0],
+        136.0,
+    );
+    let mut wrong = Vec::new();
+    for (band, (got, want)) in got.iter().zip(["0.55", "0.55", "0.45"]).enumerate() {
+        if got.len() != 1 || !got.contains(want) {
+            wrong.push(format!("band {band} inner walls {got:?}, not {want}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
