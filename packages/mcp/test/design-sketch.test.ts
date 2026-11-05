@@ -193,7 +193,8 @@ describe('finished sketches in the design tools', () => {
     expect(issues({ loops: [square], frame: { origin: [0, 0, 0] } }).join(' ')).toMatch(/^frame\.normal: /)
     // what reaches the tool is the parsed loops, with stray fields dropped
     const r = input.safeParse({ loops: [{ ...square, stray: 1, segments: square.segments.map((g) => ({ ...g, extra: true })) }] })
-    expect(r.success && r.data.loops).toEqual([square])
+    expect(r.success).toBe(true)
+    expect((r.data as unknown as { loops: unknown }).loops).toEqual([square])
   })
 
   it('checks the solved loops too, and refuses a sketch past the point budget whichever loop tips it', async () => {
