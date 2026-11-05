@@ -3,15 +3,16 @@
 // The built entry turns Node's compile cache on (src/launch.ts). The cache only saves time: these start the entry over
 // stdio, from source through tsx as sx-call.test.ts does, and check that a client gets the same answers, with nothing
 // extra on stdout or stderr, whether the cache folder is writable, unwritable or turned off, and when several servers
-// fill one empty cache at once.
+// fill one empty cache at once. On Windows Node can leave a temporary file when two servers replace one entry at the
+// same moment, and a later server removes it.
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { compileCacheDir } from '../src/compile-cache'
+import { compileCacheDir, ORPHAN_AGE_MS, removeOrphans } from '../src/compile-cache'
 
 const pkg = resolve(__dirname, '..')
 const entry = resolve(pkg, 'src/launch.ts')
@@ -106,6 +107,27 @@ describe('compile cache folder', () => {
   })
 })
 
+describe('temporary files Node leaves in the cache', () => {
+  it('are removed once they are old enough, and nothing else is', () => {
+    const dir = temporary()
+    const sub = join(dir, 'v24.0.0-x64-0123abcd')
+    mkdirSync(sub)
+    const now = Date.now()
+    const old = new Date(now - ORPHAN_AGE_MS - 1000)
+    const make = (name: string, when?: Date) => {
+      writeFileSync(join(sub, name), 'x')
+      if (when) utimesSync(join(sub, name), when, when)
+    }
+    make('45ebdb77', old) // an entry
+    make('11118761.jpVfuU', old) // left behind
+    make('0e20158e.FswFEk') // still being written
+    make('notes.txt', old)
+    make('45ebdb77.tmp', old)
+    expect(removeOrphans(dir, now)).toBe(1)
+    expect(readdirSync(sub).sort()).toEqual(['0e20158e.FswFEk', '45ebdb77', '45ebdb77.tmp', 'notes.txt'])
+  })
+})
+
 describe('the entry with the compile cache', () => {
   it('fills the cache, and answers the same from it', async () => {
     const dir = temporary()
@@ -156,10 +178,22 @@ describe('the entry with the compile cache', () => {
     expect(new Set(all.map((a) => a.tools)).size).toBe(1)
     const cached = files(cacheDir(dir))
     expect(cached.length).toBeGreaterThan(0)
-    // Node writes each entry to <name>.XXXXXX and renames it into place: no temporary file is left behind
-    expect(cached.filter((name) => name.includes('.'))).toEqual([])
+    // Node writes each entry to <name>.XXXXXX and renames it into place. Elsewhere no temporary file is left behind.
+    // On Windows the rename fails when another server replaces the same entry at that moment, so a few can be.
+    const left = cached.filter((name) => name.includes('.'))
+    if (!win) expect(left).toEqual([])
+    for (const name of left) expect(name).toMatch(/^[0-9a-f]{8}\.[0-9A-Za-z]{6}$/)
     const after = await start(dir, env)
     expectClean(after)
     expect(after.tools).toBe(all[0]!.tools)
+    if (!win) return
+    // A server that runs past its save removes the ones old enough to be left behind for good.
+    const long = new Date(Date.now() - ORPHAN_AGE_MS - 1000)
+    for (const e of readdirSync(cacheDir(dir), { recursive: true, withFileTypes: true })) {
+      if (e.isFile() && e.name.includes('.')) utimesSync(join(e.parentPath, e.name), long, long)
+    }
+    const stays = await start(dir, env, 3000)
+    expect(stays.stdout).toHaveLength(2)
+    expect(files(cacheDir(dir)).filter((name) => name.includes('.'))).toEqual([])
   })
 })

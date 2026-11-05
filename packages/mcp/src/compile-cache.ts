@@ -5,9 +5,10 @@
 // cache folder, never a shared temporary folder another account could write to. It is best effort: no cache folder,
 // a read-only home or an older Node only skip it, and nothing here ever throws or writes to stdout or stderr, since
 // stdout carries the MCP protocol.
+import { readdirSync, statSync, unlinkSync } from 'node:fs'
 import module from 'node:module'
 import { homedir } from 'node:os'
-import { posix, win32 } from 'node:path'
+import { join as joinPath, posix, win32 } from 'node:path'
 
 /** The folder the cache goes in by default, or undefined when this platform's cache folder can't be told. */
 export function compileCacheDir(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: string | undefined): string | undefined {
@@ -39,15 +40,46 @@ export function startCompileCache(env: NodeJS.ProcessEnv = process.env): void {
 
 /**
  * Writes what the cache holds so far. Node writes it when the process exits normally, but a stdio server is often
- * stopped by a signal, which skips that, so the entry also saves it once the server has started.
+ * stopped by a signal, which skips that, so the entry also saves it once the server has started. On Windows it then
+ * removes the temporary files Node left behind (`removeOrphans`).
  */
 export function saveCompileCache(): void {
   try {
     if (typeof module.flushCompileCache === 'function') module.flushCompileCache()
+    const dir = typeof module.getCompileCacheDir === 'function' ? module.getCompileCacheDir() : undefined
+    if (process.platform === 'win32' && dir) removeOrphans(dir)
   } catch {
     // as above
   }
 }
+
+/**
+ * Node writes each cache entry to a temporary file, `<entry>.XXXXXX`, and renames it over the entry. On Windows the
+ * rename fails with EPERM when another server is replacing the same entry at that moment, which happens when several
+ * clients start servers on an empty or outdated cache, and Node then leaves the temporary file behind. Each such
+ * start would leave more of them in the user's cache folder, so this removes the ones old enough that no writer can
+ * still be about to rename them. Returns how many it removed.
+ */
+export function removeOrphans(dir: string, now = Date.now()): number {
+  let removed = 0
+  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !ORPHAN_NAME.test(entry.name)) continue
+    const file = joinPath(entry.parentPath, entry.name)
+    try {
+      if (now - statSync(file).mtimeMs < ORPHAN_AGE_MS) continue
+      unlinkSync(file)
+      removed++
+    } catch {
+      // gone already, or still open: the next server removes it
+    }
+  }
+  return removed
+}
+
+/** A cache entry's name is 8 hex digits; Node's temporary file adds a dot and 6 random characters. */
+const ORPHAN_NAME = /^[0-9a-f]{8}\.[0-9A-Za-z]{6}$/
+/** Node renames a temporary file right after writing it, so one a minute old has been left behind. */
+export const ORPHAN_AGE_MS = 60_000
 
 function safeHome(): string | undefined {
   try {
