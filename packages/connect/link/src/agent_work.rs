@@ -53,12 +53,12 @@ pub(crate) enum Work {
         printer: String,
     },
     /// Skip one object of the running print (`objects.skip`). It only stops extrusion for that
-    /// object, so an approver phone may approve it from afar. `epoch` is the bed epoch of the job it
-    /// was asked for, pinned when the card is held, so it never skips in a later print.
+    /// object, so an approver phone may approve it from afar. `epoch` is the bed epoch of the print it
+    /// was asked for, which must be the running print's when the card is raised and is in its hash.
     Skip {
         printer: String,
         id: String,
-        epoch: Option<u64>,
+        epoch: u64,
     },
     /// A connected app's tool a person has to approve, such as switching a Home Assistant device.
     Plugin {
@@ -143,12 +143,12 @@ impl Work {
                 if !sx_connect::object_id_ok(&id) {
                     return Err(RpcError::new("bad_request", "work.id is not an object label"));
                 }
-                let epoch = match p.get("epoch") {
-                    None | Some(Value::Null) => None,
-                    Some(v) => Some(v.as_u64().ok_or_else(|| {
-                        RpcError::new("bad_request", "work.epoch is the bed epoch from bed.state")
-                    })?),
-                };
+                let epoch = p.get("epoch").and_then(Value::as_u64).ok_or_else(|| {
+                    RpcError::new(
+                        "bad_request",
+                        "work.epoch is the bed epoch of the running print, from bed.state",
+                    )
+                })?;
                 Ok(Work::Skip { printer, id, epoch })
             }
             Some("adjust") => Ok(Work::Adjust {
@@ -163,16 +163,17 @@ impl Work {
         }
     }
 
-    /// Pins a skip to the job running now, when the client did not name its bed epoch.
-    pub(crate) fn pin_epoch(&mut self, b: &Bridge) {
-        if let Work::Skip {
-            printer,
-            epoch: e @ None,
-            ..
-        } = self
+    /// A skip names the print running now: its epoch must be the hub's own for the printer.
+    pub(crate) fn check_epoch(&self, b: &Bridge) -> Rpc<()> {
+        if let Work::Skip { printer, epoch, .. } = self
+            && b.hub.bed(printer).epoch != *epoch
         {
-            *e = Some(b.hub.bed(printer).epoch);
+            return Err(RpcError::new(
+                "job_changed",
+                "work.epoch is not the print running now; read bed.state again",
+            ));
         }
+        Ok(())
     }
 
     pub(crate) fn printer(&self) -> &str {
@@ -268,11 +269,11 @@ impl Work {
                     hash(&json!({ "printerId": printer })),
                 )]
             }
-            // The object, not the epoch: the hub pins the job, so a client need not read it.
-            Work::Skip { printer, id, .. } => vec![(
+            // The object and the print it belongs to: a card never skips in a later print.
+            Work::Skip { printer, id, epoch } => vec![(
                 "printer.skip".into(),
                 printer.clone(),
-                hash(&json!({ "printerId": printer, "id": id })),
+                hash(&json!({ "printerId": printer, "id": id, "epoch": epoch })),
             )],
             // the same parameters the plugin checks its token against (`params::plugin`)
             Work::Plugin { plugin, tool, input } => vec![(
@@ -373,11 +374,19 @@ impl Waiting {
         lock(&self.0).get(request_id).map(|h| h.work.summary())
     }
 
-    /// The printer and the heater targets of the file a held print would start, for the remote
-    /// start rule. `None` for a card holding no print.
-    pub(crate) fn print_heat(&self, request_id: &str) -> Option<(String, Option<sx_connect::JobHeat>)> {
+    /// The printer and the content hash of the file a held print would start, for the remote start
+    /// rule. `None` for a card holding no print.
+    pub(crate) fn print_file(&self, request_id: &str) -> Option<(String, String)> {
         match &lock(&self.0).get(request_id)?.work {
-            Work::Print { printer, file, .. } => Some((printer.clone(), sx_connect::job_heat(&file.data))),
+            Work::Print { printer, file, .. } => Some((printer.clone(), file.sha256.clone())),
+            _ => None,
+        }
+    }
+
+    /// The bytes of the file a held print would start, to read what it heats.
+    pub(crate) fn print_data(&self, request_id: &str) -> Option<Vec<u8>> {
+        match &lock(&self.0).get(request_id)?.work {
+            Work::Print { file, .. } => Some(file.data.clone()),
             _ => None,
         }
     }
@@ -403,7 +412,7 @@ pub(crate) fn run(b: &Arc<Bridge>, request_id: String, work: Work, token: Approv
     let b = b.clone();
     tokio::spawn(async move {
         let printer = work.printer().to_owned();
-        let out = execute(&b, work, &token).await;
+        let out = execute(&b, &request_id, work, &token).await;
         let mut data = serde_json::Map::new();
         data.insert("requestId".into(), json!(request_id));
         data.insert("printerId".into(), json!(printer));
@@ -419,7 +428,7 @@ pub(crate) fn run(b: &Arc<Bridge>, request_id: String, work: Work, token: Approv
     });
 }
 
-async fn execute(b: &Arc<Bridge>, work: Work, token: &ApprovalToken) -> Rpc<()> {
+async fn execute(b: &Arc<Bridge>, request_id: &str, work: Work, token: &ApprovalToken) -> Rpc<()> {
     match work {
         Work::Print { printer, file, opts } => {
             // One hold for the upload and the start, so nothing else lands in between.
@@ -428,6 +437,11 @@ async fn execute(b: &Arc<Bridge>, work: Work, token: &ApprovalToken) -> Rpc<()> 
             let size = u64::try_from(file.data.len()).unwrap_or(u64::MAX);
             let rf = session(b, &printer).await?.upload(file, token).await?;
             crate::hub_rpc::record_upload(b, &rf, size).await;
+            // A start approved from afar: a fresh compared plate check now, after the upload, within
+            // its time of the approval.
+            crate::remote_start::before_start(b, request_id, &printer, false)
+                .await
+                .map_err(|why| RpcError::new("plate_check", why.message()))?;
             crate::hub_rpc::start_with_token_held(b, &json!({ "file": rf, "opts": opts, "token": token }))
                 .await?;
             Ok(())
@@ -438,10 +452,7 @@ async fn execute(b: &Arc<Bridge>, work: Work, token: &ApprovalToken) -> Rpc<()> 
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),
         // The card's token approved this skip; the hub mints the line's own, as for the app's click.
-        Work::Skip { printer, id, epoch } => {
-            let epoch = epoch.unwrap_or_else(|| b.hub.bed(&printer).epoch);
-            crate::device::skip_object(b, &printer, &id, epoch).await
-        }
+        Work::Skip { printer, id, epoch } => crate::device::skip_object(b, &printer, &id, epoch).await,
         Work::Plugin { plugin, tool, input } => {
             crate::rpc::service_call(b, &plugin, &tool, input, Some(token))
                 .await
@@ -635,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn a_skip_card_hashes_the_object_and_keeps_its_epoch_out_of_the_hash() {
+    fn a_skip_card_hashes_the_object_and_its_print() {
         let w = Work::parse(&json!({ "kind": "skip", "printerId": "bay-1", "id": "part_3", "epoch": 7 }))
             .unwrap();
         assert_eq!(w.kind(), "skip");
@@ -644,10 +655,11 @@ mod tests {
             vec![(
                 "printer.skip".to_owned(),
                 "bay-1".to_owned(),
-                sx_permit::hash_params(&json!({ "printerId": "bay-1", "id": "part_3" }))
+                sx_permit::hash_params(&json!({ "printerId": "bay-1", "id": "part_3", "epoch": 7 }))
             )]
         );
         assert_eq!(w.summary()["epoch"], 7);
+        assert!(Work::parse(&json!({ "kind": "skip", "printerId": "bay-1", "id": "part_3" })).is_err());
         assert!(Work::parse(&json!({ "kind": "skip", "printerId": "bay-1", "id": "a\nM104 S300" })).is_err());
         assert!(
             Work::parse(&json!({ "kind": "skip", "printerId": "bay-1", "id": "x", "epoch": "now" })).is_err()

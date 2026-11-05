@@ -140,6 +140,10 @@ async fn forward(
         let data = ev.get("data").cloned().unwrap_or(Value::Null);
         match ev.get("event").and_then(Value::as_str) {
             Some("approval") if approver => {
+                if let Some(id) = data.get("id").and_then(Value::as_str) {
+                    // A start card says whether a phone could approve it, from its file read once.
+                    read_card_heat(&b, id).await;
+                }
                 if let Some(id) = data.get("id").and_then(Value::as_str)
                     && decidable(&b, id)
                     && let Some(view) = card_view(&b, id)
@@ -236,6 +240,7 @@ async fn known_printer(b: &Bridge, id: &str) -> Result<(), (&'static str, String
     }
 }
 
+#[allow(clippy::too_many_lines)] // One flat method table.
 pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p: Value) -> Reply {
     let pairing = b
         .remote
@@ -306,7 +311,13 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             }
             Ok(json!({}))
         }
-        "approvals.list" => Ok(approvals_list(b, &pairing)),
+        "approvals.list" => {
+            let pending = b.broker.as_ref().map(|br| br.pending()).unwrap_or_default();
+            for id in pending.iter().filter(|id| decidable(b, id)).take(200) {
+                read_card_heat(b, id).await;
+            }
+            Ok(approvals_list(b, &pairing))
+        }
         // The relay's numbers for this hub (tier, used, cap), as Settings shows them.
         "remote.quota" => Ok(b.remote.quota().unwrap_or(Value::Null)),
         "approvals.decide" => decide(b, ctx, &pairing, &p).await,
@@ -593,10 +604,12 @@ fn shown_to_phones(kind: Option<&str>) -> bool {
 enum Remote {
     /// Pausing, stopping, or skipping one object: it only stops extrusion.
     Stop,
-    /// A start, under the remote start rule, of a file with these heater targets.
+    /// A start, under the remote start rule, of the file with this content hash. `key` names the
+    /// start for the check right before it: the request id of an agent's print, or the queue item id.
     Start {
         printer: String,
-        heat: Option<sx_connect::JobHeat>,
+        sha256: String,
+        key: String,
     },
     /// Deny only.
     No,
@@ -615,36 +628,48 @@ fn approvable_remotely(b: &Bridge, id: &str) -> Remote {
     if stops_only(kind) {
         return Remote::Stop;
     }
-    if let Some((printer, heat)) = b.agent_work.print_heat(id) {
-        return Remote::Start { printer, heat };
+    if let Some((printer, sha256)) = b.agent_work.print_file(id) {
+        return Remote::Start {
+            printer,
+            sha256,
+            key: id.to_owned(),
+        };
     }
     if kind.is_none()
         && let Some(item) = b.hub.item_for_request(id)
         && item.start_after_ms.is_none()
     {
-        let heat = b
-            .hub
-            .job_data(&item.sha256)
-            .and_then(|d| sx_connect::job_heat(&d));
         return Remote::Start {
             printer: item.printer_id,
-            heat,
+            sha256: item.sha256,
+            key: item.id,
         };
     }
     Remote::No
 }
 
+/// Reads what a start card's file heats, once per file, so the card and the decision can say.
+async fn read_card_heat(b: &Arc<Bridge>, id: &str) {
+    if let Remote::Start { sha256, .. } = approvable_remotely(b, id) {
+        let (b2, id2, sha2) = (b.clone(), id.to_owned(), sha256.clone());
+        crate::remote_start::read_heat(b, &sha256, move || {
+            b2.agent_work.print_data(&id2).or_else(|| b2.hub.job_data(&sha2))
+        })
+        .await;
+    }
+}
+
 /// The card's word on a remote start: whether the rule could let a phone approve it once the plate
 /// passes, and if not, why. `None` for a card that starts nothing.
 fn remote_start_view(b: &Bridge, id: &str) -> Option<Value> {
-    let Remote::Start { printer, heat } = approvable_remotely(b, id) else {
+    let Remote::Start { printer, sha256, .. } = approvable_remotely(b, id) else {
         return None;
     };
-    let before = crate::remote_start::rule_before_plate(&crate::remote_start::facts(b, &printer, heat));
+    let before = crate::remote_start::rule_before_plate(&crate::remote_start::facts(b, &printer, &sha256));
     let mut v = json!({
         "printerId": printer,
         "enabled": before.is_ok(),
-        "plateWindowSeconds": crate::remote_start::PLATE_PASS_MS / 1000,
+        "plateWindowSeconds": crate::remote_start::PLATE_PASS.as_secs(),
     });
     if let (Err(why), Some(o)) = (before, v.as_object_mut()) {
         o.insert("reason".into(), json!(why.reason()));
@@ -687,17 +712,16 @@ async fn plate_check(b: &Arc<Bridge>, pairing: &RemotePairing, p: &Value) -> Rep
     let look = crate::guard::look_now(b, &printer).await;
     let reference = crate::guard::reference(b, &printer);
     let ended = b.hub.bed(&printer).ended_at_ms;
-    let pass = crate::remote_start::plate_pass(
-        look.as_ref().map(crate::remote_start::Look::from),
-        crate::hub::now_ms(),
-        ended,
-    );
+    let pass = match &look {
+        None => Err(crate::remote_start::Why::NoAnswer),
+        Some(l) => crate::remote_start::plate_pass(Some(crate::remote_start::Look::from(l)), ended),
+    };
     let taken_at = reference.as_ref().map(|r| r.captured_at_ms);
     let mut out = json!({
         "printerId": printer,
         "checked": look.is_some(),
         "passes": pass.is_ok(),
-        "plateWindowSeconds": crate::remote_start::PLATE_PASS_MS / 1000,
+        "plateWindowSeconds": crate::remote_start::PLATE_PASS.as_secs(),
         "still": Value::Null,
         "reference": Value::Null,
     });
@@ -711,9 +735,11 @@ async fn plate_check(b: &Arc<Bridge>, pairing: &RemotePairing, p: &Value) -> Rep
         o.insert("compared".into(), json!(l.compared));
         o.insert("checkedAt".into(), json!(l.still.captured_at_ms));
         if pass.is_ok() {
+            // A hint for the card's countdown on the phone's clock; the hub keeps its own.
+            let left = crate::remote_start::PLATE_PASS.saturating_sub(l.taken.elapsed());
             o.insert(
                 "passUntil".into(),
-                json!(l.still.captured_at_ms + crate::remote_start::PLATE_PASS_MS),
+                json!(crate::hub::now_ms() + u64::try_from(left.as_millis()).unwrap_or(0)),
             );
         }
         o.insert("still".into(), card_picture(l.still).await.unwrap_or(Value::Null));
@@ -789,29 +815,28 @@ fn decision_bytes(p: &Value) -> Option<Vec<u8>> {
 }
 
 /// The remote start rule for an approval from afar: the rule on the look the person saw, then a
-/// confirming look now, which must pass too, since the start follows this answer at once.
+/// confirming look now, which must be answered and pass too. Returns both looks for the audit.
 async fn remote_start_ok(
     b: &Arc<Bridge>,
     printer: &str,
-    heat: Option<sx_connect::JobHeat>,
+    sha256: &str,
     bed_clear: bool,
-) -> Result<(), (&'static str, String)> {
-    use crate::remote_start::{Why, facts, rule};
-    let code = |w: &Why| match w {
-        Why::Off | Why::GuardOff | Why::HeatUnknown | Why::Chamber | Why::TooHot { .. } => "not_supported",
-        _ => "forbidden",
-    };
-    rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))?;
+) -> Result<(Value, Value), (&'static str, String)> {
+    use crate::remote_start::{Why, facts, look_audit, rule};
+    let fail = |w: Why| err(w.code(), w.message());
+    rule(&facts(b, printer, sha256), bed_clear).map_err(fail)?;
+    let seen = crate::guard::last_look(b, printer)
+        .as_ref()
+        .map_or(Value::Null, look_audit);
     // A confirming look nobody answered would leave the earlier look standing in for it.
-    if crate::guard::look_now(b, printer).await.is_none() {
-        return Err(err(
-            "forbidden",
-            "the camera guard did not answer the check at approval; check the plate again",
-        ));
-    }
-    rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))
+    let now = crate::guard::look_now(b, printer)
+        .await
+        .ok_or_else(|| fail(Why::NoAnswer))?;
+    rule(&facts(b, printer, sha256), bed_clear).map_err(fail)?;
+    Ok((seen, look_audit(&now)))
 }
 
+#[allow(clippy::too_many_lines)] // Check, audit, then grant or deny, in the order a reviewer reads them.
 async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p: &Value) -> Reply {
     if !(pairing.kind == PeerKind::Phone && pairing.rights.approve) {
         return Err(err("forbidden", "this device may not approve"));
@@ -851,12 +876,17 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
     // The person's plate answer, signed with the decision; a start from afar needs it and a pass.
     let bed_clear = p.get("bedClear").and_then(Value::as_bool) == Some(true);
     let mut remote_start = false;
+    let mut looks = Value::Null;
+    let mut start_key = None;
     if decision == "approve" {
+        read_card_heat(b, &id).await;
         match approvable_remotely(b, &id) {
             Remote::Stop => {}
-            Remote::Start { printer, heat } => {
-                remote_start_ok(b, &printer, heat, bed_clear).await?;
+            Remote::Start { printer, sha256, key } => {
+                let (seen, now) = remote_start_ok(b, &printer, &sha256, bed_clear).await?;
+                looks = json!({ "seen": seen, "atApproval": now });
                 remote_start = true;
+                start_key = Some(key);
             }
             Remote::No => {
                 return Err(err(
@@ -880,13 +910,30 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         "requestHash": hash,
         "sig": p.get("sig"),
         "remoteStart": remote_start,
+        "plateChecks": looks,
     }));
     if decision == "approve" {
+        // The start is checked again right before its start command (remote_start::before_start).
+        if let Some(key) = &start_key {
+            crate::remote_start::approved(b, key);
+        }
         // A bed answer given from afar is taken only for a start that passed the remote start rule,
         // where the camera checked the plate; otherwise nobody there can see it.
-        let out = crate::hub_rpc::grant(b, broker, &json!({ "requestId": id, "bedClear": remote_start }))
-            .await
-            .map_err(|e| from_rpc(&e))?;
+        let out = match crate::hub_rpc::grant(
+            b,
+            broker,
+            &json!({ "requestId": id, "bedClear": remote_start, "remoteStart": remote_start }),
+        )
+        .await
+        {
+            Ok(o) => o,
+            Err(e) => {
+                if let Some(key) = &start_key {
+                    crate::remote_start::forget(b, key);
+                }
+                return Err(from_rpc(&e));
+            }
+        };
         crate::hub_rpc::resolved(b, &id, true, "phone", None);
         if let Some((owner, work)) = b.agent_work.take(&id) {
             let token = serde_json::from_value(out).map_err(|_| err("failed", "the broker gave no token"))?;

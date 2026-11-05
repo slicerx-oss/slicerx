@@ -10,8 +10,11 @@ import { HAND_FRAME } from './frames.ts'
 /** `modified` is seconds since the epoch, as Moonraker reports it. */
 export interface StoredFile { name: string; size: number; sha256: string; modified: number }
 
-/** What the camera shows: the tiny placeholder, the hand reaching in (`HAND_FRAME`), or a JPEG file read for each frame. */
-export type CameraFrame = 'placeholder' | 'hand' | { file: string }
+/**
+ * What the camera shows: the tiny placeholder, the hand reaching in (`HAND_FRAME`), the placeholder with a frame counter
+ * in a JPEG comment so no two frames are the same bytes (`live`, as a real sensor's noise), or a JPEG file read for each frame.
+ */
+export type CameraFrame = 'placeholder' | 'hand' | 'live' | { file: string }
 
 /** A fault a test injects (`POST /fault`): filament runs out, the door opens, the printer drops off the network. */
 export type Fault = 'runout' | 'door' | 'offline'
@@ -63,6 +66,8 @@ export class MockMachine {
   readonly log: string[] = []
   /** What the camera sends (`POST /camera`). */
   camera: CameraFrame = 'placeholder'
+  /** Frames sent in `live` mode, for its counter. */
+  private frames = 0
   /** The faults in force (`POST /fault`). */
   readonly faults = new Set<Fault>()
   /** Set by adapters that take faults; without one, `POST /fault` is refused. */
@@ -165,6 +170,11 @@ export class MockMachine {
   /** The JPEG the camera sends now. A file that cannot be read sends the placeholder. */
   frame(): Buffer {
     if (this.camera === 'hand') return HAND_FRAME
+    if (this.camera === 'live') {
+      const note = Buffer.from(`frame ${++this.frames}`)
+      const com = Buffer.from([0xff, 0xfe, (note.length + 2) >> 8, (note.length + 2) & 0xff])
+      return Buffer.concat([JPEG.subarray(0, 2), com, note, JPEG.subarray(2)])
+    }
     if (typeof this.camera === 'object') {
       try {
         return readFileSync(this.camera.file)

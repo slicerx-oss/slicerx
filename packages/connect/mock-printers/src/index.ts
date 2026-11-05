@@ -198,14 +198,15 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       return { json: { state: m.state } }
     }
     // POST /camera {mock, frame}: what that mock's camera sends from now on. `frame` is `placeholder` (the tiny
-    // JPEG), `hand` (HAND_FRAME, a hand reaching in) or the path of a JPEG file, read for each frame.
+    // JPEG), `hand` (HAND_FRAME, a hand reaching in), `live` (the placeholder with a frame counter, so no two frames are
+    // the same bytes) or the path of a JPEG file, read for each frame.
     if (req.path === '/camera' && req.method === 'POST') {
       const b = req.json() as { mock: string; frame: string }
       const m = machines.get(b.mock)
       if (!m) return { status: 404 }
       if (!CAMERA_MOCKS.has(b.mock)) return { status: 400, json: { error: `${b.mock} has no camera that follows /camera` } }
-      if (typeof b.frame !== 'string' || !b.frame) return { status: 400, json: { error: 'frame is placeholder, hand or a file path' } }
-      const frame: CameraFrame = b.frame === 'placeholder' || b.frame === 'hand' ? b.frame : { file: b.frame }
+      if (typeof b.frame !== 'string' || !b.frame) return { status: 400, json: { error: 'frame is placeholder, hand, live or a file path' } }
+      const frame: CameraFrame = b.frame === 'placeholder' || b.frame === 'hand' || b.frame === 'live' ? b.frame : { file: b.frame }
       m.setCamera(frame)
       if (b.mock === 'bambu') bambuCamera = { hand: frame === 'hand', ...(typeof frame === 'object' ? { file: frame.file } : {}) }
       return { json: { camera: b.frame } }

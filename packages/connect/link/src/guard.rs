@@ -50,24 +50,34 @@ pub(crate) struct GuardState {
     trips: std::sync::Mutex<HashMap<String, Value>>,
     /// Empty-plate pictures read so far (the files are in the state directory).
     plates: std::sync::Mutex<HashMap<String, Still>>,
-    /// Plate checks waiting for the detector, by check id.
-    waits: std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>,
+    /// Plate checks and looks waiting for the detector, by check id, with the printer each is about.
+    /// Only the guard's own detector answers them (`plate_result_call`).
+    waits: std::sync::Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<Value>)>>,
     /// When each printer last gave a detector a second look.
     grabbed: std::sync::Mutex<HashMap<String, u64>>,
     /// Each printer's last answered plate check, the evidence a remote start needs (`remote_start.rs`).
     looks: std::sync::Mutex<HashMap<String, PlateLook>>,
 }
 
-/// One answered plate check: the still the detector judged, when it was taken, what the detector
-/// said, and whether it compared the still with the person's empty-plate picture.
+/// One answered plate check: the still the detector judged, when the hub took it (on the monotonic
+/// clock, for its age, and on the wall clock, against the last print's end), what the detector said,
+/// whether it compared the still with the person's empty-plate picture, and whether the still is the
+/// same bytes as the look before it or the empty-plate picture (a frozen feed).
 #[derive(Clone)]
 pub(crate) struct PlateLook {
     pub still: Still,
+    pub taken: std::time::Instant,
     /// `Some(true)` clear, `Some(false)` something found, `None` the detector could not tell.
     pub clear: Option<bool>,
-    /// The detector had the empty-plate picture to compare with. A look of the model alone, or one
-    /// the person overruled with "It's fine" and no spot, is not a comparison.
+    /// The detector said it compared the still with the empty-plate picture the hub sent. A look of
+    /// the model alone, one without a picture, or one the person overruled with "It's fine" and no
+    /// spot is not a comparison.
     pub compared: bool,
+    /// The still is byte for byte the previous look's or the empty-plate picture: a camera whose
+    /// feed stopped. A real sensor never sends the same bytes twice.
+    pub frozen: bool,
+    /// SHA-256 of the still, for the audit.
+    pub sha256: String,
 }
 
 /// Whether the guard watches this printer (on unless the person turned it off).
@@ -316,19 +326,20 @@ struct Plate {
 
 /// Checks the plate now. `None` when there is no detector or no picture.
 async fn check_plate(b: &Arc<Bridge>, printer: &str) -> Option<Plate> {
-    if !b.hub.has_watchers() {
+    if !b.hub.has_detector() {
         return None;
     }
     let still = crate::watch::grab(b, printer).await.ok().flatten()?;
     let id = random_hex(8);
     let (tx, rx) = tokio::sync::oneshot::channel();
-    lock(&b.hub.guard.waits).insert(id.clone(), tx);
+    lock(&b.hub.guard.waits).insert(id.clone(), (printer.to_owned(), tx));
     let ignore = lock(&b.hub.settings)
         .watch_plate_ignore
         .get(printer)
         .cloned()
         .unwrap_or_default();
-    let reference = plate(b, printer).map(|s| picture(&s));
+    let reference_still = plate(b, printer);
+    let reference = reference_still.as_ref().map(picture);
     let has_reference = reference.is_some();
     b.hub.emit(
         "watch.plate",
@@ -348,14 +359,24 @@ async fn check_plate(b: &Arc<Bridge>, printer: &str) -> Option<Plate> {
             .iter()
             .any(|x| x == printer);
     let said = answer.get("clear").and_then(Value::as_bool);
-    lock(&b.hub.guard.looks).insert(
-        printer.to_owned(),
-        PlateLook {
-            still: still.clone(),
-            clear: said,
-            compared: has_reference && !overruled,
-        },
-    );
+    let compared =
+        has_reference && !overruled && answer.get("compared").and_then(Value::as_bool) == Some(true);
+    {
+        let mut looks = lock(&b.hub.guard.looks);
+        let frozen = looks.get(printer).is_some_and(|l| l.still.data == still.data)
+            || reference_still.as_ref().is_some_and(|r| r.data == still.data);
+        looks.insert(
+            printer.to_owned(),
+            PlateLook {
+                still: still.clone(),
+                taken: std::time::Instant::now(),
+                clear: said,
+                compared,
+                frozen,
+                sha256: crate::hub::sha256_hex(&still.data),
+            },
+        );
+    }
     Some(Plate {
         clear: if overruled { Some(true) } else { said },
         bbox,
@@ -429,6 +450,22 @@ pub(crate) async fn job_began(b: Arc<Bridge>, printer: String) {
     trip(&b, &printer, ev, Some(p.still));
 }
 
+/// Forgets everything the guard keeps about a printer that was removed: its empty-plate picture, the
+/// spots marked on it, its looks, trips and frames.
+pub(crate) fn forget_printer(b: &Bridge, printer: &str) {
+    let _ = set_plate(b, printer, None);
+    {
+        let mut s = lock(&b.hub.settings);
+        s.watch_plate_ignore.remove(printer);
+        s.watch_plate_model_off.retain(|x| x != printer);
+        s.watch_guard_off.retain(|x| x != printer);
+    }
+    lock(&b.hub.guard.looks).remove(printer);
+    lock(&b.hub.guard.trips).remove(printer);
+    lock(&b.hub.guard.evidence).remove(printer);
+    lock(&b.hub.guard.last_still).remove(printer);
+}
+
 /// Runs a plate check now and returns what it saw, for a remote start's card. `None` when no
 /// detector answered or the printer gave no still.
 pub(crate) async fn look_now(b: &Arc<Bridge>, printer: &str) -> Option<PlateLook> {
@@ -483,10 +520,26 @@ pub(crate) async fn grab_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 
 /// `watch.plateResult` and `watch.lookResult {checkId, ...}` (detectors): the answer to a
 /// `watch.plate` or a `watch.look`.
-pub(crate) fn plate_result_call(b: &Bridge, p: &Value) -> Rpc<Value> {
+/// Only the guard's own detector answers: a connection that paired as a detector with the
+/// detector code or the app's (`detector` true), never an agent or partner key narrowed to the watch
+/// role. The answer must name the printer the check was about.
+pub(crate) fn plate_result_call(b: &Bridge, detector: bool, p: &Value) -> Rpc<Value> {
+    if !detector {
+        return Err(RpcError::new(
+            "forbidden",
+            "only the camera guard's own detector answers plate checks",
+        ));
+    }
     let id = str_arg(p, "checkId")?;
-    let waiting = lock(&b.hub.guard.waits).remove(&id);
-    if let Some(tx) = waiting {
+    let printer = p.get("printerId").and_then(Value::as_str);
+    let mut waits = lock(&b.hub.guard.waits);
+    if waits
+        .get(&id)
+        .is_some_and(|(want, _)| printer != Some(want.as_str()))
+    {
+        return Err(RpcError::new("bad_request", "the answer names another printer"));
+    }
+    if let Some((_, tx)) = waits.remove(&id) {
         let _ = tx.send(p.clone());
     }
     Ok(json!({ "recorded": true }))
@@ -498,12 +551,12 @@ async fn look_again(b: &Arc<Bridge>, printer: &str) -> Rpc<(Option<bool>, Option
     let Some(still) = crate::watch::grab(b, printer).await? else {
         return Ok((None, None));
     };
-    if !b.hub.has_watchers() {
+    if !b.hub.has_detector() {
         return Ok((None, Some(still)));
     }
     let id = random_hex(8);
     let (tx, rx) = tokio::sync::oneshot::channel();
-    lock(&b.hub.guard.waits).insert(id.clone(), tx);
+    lock(&b.hub.guard.waits).insert(id.clone(), (printer.to_owned(), tx));
     b.hub.emit(
         "watch.look",
         json!({ "checkId": id, "printerId": printer, "frame": picture(&still) }),
@@ -733,7 +786,7 @@ pub(crate) fn guard_state_call(b: &Bridge) -> Value {
         .iter()
         .map(|(k, v)| (k.clone(), json!(iso(*v))))
         .collect();
-    json!({ "trips": trips, "off": s.watch_guard_off, "plates": plates, "detector": b.hub.has_watchers() })
+    json!({ "trips": trips, "off": s.watch_guard_off, "plates": plates, "detector": b.hub.has_detector() })
 }
 
 /// `watch.evidence {printerId, fresh?}` (app): the frame behind the printer's trip. `fresh`

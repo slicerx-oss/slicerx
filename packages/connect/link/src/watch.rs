@@ -198,6 +198,7 @@ pub(crate) async fn feed(
     subscription: u64,
     every: Duration,
     only: Option<Vec<String>>,
+    detector: bool,
     tx: tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>,
 ) {
     /// Removes the subscription from the hub's watch state when the feed ends or is aborted.
@@ -207,7 +208,7 @@ pub(crate) async fn feed(
             self.0.hub.remove_watcher(self.1);
         }
     }
-    let _registered = Registered(&b, b.hub.add_watcher(only.clone()));
+    let _registered = Registered(&b, b.hub.add_watcher(only.clone(), detector));
     let mut tick = tokio::time::interval(every);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {

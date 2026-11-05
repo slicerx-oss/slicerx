@@ -78,6 +78,9 @@ pub(crate) struct Bridge {
     pub(crate) card_partners: StdMutex<HashMap<String, String>>,
     /// Agent work waiting for a person's answer.
     pub(crate) agent_work: crate::agent_work::Waiting,
+    /// Remote start's working state: file heat read once per file, starts approved from afar, and
+    /// queued plates' cards a client asked for.
+    pub(crate) remote_start: crate::remote_start::State,
     /// Live connections of remembered clients, so revoking a key closes them at once.
     pub(crate) live_clients: StdMutex<Vec<(String, mpsc::UnboundedSender<Message>)>>,
     /// The app link's host and the agent calls in flight (`app_link.rs`).
@@ -188,6 +191,7 @@ impl Bridge {
             card_owners: StdMutex::new(HashMap::new()),
             card_partners: StdMutex::new(HashMap::new()),
             agent_work: crate::agent_work::Waiting::default(),
+            remote_start: crate::remote_start::State::default(),
             live_clients: StdMutex::new(Vec::new()),
             app_link: crate::app_link::Link::default(),
             remote,
@@ -394,6 +398,7 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
         queued,
         client: None,
         partner: None,
+        detector: false,
         origin: crate::hub::lock(&origin).take(),
     };
     while let Some(Ok(msg)) = source.next().await {
@@ -498,11 +503,13 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
                 let partner = by_key.as_ref().and_then(|(_, _, p)| p.clone());
                 // A client may ask for the narrower role, never a wider one. A partner app stays an
                 // agent: the detector's reports could pause a print with no card.
+                let granted = role;
                 let role = if partner.is_some() {
                     Role::Agent
                 } else {
                     roles::narrowed(role, params.get("role").and_then(Value::as_str))
                 };
+                conn.detector = role == Role::Watch && granted != Role::Agent && partner.is_none();
                 // Each remembered agent can ask the person through the app link, so the agent code
                 // remembers only so many; the person revokes old ones in Settings.
                 if by_code.is_some()
@@ -634,6 +641,7 @@ fn forward_events(bridge: &Arc<Bridge>, conn: &mut Conn, tx: &mpsc::UnboundedSen
     // answers); the app's cards, queue, beds and deliveries are not theirs.
     let role = conn.role;
     let agent = role != Role::App;
+    let detector = conn.detector;
     let forward = |mut rx: broadcast::Receiver<Value>, wrap: bool| {
         let tx = tx.clone();
         tokio::spawn(async move {
@@ -655,7 +663,11 @@ fn forward_events(bridge: &Arc<Bridge>, conn: &mut Conn, tx: &mpsc::UnboundedSen
                     None if !roles::sees_broadcast(
                         role,
                         data.get("event").and_then(Value::as_str).unwrap_or(""),
-                    ) =>
+                    ) || (!detector
+                        && matches!(
+                            data.get("event").and_then(Value::as_str),
+                            Some("watch.plate" | "watch.look")
+                        )) =>
                     {
                         continue;
                     }
@@ -752,6 +764,10 @@ struct Conn {
     client: Option<String>,
     /// The partner app's name, when it paired with a partner key (roles.rs).
     partner: Option<String>,
+    /// The camera guard's own detector: the watch role from the detector code, the app code or a
+    /// detector key the person made, never an agent or partner key narrowed to it. Only it gets plate
+    /// checks and looks, and only it may answer them.
+    detector: bool,
     /// The Origin header of the upgrade, when it had one.
     origin: Option<String>,
 }
@@ -856,12 +872,43 @@ async fn dispatch(
             b.sessions.lock().await.remove(&id);
             b.fleets.lock().await.forget_printer(&id);
             crate::hub::lock(&b.hub.beds).remove(&id);
+            // A new printer under this id starts with no remote start and no empty-plate picture.
+            crate::hub::lock(&b.hub.settings).remote_start.remove(&id);
+            crate::guard::forget_printer(b, &id);
             hub_rpc::save(b).await;
             Ok(json!({ "removed": true }))
         }
         "print.local" => hub_rpc::print_local(b, &p).await,
         m if m.starts_with("bed.") => hub_rpc::bed_call(b, m, &p).await,
-        "queue.start" => hub_rpc::queue_start(b, conn.partner.as_deref(), &p).await,
+        "queue.start" => {
+            let words = match (&conn.partner, &conn.client) {
+                (Some(p), _) => Some(format!("{p}, a partner app")),
+                _ if conn.role == Role::App => None,
+                (None, Some(id)) => Some(
+                    crate::hub::lock(&b.hub.clients)
+                        .iter()
+                        .find(|c| &c.id == id)
+                        .map_or_else(
+                            || "a connected agent".to_owned(),
+                            |c| format!("{}, a connected agent", c.name),
+                        ),
+                ),
+                (None, None) => Some("a connected agent".to_owned()),
+            };
+            let asker = words.map(|words| hub_rpc::Asker {
+                words,
+                partner: conn.partner.as_deref(),
+            });
+            hub_rpc::queue_start(b, asker.as_ref(), &p).await
+        }
+        // Agents and partner apps read the queue redacted; a partner only the plates it queued.
+        "queue.list" if conn.role == Role::Agent => Ok(Value::Array(
+            crate::hub::lock(&b.hub.queue)
+                .iter()
+                .filter(|i| conn.partner.is_none() || i.queued_by == conn.partner)
+                .map(crate::hub::QueueItem::to_client_json)
+                .collect(),
+        )),
         m if m.starts_with("queue.") => hub_rpc::queue_call(b, m, &p).await,
         "remoteStart.get" => crate::remote_start::get_call(b, &p).await,
         "remoteStart.set" => crate::remote_start::set_call(b, &p).await,
@@ -980,7 +1027,14 @@ async fn dispatch(
             conn.next_sub += 1;
             conn.subs.insert(
                 id,
-                tokio::spawn(crate::watch::feed(b.clone(), id, every, only, tx.clone())),
+                tokio::spawn(crate::watch::feed(
+                    b.clone(),
+                    id,
+                    every,
+                    only,
+                    conn.detector,
+                    tx.clone(),
+                )),
             );
             Ok(json!({ "subscription": id }))
         }
@@ -999,7 +1053,7 @@ async fn dispatch(
         "watch.huginnPrinters" => Ok(crate::watch::huginn_printers(b)),
         "watch.dismiss" => crate::watch::dismiss_call(b, &p),
         "watch.grab" => crate::guard::grab_call(b, &p).await,
-        "watch.plateResult" | "watch.lookResult" => crate::guard::plate_result_call(b, &p),
+        "watch.plateResult" | "watch.lookResult" => crate::guard::plate_result_call(b, conn.detector, &p),
         "watch.handCheck" => crate::guard::hand_check_call(b, &p).await,
         "watch.resume" => crate::guard::resume_call(b, &p).await,
         "watch.plateClear" => crate::guard::plate_clear_call(b, &p).await,
@@ -1568,9 +1622,9 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         || roles::person_only(req.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())));
     let mut card = serde_json::to_value(&req).unwrap_or(Value::Null);
     // An agent's person-only card carries its work; the hub runs it once a person approves.
-    let mut work = crate::agent_work::work_arg(p)?;
-    if let Some(w) = &mut work {
-        w.pin_epoch(b);
+    let work = crate::agent_work::work_arg(p)?;
+    if let Some(w) = &work {
+        w.check_epoch(b)?;
     }
     if let (Some(w), Some(o)) = (&work, card.as_object_mut()) {
         o.insert("work".into(), w.summary());
