@@ -120,11 +120,9 @@ export function stepUnit(bytes: Uint8Array): StepUnit | null {
 const IGES_UNIT_FLAGS: Record<number, StepUnit> = { 1: 'inch', 2: 'millimeter', 4: 'foot', 6: 'meter', 10: 'centimeter' }
 const IGES_UNIT_NAMES: Record<string, StepUnit> = { IN: 'inch', INCH: 'inch', MM: 'millimeter', FT: 'foot', M: 'meter', CM: 'centimeter' }
 
-/** An IGES file's 80 column records, with or without line breaks between them. */
+/** An IGES file's 80 column records, with or without line breaks between them (a line over 80 columns holds several). */
 function igesRecords(text: string): string[] {
-  const lines = text.split(/\r?\n/)
-  if (lines.length > 1 || lines[0]!.length <= 80) return lines
-  return lines[0]!.match(/.{1,80}/gs) ?? []
+  return text.split(/\r?\n/).flatMap((line) => (line.length <= 80 ? [line] : (line.match(/.{1,80}/gs) ?? [])))
 }
 
 /** What the first record says about an IGES file: 'iges' for the fixed ASCII form, 'compressed', or null for neither. */
@@ -268,7 +266,6 @@ interface Format {
   keepFaces: boolean
   /** Give an unnamed mesh the name of the tree node that holds it. */
   nodeNames: boolean
-  ext: RegExp
 }
 
 const STEP_SHAPES = /\b(MANIFOLD_SOLID_BREP|BREP_WITH_VOIDS|FACETED_BREP|SHELL_BASED_SURFACE_MODEL|CLOSED_SHELL|OPEN_SHELL|ADVANCED_FACE|FACE_SURFACE)\s*\(/i
@@ -298,7 +295,6 @@ const STEP: Format = {
   unit: stepUnit,
   keepFaces: false,
   nodeNames: false,
-  ext: /\.(step|stp)$/i,
 }
 
 const IGES: Format = {
@@ -308,8 +304,9 @@ const IGES: Format = {
   unit: igesUnit,
   keepFaces: true,
   nodeNames: true,
-  ext: /\.(igs|iges)$/i,
 }
+
+const CAD_EXT = /\.(step|stp|igs|iges)$/i
 
 const NOTHING = (app: string, word: string): StepError =>
   new StepError('no_solids', `has no solids or surfaces ${app} can read. It may hold only drawings or annotations, or use ${word} entities ${app} does not support.`)
@@ -432,7 +429,8 @@ function read(f: Format, occt: Occt, file: Uint8Array, fileName: string, quality
     if (left > 0) notes.push(`Left out ${left} open ${left === 1 ? 'surface' : 'surfaces'} that ${left === 1 ? 'is' : 'are'} not part of a solid.`)
   }
 
-  const base = fileName.replace(f.ext, '')
+  // Any CAD extension comes off: the bytes pick the format, and the name may say another (or be the default model.step).
+  const base = fileName.replace(CAD_EXT, '')
   const bodies: StepBody[] = u.keep.map((m, i) => {
     const name = cleanName(m.name)
     const color = colorOf(m)

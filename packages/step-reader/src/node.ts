@@ -5,6 +5,7 @@
 // for gigabytes ends that worker, never the calling process. The answer comes back as a StepRead, typed StepError on
 // failure.
 import { readFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { STEP_MAX_MEMORY_MB } from './load.ts'
 import { cadFormat, STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead } from './read.ts'
@@ -100,6 +101,6 @@ export function readStepInWorker(bytes: Uint8Array, opts: NodeReadOptions = {}):
 export async function readStepFileInWorker(path: string, opts: NodeReadOptions = {}): Promise<StepRead> {
   const capMb = Math.min(opts.maxInputMb ?? STEP_MAX_MB, STEP_MAX_MB)
   const size = (await stat(path)).size
-  if (size > capMb * 1024 * 1024) throw tooLarge(size, capMb, new Uint8Array(0), opts.name)
+  if (size > capMb * 1024 * 1024) throw tooLarge(size, capMb, new Uint8Array(0), opts.name ?? basename(path))
   return readStepInWorker(new Uint8Array(await readFile(path)), opts)
 }
