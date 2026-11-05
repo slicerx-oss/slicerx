@@ -643,6 +643,20 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     expect(moved).toEqual([])
   })
 
+  test('Printer settings, every tab', async ({ page }, info) => {
+    test.slow()
+    await open(page, { settingsMode: 'advanced' })
+    await openSheet(page)
+    await sx(page, { printerSettingsOpen: true })
+    const dialog = page.getByRole('dialog', { name: /Printer settings/ })
+    await expect(dialog).toBeVisible()
+    // On a phone the tab row is wider than the dialog and scrolls sideways: a tab brought into view stays where it was
+    // pressed, and so does everything before it.
+    const moved = await probe(page, 'Printer settings', dialog)
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
   test('the phone tab bar and the mimir tab', async ({ page, isMobile }, info) => {
     test.skip(!isMobile, 'The tab bar is the phone layout; desktop keeps its tabs in the top bar')
     await open(page, { pilot: { mode: 'unset' } })

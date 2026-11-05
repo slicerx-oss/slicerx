@@ -662,6 +662,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .settings-dialog .sx-dialog-h { padding: var(--s-4) var(--s-5) var(--s-1); }
 .settings-dialog .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: var(--s-2) var(--s-5) var(--s-5); }
 .settings-dialog .sx-dialog-foot { padding: var(--s-3) var(--s-5) var(--s-5); border-top: 1px solid var(--line-soft); }
+/* Printer settings: one height for every tab too, so a tab with fewer rows never re-centers the dialog and moves its
+   tab row (static controls). The header and the footer stay put and the body scrolls. */
+.printer-settings[open] { display: flex; flex-direction: column; height: min(960px, calc(100dvh - 2 * var(--gutter))); overflow: hidden; }
+.printer-settings .sx-dialog-h, .printer-settings .sx-dialog-foot { flex: none; }
+.printer-settings .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .settings { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 320px; }
 .settings-nav { display: grid; align-content: start; gap: 2px; }
 /* The nav and the section scroll together in the dialog's body, so the nav stays at the top while a long section scrolls. */
