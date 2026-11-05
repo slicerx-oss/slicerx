@@ -73,6 +73,11 @@ pub struct TokenGrant {
     pub allowed: bool,
     #[serde(default)]
     pub retry_after_s: Option<i64>,
+    /// The partner app the person issued this token to, for a partner app
+    /// token (`create_partner_token`). Such a token has only the
+    /// `cloud_slice` scope and sees only the jobs it queued.
+    #[serde(default)]
+    pub partner_app: Option<String>,
 }
 
 fn granted() -> bool {
@@ -84,6 +89,17 @@ fn granted() -> bool {
 pub struct Principal {
     pub user_id: String,
     pub token_id: Option<String>,
+    /// Set when the caller is a partner app token: the app's name.
+    pub partner_app: Option<String>,
+}
+
+impl Principal {
+    /// Whether this caller may see `job`. A member's own token and session
+    /// see every job of the account; a partner app token sees only the jobs
+    /// it queued itself.
+    pub fn sees(&self, job: &Job) -> bool {
+        self.partner_app.is_none() || (self.token_id.is_some() && job.token_id == self.token_id)
+    }
 }
 
 /// An invited account's cloud limits and today's use (`cloud_quota` in
@@ -147,6 +163,10 @@ pub struct Job {
     /// last plate the worker took up.
     #[serde(default)]
     pub plate_index: Option<i32>,
+    /// The API token that queued the job, if one did. Kept inside the
+    /// service: it decides what a partner app token sees.
+    #[serde(default, skip_serializing)]
+    pub token_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,6 +397,8 @@ pub trait Backend: Send + Sync {
     async fn insert_job(&self, job: NewJob) -> Result<Job>;
     async fn job(&self, user_id: &str, id: &str) -> Result<Option<Job>>;
     async fn jobs(&self, user_id: &str, limit: u32) -> Result<Vec<Job>>;
+    /// The jobs one API token queued, newest first (what a partner app token lists).
+    async fn token_jobs(&self, user_id: &str, token_id: &str, limit: u32) -> Result<Vec<Job>>;
     async fn cancel_job(&self, user_id: &str, id: &str) -> Result<bool>;
     async fn claim_job(&self, worker: &str) -> Result<Option<Job>>;
     /// Records progress, with the plate being sliced (from 1) for a job that names its plates; this is also the

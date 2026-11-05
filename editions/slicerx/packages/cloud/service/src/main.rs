@@ -229,6 +229,12 @@ fn make_backend(
                 // Invited, with the hosted defaults: 20 jobs a day, 25 MB meshes.
                 m.grant_access(dev_user, 20, 25 * 1024 * 1024);
             }
+            // A partner app token for the same test user, for building a partner app against a local service.
+            if let Some(token) = env("SX_CLOUD_DEV_PARTNER_TOKEN") {
+                let dev_user = "00000000-0000-4000-8000-00000000d0e0";
+                m.add_partner_token(&token, dev_user, "Local partner app");
+                m.grant_access(dev_user, 20, 25 * 1024 * 1024);
+            }
             eprintln!("sx-cloud: memory backend; nothing is saved");
             Arc::new(m)
         }

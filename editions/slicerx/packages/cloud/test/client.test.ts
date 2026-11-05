@@ -77,6 +77,15 @@ describe('cloud client', () => {
     expect(await c.access()).toEqual({ ok: true, value: { invited: true, jobsPerDay: 20, jobsToday: 3, maxUploadBytes: 26214400 } })
   })
 
+  it('reads the partner app a partner token was issued to, and sends the token only in the header', async () => {
+    const { fetch, calls } = fakeFetch(() => json(200, { invited: true, jobsPerDay: 20, jobsToday: 1, maxUploadBytes: 26214400, partnerApp: 'Example Phone' }))
+    const token = `sxk_${'1'.repeat(64)}`
+    const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => token, fetch })
+    expect(await c.access()).toEqual({ ok: true, value: { invited: true, jobsPerDay: 20, jobsToday: 1, maxUploadBytes: 26214400, partnerApp: 'Example Phone' } })
+    expect(calls[0]).toEqual({ method: 'GET', path: '/v1/access', auth: `Bearer ${token}` })
+    expect(calls.every((x) => !x.path.includes('sxk_'))).toBe(true)
+  })
+
   it('reports offline instead of throwing when the network is down', async () => {
     const fetch = (() => Promise.reject(new TypeError('fetch failed'))) as typeof globalThis.fetch
     const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 'sxk_abc', fetch })
