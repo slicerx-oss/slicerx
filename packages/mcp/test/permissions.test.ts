@@ -88,6 +88,7 @@ describe('a person approves anything that moves or heats a printer', () => {
   const moving: [string, Record<string, unknown>][] = [
     ['slicerx_printer_set_temperature', temp],
     ['slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' }],
+    ['slicerx_printer_home', { printerId: 'bay-4' }],
     ['slicerx_printer_resume', { printerId: 'bay-3' }],
   ]
 

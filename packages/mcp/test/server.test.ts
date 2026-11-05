@@ -29,6 +29,7 @@ describe('tool list', () => {
         'slicerx_printer_history',
         'slicerx_printer_set_temperature',
         'slicerx_printer_filament',
+        'slicerx_printer_home',
         'slicerx_printer_gcode',
         'slicerx_printer_snapshot',
         'slicerx_approve',
