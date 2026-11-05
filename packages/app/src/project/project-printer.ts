@@ -7,12 +7,12 @@
 // A PrusaSlicer project opens on the printer the plate is on, and the open's note offers the printer it was made for:
 // one button switches to it (the person's own printer of that model and nozzle, else our profile for it) and works the
 // project's settings out again there. Without the button the plate stays where it is.
-import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, matchProjectPrinter, printerName, printerProfile, projectPrinterChanges, projectPrinterOffer, projectSettingChanges, reviewProjectGcode, settingDef, type ProjectPrinterMatch } from '@slicerx/settings'
+import { EASY_DEFAULTS, type PrinterInfo, type SettingValue } from '@slicerx/contracts'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, layerConfig, matchProjectPrinter, printerName, printerProfile, projectDefaults, projectPrinterChanges, projectPrinterOffer, projectSettingChanges, reviewProjectGcode, settingDef, type ProjectPrinterMatch } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { slotConfig } from '../filament/slot-config'
-import { profileReady } from '../state/profile-sync'
+import { profileReady, slotsOf } from '../state/profile-sync'
 import { isExportOnly } from '../lib/hand-printers'
 import { gcodeValues, reviewOpenedGcode } from '../state/project-gcode'
 import { recognizedScript } from './script-review'
@@ -156,7 +156,7 @@ const same = (a: SettingValue | undefined, b: SettingValue | undefined): boolean
  * else a line and the button that switches to it. The printer leads, since it is what the person acts on; the file is
  * in Details.
  */
-export function projectPrinterNote(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, changed = Object.keys(applied).length): PrinterNote | null {
+export function projectPrinterNote(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, changed = Object.keys(applied).length, real: readonly string[] = []): PrinterNote | null {
   const s = get()
   const offer = projectPrinterOffer(matchProjectPrinter(settings), { profileId: s.printerModel ? (s.profile?.printerId ?? null) : null, ...(s.profile ? { nozzle: s.profile.nozzle } : {}) })
   if (!offer || offer.kind === 'same') return null
@@ -171,7 +171,7 @@ export function projectPrinterNote(source: string, settings: Record<string, unkn
   return {
     text: `Made for a ${printerName(match.profileId)}, ${mm(match.nozzle)} nozzle.${did}`,
     details,
-    action: { label: `Switch to ${own ? own.name : `${match.model} ${mm(match.nozzle)}`}`, run: () => void switchToOfferedPrinter(source, settings, printers, applied, at.opened) },
+    action: { label: `Switch to ${own ? own.name : `${match.model} ${mm(match.nozzle)}`}`, run: () => void switchToOfferedPrinter(source, settings, printers, applied, at.opened, real) },
     settle: () => {
       at.opened = { ...get().overrides }
     },
@@ -186,7 +186,7 @@ export function projectPrinterNote(source: string, settings: Record<string, unkn
  * any setting the person changed since the open stays as they set it. Its printer G-code is reviewed again against the
  * new printer.
  */
-export async function switchToOfferedPrinter(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, opened: Record<string, SettingValue>): Promise<void> {
+export async function switchToOfferedPrinter(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, opened: Record<string, SettingValue>, realAtOpen: readonly string[] = []): Promise<void> {
   const ps = get().projectSettings
   const prior = ps?.source === source ? (ps.prior ?? {}) : {}
   const now = get().overrides
@@ -224,8 +224,9 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
   })
   // A value the project did not change that equals the layer the plate now sits on is let go, as on the open, and is no
   // longer the project's, so New project leaves a later edit to it alone; a real change and a person's own stay. With
-  // no printer layer the values stay. A key an object, part or modifier still brings stays the project's.
-  await profileReady()
+  // no printer layer the values stay. A key an object, part or modifier still brings stays the project's. Real changes
+  // are those against this printer's Standard layer, and those the open counted on the printer before.
+  const real = new Set([...realAtOpen, ...realChanges(settings, await standardLayer(), false)])
   set((s) => {
     if (!s.profile || !s.projectSettings) return {}
     const layer = resolveConfig(s.easy, {}) as unknown as Record<string, SettingValue | undefined>
@@ -234,7 +235,7 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
     const gone = new Set<string>()
     const carried = objectKeys(s)
     for (const k of keys) {
-      if (k in changes || before[k] !== undefined || !(k in overrides) || !same(overrides[k], layer[k])) continue
+      if (k in changes || real.has(k) || before[k] !== undefined || !(k in overrides) || !same(overrides[k], layer[k])) continue
       // the person had no value of their own here (before is empty), so there is nothing for New project to give back
       delete overrides[k]
       if (carried.has(k)) continue
@@ -249,6 +250,25 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
   const on = match.own ? match.own.name : `${match.model} ${mm(match.nozzle)}`
   const kept = edited.size ? ` Kept ${settingsCount(edited.size)} you changed.` : ''
   openNote(`Switched to ${on}.${changed ? ` Applied ${settingsCount(changed)} from the project.` : ''}${kept}`, CHANGE_PRINTER, { details: `From ${source}.`, wrap: true })
+}
+
+/**
+ * The plate printer's layer at Standard with no Easy edits: the fixed start a project's real changes are measured
+ * against, whatever goal the plate is on, as the MCP server measures them. Null without a printer layer.
+ */
+export async function standardLayer(): Promise<Record<string, SettingValue> | null> {
+  await profileReady()
+  const s = get()
+  if (!s.printerModel || !s.profile) return null
+  const { buildProfileLayer } = await import('../adapters/profile')
+  const layer = await buildProfileLayer({ printer: s.printerModel, tier: 'standard', slots: slotsOf(s), nozzle: s.profile.nozzle })
+  return layer ? layerConfig(layer.values, { ...EASY_DEFAULTS, varyLayerHeight: false }, new Set(['smartLayer', 'varyLayerHeight'])) : null
+}
+
+/** The keys a project's settings change against the Standard layer (`standardLayer`), its real changes. */
+export function realChanges(settings: Record<string, unknown>, standard: Record<string, SettingValue> | null, bambu: boolean): string[] {
+  if (!standard) return []
+  return Object.keys(projectSettingChanges(bambu ? { ...projectDefaults(settings), ...settings } : settings, standard as never).values)
 }
 
 /** The setting keys an object, part or modifier on the plate carries. */

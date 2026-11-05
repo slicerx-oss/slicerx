@@ -230,7 +230,8 @@ async function addProjectShown(
       brought.add(k)
       pinned.add(k)
     }
-    for (const k of r.changed) real.add(k)
+    // against the project printer's Standard layer, whatever goal the plate is on, as the MCP server measures them
+    for (const k of [...r.changed, ...pp.realChanges(project.settings, await pp.standardLayer(), true)]) real.add(k)
     note = r.note
     // What its settings did not carry over, with the engine choices and walls SlicerX used: Settings > Presets shows it.
     const { projectReport } = await import('@slicerx/settings')
@@ -251,18 +252,22 @@ async function addProjectShown(
     const { values: changed, taken: values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
     const n = Object.keys(changed).length
     const pins = Object.keys(values).length
-    for (const k of Object.keys(changed)) real.add(k)
-    // Our own project reopened as it was keeps its goal.
-    if (pins) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, ...(n || !own ? { goal: 'custom' as const } : {}) })))
+    const { realChanges, standardLayer } = await import('../project/project-printer')
+    for (const k of [...Object.keys(changed), ...realChanges(project.settings, await standardLayer(), false)]) real.add(k)
+    // Our own project reopened as it was brings nothing and keeps its goal.
+    const apply = pins > 0 && (n > 0 || !own)
+    if (apply) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
     // A PrusaSlicer project made for another printer stays on this one, and its note offers the printer it was made for.
-    const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values, n) : null
+    const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values, n, [...real]) : null
     if (offer) {
       note = `${offer.text}${note ? ` ${note}` : ''}`
       offerNote = { ...(offer.action ? { action: offer.action } : {}), details: offer.details, ...(offer.settle ? { settle: offer.settle } : {}) }
     } else if (n) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
-    for (const k of Object.keys(values)) {
-      brought.add(k)
-      pinned.add(k)
+    if (apply) {
+      for (const k of Object.keys(values)) {
+        brought.add(k)
+        pinned.add(k)
+      }
     }
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
     markOpenStage('settings')
@@ -331,11 +336,11 @@ async function addProjectShown(
 }
 
 /** The open note's line about the printer a PrusaSlicer project was made for, and its Switch to (project-printer.ts). */
-async function printerOffer(host: Host, name: string, settings: Record<string, unknown>, applied: Record<string, SettingValue>, changed: number): Promise<import('../project/project-printer').PrinterNote | null> {
+async function printerOffer(host: Host, name: string, settings: Record<string, unknown>, applied: Record<string, SettingValue>, changed: number, real: readonly string[]): Promise<import('../project/project-printer').PrinterNote | null> {
   const [{ projectPrinterNote }, { profileReady }] = await Promise.all([import('../project/project-printer'), import('./profile-sync')])
   await profileReady()
   const printers = host.printers ? await host.printers.list().catch(() => []) : []
-  return projectPrinterNote(name, settings, printers, applied, changed)
+  return projectPrinterNote(name, settings, printers, applied, changed, real)
 }
 
 /** A joined object, the file's objects it was made of, and where it was before the open placed it on this bed. */
