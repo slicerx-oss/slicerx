@@ -11,13 +11,14 @@ use crate::fm::Fm;
 use crate::measure::Topology;
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
+use crate::sketch_spline;
 use crate::vec3::{self, Frame, V2, V3};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::f64::consts::{PI, TAU};
 
 pub const CLOSE_MM: f64 = 0.001;
-const ARC_TOL_MM: f64 = 0.005;
+const ARC_TOL_MM: f64 = sketch_spline::TOL_MM;
 const MIN_LEN_MM: f64 = 1e-6;
 const MAX_MM: f64 = 100_000.0;
 
@@ -42,6 +43,9 @@ pub struct Segment {
     pub through: Option<V2>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub radius_mm: Option<f64>,
+    // a spline's points between its start and `to`
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<V2>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub clockwise: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -135,12 +139,15 @@ pub(crate) enum Prim {
         center: V2,
         sweep: f64,
     },
+    Spline {
+        to: V2,
+    },
 }
 
 impl Prim {
     pub(crate) fn to(self) -> V2 {
         match self {
-            Self::Line { to } | Self::Arc { to, .. } => to,
+            Self::Line { to } | Self::Arc { to, .. } | Self::Spline { to } => to,
         }
     }
 }
@@ -319,6 +326,50 @@ fn sweep_between(a0: f64, a1: f64, ccw: bool) -> f64 {
     if ccw { d } else { d - TAU }
 }
 
+/// a spline's points checked: numbers, each away from the one before (and the last from the first when closed)
+fn spline_points(
+    l: usize,
+    s: Option<usize>,
+    pts: &[V2],
+    closed: bool,
+) -> std::result::Result<Vec<V2>, Issue> {
+    let name = l + 1;
+    let what = s.map_or_else(
+        || "the spline".to_string(),
+        |s| format!("spline segment {}", s + 1),
+    );
+    if let Some(i) = pts.iter().position(|p| !finite2(*p)) {
+        return Err(issue(
+            l,
+            s,
+            IssueKind::ZeroLength,
+            format!(
+                "Loop {name}: {what} has a point that is not a number (point {}).",
+                i + 1
+            ),
+            None,
+        ));
+    }
+    let n = pts.len();
+    let pairs = if closed { n } else { n.saturating_sub(1) };
+    for i in 0..pairs {
+        let j = (i + 1) % n;
+        if len2(sub2(pts[j], pts[i])) < MIN_LEN_MM {
+            return Err(issue(
+                l,
+                s,
+                IssueKind::ZeroLength,
+                format!(
+                    "Loop {name}: {what} has the same point twice in a row (point {}).",
+                    j + 1
+                ),
+                Some(pts[i]),
+            ));
+        }
+    }
+    Ok(pts.to_vec())
+}
+
 fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
     flatten_as(l, lp, true)
 }
@@ -401,6 +452,29 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
         let seg = vec![0; pts.len()];
         return Ok(Ring {
             pts,
+            seg,
+            prims: Vec::new(),
+        });
+    }
+    if lp.kind.as_deref() == Some("spline") {
+        let pts = spline_points(l, None, &lp.points, true)?;
+        if pts.len() < 3 {
+            return Err(issue(
+                l,
+                None,
+                IssueKind::TooSmall,
+                format!("Loop {name}: a closed spline needs 3 or more points."),
+                pts.first().copied(),
+            ));
+        }
+        let mut ring = Vec::new();
+        for b in sketch_spline::spans(&pts, true) {
+            ring.extend(sketch_spline::flatten(&b));
+        }
+        ring.rotate_right(1);
+        let seg = vec![0; ring.len()];
+        return Ok(Ring {
+            pts: ring,
             seg,
             prims: Vec::new(),
         });
@@ -553,13 +627,50 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                 });
                 pts
             }
+            "spline" => {
+                let Some(to) = sg.to else {
+                    return Err(issue(
+                        l,
+                        Some(s),
+                        IssueKind::ZeroLength,
+                        format!("Loop {name}: spline segment {} needs its end as to.", s + 1),
+                        Some(pos),
+                    ));
+                };
+                let mut through = vec![pos];
+                through.extend(&sg.points);
+                through.push(to);
+                let through = spline_points(l, Some(s), &through, false)?;
+                if through.len() < 3 {
+                    return Err(issue(
+                        l,
+                        Some(s),
+                        IssueKind::ZeroLength,
+                        format!(
+                            "Loop {name}: spline segment {} needs 1 or more points before its end.",
+                            s + 1
+                        ),
+                        Some(pos),
+                    ));
+                }
+                let spans = sketch_spline::spans(&through, false);
+                let mut pts = Vec::new();
+                for b in &spans {
+                    pts.extend(sketch_spline::flatten(b));
+                }
+                if let Some(b) = spans.last() {
+                    dir = sketch_spline::end_dir(b);
+                }
+                prims.push(Prim::Spline { to });
+                pts
+            }
             other => {
                 return Err(issue(
                     l,
                     Some(s),
                     IssueKind::BadArc,
                     format!(
-                        "Loop {name}: segment {} has unknown type \"{other}\"; use line or arc.",
+                        "Loop {name}: segment {} has unknown type \"{other}\"; use line, arc or spline.",
                         s + 1
                     ),
                     Some(pos),
@@ -857,6 +968,9 @@ pub fn curves(loops: &[Loop]) -> Result<Vec<CurveProfile>> {
     if let Some(i) = c.issues.into_iter().next() {
         return Err(Error::invalid("sketch", i.message));
     }
+    if loops.iter().any(has_spline) {
+        return Err(Error::invalid("sketch", "splines go on the mesh path for now"));
+    }
     let mut rings = Vec::new();
     let mut paths = Vec::new();
     for (l, lp) in loops.iter().enumerate() {
@@ -873,6 +987,11 @@ pub fn curves(loops: &[Loop]) -> Result<Vec<CurveProfile>> {
         .collect())
 }
 
+/// whether the loop is a spline or has a spline segment
+pub fn has_spline(lp: &Loop) -> bool {
+    lp.kind.as_deref() == Some("spline") || lp.segments.iter().any(|s| s.kind == "spline")
+}
+
 fn exact_path(lp: &Loop, r: &Ring) -> Result<CurveLoop> {
     if lp.kind.as_deref() == Some("circle") {
         let (Some(center), Some(diameter_mm)) = (lp.center, lp.diameter_mm) else {
@@ -885,7 +1004,7 @@ fn exact_path(lp: &Loop, r: &Ring) -> Result<CurveLoop> {
         .prims
         .iter()
         .map(|&p| match p {
-            Prim::Line { to } => Piece {
+            Prim::Line { to } | Prim::Spline { to } => Piece {
                 to,
                 center: None,
                 sweep_deg: None,

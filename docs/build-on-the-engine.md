@@ -2,7 +2,7 @@
 
 The modeling tools in SlicerX (sketch and extrude, revolve, push and pull, booleans, fillet and chamfer, kept dimensions, editable history) run on one engine, `sx-geom`. You can build your own CAD app or configurator on it. It is a Rust crate with no file, network or clock access in the library, so the same code runs natively, as a command line tool and as WebAssembly in a browser worker.
 
-The engine is mesh-first: every body is a closed triangle mesh in millimeters, and every operation takes meshes and returns meshes. It has no B-rep kernel and no constraint solver. Sketches are typed geometry (lines, arcs, circles with sizes and positions), and history is a list of operations you replay.
+The engine is mesh-first: every body is a closed triangle mesh in millimeters, and every operation takes meshes and returns meshes. It has no B-rep kernel and no constraint solver. Sketches are typed geometry (lines, arcs, circles and splines with sizes and positions), and history is a list of operations you replay.
 
 ## Ways to call it
 
@@ -54,7 +54,12 @@ A sketch is a plane plus closed loops:
 
 - `{"points": [[u, v], ...]}`: straight sides, closed back to the first point
 - `{"type": "circle", "center": [u, v], "diameterMm": d}`
-- `{"start": [u, v], "segments": [...]}` with lines (`{"type": "line", "to": [u, v]}`, or `lengthMm` with `angleDeg` or `turnDeg`) and arcs (`center` and `sweepDeg`, three points with `through`, `radiusMm` with `clockwise` and `large`, or tangent with `radiusMm` and `sweepDeg`)
+- `{"type": "spline", "points": [[u, v], ...]}`: a smooth closed curve through 3 or more points
+- `{"start": [u, v], "segments": [...]}` with lines (`{"type": "line", "to": [u, v]}`, or `lengthMm` with `angleDeg` or `turnDeg`), arcs (`center` and `sweepDeg`, three points with `through`, `radiusMm` with `clockwise` and `large`, or tangent with `radiusMm` and `sweepDeg`) and splines (`{"type": "spline", "points": [[u, v], ...], "to": [u, v]}`: a smooth curve from where the segment starts, through `points` in order, to `to`)
+
+A spline passes through every point it is given (a centripetal Catmull-Rom curve, each span a cubic Bezier), so moving one point changes only the spans beside it. Its ends are free: it meets a line at a corner unless the points run on smoothly, and a tangent arc after it leaves along its end. The loop stores the points, never the flattened curve, so a replay draws it again.
+
+Arcs, circles and splines are flattened so that no chord strays more than 0.005 mm from the curve. That is half the default slice resolution (the `resolution` setting, 0.01 mm), so the slicer's own contour step is always the coarser one. The tolerance is fixed rather than read from the print profile, so a design replays to the same mesh whatever printer or profile is picked. Splines go on the mesh path for now: `sketch.curves` refuses them, and trim, extend and intersect refuse a sketch that has one; mirror and pattern copy a spline as its points.
 
 A loop inside another loop is a hole. Use the sketch as the shape `{"type": "sketch", "loops": [...]}` in `shape.extrude`.
 
