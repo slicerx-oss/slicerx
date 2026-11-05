@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it, vi } from 'vitest'
 import type { Host } from '@slicerx/contracts'
-import { bedKnownClear, deviceError, deviceHub, filamentText, jogBlockedReason, messageTone, plateObjectsFromGcode, recordDuration, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored, type DeviceHub } from '../src/features/fleet/device'
+import { bedKnownClear, deviceError, deviceHub, filamentText, homeBlockedReason, homePrinter, jogBlockedReason, messageTone, plateObjectsFromGcode, recordDuration, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored, type DeviceHub } from '../src/features/fleet/device'
 
 const refuse = (code: string) => Object.assign(new Error(`hub says ${code}`), { code })
 
@@ -38,6 +38,29 @@ describe('device page rules', () => {
     expect(recordDuration(5400)).toBe('1 h 30 min')
     expect(recordDuration(undefined)).toBe('')
     expect(filamentText(4200)).toBe('4.2 m of filament')
+  })
+})
+
+describe('homing', () => {
+  it('homes only an idle or finished printer, in its own words', () => {
+    expect(homeBlockedReason('idle')).toBeNull()
+    expect(homeBlockedReason('finished')).toBeNull()
+    for (const s of ['printing', 'paused', 'preparing'] as const) expect(homeBlockedReason(s)).toBe('The printer homes only while it is idle or finished.')
+    expect(homeBlockedReason('offline')).toMatch(/not reachable/)
+  })
+
+  it('sends the plate answer with that home only, and maps the refusals', async () => {
+    const calls: unknown[] = []
+    const confirmClear = vi.fn(async () => ({}))
+    const h = hub({ home: async (...a: unknown[]) => void calls.push(a) })
+    h.bed.confirmClear = confirmClear
+    expect(await homePrinter(h, 'bay', false)).toEqual({ kind: 'homed' })
+    expect(await homePrinter(h, 'bay', true)).toEqual({ kind: 'homed' })
+    expect(calls).toEqual([['bay'], ['bay', { plateClear: true }]])
+    expect(confirmClear).not.toHaveBeenCalled()
+    expect(await homePrinter(hub({ home: async () => { throw refuse('bed_check') } }), 'bay')).toEqual({ kind: 'ask-bed' })
+    expect(await homePrinter(hub({ home: async () => { throw refuse('forbidden') } }), 'bay')).toEqual({ kind: 'error', message: expect.stringMatching(/own network/) })
+    expect(await homePrinter(hub({ home: async () => { throw new Error('the printer did not answer') } }), 'bay')).toEqual({ kind: 'error', message: 'the printer did not answer' })
   })
 })
 

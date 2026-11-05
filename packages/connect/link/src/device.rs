@@ -13,8 +13,9 @@
 //! outside the limits is refused with the allowed range, never clamped, so what moves is what the
 //! button said. Where the printer reports homed axes and the head position, an unhomed axis and a
 //! move past the axis range are refused; where it does not report the position, Z only moves up.
-//! `home` sends `G28` under the same rules: idle or finished only, and on a finished printer only
-//! once the plate is known to be clear, since homing Z lowers the nozzle to the plate.
+//! `home` sends `G28` under the same rules: idle or finished only, and never onto a plate that may
+//! still hold a print (a job ended, canceled or finished, and nobody confirmed the plate clear), since
+//! homing Z lowers the nozzle to the plate. An agent's approved home card runs the same check.
 //! `objects.skip` only while a print is running, and only in the job the person was looking at (the
 //! bed epoch it read). `files.start` follows `print.local`'s bed rule, and a file this hub did not
 //! upload, or one the printer cannot describe, reads as unverified: the call refuses until it is
@@ -87,13 +88,22 @@ pub(crate) fn stored_path_ok(path: &str) -> bool {
         && path.split('/').all(file_name_ok)
 }
 
-/// Why a jog may not move, given what the printer reports. `bed_clear` is the hub's bed record.
+/// Whether the plate may still hold a print, so the nozzle must not come down to it: the hub saw a job
+/// end and nobody confirmed the plate clear since (a canceled job often reads idle straight away), or the
+/// printer says it finished and the hub cannot say the plate is clear. A printer the hub never watched
+/// and that reads idle is not asked about.
+fn plate_may_hold_a_print(state: PrinterState, bed: sx_permit::BedState) -> bool {
+    use sx_permit::BedState::{Clear, NotCleared};
+    bed == NotCleared || (state == PrinterState::Finished && bed != Clear)
+}
+
+/// Why a jog may not move, given what the printer reports. `bed` is the hub's bed record.
 pub(crate) fn jog_problem(
     axis: JogAxis,
     distance_mm: f64,
     m: &Motion,
     state: PrinterState,
-    bed_clear: bool,
+    bed: sx_permit::BedState,
 ) -> Rpc<()> {
     let (i, name) = match axis {
         JogAxis::X => (0, "X"),
@@ -115,7 +125,7 @@ pub(crate) fn jog_problem(
             "this printer does not report where the head is, so Z only moves up (away from the bed) here",
         ));
     }
-    if down && state == PrinterState::Finished && !bed_clear {
+    if down && plate_may_hold_a_print(state, bed) {
         return Err(RpcError::new(
             "bed_check",
             "the last print may still be on the plate; confirm the plate is clear before lowering the nozzle",
@@ -215,12 +225,11 @@ async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     if st.state != PrinterState::Idle && st.state != PrinterState::Finished {
         return Err(RpcError::new(
             "bad_state",
-            "the head only moves by hand while the printer is idle",
+            "the head moves by hand only while the printer is idle or finished",
         ));
     }
     let motion = s.motion().await.unwrap_or_default();
-    let bed_clear = b.hub.bed(&printer).state == sx_permit::BedState::Clear;
-    jog_problem(axis, distance, &motion, st.state, bed_clear)?;
+    jog_problem(axis, distance, &motion, st.state, b.hub.bed(&printer).state)?;
     let title = "Move the head";
     settle_absolute(b, &printer, s.as_ref()).await?;
     let [rel, mv, abs] = lines;
@@ -242,16 +251,17 @@ async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     Ok(json!({ "ok": true }))
 }
 
-/// Why the printer may not home now. Homing Z brings the nozzle down to the plate, so a finished
-/// print the hub does not know was taken off is asked about first, as a jog down is.
-pub(crate) fn home_problem(state: PrinterState, bed_clear: bool) -> Rpc<()> {
+/// Why the printer may not home now. Homing Z brings the nozzle down to the plate, so a plate that may
+/// still hold a print is asked about first, as a jog down is. `plate_clear` is the person's answer for
+/// this home only; it is not written to the bed record, so the next start still asks.
+pub(crate) fn home_problem(state: PrinterState, bed: sx_permit::BedState, plate_clear: bool) -> Rpc<()> {
     if state != PrinterState::Idle && state != PrinterState::Finished {
         return Err(RpcError::new(
             "bad_state",
-            "the printer only homes while it is idle",
+            "the printer homes only while it is idle or finished",
         ));
     }
-    if state == PrinterState::Finished && !bed_clear {
+    if !plate_clear && plate_may_hold_a_print(state, bed) {
         return Err(RpcError::new(
             "bed_check",
             "the last print may still be on the plate; confirm the plate is clear before homing",
@@ -260,21 +270,39 @@ pub(crate) fn home_problem(state: PrinterState, bed_clear: bool) -> Rpc<()> {
     Ok(())
 }
 
-/// `home {printerId}`: `G28`, every axis.
-async fn home(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
-    let printer = str_arg(p, "printerId")?;
-    let s = session(b, &printer).await?;
-    let held = b.hub.printer_lock(&printer);
+/// Homes `printer` (`G28`) under the home rules, read with the printer held so no start slips in between
+/// the check and the line. `token` is a person's approval of that line (an agent's card); without one the
+/// hub mints its own, as for the app's button. The printer's state is the last one its driver reported.
+pub(crate) async fn home_checked(
+    b: &Arc<Bridge>,
+    printer: &str,
+    plate_clear: bool,
+    token: Option<&ApprovalToken>,
+) -> Rpc<()> {
+    let s = session(b, printer).await?;
+    let held = b.hub.printer_lock(printer);
     let _g = held.lock().await;
-    let st = observe(b, &printer)
+    let st = observe(b, printer)
         .await
         .filter(|s| s.state != PrinterState::Offline)
         .ok_or_else(|| RpcError::new("unreachable", "the printer did not answer"))?;
-    let bed_clear = b.hub.bed(&printer).state == sx_permit::BedState::Clear;
-    home_problem(st.state, bed_clear)?;
-    settle_absolute(b, &printer, s.as_ref()).await?;
-    let t = mint_gcode(b, &printer, "G28", "Home the printer")?;
-    s.send_gcode("G28", &t).await?;
+    home_problem(st.state, b.hub.bed(printer).state, plate_clear)?;
+    settle_absolute(b, printer, s.as_ref()).await?;
+    if let Some(t) = token {
+        s.send_gcode("G28", t).await?;
+    } else {
+        let t = mint_gcode(b, printer, "G28", "Home the printer")?;
+        s.send_gcode("G28", &t).await?;
+    }
+    Ok(())
+}
+
+/// `home {printerId, plateClear?}`: `G28`, every axis. `plateClear` is the person's answer to the plate
+/// question for this home.
+async fn home(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let printer = str_arg(p, "printerId")?;
+    let plate_clear = p.get("plateClear").and_then(Value::as_bool) == Some(true);
+    home_checked(b, &printer, plate_clear, None).await?;
     Ok(json!({ "ok": true }))
 }
 
@@ -737,29 +765,29 @@ mod tests {
     fn a_jog_needs_homed_axes_and_stays_inside_the_axis_range() {
         let idle = PrinterState::Idle;
         let known = motion(Some([true, true, true]), Some([5.0, 100.0, 4.0]));
-        assert!(jog_problem(JogAxis::X, 5.0, &known, idle, false).is_ok());
+        assert!(jog_problem(JogAxis::X, 5.0, &known, idle, sx_permit::BedState::Unknown).is_ok());
         assert_eq!(
-            jog_problem(JogAxis::X, -10.0, &known, idle, false)
+            jog_problem(JogAxis::X, -10.0, &known, idle, sx_permit::BedState::Unknown)
                 .unwrap_err()
                 .code,
             "out_of_range"
         );
         assert_eq!(
-            jog_problem(JogAxis::Z, -5.0, &known, idle, false)
+            jog_problem(JogAxis::Z, -5.0, &known, idle, sx_permit::BedState::Unknown)
                 .unwrap_err()
                 .code,
             "out_of_range",
             "below the bed"
         );
-        assert!(jog_problem(JogAxis::Z, -4.0, &known, idle, false).is_ok());
+        assert!(jog_problem(JogAxis::Z, -4.0, &known, idle, sx_permit::BedState::Unknown).is_ok());
         let unhomed = motion(Some([true, true, false]), Some([5.0, 5.0, 4.0]));
         assert_eq!(
-            jog_problem(JogAxis::Z, 1.0, &unhomed, idle, false)
+            jog_problem(JogAxis::Z, 1.0, &unhomed, idle, sx_permit::BedState::Unknown)
                 .unwrap_err()
                 .code,
             "not_homed"
         );
-        assert!(jog_problem(JogAxis::X, 1.0, &unhomed, idle, false).is_ok());
+        assert!(jog_problem(JogAxis::X, 1.0, &unhomed, idle, sx_permit::BedState::Unknown).is_ok());
     }
 
     #[test]
@@ -767,19 +795,19 @@ mod tests {
         let idle = PrinterState::Idle;
         let blind = Motion::default();
         assert_eq!(
-            jog_problem(JogAxis::Z, -1.0, &blind, idle, true)
+            jog_problem(JogAxis::Z, -1.0, &blind, idle, sx_permit::BedState::Clear)
                 .unwrap_err()
                 .code,
             "position_unknown"
         );
-        assert!(jog_problem(JogAxis::Z, 1.0, &blind, idle, false).is_ok());
-        assert!(jog_problem(JogAxis::X, -10.0, &blind, idle, false).is_ok());
+        assert!(jog_problem(JogAxis::Z, 1.0, &blind, idle, sx_permit::BedState::Unknown).is_ok());
+        assert!(jog_problem(JogAxis::X, -10.0, &blind, idle, sx_permit::BedState::Unknown).is_ok());
         let homed_only = Motion {
             homed: Some([false, true, true]),
             ..Motion::default()
         };
         assert_eq!(
-            jog_problem(JogAxis::X, 1.0, &homed_only, idle, false)
+            jog_problem(JogAxis::X, 1.0, &homed_only, idle, sx_permit::BedState::Unknown)
                 .unwrap_err()
                 .code,
             "not_homed"
@@ -787,32 +815,68 @@ mod tests {
         let known = motion(Some([true, true, true]), Some([5.0, 5.0, 20.0]));
         let done = PrinterState::Finished;
         assert_eq!(
-            jog_problem(JogAxis::Z, -1.0, &known, done, false)
+            jog_problem(JogAxis::Z, -1.0, &known, done, sx_permit::BedState::NotCleared)
                 .unwrap_err()
                 .code,
             "bed_check"
         );
-        assert!(jog_problem(JogAxis::Z, -1.0, &known, done, true).is_ok());
-        assert!(jog_problem(JogAxis::Z, 1.0, &known, done, false).is_ok());
+        assert!(jog_problem(JogAxis::Z, -1.0, &known, done, sx_permit::BedState::Clear).is_ok());
+        assert!(jog_problem(JogAxis::Z, 1.0, &known, done, sx_permit::BedState::NotCleared).is_ok());
     }
 
     #[test]
     fn home_only_while_idle_and_never_onto_a_plate_that_may_hold_a_print() {
-        assert!(home_problem(PrinterState::Idle, false).is_ok());
-        assert!(home_problem(PrinterState::Finished, true).is_ok());
+        use sx_permit::BedState::{Busy, Clear, NotCleared, Unknown};
+        let code = |s, bed, ok| home_problem(s, bed, ok).err().map(|e| e.code);
+        assert_eq!(code(PrinterState::Idle, Unknown, false), None);
+        assert_eq!(code(PrinterState::Idle, Clear, false), None);
+        assert_eq!(code(PrinterState::Finished, Clear, false), None);
+        // A finished print, or one canceled straight back to idle, may still be on the plate.
         assert_eq!(
-            home_problem(PrinterState::Finished, false).unwrap_err().code,
-            "bed_check"
+            code(PrinterState::Finished, Unknown, false).as_deref(),
+            Some("bed_check")
         );
+        assert_eq!(
+            code(PrinterState::Finished, NotCleared, false).as_deref(),
+            Some("bed_check")
+        );
+        assert_eq!(
+            code(PrinterState::Idle, NotCleared, false).as_deref(),
+            Some("bed_check")
+        );
+        // The person's answer for this home.
+        assert_eq!(code(PrinterState::Idle, NotCleared, true), None);
+        assert_eq!(code(PrinterState::Finished, Unknown, true), None);
         for s in [
             PrinterState::Printing,
             PrinterState::Paused,
             PrinterState::Preparing,
             PrinterState::Error,
+            PrinterState::Offline,
         ] {
-            assert_eq!(home_problem(s, true).unwrap_err().code, "bad_state", "{s:?}");
+            assert_eq!(code(s, Busy, true).as_deref(), Some("bad_state"), "{s:?}");
         }
+        assert!(
+            home_problem(PrinterState::Paused, Busy, true)
+                .unwrap_err()
+                .message
+                .contains("idle or finished")
+        );
         assert_eq!(sx_connect::gcode_line_problem("G28"), None);
+    }
+
+    #[test]
+    fn a_jog_down_after_a_canceled_print_asks_about_the_plate() {
+        let known = motion(Some([true, true, true]), Some([5.0, 5.0, 20.0]));
+        let idle = PrinterState::Idle;
+        assert_eq!(
+            jog_problem(JogAxis::Z, -1.0, &known, idle, sx_permit::BedState::NotCleared)
+                .unwrap_err()
+                .code,
+            "bed_check"
+        );
+        assert!(jog_problem(JogAxis::Z, 1.0, &known, idle, sx_permit::BedState::NotCleared).is_ok());
+        assert!(jog_problem(JogAxis::Z, -1.0, &known, idle, sx_permit::BedState::Unknown).is_ok());
     }
 
     fn obj(id: &str, name: &str) -> PrintObject {

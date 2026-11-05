@@ -118,6 +118,11 @@ describe('device view logic', () => {
     expect(slotGroups([{ id: 'A1' }, { id: 'B1' }, { id: '1', material: 'TPU' }], undefined, 'A1').map((x) => x.label)).toEqual(['AMS lite 1', 'AMS lite 2', 'External spool'])
   })
 
+  it('names a unit of a kind it does not know by the printer\'s own unit', () => {
+    const live = { units: [{ id: 'A', kind: 'ams-9000' as never }] }
+    expect(slotGroups([{ id: 'A1' }], live, 'A1').map((x) => x.label)).toEqual(['AMS lite'])
+  })
+
   it('reads what each unit\'s sensors say: humidity, temperature and drying', () => {
     expect(slotGroups(H2D_STATUS.slots, H2D_STATUS.live, 'H2D').map((x) => x.climate)).toEqual(['18% humidity · 27 °C', '9% humidity · 45 °C'])
     expect(unitClimateText({ humidityPct: 11, humidityLevel: 3, tempC: 45.4, drying: true, dryMinutesLeft: 200 })).toBe('11% humidity · 45 °C · Drying, 3 h 20 min left')

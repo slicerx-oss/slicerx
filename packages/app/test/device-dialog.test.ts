@@ -16,7 +16,7 @@ const printer: PrinterInfo = { id: 'bay-1', name: 'Bay 1', vendor: 'Bambu Lab', 
 const idle: PrinterStatus = { printerId: 'bay-1', state: 'idle', nozzles: [], slots: [], cameraAvailable: false, firmware: '01.04.00.00', updatedAt: '2026-11-05T12:00:00.000Z' }
 const refuse = (code: string) => Object.assign(new Error(`hub says ${code}`), { code })
 
-function fakeHub(home: () => Promise<void>) {
+function fakeHub(home: (...a: unknown[]) => Promise<void>) {
   const calls = { home: vi.fn(home), confirmClear: vi.fn(async () => ({})) }
   const printers = {
     device: { files: async () => [], history: async () => [], issues: async () => [], objects: async () => [], jog: async () => undefined, home: calls.home, skipObject: async () => undefined, startFile: async () => ({}) },
@@ -83,23 +83,40 @@ describe('the printer controls dialog', () => {
     // Mid-print the dialog opens on Skip objects; Move is one tab away.
     await click([...document.body.querySelectorAll('nav button')].find((b) => b.textContent === 'Move') as HTMLButtonElement)
     expect(off(button('Home'))).toBe(true)
-    expect(document.body.textContent).toContain('The head only moves by hand while the printer is idle.')
+    expect(document.body.textContent).toContain('The head moves and homes only while the printer is idle or finished.')
     expect(calls.home).not.toHaveBeenCalled()
   })
 
-  it('asks whether the plate is clear when the hub cannot tell, then homes', async () => {
-    let cleared = false
-    const { host, calls } = fakeHub(async () => {
-      if (!cleared) throw refuse('bed_check')
+  // The answer goes with that home only: the hub does not record the plate as clear for a later start.
+  it('asks whether the plate is clear when the hub cannot tell, then homes with that answer', async () => {
+    const { host, calls } = fakeHub(async (...a: unknown[]) => {
+      if (!(a[1] as { plateClear?: boolean } | undefined)?.plateClear) throw refuse('bed_check')
     })
-    calls.confirmClear.mockImplementation(async () => ((cleared = true), {}))
     await show(host, { ...idle, state: 'finished' })
     await click(button('Home'))
     const ask = document.body.querySelector('[role="alertdialog"][aria-label="Confirm home"]')
     expect(ask?.textContent).toContain('Is the build plate clear?')
     await click(button('Plate is clear, home'))
-    expect(calls.confirmClear).toHaveBeenCalledWith('bay-1')
-    expect(calls.home).toHaveBeenCalledTimes(2)
+    expect(calls.home.mock.calls).toEqual([['bay-1'], ['bay-1', { plateClear: true }]])
+    expect(calls.confirmClear).not.toHaveBeenCalled()
     expect(document.body.querySelector('[aria-label="Confirm home"]')).toBeNull()
+  })
+
+  it('drops the plate question on Cancel, and when the printer starts a job', async () => {
+    const { host, calls } = fakeHub(async () => {
+      throw refuse('bed_check')
+    })
+    await show(host, { ...idle, state: 'finished' })
+    await click(button('Home'))
+    await click(button('Cancel'))
+    expect(document.body.querySelector('[aria-label="Confirm home"]')).toBeNull()
+    expect(calls.home).toHaveBeenCalledTimes(1)
+    await click(button('Home'))
+    expect(document.body.querySelector('[aria-label="Confirm home"]')).not.toBeNull()
+    await act(async () => root!.render(createElement(HostContext.Provider, { value: host as never }, createElement(DeviceDialog, { printer, status: { ...idle, state: 'printing' }, onClose: () => undefined }))))
+    await act(async () => new Promise<void>((r) => setTimeout(r, 20)))
+    expect(document.body.querySelector('[aria-label="Confirm home"]')).toBeNull()
+    expect(off(button('Home'))).toBe(true)
+    expect(calls.home).toHaveBeenCalledTimes(2)
   })
 })

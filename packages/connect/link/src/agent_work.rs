@@ -40,6 +40,10 @@ pub(crate) enum Work {
         printer: String,
         line: String,
     },
+    /// Home every axis (`G28`) under the hub's home rules, checked when the person approves.
+    Home {
+        printer: String,
+    },
     /// A change to a running print, checked against the safe limits when it runs.
     Adjust {
         printer: String,
@@ -73,7 +77,7 @@ const PLUGIN_WORK: [&str; 2] = ["spoolman", "home-assistant"];
 
 impl Work {
     /// `work: {kind: "print", printerId, file: {name, kind, sha256, dataBase64}, opts?}`,
-    /// `{kind: "resume", printerId}` or `{kind: "gcode", printerId, line}`.
+    /// `{kind: "resume", printerId}`, `{kind: "gcode", printerId, line}` or `{kind: "home", printerId}`.
     pub(crate) fn parse(p: &Value) -> Rpc<Self> {
         // `{kind: "plugin", pluginId, tool, input}`: a connected app's tool, by its bare name.
         if p.get("kind").and_then(Value::as_str) == Some("plugin") {
@@ -129,6 +133,7 @@ impl Work {
                 })
             }
             Some("resume") => Ok(Work::Resume { printer }),
+            Some("home") => Ok(Work::Home { printer }),
             Some("gcode") => {
                 let line = str_arg(p, "line")?;
                 // One G-code command, short enough that every card shows it whole: a line break
@@ -158,7 +163,7 @@ impl Work {
             }),
             _ => Err(RpcError::new(
                 "bad_request",
-                "work.kind is print, resume, gcode, adjust, skip or plugin",
+                "work.kind is print, resume, gcode, home, adjust, skip or plugin",
             )),
         }
     }
@@ -181,6 +186,7 @@ impl Work {
             Work::Print { printer, .. }
             | Work::Resume { printer }
             | Work::Gcode { printer, .. }
+            | Work::Home { printer }
             | Work::Adjust { printer, .. }
             | Work::Pause { printer }
             | Work::Cancel { printer }
@@ -202,6 +208,8 @@ impl Work {
             }),
             Work::Resume { printer } => json!({ "kind": "resume", "printerId": printer }),
             Work::Gcode { printer, line } => json!({ "kind": "gcode", "printerId": printer, "line": line }),
+            // Cards show it as the line it sends, which every app and phone already reads.
+            Work::Home { printer } => json!({ "kind": "gcode", "printerId": printer, "line": "G28" }),
             Work::Adjust { printer, change } => {
                 json!({ "kind": "adjust", "printerId": printer, "change": change })
             }
@@ -250,6 +258,12 @@ impl Work {
                 printer.clone(),
                 hash(&json!({ "printerId": printer, "line": line })),
             )],
+            // The card shows and approves the line it sends.
+            Work::Home { printer } => vec![(
+                "printer.gcode".into(),
+                printer.clone(),
+                hash(&json!({ "printerId": printer, "line": "G28" })),
+            )],
             Work::Adjust { printer, change } => {
                 let canon: Value =
                     serde_json::from_str(&sx_connect::params::adjust(printer, change)).unwrap_or(Value::Null);
@@ -297,12 +311,13 @@ struct Held {
 pub(crate) struct Waiting(std::sync::Mutex<HashMap<String, Held>>);
 
 impl Work {
-    /// The kind name of the summary (`print`, `resume`, `gcode`, `adjust`, `pause`, `cancel`).
+    /// The kind name of the summary (`print`, `resume`, `gcode`, `home`, `adjust`, `pause`, `cancel`).
     pub(crate) fn kind(&self) -> &'static str {
         match self {
             Work::Print { .. } => "print",
             Work::Resume { .. } => "resume",
             Work::Gcode { .. } => "gcode",
+            Work::Home { .. } => "home",
             Work::Adjust { .. } => "adjust",
             Work::Pause { .. } => "pause",
             Work::Cancel { .. } => "cancel",
@@ -463,6 +478,8 @@ async fn execute(
         }
         Work::Resume { printer } => Ok(session(b, &printer).await?.resume(token).await?),
         Work::Gcode { printer, line } => Ok(session(b, &printer).await?.send_gcode(&line, token).await?),
+        // A card can wait: the printer may have started a job, or finished one, since it was made.
+        Work::Home { printer } => crate::device::home_checked(b, &printer, false, Some(token)).await,
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),
@@ -516,6 +533,18 @@ mod tests {
         Work::Cancel {
             printer: "bay-1".into(),
         }
+    }
+
+    #[test]
+    fn a_home_card_approves_the_g28_it_sends() {
+        let w = Work::parse(&json!({ "kind": "home", "printerId": "bay-1" })).unwrap();
+        assert_eq!(w.kind(), "home");
+        assert_eq!(
+            w.summary(),
+            json!({ "kind": "gcode", "printerId": "bay-1", "line": "G28" })
+        );
+        let g = Work::parse(&json!({ "kind": "gcode", "printerId": "bay-1", "line": "G28" })).unwrap();
+        assert_eq!(w.actions(), g.actions());
     }
 
     #[test]

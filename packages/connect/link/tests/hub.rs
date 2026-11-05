@@ -3148,6 +3148,132 @@ async fn home_sends_g28_only_while_idle_and_asks_about_a_finished_plate() {
     assert_eq!(g28(mock_log(&mocks).await), 2);
 }
 
+/// Polls bay-4's status until it reads `state`.
+async fn until_bay4(ws: &mut Ws, state: &str) {
+    for i in 0..100 {
+        let r = call(ws, 300 + i, "status", json!({ "printerId": "bay-4" })).await;
+        if r["result"]["state"] == state {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("bay-4 never read {state}");
+}
+
+/// Cancels the mock Klipper printer's job from its own API, as its screen or another app would.
+async fn cancel_on_printer(mocks: &common::Mocks) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", mocks.port("moonraker")))
+        .await
+        .unwrap();
+    sock.write_all(b"POST /printer/print/cancel HTTP/1.0\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n")
+        .await
+        .unwrap();
+    let mut raw = Vec::new();
+    sock.read_to_end(&mut raw).await.unwrap();
+    assert!(String::from_utf8_lossy(&raw).contains(" 200 "), "cancel refused");
+}
+
+// A canceled print on Klipper reads idle ("cancelled" is not "complete"), and the part may still be on
+// the plate: home and a jog down ask about the plate until it is confirmed clear, as on a finished one.
+#[tokio::test]
+async fn after_a_canceled_print_home_and_a_jog_down_ask_about_the_plate() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut ws = paired(&link).await;
+    add_bay4(&mut ws, &mocks).await;
+    started_print(&mut ws, "plate.gcode").await;
+    until_bay4(&mut ws, "printing").await;
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut ws, "idle").await;
+    mocks
+        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20] }))
+        .await;
+    let g28 = |log: Vec<String>| log.into_iter().filter(|l| l == "gcode G28").count();
+    let home = json!({ "printerId": "bay-4" });
+    let r = call(&mut ws, 70, "home", home.clone()).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let down = json!({ "printerId": "bay-4", "axis": "z", "distanceMm": -1 });
+    let r = call(&mut ws, 71, "jog", down.clone()).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 0, "refusals sent nothing");
+
+    // The answer given for one home covers that home only: the plate is not recorded as clear for the
+    // next start.
+    let r = call(
+        &mut ws,
+        72,
+        "home",
+        json!({ "printerId": "bay-4", "plateClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 1);
+    let r = call(&mut ws, 73, "bed.state", home.clone()).await;
+    assert_eq!(r["result"]["state"], "not_cleared", "{r}");
+
+    let r = call(&mut ws, 74, "bed.confirmClear", home.clone()).await;
+    assert!(r["error"].is_null(), "{r}");
+    mocks
+        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20] }))
+        .await;
+    let r = call(&mut ws, 75, "jog", down).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let r = call(&mut ws, 76, "home", home).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+}
+
+// A client's home card runs the hub's own home rules when a person approves it, not when the card was
+// made: approved after a print started, it sends nothing and says why.
+#[tokio::test]
+async fn an_agent_home_card_approved_after_a_print_starts_sends_nothing() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    let g28 = json!({ "printerId": "bay-4", "line": "G28" });
+    let work = json!({ "kind": "home", "printerId": "bay-4" });
+    let r = call(
+        &mut ag,
+        2,
+        "approvals.register",
+        json!({ "request": card("h-1", "printer.home", "printer.gcode", &g28), "work": work }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    let r = call(&mut app, 20, "approvals.grant", json!({ "requestId": "h-1" })).await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    let done = wait_event(&mut ag, "approval.done", |d| d["requestId"] == "h-1").await;
+    assert_eq!(
+        (done["ok"].clone(), done["code"].clone()),
+        (json!(false), json!("bad_state")),
+        "{done}"
+    );
+    assert!(!mock_log(&mocks).await.contains(&"gcode G28".to_owned()));
+
+    // Idle with the plate known clear: the same card homes.
+    mocks.set_state("moonraker", "idle").await;
+    until_bay4(&mut app, "idle").await;
+    let r = call(&mut app, 21, "bed.confirmClear", json!({ "printerId": "bay-4" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(
+        &mut ag,
+        3,
+        "approvals.register",
+        json!({ "request": card("h-2", "printer.home", "printer.gcode", &g28), "work": work }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let r = call(&mut app, 22, "approvals.grant", json!({ "requestId": "h-2" })).await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    let done = wait_event(&mut ag, "approval.done", |d| d["requestId"] == "h-2").await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(mock_log(&mocks).await.contains(&"gcode G28".to_owned()));
+}
+
 #[tokio::test]
 async fn a_jog_knows_where_the_head_is_and_restores_absolute_mode() {
     let link = hub(None).await;
