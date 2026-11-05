@@ -177,3 +177,19 @@ test('a dropped STEP assembly becomes named objects and slices', async ({ page }
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).click()
   await expect.poll(async () => { const sl = (await store(page)).slice as { status: string; stale?: boolean; error?: unknown; result?: { id: string } }; if (sl.status === 'error') return JSON.stringify(sl).slice(0, 400); return sl.status === 'done' && !sl.stale && sl.result?.id !== earlier ? 'done' : sl.status }, { timeout: 120_000 }).toBe('done')
 })
+
+// A STEP file that colors its solids opens with each colored body on a filament of its color, says so in the note
+// under the printer card, and Use one filament there takes the added filaments back.
+test('a dropped STEP with colored bodies opens on filaments of its colors', async ({ page }) => {
+  test.slow()
+  const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'step-reader', 'test', 'fixtures')
+  await setState(page, { plate: [], selection: null, selectedIds: [], toast: null, openNote: null, printerSlots: [], slotSetup: {} })
+  await dropFile(page, 'assembly-colors.step', readFileSync(join(fixtures, 'assembly-colors.step')), 'application/step')
+  await expect(page.locator('.obj-name', { hasText: 'cube' })).toBeVisible({ timeout: 60_000 })
+  const note = page.getByTestId('open-note')
+  await expect(note.getByTestId('open-note-text')).toHaveText("assembly-colors.step: Added filaments 2 (Red) and 3 (Blue) for the file's colors. Split into 2 objects.")
+  const slots = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { slotOverrides?: Record<string, number>; handle: { parts: { name: string; slot: number }[] } }[] } } }).__sx.getState().plate.flatMap((e) => e.handle.parts.map((p) => e.slotOverrides?.[p.name] ?? p.slot)))
+  expect(await slots()).toEqual([2, 1, 3])
+  await note.getByTestId('open-note-action').filter({ hasText: 'Use one filament' }).click()
+  await expect.poll(slots).toEqual([1, 1, 1])
+})
