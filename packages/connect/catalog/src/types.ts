@@ -53,6 +53,23 @@ export interface FindGuide {
   checkedOnPrinter: boolean
 }
 
+/**
+ * The web page a printer serves for people (Mainsail, Fluidd, OctoPrint, Duet Web Control, PrusaLink). SlicerX
+ * links to it and opens it in the browser; it never shows the page inside the app.
+ */
+export interface WebUi {
+  port: number
+  /** Starts with `/`. */
+  path: string
+  /**
+   * The page is served on the connection's own port (OctoPrint, PrusaLink, Duet), so a port saved with the printer
+   * moves the page too. Unset for Klipper, where the saved port is Moonraker's and the page has its own.
+   */
+  sharesPort?: boolean
+  /** The connections that reach this page. All of the model's connections when unset. */
+  via?: ConnectionId[]
+}
+
 export interface PrinterModel {
   /** Stable id, `brand-model` in lowercase, such as `bambu-a1-mini`. The settings package keys its printer profile by it (`printerProfile` in @slicerx/settings). */
   id: string
@@ -74,6 +91,8 @@ export interface PrinterModel {
   find: FindGuide
   /** One line on anything that changes what works, such as an unsupported protocol. */
   note?: string
+  /** The printer's own web page, when it is not where its connection's default puts it (QIDI's Fluidd on 10088). */
+  webUi?: WebUi
 }
 
 export type Discovery =
@@ -125,4 +144,6 @@ export interface ConnectionMethod {
   requiresApp?: string
   /** One line for the setup screen. */
   summary: string
+  /** The web page printers on this connection serve, when they serve one. A model's own `webUi` comes first. */
+  webUi?: WebUi
 }

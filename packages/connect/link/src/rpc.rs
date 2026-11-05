@@ -1915,12 +1915,18 @@ async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     Ok(strip_nulls(info))
 }
 
-/// A registered printer as `list` shows it: its info, with the tunnel it is reached through taken from its config
-/// (a printer saved before the info carried it still says so).
+/// A registered printer as `list` shows it: its info, with the tunnel it is reached through and the port saved for
+/// its connection taken from its config (a printer saved before the info carried them still says so). The app builds
+/// the link to the printer's own web page from the port.
 fn listed(r: &Registered) -> Value {
     let mut v = r.info.clone();
-    if let (Some(t), Some(o)) = (r.config.tunnel, v.as_object_mut()) {
-        o.insert("tunnel".into(), json!(t));
+    if let Some(o) = v.as_object_mut() {
+        if let Some(t) = r.config.tunnel {
+            o.insert("tunnel".into(), json!(t));
+        }
+        if let Some(p) = r.config.port {
+            o.insert("port".into(), json!(p));
+        }
     }
     v
 }
