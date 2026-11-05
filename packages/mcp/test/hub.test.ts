@@ -532,6 +532,46 @@ describe('turning down the question mimir waits on, through a scripted hub', () 
   })
 })
 
+describe("the person's saved presets, through a scripted hub", () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('lists, compares, copies and puts back, each through the app link and read back', async () => {
+    const seen: { method: string; args: Record<string, unknown> }[] = []
+    let layer = 0.28
+    const hub = scriptedHub({ ok: true }, true, undefined, (method, args) => {
+      seen.push({ method, args })
+      const listed = { id: 'up_1', kind: 'process', name: 'Fast draft', settings: 1, inUse: false }
+      if (method === 'presets.list') return { presets: [listed] }
+      if (method === 'presets.compare') return { preset: listed, with: { id: 'up_2', name: 'Fine detail' }, differ: layer === 0.28 ? 1 : 0, groups: [{ group: 'quality', label: 'Quality', rows: [{ key: 'layer_height', label: 'Layer height', differs: true, a: layer, b: 0.12, aText: `${layer} mm`, bText: '0.12 mm' }] }], unknownKeys: [] }
+      if (method === 'presets.copy') {
+        layer = 0.12
+        return { preset: listed, key: 'layer_height', label: 'Layer height', value: 0.12, from: 'Fine detail', undoId: 'pu_1' }
+      }
+      if (method === 'presets.undo') {
+        if (args['undoId'] !== 'pu_1' || layer === 0.28) throw { code: 'not_found', message: 'No copy to put back with that undoId' }
+        layer = 0.28
+        return { preset: listed, key: 'layer_height', value: 0.28 }
+      }
+      return {}
+    })
+    const h = await connect(opts(hub))
+    const listed = await h.call('slicerx_app_presets', {})
+    expect(listed.isError, text(listed)).toBeFalsy()
+    const cmp = await h.call('slicerx_app_preset_compare', { preset: 'Fast draft', with: 'Fine detail' })
+    expect(data<{ output: { differ: number } }>(cmp).output.differ).toBe(1)
+    const copied = await h.call('slicerx_app_preset_copy', { preset: 'Fast draft', key: 'layer_height', with: 'Fine detail' })
+    expect(copied.isError, text(copied)).toBeFalsy()
+    expect(data<{ output: { value: number; undoId: string } }>(copied).output).toMatchObject({ value: 0.12, undoId: 'pu_1' })
+    expect(data<{ output: { differ: number } }>(await h.call('slicerx_app_preset_compare', { preset: 'Fast draft', with: 'Fine detail' })).output.differ).toBe(0)
+    expect(data<{ output: { value: number } }>(await h.call('slicerx_app_preset_undo', { undoId: 'pu_1' })).output.value).toBe(0.28)
+    const again = await h.call('slicerx_app_preset_undo', { undoId: 'pu_1' })
+    expect(again.isError, text(again)).toBe(true)
+    expect(text(again)).toMatch(/not_found/)
+    expect(seen.map((s) => s.method)).toEqual(['presets.list', 'presets.compare', 'presets.copy', 'presets.compare', 'presets.undo', 'presets.undo'])
+    expect(seen[2]!.args).toEqual({ preset: 'Fast draft', key: 'layer_height', with: 'Fine detail' })
+  })
+})
+
 describe('a dimension sheet through a scripted hub', () => {
   const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
 
