@@ -3,35 +3,65 @@
 //! Opens a printer's own web page (Mainsail, Fluidd, OctoPrint, Duet Web Control, PrusaLink) in the system browser.
 //! The page builds the address from the saved printer (`printerWebUi` in @slicerx/printer-catalog); the shell opens
 //! it only when it is a plain http or https address on the local network, by the rule the bridge applies before it
-//! connects a printer (`sx_link::is_lan_host`, which also refuses a name a browser reads as an IPv4 number). The
-//! opener's own allow list takes fixed pages only, and a glob that took every local address would also take
-//! `http://10.example.com/`, so these go through here instead.
+//! connects a printer (`sx_link::is_lan_host`, which also refuses a name a browser reads as an IPv4 number). A single
+//! label normally resolves through the local search domain, but one that is also a top-level domain (`ai`) could
+//! resolve on the internet, so the shell asks the system resolver first and opens it only when some address it gets
+//! is local. The opener's own allow list takes fixed pages only, and a glob that took every local address would also
+//! take `http://10.example.com/`, so these go through here instead.
 
-/// Opens `url` in the browser when it is a printer page on the local network.
+use std::net::{IpAddr, ToSocketAddrs};
+
+/// Opens `url` in the browser when it is a printer page on the local network. The lookup of a single-label name
+/// runs off the main thread.
 #[tauri::command]
-pub fn printer_page_open(url: String) -> Result<(), String> {
-    open_with(&url, |u| {
-        tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())
+pub async fn printer_page_open(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        open_with(&url, system_resolve, |u| {
+            tauri_plugin_opener::open_url(u, None::<&str>).map_err(|e| e.to_string())
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-/// Hands `url` to `open` when [`printer_page`] accepts it.
-pub fn open_with(url: &str, open: impl FnOnce(&str) -> Result<(), String>) -> Result<(), String> {
-    if !printer_page(url) {
+/// Hands `url` to `open` when [`page_host`] accepts it and, for a single-label name, `resolve` gives at least one
+/// local address.
+pub fn open_with(
+    url: &str,
+    resolve: impl FnOnce(&str) -> Vec<IpAddr>,
+    open: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(), String> {
+    let Some(host) = page_host(url) else {
         return Err("only a printer's own page on the local network opens here".into());
+    };
+    let name = host.strip_suffix('.').unwrap_or(host);
+    if !name.contains('.')
+        && !name.contains(':')
+        && !resolve(name)
+            .iter()
+            .any(|ip| sx_link::is_lan_host(&ip.to_string()))
+    {
+        return Err(format!(
+            "{name} does not resolve to an address on the local network"
+        ));
     }
     open(url)
 }
 
-/// True for `http://host[:port]/path` or the https form, with no user name, query or fragment, whose host is on the
+/// The addresses the system resolver gives for `name`; none when it fails.
+fn system_resolve(name: &str) -> Vec<IpAddr> {
+    (name, 80)
+        .to_socket_addrs()
+        .map(|a| a.map(|s| s.ip()).collect())
+        .unwrap_or_default()
+}
+
+/// The host of `http://host[:port]/path` or the https form, with no user name, query or fragment, when it is on the
 /// local network.
-pub fn printer_page(url: &str) -> bool {
-    let Some(rest) = url
+pub fn page_host(url: &str) -> Option<&str> {
+    let rest = url
         .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-    else {
-        return false;
-    };
+        .or_else(|| url.strip_prefix("https://"))?;
     let (authority, path) = rest.find('/').map_or((rest, ""), |i| rest.split_at(i));
     if authority.is_empty()
         || authority.contains('@')
@@ -39,46 +69,25 @@ pub fn printer_page(url: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-._~/".contains(&b))
     {
-        return false;
+        return None;
     }
     let host = if let Some(v6) = authority.strip_prefix('[') {
-        let Some((h, after)) = v6.split_once(']') else {
-            return false;
-        };
+        let (h, after) = v6.split_once(']')?;
         // Brackets hold an IPv6 address and nothing else.
         if h.parse::<std::net::Ipv6Addr>().is_err()
             || !(after.is_empty() || after.strip_prefix(':').is_some_and(valid_port))
         {
-            return false;
+            return None;
         }
         h
     } else {
         match authority.split_once(':') {
             Some((h, port)) if valid_port(port) => h,
-            Some(_) => return false,
+            Some(_) => return None,
             None => authority,
         }
     };
-    !host.contains('%') && sx_link::is_lan_host(host) && !root_tld(host)
-}
-
-/// The top-level domains of the DNS root zone, from the printer catalog's list (one file for the app and the shell).
-fn root_tlds() -> &'static std::collections::HashSet<&'static str> {
-    static SET: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
-    SET.get_or_init(|| {
-        let file = include_str!("../../../../packages/connect/catalog/src/root-tlds.ts");
-        file.split('`')
-            .nth(1)
-            .unwrap_or_default()
-            .split_whitespace()
-            .collect()
-    })
-}
-
-/// A single label that is a root-zone TLD, such as `ai`: it can resolve on the internet, so it gets no page.
-fn root_tld(host: &str) -> bool {
-    let h = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
-    !h.contains('.') && root_tlds().contains(h.as_str())
+    (!host.contains('%') && sx_link::is_lan_host(host)).then_some(host)
 }
 
 fn valid_port(p: &str) -> bool {
@@ -107,7 +116,8 @@ mod tests {
             "http://voron.local./",
         ] {
             let mut got = None;
-            open_with(ok, |u| {
+            let lan = |_: &str| vec!["192.168.1.2".parse().unwrap()];
+            open_with(ok, lan, |u| {
                 got = Some(u.to_owned());
                 Ok(())
             })
@@ -116,20 +126,21 @@ mod tests {
         }
     }
 
-    /// The single labels the app links to and the root-zone TLDs it does not, from the table the app's rule runs too.
+    /// A single-label name opens only when the resolver gives a local address; dotted names and addresses are not looked up.
     #[test]
-    fn single_labels_follow_the_shared_table() {
-        let table: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../packages/connect/fixtures/lan-hosts.json"
-        ))
-        .unwrap();
-        for (key, want) in [("allowed", true), ("refused", false)] {
-            for h in table["webLink"][key].as_array().unwrap() {
-                let url = format!("http://{}/", h.as_str().unwrap());
-                assert_eq!(printer_page(&url), want, "{url}");
-            }
+    fn a_single_label_opens_only_when_it_resolves_on_the_network() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let try_open = |url: &str, found: Vec<IpAddr>| open_with(url, move |_| found, |_| Ok(()));
+        assert!(try_open("http://octopi/", vec![ip("192.168.1.30")]).is_ok());
+        assert!(try_open("http://mini:8080/", vec![ip("8.8.8.8"), ip("fd00::5")]).is_ok());
+        assert!(try_open("http://ai/", vec![ip("8.8.8.8")]).is_err());
+        assert!(try_open("http://octopi./", vec![]).is_err());
+        let not_asked = |_: &str| -> Vec<IpAddr> { panic!("looked up a name that needs no lookup") };
+        for url in ["http://voron.local/", "http://192.168.1.20/", "http://[fd00::5]/"] {
+            assert!(open_with(url, not_asked, |_| Ok(())).is_ok(), "{url}");
         }
-        assert!(root_tlds().len() > 1400);
+        // The real resolver knows localhost.
+        assert!(open_with("http://localhost/", system_resolve, |_| Ok(())).is_ok());
     }
 
     #[test]
@@ -170,11 +181,9 @@ mod tests {
             "http://192.168.1.20:80:90/",
             "http://192.168.1.20\\@8.8.8.8/",
             "http://voron.local%2e/",
-            "http://ai/",
-            "http://COM./",
         ] {
             assert!(
-                open_with(bad, |_| panic!("{bad} reached the opener")).is_err(),
+                open_with(bad, |_| Vec::new(), |_| panic!("{bad} reached the opener")).is_err(),
                 "{bad}"
             );
         }
