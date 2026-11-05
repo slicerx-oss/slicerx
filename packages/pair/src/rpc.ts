@@ -111,8 +111,8 @@ export const ApprovalRequestSchema = z.looseObject({
  * hashes: print to `printer.upload` `{printerId, name, sha256}` and `printer.start`
  * `{printerId, name, opts, sha256}` (`opts` `{}` when absent); resume, pause and cancel to
  * `{printerId}`; gcode to `{printerId, line}`; adjust to `{printerId, change}`; plugin to `plugin.call`
- * `{pluginId, tool, input}`, targeting the connected app; skip to `printer.skip` `{printerId, id}` (the
- * object's label; `epoch` is the job the hub pinned and is not hashed). A phone shows the
+ * `{pluginId, tool, input}`, targeting the connected app; skip to `printer.skip` `{printerId, id, epoch}` (the
+ * object's label and the running print's bed epoch). A phone shows the
  * summary only when every hash matches, and offers no Approve when one does not. `sizeBytes` is the
  * hub's count of the bytes it holds; the hash binds the name and content hash.
  */
@@ -128,7 +128,7 @@ export const WorkSummary = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('gcode'), printerId: z.string().max(128), line: z.string().max(96).regex(/^[\x20-\x7e]+$/) }),
   z.object({ kind: z.literal('adjust'), printerId: z.string().max(128), change: z.unknown() }),
   // One object of the running print, by the label the printer lists it under.
-  z.object({ kind: z.literal('skip'), printerId: z.string().max(128), id: z.string().min(1).max(64).regex(/^[\x21-\x7e]+$/), epoch: z.number().int().nonnegative().nullable().optional() }),
+  z.object({ kind: z.literal('skip'), printerId: z.string().max(128), id: z.string().min(1).max(64).regex(/^[\x21-\x7e]+$/), epoch: z.number().int().nonnegative() }),
   // A connected app's tool, hashed to `plugin.call` `{pluginId, tool, input}`; `printerId` is empty.
   z.object({ kind: z.literal('plugin'), printerId: z.string().max(128), pluginId: z.enum(['spoolman', 'home-assistant']), tool: z.string().max(64).regex(/^[a-z0-9_]+$/), input: z.looseObject({}) }),
 ])

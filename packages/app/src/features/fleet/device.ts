@@ -39,6 +39,9 @@ export interface RemoteStartRow {
   enabled: boolean
   maxNozzleC: number
   maxBedC: number
+  /** The printer catalog's own limits for the model, which the setting never goes above; null when unknown. */
+  catalogMaxNozzleC: number | null
+  catalogMaxBedC: number | null
   guard: boolean
   plateCheck: { checkedAt: string; clear: boolean | null; compared: boolean; passes: boolean; reason: string | null } | null
 }
@@ -46,6 +49,11 @@ export interface RemoteStartRow {
 /** The limits the hub takes for a remote start, in °C (`remote_start.rs`). */
 export const REMOTE_NOZZLE_RANGE = [150, 300] as const
 export const REMOTE_BED_RANGE = [0, 120] as const
+
+/** The range a limit may take on this printer: the hub's, capped at the catalog's limit for the model. */
+export function limitRange([lo, hi]: readonly [number, number], catalog: number | null | undefined): [number, number] {
+  return [lo, typeof catalog === 'number' ? Math.min(hi, catalog) : hi]
+}
 
 /** A typed limit the hub would take, or null. */
 export function remoteLimit(text: string, [lo, hi]: readonly [number, number]): number | null {
