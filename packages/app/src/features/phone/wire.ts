@@ -8,6 +8,7 @@ import type { ConnectedBridge } from '../../link/bridge'
 import type { PhoneAccess, PhoneState } from '../../lib/phone'
 import { PHONE_OFF } from '../../lib/phone'
 import { getRemoteAccess, type PairSource } from './remote'
+import { phoneQuestionFeed } from '../../workspaces/mimir/phone-answers'
 
 export interface PairStorage {
   identity: IdentityStore
@@ -74,6 +75,8 @@ export function phoneAccessFor(bridge: ConnectedBridge, s: PairStorage, relayUrl
             approvals: bridge.approvals,
             ...(bridge.camera ? { camera: bridge.camera } : {}),
             ...(bridge.push ? { push: bridge.push } : {}),
+            // approver phones answer mimir's question cards the way a click does
+            questionFeed: phoneQuestionFeed,
           },
         })
       },
