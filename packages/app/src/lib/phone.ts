@@ -10,6 +10,12 @@ export interface PhoneDevice {
   platform: string
   online: boolean
   lastSeenAt?: number
+  /** A partner phone: another company's app, paired under this app name. Listed in Printer bridge, Devices. */
+  partner?: string
+  /** It may approve pausing and stopping a print (and answer mimir's questions). */
+  approve?: boolean
+  /** A partner phone may send prints and read the library. */
+  send?: boolean
 }
 
 export interface PhoneState {
@@ -23,11 +29,15 @@ export interface PhoneState {
 /** A phone asking to pair: both people compare the digits, then the person at this computer confirms or refuses. */
 export interface PhoneAttempt {
   deviceName: string
+  /** The partner app name, on a partner offer. */
+  partner?: string
   /** The digits both screens show. */
   sas: Promise<string>
-  confirm(): void
+  /** `rights`: what the paired phone may do. A partner phone starts without approve unless it is passed here. */
+  confirm(rights?: { request: boolean; approve: boolean; introduce: boolean; send?: boolean }): void
   reject(): void
-  result: Promise<{ ok: boolean; reason?: string }>
+  /** `device` names the phone once it is paired: its own name comes inside the sealed confirm. */
+  result: Promise<{ ok: boolean; reason?: string; device?: { name: string } }>
 }
 
 /** A pairing offer: the phone types the code (or opens the link). It expires and works once. */
@@ -46,8 +56,10 @@ export interface PhoneAccess {
   /** Turns the LAN listener on or off. Off by default; not remembered across launches. */
   setEnabled(on: boolean): Promise<void>
   revoke(deviceId: string): Promise<void>
-  /** A new pairing offer. Needs phone access on. */
-  offer(): Promise<PhoneOffer>
+  /** A new pairing offer. Needs phone access on. `partner`: an offer for a partner phone under that app name. */
+  offer(opts?: { partner?: string }): Promise<PhoneOffer>
+  /** What a partner phone may do beyond seeing and asking to pause or stop: approve, and send prints. */
+  setPartnerRights?(deviceId: string, change: { approve?: boolean; send?: boolean }): Promise<void>
 }
 
 export const PHONE_OFF: PhoneState = { status: 'off', urls: [], devices: [] }

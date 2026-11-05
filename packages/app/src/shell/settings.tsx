@@ -199,6 +199,8 @@ export function PhoneRows({ phone }: { phone: PhoneAccess | null }) {
   const on = state.status === 'on' || state.status === 'starting'
   const [busy, setBusy] = useState(false)
   const [pairing, setPairing] = useState(false)
+  // Partner phones are listed and revoked in Printer bridge, Devices.
+  const own = state.devices.filter((d) => d.partner === undefined)
   const toggle = async (next: boolean) => {
     if (!phone) return
     setBusy(true)
@@ -236,9 +238,9 @@ export function PhoneRows({ phone }: { phone: PhoneAccess | null }) {
       ) : null}
       {pairing && phone ? <PairDialog phone={phone} onClose={() => setPairing(false)} /> : null}
       <h4 className="set-sub">Paired phones</h4>
-      {state.devices.length ? (
+      {own.length ? (
         <ul className="dev-list">
-          {state.devices.map((d) => (
+          {own.map((d) => (
             <li key={d.id}>
               <Icon name="phone" />
               <span className="min0">
@@ -254,6 +256,7 @@ export function PhoneRows({ phone }: { phone: PhoneAccess | null }) {
       ) : (
         <p className="sx-small sx-muted">No phones paired yet.</p>
       )}
+      {own.length < state.devices.length ? <p className="sx-small sx-muted">Partner phones are listed in Settings, Printer bridge, Devices.</p> : null}
       <PendingRemovals />
     </>
   )
