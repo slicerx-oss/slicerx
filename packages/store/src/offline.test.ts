@@ -760,6 +760,34 @@ describe('API tokens', () => {
     expect(await store(null).createApiToken({ name: 'x', scopes: ['read'] })).toMatchObject({ ok: false, code: 'not_signed_in' })
   })
 
+  it('issues a partner app token with the cloud_slice scope only, lists it by app and revokes it', async () => {
+    const s = store()
+    const created = value(await s.createPartnerToken({ partnerApp: '  Example Phone ', expiresInDays: 30 }))
+    expect(created.secret).toMatch(/^sxk_[0-9a-f]{64}$/)
+    expect(created.token).toMatchObject({ name: 'Example Phone', partnerApp: 'Example Phone', scopes: ['cloud_slice'], rateLimitPerMinute: 60 })
+    expect(created.token.expiresAt).toBeDefined()
+    const own = value(await s.createApiToken({ name: 'Laptop CLI', scopes: ['cli'] }))
+    expect(own.token.partnerApp).toBeUndefined()
+    const listed = await s.apiTokens()
+    expect(listed.find((t) => t.id === created.token.id)?.partnerApp).toBe('Example Phone')
+    expect(JSON.stringify(listed)).not.toContain(created.secret)
+    expect(await s.revokeApiToken(created.token.id)).toEqual({ ok: true, value: undefined })
+    expect((await s.apiTokens()).find((t) => t.id === created.token.id)?.revokedAt).toBeDefined()
+    expect((await s.apiTokens()).find((t) => t.id === own.token.id)?.revokedAt).toBeUndefined()
+  })
+
+  it('refuses a partner app token without a name, without an expiry in a year, or signed out', async () => {
+    const s = store()
+    expect(await s.createPartnerToken({ partnerApp: '' })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await s.createPartnerToken({ partnerApp: '   ' })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await s.createPartnerToken({ partnerApp: 'x'.repeat(61) })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await s.createPartnerToken({ partnerApp: 'Example\nPhone' })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await s.createPartnerToken({ partnerApp: 'Example Phone', expiresInDays: 400 })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await s.createPartnerToken({ partnerApp: 'Example Phone', expiresInDays: null as never })).toMatchObject({ ok: false, code: 'invalid' })
+    expect(await store(null).createPartnerToken({ partnerApp: 'Example Phone' })).toMatchObject({ ok: false, code: 'not_signed_in' })
+    expect(await s.apiTokens()).toHaveLength(0)
+  })
+
   it('works through the auth-only client, without the store module', async () => {
     const auth = createAuth({ offline: true, now: fixed, newId, seed: generateSeed() })
     expect((await auth.session())?.handle).toBe('rv')

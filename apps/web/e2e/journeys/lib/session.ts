@@ -288,6 +288,45 @@ export async function settingsAccount(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0)
 }
 
+/**
+ * Settings, Account, Partner apps: the member issues a cloud slicing token to a named app, sees the secret once and
+ * then only the app's row, and revokes it. A phone opens Account from the section list first.
+ */
+export async function partnerAppToken(page: Page, info: TestInfo, tag: string): Promise<void> {
+  await goTab(page, 'prepare')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Settings' })
+  await expect(dialog).toBeVisible()
+  const list = dialog.getByTestId('settings-list')
+  if (await list.isVisible()) await list.getByRole('button', { name: 'Account' }).click()
+  const section = dialog.getByTestId('partner-tokens')
+  await section.scrollIntoViewIfNeeded()
+  await expect(section.getByText('No partner app can slice on your account.')).toBeVisible()
+  await expect(section.getByTestId('partner-token-create')).toBeDisabled()
+  await section.getByTestId('partner-token-name').fill('Example Phone')
+  await section.getByTestId('partner-token-days').selectOption('365')
+  await section.getByTestId('partner-token-create').click()
+  const secret = section.getByTestId('partner-token-secret')
+  await expect(secret).toHaveText(/^sxk_[0-9a-f]{64}$/)
+  const value = (await secret.textContent()) ?? ''
+  const row = section.getByTestId('partner-token-row')
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText('Example Phone')
+  await expect(row).toContainText('Cloud slicing, expires')
+  await expect(row).not.toContainText(value)
+  await noHorizontalScroll(page)
+  if (shotsOn()) await section.screenshot({ path: `${shotsDir(info)}/partner-token-made-${tag}.png` })
+  await section.getByTestId('partner-token-hide').click()
+  await expect(secret).toHaveCount(0)
+  // the member's own tokens list stays apart from partner apps
+  await expect(dialog.getByText('You have no API tokens.')).toBeAttached()
+  await section.getByRole('button', { name: 'Revoke Example Phone' }).click()
+  await expect(row.getByText('Revoked', { exact: true })).toBeVisible()
+  if (shotsOn()) await section.screenshot({ path: `${shotsDir(info)}/partner-token-revoked-${tag}.png` })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+}
+
 /* ------------------------------------------------------------------ first run */
 
 /** Steps in setup: the theme, the printer, the slicer you use now, what the plate tab opens in, and mimir. A phone has no modeling, so it skips "Opens in". */
