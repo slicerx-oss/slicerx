@@ -207,8 +207,9 @@ describe('Prusa brim for every process tier', () => {
 describe('Prusa MK4 and MINI first layer', () => {
   const first = read<MakerOverlay>(PRUSA_FIRST_LAYER_OVERLAY)
   // The stock MK4 IS and MINI IS print presets, every nozzle: first layer line width and elephant foot compensation.
-  const stock: Record<string, { width: string; efc: number | undefined }> = {
-    '0.25': { width: '0.32', efc: undefined },
+  // Brim separation is 0 in every stock 0.25 mm preset; the other nozzles keep the catalog's 0.1 mm gap.
+  const stock: Record<string, { width: string; efc: number | undefined; gap?: number }> = {
+    '0.25': { width: '0.32', efc: undefined, gap: 0 },
     '0.4': { width: '0.5', efc: 0.2 },
     '0.6': { width: '0.68', efc: 0.2 },
     '0.8': { width: '1', efc: 0.2 },
@@ -221,13 +222,14 @@ describe('Prusa MK4 and MINI first layer', () => {
     expect(JSON.stringify(data) + '\n').toBe(shipped)
   })
 
-  it('writes only the two first layer keys, on the MK4 and the MINI', () => {
+  it('writes only the first layer keys, and the brim gap on the 0.25 mm nozzle, on the MK4 and the MINI', () => {
     expect(Object.keys(first.process).sort()).toEqual(['prusa-mini-plus', 'prusa-mk4'])
     for (const [model, sizes] of Object.entries(first.process)) {
       for (const [size, tiers] of Object.entries(sizes)) {
         for (const [tier, o] of Object.entries(tiers)) {
           const want: Record<string, string> = { initial_layer_line_width: stock[size]!.width }
           if (stock[size]!.efc !== undefined) want['elefant_foot_compensation'] = String(stock[size]!.efc)
+          if (stock[size]!.gap !== undefined) want['brim_object_gap'] = String(stock[size]!.gap)
           expect(o.values, `${model} ${size} ${tier}`).toEqual(want)
         }
       }
@@ -246,6 +248,7 @@ describe('Prusa MK4 and MINI first layer', () => {
           expect(layer!.nozzle, `${printerId} ${size} ${tier}`).toBe(size)
           expect(layer!.values['initial_layer_line_width'], `${printerId} ${size} ${tier}`).toBe(want.width)
           expect(layer!.values['elefant_foot_compensation'] ?? 0, `${printerId} ${size} ${tier}`).toBe(want.efc ?? 0)
+          expect(layer!.values['brim_object_gap'] ?? defaultConfig()['brim_object_gap'], `${printerId} ${size} ${tier}`).toBe(want.gap ?? 0.1)
           // The whole brim keys still reach every tier, so the gap to the part stays the brim gap at this compensation.
           expect(layer!.values['brim_use_efc_outline'], `${printerId} ${size} ${tier}`).toBe(true)
           expect(layer!.values['brim_loop_rounding'], `${printerId} ${size} ${tier}`).toBe('whole')
