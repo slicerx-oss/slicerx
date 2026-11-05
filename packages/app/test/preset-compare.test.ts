@@ -4,7 +4,9 @@ import { act } from 'react'
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { comparable, comparePreset, copyValue, parentFor, stockFor, undoCopy, whole } from '../src/presets/compare'
+import { sameValue } from '@slicerx/settings'
+import { comparable, comparePreset, copyValue, parentFor, parentSide, stockFor, undoCopy, whole } from '../src/presets/compare'
+import { applyPreset } from '../src/presets/presets'
 import { ComparePanel } from '../src/presets/compare-panel'
 import { memoryStore, setPresetStore, type UserPreset } from '../src/presets/store'
 import { get, set } from '../src/state/store'
@@ -48,8 +50,13 @@ describe('compare presets', () => {
     const a = preset('a', 'filament', { nozzle_temperature: [231] }, { inherits: 'Bambu PLA Basic @BBL A1' })
     const parent = await parentFor(a)
     expect(parent?.name).toBe('Bambu PLA Basic @BBL A1')
-    const c = comparePreset(a, parent!.config, parent!)
-    expect(c.groups.flatMap((g) => g.rows).map((r) => r.key)).toEqual(['nozzle_temperature'])
+    // The preset applies over the stock settings, never over its parent, so the parent is read over them too.
+    const side = parentSide(a, parent!)
+    const stock = stockFor(a)
+    const c = comparePreset(a, stock, side)
+    const keys = c.groups.flatMap((g) => g.rows).map((r) => r.key)
+    expect(keys).toContain('nozzle_temperature')
+    for (const k of keys) if (k !== 'nozzle_temperature') expect(side.config[k], k).not.toEqual(stock[k])
     expect(await parentFor(preset('b', 'filament', {}, { inherits: 'No such preset @Nowhere' }))).toBeUndefined()
     expect(await parentFor(preset('c', 'filament', {}))).toBeUndefined()
   })
@@ -76,6 +83,34 @@ describe('compare presets', () => {
     expect(get().overrides).toEqual({ nozzle_temperature: [231], wall_loops: 4 })
   })
 
+  it('copies a parent value into the preset, so the plate gets the parent value, not stock', async () => {
+    set({ userPresets: [preset('a', 'filament', {}, { inherits: 'Bambu PLA Basic @BBL A1' })] })
+    const a = get().userPresets[0]!
+    const stock = stockFor(a)
+    const side = parentSide(a, (await parentFor(a))!)
+    const key = comparePreset(a, stock, side).groups.flatMap((g) => g.rows)[0]!.key
+    expect(side.config[key]).not.toEqual(stock[key])
+    const before = await copyValue('a', key, side.config, stock)
+    expect(get().userPresets[0]!.values[key]).toEqual(side.config[key])
+    applyPreset('a')
+    expect(get().overrides[key]).toEqual(side.config[key])
+    expect(comparePreset(get().userPresets[0]!, stock, side).groups.flatMap((g) => g.rows).some((r) => r.key === key)).toBe(false)
+    await undoCopy(before!, key)
+    expect(key in get().userPresets[0]!.values).toBe(false)
+  })
+
+  it('runs copies and undos one after another, so none is lost', async () => {
+    set({ userPresets: [preset('a', 'process', {}), preset('b', 'process', { layer_height: 0.12, wall_loops: 6 })] })
+    const base = stockFor(get().userPresets[0]!)
+    const b = whole(get().userPresets[1]!, base)
+    await Promise.all([copyValue('a', 'layer_height', b, base), copyValue('a', 'wall_loops', b, base)])
+    expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6 })
+    const before = (await copyValue('a', 'sparse_infill_density', { ...b, sparse_infill_density: '40%' }, base))!
+    // Undo, then a copy sent before the undo's write lands: the copy builds on the undone preset.
+    await Promise.all([undoCopy(before, 'sparse_infill_density'), copyValue('a', 'top_shell_layers', { ...b, top_shell_layers: 9 }, base)])
+    expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6, top_shell_layers: 9 })
+  })
+
   it('compares only presets of the same kind', () => {
     const a = preset('a', 'filament', { nozzle_temperature: [210] })
     expect(comparable(a, [a, preset('b', 'filament', {}), preset('c', 'process', {})]).map((p) => p.id)).toEqual(['b'])
@@ -96,6 +131,13 @@ describe('Compare presets panel', () => {
       el.dispatchEvent(new Event('change', { bubbles: true }))
     })
   const flush = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))))
+  /** Waits for `ok`, up to 20 s: the parent preset loads from a vendor file. */
+  const until = async (ok: () => boolean) => {
+    for (let t = Date.now(); !ok(); ) {
+      if (Date.now() - t > 20_000) throw new Error('timed out')
+      await act(async () => void (await new Promise((r) => setTimeout(r, 20))))
+    }
+  }
 
   it('groups what differs, shows all on request, copies a value across and undoes it', async () => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -116,9 +158,12 @@ describe('Compare presets panel', () => {
     expect(host.textContent).not.toContain('layer_height')
     expect(host.querySelector('[role="status"]')!.textContent).toBe('2 settings differ')
 
+    // No setting key anywhere, tooltips included.
+    expect(host.querySelector('[data-tip-key]')).toBeNull()
     const all = host.querySelector<HTMLButtonElement>('[role="switch"]')!
     act(() => all.click())
     expect(rows().length).toBeGreaterThan(50)
+    for (const r of rows()) expect(r.querySelector('[data-testid="preset-compare-copy"]') !== null, r.dataset['key']).toBe(r.dataset['differs'] === 'true')
     expect(host.querySelector('[role="status"]')!.textContent).toBe('2 settings differ')
     act(() => all.click())
 
@@ -136,6 +181,19 @@ describe('Compare presets panel', () => {
     expect(get().userPresets.find((p) => p.id === 'a')!.values['layer_height']).toBe(0.2)
     expect(rows().map((r) => r.dataset['key'])).toEqual(['layer_height', 'wall_loops'])
     expect(undo().disabled).toBe(true)
+  })
+
+  it('says when the parent does not ship with the app', async () => {
+    set({ userPresets: [preset('a', 'filament', { nozzle_temperature: [231] }, { name: 'Odd PLA', inherits: 'No Such PLA @Nowhere' })] })
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root.render(createElement(ComparePanel)))
+    pick('cmp-kind', 'filament')
+    pick('cmp-a', 'a')
+    pick('cmp-b', 'parent')
+    await until(() => /does not ship/.test(host.textContent ?? ''))
+    expect(host.textContent).toContain('Odd PLA was made from No Such PLA @Nowhere, which does not ship with')
   })
 
   it('says how a G-code setting differs, line by line', async () => {
@@ -165,9 +223,17 @@ describe('Compare presets panel', () => {
     const options = () => [...host.querySelectorAll<HTMLOptionElement>('#cmp-b option')].map((o) => o.value)
     expect(options()).toEqual(['', 'parent', 'stock', 'preset:b'])
     pick('cmp-b', 'parent')
-    await flush()
-    await act(async () => void (await new Promise((r) => setTimeout(r, 50))))
-    expect([...host.querySelectorAll<HTMLElement>('[data-testid="preset-compare-row"]')].map((r) => r.dataset['key'])).toEqual(['nozzle_temperature'])
+    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-testid="preset-compare-row"]')]
+    await until(() => rows().length > 0)
+    expect(rows().map((r) => r.dataset['key'])).toContain('nozzle_temperature')
+    // Copy from the parent: the preset keeps the parent's value, and the row goes.
+    const first = rows()[0]!
+    const key = first.dataset['key']!
+    await act(async () => first.querySelector<HTMLButtonElement>('[data-testid="preset-compare-copy"]')!.click())
+    await until(() => !rows().some((r) => r.dataset['key'] === key))
+    const kept = get().userPresets.find((p) => p.id === 'a')!.values[key]
+    expect(kept).toBeDefined()
+    expect(sameValue(kept, stockFor(get().userPresets.find((p) => p.id === 'a')!)[key])).toBe(false)
     pick('cmp-a', 'b')
     expect(options()).toEqual(['', 'stock', 'preset:a'])
   })

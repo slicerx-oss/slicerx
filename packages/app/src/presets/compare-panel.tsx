@@ -5,7 +5,7 @@ import { Button, Select, Switch, tipAttrs } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../state/store'
 import { appName } from '../edition'
-import { comparePreset, copyValue, parentFor, stockFor, undoCopy, whole, type CompareSide } from './compare'
+import { comparePreset, copyValue, parentFor, parentSide, stockFor, undoCopy, whole, type CompareSide } from './compare'
 import { KIND_LABEL, KINDS, reportPresetError } from './presets'
 import type { PresetKind, UserPreset } from './store'
 
@@ -29,7 +29,7 @@ export function ComparePanel() {
   const [withId, setWith] = useState('')
   const [all, setAll] = useState(false)
   const [undo, setUndo] = useState<{ before: UserPreset; key: string }[]>([])
-  const [parent, setParent] = useState<{ of: string; side: CompareSide | null } | null>(null)
+  const [parent, setParent] = useState<{ of: string; side: CompareSide | null; failed?: boolean } | null>(null)
   const a = list.find((p) => p.id === aId)
   const other = withId.startsWith('preset:') ? list.find((p) => p.id === withId.slice('preset:'.length)) : undefined
   const inherits = a?.inherits
@@ -37,19 +37,28 @@ export function ComparePanel() {
   useEffect(() => {
     if (withId !== 'parent' || !a?.inherits) return
     const of = `${a.kind}:${a.inherits}`
-    if (parent?.of === of) return
+    if (parent?.of === of && !parent.failed) return
     let live = true
-    void parentFor(a).then((side) => live && setParent({ of, side: side ?? null }), reportPresetError)
+    void parentFor(a).then(
+      (side) => live && setParent({ of, side: side ?? null }),
+      (e: unknown) => {
+        // A failed read says so; picking Parent again tries once more.
+        if (live) setParent({ of, side: null, failed: true })
+        reportPresetError(e)
+      },
+    )
     return () => {
       live = false
     }
-  }, [withId, a, parent])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withId, a])
 
-  const base = useMemo(() => (a ? (withId === 'parent' && parent?.side && parent.of === `${a.kind}:${a.inherits}` ? parent.side.config : stockFor(a)) : null), [a, withId, parent])
+  // The first preset always stands on its stock settings, which is what applying it gives, whatever it is compared with.
+  const base = useMemo(() => (a ? stockFor(a) : null), [a])
   const side: CompareSide | null = useMemo(() => {
     if (!a || !base) return null
     if (withId === 'stock') return { name: 'Stock', config: base }
-    if (withId === 'parent') return parent?.side && parent.of === `${a.kind}:${a.inherits}` ? parent.side : null
+    if (withId === 'parent') return parent?.side && parent.of === `${a.kind}:${a.inherits}` ? parentSide(a, parent.side) : null
     return other ? { name: other.name, config: whole(other, stockFor(other)) } : null
   }, [a, base, withId, parent, other])
   const result = useMemo(() => (a && base && side ? comparePreset(a, base, side, { all }) : null), [a, base, side, all])
@@ -72,7 +81,8 @@ export function ComparePanel() {
     setUndo((u) => u.slice(0, -1))
     void undoCopy(last.before, last.key).catch(reportPresetError)
   }
-  const missingParent = withId === 'parent' && a && parent?.of === `${a.kind}:${a.inherits}` && parent.side === null
+  const parentState = withId === 'parent' && a && parent?.of === `${a.kind}:${a.inherits}` && parent.side === null ? (parent.failed ? 'failed' : 'missing') : null
+  const missingParent = parentState !== null
   const count = result?.differ ?? 0
   return (
     <section className="preset-group cmp" aria-labelledby="presets-compare-h">
@@ -168,8 +178,8 @@ export function ComparePanel() {
                       {g.rows.map((r) => (
                         <tr key={r.key} data-testid="preset-compare-row" data-key={r.key} data-differs={r.differs ? 'true' : undefined}>
                           <th scope="row">
-                            {/* The setting's key only in the tooltip's details line, never in the row. */}
-                            <span className="cmp-label" {...tipAttrs({ title: r.label, key: r.key })}>
+                            {/* Labels only: the key stays in data-key on the row, for tests and the agent bridge. */}
+                            <span className="cmp-label">
                               {r.label}
                             </span>
                             {r.lines ? <small className="cmp-note">{linesText(r.lines, a.name, side.name)}</small> : null}
@@ -190,8 +200,10 @@ export function ComparePanel() {
         </>
       ) : (
         <p className="sx-small sx-muted">
-          {missingParent
-            ? `The preset ${a?.name ?? ''} was made from does not ship with ${appName()}, so it cannot be compared.`
+          {parentState === 'failed'
+            ? `Could not read ${a?.inherits ?? 'the parent preset'}. Pick Parent again to try once more.`
+            : parentState === 'missing'
+            ? `${a?.name ?? ''} was made from ${a?.inherits ?? ''}, which does not ship with ${appName()}, so there is nothing to compare it with.`
             : list.length === 0
               ? `Save a ${KIND_LABEL[kind].toLowerCase()} preset to compare it.`
               : !a
