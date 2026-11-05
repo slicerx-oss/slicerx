@@ -31,7 +31,7 @@ function tierOf(s: Pick<AppState, 'goal' | 'goalBase'>): EasyGoal {
   return s.goal === 'custom' ? s.goalBase : s.goal
 }
 
-function slotsOf(s: AppState): { type: string; vendor?: string; family?: string }[] {
+export function slotsOf(s: AppState): { type: string; vendor?: string; family?: string }[] {
   const slots = resolveSlots(s)
   const top = slots.reduce((n, r) => (r.used ? Math.max(n, r.index) : n), 0)
   const list = top >= 2 ? slots.slice(0, top) : [slots.find((r) => r.used) ?? slots[0]]

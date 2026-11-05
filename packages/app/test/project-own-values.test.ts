@@ -7,7 +7,7 @@
 // pick, filament change or Switch to moves it, New project leaves a later edit to it alone, and a person's own
 // override the open left as it was comes back on New project.
 import { describe, expect, it } from 'vitest'
-import type { Host, MeshHandle, SettingValue } from '@slicerx/contracts'
+import type { Host, MeshHandle, PrinterInfo, SettingValue } from '@slicerx/contracts'
 import { importFlat } from '@slicerx/settings'
 
 const { openModelBytes } = await import('../src/state/actions')
@@ -24,6 +24,7 @@ const { sx3mfBytes } = await import('../src/export/actions')
 const { allPlates } = await import('../src/plate/plates')
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
+const hostWith = (printers: PrinterInfo[]): Host => ({ kind: 'web', capabilities: { threads: 1 }, printers: { list: async () => printers }, slicer: { loadParts: async (name: string, parts: { name: string; slot?: number }[]) => ({ ...handle(name), parts: parts.map((p) => ({ name: p.name, slot: p.slot ?? 1, triangles: 12 })) }) } }) as unknown as Host
 const host = { kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string, parts: { name: string; slot?: number }[]) => ({ ...handle(name), parts: parts.map((p) => ({ name: p.name, slot: p.slot ?? 1, triangles: 12 })) }) } } as unknown as Host
 
 const cube = (() => {
@@ -33,7 +34,8 @@ const cube = (() => {
 })()
 const model = (app: string) => `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">${app}</metadata><resources><object id="1" type="model">${cube}</object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 110 110 0"/></build></model>`
 const bambuFile = (settings: Record<string, unknown>) => zip([{ name: '3D/3dmodel.model', data: model('BambuStudio-02.08.04.61') }, { name: 'Metadata/project_settings.config', data: JSON.stringify(settings) }])
-const prusaFile = (lines: string[]) => zip([{ name: '3D/3dmodel.model', data: model('PrusaSlicer-2.9.6') }, { name: 'Metadata/Slic3r_PE.config', data: lines.map((l) => `; ${l}`).join('\n') }])
+/** A PrusaSlicer project of one cube; `object` is the cube's own settings, in PrusaSlicer's keys. */
+const prusaFile = (lines: string[], object: Record<string, string> = {}) => zip([{ name: '3D/3dmodel.model', data: model('PrusaSlicer-2.9.6') }, { name: 'Metadata/Slic3r_PE.config', data: lines.map((l) => `; ${l}`).join('\n') }, ...(Object.keys(object).length ? [{ name: 'Metadata/Slic3r_PE_model.config', data: `<?xml version="1.0" encoding="UTF-8"?><config><object id="1" instances_count="1"><metadata type="object" key="name" value="cube"/>${Object.entries(object).map(([k, v]) => `<metadata type="object" key="${k}" value="${v}"/>`).join('')}<volume firstid="0" lastid="11"><metadata type="volume" key="name" value="cube"/><metadata type="volume" key="volume_type" value="ModelPart"/></volume></object></config>` }] : [])])
 
 const P1S_ID = { printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'Bambu Lab P1S', nozzle_diameter: ['0.4'] }
 const inherited = bambuFile({ ...P1S_ID, inherits_group: ['0.20mm Standard @BBL X1C', '', ''], layer_height: '0.12', enable_support: '1', support_top_z_distance: '0.2', support_bottom_z_distance: '0.2', overhang_2_4_speed: '50', different_settings_to_system: ['enable_support;layer_height', '', ''] })
@@ -43,6 +45,7 @@ const A1 = { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' }
 const P1S = { id: 'my-p1s', vendor: 'Bambu Lab', model: 'P1S' }
 const MK4 = { id: 'my-mk4', vendor: 'Prusa Research', model: 'MK4' }
 const MK4S = { id: 'my-mk4s', vendor: 'Prusa Research', model: 'MK4S' }
+const BAY_2: PrinterInfo = { id: 'bay-2', name: 'Bay 2', vendor: 'Bambu Lab', model: 'P1S', plugin: 'bambu-lan', nozzleCount: 1 }
 type Printer = typeof A1 | null
 
 async function settled(): Promise<void> {
@@ -58,26 +61,26 @@ const config = (): Record<string, SettingValue> => resolveConfig(get().easy, get
 const layer = (): Record<string, SettingValue> => resolveConfig(get().easy, {}) as unknown as Record<string, SettingValue>
 const pinnedOf = (keys: readonly string[]): string[] => keys.filter((k) => k in get().overrides)
 
-/** A fresh plate on `printer` (none for the generic bed) with `overrides`, on Standard. */
-async function fresh(printer: Printer, overrides: Record<string, SettingValue> = {}): Promise<void> {
-  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], slotSetup: {}, openNote: null, printerId: printer?.id ?? null, printerModel: printer, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal: 'standard', goalBase: 'standard', overrides, vouchedGcode: {}, toast: null }))
+/** A fresh plate on `printer` (none for the generic bed) with `overrides`, on `goal`. */
+async function fresh(printer: Printer, overrides: Record<string, SettingValue> = {}, goal: 'standard' | 'fine' = 'standard'): Promise<void> {
+  set((s) => ({ easy: { ...s.easy, ...goalEasy(goal) }, plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], slotSetup: {}, openNote: null, printerId: printer?.id ?? null, printerModel: printer, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal, goalBase: goal, overrides, vouchedGcode: {}, toast: null }))
   startProfileSync()
   startProjectPrinterSync()
   await settled()
 }
 
 /** The config the app slices `bytes` with, opened on a fresh plate on `printer`. */
-async function openOn(printer: Printer, name: string, bytes: Uint8Array, overrides: Record<string, SettingValue> = {}): Promise<Record<string, unknown>> {
-  await fresh(printer, overrides)
-  await openModelBytes(host, name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
+async function openOn(printer: Printer, name: string, bytes: Uint8Array, overrides: Record<string, SettingValue> = {}, opts: { goal?: 'standard' | 'fine'; printers?: PrinterInfo[] } = {}): Promise<Record<string, unknown>> {
+  await fresh(printer, overrides, opts.goal)
+  await openModelBytes(opts.printers ? hostWith(opts.printers) : host, name, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
   await settled()
   const s = get()
   return plateSliceConfig(s, activeMeta(s)) as unknown as Record<string, unknown>
 }
 
-/** Our Standard layer's values for `keys` on `printer`. */
-async function standardOf(printer: Printer, keys: readonly string[]): Promise<Record<string, SettingValue>> {
-  await fresh(printer)
+/** Our Standard (or `goal`) layer's values for `keys` on `printer`. */
+async function standardOf(printer: Printer, keys: readonly string[], goal: 'standard' | 'fine' = 'standard'): Promise<Record<string, SettingValue>> {
+  await fresh(printer, {}, goal)
   const cfg = config()
   return Object.fromEntries(keys.map((k) => [k, cfg[k]!]))
 }
@@ -129,6 +132,41 @@ describe('a project opened on a fresh plate', () => {
     expect(get().profile?.printerId).toBe('prusa-mk4s')
     expect(config()['layer_height']).toBe(0.12)
     expect(config()['support_top_z_distance']).toBe(0.2)
+  })
+
+  it('keeps its real changes from a plate on Fine when it moves to a printer whose Fine layer differs', async () => {
+    // Real changes are measured against Standard, whatever goal the plate was on, as the MCP server measures them.
+    await openOn(A1, 'p1s-gaps.3mf', inherited, {}, { goal: 'fine' })
+    expect(get().overrides['layer_height']).toBe(0.12)
+    set({ printerId: MK4S.id, printerModel: MK4S })
+    await settled()
+    expect(config()['layer_height']).toBe(0.12)
+    expect(config()['support_top_z_distance']).toBe(0.2)
+  })
+
+  it('keeps its real changes on a printer of the person and on one with no profile', async () => {
+    const unknown = bambuFile({ printer_settings_id: 'Workshop Printer 0.4 nozzle', printer_model: 'Workshop Printer', nozzle_diameter: ['0.4'], layer_height: '0.12', enable_support: '1', support_top_z_distance: '0.2', support_bottom_z_distance: '0.2', different_settings_to_system: ['enable_support;layer_height', '', ''] })
+    const cases: [Uint8Array, { printers?: PrinterInfo[] }][] = [[inherited, { printers: [BAY_2] }], [unknown, {}]]
+    for (const [bytes, opts] of cases) {
+      const cfg = await openOn(A1, 'gaps.3mf', bytes, {}, opts)
+      expect(get().goalBase).toBe('fine')
+      expect(get().overrides['layer_height']).toBe(0.12)
+      expect(cfg['support_top_z_distance']).toBe(0.2)
+      expect(cfg['support_bottom_z_distance']).toBe(0.2)
+    }
+  })
+
+  it('turns custom when our own project reopened changes the plate', async () => {
+    await openOn(A1, 'prusa-gaps.3mf', prusaFile(prusaGaps))
+    set((s) => ({ overrides: {}, easy: { ...s.easy, ...goalEasy('fine') }, goal: 'fine', goalBase: 'fine', easyTouched: [] }))
+    await settled()
+    const bytes = await sx3mfBytes(allPlates(get()))
+    await fresh(A1)
+    await openModelBytes(host, 'mine.sx3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
+    await settled()
+    expect(get().goal).toBe('custom')
+    expect(get().goalBase).toBe('fine')
+    expect(config()['layer_height']).toBe(0.12)
   })
 
   it('keeps the goal of our own project reopened as it was', async () => {
@@ -224,6 +262,35 @@ describe("Switch to another slicer's project's printer", () => {
     await settled()
     expect(pinnedOf(SWITCH_KEYS)).toEqual([])
     expect(config()['nozzle_temperature']).not.toEqual(pla)
+  })
+
+  it("keeps a real change the open counted, also where it equals the layer it switches to", async () => {
+    // A project for the MK4S at the MK4S Fine layer height, opened on the A1: a real change there, kept through Switch to
+    // (where it equals the MK4S Fine layer) and the move back to the A1, whose Fine layer differs.
+    const fine = (await standardOf(MK4S, ['layer_height'], 'fine'))['layer_height']!
+    const a1Fine = (await standardOf(A1, ['layer_height'], 'fine'))['layer_height']!
+    expect(fine).not.toEqual(a1Fine)
+    await openOn(A1, 'mk4s-fine.3mf', prusaFile(['printer_model = MK4S', 'nozzle_diameter = 0.4', `layer_height = ${fine}`, 'support_material_contact_distance = 0.25']))
+    expect(get().openNote?.action?.label).toBe('Switch to MK4S 0.4 mm')
+    get().openNote!.action!.run()
+    await until(() => get().openNote?.text.startsWith('Switched') === true)
+    await settled()
+    expect(pinnedOf(['layer_height', 'support_top_z_distance'])).toEqual(['layer_height', 'support_top_z_distance'])
+    set({ printerId: A1.id, printerModel: A1 })
+    await settled()
+    expect(config()['layer_height']).toBe(fine)
+    expect(config()['support_top_z_distance']).toBe(0.25)
+  })
+
+  it("keeps a key the file's object brings as the project's after the open and Switch to", async () => {
+    const a1 = await standardOf(A1, ['wall_loops'])
+    const lines = ['printer_model = MK4IS', 'nozzle_diameter = 0.4', 'layer_height = 0.2', `perimeters = ${a1['wall_loops']}`]
+    await openOn(A1, 'mk4-object.3mf', prusaFile(lines, { perimeters: '5' }))
+    expect(get().projectSettings?.keys).toContain('wall_loops')
+    get().openNote!.action!.run()
+    await until(() => get().openNote?.text.startsWith('Switched') === true)
+    await settled()
+    expect(get().projectSettings?.keys).toContain('wall_loops')
   })
 
   it("keeps the person's own override and a later edit on New project", async () => {
