@@ -200,7 +200,7 @@ export interface PrinterLive {
   /** `left` or `right` for each entry of `nozzles`, on printers with two side by side. */
   nozzleSides?: ('left' | 'right')[]
   /** The filament units in the order of their slots: the letter their slot ids start with, the kind, and the nozzle each feeds on a printer with two. */
-  units?: { id: string; kind: FilamentUnit['kind']; feeds?: 'left' | 'right' }[]
+  units?: { id: string; kind: FilamentUnit['kind']; feeds?: 'left' | 'right'; climate?: UnitClimate }[]
   /** Height of the layer printing now, in mm. */
   layerZMm?: number
   /**
@@ -225,6 +225,38 @@ export interface PrinterLive {
    * Absent when no sensor reports one or the printer has none.
    */
   runoutSlots?: string[]
+}
+
+/** The air inside a filament unit and its dryer, as the unit reports them, read only. Every field is absent when the unit does not say. */
+export interface UnitClimate {
+  /** Relative humidity in percent. */
+  humidityPct?: number
+  /** Humidity as a level from 1 (dry) to 5 (wet), for units that report no percentage. */
+  humidityLevel?: number
+  tempC?: number
+  /** Whether the unit is drying its filament now. Absent on units that cannot dry. */
+  drying?: boolean
+  /** Minutes of drying left, while it dries. */
+  dryMinutesLeft?: number
+}
+
+/**
+ * What a unit's sensors read, in words: "22% humidity · 26 °C · Drying, 3 h 20 min left". Humidity is the percentage
+ * when the unit reports one, else its level. Empty when the unit reports nothing to show.
+ */
+export function unitClimateText(c: UnitClimate | undefined): string {
+  if (!c) return ''
+  const parts: string[] = []
+  if (c.humidityPct !== undefined) parts.push(`${Math.round(c.humidityPct)}% humidity`)
+  else if (c.humidityLevel !== undefined) parts.push(`Humidity ${c.humidityLevel} of 5 (1 is dry)`)
+  if (c.tempC !== undefined) parts.push(`${Math.round(c.tempC)} °C`)
+  if (c.drying) {
+    const m = c.dryMinutesLeft
+    const left = m === undefined ? '' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`
+    parts.push(left ? `Drying, ${left} left` : 'Drying')
+  }
+  const text = parts.join(' · ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 export type PrinterEvent =
@@ -467,6 +499,20 @@ export interface ExtruderInfo {
   nozzleDiameterMm?: number
   nozzleType?: 'brass' | 'hardened-steel' | 'stainless-steel' | 'tungsten-carbide'
   highFlow?: boolean
+}
+
+/** A filament unit's kind as people know it. */
+export const FILAMENT_UNIT_LABEL: Record<FilamentUnit['kind'], string> = {
+  ams: 'AMS',
+  'ams-lite': 'AMS lite',
+  'ams-2-pro': 'AMS 2 Pro',
+  'ams-ht': 'AMS HT',
+  mmu: 'MMU',
+  'qidi-box': 'QIDI Box',
+  cfs: 'CFS',
+  toolchanger: 'Toolheads',
+  ace: 'ACE',
+  external: 'External spool',
 }
 
 export interface FilamentUnit {

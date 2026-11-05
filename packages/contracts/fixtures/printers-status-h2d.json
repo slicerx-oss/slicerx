@@ -26,11 +26,22 @@
     "speedPercent": 100,
     "units": [
       {
+        "climate": {
+          "humidityLevel": 2,
+          "humidityPct": 18,
+          "tempC": 27.0
+        },
         "feeds": "left",
         "id": "A",
         "kind": "ams"
       },
       {
+        "climate": {
+          "drying": false,
+          "humidityLevel": 3,
+          "humidityPct": 9,
+          "tempC": 45.0
+        },
         "feeds": "right",
         "id": "E",
         "kind": "ams-ht"
