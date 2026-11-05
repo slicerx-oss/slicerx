@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Offline AuthClient over the bundled seed's example accounts.
+import { PARTNER_APP_NAME_MAX } from '@slicerx/contracts'
 import type { AccountExport, ApiToken, ApiTokenScope, AuthClient, AuthProvider, EffectiveRole, PairedDeviceEvent, Session, SignInMethod, StoreErrorCode, StoreResult } from '@slicerx/contracts'
 import { toDevice } from '../map'
 import type { PairedDeviceRow, SeedData } from '../rows'
@@ -133,7 +134,7 @@ export function offlineAuth(ctx: OfflineContext): AuthClient {
     return n
   }
 
-  return {
+  const auth: AuthClient = {
     mode: 'offline',
 
     async session() {
@@ -206,6 +207,17 @@ export function offlineAuth(ctx: OfflineContext): AuthClient {
       }
       tokens.push({ userId: uid, token })
       return ok({ token, secret })
+    },
+
+    async createPartnerToken(input) {
+      const app = input.partnerApp.trim()
+      if (app.length < 1 || app.length > PARTNER_APP_NAME_MAX || [...app].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) return fail('invalid', `Name the partner app in 1 to ${PARTNER_APP_NAME_MAX} characters`)
+      const days: number | null = input.expiresInDays === undefined ? 90 : input.expiresInDays
+      if (days === null || !Number.isInteger(days) || days < 1 || days > 365) return fail('invalid', 'Partner app tokens expire after 1 to 365 days')
+      const r = await auth.createApiToken({ name: app, scopes: ['cloud_slice'], expiresInDays: days, rateLimitPerMinute: 60 })
+      if (!r.ok) return r
+      r.value.token.partnerApp = app
+      return r
     },
 
     async revokeApiToken(id) {
@@ -335,4 +347,5 @@ export function offlineAuth(ctx: OfflineContext): AuthClient {
       return uid ? (deletions.get(uid) ?? null) : null
     },
   }
+  return auth
 }

@@ -697,6 +697,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dev-list li { justify-content: flex-start; }
 .dev-list li .sx-btn { margin-left: auto; }
 .tok-list li[data-state=revoked], .tok-list li[data-state=expired] { opacity: .6; }
+.ptk-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ptk-form .sx-input { flex: 1 1 180px; min-width: 0; }
+.ptk-made { display: grid; gap: 8px; border-radius: var(--r-sm); padding: 10px 12px; background: var(--ink-2); font-size: var(--fs-md); }
+.ptk-made p { margin: 0; display: flex; gap: 6px; align-items: flex-start; }
+.ptk-made .sx-ic { color: var(--green); flex: none; }
+.ptk-secret { margin: 0; padding: 8px 10px; border-radius: var(--r-xs); background: var(--ink-0); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }
 .banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-2); }
 .banner.warn { border-color: color-mix(in srgb, var(--orange) 55%, transparent); }
 .banner p { margin: 0; }
