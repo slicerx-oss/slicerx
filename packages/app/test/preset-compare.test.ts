@@ -105,7 +105,7 @@ describe('compare presets', () => {
     const b = whole(get().userPresets[1]!, base)
     await Promise.all([copyValue('a', 'layer_height', b, base), copyValue('a', 'wall_loops', b, base)])
     expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6 })
-    const before = (await copyValue('a', 'sparse_infill_density', { ...b, sparse_infill_density: '40%' }, base))!
+    const before = (await copyValue('a', 'sparse_infill_density', { ...b, sparse_infill_density: 40 }, base))!
     // Undo, then a copy sent before the undo's write lands: the copy builds on the undone preset.
     await Promise.all([undoCopy(before, 'sparse_infill_density'), copyValue('a', 'top_shell_layers', { ...b, top_shell_layers: 9 }, base)])
     expect(get().userPresets.find((p) => p.id === 'a')!.values).toEqual({ layer_height: 0.12, wall_loops: 6, top_shell_layers: 9 })
