@@ -31,6 +31,14 @@ export async function parentFor(p: Pick<UserPreset, 'kind' | 'inherits'>): Promi
   return parent ? { name: parent.name, config: parent.config } : undefined
 }
 
+/**
+ * The parent side of a compare: the maker preset over the stock settings `a` goes over. A preset applies over the stock
+ * settings, never over its parent, so both sides of a parent compare stand on the same ground.
+ */
+export function parentSide(a: Pick<UserPreset, 'easy'>, parent: CompareSide): CompareSide {
+  return { name: parent.name, config: { ...stockFor(a), ...parent.config } as PrintConfig }
+}
+
 /** What a preset gives, whole: its values over `base`. */
 export function whole(p: Pick<UserPreset, 'values'>, base: PrintConfig): PrintConfig {
   return { ...base, ...p.values } as PrintConfig
@@ -58,24 +66,38 @@ function followOnPlate(p: UserPreset, key: string, value: SettingValue | undefin
   markStale()
 }
 
+// Copies and undos write one at a time, each reading the preset after the one before has landed, so two quick presses
+// never build on the same old values and lose one of them.
+let writes: Promise<unknown> = Promise.resolve()
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writes.then(fn, fn)
+  writes = run.catch(() => undefined)
+  return run
+}
+
 /**
- * Copies `key`'s value from `from` into preset `id` (whose values go over `base`). A value equal to what the preset
- * starts from is dropped from the preset rather than kept as a change. Returns the preset as it was, for `undoCopy`.
+ * Copies `key`'s value from `from` into preset `id`, whose values go over `base` (its stock settings, `stockFor`). A
+ * value equal to what the preset gets without it is dropped from the preset rather than kept as a change. Returns the
+ * preset as it was, for `undoCopy`.
  */
-export async function copyValue(id: string, key: string, from: PrintConfig, base: PrintConfig): Promise<UserPreset | null> {
-  const before = get().userPresets.find((p) => p.id === id)
-  if (!before) return null
-  const value = from[key]
-  const values = { ...before.values }
-  if (value === undefined || sameValue(value, base[key])) delete values[key]
-  else values[key] = structuredClone(value)
-  const after = await updatePreset(id, { values, ...(before.easy ? { easy: before.easy } : {}) })
-  if (after) followOnPlate(after, key, values[key])
-  return structuredClone(before)
+export function copyValue(id: string, key: string, from: PrintConfig, base: PrintConfig): Promise<UserPreset | null> {
+  return oneAtATime(async () => {
+    const before = get().userPresets.find((p) => p.id === id)
+    if (!before) return null
+    const value = from[key]
+    const values = { ...before.values }
+    if (value === undefined || sameValue(value, base[key])) delete values[key]
+    else values[key] = structuredClone(value)
+    const after = await updatePreset(id, { values, ...(before.easy ? { easy: before.easy } : {}) })
+    if (after) followOnPlate(after, key, values[key])
+    return structuredClone(before)
+  })
 }
 
 /** Puts back a preset as `copyValue` found it. */
-export async function undoCopy(before: UserPreset, key: string): Promise<void> {
-  const after = await updatePreset(before.id, { values: before.values, ...(before.easy ? { easy: before.easy } : {}) })
-  if (after) followOnPlate(after, key, before.values[key])
+export function undoCopy(before: UserPreset, key: string): Promise<void> {
+  return oneAtATime(async () => {
+    const after = await updatePreset(before.id, { values: before.values, ...(before.easy ? { easy: before.easy } : {}) })
+    if (after) followOnPlate(after, key, before.values[key])
+  })
 }
