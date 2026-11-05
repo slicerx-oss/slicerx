@@ -121,6 +121,19 @@ describe('cloud slicing through the app slicer', () => {
     expect(Object.keys(clean).filter((k) => /^collision|^primeTower/.test(k))).toEqual([])
   })
 
+  it('keeps the filaments each feature printed with, and reads a report that is not well formed as none', async () => {
+    const { svc, slicer } = setup()
+    const body = await slicer.loadParts('Body', [part('Body')])
+    const used = [{ object: 'a', name: 'Body', features: { outerWall: [2], sparseInfill: [1, 2] }, nozzleMm: 0.6 }]
+    svc.extra = () => ({ featureFilaments: used })
+    const req = { plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never }
+    expect((await slicer.slice(req)).featureFilaments).toEqual(used)
+    svc.extra = () => ({ featureFilaments: [{ object: 'a', features: { outerWall: ['x'] } }] })
+    const bad = await slicer.slice(req)
+    expect(bad).not.toHaveProperty('featureFilaments')
+    expect(bad.layerCount).toBeGreaterThan(0)
+  })
+
   it('uploads the models the app loaded, painted copy included, and returns the G-code', async () => {
     const { svc, slicer, sliced } = setup()
     // An opened project loads each object's parts; a painted object slices with a copy loaded from its bytes.

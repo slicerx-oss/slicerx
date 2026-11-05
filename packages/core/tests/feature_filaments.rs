@@ -160,3 +160,55 @@ fn one_filament_reports_slot_one_for_every_feature() {
     // Paths of no object (the brim around several, a skirt, a prime tower) never make an entry of their own.
     assert_eq!(run.report.feature_filaments.len(), 1);
 }
+
+/// A browser slice runs layer ranges on their own and joins the ranges' reports: each feature's slots unioned per
+/// object give the whole slice's report.
+#[test]
+fn layer_range_reports_union_to_the_whole_slice() {
+    use sx_core::api;
+    let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+    let m = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "name": "cube a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 80, 100, 0, 1]},
+            {"id": "b", "name": "cube b", "mesh": "c", "settings": {"outer_wall_filament_id": 2},
+                "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 170, 100, 0, 1]},
+        ]},
+        "config": two_filaments(),
+        "options": {"trustedGcode": true},
+    }))
+    .unwrap();
+    let load = move |_: &str| Ok(m.clone());
+    let whole = common::run_request(&req, &load).unwrap().report.feature_filaments;
+    let (config, _) = api::request_config_checked(&req).unwrap();
+    let plate = api::build_plate(&req, &load).unwrap();
+    let n = api::build_session(&req, &plate, &config).unwrap().layer_count();
+    let shards = 3;
+    let mut joined: BTreeMap<String, BTreeMap<String, BTreeSet<u8>>> = BTreeMap::new();
+    for s in 0..shards {
+        let session = api::build_session(&req, &plate, &config).unwrap();
+        let (out, _) = api::slice_shard(
+            &req,
+            &session,
+            &config,
+            n * s / shards..n * (s + 1) / shards,
+            &sx_core::NoProgress,
+            &mut Vec::new(),
+        )
+        .unwrap();
+        for f in api::shard_feature_filaments(&out, &config) {
+            let o = joined.entry(f.object).or_default();
+            for (k, v) in f.features {
+                o.entry(k).or_default().extend(v);
+            }
+        }
+    }
+    for f in &whole {
+        let got: BTreeMap<String, Vec<u8>> = joined[&f.object]
+            .iter()
+            .map(|(k, v)| (k.clone(), v.iter().copied().collect()))
+            .collect();
+        assert_eq!(got, f.features, "{}", f.object);
+    }
+    assert_eq!(joined.len(), whole.len());
+}
