@@ -1,5 +1,5 @@
 {
-  "note": "Hosts on the local network, by the rule sx-link's is_lan_host and the printer catalog's isLanHost both apply. Both test suites read this file, so the two rules stay the same. Every name a URL parser would read as an IPv4 number (a last label of digits, or 0x and hex digits) and every IPv4 address with a leading zero (read as octal) is refused: a browser would open a public address for it.",
+  "note": "Hosts on the local network, by the rule sx-link's is_lan_host and the printer catalog's isLanHost both apply. Both test suites read this file, so the two rules stay the same. Every name a URL parser would read as an IPv4 number (a last label of digits, or 0x and hex digits) and every IPv4 address with a leading zero (read as octal) is refused: a browser would open a public address for it. webLink lists single-label names for the printer page link alone: the bridge still connects to any single label, but a root-zone TLD (catalog/src/root-tlds.ts) gets no link, since it can resolve on the internet.",
   "lan": [
     "192.168.1.20",
     "10.0.0.5",
@@ -15,7 +15,21 @@
     "::1",
     "fd00::5",
     "FD00:0::5",
-    "fe80::1"
+    "fe80::1",
+    "voron2",
+    "k1-max",
+    "printer-1a",
+    "3dprinter",
+    "ender3",
+    "pi4.local",
+    "bay-1a.lan",
+    "192-168-1-5",
+    "0xprinter",
+    "bay.10a.local",
+    "localhost",
+    "octopi",
+    "mainsail",
+    "voron"
   ],
   "notLan": [
     "8.8.8.8",
@@ -49,6 +63,36 @@
     "172.016.0.1",
     "192.168.01.1",
     "printer.0x10",
-    "bay.10"
-  ]
+    "bay.10",
+    "a.b.c.123",
+    "printer.0XFF",
+    "0xdead.beef.0x1",
+    "printer..",
+    "voron.local..",
+    "8.8.8.8..",
+    "..",
+    "Kitchen",
+    "voron.local\n"
+  ],
+  "webLink": {
+    "allowed": [
+      "octopi",
+      "mainsail",
+      "fluiddpi",
+      "voron",
+      "voron2",
+      "k1-max",
+      "localhost",
+      "voron.local",
+      "192.168.1.20"
+    ],
+    "refused": [
+      "ai",
+      "to",
+      "com",
+      "AI",
+      "studio",
+      "mini"
+    ]
+  }
 }

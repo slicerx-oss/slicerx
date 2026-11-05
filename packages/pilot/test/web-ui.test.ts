@@ -11,8 +11,9 @@ const MACHINE: PilotMachine = { printer: 'bambu_p1s', material: 'pla', nozzle: 0
 
 type ToolResult = Extract<PilotEvent, { type: 'tool_result' }>
 
-async function list(): Promise<{ id: string; webUi: string | null }[]> {
+async function list(away = false): Promise<{ id: string; webUi: string | null }[]> {
   const env = createEvalEnv({
+    ...(away ? { hosts: () => ({ localNetwork: async () => false }) } : {}),
     client: createScriptedClient([{ calls: [{ name: 'printer.list', args: {} }] }, { text: 'done' }]),
     machine: MACHINE,
     objects: [],
@@ -35,5 +36,12 @@ describe('printer.list', () => {
     expect(out['bay-1']).toBeNull()
     // PrusaLink serves one, but this printer's saved host is not on a local network.
     expect(out['bay-3']).toBeNull()
+  })
+
+  // A phone away from home reaches the computer through the relay; the printer's local address would open there.
+  it('offers no web page from a device away from the printers\' network', async () => {
+    const out = await list(true)
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.every((p) => p.webUi === null)).toBe(true)
   })
 })

@@ -42,6 +42,12 @@ export interface ToolHost {
   share?: ShareHost
   setup?: SetupHost
   projectExport?: ProjectExportHost
+  /**
+   * Whether this device reaches the printers' network directly. False through a relay (a phone away from home): a
+   * printer's own web page is then not offered, since its local address would open on whatever network the device
+   * is on. Absent means it does.
+   */
+  localNetwork?: () => Promise<boolean>
 }
 
 export interface WebLookup {
