@@ -28,7 +28,9 @@ pub fn origin_allowed(origin: &str, extra: &[String]) -> bool {
 }
 
 /// True for hosts on the local network: private and loopback IP ranges, link-local, and names
-/// that cannot resolve outside it (`*.local`, single label). The bridge refuses to connect
+/// meant for it (`*.local`, `*.lan`, `*.home.arpa`, single label). A single label resolves through the
+/// local search domain, but a root-zone TLD such as `ai` can resolve on the internet, so the link
+/// to a printer's own page refuses those too (`printer_page.rs` in the desktop shell). The bridge refuses to connect
 /// printers anywhere else, so a paired page cannot use it to reach the internet. A name a URL
 /// parser reads as an IPv4 number is refused too (`134744072` and `0x08080808` are 8.8.8.8 in a
 /// browser), as is an address with a leading zero, which the parse below refuses and a browser
@@ -41,7 +43,8 @@ pub fn is_lan_host(host: &str) -> bool {
             IpAddr::V6(v6) => lan_v6(v6),
         };
     }
-    let h = host.trim_end_matches('.').to_ascii_lowercase();
+    // One trailing dot, as a URL parser drops it; `printer..` is not a name.
+    let h = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
     if h.is_empty()
         || h.len() > 253
         || !h

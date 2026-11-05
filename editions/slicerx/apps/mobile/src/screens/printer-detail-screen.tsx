@@ -55,6 +55,11 @@ export interface PrinterDetailScreenProps {
   now?: number | undefined
   /** Opens the printer's web page in the browser; the system browser by default. */
   openUrl?: ((url: string) => void) | undefined
+  /**
+   * Whether the phone reaches the computer on its own network. The printer's web page is offered at home only:
+   * through the relay its local address would open on whatever network the phone is on. Nothing shows until known.
+   */
+  network?: 'home' | 'away' | undefined
 }
 
 function openInBrowser(url: string): void {
@@ -232,10 +237,15 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
             </>
           ) : null}
 
-          {webUi ? (
+          {webUi && p.network === 'home' ? (
             <>
               <Hairline />
               <Row icon="external" title="Open web interface" detail={webUi} mono chevron onPress={() => (p.openUrl ?? openInBrowser)(webUi)} accessibilityHint="Opens the printer's own page in your browser" testID="open-web-ui" />
+            </>
+          ) : webUi && p.network === 'away' ? (
+            <>
+              <Hairline />
+              <Row icon="external" title="Web interface" detail="Available on your home network" testID="web-ui-away" />
             </>
           ) : null}
 

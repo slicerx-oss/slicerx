@@ -2,7 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
+import { Linking } from 'react-native'
 import { useFeed } from '../../src/camera/use-feed'
+import { onHomeNetwork } from '../../src/data/home-network'
 import { usePocketHost } from '../../src/data/provider'
 import { usePrinterView } from '../../src/data/queries'
 import { useRefreshPrinters } from '../../src/data/send'
@@ -24,6 +26,15 @@ export default function PrinterRoute() {
   const refresh = useRefreshPrinters()
   const [refreshing, setRefreshing] = useState(false)
   const waiting = usePocket((s) => s.waiting)
+  // The printer's own web page is offered only while the phone reaches the computer on its network.
+  const [network, setNetwork] = useState<'home' | 'away' | undefined>(undefined)
+  useEffect(() => {
+    let live = true
+    void onHomeNetwork(host.printers).then((home) => live && setNetwork(home ? 'home' : 'away'))
+    return () => {
+      live = false
+    }
+  }, [host, refreshing])
 
   // While this page is open its approvals show here, not in the sheet.
   useEffect(() => {
@@ -85,6 +96,14 @@ export default function PrinterRoute() {
       approvals={approvals}
       onAskPilot={(prompt) => router.push({ pathname: '/pilot', params: { prompt } })}
       onBack={() => router.back()}
+      network={network}
+      openUrl={(url) => {
+        // Checked again at the tap: the connection may have moved to the relay since the page opened.
+        void onHomeNetwork(host.printers).then((home) => {
+          if (home) Linking.openURL(url).catch(() => undefined)
+          else setNetwork('away')
+        })
+      }}
     />
   )
 }
