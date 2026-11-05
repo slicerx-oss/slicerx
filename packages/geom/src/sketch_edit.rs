@@ -7,6 +7,7 @@
 use crate::error::{Error, Result};
 use crate::fm::Fm;
 use crate::sketch::{self, Loop, Segment};
+use crate::sketch_spline;
 use crate::vec3::V2;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::TAU;
@@ -98,11 +99,16 @@ fn dist(a: V2, b: V2) -> f64 {
 
 /// a loop as curves: a circle, or a chain from its start, open or closed
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools, reason = "the kinds of loop a shape can be")]
 pub struct Shape {
     pub curves: Vec<Curve>,
     pub circle: bool,
     pub closed: bool,
     pub construction: bool,
+    /// a spline segment's points between its ends, by curve; its curve here is only the chord
+    pub fits: Vec<Vec<V2>>,
+    /// a closed spline loop, its points the curves' starts
+    pub spline: bool,
 }
 
 /// the loops as curves; lines need their ends as points
@@ -129,8 +135,11 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
             circle: true,
             closed: true,
             construction: lp.construction,
+            fits: Vec::new(),
+            spline: false,
         });
     }
+    let spline = lp.kind.as_deref() == Some("spline");
     if !lp.points.is_empty() {
         let p = &lp.points;
         let curves = (0..p.len())
@@ -138,12 +147,14 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
                 a: p[i],
                 b: p[(i + 1) % p.len()],
             })
-            .collect();
+            .collect::<Vec<_>>();
         return Ok(Shape {
+            fits: vec![Vec::new(); curves.len()],
             curves,
             circle: false,
             closed: true,
             construction: lp.construction,
+            spline,
         });
     }
     let Some(start) = lp.start else {
@@ -152,7 +163,13 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
     let mut pos = start;
     let mut dir = [1.0, 0.0];
     let mut curves = Vec::with_capacity(lp.segments.len());
+    let mut fits = Vec::with_capacity(lp.segments.len());
     for (s, seg) in lp.segments.iter().enumerate() {
+        fits.push(if seg.kind == "spline" {
+            seg.points.clone()
+        } else {
+            Vec::new()
+        });
         let c = if seg.kind == "arc" {
             let (c, a0, sweep, _) =
                 sketch::arc_of(l, s, seg, pos, dir).map_err(|i| Error::invalid("loops", i.message))?;
@@ -172,7 +189,17 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
             ("arc", Some(to)) => to,
             _ => c.at(1.0),
         };
-        dir = tangent(c, 1.0);
+        dir = if seg.kind == "spline" {
+            // a tangent arc after a spline leaves along the spline's end
+            let mut pts = vec![pos];
+            pts.extend(&seg.points);
+            pts.push(end);
+            sketch_spline::spans(&pts, false)
+                .last()
+                .map_or_else(|| tangent(c, 1.0), sketch_spline::end_dir)
+        } else {
+            tangent(c, 1.0)
+        };
         pos = end;
         curves.push(c);
     }
@@ -182,6 +209,8 @@ fn shape(l: usize, lp: &Loop) -> Result<Shape> {
         circle: false,
         closed,
         construction: lp.construction,
+        fits,
+        spline: false,
     })
 }
 
@@ -297,8 +326,23 @@ fn hits_on(shapes: &[Shape], l: usize, k: usize) -> Vec<f64> {
     ts
 }
 
+// trim, extend and crossings read curves exactly, which splines are not yet
+fn no_splines(loops: &[Loop], what: &str) -> Result<()> {
+    match loops.iter().position(sketch::has_spline) {
+        Some(l) => Err(Error::invalid(
+            "loops",
+            format!(
+                "loop {} is a spline; {what} doesn't work on sketches with splines yet",
+                l + 1
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// every crossing and touch between segments, once for each segment it lies on
 pub fn intersections(loops: &[Loop]) -> Result<Vec<Hit>> {
+    no_splines(loops, "intersect")?;
     let shapes = shapes(loops)?;
     let curves = all(&shapes);
     let mut out = Vec::new();
@@ -348,6 +392,7 @@ pub struct Edited {
 
 /// takes off the piece of segment `seg` of loop `l` under `at`, between the nearest crossings either side
 pub fn trim(loops: &[Loop], l: usize, seg: usize, at: V2) -> Result<Edited> {
+    no_splines(loops, "trim")?;
     let sh = shapes(loops)?;
     let Some(s) = sh.get(l) else {
         return Err(Error::invalid("loop", format!("there is no loop {}", l + 1)));
@@ -621,6 +666,7 @@ pub enum End {
 
 /// runs the end segment of open chain `l` on to the nearest curve it would meet
 pub fn extend(loops: &[Loop], l: usize, end: End) -> Result<Edited> {
+    no_splines(loops, "extend")?;
     let sh = shapes(loops)?;
     let Some(s) = sh.get(l) else {
         return Err(Error::invalid("loop", format!("there is no loop {}", l + 1)));
@@ -727,6 +773,14 @@ fn map_loop(lp: &Loop, sh: &Shape, f: &dyn Fn(V2) -> V2) -> Loop {
             ..lp.clone()
         };
     }
+    if sh.spline {
+        return Loop {
+            kind: Some("spline".into()),
+            points: lp.points.iter().map(|&p| f(p)).collect(),
+            construction: lp.construction,
+            ..Loop::default()
+        };
+    }
     let start = sh.curves.first().map_or([0.0, 0.0], |c| c.at(0.0));
     let segments = sh
         .curves
@@ -736,6 +790,12 @@ fn map_loop(lp: &Loop, sh: &Shape, f: &dyn Fn(V2) -> V2) -> Loop {
             let last = sh.closed && i + 1 == sh.curves.len();
             let to = if last { f(start) } else { f(c.at(1.0)) };
             match c {
+                Curve::Line { .. } if !sh.fits[i].is_empty() => Segment {
+                    kind: "spline".into(),
+                    to: Some(to),
+                    points: sh.fits[i].iter().map(|&p| f(p)).collect(),
+                    ..Segment::default()
+                },
                 Curve::Line { .. } => line_seg(to),
                 Curve::Arc { .. } => Segment {
                     kind: "arc".into(),
@@ -1103,6 +1163,23 @@ mod tests {
         .unwrap();
         assert!(close(c.loops[2].start.unwrap(), [-1.0, 0.0]));
         assert!(sketch::check(&c.loops).ok);
+        // a loop of points mirrors and patterns as its sides
+        let ring = loops(json!([{ "points": [[5, 0], [10, 0], [10, 10], [5, 10]] }]));
+        let m = mirror(&ring, &[0], [0.0, 0.0], [0.0, 1.0]).unwrap();
+        assert_eq!(m.loops.len(), 2);
+        assert_eq!(m.loops[1].start, Some([-5.0, 0.0]));
+        assert!(sketch::check(&m.loops).ok);
+        let p = pattern(
+            &ring,
+            &[0],
+            Spread::Circle {
+                count: 6,
+                center: [0.0, 0.0],
+                angle_deg: 360.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.loops.len(), 6);
         assert!(
             pattern(
                 &tri,

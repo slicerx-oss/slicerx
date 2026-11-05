@@ -79,6 +79,8 @@ pub mod sketch_loft;
 #[cfg(feature = "cad")]
 pub mod sketch_solve;
 #[cfg(feature = "cad")]
+pub mod sketch_spline;
+#[cfg(feature = "cad")]
 pub mod sketch_sweep;
 pub mod solids;
 pub mod split;
