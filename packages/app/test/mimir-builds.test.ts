@@ -130,7 +130,7 @@ describe('scripted mimir builds', () => {
     expect(stepWords(row('app.slice', 'Slice the plate done'))).toMatchObject({ doing: 'Slicing the plate', done: 'Sliced the plate' })
     expect(stepWords(row('app.plate_clear', 'Clear the plate done'))?.done).toBe('Clear the plate done')
     expect(stepWords(row('kb.search', '3 results'))?.done).toBe('3 results')
-    expect(stepWords(row('design.sketch', 'Sketch 1'))?.done).toBe('Design step done')
+    expect(stepWords(row('design.sketch', 'Sketch 1'))?.done).toBe('Drew the sketch')
     // the sheet's record says how it was answered, so it has no row; binding its sizes reads plainly
     expect(stepWords(row('pilot.sheet', 'Confirmed as shown'))).toBeNull()
     expect(stepWords(row('pilot.sheet_bind', 'Tied 3 rows to the design'))?.done).toBe('Linked the sizes to the part')
