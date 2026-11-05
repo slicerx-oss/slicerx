@@ -3,7 +3,7 @@
 // Keeps the printer, filament and process layer under the Easy choices in step with the selected printer, the
 // quality tier and the filaments in use. The layer builds from the shipped presets (adapters/profile.ts), loads with
 // the settings on first use, and slicing waits for the build that is under way.
-import type { EasyGoal, EasySettings } from '@slicerx/contracts'
+import type { EasyGoal, EasySettings, SettingValue } from '@slicerx/contracts'
 import { setProfileLayer } from '../adapters/config'
 import { keepOutBoxes, setAvoidAreas } from '../plate/arrange'
 import { installPrintMargins } from '../plate/footprint'
@@ -25,6 +25,11 @@ let key = ''
 /** The inputs of the layer last built or being built, so a build for inputs already in hand does not run again. */
 let built: string | null = null
 let building: Promise<void> = Promise.resolve()
+/**
+ * The printer's Standard layer values for one set of printer inputs (`printerKeyOf`): kept from the plate's own build
+ * when it is on Standard, else built once, so measuring a project against Standard does not build the layer again.
+ */
+let standard: { key: string; values: Promise<Record<string, SettingValue> | null> } | null = null
 
 /** The maker's tier the layer builds from: the goal, or while the settings are edited, the goal they started from. */
 function tierOf(s: Pick<AppState, 'goal' | 'goalBase'>): EasyGoal {
@@ -52,8 +57,21 @@ function dropLayer(): void {
  * were moved (the layer leaves the rest to the preset).
  */
 function keyOf(s: AppState): string {
+  return `${printerKeyOf(s)}|${tierOf(s)}|${[...s.easyTouched].sort().join(',')}`
+}
+
+/** What a layer is made from apart from the tier and the Easy controls: the printer, its nozzle and the filaments. */
+function printerKeyOf(s: AppState): string {
   const nz = s.printerModel?.id ? `${s.nozzleReported[s.printerModel.id] ?? ''}/${s.printerNozzles[s.printerModel.id] ?? ''}/${JSON.stringify(s.printerExtruders[s.printerModel.id] ?? [])}` : ''
-  return `${s.printerModel ? `${s.printerModel.id ?? ''}|${s.printerModel.vendor}|${s.printerModel.model}` : ''}|${nz}|${tierOf(s)}|${JSON.stringify(slotsOf(s))}|${[...s.easyTouched].sort().join(',')}`
+  return `${s.printerModel ? `${s.printerModel.id ?? ''}|${s.printerModel.vendor}|${s.printerModel.model}` : ''}|${nz}|${JSON.stringify(slotsOf(s))}`
+}
+
+/** The layer inputs for the plate's printer at `tier`, as the plate's own build reads them. */
+function inputOf(s: AppState, model: NonNullable<AppState['printerModel']>, tier: EasyGoal) {
+  const reported = model.id ? s.nozzleReported[model.id] : undefined
+  const chosen = model.id ? s.printerNozzles[model.id] : undefined
+  const extruders = model.id ? s.printerExtruders[model.id] : undefined
+  return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders && !reported ? { extruders } : {}) }
 }
 
 async function rebuild(): Promise<void> {
@@ -70,10 +88,8 @@ async function rebuild(): Promise<void> {
   }
   await loadSettings()
   const { buildProfileLayer } = await import('../adapters/profile')
-  const reported = model.id ? s.nozzleReported[model.id] : undefined
-  const chosen = model.id ? s.printerNozzles[model.id] : undefined
-  const extruders = model.id ? s.printerExtruders[model.id] : undefined
-  const layer = await buildProfileLayer({ printer: model, tier: tierOf(s), slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders && !reported ? { extruders } : {}) })
+  const layer = await buildProfileLayer(inputOf(s, model, tierOf(s)))
+  if (tierOf(s) === 'standard') standard = { key: printerKeyOf(s), values: Promise.resolve(layer?.values ?? null) }
   if (!layer) {
     dropLayer()
     return
@@ -114,10 +130,37 @@ export async function profileReady(): Promise<void> {
   await building
 }
 
+/**
+ * The plate printer's layer values at Standard, before any Easy control: the fixed start a project's real changes are
+ * measured against. Waits for the plate's own layer first, and builds the Standard one only when the plate is on
+ * another tier and no build for these inputs is in hand. Null without a printer layer.
+ */
+export async function standardLayerValues(): Promise<Record<string, SettingValue> | null> {
+  await profileReady()
+  const s = get()
+  const model = s.printerModel
+  if (!model) return null
+  const k = printerKeyOf(s)
+  if (standard?.key !== k) {
+    const values = (async () => {
+      await loadSettings()
+      const { buildProfileLayer } = await import('../adapters/profile')
+      return (await buildProfileLayer(inputOf(s, model, 'standard')))?.values ?? null
+    })()
+    // A failed build is not kept, so the next call tries again.
+    values.catch(() => {
+      if (standard?.values === values) standard = null
+    })
+    standard = { key: k, values }
+  }
+  return standard.values
+}
+
 /** For tests: forgets the inputs the layer was last built for, so the next `profileReady` builds it again. */
 export function resetProfileReady(): void {
   key = ''
   built = null
+  standard = null
 }
 
 let started = false
