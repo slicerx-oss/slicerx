@@ -13,6 +13,7 @@ import type { StepConverter } from '../src/state/import-step'
 import { addAutoImport, autoFormatOf, toBase64 } from '../src/state/import-auto'
 import { bounds, decompose, sizeOf } from '../src/plate/transform'
 import { appStore, get, set } from '../src/state/store'
+import { resolveSlots } from '../src/filament/slots'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('step-replies')
@@ -129,5 +130,63 @@ describe('adding IGES files to the plate', () => {
   it('adds nothing when the file is not IGES', async () => {
     await expect(addAutoImport(host, 'not.igs', buffer(new TextEncoder().encode('solid x\nendsolid x\n')), undefined, convert)).rejects.toThrow(/^not\.igs is not an IGES file/)
     expect(get().plate).toHaveLength(0)
+  })
+})
+
+describe('STEP body colors as filaments', () => {
+  /** The worker's job with the body colors it sends beside the OBJ (step-worker.ts). */
+  const colored: StepConverter = async (o) => {
+    const read = readCad(occt, new Uint8Array(o.data), o.name, o.quality as StepQuality | undefined, { appName: 'SlicerX' })
+    const colors = read.objects.map((x) => x.bodies.map((b) => b.color ?? null))
+    return { ...(await convert(o)), ...(colors.some((x) => x.some(Boolean)) ? { colors } : {}) }
+  }
+  // the engine's handle lists each part with the slot it loaded on, as the real one does
+  const slots = { slicer: { loadParts: async (name: string, parts: { name: string; slot: number; indices: Uint32Array }[]) => ({ id: name, name, parts: parts.map((p) => ({ name: p.name, slot: p.slot, triangles: p.indices.length / 3 })) }) } } as unknown as Host
+  /** Each part's slot after the person's or the auto pick's override, by part name. */
+  const printsOn = () => Object.fromEntries(get().plate.flatMap((e) => e.handle.parts.map((p) => [p.name, e.slotOverrides?.[p.name] ?? p.slot])))
+
+  beforeEach(() => set({ printerSlots: [], slotSetup: {}, fileSlotColors: [] }))
+
+  it('puts each colored body on a new filament of its color and leaves the uncolored one on filament 1', async () => {
+    await addAutoImport(slots, 'assembly-colors.step', buffer(file('assembly-colors.step')), undefined, colored)
+    expect(printsOn()).toEqual({ 'assembly-colors base': 2, 'assembly-colors post': 1, cube: 3 })
+    // the new filaments show the bodies' colors, as an OBJ's colors do
+    const rail = resolveSlots(get())
+    expect(rail.map((r) => [r.index, r.color, r.source])).toEqual([
+      [1, rail[0]!.color, rail[0]!.source],
+      [2, '#ff0000', 'model'],
+      [3, '#0040ff', 'model'],
+    ])
+    const note = get().openNote!
+    expect(note.text).toBe("assembly-colors.step: Added filaments 2 (Red) and 3 (Blue) for the file's colors. Split into 2 objects.")
+    expect(note.action?.label).toBe('Use one filament')
+    // the colors are the point of this note, so it takes two lines before Details
+    expect(note.wrap).toBe(true)
+    // the action takes the added filaments back: every body on filament 1, and the rail is one filament again
+    note.action!.run()
+    expect(printsOn()).toEqual({ 'assembly-colors base': 1, 'assembly-colors post': 1, cube: 1 })
+    expect(resolveSlots(get()).filter((r) => r.used).map((r) => r.index)).toEqual([1])
+  })
+
+  it('matches a loaded spool close to a color, and keeps to the slots the printer holds', async () => {
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#C12E1F' }, { id: 'A2', material: 'PLA', color: '#101010' }] })
+    await addAutoImport(slots, 'assembly-colors.step', buffer(file('assembly-colors.step')), undefined, colored)
+    // red on the red spool; blue has no close spool and no slot left, so it takes the nearest; the uncolored post the
+    // auto-picked spool, the first PLA one
+    expect(printsOn()).toEqual({ 'assembly-colors base': 1, 'assembly-colors post': 1, cube: 2 })
+    expect(get().openNote?.text).toBe("assembly-colors.step: The file has 2 colors and the printer holds 2, so 1 prints with the nearest filament's color. Split into 2 objects.")
+    expect(get().openNote?.action?.label).not.toBe('Use one filament')
+  })
+
+  it('maps the solid colors of an IGES file the same way', async () => {
+    await addAutoImport(slots, 'assembly.igs', buffer(file('assembly.igs')), undefined, colored)
+    expect(printsOn()).toEqual({ 'assembly base': 2, 'assembly post': 1, cube: 3 })
+    expect(get().openNote?.text).toBe("assembly.igs: Added filaments 2 (Red) and 3 (Blue) for the file's colors. Split into 2 objects.")
+  })
+
+  it('opens a file without colors as before', async () => {
+    await addAutoImport(slots, 'assembly.step', buffer(file('assembly.step')), undefined, colored)
+    expect(Object.values(printsOn())).toEqual([1, 1, 1])
+    expect(get().openNote?.text).toBe('assembly.step: Split into 2 objects.')
   })
 })

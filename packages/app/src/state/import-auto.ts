@@ -17,7 +17,9 @@ import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } fro
 import { appStore, get, markStale, openNote, set, toast, type AppState, type PlateEntry } from './store'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
-import { withAutoSpools } from '../filament/pick'
+import { autoSpool, fileSlotFor, lastSpool, loadedSpools, moveToSpool, profileMaterial, spoolPicks, withAutoSpools, type PickWhy } from '../filament/pick'
+import { bodyColorNote, planBodyColors } from '../filament/body-colors'
+import { activeMeta } from '../plate/plates'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
 import { bodyCount, multiBodyChoice, regroup, severalShells, willAsk } from './multi-body'
@@ -142,6 +144,16 @@ async function stepConverter(): Promise<StepConverter> {
   return (await import('./import-step')).convertStep
 }
 
+/**
+ * The engine's answer with each part's color set from a STEP or IGES file's body colors (an object per object of the
+ * file, a part per body, in order), or null when the answer is not shaped like the file (a part the repair dropped), in
+ * which case the colors are left out and the file opens as one without colors.
+ */
+export function withStepColors(result: AutoImport, colors: readonly (readonly (string | null)[])[]): AutoImport | null {
+  if (result.objects.length !== colors.length || result.objects.some((o, i) => o.parts.length !== colors[i]!.length)) return null
+  return { ...result, objects: result.objects.map((o, i) => ({ ...o, parts: o.parts.map((p, j) => ({ ...p, color: colors[i]![j] ?? null })) })) }
+}
+
 /** Turns the engine's answer into plate entries, placed on the bed at the detected size. */
 /**
  * The plate entries for an import. The objects keep their places relative to each other, as the file has them (one
@@ -207,6 +219,45 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
 }
 
 /**
+ * Sets each colored part of `made` (a STEP or IGES file's objects, colors on the parts) to the slot planned for its color.
+ * Returns which parts it set, per object, the note's sentence and whether the plan added filaments.
+ */
+function planStepColors(made: { parts: MeshPart[] }[], result: AutoImport): { parts: Set<string>[]; note: string | null; added: boolean } | null {
+  const s = get()
+  // the objects entriesFromImport kept, in its order, with each part's own color (an entry shows a palette color for a
+  // part without one, so the colors come from the engine's answer)
+  const kept = result.objects.filter((o) => o.parts.some((p) => p.mesh.indices.length > 0))
+  if (kept.length !== made.length || kept.some((o, i) => o.parts.length !== made[i]!.parts.length)) return null
+  const colors = kept.flatMap((o) => o.parts.map((p) => p.color))
+  const plan = planBodyColors(colors, s)
+  const meta = activeMeta(s)
+  let k = 0
+  const parts = made.map((m) =>
+    new Set(
+      m.parts.flatMap((p) => {
+        const pick = plan.picks[k++]
+        if (!pick) return []
+        p.slot = fileSlotFor(meta, pick.slot)
+        return [p.name]
+      }),
+    ),
+  )
+  return { parts, note: bodyColorNote(plan, s), added: plan.add.length > 0 }
+}
+
+/** "Use one filament": the objects back on the one spool a model without colors would start on. */
+function oneFilament(ids: string[]): { label: string; run: () => void } {
+  return {
+    label: 'Use one filament',
+    run: () => {
+      const s = get()
+      const slot = autoSpool(loadedSpools(s), { material: profileMaterial(s), last: lastSpool(s.printerId) })?.slot ?? 1
+      moveToSpool({ kind: 'objects', ids: ids.filter((id) => s.plate.some((e) => e.id === id)) }, slot)
+    },
+  }
+}
+
+/**
  * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP and IGES reader (a
  * test passes its own). Returns the ids of the new objects. Nothing is added when any step fails.
  */
@@ -229,6 +280,7 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   // A binary STL the page could not read (a corner that is not a number) goes to the import as a file after all.
   if (!isCad(format) && !started) start({ bytes: new Uint8Array(data), name, format })
   let stepNotes: string[] = []
+  let stepColors: (string | null)[][] | undefined
   let result: AutoImport
   try {
     if (isCad(format)) {
@@ -240,6 +292,7 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
         throw new Error(`${name} ${e instanceof Error ? e.message : 'could not be read.'}`)
       }
       stepNotes = mesh.notes
+      stepColors = mesh.colors
       result = await run({ base64: mesh.base64, name, format: 'obj', declaredUnit: 'millimeter' })
     } else result = await started!
   } catch (e) {
@@ -249,6 +302,9 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     openNote(`Added ${name}`)
     return [quick.id]
   }
+  // A STEP or IGES file's body colors ride on the parts, as an OBJ's vertex colors do; their filaments are planned below.
+  const stepColored = stepColors ? withStepColors(result, stepColors) : null
+  if (stepColored) result = stepColored
   const { bed } = get()
   // The model already on the plate from its quick draw keeps its place (and any move made while it loaded): the engine's
   // objects are in the file's own coordinates, as it was, unless the engine changed the unit.
@@ -263,6 +319,8 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   // The engine changed nothing (no repair, one body, millimeters): the object on the plate is already its result.
   const same = here && made.length === 1 && made[0]!.parts.length === 1 && !result.unit.autoApply && sameMesh(made[0]!.parts[0]!, quick!.part)
   let entries: PlateEntry[]
+  let colorNote: string | null = null
+  let colorAction: { label: string; run: () => void } | null = null
   if (same) entries = [here]
   else {
     if (made.length === 0) {
@@ -270,6 +328,8 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
       throw new Error(`${name} has no geometry`)
     }
     entries = []
+    // A STEP or IGES file's colored bodies go on the filaments planned for their colors before they load (body-colors.ts).
+    const planned = stepColored && !choice ? planStepColors(made, result) : null
     // pieces split from one model share a key, so the fit check keeps quiet about them touching
     const split = made.length > 1 ? uid() : undefined
     for (const m of made) {
@@ -278,9 +338,18 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     }
     // Parts start on the auto-picked spool: nearest to the file's color when it has colors, else (a plain model, all on
     // filament 1) the one used last. A file that spreads its parts over filaments without colors keeps its own.
-    const colored = result.slotColors.length > 0 || result.objects.some((o) => o.parts.some((p) => p.color))
-    const plain = entries.every((e) => e.handle.parts.every((p) => p.slot === 1))
-    if (colored || plain) entries = withAutoSpools(entries, colored ? { color: (e, i) => e.colors[i] } : {})
+    if (planned) {
+      // the bodies without a color start on the auto-picked spool, as a plain model does
+      const own = new Map(entries.map((e, i) => [e, planned.parts[i]!] as const))
+      spoolPicks.setState((p) => ({ why: { ...p.why, ...Object.fromEntries(entries.filter((e) => own.get(e)!.size).map((e) => [e.id, 'color' as PickWhy])) } }))
+      entries = withAutoSpools(entries, { own: (e, part) => own.get(e)?.has(part) ?? false })
+    } else {
+      const colored = result.slotColors.length > 0 || result.objects.some((o) => o.parts.some((p) => p.color))
+      const plain = entries.every((e) => e.handle.parts.every((p) => p.slot === 1))
+      if (colored || plain) entries = withAutoSpools(entries, colored ? { color: (e, i) => e.colors[i] } : {})
+    }
+    colorNote = planned?.note ?? null
+    colorAction = planned?.added ? oneFilament(entries.map((e) => e.id)) : null
     if (!quick) markOpenStage('engine')
     // The engine's result takes the place of the object shown before it.
     edit(() => set((s) => ({ plate: [...s.plate.filter((p) => p.id !== quick?.id), ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) })))
@@ -294,19 +363,23 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   const ids = entries.map((e) => e.id)
   // A chosen grouping says what it made in place of the engine's own split note.
   const summary = choice ? [...result.summary.filter((n) => !/^Split into \d+ objects\.$/.test(n)), choice === 'parts' ? `Loaded as one object with ${bodyCount(made)} parts.` : `Split into ${made.length} objects.`] : result.summary
-  const notes = [...stepNotes, ...summary]
+  // what the file's colors became leads, so the two lines the note shows keep it
+  const notes = [...(colorNote ? [colorNote] : []), ...stepNotes, ...summary]
   for (const w of result.warnings) if (!notes.includes(w)) notes.push(w)
   const u = result.unit
   // The repair details open from the toast when there is no unit undo to offer in its place.
   const fixes: RepairEntry[] = result.objects.map((o) => ({ label: o.name || result.name, report: o.repair }))
-  const repairAction = fixes.some((e) => repairChanged(e.report)) ? { label: 'Repair details', run: () => showRepairReport({ title: `Repair report for ${name}`, entries: fixes }) } : null
-  if (repairAction) rememberRepair({ title: `Repair report for ${name}`, entries: fixes })
+  const repaired = fixes.some((e) => repairChanged(e.report)) ? { label: 'Repair details', run: () => showRepairReport({ title: `Repair report for ${name}`, entries: fixes }) } : null
+  if (repaired) rememberRepair({ title: `Repair report for ${name}`, entries: fixes })
+  // The note has one action: taking back added filaments comes first, the repair details stay in the repair report.
+  const action = colorAction ?? repaired
   if (u.autoApply) {
     const size = u.sizeAfter.map((v) => `${Math.round(v * 10) / 10}`).join(' x ')
     notes.unshift(`${name} looked like ${u.unit === 'inch' ? 'inches' : u.unit === 'meter' ? 'meters' : u.unit}, so it was scaled to ${size} mm.`)
     openNote(notes.join(' '), { label: 'Use as millimeters', run: () => useAsMillimeters(ids) })
-  } else if (notes.length && result.warnings.length) toast(`${name}: ${notes.join(' ')}`, 'warn', repairAction ?? undefined)
-  else if (notes.length) openNote(`${name}: ${notes.join(' ')}`, repairAction ?? undefined)
+  } else if (notes.length && result.warnings.length) toast(`${name}: ${notes.join(' ')}`, 'warn', action ?? undefined)
+  // what the file's colors became is the point of the note when it says it, so it takes two lines before Details
+  else if (notes.length) openNote(`${name}: ${notes.join(' ')}`, action ?? undefined, colorNote ? { wrap: true } : {})
   else openNote(`Added ${name}`)
   if (run === engine) void checkCrossings(host, name, entries.map((e, i) => ({ id: e.id, perShell: same ? (made[0]?.perShell ?? true) : (made[i]?.perShell ?? false) })), cross, edit)
   return ids

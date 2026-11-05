@@ -17,6 +17,8 @@ export interface StepConverted {
   triangles: number
   toleranceMm: number
   unit: StepUnit | null
+  /** Each object's body colors as #rrggbb, null for a body without one; absent when the file colors no body. */
+  colors?: (string | null)[][]
 }
 
 export type StepConverter = (file: { name: string; data: ArrayBuffer; quality?: StepQuality }) => Promise<StepConverted>
