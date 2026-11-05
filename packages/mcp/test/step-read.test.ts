@@ -86,7 +86,7 @@ describe('slicerx_step_read', () => {
       ])
       const surfaces = data<Info & { notes: string[] }>(await call({ model: join(h.dir, 'bracket-inch.iges'), output: 'stl' }))
       expect(surfaces.unit).toBe('inch')
-      expect(surfaces.notes).toEqual(['Converted from inches to millimeters.', 'The file has surfaces and no solids, so they were joined into one body.'])
+      expect(surfaces.notes).toEqual(['Converted from inches to millimeters.', 'The file has surfaces and no solids, so they were sewn into one solid.'])
       const b = surfaces.objects[0]!.bodies[0]!.bounds
       expect(b.max.map((v, k) => Math.round((v - b.min[k]!) * 1000) / 1000)).toEqual([50.8, 25.4, 6.35])
       // The STL it writes is a model the other tools take.

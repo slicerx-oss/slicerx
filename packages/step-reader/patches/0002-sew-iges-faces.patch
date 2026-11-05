@@ -1,0 +1,240 @@
+diff --git a/occt-import-js/src/importer-iges.cpp b/occt-import-js/src/importer-iges.cpp
+index 5e82196..3e99e8b 100644
+--- a/occt-import-js/src/importer-iges.cpp
++++ b/occt-import-js/src/importer-iges.cpp
+@@ -36,5 +36,6 @@ bool ImporterIges::TransferToDocument (const std::vector<std::uint8_t>& fileCont
+     }
+ 
+     std::remove (dummyFileName.c_str ());
++    SewLooseFaces ();
+     return true;
+ }
+diff --git a/occt-import-js/src/importer-xcaf.cpp b/occt-import-js/src/importer-xcaf.cpp
+index 52558b1..f97516e 100644
+--- a/occt-import-js/src/importer-xcaf.cpp
++++ b/occt-import-js/src/importer-xcaf.cpp
+@@ -10,6 +10,31 @@
+ #include <Quantity_Color.hxx>
+ #include <BRep_Tool.hxx>
+ #include <XCAFDoc_DocumentTool.hxx>
++#include <BRep_Builder.hxx>
++#include <BRepBndLib.hxx>
++#include <BRepBuilderAPI_MakeSolid.hxx>
++#include <BRepBuilderAPI_Sewing.hxx>
++#include <BRepLib.hxx>
++#include <Bnd_Box.hxx>
++#include <NCollection_DataMap.hxx>
++#include <Standard_Failure.hxx>
++#include <Standard_GUID.hxx>
++#include <TDataStd_UAttribute.hxx>
++#include <TopoDS_Compound.hxx>
++#include <TopoDS_Shell.hxx>
++#include <TopoDS_Solid.hxx>
++#include <TopTools_ShapeMapHasher.hxx>
++
++#include <algorithm>
++#include <cmath>
++#include <vector>
++
++// Marks the solids SewLooseFaces makes, so their meshes say "sewn".
++static const Standard_GUID& SewnSolidGuid ()
++{
++    static const Standard_GUID guid ("da825943-f819-41c4-8bad-bd46db765c55");
++    return guid;
++}
+ 
+ static std::string GetLabelNameNoRef (const TDF_Label& label)
+ {
+@@ -134,7 +159,11 @@ public:
+ 
+     virtual std::string GetKind () const override
+     {
+-        return shape.ShapeType () == TopAbs_SOLID ? "solid" : "shell";
++        if (shape.ShapeType () != TopAbs_SOLID) {
++            return "shell";
++        }
++        TDF_Label label;
++        return shapeTool->Search (shape, label) && label.IsAttribute (SewnSolidGuid ()) ? "sewn" : "solid";
+     }
+ 
+     virtual bool GetColor (Color& color) const override
+@@ -402,6 +431,167 @@ Importer::Result ImporterXcaf::LoadFile (const std::vector<std::uint8_t>& fileCo
+     return Importer::Result::Success;
+ }
+ 
++// Whether every edge of a shell but the degenerate ones is used once forward and once reversed: the shell is closed
++// and its faces agree on which side is out.
++static bool IsClosedCoherentShell (const TopoDS_Shape& shell)
++{
++    NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher> uses;
++    for (TopExp_Explorer ex (shell, TopAbs_EDGE); ex.More (); ex.Next ()) {
++        const TopoDS_Edge& edge = TopoDS::Edge (ex.Current ());
++        TopAbs_Orientation orientation = edge.Orientation ();
++        if (BRep_Tool::Degenerated (edge) || (orientation != TopAbs_FORWARD && orientation != TopAbs_REVERSED)) {
++            continue;
++        }
++        int use = orientation == TopAbs_FORWARD ? 1 : 2;
++        int* seen = uses.ChangeSeek (edge);
++        if (seen == nullptr) {
++            uses.Bind (edge, use);
++        } else if ((*seen & use) != 0) {
++            return false;
++        } else {
++            *seen |= use;
++        }
++    }
++    if (uses.IsEmpty ()) {
++        return false;
++    }
++    for (NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher>::Iterator it (uses); it.More (); it.Next ()) {
++        if (it.Value () != 3) {
++            return false;
++        }
++    }
++    return true;
++}
++
++// Many CAD programs write IGES as trimmed surfaces with no solid. When the file has no solid and no shell, its faces
++// are sewn together with a tolerance scaled to the model (a ten thousandth of its box diagonal, at least 0.001 and
++// at most 0.1 in the document's unit, millimeters here). Each sewn shell that closes becomes a solid, marked so its
++// mesh says "sewn". The faces that do not close stay loose, one free shape per sewn group, so they read as before.
++// A group keeps a name when every face in it came from shapes of that one name. Nothing changes when no shell
++// closes or OpenCASCADE fails on the way.
++void ImporterXcaf::SewLooseFaces ()
++{
++    Handle (XCAFDoc_ShapeTool) tool = XCAFDoc_DocumentTool::ShapeTool (document->Main ());
++    TDF_LabelSequence labels;
++    tool->GetFreeShapes (labels);
++
++    std::vector<std::pair<TopoDS_Shape, TDF_Label>> faces;
++    Bnd_Box box;
++    for (TDF_LabelSequence::Iterator it (labels); it.More (); it.Next ()) {
++        TopoDS_Shape shape = tool->GetShape (it.Value ());
++        if (TopExp_Explorer (shape, TopAbs_SOLID).More () || TopExp_Explorer (shape, TopAbs_SHELL).More ()) {
++            return;
++        }
++        for (TopExp_Explorer ex (shape, TopAbs_FACE); ex.More (); ex.Next ()) {
++            faces.emplace_back (ex.Current (), it.Value ());
++            BRepBndLib::Add (ex.Current (), box);
++        }
++    }
++    if (faces.size () < 2 || box.IsVoid ()) {
++        return;
++    }
++
++    std::vector<TopoDS_Shape> solids;
++    std::vector<TopoDS_Shape> open;
++    NCollection_DataMap<TopoDS_Shape, TDF_Label, TopTools_ShapeMapHasher> faceLabels;
++    try {
++        double tolerance = std::min (std::max (std::sqrt (box.SquareExtent ()) * 1.0e-4, 1.0e-3), 0.1);
++        BRepBuilderAPI_Sewing sewing (tolerance);
++        for (const auto& face : faces) {
++            sewing.Add (face.first);
++        }
++        sewing.Perform ();
++        const TopoDS_Shape& sewn = sewing.SewedShape ();
++        if (sewn.IsNull ()) {
++            return;
++        }
++        for (const auto& face : faces) {
++            const TopoDS_Shape& now = sewing.IsModified (face.first) ? sewing.Modified (face.first) : face.first;
++            if (!faceLabels.IsBound (now)) {
++                faceLabels.Bind (now, face.second);
++            }
++        }
++
++        BRep_Builder builder;
++        for (TopExp_Explorer ex (sewn, TopAbs_SHELL); ex.More (); ex.Next ()) {
++            const TopoDS_Shell& shell = TopoDS::Shell (ex.Current ());
++            if (IsClosedCoherentShell (shell)) {
++                BRepBuilderAPI_MakeSolid makeSolid (shell);
++                if (makeSolid.IsDone ()) {
++                    TopoDS_Solid solid = makeSolid.Solid ();
++                    if (BRepLib::OrientClosedSolid (solid)) {
++                        solids.push_back (solid);
++                        continue;
++                    }
++                }
++            }
++            TopoDS_Compound group;
++            builder.MakeCompound (group);
++            for (TopExp_Explorer faceEx (shell, TopAbs_FACE); faceEx.More (); faceEx.Next ()) {
++                builder.Add (group, faceEx.Current ());
++            }
++            open.push_back (group);
++        }
++        for (TopExp_Explorer ex (sewn, TopAbs_FACE, TopAbs_SHELL); ex.More (); ex.Next ()) {
++            open.push_back (ex.Current ());
++        }
++    } catch (const Standard_Failure&) {
++        return;
++    }
++    if (solids.empty ()) {
++        return;
++    }
++
++    auto groupName = [&] (const TopoDS_Shape& group, TCollection_ExtendedString& name) {
++        bool first = true;
++        std::string shared;
++        for (TopExp_Explorer ex (group, TopAbs_FACE); ex.More (); ex.Next ()) {
++            const TDF_Label* label = faceLabels.Seek (ex.Current ());
++            std::string faceName = label != nullptr ? GetLabelName (*label, tool) : std::string ();
++            if (first) {
++                shared = faceName;
++                first = false;
++            } else if (faceName != shared) {
++                return false;
++            }
++        }
++        if (shared.empty ()) {
++            return false;
++        }
++        name = TCollection_ExtendedString (shared.c_str (), Standard_True);
++        return true;
++    };
++    struct Added {
++        TopoDS_Shape shape;
++        bool sewnSolid;
++        bool named;
++        TCollection_ExtendedString name;
++    };
++    std::vector<Added> added;
++    for (const TopoDS_Shape& solid : solids) {
++        added.push_back ({ solid, true, false, TCollection_ExtendedString () });
++    }
++    for (const TopoDS_Shape& group : open) {
++        added.push_back ({ group, false, false, TCollection_ExtendedString () });
++    }
++    // Names come from the shapes the faces were read into, so they are read before those go.
++    for (Added& shape : added) {
++        shape.named = groupName (shape.shape, shape.name);
++    }
++    for (TDF_LabelSequence::Iterator it (labels); it.More (); it.Next ()) {
++        tool->RemoveShape (it.Value (), Standard_True);
++    }
++    for (const Added& shape : added) {
++        TDF_Label label = tool->AddShape (shape.shape, Standard_False, Standard_False);
++        if (shape.named) {
++            TDataStd_Name::Set (label, shape.name);
++        }
++        if (shape.sewnSolid) {
++            TDataStd_UAttribute::Set (label, SewnSolidGuid ());
++        }
++    }
++}
++
+ NodePtr ImporterXcaf::GetRootNode () const
+ {
+     return rootNode;
+diff --git a/occt-import-js/src/importer-xcaf.hpp b/occt-import-js/src/importer-xcaf.hpp
+index 7cfa675..ee282e7 100644
+--- a/occt-import-js/src/importer-xcaf.hpp
++++ b/occt-import-js/src/importer-xcaf.hpp
+@@ -16,6 +16,7 @@ public:
+ 
+ protected:
+     virtual bool TransferToDocument (const std::vector<std::uint8_t>& fileContent) = 0;
++    void SewLooseFaces ();
+ 
+     Handle (TDocStd_Document) document;
+     Handle (XCAFDoc_ShapeTool) shapeTool;

@@ -86,3 +86,11 @@ write_faces(here / "bracket-inch.iges", [bracket.part], "IN")
 # touching surfaces.
 cubes = [Pos(x, 0, 0) * Box(10, 10, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)) for x in (0, 30)]
 write_faces(here / "cubes-faces.igs", [face for c in cubes for face in c.faces()], "MM")
+
+# Two 100 mm boxes 50 mm apart, each face a loose surface. The first box's top sits 0.005 mm above its sides, a gap
+# that closes at the reader's sewing tolerance (scaled to the model) and not at OpenCASCADE's default of 0.000001 mm;
+# the second box has no top, so it cannot close.
+boxes = [Pos(x, 0, 0) * Box(100, 100, 100, align=(Align.CENTER, Align.CENTER, Align.MIN)) for x in (0, 150)]
+lifted = boxes[0].faces().sort_by(Axis.Z)
+open_box = boxes[1].faces().sort_by(Axis.Z)
+write_faces(here / "boxes-gap-open.igs", [*lifted[:-1], Pos(0, 0, 0.005) * lifted[-1], *open_box[:-1]], "MM")
