@@ -178,6 +178,8 @@ export const HostInfo = z.object({
   rights: Rights,
   /** The STUN server (`host:port`) for direct video, run next to the relay. Use it, not a third party's. */
   stun: z.string().max(200).nullable().optional(),
+  /** mimir's question cards through `mimir.questions` and `mimir.answer`. Absent on hosts from before they existed. */
+  mimir: z.boolean().optional(),
 })
 export type HostInfo = z.infer<typeof HostInfo>
 
@@ -192,6 +194,44 @@ export const DecideParams = z.object({
   sig: Sig64,
 })
 export type DecideParams = z.infer<typeof DecideParams>
+
+/** The version of the question card on the wire. A phone shows a card of another version without its buttons. */
+export const MIMIR_QUESTION_V = 1
+/** The question mimir waits on in the desktop app, as an approver phone reads it. Labels are plain text. */
+export const MimirQuestion = z.object({
+  v: z.number().int().min(1).max(1000),
+  sessionId: z.string().min(1).max(128),
+  askId: z.string().min(1).max(200),
+  title: z.string().max(200),
+  question: z.string().max(1000),
+  choices: z.array(z.object({ id: z.string().min(1).max(64), label: z.string().max(200) })).min(1).max(12),
+  /** When the question was first shown on the computer, Unix milliseconds. */
+  at: z.number().int().nonnegative(),
+})
+export type MimirQuestion = z.infer<typeof MimirQuestion>
+/** A question that stopped waiting: what ended it (`choiceId` null is a Cancel) and where. */
+export const MimirEnded = z.object({
+  askId: z.string().min(1).max(200),
+  choiceId: z.string().max(64).nullable(),
+  by: z.enum(['app', 'phone']),
+  /** The phone's name, when a phone answered. */
+  name: z.string().max(64).optional(),
+})
+export type MimirEnded = z.infer<typeof MimirEnded>
+/**
+ * mimir's question state on the computer. `live` is true while SlicerX runs there and can take an answer;
+ * `waiting` is the question it waits on now, or null.
+ */
+export const MimirState = z.object({ live: z.boolean(), waiting: MimirQuestion.nullable() })
+export type MimirState = z.infer<typeof MimirState>
+/** A phone's answer: one of the question's choice ids, or null to cancel it. Never signed: it unlocks nothing on a printer. */
+export const MimirAnswerParams = z.object({
+  v: z.number().int().min(1).max(1000),
+  sessionId: z.string().min(1).max(128),
+  askId: z.string().min(1).max(200),
+  choiceId: z.string().min(1).max(64).nullable(),
+})
+export type MimirAnswerParams = z.infer<typeof MimirAnswerParams>
 
 const CameraQuality = z.enum(['low', 'medium', 'high'])
 export type CameraQuality = z.infer<typeof CameraQuality>
@@ -290,6 +330,10 @@ export const METHODS = {
   'pairing.revoke': { params: z.object({}), result: z.object({}) },
   /** The relay quota of the hub (sx-link over the relay); null from a host that is not on the relay. */
   'remote.quota': { params: z.object({}), result: RemoteQuota.nullable() },
+  /** Approver phones: the question mimir waits on in the desktop app, and whether the app can take an answer. */
+  'mimir.questions': { params: z.object({}), result: MimirState },
+  /** Approver phones: answers the waiting question. `not_found` when it was answered already or is no longer waiting. */
+  'mimir.answer': { params: MimirAnswerParams, result: z.object({ answered: z.literal(true) }) },
 } as const
 
 export type Method = keyof typeof METHODS
@@ -324,6 +368,8 @@ export interface ResultMap {
   'approvals.decide': Record<string, never>
   'pairing.revoke': Record<string, never>
   'remote.quota': RemoteQuota | null
+  'mimir.questions': MimirState
+  'mimir.answer': { answered: true }
 }
 
 export const EVENTS = {
@@ -343,6 +389,8 @@ export const EVENTS = {
   'camera.stats': z.object({ stream: StreamId, fps: z.number().nonnegative(), kbps: z.number().nonnegative(), dropped: z.number().int().nonnegative(), quality: CameraQuality }),
   /** `reason` `codec`: the camera sends H.264, which the phone cannot draw; use stills. */
   'camera.ended': z.object({ stream: StreamId, reason: z.enum(['ended', 'codec', 'closed']).optional() }),
+  /** mimir's question state changed on the computer (approver phones). `ended` names the question that stopped waiting. */
+  'mimir.question': MimirState.extend({ ended: MimirEnded.optional() }),
 } as const
 
 export type EventName = keyof typeof EVENTS
@@ -360,6 +408,7 @@ export interface EventMap {
   'camera.frame': { stream: number; capturedAt: number; key: boolean; kind: 'jpeg'; dataB64: string }
   'camera.stats': { stream: number; fps: number; kbps: number; dropped: number; quality: CameraQuality }
   'camera.ended': { stream: number; reason?: 'ended' | 'codec' | 'closed' }
+  'mimir.question': MimirState & { ended?: MimirEnded }
 }
 
 export const RPC_ERROR_CODES = ['bad_request', 'forbidden', 'not_found', 'not_supported', 'unavailable', 'busy', 'too_large', 'failed', 'timeout', 'closed'] as const
