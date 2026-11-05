@@ -849,6 +849,31 @@ fn wall_key(cfg: &PrintConfig) -> (u32, [i64; 3]) {
     )
 }
 
+/// Whether two regions that share their walls print the same first layer: the same line widths and every other setting
+/// alike, save the line widths of features the first layer does not print at them. With `bottom` (the first layer is all
+/// bottom surface) the sparse infill's settings do not count either, its filament aside. On the print's first layer
+/// such regions print one surface across their boundary ([`SliceSession::region_preps`]).
+fn first_layer_alike(a: &PrintConfig, b: &PrintConfig, bottom: bool) -> bool {
+    let apart = |k: &str| {
+        k == "line_width"
+            || k.ends_with("_line_width")
+            || (bottom && k.starts_with("sparse_infill_") && !k.ends_with("_filament_id"))
+    };
+    // Under a bottom surface the sparse infill's width does not print.
+    let widths = |w: crate::config::FeatureWidths| crate::config::FeatureWidths {
+        sparse_infill: if bottom { None } else { w.sparse_infill },
+        ..w
+    };
+    a.line_width.to_bits() == b.line_width.to_bits()
+        && a.layer_height.to_bits() == b.layer_height.to_bits()
+        && widths(a.feature_widths) == widths(b.feature_widths)
+        && widths(a.first_layer_widths) == widths(b.first_layer_widths)
+        && a.raw
+            .keys()
+            .chain(b.raw.keys())
+            .all(|k| apart(k) || a.raw.get(k) == b.raw.get(k))
+}
+
 /// The first part of a layer's paths ([`SliceSession::layer_start`]), which [`SliceSession::layer_finish`]
 /// completes. `rest` is None for a layer with nothing to print.
 struct LayerStart {
@@ -8808,6 +8833,25 @@ impl SliceSession {
             let group = group_of(ri);
             // The walls of the region's own outline, which the surfaces' edges are measured from.
             let mut own_outline = false;
+            // On the print's first layer the regions of a group that print alike lay one bottom surface: the region
+            // that walls the group prints each piece of the group's infill area that meets its own area, the others
+            // the rest of theirs. Apart, each one's lines would stop short of the boundary and overlap their
+            // neighbor's there. A piece of another object stays with its own region.
+            // Alike also means each feature on the same filament; the sparse infill's settings only count apart
+            // when the layer has a bottom surface to cover them.
+            let one_surface = layer == 0
+                && self.raft.is_none()
+                && group.len() > 1
+                && group.first().is_some_and(|&f| {
+                    let lead = region_config(f);
+                    let bottom = lead.shell_layers(self.plan.height).1 > 0;
+                    let tools = self.feature_tools(lead, *slot);
+                    group.iter().all(|&j| {
+                        let c = region_config(j);
+                        first_layer_alike(lead, c, bottom) && self.feature_tools(c, *slot) == tools
+                    })
+                });
+            let mut group_area = None;
             let (islands, inner) = match group.first() {
                 Some(&first) if group.len() > 1 => {
                     let own = if ri == first {
@@ -8837,7 +8881,29 @@ impl SliceSession {
                             group_inner.get(first).cloned().flatten().unwrap_or_default(),
                         )
                     };
-                    (own.0, perimeters::intersection(&own.1, shapes))
+                    if one_surface {
+                        // The pieces of the group's infill area the first region prints.
+                        let first_area = here.regions.get(first).map(|r| &r.1);
+                        let taken: Shapes = own
+                            .1
+                            .iter()
+                            .filter(|piece| {
+                                first_area.is_some_and(|a| {
+                                    !perimeters::intersection(&vec![(*piece).clone()], a).is_empty()
+                                })
+                            })
+                            .cloned()
+                            .collect();
+                        if ri == first {
+                            group_area = Some(perimeters::union_all(&[shapes, &taken]));
+                            (own.0, taken)
+                        } else {
+                            let mine = perimeters::intersection(&own.1, shapes);
+                            (own.0, perimeters::difference(&mine, &taken))
+                        }
+                    } else {
+                        (own.0, perimeters::intersection(&own.1, shapes))
+                    }
                 }
                 _ if !counterbore_cut.is_empty() => {
                     // Counterbore floors a bridge can span are not walled; they print as bridging infill.
@@ -9020,11 +9086,13 @@ impl SliceSession {
                 .filter(|a| !a.is_empty())
                 .collect();
             let band_top = (!band_top.is_empty()).then(|| perimeters::union_all(&band_top));
+            // The region's area, or the group's where it prints the group's one surface.
+            let area = group_area.as_ref().unwrap_or(shapes);
             let known = facts.filter(|f| {
                 region_k == 0
                     && shared.is_some()
                     && band_top.is_none()
-                    && *shapes == slice_shapes(here)
+                    && *area == slice_shapes(here)
                     && f.inner == inner
             });
             let cls = match known {
@@ -9033,7 +9101,7 @@ impl SliceSession {
                     cfg,
                     layer,
                     count: n,
-                    region: shapes,
+                    region: area,
                     inner: &inner,
                     slice: &slice_of,
                     inner_of: &inner_of,
