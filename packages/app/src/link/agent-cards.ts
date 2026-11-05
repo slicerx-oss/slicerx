@@ -15,7 +15,7 @@ const PRINT_OPTIONS = new Set<string>(SEND_OPTION_IDS)
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
-  kind: 'print' | 'resume' | 'gcode' | 'adjust' | 'pause' | 'cancel' | 'plugin'
+  kind: 'print' | 'resume' | 'gcode' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'plugin'
   /** Empty for a connected app's tool, which targets no printer. */
   printerId: string
   /** A connected app's tool: the app, the tool's bare name and its input, as the hub will run them. */
@@ -26,6 +26,9 @@ export interface VerifiedWork {
   opts?: Record<string, unknown>
   line?: string
   change?: Record<string, unknown>
+  /** A skip: the object's label on the printer, and the bed epoch of the job the hub pinned it to. */
+  id?: string
+  epoch?: number
 }
 
 export type HubCard = ApprovalRequest & {
@@ -111,6 +114,7 @@ const WORK_ACTIONS: Record<VerifiedWork['kind'], string[]> = {
   adjust: ['printer.adjust'],
   pause: ['printer.pause'],
   cancel: ['printer.cancel'],
+  skip: ['printer.skip'],
   plugin: ['plugin.call'],
 }
 
@@ -146,6 +150,7 @@ const ACTION_WORDS: Record<string, string> = {
   'printer.gcode': 'send a G-code line',
   'printer.config': 'change the running print',
   'printer.adjust': 'change the running print',
+  'printer.skip': 'skip one object of the running print',
   'plugin.call': 'call a plugin',
   'profile.write': 'change a profile',
   'project.replace': 'replace objects in the project',
@@ -182,6 +187,8 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
         ? `Send a G-code line${printer ? ` to ${printer}` : ''}?`
         : has('printer.config') || has('printer.adjust')
           ? `Change the running print${on}?`
+          : has('printer.skip')
+            ? `Skip an object${on}?`
           : `Let ${asker} ${ACTION_WORDS[card.actions[0]?.action ?? ''] ?? 'act'}${on}?`
   const lines: string[] = [card.origin === 'phone' ? 'Asked by a paired phone. Only you can approve it here.' : partner ? `Asked by ${partner}, a partner app.` : 'Asked by an AI agent over MCP. It cannot approve this itself.']
   const did = [...new Set(card.actions.map((a) => ACTION_WORDS[a.action] ?? a.action))]
@@ -211,6 +218,12 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
     const said = describeChange(w?.change)
     if (said) lines.push(`Change: ${said}${on}`)
     else blocked ??= `${appName()} cannot show this change in plain words. Deny this request.`
+  }
+  if (has('printer.skip')) {
+    // The object's label as the printer lists it; one this card cannot show plainly gets no Approve.
+    const label = w?.id && /^[\x21-\x7e]{1,64}$/.test(w.id) ? w.id : null
+    if (label) lines.push(`Object: ${label}. Only this object stops printing; the rest of the plate carries on.`)
+    else blocked ??= `${appName()} cannot show which object would be skipped. Deny this request.`
   }
   const options = Object.entries(w?.opts ?? {}).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v))
   // The hub's options are a fixed set of numbers and switches, so the whole list is short; it is never cut.

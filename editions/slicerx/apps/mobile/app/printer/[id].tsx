@@ -65,6 +65,7 @@ export default function PrinterRoute() {
       blocked: w.blocked,
       code: w.code,
       answered: w.answered,
+      plate: w.plate,
       decide: async (d: 'approve' | 'deny', o?: { bedClear?: boolean }) => {
         await w.decide(d, o)
         settleWaiting(w.id)

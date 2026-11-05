@@ -45,6 +45,8 @@ export interface WaitingApproval {
   pairingId?: string | undefined
   /** Set once it was answered somewhere else: the note the card shows until it closes. */
   answered?: string | undefined
+  /** A start approved from afar: the card runs a plate check and shows the still beside the empty plate. */
+  plate?: { printerId: string; windowSeconds: number; check: () => Promise<import('@slicerx/pair').PlateCheck> } | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 

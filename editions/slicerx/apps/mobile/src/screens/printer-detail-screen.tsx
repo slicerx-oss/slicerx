@@ -11,7 +11,7 @@ import type { FeedView } from '../camera/use-feed'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
 import { Hairline, Row, Screen, ScreenHeader, SectionLabel, Stat } from '../components/layout'
-import { ApprovalCard } from '../components/pilot/approval-card'
+import { ApprovalCard, type PlateCheckSource } from '../components/pilot/approval-card'
 import { LiveView } from '../components/printers/live-view'
 import { fmtEta, fmtLeft, JobStage, Slots, StatePill, type PrinterView } from '../components/printers/printer-bits'
 import { ProgressBar } from '../components/status'
@@ -33,6 +33,8 @@ export interface WaitingApproval {
   code?: string | undefined
   /** How it was answered somewhere else; the card shows this note until it closes. */
   answered?: string | undefined
+  /** A start approved from afar: the card runs a plate check and shows the still beside the empty plate. */
+  plate?: PlateCheckSource | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 
@@ -174,6 +176,7 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
                 blocked={a.blocked}
                 code={a.code}
                 answered={a.answered}
+                plate={a.plate}
                 onApprove={(_r, o) => a.decide('approve', o)}
                 onDeny={() => a.decide('deny')}
               />

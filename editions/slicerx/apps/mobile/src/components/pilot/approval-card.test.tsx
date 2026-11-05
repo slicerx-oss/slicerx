@@ -94,3 +94,26 @@ it('offers no Approve when the phone may only deny it from here', async () => {
   expect(screen.queryByTestId('approval-approve')).toBeNull()
   expect(screen.getByTestId('approval-deny')).toBeOnTheScreen()
 })
+
+it('a start approved away from home shows the plate beside the empty plate and waits for a passing check', async () => {
+  const start: ApprovalRequest = { ...request, id: 'a3', permission: 'start', actions: [{ action: 'printer.start', target: 'bay-2', paramsHash: 'y' }] }
+  const pic = { contentType: 'image/jpeg', dataB64: '/9j/' }
+  const looks = [
+    { printerId: 'bay-2', checked: true, passes: false, plateWindowSeconds: 60, clear: false, compared: true, checkedAt: NOW, reason: 'plate_failed', message: 'the plate check found something on the plate, or could not tell', still: pic, reference: pic },
+    { printerId: 'bay-2', checked: true, passes: true, plateWindowSeconds: 60, clear: true, compared: true, checkedAt: NOW, passUntil: NOW + 60_000, still: pic, reference: pic },
+  ]
+  const check = jest.fn(() => Promise.resolve(looks.shift()!))
+  const { onApprove } = await setup({ request: start, plate: { printerId: 'bay-2', windowSeconds: 60, check } })
+  await waitFor(() => expect(screen.getByTestId('plate-words')).toHaveTextContent(/found something on the plate/))
+  expect(screen.getByTestId('plate-now')).toBeOnTheScreen()
+  expect(screen.getByTestId('plate-empty')).toBeOnTheScreen()
+  // A failed check holds Approve, even with the plate switch on.
+  await fireEvent(screen.getByTestId('approval-bed-clear'), 'valueChange', true)
+  await fireEvent.press(screen.getByTestId('approval-approve'))
+  expect(onApprove).not.toHaveBeenCalled()
+  await fireEvent.press(screen.getByTestId('plate-check-again'))
+  await waitFor(() => expect(screen.getByTestId('plate-words')).toHaveTextContent(/looks clear/))
+  await fireEvent.press(screen.getByTestId('approval-approve'))
+  await waitFor(() => expect(onApprove).toHaveBeenCalledWith(start, { bedClear: true }))
+  expect(check).toHaveBeenCalledTimes(2)
+})

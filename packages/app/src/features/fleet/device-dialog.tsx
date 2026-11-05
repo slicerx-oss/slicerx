@@ -2,18 +2,18 @@
 // Copyright (C) 2026 The SlicerX contributors
 // One printer's controls: move the head, the printer's own files and print history, what it reports as
 // wrong, and skipping objects of the running print. Opens from the printer card; loaded on first open.
-import { Button, Dialog, Pill } from '@slicerx/ui'
+import { Button, Dialog, Pill, Switch } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
-  type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type StoredFile,
+  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
 
-type Tab = 'move' | 'files' | 'history' | 'problems' | 'skip'
+type Tab = 'move' | 'files' | 'history' | 'problems' | 'skip' | 'remote'
 
 const when = (s: number | undefined) => (s ? new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const size = (n: number | undefined) => (n === undefined ? '' : n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
@@ -45,7 +45,14 @@ export function DeviceDialog({ printer, status, onClose }: { printer: PrinterInf
   const hub = deviceHub(host)
   const running = status.state === 'printing' || status.state === 'paused'
   const [tab, setTab] = useState<Tab>(running ? 'skip' : 'move')
-  const tabs: [Tab, string][] = [['move', 'Move'], ['files', 'Files'], ['history', 'History'], ['problems', 'Problems'], ...(running ? ([['skip', 'Skip objects']] as [Tab, string][]) : [])]
+  const tabs: [Tab, string][] = [
+    ['move', 'Move'],
+    ['files', 'Files'],
+    ['history', 'History'],
+    ['problems', 'Problems'],
+    ...(running ? ([['skip', 'Skip objects']] as [Tab, string][]) : []),
+    ...(hub?.remoteStart ? ([['remote', 'Remote start']] as [Tab, string][]) : []),
+  ]
   return (
     <Dialog open onClose={onClose} title={`${printer.name}: controls and files`} footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
       {pauseNoteOf(status) ? <p className="sx-small warn" role="note">{pauseNoteOf(status)}</p> : null}
@@ -65,6 +72,7 @@ export function DeviceDialog({ printer, status, onClose }: { printer: PrinterInf
           {tab === 'history' ? <History hub={hub} printer={printer} /> : null}
           {tab === 'problems' ? <Problems hub={hub} printer={printer} status={status} /> : null}
           {tab === 'skip' ? <Skip hub={hub} printer={printer} status={status} /> : null}
+          {tab === 'remote' && hub.remoteStart ? <RemoteStart rs={hub.remoteStart} printer={printer} /> : null}
         </>
       )}
     </Dialog>
@@ -306,6 +314,97 @@ function Skip({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
           <Button variant="ghost" onClick={() => setConfirm(null)}>Keep printing it</Button>
         </div>
       ) : null}
+    </section>
+  )
+}
+
+/**
+ * Remote start: whether a paired phone away from home may start a print on this printer. Off by default. The phone
+ * shows the camera's still beside the empty-plate picture, and the hub lets the start through only after a fresh
+ * plate check passed and within the temperature limits set here.
+ */
+function RemoteStart({ rs, printer }: { rs: NonNullable<DeviceHub['remoteStart']>; printer: PrinterInfo }) {
+  const [row, setRow] = useState<RemoteStartRow | null>(null)
+  const [windowS, setWindowS] = useState(60)
+  const [nozzle, setNozzle] = useState('')
+  const [bed, setBed] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const show = (r: RemoteStartRow) => {
+    setRow(r)
+    setNozzle(String(r.maxNozzleC))
+    setBed(String(r.maxBedC))
+  }
+  useEffect(() => {
+    let live = true
+    rs.get(printer.id).then(
+      (s) => {
+        if (!live) return
+        setWindowS(s.plateWindowSeconds)
+        const r = s.printers[0]
+        if (r) show(r)
+      },
+      (e: unknown) => live && setError(deviceError(e)),
+    )
+    return () => {
+      live = false
+    }
+  }, [rs, printer.id])
+  const save = async (enabled: boolean, limits?: { maxNozzleC?: number; maxBedC?: number }) => {
+    setBusy(true)
+    setError(null)
+    try {
+      show(await rs.set(printer.id, enabled, limits))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const n = remoteLimit(nozzle, REMOTE_NOZZLE_RANGE)
+  const b = remoteLimit(bed, REMOTE_BED_RANGE)
+  const changed = row !== null && (n !== row.maxNozzleC || b !== row.maxBedC)
+  return (
+    <section aria-label="Remote start" className="remote-start">
+      <div className="sx-switchrow">
+        <label htmlFor={`rs-on-${printer.id}`}>
+          Let a paired phone start prints away from home
+          <small>Off by default. Pausing, stopping and skipping one object work from afar either way.</small>
+        </label>
+        <Switch id={`rs-on-${printer.id}`} checked={row?.enabled ?? false} disabled={!row || busy} onChange={(v) => void save(v)} />
+      </div>
+      <p className="sx-small sx-muted">
+        The phone shows the camera's picture of the plate next to your empty-plate picture. The start goes through only when the camera guard compared them and found the plate clear in the last {windowS} seconds, the file stays within the temperatures below and heats no chamber, and you tick that the plate is clear.
+      </p>
+      {row && !row.guard ? <p className="sx-small warn" role="note">The camera guard is off for this printer, so a start from afar is always refused.</p> : null}
+      {row?.enabled ? (
+        <div className="remote-start-limits">
+          <label className="plate-form-row" htmlFor={`rs-nozzle-${printer.id}`}>
+            <span>Highest nozzle temperature (°C)</span>
+            <input id={`rs-nozzle-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={REMOTE_NOZZLE_RANGE[0]} max={REMOTE_NOZZLE_RANGE[1]} step={1} value={nozzle} aria-invalid={n === null} onChange={(e) => setNozzle(e.currentTarget.value)} />
+          </label>
+          <label className="plate-form-row" htmlFor={`rs-bed-${printer.id}`}>
+            <span>Highest bed temperature (°C)</span>
+            <input id={`rs-bed-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={REMOTE_BED_RANGE[0]} max={REMOTE_BED_RANGE[1]} step={1} value={bed} aria-invalid={b === null} onChange={(e) => setBed(e.currentTarget.value)} />
+          </label>
+          {n === null || b === null ? (
+            <p className="sx-small warn" role="note">
+              Nozzle {REMOTE_NOZZLE_RANGE[0]} to {REMOTE_NOZZLE_RANGE[1]} °C, bed {REMOTE_BED_RANGE[0]} to {REMOTE_BED_RANGE[1]} °C.
+            </p>
+          ) : null}
+          <div className="calib-act">
+            <Button size="sm" disabled={busy || !changed || n === null || b === null} onClick={() => n !== null && b !== null && void save(true, { maxNozzleC: n, maxBedC: b })}>
+              Save limits
+            </Button>
+          </div>
+          <p className="sx-small sx-muted" role="status">
+            {row.plateCheck
+              ? `Last plate check ${new Date(row.plateCheck.checkedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${row.plateCheck.clear === true ? 'clear' : row.plateCheck.clear === false ? 'something on the plate' : 'could not tell'}${row.plateCheck.compared ? '' : ', no empty-plate picture to compare with'}.`
+              : 'No plate check yet. The phone runs one when you open a start card.'}
+          </p>
+        </div>
+      ) : null}
+      {error ? <p className="app-err" role="alert">{error}</p> : null}
     </section>
   )
 }
