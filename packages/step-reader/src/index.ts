@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// @slicerx/step-reader: STEP files (AP203, AP214, AP242) to meshes in millimeters, in a browser, a worker or Node.
+// @slicerx/step-reader: STEP files (AP203, AP214, AP242) and IGES files to meshes in millimeters, in a browser, a worker
+// or Node.
 // Node servers that read untrusted files use '@slicerx/step-reader/node', which reads each file in a worker thread
 // with a deadline and memory cap.
 export { stepInfo, toObj, toStl, type ObjOptions, type StepBounds, type StepInfo } from './convert.ts'
 export { defaultWasmUrl, loadOcct, loadStepReader, STEP_MAX_MEMORY_MB, type LoadOptions, type StepReader } from './load.ts'
 export {
+  cadFormat,
+  igesUnit,
+  readCad,
+  readIges,
   readStep,
   STEP_ANGLE_RAD,
   STEP_ERROR_CODES,
@@ -15,8 +20,10 @@ export {
   StepError,
   stepUnit,
   toLocalOrigin,
+  type CadFormat,
   type Occt,
   type OcctMesh,
+  type OcctNode,
   type OcctParams,
   type OcctResult,
   type ReadOptions,

@@ -90,3 +90,52 @@ describe('broken and hostile files', () => {
     expect(await outcome(text(HEADER))).toMatchObject({ code: expect.stringMatching(/^(unreadable|no_solids)$/) })
   })
 })
+
+describe('IGES files in a worker thread', () => {
+  const lines = (bytes: Uint8Array) => new TextDecoder('latin1').decode(bytes).split('\n').filter(Boolean)
+
+  it('reads an IGES file as in process, told apart by its bytes', async () => {
+    const r = await readStepInWorker(file('assembly.igs'), { name: 'assembly.igs' })
+    expect(r.objects.map((o) => [o.name, o.bodies.map((b) => [b.name, b.color ?? null])])).toEqual([
+      ['assembly', [['base', '#ff0000'], ['post', null]]],
+      ['cube', [['cube', '#0040ff']]],
+    ])
+    expect(r.triangles).toBe(328)
+    const path = join(work, 'bracket.iges')
+    writeFileSync(path, file('bracket-inch.iges'))
+    expect((await readStepFileInWorker(path, { name: 'bracket.iges' })).unit).toBe('inch')
+    await expect(readStepFileInWorker(path, { name: 'bracket.iges', maxInputMb: 0.01 })).rejects.toMatchObject({ code: 'too_large', message: 'is 0 MB. IGES files up to 0.01 MB can be opened.' })
+  })
+
+  it('stops an IGES read at its deadline and at the memory cap', async () => {
+    expect(await outcome(file('assembly.igs'), { timeoutMs: 1 })).toMatchObject({ code: 'timeout' })
+    expect(await outcome(file('assembly.igs'), { maxMemoryMb: 17 })).toMatchObject({ code: 'out_of_memory' })
+  })
+
+  // OpenCASCADE reads what it can of a damaged IGES file, so these end in a refusal or a partial read; either way the
+  // worker answers (outcome checks the code of a refusal) and the caller goes on.
+  const answered = { code: expect.stringMatching(/^(unreadable|no_solids)$/) }
+  const partial = { objects: expect.any(Array) }
+
+  it('a file cut off part way, or with garbage after its global section', async () => {
+    const whole = file('assembly.igs')
+    expect(await outcome(whole.subarray(0, Math.floor(whole.length * 0.1)), { name: 'x.igs' })).toMatchObject(answered)
+    for (const at of [0.5, 0.9]) {
+      const r = await outcome(whole.subarray(0, Math.floor(whole.length * at)), { name: 'x.igs' })
+      expect(r).toMatchObject('code' in r ? answered : partial)
+    }
+    const head = lines(whole).filter((l) => /[SG]\d{7}$/.test(l)).join('\n')
+    let seed = 11
+    const noise = Uint8Array.from({ length: 64 * 1024 }, () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) & 255)
+    expect(await outcome(new Uint8Array([...text(`${head}\n`), ...noise]), { name: 'x.igs' })).toMatchObject({ code: expect.stringMatching(/^(unreadable|no_solids)$/) })
+  })
+
+  it('a directory entry pointing far past the end of the file', async () => {
+    const all = lines(file('assembly.igs'))
+    // The first entry's parameter data pointer, columns 9 to 16 of its first record, moved to a line that is not there.
+    const at = all.findIndex((l) => l[72] === 'D')
+    all[at] = `${all[at]!.slice(0, 8)}${'99999999'}${all[at]!.slice(16)}`
+    const r = await outcome(text(`${all.join('\n')}\n`), { name: 'x.igs' })
+    expect(r).toMatchObject('code' in r ? answered : partial)
+  })
+})
