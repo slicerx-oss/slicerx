@@ -101,7 +101,13 @@ fn config(p: Printer, nozzle: f64, extra: &Value) -> Value {
                 }),
             )
         }
-        Printer::Mk4 => printer("prusa", "prusa-mk4", &json!({})),
+        // The MK4 with the generic first layer these cases were laid out on: 0.48 mm lines (120%) and no elephant foot
+        // compensation, where the stock MK4 now prints 0.5 mm lines 0.2 mm in. The rule here leaves compensation out.
+        Printer::Mk4 => printer(
+            "prusa",
+            "prusa-mk4",
+            &json!({"initial_layer_line_width": "120%", "elefant_foot_compensation": 0}),
+        ),
         Printer::Voron if big => printer(
             "voron",
             "voron-2.4-300",
