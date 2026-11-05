@@ -2,6 +2,8 @@
 
 An app that runs next to SlicerX on the same computer, such as LayerMate, reaches the user's printers through SlicerX's printer bridge (`sx-link`) with a partner app key. The user makes the key in SlicerX and pastes it into your app. You don't need the bridge's pairing codes, and you shouldn't read files from its state folder other than the public `hub-key.pub`.
 
+The key works only through the bridge on the user's computer. For cloud slicing from your app, a phone app included, the user issues a separate token from their SlicerX account instead: [cloud-slice.md](cloud-slice.md).
+
 ## What the key can do
 
 A partner app key has the agent role with tighter limits:
