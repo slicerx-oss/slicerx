@@ -138,6 +138,11 @@ export class MockMachine {
       this.failG90--
       throw new MockError(500, 'G90 refused')
     }
+    // Homing finds every axis's end stop; the head rests at the origin.
+    if (line === 'G28') {
+      this.homed = 'xyz'
+      this.position = [0, 0, 0]
+    }
     if (line === 'G91') this.relative = true
     if (line === 'G90') this.relative = false
     const move = /^G[01] (.*)$/.exec(line)

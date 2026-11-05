@@ -401,7 +401,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     }
     if (req.path !== '/state') return { status: 404 }
     const out: Record<string, unknown> = { log }
-    for (const [name, m] of machines) out[name] = { state: m.state, files: [...m.files.values()], log: m.log, position: m.position, relative: m.relative, job: m.job ?? null, faults: [...m.faults], camera: typeof m.camera === 'object' ? m.camera.file : m.camera }
+    for (const [name, m] of machines) out[name] = { state: m.state, files: [...m.files.values()], log: m.log, position: m.position, homed: m.homed, relative: m.relative, job: m.job ?? null, faults: [...m.faults], camera: typeof m.camera === 'object' ? m.camera.file : m.camera }
     return { json: out }
   })
   servers.push(ctl.server)
