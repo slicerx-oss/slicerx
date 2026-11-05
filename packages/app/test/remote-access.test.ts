@@ -210,3 +210,15 @@ describe('remote access', () => {
     expect(forgot).toEqual(['p9'])
   })
 })
+
+describe('partner phones over remote access', () => {
+  it('hands the hub a partner phone with its app name and its approve right as the person set it', async () => {
+    const puts: unknown[] = []
+    const h = hub()
+    h.remote.pairings.put = async (p) => void puts.push(p)
+    const partner: RemotePairing = { ...phone('pp'), partner: 'Example Phone', rights: { request: true, approve: false } }
+    const r = createRemoteAccess({ remote: h.remote, source: { identity: async () => me, hostDh: async () => 'host-dh', pairings: async () => [partner] }, relayUrl: 'wss://relay.example.invalid' })
+    await r.setEnabled(true)
+    expect(puts).toEqual([expect.objectContaining({ pairingId: 'pp', kind: 'phone', partner: 'Example Phone', rights: { request: true, approve: false } })])
+  })
+})
