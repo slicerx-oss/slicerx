@@ -328,7 +328,9 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             Ok(mesh_report(&emboss::merge_coplanar(&out)?, enc))
         }
         "subtract" => {
-            let m = mesh_field(req, "mesh", files)?;
+            // the part with its transform: cut in bed coordinates, answered in the part's own frame
+            let it = crate::json_cad::item_field(req, "mesh", files)?;
+            let m = it.world();
             let solids: Vec<SolidSpec> = field(req, "solids")?;
             if solids.is_empty() {
                 return Err(Error::invalid("solids", "needs at least one solid"));
@@ -341,8 +343,16 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
                     &convex::overshoot_flush(c, &out, crate::solids::OVERSHOOT_MM),
                 )?;
             }
-            let out = emboss::merge_coplanar(&out)?;
-            let mut v = mesh_report(&out, enc);
+            let mut out = emboss::merge_coplanar(&out)?;
+            convex::flip_needles(&mut out);
+            // The faces, found here on the f64 result: the answer rounds the corners to f32, and after that a
+            // corner the cut left on a chord of a hole's wall reads as a seam, so the wall no longer fits a cylinder.
+            // What the part's own faces knew (a wall an earlier cut found, the keys) carries over.
+            #[cfg(feature = "cad")]
+            {
+                out.faces = Some(crate::faces::faces_after_cut(&m, &out));
+            }
+            let mut v = mesh_report(&it.to_local(&out)?, enc);
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("removedVolumeMm3".to_owned(), json!(m.volume() - out.volume()));
             }
@@ -1457,6 +1467,217 @@ mod tests {
                 "{solid}: {removed} vs {expect}"
             );
         }
+    }
+
+    /// A mesh as the app keeps it and sends it: corners rounded to f32.
+    #[cfg(feature = "cad")]
+    #[allow(clippy::cast_possible_truncation, reason = "rounding to f32 on purpose")]
+    fn stored(m: &TriMesh) -> Value {
+        json!({ "positions": m.positions.iter().flatten().map(|&c| f64::from(c as f32)).collect::<Vec<_>>(),
+                "indices": m.triangles.iter().flatten().collect::<Vec<_>>() })
+    }
+
+    /// A triangle of a hole's wall in `m` (upright, `r` from the vertical line through `c`).
+    #[cfg(feature = "holes")]
+    fn hole_wall(m: &TriMesh, c: [f64; 2], r: f64) -> Option<usize> {
+        (0..m.triangles.len()).find(|&t| {
+            let [a, b, d] = m.corners(m.triangles[t]);
+            let mid = crate::vec3::scale(crate::vec3::add(crate::vec3::add(a, b), d), 1.0 / 3.0);
+            crate::vec3::normalize(m.normal(m.triangles[t])).is_some_and(|n| n[2].abs() < 1e-3)
+                && (crate::fm::Fm::m_hypot(mid[0] - c[0], mid[1] - c[1]) - r).abs() < 0.05
+        })
+    }
+
+    #[cfg(feature = "holes")]
+    #[test]
+    fn the_hole_and_thread_tools_find_a_subtract_hole_on_the_answer() {
+        // As the app cuts it: a 20 mm box on f32 corners, sent in bed coordinates or in its own frame with its
+        // transform, a cylinder from the top, through or blind. The answer's corners are f32 too.
+        let at = [34.1, 16.1];
+        let mut moved = crate::xform::IDENTITY;
+        moved[12..14].copy_from_slice(&at);
+        let bed = stored(&build::box_mesh([24.1, 6.1, 0.0], [44.1, 26.1, 20.0]));
+        let own = json!({ "mesh": stored(&build::box_mesh([-10.0, -10.0, 0.0], [10.0, 10.0, 20.0])),
+                          "transform": moved });
+        let (mut found, mut tried) = (0, 0);
+        let mut missed = Vec::new();
+        for (part, transform, local) in [(bed, crate::xform::IDENTITY, at), (own, moved, [0.0; 2])] {
+            for (depth, through) in [(25.0_f64, true), (12.0, false)] {
+                for (d, size) in [(6.8_f64, "M8"), (5.0, "M6")] {
+                    let solid = json!({ "type": "cylinder", "origin": [at[0], at[1], 20.5 - depth - 0.5],
+                                        "axis": [0, 0, 1], "diameterMm": d, "heightMm": depth + 0.5 });
+                    let case = format!(
+                        "d {d}, depth {depth}, transform {}",
+                        transform != crate::xform::IDENTITY
+                    );
+                    tried += if cfg!(feature = "threads") { 2 } else { 1 };
+                    let req = json!({ "mesh": part, "solids": [solid], "withFaces": true });
+                    let out: Value = match call("subtract", &req.to_string()) {
+                        Ok(out) => serde_json::from_str(&out).unwrap(),
+                        Err(e) => {
+                            missed.push(format!("subtract, {case}: {e}"));
+                            continue;
+                        }
+                    };
+                    let m = mesh_value(&out["mesh"], "mesh", &|_| unreachable!()).unwrap();
+                    let t = hole_wall(&m, local, d / 2.0).expect("a wall triangle");
+                    let pick = json!({ "mesh": { "mesh": out["mesh"], "transform": transform }, "triangle": t,
+                                       "at": [at[0], at[1], 19.9] });
+                    match call("hole.find", &pick.to_string()) {
+                        Ok(h) => {
+                            let h: Value = serde_json::from_str(&h).unwrap();
+                            assert_eq!(h["through"], through, "{case}: {h}");
+                            assert!(
+                                (h["diameterMm"].as_f64().unwrap() - d).abs() < 1e-3,
+                                "{case}: {h}"
+                            );
+                            assert!(
+                                (h["depthMm"].as_f64().unwrap() - depth.min(20.0)).abs() < 1e-3,
+                                "{case}: {h}"
+                            );
+                            found += 1;
+                        }
+                        Err(e) => missed.push(format!("hole, {case}: {e}")),
+                    }
+                    #[cfg(feature = "threads")]
+                    {
+                        match call("thread.find", &pick.to_string()) {
+                            Ok(th) => {
+                                let th: Value = serde_json::from_str(&th).unwrap();
+                                assert_eq!(th["internal"], true, "{case}: {th}");
+                                assert_eq!(th["suggested"], size, "{case}: {th}");
+                                found += 1;
+                            }
+                            Err(e) => missed.push(format!("thread, {case}: {e}")),
+                        }
+                    }
+                    #[cfg(not(feature = "threads"))]
+                    let _ = size;
+                }
+            }
+        }
+        assert_eq!(found, tried, "found {found} of {tried}: {missed:#?}");
+    }
+
+    #[cfg(feature = "holes")]
+    #[test]
+    fn a_subtract_hole_made_another_size_is_found_again() {
+        // The answer's f32 corners cross nowhere, so the hole tool's boolean keeps the faces, and the hole it made
+        // is found again (by its axis, as a client reads it back).
+        let out = run(
+            "subtract",
+            &json!({ "mesh": stored(&build::box_mesh([0.0; 3], [20.0; 3])), "withFaces": true, "keySalt": 5,
+                     "solids": [{ "type": "cylinder", "origin": [10, 10, -1], "axis": [0, 0, 1],
+                                  "diameterMm": 6.8, "heightMm": 22 }] }),
+        );
+        let m = mesh_value(&out["mesh"], "mesh", &|_| unreachable!()).unwrap();
+        assert!(!crate::boolean::Solid::new(&m).unwrap().unclean());
+        let t = hole_wall(&m, [10.0, 10.0], 3.4).expect("a wall triangle");
+        let h = run(
+            "hole.find",
+            &json!({ "mesh": out["mesh"], "triangle": t, "at": [10, 10, 19] }),
+        );
+        let made = run(
+            "hole.apply",
+            &json!({ "mesh": out["mesh"], "hole": h, "spec": { "diameterMm": 5.0 }, "withFaces": true, "keySalt": 6 }),
+        );
+        assert!(
+            made["mesh"]["faces"]["table"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| s["kind"] != "other"),
+            "{}",
+            made["mesh"]["faces"]["table"]
+        );
+        let again = run(
+            "hole.find",
+            &json!({ "mesh": made["mesh"], "at": [10, 10, 20], "axis": [0, 0, 1] }),
+        );
+        assert!(
+            (again["diameterMm"].as_f64().unwrap() - 5.0).abs() < 1e-3,
+            "{again}"
+        );
+        assert_eq!(again["through"], true);
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
+    fn subtract_keeps_the_keys_of_the_faces_it_leaves_whole() {
+        use crate::faces::{Faces, Surface};
+        // the answer's faces and the key of each that `pick` matches
+        let keys = |out: &Value, pick: &dyn Fn(&Surface) -> bool| -> Vec<u64> {
+            let f: Faces = serde_json::from_value(out["mesh"]["faces"].clone()).unwrap();
+            assert_eq!(f.keys.len(), f.table.len(), "every face has a key slot");
+            f.table
+                .iter()
+                .zip(&f.keys)
+                .filter(|(s, _)| pick(s))
+                .map(|(_, &k)| k)
+                .collect()
+        };
+        let top = |s: &Surface| matches!(s, Surface::Plane { normal, offset } if normal[2] > 0.999 && (offset - 20.0).abs() < 1e-3);
+        let wall = |x: f64| move |s: &Surface| matches!(s, Surface::Cylinder { origin, radius, .. } if (radius - 3.4).abs() < 1e-3 && (origin[0] - x).abs() < 1e-3);
+        let hole = |x: f64| json!({ "type": "cylinder", "origin": [x, 10, -1], "axis": [0, 0, 1], "diameterMm": 6.8, "heightMm": 22 });
+        let cut = |mesh: Value, solid: Value, salt: u64| {
+            run(
+                "subtract",
+                &json!({ "mesh": mesh, "solids": [solid], "withFaces": true, "keySalt": salt }),
+            )
+        };
+        // a first hole: the box's faces are keyed as a base, and its wall gets a key of the step
+        let one = cut(
+            stored(&build::box_mesh([0.0; 3], [40.0, 20.0, 20.0])),
+            hole(10.0),
+            5,
+        );
+        let [top1] = keys(&one, &top)[..] else {
+            panic!(
+                "one top face: {} {}",
+                one["mesh"]["faces"]["table"], one["mesh"]["faces"]["keys"]
+            )
+        };
+        let [wall1] = keys(&one, &wall(10.0))[..] else {
+            panic!("one wall")
+        };
+        assert!(top1 != 0 && wall1 != 0 && top1 != wall1);
+        // a second hole on the first's answer, rounded to f32 as the app stores it: what it leaves whole keeps its key
+        let two = cut(one["mesh"].clone(), hole(30.0), 6);
+        assert_eq!(keys(&two, &top), [top1]);
+        assert_eq!(keys(&two, &wall(10.0)), [wall1]);
+        let [wall2] = keys(&two, &wall(30.0))[..] else {
+            panic!("one new wall")
+        };
+        assert!(wall2 != 0 && wall2 != wall1 && wall2 != top1);
+        // and the hole tool still finds the first hole after the second cut
+        #[cfg(feature = "holes")]
+        {
+            let m = mesh_value(&two["mesh"], "mesh", &|_| unreachable!()).unwrap();
+            let t = hole_wall(&m, [10.0, 10.0], 3.4).expect("a wall triangle");
+            let h = run(
+                "hole.find",
+                &json!({ "mesh": two["mesh"], "triangle": t, "at": [10, 10, 19.9] }),
+            );
+            assert!((h["diameterMm"].as_f64().unwrap() - 6.8).abs() < 1e-3, "{h}");
+        }
+        // a slot across the top splits it in two: neither piece keeps its key, the walls still do
+        let slot = json!({ "type": "box", "min": [19, -1, 15], "max": [21, 21, 21] });
+        let three = cut(two["mesh"].clone(), slot, 7);
+        assert_eq!(keys(&three, &top), [0, 0]);
+        assert_eq!(keys(&three, &wall(10.0)), [wall1]);
+        assert_eq!(keys(&three, &wall(30.0)), [wall2]);
+        // without a step's salt, the faces still come back, keyless
+        let plain = run(
+            "subtract",
+            &json!({ "mesh": stored(&build::box_mesh([0.0; 3], [40.0, 20.0, 20.0])),
+                                             "solids": [hole(10.0)], "withFaces": true }),
+        );
+        assert!(
+            plain["mesh"]["faces"]["keys"].is_null(),
+            "{}",
+            plain["mesh"]["faces"]
+        );
+        assert!(!plain["mesh"]["faces"]["table"].as_array().unwrap().is_empty());
     }
 
     #[test]

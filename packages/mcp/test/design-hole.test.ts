@@ -99,4 +99,34 @@ describe('a hole made another size on a design', () => {
     const steps = data<{ output: { steps: unknown[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
     expect(steps).toHaveLength(1)
   }, 60_000)
+
+  it('lists the wall of a hole made by Subtract with a face key, and makes that hole another size by it', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: T }>(r).output
+    }
+    const d = (await ok<{ design: string }>('slicerx_design_new', { name: 'Block' })).design
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [10, 10] }, distance_mm: 20 })
+    await ok('slicerx_geom_subtract', { design: d, solids: [{ type: 'cylinder', origin: [10, 10, -1], axis: [0, 0, 1], diameterMm: 6.8, heightMm: 22 }] })
+
+    type Face = { part: number; faceKey: number | null; surfaceType: string; ambiguity: string; dimensions: { diameterMm?: number } }
+    const topology = (await ok<{ topology: { bodyId: string; revision: string; faces: Face[] } }>('slicerx_geom_faces', { design: d, format: 'topology', limit: 500 })).topology
+    const walls = topology.faces.filter((f) => f.surfaceType === 'cylinder')
+    expect(walls).toHaveLength(1)
+    expect(walls[0]).toMatchObject({ part: 0, ambiguity: 'none' })
+    expect(walls[0]!.faceKey).toBeGreaterThan(0)
+    expect(walls[0]!.dimensions.diameterMm).toBeCloseTo(6.8, 3)
+    // the block's faces the cut left whole keep their keys too
+    expect(topology.faces.filter((f) => f.surfaceType === 'plane' && f.faceKey !== null)).toHaveLength(6)
+
+    const reference = { bodyId: topology.bodyId, revision: topology.revision, part: 0, faceKey: walls[0]!.faceKey }
+    const r = await ok<Out>('slicerx_geom_hole', { design: d, face: { topology: reference }, diameter_mm: 5 })
+    // a through hole picked by its wall is entered from the end nearest the point the key stands for
+    expect(r.before).toMatchObject({ diameterMm: 6.8, depthMm: 20, kind: 'through' })
+    expect(r.after).toMatchObject({ diameterMm: 5, depthMm: 20, kind: 'through' })
+    expect(r.after.center.slice(0, 2)).toEqual([10, 10])
+    expect(r.lastStep).toMatchObject({ op: 'hole.apply', state: 'done' })
+  }, 60_000)
 })

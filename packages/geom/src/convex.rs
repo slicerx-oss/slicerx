@@ -834,6 +834,89 @@ pub(crate) fn ray_distance(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
     (t > 0.0).then_some(t)
 }
 
+/// Turns the needles of a cut away: a triangle whose corner lies on its opposite side (within what an f32 corner
+/// can hold) shares that side with a neighbor, and the two become two triangles across the needle's corner. No
+/// corner moves, so the surface is the same; after rounding to f32 such a needle would turn over and cross its
+/// neighbors, and a later boolean on the part would need the robust engine, which loses the faces.
+pub(crate) fn flip_needles(mesh: &mut TriMesh) {
+    let scale = mesh
+        .positions
+        .iter()
+        .flatten()
+        .fold(1.0_f64, |m, c| m.max(c.abs()));
+    let tol = scale * 1e-6;
+    // a triangle whose height over its longest side is under `tol`
+    let thin = |a: V3, b: V3, c: V3| {
+        let long = [vec3::sub(b, a), vec3::sub(c, b), vec3::sub(a, c)]
+            .map(vec3::len)
+            .into_iter()
+            .fold(0.0, f64::max);
+        vec3::len(vec3::tri_normal(a, b, c)) < tol * long
+    };
+    for _ in 0..8 {
+        let mut sides: HashMap<(u32, u32), usize> = HashMap::with_capacity(mesh.triangles.len() * 3);
+        for (t, tri) in mesh.triangles.iter().enumerate() {
+            for j in 0..3 {
+                sides.insert((tri[j], tri[(j + 1) % 3]), t);
+            }
+        }
+        let mut done = vec![false; mesh.triangles.len()];
+        let mut flipped = false;
+        for t in 0..mesh.triangles.len() {
+            if done[t] {
+                continue;
+            }
+            let tri = mesh.triangles[t];
+            let p = mesh.corners(tri);
+            // the longest side, a to b, and the corner c across it
+            let j = (0..3)
+                .max_by(|&i, &k| {
+                    let side = |i: usize| vec3::len(vec3::sub(p[(i + 1) % 3], p[i]));
+                    side(i).total_cmp(&side(k))
+                })
+                .unwrap_or(0);
+            let (a, b, c) = (tri[j], tri[(j + 1) % 3], tri[(j + 2) % 3]);
+            let (pa, pb, pc) = (p[j], p[(j + 1) % 3], p[(j + 2) % 3]);
+            if !thin(pa, pb, pc) {
+                continue;
+            }
+            let Some(&u) = sides.get(&(b, a)) else {
+                continue;
+            };
+            if done[u] || u == t {
+                continue;
+            }
+            let Some(&d) = mesh.triangles[u].iter().find(|&&v| v != a && v != b) else {
+                continue;
+            };
+            let pd = mesh.positions[d as usize];
+            // c between a and b, the two new triangles of some height, and no side c to d already
+            let along = vec3::dot(vec3::sub(pc, pa), vec3::sub(pb, pa))
+                / vec3::dot(vec3::sub(pb, pa), vec3::sub(pb, pa));
+            if !(0.0..=1.0).contains(&along)
+                || c == d
+                || sides.contains_key(&(c, d))
+                || sides.contains_key(&(d, c))
+                || thin(pa, pd, pc)
+                || thin(pd, pb, pc)
+            {
+                continue;
+            }
+            mesh.triangles[t] = [a, d, c];
+            mesh.triangles[u] = [d, b, c];
+            for side in [(a, d), (d, c), (c, a), (d, b), (b, c), (c, d)] {
+                sides.insert(side, t);
+            }
+            done[t] = true;
+            done[u] = true;
+            flipped = true;
+        }
+        if !flipped {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

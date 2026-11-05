@@ -125,13 +125,13 @@ describe('a client models a cable clip as a design', () => {
     expect(again.volumeMm3).toBeCloseTo(rounded.volumeMm3, 2)
     again.sizeMm.forEach((c, k) => expect(c).toBeCloseTo(rounded.sizeMm[k]!, 3))
 
-    // A longer ring, 12 mm instead of 10: the round on the end no longer fits, and the step says by how much.
+    // A longer ring, 12 mm instead of 10: every later step replays on it. The round on the end finds its edge by the
+    // keys of its two faces, which the screw holes' cut keeps, as the end edge is the same.
     const longer = await h.call('slicerx_design_edit_step', { design: again.design, step: 2, value: 6 })
-    const broke = data<{ ok: boolean; output: Omit<Summary, 'steps'> & { steps: Row[] } }>(longer)
-    expect(broke.ok).toBe(false)
-    expect(broke.output.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'broken'])
-    expect(broke.output.steps[4]?.message).toMatch(/at most/)
-    expect(broke.output.sizeMm[1]).toBeCloseTo(12, 3)
+    const grown = data<{ ok: boolean; output: Omit<Summary, 'steps'> & { steps: Row[] } }>(longer)
+    expect(grown.ok, text(longer)).toBe(true)
+    expect(grown.output.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
+    expect(grown.output.sizeMm[1]).toBeCloseTo(12, 3)
 
     // Back to 10 mm, everything goes through again; then a smaller round.
     const back = data<{ output: Omit<Summary, 'steps'> & { steps: Row[] } }>(await h.call('slicerx_design_edit_step', { design: again.design, step: 2, value: 5 })).output
