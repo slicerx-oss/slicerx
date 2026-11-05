@@ -43,6 +43,8 @@ use crate::sketch_edit;
 use crate::sketch_loft;
 #[cfg(feature = "cad")]
 use crate::sketch_solve;
+#[cfg(feature = "cad")]
+use crate::sketch_sweep;
 #[cfg(feature = "threads")]
 use crate::thread::{self, ThreadSpec, ThreadTarget};
 #[cfg(feature = "cad")]
@@ -163,6 +165,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.revolve" => sketch_revolve_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.loft" => sketch_loft_op(req, enc, files),
+        #[cfg(feature = "cad")]
+        "sketch.sweep" => sketch_sweep_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.snaps" => sketch_snaps_op(req, files),
         #[cfg(feature = "cad")]
@@ -412,6 +416,21 @@ fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
         Some(v) => Some(item(v, "target", files)?),
     };
     let tool = sketch_loft::loft(&profiles)?;
+    let world = target.as_ref().map(Item::world);
+    let r = face::apply(tool, op, world.as_ref())?;
+    tool_reply(r, target.as_ref(), op, enc)
+}
+
+#[cfg(feature = "cad")]
+fn sketch_sweep_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let profile: sketch_loft::Profile = field(req, "profile")?;
+    let path: sketch_sweep::Path = field(req, "path")?;
+    let op: face::Operation = field_or_default(req, "operation")?;
+    let target = match req.get("target") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(item(v, "target", files)?),
+    };
+    let tool = sketch_sweep::sweep(&profile, &path)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc)
@@ -1495,5 +1514,57 @@ mod tests {
             one.unwrap_err().to_string(),
             "profiles: a loft needs 2 or more profiles"
         );
+    }
+
+    #[test]
+    fn sketch_sweep_op() {
+        assert!(crate::json::operations().contains(&"sketch.sweep"));
+        let square = json!({ "points": [[-5, -5], [5, -5], [5, 5], [-5, 5]] });
+        let profile = json!({ "loops": [square] });
+        let path = json!({ "points": [[0, 0, 0], [0, 0, 20]] });
+        let out = run("sketch.sweep", &json!({ "profile": profile, "path": path }));
+        assert_eq!(out["watertight"], true);
+        assert_eq!(out["shells"], 1);
+        assert!((out["volumeMm3"].as_f64().unwrap() - 2000.0).abs() < 1e-6);
+        // joined to a plate under it, and cut from a block around it
+        let base =
+            json!({ "mesh": MeshOut::Flat.mesh(&build::box_mesh([-15.0, -15.0, -5.0], [15.0, 15.0, 0.0])) });
+        let joined = run(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": path, "operation": "join", "target": base }),
+        );
+        assert_eq!(joined["shells"], 1);
+        assert!((joined["volumeMm3"].as_f64().unwrap() - (2000.0 + 4500.0)).abs() < 1e-3);
+        let block =
+            json!({ "mesh": MeshOut::Flat.mesh(&build::box_mesh([-20.0, -20.0, 5.0], [20.0, 20.0, 15.0])) });
+        let cut = run(
+            "sketch.sweep",
+            &json!({ "profile": profile, "path": path, "operation": "cut", "target": block }),
+        );
+        assert!((cut["volumeMm3"].as_f64().unwrap() - (16_000.0 - 1000.0)).abs() < 1e-3);
+        assert!(cut["report"]["touches"].as_bool().unwrap());
+        // a path drawn on its own plane: a quarter arc on the bed
+        let ring = json!({ "type": "circle", "center": [0, 0], "diameterMm": 4 });
+        let side = json!({ "origin": [20, 0, 0], "normal": [0, 1, 0], "u": [-1, 0, 0], "v": [0, 0, 1] });
+        let arc = json!({ "loops": [{ "start": [20, 0], "segments": [{ "type": "arc", "center": [0, 0], "sweepDeg": 90 }] }] });
+        let bent = run(
+            "sketch.sweep",
+            &json!({ "profile": { "frame": side, "loops": [ring] }, "path": arc }),
+        );
+        assert_eq!(bent["watertight"], true);
+        let torus = std::f64::consts::PI * 4.0 * 20.0 * std::f64::consts::PI / 2.0;
+        assert!((bent["volumeMm3"].as_f64().unwrap() / torus - 1.0).abs() < 5e-3);
+        let err = |req: Value| call("sketch.sweep", &req.to_string()).unwrap_err().to_string();
+        assert_eq!(
+            err(json!({ "profile": profile, "path": { "points": [[0, 0, 0], [10, 0, 0]] } })),
+            "profile: the profile's plane is parallel to the path where the path starts (within 1 degree); turn the profile to face along the path"
+        );
+        assert_eq!(
+            err(
+                json!({ "profile": profile, "path": { "loops": [{ "start": [0, 0], "segments": [{ "type": "line", "to": [10, 0] }, { "type": "line", "to": [10, 10] }, { "type": "line", "to": [0, 0] }] }] } })
+            ),
+            "path: the path ends where it starts; a sweep path is open, with two ends"
+        );
+        assert_eq!(err(json!({ "path": path })), "request: missing \"profile\"");
     }
 }

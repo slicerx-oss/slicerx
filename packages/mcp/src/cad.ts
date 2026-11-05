@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// CAD tools on the sx-geom engine: sketch and extrude, revolve, loft, push and pull,
+// CAD tools on the sx-geom engine: sketch and extrude, revolve, loft, sweep, push and pull,
 // booleans, fillet and chamfer, and the face and edge lookups a client needs to
 // target them. Each tool is one engine op (docs/cad-fillet.md and
 // docs/build-on-the-engine.md describe the JSON), run like the other geom tools.
@@ -609,6 +609,53 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const chain = z
+    .union([z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }), z.object({ points: z.array(vec2).min(2).max(4096) })])
+    .describe('An open chain: {"start":[u,v],"segments":[...]} of lines and arcs as in a sketch loop, or {"points":[[u,v],...]} as an open polyline. Its end must not come back to its start')
+  const sweepPath = z
+    .object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
+    .describe('The path: one open chain on a plane as {"frame":{...},"loops":[chain]} (no frame: the bed), or an open polyline in space as {"points":[[x,y,z],...]}. Give loops or points, not both')
+  const sweep = defineTool({
+    name: 'geom.sweep',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Sweep one closed sketch profile along an open path to make a solid: the profile keeps its place and turn relative to the path (it does not twist about it), with straight sides between path points and flat ends. The path is an open chain of lines and arcs on a plane, or points in space; it must not cross itself, bend tighter than the profile can follow, or start along the profile\'s plane. The profile does not need to sit on the path. As a new body, joined to a target or cut from it. With "design" it adds a step to the design (read it back with slicerx_design_steps and slicerx_geom_info); with no design it writes the result as an STL.',
+    input: z.object({
+      profile: z.object({ frame: frameSchema.optional(), loops }).optional().describe('The profile: one closed loop of lines and arcs (or a circle) on its plane, as for slicerx_geom_revolve. Holes are not supported yet'),
+      path: sweepPath.optional(),
+      profile_sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch) to use as the profile instead of profile'),
+      path_sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id holding one open chain, to use as the path instead of path'),
+      operation,
+      target: modelArg.optional().describe('The model to join to or cut from'),
+      design: designArg.optional(),
+      part: partArg,
+      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
+    }),
+    async run(i) {
+      if (!i.profile === !i.profile_sketch) throw new ToolInputError(i.profile ? 'profile_sketch: give profile or profile_sketch, not both' : 'profile: give the profile, or a finished sketch id as profile_sketch')
+      if (!i.path === !i.path_sketch) throw new ToolInputError(i.path ? 'path_sketch: give path or path_sketch, not both' : 'path: give the path, or a finished sketch id as path_sketch')
+      if (i.path && !i.path.loops === !i.path.points) throw new ToolInputError('path: give loops or points, not both')
+      const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Swept'
+      if (i.design) {
+        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
+        const d = designOf(i.design)
+        const k = i.profile_sketch ? finished(i.profile_sketch) : null
+        const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(i.profile!.frame), loops: i.profile!.loops }
+        const j = i.path_sketch ? finished(i.path_sketch) : null
+        const path = j ? { frame: j.frame, loops: j.loops } : i.path!.points ? { points: i.path!.points } : { frame: frameOf(i.path!.frame), loops: i.path!.loops }
+        const params: StepParams = plain({ op: 'sketch.sweep', profile, path, operation: i.operation, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        return stepOut(d, verb)
+      }
+      if (i.profile_sketch || i.path_sketch) throw new ToolInputError('profile_sketch: finished sketches sweep on a design; give its id as design')
+      const path = i.path!.points ? { points: i.path!.points } : { ...plane(i.path!.frame), loops: i.path!.loops }
+      const out = await call('sketch.sweep', { profile: { ...plane(i.profile!.frame), loops: i.profile!.loops }, path, operation: i.operation, ...(await target(i.target, i.operation)) })
+      return { summary: `${verb} the profile along the path`, output: out }
+    },
+  })
+
   const sketch = defineTool({
     name: 'design.sketch',
     version: '1.1.0',
@@ -1078,5 +1125,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, loft, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }
