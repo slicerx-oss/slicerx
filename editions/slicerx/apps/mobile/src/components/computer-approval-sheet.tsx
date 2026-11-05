@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import type { ApprovalRequest } from '@slicerx/contracts'
-import { ApprovalCard } from './pilot/approval-card'
+import { ApprovalCard, type PlateCheckSource } from './pilot/approval-card'
 import { Sheet } from './sheet'
 import { t } from './theme'
 
@@ -23,6 +23,8 @@ export interface PendingComputerApproval {
   code?: string | undefined
   /** Answered somewhere else: the card shows this note instead of its buttons. */
   answered?: string | undefined
+  /** A start approved from afar: the card runs a plate check and shows the still beside the empty plate. */
+  plate?: PlateCheckSource | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 
@@ -83,6 +85,7 @@ export function ComputerApprovalSheet({ pending, onSettled, now = Date.now }: Co
           blocked={a.blocked}
           code={a.code}
           answered={a.answered}
+          plate={a.plate}
           now={now}
           onApprove={async (r, o) => {
             await a.decide('approve', o)

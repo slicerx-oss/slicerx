@@ -228,6 +228,16 @@ describe('agent cards', () => {
     stop()
   })
 
+  it('words a skip of one object from the hub-checked work, and blocks one it cannot show', () => {
+    const skip = (id: string) => card({ title: 'Cancel the print', actions: [{ action: 'printer.skip', target: 'bay-4', paramsHash: 's' }], work: { kind: 'skip', printerId: 'bay-4', id, epoch: 3 } })
+    const t = describeCard(skip('lid.stl_id_0_copy_0'), names)
+    expect(t.title).toBe('Skip an object on Bay 4?')
+    expect(t.startsPrint).toBe(false)
+    expect(t.blocked).toBeUndefined()
+    expect(t.lines.some((l) => l.startsWith('Object: lid.stl_id_0_copy_0.'))).toBe(true)
+    expect(describeCard(skip('lid M112'), names).blocked).toMatch(/cannot show which object/)
+  })
+
   it('describes a pause or cancel a paired phone asked for from the hub-verified action', () => {
     const pause = describeCard(card({ origin: 'phone', title: 'Start a print?', actions: [{ action: 'printer.pause', target: 'bay-4', paramsHash: 'p' }] } as Partial<HubCard>), names)
     expect(pause.title).toBe('Pause the print on Bay 4?')

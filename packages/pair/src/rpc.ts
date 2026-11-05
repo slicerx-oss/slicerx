@@ -111,7 +111,8 @@ export const ApprovalRequestSchema = z.looseObject({
  * hashes: print to `printer.upload` `{printerId, name, sha256}` and `printer.start`
  * `{printerId, name, opts, sha256}` (`opts` `{}` when absent); resume, pause and cancel to
  * `{printerId}`; gcode to `{printerId, line}`; adjust to `{printerId, change}`; plugin to `plugin.call`
- * `{pluginId, tool, input}`, targeting the connected app. A phone shows the
+ * `{pluginId, tool, input}`, targeting the connected app; skip to `printer.skip` `{printerId, id}` (the
+ * object's label; `epoch` is the job the hub pinned and is not hashed). A phone shows the
  * summary only when every hash matches, and offers no Approve when one does not. `sizeBytes` is the
  * hub's count of the bytes it holds; the hash binds the name and content hash.
  */
@@ -126,10 +127,45 @@ export const WorkSummary = z.discriminatedUnion('kind', [
   // One command a card shows whole, the hub's own rule (`MAX_GCODE_LINE` in sx-connect).
   z.object({ kind: z.literal('gcode'), printerId: z.string().max(128), line: z.string().max(96).regex(/^[\x20-\x7e]+$/) }),
   z.object({ kind: z.literal('adjust'), printerId: z.string().max(128), change: z.unknown() }),
+  // One object of the running print, by the label the printer lists it under.
+  z.object({ kind: z.literal('skip'), printerId: z.string().max(128), id: z.string().min(1).max(64).regex(/^[\x21-\x7e]+$/), epoch: z.number().int().nonnegative().nullable().optional() }),
   // A connected app's tool, hashed to `plugin.call` `{pluginId, tool, input}`; `printerId` is empty.
   z.object({ kind: z.literal('plugin'), printerId: z.string().max(128), pluginId: z.enum(['spoolman', 'home-assistant']), tool: z.string().max(64).regex(/^[a-z0-9_]+$/), input: z.looseObject({}) }),
 ])
 export type WorkSummary = z.infer<typeof WorkSummary>
+
+/** A start card's remote start word from the hub: `enabled` false with the `reason` (`off`, `too_hot`, `chamber` and so on). */
+export const RemoteStartCard = z.object({
+  printerId: z.string().max(128),
+  enabled: z.boolean(),
+  /** How old a plate check may be when the person approves, in seconds. */
+  plateWindowSeconds: z.number().int().positive().max(3600),
+  reason: z.string().max(40).optional(),
+  message: z.string().max(300).optional(),
+})
+export type RemoteStartCard = z.infer<typeof RemoteStartCard>
+
+/** A plate check for a start card: the camera's still beside the person's empty-plate picture. */
+export const PlateCheck = z.object({
+  printerId: z.string().max(128),
+  /** A detector answered. */
+  checked: z.boolean(),
+  /** The remote start rule takes this look now (clear, compared, fresh). */
+  passes: z.boolean(),
+  plateWindowSeconds: z.number().int().positive().max(3600),
+  clear: z.boolean().nullable().optional(),
+  /** The detector compared the still with the empty-plate picture. */
+  compared: z.boolean().optional(),
+  checkedAt: z.number().int().nonnegative().optional(),
+  /** Until when, Unix milliseconds, an approval may rely on this look. */
+  passUntil: z.number().int().nonnegative().optional(),
+  reason: z.string().max(40).optional(),
+  message: z.string().max(300).optional(),
+  still: z.object({ contentType: z.string().max(60), dataB64: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).max(340_000) }).nullable(),
+  reference: z.object({ contentType: z.string().max(60), dataB64: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).max(340_000) }).nullable(),
+  referenceAt: z.number().int().nonnegative().optional(),
+})
+export type PlateCheck = z.infer<typeof PlateCheck>
 
 /** An approval the phone may decide: Pilot's, the host's own, or one this phone's job raised. */
 export const ApprovalView = z.object({
@@ -144,6 +180,13 @@ export const ApprovalView = z.object({
    * existed parses the list and shows the card with no Approve.
    */
   connectedAppWork: WorkSummary.optional(),
+  /** Skipping one object (kind `skip`), under its own key for the same reason. Approvable from afar. */
+  objectWork: WorkSummary.optional(),
+  /**
+   * On a card that starts a print (sx-link): whether this hub could let a phone away from home approve it under the
+   * remote start rule once a fresh plate check passes (`plate.check`), and if not, why.
+   */
+  remoteStart: RemoteStartCard.optional(),
 })
 export interface ApprovalView {
   request: ApprovalRequest
@@ -151,6 +194,8 @@ export interface ApprovalView {
   requestedBy?: string
   work?: WorkSummary
   connectedAppWork?: WorkSummary
+  objectWork?: WorkSummary
+  remoteStart?: RemoteStartCard
 }
 
 /** The relay's numbers for the hub the phone reaches (sx-link `remote.status.quota`). */
@@ -180,6 +225,8 @@ export const HostInfo = z.object({
   stun: z.string().max(200).nullable().optional(),
   /** mimir's question cards through `mimir.questions` and `mimir.answer`. Absent on hosts from before they existed. */
   mimir: z.boolean().optional(),
+  /** Starts approvable from afar under the remote start rule, with `plate.check`. Absent on hosts from before it. */
+  remoteStart: z.boolean().optional(),
 })
 export type HostInfo = z.infer<typeof HostInfo>
 
@@ -334,6 +381,8 @@ export const METHODS = {
   'mimir.questions': { params: z.object({}), result: MimirState },
   /** Approver phones: answers the waiting question. `not_found` when it was answered already or is no longer waiting. */
   'mimir.answer': { params: MimirAnswerParams, result: z.object({ answered: z.literal(true) }) },
+  /** Approver phones, on a printer with remote start on: runs the plate check now for a start card. */
+  'plate.check': { params: z.object({ printerId: PrinterId }), result: PlateCheck },
 } as const
 
 export type Method = keyof typeof METHODS
@@ -370,6 +419,7 @@ export interface ResultMap {
   'remote.quota': RemoteQuota | null
   'mimir.questions': MimirState
   'mimir.answer': { answered: true }
+  'plate.check': PlateCheck
 }
 
 export const EVENTS = {

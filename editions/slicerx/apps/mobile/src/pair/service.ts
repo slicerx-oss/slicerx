@@ -16,6 +16,7 @@ import {
   type PairClient,
   type PairedHost,
   type PairedPrinterHost,
+  type PlateCheck,
   type RelayConnection,
   type SliceWhere,
 } from '@slicerx/pair'
@@ -41,6 +42,8 @@ export interface ComputerApproval {
   via: 'lan' | 'relay'
   /** Call only from the approval card, after device auth. Signs the decision with this phone's key. */
   decide(decision: 'approve' | 'deny', opts?: { bedClear?: boolean }): Promise<void>
+  /** A plate check for a start card, on a computer whose hub offers remote start. */
+  checkPlate?: (printerId: string) => Promise<PlateCheck>
 }
 
 /** A computer's word that one of its requests was answered (`approval.resolved`), here or somewhere else. */
@@ -175,6 +178,7 @@ async function createService(pocket: PocketHost): Promise<PairService> {
             view,
             via: conn.via,
             decide: (d, o) => (d === 'approve' ? conn.approve(view, { bedClear: o?.bedClear === true }) : conn.deny(view)),
+            ...(conn.info.remoteStart ? { checkPlate: (printerId: string) => conn.plateCheck(printerId) } : {}),
           }
           for (const cb of [...approvalCbs]) cb(a)
         })

@@ -11,6 +11,7 @@ type Work =
   | { kind: 'resume' | 'pause' | 'cancel'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: unknown }
+  | { kind: 'skip'; printerId: string; id: string }
   | { kind: 'plugin'; printerId: string; pluginId: string; tool: string; input: Record<string, unknown> }
 
 export const MISMATCH = 'This request does not match what your computer checked. Do not approve it'
@@ -45,6 +46,9 @@ export function readWork(request: ApprovalRequest): Work | null | 'unknown' {
       return typeof raw['line'] === 'string' && plainGcodeLine(raw['line']) ? { kind: 'gcode', printerId, line: raw['line'] } : 'unknown'
     case 'adjust':
       return { kind: 'adjust', printerId, change: raw['change'] }
+    case 'skip':
+      // An object label this card can show whole: printable ASCII with no spaces, at most 64 characters.
+      return typeof raw['id'] === 'string' && /^[\x21-\x7e]{1,64}$/.test(raw['id']) ? { kind: 'skip', printerId, id: raw['id'] } : 'unknown'
     case 'plugin':
       return typeof raw['pluginId'] === 'string' && typeof raw['tool'] === 'string' && obj(raw['input'])
         ? { kind: 'plugin', printerId, pluginId: raw['pluginId'], tool: raw['tool'], input: raw['input'] }
@@ -71,6 +75,8 @@ async function expected(w: Work): Promise<{ action: string; target: string; para
       return [{ action: 'printer.gcode', target: t, paramsHash: await hashParams({ printerId: t, line: w.line }) }]
     case 'adjust':
       return [{ action: 'printer.adjust', target: t, paramsHash: await hashParams({ printerId: t, change: w.change }) }]
+    case 'skip':
+      return [{ action: 'printer.skip', target: t, paramsHash: await hashParams({ printerId: t, id: w.id }) }]
     case 'plugin':
       return [{ action: 'plugin.call', target: w.pluginId, paramsHash: await hashParams({ pluginId: w.pluginId, tool: w.tool, input: w.input }) }]
   }
@@ -130,6 +136,8 @@ export async function checkWork(request: ApprovalRequest, printerName: (id: stri
       return { state: 'verified', title: `Send G-code to ${on}?`, lines: [`Printer ${on}`], code: w.line }
     case 'adjust':
       return { state: 'verified', title: `Change the running print on ${on}?`, lines: [`Change ${tidy(JSON.stringify(w.change), 160)}`, `Printer ${on}`] }
+    case 'skip':
+      return { state: 'verified', title: `Skip ${w.id} on ${on}?`, lines: [`Only this object stops printing; the rest of the plate carries on`, `Printer ${on}`] }
     case 'resume':
       return { state: 'verified', title: `Resume the print on ${on}?`, lines: [`Printer ${on}`] }
     case 'pause':

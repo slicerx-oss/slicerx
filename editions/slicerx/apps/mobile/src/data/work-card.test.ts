@@ -106,3 +106,13 @@ it('offers no Approve for a connected app or tool it does not know', async () =>
     expect((await checkWork(r, name)).state).toBe('mismatch')
   }
 })
+
+it('words a skip of one object and refuses a label that could carry a second command', async () => {
+  const req = await printRequest()
+  const id = 'lid.stl_id_0_copy_0'
+  const skip = { ...req, actions: [{ action: 'printer.skip', target: 'bay-2', paramsHash: await hashParams({ printerId: 'bay-2', id }) }], work: { kind: 'skip', printerId: 'bay-2', id, epoch: 7 } }
+  expect(await checkWork(skip as never, name)).toMatchObject({ state: 'verified', title: `Skip ${id} on Bay 2?` })
+  // The epoch is the job the hub pinned, not part of the hash; another object is a mismatch.
+  expect(await checkWork({ ...skip, work: { kind: 'skip', printerId: 'bay-2', id: 'base' } } as never, name)).toEqual({ state: 'mismatch' })
+  expect(await checkWork({ ...skip, work: { kind: 'skip', printerId: 'bay-2', id: 'lid M112' } } as never, name)).toEqual({ state: 'mismatch' })
+})

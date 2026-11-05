@@ -61,6 +61,7 @@ export const SIDE_EFFECT_ACTIONS = [
   'printer.cancel',
   'printer.gcode',
   'printer.adjust',
+  'printer.skip',
   'plugin.call',
   'profile.write',
   'project.replace',
@@ -80,6 +81,7 @@ export type SideEffectAction = (typeof SIDE_EFFECT_ACTIONS)[number]
  * - printer.gcode: `{ printerId, line }`
  * - printer.adjust: `{ printerId, change }`, the change to a running print as the hub checks it
  *   or `{ printerId, slot }`, a SlotSetting written to an AMS slot (app only)
+ * - printer.skip: `{ printerId, id }`, one object of the running print to stop printing (the hub pins the job)
  * - plugin.call: `{ pluginId, tool, input }`
  * - profile.write: `{ profileId, changes }`
  * - project.replace: `{ objectIds, with }`

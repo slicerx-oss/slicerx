@@ -26,6 +26,32 @@ export interface DeviceHub {
     startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean }): Promise<unknown>
   }
   bed: { state(printerId: string): Promise<{ askOnPrint: boolean; epoch?: number }> }
+  /** Remote start (link-client `remoteStart`); absent on a hub from before it. */
+  remoteStart?: {
+    get(printerId?: string): Promise<{ printers: RemoteStartRow[]; plateWindowSeconds: number }>
+    set(printerId: string, enabled: boolean, limits?: { maxNozzleC?: number; maxBedC?: number }): Promise<RemoteStartRow>
+  }
+}
+
+/** One printer's remote start setting as the hub holds it (link-client `RemoteStartRow`). */
+export interface RemoteStartRow {
+  printerId: string
+  enabled: boolean
+  maxNozzleC: number
+  maxBedC: number
+  guard: boolean
+  plateCheck: { checkedAt: string; clear: boolean | null; compared: boolean; passes: boolean; reason: string | null } | null
+}
+
+/** The limits the hub takes for a remote start, in °C (`remote_start.rs`). */
+export const REMOTE_NOZZLE_RANGE = [150, 300] as const
+export const REMOTE_BED_RANGE = [0, 120] as const
+
+/** A typed limit the hub would take, or null. */
+export function remoteLimit(text: string, [lo, hi]: readonly [number, number]): number | null {
+  if (!/^\d{1,3}$/.test(text.trim())) return null
+  const n = Number(text.trim())
+  return n >= lo && n <= hi ? n : null
 }
 
 /** The printer host as a hub with the device page methods, or null (a demo or cloud host). */
