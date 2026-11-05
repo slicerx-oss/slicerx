@@ -11,7 +11,6 @@ import {
   type RemoteQuota,
   type ApprovalView,
   type HostConnection,
-  type MimirEnded,
   type MimirQuestion,
   type MimirState,
   type PairClient,
@@ -23,6 +22,7 @@ import {
 import Constants from 'expo-constants'
 import * as ExpoCrypto from 'expo-crypto'
 import { Alert, Platform } from 'react-native'
+import { hookQuestions, type ComputerQuestion } from './questions'
 import type { PocketHost } from '../host'
 import { secureIdentityStore, securePairingStore } from './storage'
 
@@ -52,17 +52,6 @@ export interface ComputerResolved {
   by: string
   /** Which kind of client answered, when the computer says. */
   via?: 'app' | 'phone' | 'partner' | 'agent' | undefined
-}
-
-/** A paired computer's word on the question mimir waits on there (approver phones only). */
-export interface ComputerQuestion {
-  pairingId: string
-  hostName: string
-  live: boolean
-  waiting: MimirQuestion | null
-  ended?: MimirEnded | undefined
-  /** False once the connection dropped. */
-  reachable?: boolean | undefined
 }
 
 export interface PairService {
@@ -157,8 +146,6 @@ async function createService(pocket: PocketHost): Promise<PairService> {
   const tellQuestion = (q: ComputerQuestion) => {
     for (const cb of [...questionCbs]) cb(q)
   }
-  /** A computer that hands this phone its mimir questions: it says so, and this phone may approve there. */
-  const asks = (conn: HostConnection) => conn.info.mimir === true && conn.info.rights.approve
   const notify = () => {
     for (const cb of [...changed]) cb()
   }
@@ -176,16 +163,9 @@ async function createService(pocket: PocketHost): Promise<PairService> {
         conn.onClose(() => {
           live.delete(pairingId)
           setOnline(pairingId, false)
-          if (asks(conn)) tellQuestion({ pairingId, hostName: conn.info.identity.name, live: false, waiting: null, reachable: false })
           void reload()
         })
-        if (asks(conn)) {
-          conn.on('mimir.question', (st) => tellQuestion({ pairingId, hostName: conn.info.identity.name, ...st }))
-          conn.mimirQuestions().then(
-            (st) => tellQuestion({ pairingId, hostName: conn.info.identity.name, ...st }),
-            () => undefined,
-          )
-        }
+        hookQuestions(conn, pairingId, tellQuestion)
         conn.on('approval.request', async (view) => {
           // Requests the printer adapter raised for this phone are answered by the adapter itself.
           if (await printerHosts.get(pairingId)?.ownsSettled(view.request.id)) return
