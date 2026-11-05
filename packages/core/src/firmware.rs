@@ -870,19 +870,7 @@ pub fn thumbnail_marker(cfg: &PrintConfig) -> String {
     }
     let list: Vec<String> = ok
         .iter()
-        .map(|s| {
-            format!(
-                "{}x{}/{}",
-                s.width,
-                s.height,
-                match s.format {
-                    crate::thumbnail::Format::Png => "PNG",
-                    crate::thumbnail::Format::Jpg => "JPG",
-                    crate::thumbnail::Format::Qoi => "QOI",
-                    crate::thumbnail::Format::BttTft => "BTT_TFT",
-                }
-            )
-        })
+        .map(|s| format!("{}x{}/{}", s.width, s.height, s.format.text()))
         .collect();
     format!(";@T {}\n", list.join(","))
 }
@@ -1468,6 +1456,15 @@ pub fn finalize_timed(
                     .collect();
                 let (specs, _) = crate::thumbnail::parse_specs(&list, "PNG");
                 out.extend_from_slice(crate::thumbnail::comment_blocks(&specs, img).as_bytes());
+                // COLPIC images open the file, ahead of the header written so far. Their lines end with a bare
+                // CR; one LF after the last puts what follows on a line of its own for readers that split on LF.
+                let colpic = crate::thumbnail::colpic_blocks(&specs, img);
+                if !colpic.is_empty() {
+                    let mut head = colpic.into_bytes();
+                    head.push(b'\n');
+                    head.append(&mut out);
+                    out = head;
+                }
             }
             continue;
         }

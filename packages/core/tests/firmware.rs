@@ -511,6 +511,97 @@ fn thumbnails_are_drawn_from_the_toolpaths_in_the_requested_formats() {
     assert_eq!(two_objects(c2, json!({"shards": 1})).gcode, r.gcode);
 }
 
+/// The width, height and first pixel (`RGB565`) of the COLPIC image tagged `tag` in a block's text, read from
+/// the format: lines split on CR, characters back to 6-bit values (`~` is 44), the header, the palette and
+/// the first run.
+#[allow(clippy::cast_possible_truncation, reason = "bytes of a 24-bit group")]
+fn colpic_head(head: &str, tag: &str) -> (u32, u32, u16) {
+    let (one, two) = (format!(";{tag}:"), format!(";;{tag}:"));
+    let text: String = head
+        .split('\r')
+        .filter_map(|l| l.strip_prefix(&two).or_else(|| l.strip_prefix(&one)))
+        .collect();
+    assert!(!text.is_empty(), "no {tag} image");
+    let mut bytes = Vec::new();
+    for q in text.as_bytes().chunks(4) {
+        let v: Vec<u32> = q
+            .iter()
+            .map(|&c| if c == b'~' { 44 } else { u32::from(c - 48) })
+            .collect();
+        let n = (v[0] << 18) | (v[1] << 12) | (v[2] << 6) | v[3];
+        bytes.extend([(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+    }
+    let le = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
+    assert_eq!(&bytes[12..16], &[0x3C, 0xC3, 0xDD, 0x05]);
+    let pal = le(16) as usize;
+    let mut at = 32 + pal;
+    let mut page = 0;
+    if bytes[at] >> 5 == 7 {
+        page = usize::from(bytes[at] & 31);
+        at += 1;
+    }
+    let i = 32 + 2 * (page * 32 + usize::from(bytes[at] & 31));
+    (le(4), le(8), u16::from_le_bytes([bytes[i], bytes[i + 1]]))
+}
+
+#[test]
+fn colpic_thumbnails_open_the_file_large_image_first() {
+    let config = || {
+        let mut c = base_config();
+        c["thumbnails"] = json!(["320x320/COLPIC/#30394F", "160x160/COLPIC/#30394F", "160x160/PNG"]);
+        c["thumbnails_format"] = json!("COLPIC");
+        c
+    };
+    let r = two_objects(config(), json!({"shards": 3}));
+    let g = text(&r);
+    assert!(
+        g.starts_with(";gimage:") || g.starts_with("\r;;gimage:"),
+        "{g:.40}"
+    );
+    // Every COLPIC line ends with a bare CR, so both images sit before the file's first LF.
+    let head = &g[..g.find('\n').unwrap()];
+    let (gi, si) = (head.find(";gimage:").unwrap(), head.find(";simage:").unwrap());
+    assert!(gi < si);
+    assert!(head.split('\r').all(|l| l.len() <= 1024));
+    // The corners are the background, #30394F.
+    let bg: u16 = ((0x30 >> 3) << 11) | ((0x39 >> 2) << 5) | (0x4F >> 3);
+    assert_eq!(colpic_head(&head[..si], "gimage"), (320, 320, bg));
+    assert_eq!(colpic_head(&head[si..], "simage"), (160, 160, bg));
+    assert_eq!(
+        g.matches(";gimage:").count() + g.matches(";simage:").count(),
+        head.matches("image:").count()
+    );
+    // The PNG entry still gets its own block in the header, and nothing is reported as skipped.
+    assert!(g.contains("; thumbnail begin 160x160 "));
+    // No marker is left behind (the COLPIC text itself may hold `;@`).
+    assert!(!g[head.len()..].contains(";@"));
+    assert!(!r.report.warnings.iter().any(|w| w.message.contains("COLPIC")));
+    assert_eq!(two_objects(config(), json!({"shards": 1})).gcode, r.gcode);
+}
+
+#[test]
+fn colpic_thumbnails_leave_the_first_command_on_its_own_line() {
+    // `file_start_gcode` is the first thing after the images: an LF reader must see it as its own line, and
+    // line numbering must count it as on a file without COLPIC.
+    let numbered = |thumbnails: Value| {
+        let mut c = base_config();
+        c["file_start_gcode"] = json!("M117 hi");
+        c["gcode_add_line_number"] = json!(true);
+        c["thumbnails"] = thumbnails;
+        text(&two_objects(c, json!({})))
+    };
+    let plain = numbered(json!(["160x160/PNG"]));
+    let colpic = numbered(json!([
+        "320x320/COLPIC/#30394F",
+        "160x160/COLPIC/#30394F",
+        "160x160/PNG"
+    ]));
+    assert!(plain.lines().any(|l| l == "N1 M117 hi"));
+    assert!(colpic.lines().any(|l| l == "N1 M117 hi"));
+    let numbers = |g: &str| g.lines().filter(|l| l.starts_with('N')).count();
+    assert_eq!(numbers(&colpic), numbers(&plain));
+}
+
 #[test]
 fn a_host_image_replaces_the_drawn_one_and_a_bad_one_is_an_error() {
     let mut c = base_config();
