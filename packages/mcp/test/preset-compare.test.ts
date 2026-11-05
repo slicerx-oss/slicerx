@@ -6,6 +6,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { writeZip } from '../src/zip'
 import { connect, data, text } from './helpers'
 
 interface Row { key: string; label: string; differs: boolean; a?: unknown; b?: unknown; aText: string; bText: string; lines?: { added: number; removed: number; unified: string } }
@@ -71,18 +72,46 @@ describe('slicerx_preset_compare', () => {
     }
   })
 
-  it('refuses two kinds, a missing second side, and a parent that is not known', async () => {
+  it('refuses each bad call with its code and reason, before reading anything it does not need', async () => {
     const h = await connect()
     try {
-      const kinds = await h.call('slicerx_preset_compare', { a: 'process:standard', b: 'machine:bambu-a1' })
-      expect(kinds.isError).toBe(true)
-      expect(text(kinds)).toMatch(/process.*printer|same kind/i)
-      expect((await h.call('slicerx_preset_compare', { a: 'process:standard' })).isError).toBe(true)
+      const pla = join(h.dir, 'My PLA.json')
+      writeFileSync(pla, JSON.stringify({ name: 'My PLA', inherits: 'Bambu PLA Basic @BBL A1', filament_settings_id: ['My PLA'], nozzle_temperature: ['231'] }))
       const orphan = join(h.dir, 'Orphan.json')
       writeFileSync(orphan, JSON.stringify({ type: 'filament', name: 'Orphan', inherits: 'No Such PLA @Nowhere', nozzle_temperature: ['200'] }))
-      const r = await h.call('slicerx_preset_compare', { a_file: orphan, against: 'parent' })
-      expect(r.isError).toBe(true)
-      expect(text(r)).toMatch(/parent/i)
+      const loose = join(h.dir, 'Loose.json')
+      writeFileSync(loose, JSON.stringify({ type: 'filament', name: 'Loose', filament_settings_id: ['Loose'], nozzle_temperature: ['200'] }))
+      const bundle = join(h.dir, 'two.zip')
+      writeFileSync(bundle, writeZip([
+        { name: 'a.json', data: JSON.stringify({ type: 'filament', name: 'One', filament_settings_id: ['One'], nozzle_temperature: ['200'] }) },
+        { name: 'b.json', data: JSON.stringify({ type: 'filament', name: 'Two', filament_settings_id: ['Two'], nozzle_temperature: ['210'] }) },
+      ]))
+      const cases: [string, Record<string, unknown>, string, string][] = [
+        ['no first preset', { b: 'process:fine' }, 'invalid_input', 'no_first'],
+        ['a and a_file', { a: 'process:standard', a_file: pla, against: 'stock' }, 'invalid_input', 'two_firsts'],
+        ['no second side', { a: 'process:standard' }, 'invalid_input', 'no_second'],
+        ['b and against', { a: 'process:standard', b: 'process:fine', against: 'stock' }, 'invalid_input', 'two_seconds'],
+        ['b_file and b', { a: 'process:standard', b: 'process:fine', b_file: pla }, 'invalid_input', 'two_seconds'],
+        ['an unknown profile', { a: 'process:nope-nope', against: 'stock' }, 'unknown_profile', 'unknown_profile'],
+        ['two kinds', { a: 'process:standard', b: 'machine:bambu-a1' }, 'invalid_input', 'kinds_differ'],
+        ['a profile against a preset file of another kind', { a: 'process:standard', b_file: pla }, 'invalid_input', 'kinds_differ'],
+        ['a bundle of several presets', { a_file: bundle, against: 'stock' }, 'invalid_input', 'several_presets'],
+        ['the parent of a profile, which names none', { a: 'process:standard', against: 'parent' }, 'invalid_input', 'no_parent'],
+        ['the parent of a preset file that names none', { a_file: loose, against: 'parent' }, 'invalid_input', 'no_parent'],
+        ['a parent that does not ship', { a_file: orphan, against: 'parent' }, 'unknown_profile', 'parent_not_shipped'],
+      ]
+      for (const [what, args, code, reason] of cases) {
+        const r = await h.call('slicerx_preset_compare', args)
+        expect(r.isError, what).toBe(true)
+        const e = data<{ error: { code: string; message: string; details?: { reason?: string } } }>(r).error
+        expect(e.code, what).toBe(code)
+        expect(e.details?.reason, what).toBe(reason)
+      }
+      const orphanMessage = data<{ error: { message: string } }>(await h.call('slicerx_preset_compare', { a_file: orphan, against: 'parent' })).error.message
+      expect(orphanMessage).toContain('"No Such PLA @Nowhere"')
+      // A shipped parent goes through.
+      const ok = await h.call('slicerx_preset_compare', { a_file: pla, against: 'parent' })
+      expect(ok.isError, text(ok)).toBeFalsy()
     } finally {
       await h.client.close()
     }
