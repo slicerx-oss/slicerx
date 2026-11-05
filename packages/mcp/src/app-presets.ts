@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The person's saved presets in the open app, through the app link, as Settings > Presets > Compare presets has them:
 // listed, compared with another saved preset, the maker preset one was made from or the stock settings (the rows the
-// panel lists, with keys), one setting's value copied into a preset, and that copy put back. Copying changes the saved
-// preset, so it needs the link's edit grant. Nothing creates, renames, deletes or applies a preset.
+// panel lists, with keys), one setting's value copied into a preset, and that one setting put back. Each copy and undo
+// changes a saved preset, which the link's grant does not cover, so the person approves it in the app every time, and
+// it is the saved profile permission class here. Nothing creates, renames, deletes or applies a preset.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
@@ -12,10 +13,13 @@ import { ToolInputError, type ErrorCode } from './errors'
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', not_found: 'not_found', busy: 'busy', not_ready: 'busy', refused: 'not_supported', read_only: 'not_supported', denied: 'not_supported', bad_request: 'invalid_input' }
 const OFF = ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']
 
-async function call<T>(link: AppLinkCaller | undefined, appName: string, method: string, args: Record<string, unknown>): Promise<T> {
+/** A copy or undo waits while the person answers in the app; the hub lets a call wait at most this long. */
+export const PERSON_WAIT_MS = 120_000
+
+async function call<T>(link: AppLinkCaller | undefined, appName: string, method: string, args: Record<string, unknown>, opts?: { timeoutMs?: number }): Promise<T> {
   if (!link) throw new ToolInputError(`Needs ${appName} open with the app link on (start this server with --printers link).`, 'not_configured')
   try {
-    return await link.call<T>(method, args)
+    return await (opts ? link.call<T>(method, args, opts) : link.call<T>(method, args))
   } catch (e) {
     const code = String((e as { code?: unknown }).code ?? '')
     const message = e instanceof Error ? e.message : String((e as { message?: unknown }).message ?? e)
@@ -68,12 +72,12 @@ export function appPresetTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.preset_copy',
     version: '1.0.0',
     source: 'command',
-    permission: 'slice',
-    description: `Copy one setting's value into a preset the person saved in the open ${appName} app, from the second side of a compare (with another saved preset, or against "parent" or "stock"), as the copy button in Compare presets does. key is a setting key that slicerx_app_preset_compare lists as differing. A value equal to what the preset gets without it is dropped from the preset instead of being kept as a change; when the preset is in use, the plate follows. Answers with the value the preset now has and an undoId for slicerx_app_preset_undo. Needs the app link's edit grant.`,
+    permission: 'profile',
+    description: `Copy one setting's value into a preset the person saved in the open ${appName} app, from the second side of a compare (with another saved preset, or against "parent" or "stock"), as the copy button in Compare presets does. key is a setting key that slicerx_app_preset_compare lists as differing. A value equal to what the preset gets without it is dropped from the preset instead of being kept as a change; when the preset is in use, the plate follows. The person approves each copy in the app (the call waits for them, up to 2 minutes); a decline is not_supported with details.reason "declined". Answers with value (what the preset gives now), kept (whether the preset holds it as its own change) and an undoId for slicerx_app_preset_undo. Needs the app link's edit grant.`,
     input: z.object({ preset, key: z.string().trim().min(1).max(100).describe('The setting key, from slicerx_app_preset_compare'), ...second }),
     async run(i) {
       oneSecond(i)
-      const out = await call<{ preset: Listed; label: string; value: unknown; from: string; undoId: string }>(link, appName, 'presets.copy', pick({ preset: i.preset, key: i.key, with: i.with, against: i.against }))
+      const out = await call<{ preset: Listed; label: string; value: unknown; from: string; undoId: string }>(link, appName, 'presets.copy', pick({ preset: i.preset, key: i.key, with: i.with, against: i.against }), { timeoutMs: PERSON_WAIT_MS })
       return { summary: `${out.label} in ${out.preset.name} now has the ${out.from} value (undo with ${out.undoId}).`, output: out }
     },
   })
@@ -81,11 +85,11 @@ export function appPresetTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.preset_undo',
     version: '1.0.0',
     source: 'command',
-    permission: 'slice',
-    description: `Put back a copy slicerx_app_preset_copy made in the open ${appName} app, by its undoId. Refused when the preset changed again after the copy (not_supported), and for an undoId already used or unknown (not_found). Answers with the value read back. Needs the app link's edit grant.`,
+    permission: 'profile',
+    description: `Put back a copy slicerx_app_preset_copy made in the open ${appName} app, by its undoId: only the setting it copied goes back, and only while that setting still holds the copied value (otherwise not_supported, details.reason "changed"). An undoId already used or unknown, or a preset since deleted, is not_found. The person approves it in the app, as a copy. Answers with the value read back. Needs the app link's edit grant.`,
     input: z.object({ undoId: z.string().trim().min(1).max(40).describe('The undoId from slicerx_app_preset_copy') }),
     async run(i) {
-      const out = await call<{ preset: Listed; key: string; value: unknown }>(link, appName, 'presets.undo', { undoId: i.undoId })
+      const out = await call<{ preset: Listed; key: string; value: unknown }>(link, appName, 'presets.undo', { undoId: i.undoId }, { timeoutMs: PERSON_WAIT_MS })
       return { summary: `Put back ${out.key} in ${out.preset.name}.`, output: out }
     },
   })
