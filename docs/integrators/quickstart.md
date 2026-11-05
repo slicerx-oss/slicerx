@@ -303,6 +303,8 @@ A local slice needs no account and no token, and neither does the viewport or th
 
 `read`, `mcp` and `cli` exist on tokens, but no integrator API checks them yet. Do not ask for them.
 
+For cloud slicing from a partner app, ask the person for a partner app token: they make it in Settings, Account, Partner apps, under your app's name. It has `cloud_slice` only, always expires, sees only the jobs your app queued and can't send a job to a printer. [cloud-slice.md](cloud-slice.md) is the HTTP API a phone app calls with it.
+
 The MCP server reads tokens at call time, from the system keychain or the environment, never from its command line:
 
 | Feature | Keychain item (account `slicerx`) | Environment |
