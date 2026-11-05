@@ -7,7 +7,7 @@ import type { EasyGoal, PrintConfig, SettingSection, SettingValue, SmartLayerMod
 import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, stockPrinter, stockProcess, type StockPrinter, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
-import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
+import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, printerProfileFor, sameValue } from './settings'
 
 export type ProfileSource = 'slicerx' | 'knowledge' | 'intent' | 'stock'
 
@@ -213,15 +213,17 @@ export class ProfileCatalog {
   }
 
   /**
-   * The printer model a printer profile stands for, whose process and supports a slice of it starts from: `machine:<id>`
-   * itself, a knowledge printer by its name. A knowledge printer linked to a profile of another name (printerProfileFor)
-   * takes only its model and clearances from it, in its printer layer.
+   * The printer model a printer profile stands for, whose process, supports and default filament a slice of it starts
+   * from: `machine:<id>` itself, a knowledge printer the profile it is linked to (printerProfileFor), by its name or,
+   * where the names differ, by printer-models.json ("Original Prusa MK4S" is prusa-mk4s). So a knowledge printer starts
+   * from its maker's preset, as the app does on that machine.
    */
   printerModel(query: string): string | undefined {
     const p = this.find(query)
     if (p?.section !== 'printer') return undefined
     if (p.id.startsWith('machine:')) return p.id.slice('machine:'.length)
-    return printerProfileByName(p.name)
+    const entry = this.store.findKnowledge(['printer'], p.id.slice(p.id.indexOf(':') + 1))
+    return entry ? printerProfileFor(entry) : undefined
   }
 
   list(): ProfileSummary[] {
