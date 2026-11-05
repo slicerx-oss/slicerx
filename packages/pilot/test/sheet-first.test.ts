@@ -52,6 +52,8 @@ describe('a sheet before the first build', () => {
     expect(startsPart('geom.build', {})).toBe(true)
     expect(startsPart('geom.extrude', {})).toBe(true)
     expect(startsPart('geom.revolve', { operation: 'new' })).toBe(true)
+    expect(startsPart('geom.sweep', {})).toBe(true)
+    expect(startsPart('geom.sweep', { operation: 'join', part: 0 })).toBe(false)
     expect(startsPart('geom.extrude', { operation: 'cut', part: 0 })).toBe(false)
     expect(startsPart('geom.fillet', {})).toBe(false)
   })

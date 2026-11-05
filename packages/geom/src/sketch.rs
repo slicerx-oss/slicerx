@@ -319,8 +319,64 @@ fn sweep_between(a0: f64, a1: f64, ccw: bool) -> f64 {
     if ccw { d } else { d - TAU }
 }
 
-#[allow(clippy::too_many_lines, reason = "one arm per segment form")]
 fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
+    flatten_as(l, lp, true)
+}
+
+/// One open chain of a sketch, flattened: its points and the directions it starts and ends in.
+pub(crate) struct Chain {
+    pub(crate) pts: Vec<V2>,
+    /// The way the chain leaves its first point: an arc's tangent there, not its first chord.
+    pub(crate) start_dir: V2,
+    /// The way the chain arrives at its last point.
+    pub(crate) end_dir: V2,
+}
+
+/// The points along one open chain of a sketch (a sweep path): its segments flattened as a closed loop's are, from the
+/// start to the last end, which is not joined back to the start. `points` is an open polyline here. A circle has no
+/// ends, so it is refused.
+pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issue> {
+    if lp.kind.as_deref() == Some("circle") {
+        return Err(issue(
+            l,
+            None,
+            IssueKind::Open,
+            format!("Loop {} is a circle, which has no ends.", l + 1),
+            lp.center,
+        ));
+    }
+    let r = flatten_as(l, lp, false)?;
+    let n = r.pts.len();
+    if n < 2 {
+        return Ok(Chain {
+            pts: r.pts,
+            start_dir: [1.0, 0.0],
+            end_dir: [1.0, 0.0],
+        });
+    }
+    let along = |p: V2, c: V2, sweep: f64| {
+        let t = [c[1] - p[1], p[0] - c[0]];
+        if sweep < 0.0 { [-t[0], -t[1]] } else { t }
+    };
+    let mut start_dir = sub2(r.pts[1], r.pts[0]);
+    let mut end_dir = sub2(r.pts[n - 1], r.pts[n - 2]);
+    if lp.points.is_empty() {
+        if let Some(&Prim::Arc { center, sweep, .. }) = r.prims.first() {
+            start_dir = along(r.pts[0], center, sweep);
+        }
+        if let Some(&Prim::Arc { to, center, sweep }) = r.prims.last() {
+            end_dir = along(to, center, sweep);
+        }
+    }
+    Ok(Chain {
+        pts: r.pts,
+        start_dir,
+        end_dir,
+    })
+}
+
+#[allow(clippy::too_many_lines, reason = "one arm per segment form")]
+fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Issue> {
     let name = l + 1;
     if lp.kind.as_deref() == Some("circle") {
         let (Some(c), Some(d)) = (lp.center, lp.diameter_mm) else {
@@ -369,7 +425,8 @@ fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
             ));
         }
         let n = lp.points.len();
-        for i in 0..n {
+        let sides = if closed { n } else { n.saturating_sub(1) };
+        for i in 0..sides {
             if len2(sub2(lp.points[(i + 1) % n], lp.points[i])) < MIN_LEN_MM {
                 return Err(issue(
                     l,
@@ -514,6 +571,9 @@ fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
             seg.push(s);
         }
         pos = *pts.last().unwrap_or(&pos);
+    }
+    if !closed {
+        return Ok(Ring { pts, seg, prims });
     }
     let gap = len2(sub2(pos, start));
     if gap > CLOSE_MM {

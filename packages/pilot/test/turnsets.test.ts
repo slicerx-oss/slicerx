@@ -71,10 +71,11 @@ describe('the set a request picks', () => {
   it('puts every design tool in a set and the rest of the app in app', () => {
     expect(turnSetsOf({ name: 'geom.extrude' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.loft' })).toEqual(new Set(['build']))
+    expect(turnSetsOf({ name: 'geom.sweep' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.mirror' })).toEqual(new Set(['shape']))
     expect(turnSetsOf({ name: 'design.timeline' })).toEqual(new Set(['edit']))
     // a design tool no list names yet still lands in a set
-    expect(turnSetsOf({ name: 'geom.sweep' })).toEqual(new Set(['edit']))
+    expect(turnSetsOf({ name: 'geom.coil' })).toEqual(new Set(['edit']))
     // sending a sliced plate is in app as well as print; the rest of the printers only in print
     expect(turnSetsOf({ name: 'printer.queue' })).toEqual(new Set(['app', 'print']))
     expect(turnSetsOf({ name: 'printer.history' })).toEqual(new Set(['print']))

@@ -64,6 +64,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("sketch.curves", "cad"),
     ("sketch.revolve", "cad"),
     ("sketch.loft", "cad"),
+    ("sketch.sweep", "cad"),
     ("sketch.snaps", "cad"),
     ("sketch.offset", "cad"),
     ("dimension.anchor", "cad"),

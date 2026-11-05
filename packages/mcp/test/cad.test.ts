@@ -73,7 +73,7 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'loft', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'loft', 'sweep', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -194,6 +194,23 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     const bad = await h.call('slicerx_geom_loft', { profiles: [{ loops: [square] }, { loops: [circle] }] })
     expect(bad.isError).toBe(true)
     expect(JSON.stringify(bad.content)).toMatch(/profiles 1 and 2 touch or cross/)
+  })
+
+  it('sweeps a circle round a quarter arc into an STL, and refuses a bend too tight for it', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    // a 10 mm circle square to the bed's x axis at x = 20, carried a quarter turn round the origin
+    const profile = { frame: { origin: [20, 0, 0], normal: [0, 1, 0] }, loops: [{ type: 'circle', center: [0, 0], diameterMm: 10 }] }
+    const path = { loops: [{ start: [20, 0], segments: [{ type: 'arc', center: [0, 0], sweepDeg: 90 }] }] }
+    const r = await h.call('slicerx_geom_sweep', { profile, path })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: MeshOut }>(r).output
+    expect(out.watertight).toBe(true)
+    expect(out.shells).toBe(1)
+    const torus = Math.PI * 25 * 20 * (Math.PI / 2)
+    expect(Math.abs(out.volumeMm3 / torus - 1)).toBeLessThan(5e-3)
+    const tight = await h.call('slicerx_geom_sweep', { profile: { ...profile, frame: { origin: [3, 0, 0], normal: [0, 1, 0] } }, path: { loops: [{ start: [3, 0], segments: [{ type: 'arc', center: [0, 0], sweepDeg: 90 }] }] } })
+    expect(tight.isError).toBe(true)
+    expect(JSON.stringify(tight.content)).toMatch(/the path bends too tightly for the profile/)
   })
 
   it('revolves a profile and checks a sketch', async () => {

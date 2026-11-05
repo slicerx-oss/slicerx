@@ -140,6 +140,8 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return obj(p['shape']) && typeof p['shape']['type'] === 'string' && constraintsOk(p['shape']['constraints']) && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string') && (p['pattern'] === undefined || patternOk(p['pattern']))
     case 'sketch.revolve':
       return Array.isArray(p['loops']) && constraintsOk(p['constraints']) && obj(p['axis']) && vec2(p['axis']['point']) && vec2(p['axis']['direction']) && frameOk(p['frame']) && (p['angleDeg'] === undefined || isNum(p['angleDeg']))
+    case 'sketch.sweep':
+      return obj(p['profile']) && Array.isArray(p['profile']['loops']) && frameOk(p['profile']['frame']) && obj(p['path']) && frameOk(p['path']['frame']) && Array.isArray(p['path']['loops']) !== Array.isArray(p['path']['points']) && (p['path']['points'] === undefined || (p['path']['points'] as unknown[]).every((q) => Array.isArray(q) && q.length === 3 && q.every(isNum))) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
     case 'sketch.loft':
       return Array.isArray(p['profiles']) && p['profiles'].length >= 2 && p['profiles'].length <= 64 && p['profiles'].every((f: unknown) => obj(f) && Array.isArray(f['loops']) && frameOk(f['frame'])) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
     case 'subtract':

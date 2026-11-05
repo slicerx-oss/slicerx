@@ -154,10 +154,10 @@ export const PART_GENERATORS: ReadonlySet<string> = new Set(['text_to_part', 'ma
 /** Calls that build with the design tools: a failed one is part of building, never a reason to change models. */
 const BUILD_CALL = /^(design|geom)\./
 
-/** Whether a call starts a new part: a new body from geom.extrude, geom.revolve or geom.loft, or a part from geom.build. */
+/** Whether a call starts a new part: a new body from geom.extrude, geom.revolve, geom.loft or geom.sweep, or a part from geom.build. */
 export function startsPart(name: string, input: unknown): boolean {
   if (name === 'geom.build') return true
-  if (name !== 'geom.extrude' && name !== 'geom.revolve' && name !== 'geom.loft') return false
+  if (name !== 'geom.extrude' && name !== 'geom.revolve' && name !== 'geom.loft' && name !== 'geom.sweep') return false
   const op = (input as { operation?: unknown } | null)?.operation
   return op === undefined || op === 'new'
 }
