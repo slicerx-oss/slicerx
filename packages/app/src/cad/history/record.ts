@@ -4,7 +4,7 @@
 // was before the tool changed it, for the tool's own store update. Ending a history (a split) keeps a
 // note and makes the new parts the base. No engine calls in here.
 import { setKeySalt } from '../../geom/client'
-import { HISTORY_VERSION, appendStep, direction, followField, followFor, followed, followsOf, invert, mainNumber, multiply, onFlatFace, point, refPoints, settle, stepId, stepSalt, type FlatFace, type Follow, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, samePart, direction, followField, followFor, followed, followsOf, invert, mainNumber, multiply, onFlatFace, point, refPoints, settle, stepId, stepSalt, type FlatFace, type Follow, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { bindFor } from '../values'
@@ -122,7 +122,7 @@ function capNormal(s: Step | undefined): [number, number, number] | null {
  * one itself); one of a step after the push keeps them.
  */
 function onPushed(s: Step, push: Step & { params: PushParams }, face: FlatFace, transform: number[], steps: readonly Step[], head: ReadonlySet<string>): Step {
-  if (s.part !== push.part && s.part !== -1 && push.part !== -1) return s
+  if (!samePart(steps, s, push)) return s
   const pts = refPoints(followed(s, steps).params)
   const now = multiply(transform, invert(s.transform))
   let on = pts.flatMap((q, k) => (onFlatFace(point(now, q), face).inside ? [k] : []))

@@ -5,7 +5,7 @@
 // the step that made each key.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { keyOfTriangle, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
+import { keyOfTriangle, partThrough, point, usedBy, type HistoryMesh, type Step, type StepStatus } from '@slicerx/cad-history'
 import { runReplay, withStatus } from './ops'
 
 type Faces = HistoryMesh['faces']
@@ -23,7 +23,7 @@ const known = new WeakMap<readonly MeshPart[], Promise<Known | null>>()
 async function learn(entry: PlateEntry): Promise<Known | null> {
   const r = await runReplay({ history: entry.history! })
   if (!r.madeBy) return null
-  const steps = withStatus(entry.history!.steps, r.status, r.found).map((s, i) => withCapKey(s, r.status[i], r.parts))
+  const steps = withStatus(entry.history!.steps, r.status, r.found).map((s, i, all) => withCapKey(s, r.status[i], r.parts, partThrough(all, i, all.length, s.part)))
   return { faces: r.parts.map((p) => p.faces), triangles: r.parts.map((p) => p.indices.length / 3), made: r.madeBy, steps }
 }
 
@@ -33,10 +33,11 @@ async function learn(entry: PlateEntry): Promise<Known | null> {
  * result that lies on its cap's plane, facing its way. Read here only, never saved: a replay finds a saved key on
  * the part before the step, and a keyless base has none to find.
  */
-function withCapKey(s: Step, status: StepStatus | undefined, parts: readonly HistoryMesh[]): Step {
+function withCapKey(s: Step, status: StepStatus | undefined, parts: readonly HistoryMesh[], now: number): Step {
   const p = s.params
   if (p.op !== 'face.push' || p.faceKey || s.suppressed || status?.state !== 'done') return s
-  const part = parts[s.part]
+  // `parts` are the result, after any reorder: the step's part is at `now` there
+  const part = parts[now]
   const f = part?.faces
   if (!part || !f?.keys?.length) return s
   const l = Math.hypot(...p.normal) || 1

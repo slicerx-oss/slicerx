@@ -353,8 +353,18 @@ test.describe('the Objects card', () => {
       await expect.poll(names).toEqual([first, copy, second])
       await row.getByTestId('slice-object-part').nth(1).press('Alt+ArrowDown')
       await expect.poll(names).toEqual([first, second, copy])
+      await row.getByTestId('slice-object-part').nth(2).press('Alt+ArrowUp')
+      await expect.poll(names).toEqual([first, copy, second])
+      // The ends: the first part cannot move up, the last cannot move down.
+      const menu = page.getByRole('menu', { name: 'Part' })
+      await row.getByTestId('object-part-more').nth(0).click()
+      await expect(menu.getByRole('menuitem', { name: 'Move up' })).toBeDisabled()
+      await page.keyboard.press('Escape')
+      await row.getByTestId('object-part-more').nth(2).click()
+      await expect(menu.getByRole('menuitem', { name: 'Move down' })).toBeDisabled()
+      await page.keyboard.press('Escape')
       // Each was one undo step.
-      for (const want of [[first, copy, second], [copy, first, second], [first, second, copy], [first, second]]) {
+      for (const want of [[first, second, copy], [first, copy, second], [copy, first, second], [first, second, copy], [first, second]]) {
         await page.getByRole('button', { name: 'Undo' }).first().click()
         await expect.poll(names).toEqual(want)
       }

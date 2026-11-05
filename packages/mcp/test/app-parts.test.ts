@@ -34,7 +34,9 @@ it('rejects a missing object, negative indices, an order and a move together, an
   const call = vi.fn(async () => state)
   const order = appPartTools({ call } as AppLinkCaller, 'SlicerX')[2]!
   await expect(order.run({ object: 'box' } as never, {} as never)).rejects.toMatchObject({ code: 'invalid_input' })
-  await expect(order.run({ object: 'box', order: [0], part: 0, to: 1 } as never, {} as never)).rejects.toMatchObject({ code: 'invalid_input' })
+  for (const mixed of [{ order: [0], part: 0, to: 1 }, { order: [0, 1], part: 0 }, { order: [0, 1], to: 1 }, { part: 0 }, { to: 1 }]) {
+    await expect(order.run({ object: 'box', ...mixed } as never, {} as never)).rejects.toMatchObject({ code: 'invalid_input' })
+  }
   expect(call).not.toHaveBeenCalled()
 })
 
@@ -44,4 +46,10 @@ it('keeps app refusals and needs the app link', async () => {
     const link = { call: async () => { throw Object.assign(new Error(code), { code }) } }
     await expect(appPartTools(link, 'SlicerX')[1]!.run({ object: 'box', part: 0 } as never, {} as never)).rejects.toMatchObject({ code: expected })
   }
+})
+
+it('asks the person before an edit, naming the object', async () => {
+  const tools = appPartTools({ call: vi.fn(async () => state) } as AppLinkCaller, 'SlicerX')
+  expect(tools[0]!.approval).toBeUndefined()
+  for (const t of tools.slice(1)) expect((await t.approval!({ object: 'Box' } as never, {} as never))!.title).toBe('Change the parts of Box?')
 })
