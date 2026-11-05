@@ -3,10 +3,12 @@
 // One printer: the camera, the job's progress, temperatures and filament, and the controls. Pause
 // and resume are one tap. Stop asks once, since it ends the print. An approval waiting on this
 // printer sits above the controls and is answered with a tap. mimir is one tap away when the
-// printer needs diagnosis.
+// printer needs diagnosis. A printer that serves its own web page (Mainsail, Fluidd, OctoPrint) links to it, and
+// it opens in the phone's browser.
 import { useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Linking, StyleSheet, View } from 'react-native'
 import type { ApprovalRequest, PrinterStatus, Temp } from '@slicerx/contracts'
+import { printerWebUi } from '@slicerx/printer-catalog'
 import type { FeedView } from '../camera/use-feed'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
@@ -53,6 +55,12 @@ export interface PrinterDetailScreenProps {
   onBack: () => void
   /** Clock for "done by", for tests. */
   now?: number | undefined
+  /** Opens the printer's web page in the browser; the system browser by default. */
+  openUrl?: ((url: string) => void) | undefined
+}
+
+function openInBrowser(url: string): void {
+  Linking.openURL(url).catch(() => undefined)
 }
 
 /** The question mimir gets when the person asks about this printer. */
@@ -128,6 +136,7 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
   const busy = state === 'printing' || state === 'preparing'
   const waiting = p.approvals ?? []
   const diagnose = state === 'paused' || state === 'error' || state === 'offline'
+  const webUi = printerWebUi({ ...info, model: info.model || status?.model || '' })
 
   const header = (
     <ScreenHeader
@@ -223,6 +232,13 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
             <>
               <Hairline style={{ marginTop: t.space(3) }} />
               <Row icon="pilot" title="Ask mimir" detail="Plan a print, compare settings, or ask about this printer" chevron onPress={() => p.onAskPilot(pilotPrompt(p.printer))} testID="ask-pilot" />
+            </>
+          ) : null}
+
+          {webUi ? (
+            <>
+              <Hairline />
+              <Row icon="external" title="Open web interface" detail={webUi} mono chevron onPress={() => (p.openUrl ?? openInBrowser)(webUi)} accessibilityHint="Opens the printer's own page in your browser" testID="open-web-ui" />
             </>
           ) : null}
 

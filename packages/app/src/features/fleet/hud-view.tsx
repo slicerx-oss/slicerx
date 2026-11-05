@@ -29,6 +29,8 @@ import {
 import { adjustHub, setLight, setSpeed } from './hud-actions'
 import { preloadPrinterControls } from './preload'
 import { spoolLeft } from '../../filament/left'
+import { openPrinterPage } from '../../lib/links'
+import { WEB_UI_LABEL, webUiFor, webUiTip } from './web-ui'
 import './hud.css'
 
 const SlotDialog = lazy(() => import('../../filament/dialogs').then((m) => ({ default: m.SlotDialog })))
@@ -292,6 +294,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
   const watchOnly = st.live?.monitorOnly === true
   const watchTip = (title: string) => ({ title, reason: `Developer Mode is off on ${row.name}, so ${appName()} shows its status only. Use the printer's screen or Bambu Connect.` })
   const mine = target?.id === row.id
+  const webUi = webUiFor(row)
   const editIndex = Math.max(1, printerSlots.findIndex((s) => s.id === (st.live?.activeSlot ?? st.slots[0]?.id)) + 1)
 
   return (
@@ -327,6 +330,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
           <div className="ph-job ph-muted">{st.state === 'offline' ? 'Not reachable' : 'Ready for a job'}</div>
         )}
         {job && (isRunning || st.state === 'preparing') ? <span className="ph-pct ph-num">{progress}%</span> : null}
+        {webUi ? <Button className="ph-web" size="sm" variant="ghost" icon="external" aria-label={WEB_UI_LABEL} data-testid="ph-web-ui" tip={webUiTip(webUi)} onClick={() => void openPrinterPage(webUi)} /> : null}
       </header>
 
       {issues.length ? (

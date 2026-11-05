@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { PrinterModel } from '../types.ts'
+import type { PrinterModel, WebUi } from '../types.ts'
 import { find, rect } from './util.ts'
 
 const FIND = find({
@@ -8,14 +8,17 @@ const FIND = find({
   credential: 'None. Creality printers need no code or password for this connection, and no root. Moonraker and Fluidd come with the K2 family (Moonraker on 7125, Fluidd on 4408); on a K1 or Ender-3 V3 KE they need root (Settings, then Root account information), which SlicerX does not need.',
 })
 
-const creality = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
-  brand: 'creality',
-  connections: ['creality', 'moonraker', 'export'],
-  nozzleCount: 1,
-  defaultNozzle: 0.4,
-  find: FIND,
-  ...m,
-})
+/**
+ * Fluidd on port 4408 (creality.md). A K2 serves it on stock firmware; a K1 or Ender-3 V3 KE only once Moonraker is
+ * installed with root, so there the page goes with the Moonraker connection alone.
+ */
+const FLUIDD_ROOTED: WebUi = { port: 4408, path: '/', via: ['moonraker'] }
+const FLUIDD_STOCK: WebUi = { port: 4408, path: '/' }
+
+const creality = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => {
+  const model: PrinterModel = { brand: 'creality', connections: ['creality', 'moonraker', 'export'], nozzleCount: 1, defaultNozzle: 0.4, find: FIND, ...m }
+  return model.webUi || !model.connections.includes('moonraker') ? model : { ...model, webUi: FLUIDD_ROOTED }
+}
 
 const STD = [0.4, 0.6, 0.8]
 
@@ -39,6 +42,7 @@ export const CREALITY: PrinterModel[] = [
     buildVolume: rect(350, 350, 350),
     nozzles: STD,
     filamentSystem: 'cfs',
+    webUi: FLUIDD_STOCK,
     note: 'Runs Klipper with Moonraker on 7125 out of the box. SlicerX reads the CFS spools over the printer\'s own interface and shows the WebRTC camera.',
   }),
   creality({
