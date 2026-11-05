@@ -158,3 +158,23 @@ it('SlicerX closing reads as closed, not answered', () => {
   expect(h.cards()[0]?.answered).toBeUndefined()
   h.w.stop()
 })
+
+it('a question the person closed stays closed when the computer reconnects, and the next question shows', () => {
+  const h = harness()
+  h.push({})
+  expect(h.onNew).toHaveBeenCalledTimes(1)
+  h.w.dismiss('pc-1')
+  expect(h.cards()).toEqual([])
+  // a reconnect reads the same question again
+  h.push({})
+  expect(h.cards()).toEqual([])
+  expect(h.onNew).toHaveBeenCalledTimes(1)
+  // another computer's question still shows
+  h.push({ pairingId: 'pc-2', waiting: { ...Q, askId: 'ask_9' } })
+  expect(h.cards().map((c) => c.pairingId)).toEqual(['pc-2'])
+  // a new question on the first computer shows again
+  h.push({ waiting: { ...Q, askId: 'ask_2' } })
+  expect(h.cards().map((c) => c.question.askId)).toEqual(['ask_9', 'ask_2'])
+  expect(h.onNew).toHaveBeenCalledTimes(3)
+  h.w.stop()
+})

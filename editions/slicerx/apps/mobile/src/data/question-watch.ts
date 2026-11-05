@@ -59,7 +59,17 @@ export function watchQuestions(d: QuestionWatchDeps): QuestionWatch {
     }
   }
 
+  /** The question the person closed on each computer, kept while it still waits there so a reconnect never brings it back. */
+  const dismissed = new Map<string, string>()
+
   const apply = (u: QuestionUpdate) => {
+    const closed = dismissed.get(u.pairingId)
+    if (closed !== undefined) {
+      if (u.waiting?.askId === closed) return
+      // that computer moved on: another question, or nothing waits there now
+      if (u.waiting || (u.live && u.reachable !== false)) dismissed.delete(u.pairingId)
+      if (!u.waiting) return
+    }
     const before = d.cards()
     d.update((cards) => applyUpdate(cards, u))
     const after = d.cards().find((c) => c.pairingId === u.pairingId)
@@ -107,6 +117,8 @@ export function watchQuestions(d: QuestionWatchDeps): QuestionWatch {
       schedule()
     },
     dismiss(pairingId) {
+      const card = d.cards().find((c) => c.pairingId === pairingId)
+      if (card && card.answered === undefined) dismissed.set(pairingId, card.question.askId)
       d.update((cards) => cards.filter((c) => c.pairingId !== pairingId))
     },
     stop() {
