@@ -3,7 +3,7 @@
 // Settings, Printer bridge, Devices: the keys the hub remembers for partner apps, AI agents and
 // detectors, with Revoke, which also cuts the connection that key has open. Never the keys themselves.
 // Below them, the partner routes open now (a partner app's sealed byte stream to its own phone), with
-// Close. Sizes and times only.
+// End route. Sizes and times only.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Icon, type IconName } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
@@ -36,9 +36,9 @@ function size(n: number): string {
 
 function openFor(at: number): string {
   const m = Math.max(0, Math.round((Date.now() - at) / 60_000))
-  if (m < 1) return 'opened just now'
-  if (m < 60) return `open ${m} min`
-  return `open ${Math.round(m / 60)} h`
+  if (m < 1) return 'just opened'
+  if (m < 60) return `${m} min`
+  return `${Math.round(m / 60)} h`
 }
 
 /** The partner routes open now, each closable. Nothing shows while none is open. */
@@ -60,9 +60,9 @@ function PartnerRouteRows() {
     setBusy(r.routeId)
     try {
       await routes.close(r.routeId)
-      toast(`Closed the route from ${r.app} to ${r.phone ?? 'its phone'}.`, 'ok')
+      toast(`Ended the route from ${r.app} to ${r.phone ?? 'its phone'}.`, 'ok')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'The bridge did not close the route.', 'warn')
+      toast(e instanceof Error ? e.message : 'The bridge did not end the route.', 'warn')
     } finally {
       setBusy(null)
       load()
@@ -72,7 +72,7 @@ function PartnerRouteRows() {
   return (
     <>
       <h4 className="set-sub">Partner routes</h4>
-      <p className="sx-small sx-muted">A partner app's connection to its own phone through the relay. It reaches no printer. Close one to end it now.</p>
+      <p className="sx-small sx-muted">A partner app's connection to its own phone through the relay. It reaches no printer. End one to close it right away.</p>
       <ul className="dev-list" data-testid="partner-routes">
         {rows.map((r) => (
           <li key={r.routeId} data-testid={`partner-route-${r.routeId}`}>
@@ -86,7 +86,7 @@ function PartnerRouteRows() {
               </small>
             </span>
             <Button size="sm" data-testid={`partner-route-close-${r.routeId}`} disabled={busy === r.routeId} onClick={() => void close(r)}>
-              Close
+              End route
             </Button>
           </li>
         ))}

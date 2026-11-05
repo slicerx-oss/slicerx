@@ -501,7 +501,7 @@ test('Partner app: a named key shown once, listed in Devices, and revoking it cu
 // A partner route needs a signed-in relay and a paired partner phone, which this hub has not got: the hub's
 // relay.partnerRoute.list and close answers come from a stand-in on the page's socket, shaped as sx-link answers them
 // (partner_route.rs, tested end to end in packages/connect/link/tests/remote.rs). Everything else reaches the real hub.
-test('Devices lists an open partner route with its app, phone, time and bytes, and Close ends it', async ({ page }) => {
+test('Devices lists an open partner route with its app, phone, time and bytes, and End route closes it', async ({ page }) => {
   const now = Date.now()
   let routes = [{ routeId: 'cm91dGUtaWQtb25lLTE2Yg', app: 'LayerMate', pairingId: 'UVFRUVFRUVFRUVFRUVFRUQ', phone: "Chris's phone", state: 'open', openedAt: now - 12 * 60_000, lastAt: now, bytesIn: 4_600_000, bytesOut: 1_200_000, refused: 0 }]
   const closed: string[] = []
@@ -533,6 +533,8 @@ test('Devices lists an open partner route with its app, phone, time and bytes, a
     ws.onClose(() => server.close())
   })
   await repair(page)
+  // Kept after a pass (a test's own output folder is not), for checking the rows by eye.
+  const shots = process.env['SX_SHOTS_DIR'] ?? join(test.info().project.outputDir, 'partner-routes-shots')
   const home = page.viewportSize() ?? { width: 1440, height: 900 }
   const scheme0 = (await page.locator('html').getAttribute('data-scheme')) ?? 'dark'
   try {
@@ -540,13 +542,13 @@ test('Devices lists an open partner route with its app, phone, time and bytes, a
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
     const row = page.getByTestId('partner-route-cm91dGUtaWQtb25lLTE2Yg')
     await expect(row).toContainText("LayerMate to Chris's phone")
-    await expect(row).toContainText('open 12 min, 4.6 MB in, 1.2 MB out')
-    await expect(row.getByRole('button', { name: 'Close' })).toBeVisible()
-    // The row's text and its Close button sit side by side, inside the list, at every width.
+    await expect(row).toContainText('12 min, 4.6 MB in, 1.2 MB out')
+    await expect(row.getByRole('button', { name: 'End route' })).toBeVisible()
+    // The row's text and its End route button sit side by side, inside the list, at every width.
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 })
       await row.scrollIntoViewIfNeeded()
-      const [list, text, close] = await Promise.all([page.getByTestId('partner-routes').boundingBox(), row.locator('.min0').boundingBox(), row.getByRole('button', { name: 'Close' }).boundingBox()])
+      const [list, text, close] = await Promise.all([page.getByTestId('partner-routes').boundingBox(), row.locator('.min0').boundingBox(), row.getByRole('button', { name: 'End route' }).boundingBox()])
       expect(list && text && close).toBeTruthy()
       if (!list || !text || !close) continue
       expect(close.x + close.width).toBeLessThanOrEqual(list.x + list.width + 0.5)
@@ -554,15 +556,15 @@ test('Devices lists an open partner route with its app, phone, time and bytes, a
       for (const scheme of ['light', 'dark']) {
         await setState(page, { scheme })
         await expect(page.locator('html')).toHaveAttribute('data-scheme', scheme)
-        await page.getByTestId('partner-routes').screenshot({ path: test.info().outputPath(`partner-routes-${width}-${scheme}.png`) })
-        await page.screenshot({ path: test.info().outputPath(`partner-routes-page-${width}-${scheme}.png`) })
+        await page.getByTestId('partner-routes').screenshot({ path: join(shots, `partner-routes-${width}-${scheme}.png`) })
+        await page.screenshot({ path: join(shots, `partner-routes-page-${width}-${scheme}.png`) })
       }
     }
     await page.setViewportSize(home)
-    await row.getByRole('button', { name: 'Close' }).click()
+    await row.getByRole('button', { name: 'End route' }).click()
     await expect(page.getByTestId('partner-routes')).toHaveCount(0)
     expect(closed).toEqual(['cm91dGUtaWQtb25lLTE2Yg'])
-    await sawToast(page, /Closed the route from LayerMate to Chris's phone/)
+    await sawToast(page, /Ended the route from LayerMate to Chris's phone/)
   } finally {
     await page.setViewportSize(home)
     await setState(page, { scheme: scheme0 })
