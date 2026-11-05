@@ -388,7 +388,6 @@
   .fr-read > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .fr-foundcard { flex-wrap: wrap; }
   .fr-hostrow { flex-direction: column; align-items: stretch; }
-  .fr-nozzle-row .sx-seg { max-width: 100%; overflow-x: auto; }
   /* The help pill floats above the footer; the content keeps room for it so it never covers a field. */
   .fr-body-printer { padding-bottom: 96px; }
   .fr-sheet { position: fixed; left: var(--s-4); right: var(--s-4); bottom: calc(var(--fr-foot-h, 104px) + var(--s-2)); margin: 0; z-index: 2; border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-1) 92%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
