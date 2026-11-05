@@ -544,7 +544,9 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   if ('brim_width' in values) values['brim_loop_rounding'] = 'whole'
   // A project with a brim width orders the objects of each layer, and on the first layer their brims, along a chain of
   // the shortest links between them printed from the end the engine's order picks. The same as the engine's project
-  // read.
+  // read. `chain` is the marker for the Prusa project rules: the Prusa project read sets it; a request may too. It
+  // turns on both that order and, where two parts of an object in one filament overlap, the later part printing the
+  // overlap. A third Prusa-only behavior gets a key of its own.
   if ('brim_width' in values) values['object_order_rule'] = 'chain'
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {

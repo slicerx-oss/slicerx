@@ -50,8 +50,23 @@ type OwnView = (
 );
 
 /// Slot, welded plate-space vertices and triangles of one part.
-/// A part with settings of its own: its welded mesh and the settings.
-type PartRegion = (Vec<[f64; 3]>, Vec<[u32; 3]>, serde_json::Value);
+/// A part printed as a region of its own: its welded mesh, its settings (empty for a later part without any) and what
+/// the layers need to know of it.
+type PartRegion = (Vec<[f64; 3]>, Vec<[u32; 3]>, serde_json::Value, RegionPart);
+
+/// A part printed as a region of its own (the first modifier volumes, in the order of
+/// [`SliceSession::modifier_settings`]).
+#[derive(Debug, Clone, Copy)]
+struct RegionPart {
+    /// Its object, by its index on the session's plate.
+    object: usize,
+    /// Its filament slot.
+    slot: u8,
+    /// A later part without settings of its own in a Prusa-format project. It takes its area from the regions of the
+    /// object's parts before it in the same filament and prints it with the layer's own settings, a height range's
+    /// included, so it is no region of its own.
+    plain: bool,
+}
 
 type RawPart = (u8, Vec<[f64; 3]>, Vec<[u32; 3]>, crate::paint::Facets);
 
@@ -177,6 +192,9 @@ pub struct SliceSession {
     volumes: Vec<(crate::plate::VolumeRole, PreparedPart)>,
     /// The setting overrides of each volume (modifiers); `Null` for the rest.
     volume_settings: Vec<serde_json::Value>,
+    /// The parts printed as regions of their own: the first modifier volumes, in the order of
+    /// [`Self::modifier_settings`]. The objects' modifier volumes follow them.
+    region_parts: Vec<RegionPart>,
     /// Painted support pieces in plate coordinates: state 1 asks for support, 2 keeps it out.
     painted_supports: Vec<([[f64; 3]; 3], u8)>,
     /// Painted seam pieces in plate coordinates.
@@ -1646,7 +1664,7 @@ impl SliceSession {
         let hulls = hulls.unwrap_or_else(|| crate::firmware::footprints(plate));
         let timer = Timer::start();
         let mut raw: Vec<RawPart> = Vec::new();
-        // Parts with settings of their own: their welded mesh and the settings.
+        // Parts printed as regions of their own (`PartRegion`): their welded mesh and settings.
         let mut part_regions: Vec<PartRegion> = Vec::new();
         let mut painted_supports: Vec<([[f64; 3]; 3], u8)> = Vec::new();
         let mut seam_faces: Vec<crate::seam::SeamFace> = Vec::new();
@@ -1664,6 +1682,14 @@ impl SliceSession {
         for (obj_index, obj) in plate.objects.iter().enumerate() {
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
             let mut oxy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+            // In a Prusa-format project, once a part of the object has settings of its own, each later part is a
+            // region too, so where parts in one filament overlap the later one in file order prints there, with its
+            // own settings or else the layer's (the object's, under a height range where one reaches). Where they are
+            // in different filaments, and outside Prusa-format projects, a part with settings keeps its whole
+            // footprint. The Prusa project read sets the chain object order (`object_order_rule`, a
+            // hidden setting; a request may too), which marks one here.
+            let later_part_owns = crate::objorder::rule(config) == crate::objorder::Rule::Chain;
+            let mut after_own = false;
             for (part_index, part) in obj.mesh.parts.iter().enumerate() {
                 if part.triangles.is_empty() {
                     continue;
@@ -1680,10 +1706,20 @@ impl SliceSession {
                         oxy[3].max(v[1]),
                     ];
                 }
-                if let Some((_, s)) = obj.part_settings.iter().find(|(n, _)| *n == part.name)
-                    && s.as_object().is_some_and(|m| !m.is_empty())
-                {
-                    part_regions.push((verts.clone(), tris.clone(), s.clone()));
+                let region = |plain| RegionPart {
+                    object: obj_index,
+                    slot,
+                    plain,
+                };
+                match obj.part_settings.iter().find(|(n, _)| *n == part.name) {
+                    Some((_, s)) if s.as_object().is_some_and(|m| !m.is_empty()) => {
+                        part_regions.push((verts.clone(), tris.clone(), s.clone(), region(false)));
+                        after_own = later_part_owns;
+                    }
+                    _ if after_own => {
+                        part_regions.push((verts.clone(), tris.clone(), serde_json::json!({}), region(true)));
+                    }
+                    _ => {}
                 }
                 for v in &verts {
                     max_z = max_z.max(v[2]);
@@ -1843,14 +1879,17 @@ impl SliceSession {
         let painted_objects = PaintedObject::of(&parts, &part_object);
         let mut volumes = Vec::new();
         let mut volume_settings: Vec<serde_json::Value> = Vec::new();
-        // A part with its own settings prints its area like a modifier shaped as the part. These come before the
-        // objects' modifier volumes, so a modifier wins over the part's settings where it reaches into the part
-        // (the last modifier wins where they overlap).
-        for (v, t, settings) in part_regions {
+        let mut region_parts: Vec<RegionPart> = Vec::new();
+        // A part with its own settings prints its area like a modifier shaped as the part, and in a Prusa-format
+        // project so does a later part of the same object without settings (`RegionPart::plain`). These come before the
+        // objects' modifier volumes, so a modifier wins over the part's settings where it reaches into the part (the
+        // last modifier wins where they overlap).
+        for (v, t, settings, part) in part_regions {
             volumes.push((
                 crate::plate::VolumeRole::Modifier,
                 PreparedPart::new(1, v, t, &plan),
             ));
+            region_parts.push(part);
             volume_settings.push(settings);
         }
         for obj in &plate.objects {
@@ -1964,6 +2003,7 @@ impl SliceSession {
             object_boxes,
             volumes,
             volume_settings,
+            region_parts,
             painted_supports,
             seam_faces,
             fuzzy_paint,
@@ -8349,13 +8389,39 @@ impl SliceSession {
             for (slot, shapes) in std::mem::take(&mut regions) {
                 let mut rest = shapes;
                 let mut pieces: Vec<(Shapes, u16)> = Vec::new();
+                // What the later parts without settings of their own (`RegionPart::plain`) keep from the parts before
+                // them in their object, by object and filament: it stays in the rest, which prints with the layer's
+                // settings, a height range's included. A part before them in another filament keeps its area there.
+                // Only a region in the parts' own filament counts: in another filament's region (a higher slot's part
+                // or paint over them) a later part takes nothing, so the part before it keeps its settings there.
+                let mut kept: Vec<((usize, u8), Shapes)> = Vec::new();
                 // The last modifier wins where they overlap.
                 for (k, m) in mods.iter().enumerate().rev() {
-                    let piece = perimeters::intersection(&rest, m);
-                    if !piece.is_empty() {
-                        rest = perimeters::difference(&rest, &piece);
-                        pieces.push((piece, u16::try_from(k + 1).unwrap_or(u16::MAX)));
+                    let mut piece = perimeters::intersection(&rest, m);
+                    if piece.is_empty() {
+                        continue;
                     }
+                    let part = self.region_parts.get(k).map(|p| (p, (p.object, p.slot)));
+                    if let Some((p, key)) = part.filter(|(p, _)| p.plain) {
+                        if p.slot == slot {
+                            match kept.iter_mut().find(|(o, _)| *o == key) {
+                                Some((_, s)) => *s = perimeters::union_all(&[&*s, &piece]),
+                                None => kept.push((key, piece)),
+                            }
+                        }
+                        continue;
+                    }
+                    if let Some((_, s)) = part
+                        .filter(|(p, _)| p.slot == slot)
+                        .and_then(|(_, key)| kept.iter().find(|(o, _)| *o == key))
+                    {
+                        piece = perimeters::difference(&piece, s);
+                        if piece.is_empty() {
+                            continue;
+                        }
+                    }
+                    rest = perimeters::difference(&rest, &piece);
+                    pieces.push((piece, u16::try_from(k + 1).unwrap_or(u16::MAX)));
                 }
                 if !rest.is_empty() {
                     split.push((slot, rest));

@@ -169,7 +169,7 @@ Runs the wrapping detection G-code on every layer, on printers that can detect f
 
 **Object order rule**
 
-How a layer's objects are put in order: ending at the object nearest the bed's origin, or along a chain of the nearest objects with every brim first. Prusa projects set it when opened; the app does not list it.
+How a layer's objects are ordered: ending at the object nearest the bed's origin, or a chain of the nearest objects, brims first; with the chain a later part prints where two parts in one filament overlap. The Prusa project read sets it; a request may too.
 
 - Type: enum
 - Default: none (the slice works it out when nothing sets it)

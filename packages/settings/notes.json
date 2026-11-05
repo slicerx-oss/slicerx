@@ -12,7 +12,7 @@
   "brim_width": "How far the brim reaches out from the part, in mm. A wider brim holds better against warping and takes longer to print and peel off; 3 to 8 mm covers most parts.",
   "draft_shield": "Builds the skirt up as a thin wall as tall as the print, which shields ABS and ASA from drafts on an open printer. Not needed in an enclosure.",
   "min_skirt_length": "Adds skirt loops until at least this much filament has gone through the nozzle, in mm. Use it to prime the nozzle when the start G-code draws no purge line; 0 turns it off.",
-  "object_order_rule": "How a layer's objects are put in order: ending at the object nearest the bed's origin, or along a chain of the nearest objects with every brim first. Prusa projects set it when opened; the app does not list it.",
+  "object_order_rule": "How a layer's objects are ordered: ending at the object nearest the bed's origin, or a chain of the nearest objects, brims first; with the chain a later part prints where two parts in one filament overlap. The Prusa project read sets it; a request may too.",
   "raft_contact_distance": "The vertical gap between the raft and the part, in mm. A larger gap makes the raft easier to remove and leaves a rougher underside.",
   "raft_expansion": "How far every raft layer reaches past the part's footprint, in mm. A wider raft holds better and uses more filament.",
   "raft_first_layer_density": "How densely the first raft or support layer is filled, in percent. Lower saves filament; higher sticks to the bed better.",

@@ -392,3 +392,22 @@ fn on_the_first_layer_each_object_prints_its_own_bottom_surface() {
     }
     assert!(checked > 0);
 }
+
+#[test]
+fn outside_a_prusa_format_project_a_part_with_settings_keeps_its_overlap() {
+    // Two boxes, x 100 to 120 and 115 to 135, the first part with 0.55 mm inner walls, in a Bambu Lab format project:
+    // the first part's region keeps its whole footprint, so its 0.55 mm inner walls reach x 120 over the overlap and the
+    // second part's 0.45 mm walls start there.
+    let l = layer_at(&gcode("two-parts-overlap-inner.3mf"), 1.6);
+    assert_eq!(l.widths["Inner wall"], set(&["0.45", "0.55"]));
+    let wide = &l.walls_at[&("Inner wall".to_owned(), "0.55".to_owned())];
+    assert!(
+        wide.iter().all(|x| *x < 1200) && wide.iter().any(|x| *x > 1170),
+        "0.55 mm inner walls at {wide:?}"
+    );
+    let plain = &l.walls_at[&("Inner wall".to_owned(), "0.45".to_owned())];
+    assert!(
+        plain.iter().all(|x| *x > 1200),
+        "0.45 mm inner walls at {plain:?}"
+    );
+}
