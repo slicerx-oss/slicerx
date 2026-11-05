@@ -29,7 +29,7 @@ export function PairQr({ link }: { link: string }) {
   }, [link])
   if (!qr) return null
   return (
-    <svg className="pair-qr" role="img" aria-label="Pairing QR code" viewBox={`0 0 ${qr.size} ${qr.size}`} shapeRendering="crispEdges" width={200} height={200}>
+    <svg className="pair-qr" role="img" aria-label="Pairing QR code" data-link={link} viewBox={`0 0 ${qr.size} ${qr.size}`} shapeRendering="crispEdges" width={200} height={200}>
       <rect width={qr.size} height={qr.size} fill="#fff" />
       <path d={qr.d} fill="#000" />
     </svg>
