@@ -67,6 +67,16 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
           },
         }
       : {}),
+    // Partner routes in Settings, Devices: the person sees and closes them.
+    ...(typeof (link as { partnerRoutes?: { list?: unknown } }).partnerRoutes?.list === 'function'
+      ? {
+          partnerRoutes: {
+            list: async () => (await link.partnerRoutes.list()).routes,
+            close: async (id: string) => void (await link.partnerRoutes.close(id)),
+            onChanged: (cb: () => void) => link.partnerRoutes.onChanged(() => cb()),
+          },
+        }
+      : {}),
     // The app link: the desktop app hosts it; the browser build never does.
     ...(opts.appLink && typeof (link as { appLink?: { host?: unknown } }).appLink?.host === 'function'
       ? {

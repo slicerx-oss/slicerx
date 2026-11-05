@@ -33,7 +33,23 @@ export interface SecureChannel {
   onClose(cb: () => void): () => void
   close(): void
   readonly closed: boolean
+  /** The byte channel of one partner route inside this session (docs/integrators/partner-route.md). */
+  route?(routeId: Uint8Array): RouteChannel
 }
+
+/**
+ * A partner route's byte channel: its own keys (`routeKey` of each session key) and its own counters, so its
+ * frames never open as session messages and the session's never open on the route. Bytes in, bytes out, no JSON.
+ */
+export interface RouteChannel {
+  /** Seals bytes as a data frame for the route's relay route (`up` on the phone). */
+  seal(bytes: Uint8Array): string
+  /** Opens a data frame from the route (`down` on the phone); null when it does not open here or comes out of order. */
+  open(frameText: string): Uint8Array | null
+}
+
+/** HKDF-SHA256 of one session key, the 16 byte route id as salt, info `sx-pair/v1 partner route`. */
+export const routeKey = (sessionKey: Uint8Array, routeId: Uint8Array): Uint8Array => kdf(sessionKey, routeId, 'partner route', 32)
 
 export const macKey = (deviceKey: Uint8Array) => kdf(deviceKey, undefined, 'session mac')
 
@@ -72,6 +88,28 @@ export function createChannel(sid: string, keys: ChannelKeys, sendFrame: (f: str
 
   const channel: SecureChannel & { deliver(f: FrameOf<'data'>): boolean } = {
     sid,
+    route(routeId) {
+      const sendKey = routeKey(keys.sendKey, routeId)
+      const recvKey = routeKey(keys.recvKey, routeId)
+      let sent = 0
+      let last = -1
+      return {
+        seal(bytes) {
+          if (bytes.length > MAX_MESSAGE_BYTES) throw new Error('Chunk too large for one frame')
+          const c = sent++
+          return JSON.stringify({ k: 'data', s: sid, c, x: toB64url(seal(sendKey, keys.sendDir, c, aad(keys.sendDir), bytes)) })
+        },
+        open(text) {
+          const f = parseFrame(text)
+          if (!f || f.k !== 'data' || f.s !== sid || f.c <= last) return null
+          const x = fromB64url(f.x)
+          const pt = x ? open(recvKey, keys.recvDir, f.c, aad(keys.recvDir), x) : null
+          if (!pt || pt.length > MAX_MESSAGE_BYTES) return null
+          last = f.c
+          return pt
+        },
+      }
+    },
     get closed() {
       return closed
     },

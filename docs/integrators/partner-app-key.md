@@ -53,3 +53,7 @@ link.partner // true
 ## When the key stops working
 
 A revoked key fails pairing with `unauthorized`, and an open connection closes. Tell the user the key was revoked and point them to Settings, mimir, Connect your AI agent, Partner app for a new one. Don't retry in a loop.
+
+## Reaching your own phone
+
+A partner app key can also open a partner route: a sealed byte stream to your own app on the user's phone over SlicerX's relay, for your own protocol. It carries bytes only, never a bridge method. See [partner-route.md](partner-route.md).

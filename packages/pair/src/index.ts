@@ -43,6 +43,7 @@ export type { DevicePlatform, DeviceGrant, Endpoints, PublicIdentity, Rights } f
 export { connectRelay, memoryPipePair, openSocket, pipeFromSocket, relayPipe, type Pipe, type RelayClientOptions, type RelayConnection, type SocketFactory, type SocketLike } from './transport'
 export { defaultEnv, type PairEnv } from './crypto'
 export { fromB64url, toB64url } from './bytes'
+export { routeKey, type RouteChannel } from './session'
 export { requestHash, signDecision, verifyDecision } from './approval'
 export { createPairedPrinterHost, PairedPrinterError, type PairedPrinterHost, type PairedPrinterHostOptions } from './printer-host'
 export { serveLanThroughBridge, type LanBridge, type LanService } from './lan-bridge'

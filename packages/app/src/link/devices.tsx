@@ -2,10 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings, Printer bridge, Devices: the keys the hub remembers for partner apps, AI agents and
 // detectors, with Revoke, which also cuts the connection that key has open. Never the keys themselves.
+// Below them, the partner routes open now (a partner app's sealed byte stream to its own phone), with
+// Close. Sizes and times only.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Icon, type IconName } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
-import { liveBridge, type RememberedClient } from './bridge'
+import { liveBridge, type PartnerRouteRow, type RememberedClient } from './bridge'
 import { toast } from '../state/store'
 
 function kind(c: RememberedClient): { label: string; icon: IconName } {
@@ -25,6 +27,73 @@ function seen(at: string | null): string {
 
 // Two keys for one app read apart by when each was made.
 const made = (at: string): string => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+
+function size(n: number): string {
+  if (n < 1000) return `${n} B`
+  if (n < 1_000_000) return `${Math.round(n / 1000)} KB`
+  return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)} MB`
+}
+
+function openFor(at: number): string {
+  const m = Math.max(0, Math.round((Date.now() - at) / 60_000))
+  if (m < 1) return 'opened just now'
+  if (m < 60) return `open ${m} min`
+  return `open ${Math.round(m / 60)} h`
+}
+
+/** The partner routes open now, each closable. Nothing shows while none is open. */
+function PartnerRouteRows() {
+  const routes = liveBridge()?.partnerRoutes ?? null
+  const [rows, setRows] = useState<PartnerRouteRow[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const load = useCallback(() => {
+    if (!routes) return
+    routes.list().then(setRows, () => setRows([]))
+  }, [routes])
+  useEffect(() => {
+    load()
+    return routes?.onChanged?.(load)
+  }, [load, routes])
+  if (!routes || rows.length === 0) return null
+
+  const close = async (r: PartnerRouteRow) => {
+    setBusy(r.routeId)
+    try {
+      await routes.close(r.routeId)
+      toast(`Closed the route from ${r.app} to ${r.phone ?? 'its phone'}.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The bridge did not close the route.', 'warn')
+    } finally {
+      setBusy(null)
+      load()
+    }
+  }
+
+  return (
+    <>
+      <h4 className="set-sub">Partner routes</h4>
+      <p className="sx-small sx-muted">A partner app's connection to its own phone through the relay. It reaches no printer. Close one to end it now.</p>
+      <ul className="dev-list" data-testid="partner-routes">
+        {rows.map((r) => (
+          <li key={r.routeId} data-testid={`partner-route-${r.routeId}`}>
+            <Icon name="plugin" />
+            <span className="min0">
+              <b>
+                {r.app} to {r.phone ?? 'its phone'}
+              </b>
+              <small className="sx-muted">
+                {r.state === 'opening' ? 'opening' : openFor(r.openedAt)}, {size(r.bytesIn)} in, {size(r.bytesOut)} out
+              </small>
+            </span>
+            <Button size="sm" data-testid={`partner-route-close-${r.routeId}`} disabled={busy === r.routeId} onClick={() => void close(r)}>
+              Close
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
 
 export function DeviceRows() {
   const clients = liveBridge()?.clients ?? null
@@ -82,6 +151,7 @@ export function DeviceRows() {
           No keys yet. Make one in Settings, {ASSISTANT_NAME}, Connect your AI agent.
         </p>
       )}
+      <PartnerRouteRows />
     </>
   )
 }
