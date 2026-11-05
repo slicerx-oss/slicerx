@@ -141,12 +141,13 @@ function pointIn(page: Page, id: string, f: [number, number, number]): Promise<[
 /** The middle of an object's box, bed mm. */
 const middleOf = (page: Page, id: string) => pointIn(page, id, [0.5, 0.5, 0.5])
 
-/** One finger: down at `from`, through `to` in steps, then up; `hold` ms before moving. */
-async function finger(cdp: CDPSession, from: { x: number; y: number }, to: { x: number; y: number }, hold = 0, steps = 10): Promise<void> {
+/** One finger: down at `from`, through `to` in steps, then up; `hold` ms before moving and `gap` ms between steps. */
+async function finger(cdp: CDPSession, from: { x: number; y: number }, to: { x: number; y: number }, hold = 0, steps = 10, gap = 0): Promise<void> {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y }] })
   if (hold) await new Promise((r) => setTimeout(r, hold))
   for (let i = 1; i <= steps; i++) {
     const t = i / steps
+    if (gap && i > 1) await new Promise((r) => setTimeout(r, gap))
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }] })
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
@@ -204,10 +205,10 @@ test.describe('phone', () => {
       // Framed, the model's middle is the move arrows' origin, so a drag on the model starts on its low X and Y side,
       // away from all three arrows. In four steps, so the first move is already past the 8 px a held finger may wander.
       // Each step waits for the page to take it, one a frame, so on a slow runner a drag still inside that read as a
-      // finger held for Select Other, whose list then took the drag.
-      const drag = async () => {
+      // finger held for Select Other, whose list then took the drag. `gap` paces the steps as a finger would.
+      const drag = async (gap = 0) => {
         const body = await screenOf(page, await pointIn(page, id, [0.2, 0.2, 0.5]))
-        await finger(cdp, body, { x: body.x + 60, y: body.y + 10 }, 0, 4)
+        await finger(cdp, body, { x: body.x + 60, y: body.y + 10 }, 0, 4, gap)
         await page.waitForTimeout(300)
       }
       const before = (await state(page)).plate[0]!.transform.join(',')
@@ -216,12 +217,17 @@ test.describe('phone', () => {
       await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
       await drag()
       expect((await state(page)).plate[0]!.transform.join(',')).toBe(before)
-      // selected: the same drag moves the model on the plate, flat on the bed, and one undo puts it back
+      // selected: the same drag moves the model on the plate, flat on the bed, and one undo puts it back. At a finger's
+      // pace, over about half a second: the view stays put, where the plate edge drag once eased it out and slid it to
+      // the near edge under a finger that had barely moved, and the model went back where it started.
       await setState(page, { selection: id, selectedIds: [id] })
       await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
       const t0 = (await state(page)).plate[0]!.transform
-      await drag()
-      await expect.poll(async () => Math.hypot((await state(page)).plate[0]!.transform[12]! - t0[12]!, (await state(page)).plate[0]!.transform[13]! - t0[13]!)).toBeGreaterThan(2)
+      await drag(150)
+      const moved = async () => { const t = (await state(page)).plate[0]!.transform; return Math.hypot(t[12]! - t0[12]!, t[13]! - t0[13]!) }
+      await expect.poll(moved).toBeGreaterThan(2)
+      // 60 px on a 20 mm box framed to fill the view is a few millimeters
+      expect(await moved()).toBeLessThan(30)
       expect(Math.abs((await state(page)).plate[0]!.transform[14]! - t0[14]!)).toBeLessThan(0.01)
       expect((await state(page)).selection).toBe(id)
       await page.locator('body').press('ControlOrMeta+z')
