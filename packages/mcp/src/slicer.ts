@@ -87,6 +87,12 @@ export interface SliceSummary {
    * engine alone reports it).
    */
   chamber_cooling?: { mode: number; source: 'override' | 'project' | 'preset' | 'derived' | 'config'; filaments?: string[]; text: string }
+  /**
+   * The prime tower as the engine placed it (sx engine), when the plate prints one: its front left corner, width and
+   * depth in mm and its turn in degrees about that corner. A smooth timelapse (`timelapse_type` 1) on a Bambu Lab
+   * printer prints one even with a single filament.
+   */
+  prime_tower?: { x: number; y: number; width: number; depth: number; angle: number }
   /** The plate that was sliced, for a 3MF or .sx3mf project. */
   plate?: number
   /** How many plates of the project have something to print, when it has more than one and no plate was asked for. */

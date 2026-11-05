@@ -900,7 +900,8 @@ impl Tower {
         self
     }
 
-    /// The tower for a plate with `tools` filaments, or none when it is off or the plate uses one.
+    /// The tower for a plate with `tools` filaments, or none when it is off or the plate uses one (unless a smooth
+    /// timelapse needs it, [`crate::timelapse::smooth_tower`]).
     pub(crate) fn new(cfg: &PrintConfig, tools: u8, rows: f64) -> Option<Self> {
         let on = match cfg.raw.get("enable_prime_tower") {
             Some(serde_json::Value::Bool(b)) => *b,
@@ -908,7 +909,7 @@ impl Tower {
             Some(serde_json::Value::String(s)) => s == "1" || s == "true",
             _ => false,
         };
-        if !on || tools < 2 {
+        if !on || (tools < 2 && !crate::timelapse::smooth_tower(cfg)) {
             return None;
         }
         let nozzle = cfg.nozzle_diameter;
@@ -2618,7 +2619,12 @@ pub(crate) fn rib_size(
     };
     let side = (((deepest(width) + pw) * width * gap).sqrt() / pw).ceil() * pw;
     let block = deepest(side);
-    (block > 0.0).then_some((side, block * gap + pw))
+    if block > 0.0 {
+        Some((side, block * gap + pw))
+    } else {
+        // A smooth timelapse prints the tower on a plate with no purges: the square of a tower with none.
+        crate::timelapse::smooth_tower(cfg).then_some((side, side))
+    }
 }
 
 /// The bead width of the rows an old filament rams out before a change: Bambu Studio's nozzle change width

@@ -339,7 +339,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "thumbnails_format",
     "time_cost",
     "time_lapse_gcode",
-    "timelapse_type",
     "tool_change_on_wipe_tower",
     "toolchange_cyclic_first_layer",
     "toolchange_ordering",

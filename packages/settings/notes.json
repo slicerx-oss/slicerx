@@ -261,7 +261,7 @@
   "spiral_mode_max_xy_smoothing": "How far smooth spiral may move points sideways to even out the spiral, in mm or as a percent of the nozzle diameter.",
   "spiral_mode_smooth": "Also smooths sideways moves in spiral vase mode, so no seam shows even on slanted walls.",
   "spiral_starting_flow_ratio": "Flow at the very start of the spiral, where it normally ramps up from zero over the first loop. Raise it if the first loop is thin.",
-  "timelapse_type": "How the timelapse camera takes its shots. Traditional snaps where the toolhead is; smooth parks the toolhead out of view for each shot, which takes longer and may need a prime tower.",
+  "timelapse_type": "How the timelapse camera takes its shots: traditional snaps where the toolhead is, smooth parks it out of view for each shot. Smooth then wipes the nozzle on the prime tower, so it takes longer and needs the prime tower on.",
   "gap_infill_speed": "Speed for filling thin gaps, in mm/s. Gaps vary in width, so slower than normal infill prints them more evenly.",
   "initial_layer_infill_speed": "Speed of solid infill on the first layer, in mm/s. Slower helps it stick to the bed.",
   "initial_layer_speed": "Speed of walls and everything except solid infill on the first layer, in mm/s. Slower gives the first layer time to stick.",

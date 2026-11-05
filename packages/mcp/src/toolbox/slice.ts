@@ -156,6 +156,14 @@ export const summaryShape = {
     filaments: z.array(z.string()).optional().describe('With derived: the filament_type of each filament the plate prints, in slot order'),
     text: z.string(),
   }).optional(),
+  /** sx engine: the prime tower as placed, when the plate prints one. */
+  prime_tower: z.object({
+    x: z.number().describe('Front left corner on the bed, mm'),
+    y: z.number().describe('Front left corner on the bed, mm'),
+    width: z.number().describe('mm'),
+    depth: z.number().describe('mm'),
+    angle: z.number().describe('Turn about the corner, degrees'),
+  }).optional().describe('The prime tower as the engine placed it, when the plate prints one. A smooth timelapse (overrides timelapse_type "1") on a Bambu Lab printer prints one with a single filament too.'),
   plate: z.number().optional(),
   plate_count: z.number().optional().describe('How many plates of the project have something to print, when it has more than one and no plate was asked for'),
   gcode_path: z.string().optional(),
@@ -378,6 +386,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(result.preview_path ? [`Preview: ${result.preview_path}`] : []),
     `Walls: ${walls.text}`,
     ...(result.chamber_cooling ? [`Chamber: ${result.chamber_cooling.text} (${result.chamber_cooling.source})`] : []),
+    ...(result.prime_tower ? [`Prime tower: ${result.prime_tower.width} x ${result.prime_tower.depth} mm at (${result.prime_tower.x}, ${result.prime_tower.y})`] : []),
     ...result.warnings.map((w) => `Warning: ${w}`),
     ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
     ...(result.note ? [result.note] : []),

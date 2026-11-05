@@ -145,6 +145,15 @@ impl Plate {
         )
     }
 
+    /// A block on a Bambu Lab A1 with the prime tower on and a traditional timelapse.
+    fn bambu() -> Self {
+        Self::new(
+            block(20.0, 20.0, 2.0),
+            &[(128.0, 128.0, 0.0)],
+            &json!({"printer_model": "Bambu Lab A1", "enable_prime_tower": true, "timelapse_type": "0"}),
+        )
+    }
+
     /// Two blocks turned apart about Z, printed layer by layer.
     fn turned() -> Self {
         Self::new(
@@ -192,6 +201,8 @@ const KEYED: &[&str] = &[
     "filament_multitool_ramming",
     "filament_multitool_ramming_volume",
     "enable_filament_ramming",
+    // A smooth timelapse prints the prime tower on every layer.
+    "timelapse_type",
     "wall_direction",
     "scarf_angle_threshold",
     "scarf_overhang_threshold",
@@ -217,6 +228,7 @@ fn edits() -> Vec<Edit> {
         ("wall_maximum_deviation", Plate::round, json!(0.005)),
         ("wall_maximum_resolution", Plate::round, json!(0.05)),
         ("align_infill_direction_to_model", Plate::turned, json!(true)),
+        ("timelapse_type", Plate::bambu, json!("1")),
     ]
 }
 
