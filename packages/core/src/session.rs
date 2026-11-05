@@ -9864,12 +9864,14 @@ impl SliceSession {
                 && crate::tower::flag_or(cfg, "detect_overhang_wall", true)
                 && crate::tower::flag(cfg, "extra_perimeters_on_overhangs")
             {
-                // The loops print with the overhang walls' bead.
-                let (width, flow) = crate::overhang::bead(cfg, self.plan.thickness(layer));
+                // The loops print with the overhang walls' bead, at this layer's height: they are laid at that
+                // height's spacing, which smart layers can make wider or narrower than the set height's.
+                let thickness = self.plan.thickness(layer);
+                let (width, flow) = crate::overhang::bead(cfg, thickness);
                 let spacing = if cfg.thick_bridges {
                     width + 0.05
                 } else {
-                    cfg.spacing_for(width)
+                    cfg.spacing_at(width, thickness)
                 };
                 // OrcaSlicer measures against the layer below grown by half the nozzle.
                 let grown = overhangs
