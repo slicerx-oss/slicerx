@@ -44,6 +44,7 @@ mod printer_page;
 mod probe;
 mod recover;
 mod slicing;
+mod spacemouse;
 mod themes;
 mod updates;
 #[cfg(feature = "connect")]
@@ -141,6 +142,7 @@ fn main() {
         .manage(opened::PendingVault::default())
         .manage(closing::Unsaved::default())
         .manage(menu::Shown::default())
+        .manage(spacemouse::SpaceMouse::default())
         .manage(updates::Updates::new(updates_on))
         .on_window_event(closing::window_event)
         .manage(watch_state())
@@ -223,6 +225,8 @@ fn main() {
             opened::vault_link_take,
             presets::presets_scan,
             presets::presets_read,
+            spacemouse::spacemouse_start,
+            spacemouse::spacemouse_stop,
             #[cfg(feature = "connect")]
             pairdoc::pair_doc_read,
             #[cfg(feature = "connect")]

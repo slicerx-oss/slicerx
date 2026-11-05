@@ -59,6 +59,9 @@ serde_json = "=1.0.151"
 # finds the design a web page just downloaded by its SHA-256 (opened.rs)
 sha2 = { version = "=0.11.0", default-features = false }
 anyhow = "=1.0.104"
+# Reads a 3D mouse for the view (spacemouse.rs): opened shared, never seized, so the maker's driver keeps working.
+# Pure Rust on Windows and Linux (no libudev to install); hidapi's own C code on macOS.
+hidapi = { version = "=2.6.7", default-features = false, features = ["windows-native", "linux-native-basic-udev", "macos-shared-device"] }
 zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 
 # Opens a menu by its access key (menu::menu_key), reads the GPU for local AI (localai.rs) and seals printer codes the
