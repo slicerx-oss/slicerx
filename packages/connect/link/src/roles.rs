@@ -93,6 +93,9 @@ const APP_ONLY: &[&str] = &[
     "inbox.decline",
     "push.register",
     "push.unregister",
+    // The app hands over a LAN partner phone's own token for the pairing it checked.
+    "push.registerPartner",
+    "push.partnerApprovals",
 ];
 
 const APP_ONLY_PREFIXES: &[&str] = &["clients.", "secrets.", "remote.", "appLink."];
