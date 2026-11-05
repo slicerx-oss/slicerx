@@ -93,6 +93,8 @@ The mimir tab saves notes, asking first with a small chip that says where the no
 
 `voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs that mimir searches, in the edition file the running build carries. The bundled docs are not counted, and neither is one of yours that shares a bundled doc's id or name (the bundled doc wins). `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
 
+`slicerx_mimir_session` reads a conversation back turn by turn, with the same needs. A question mimir asked shows as a step with its `askId`, choices and `picked`. When the person answered it on their paired phone, the step also has `answeredOn`, for example `{ "kind": "phone", "name": "Pocket" }`. A client can turn a waiting question down with `slicerx_mimir_dismiss`, but no tool picks an answer for the person.
+
 ## Print runs
 
 mimir follows one chat from a part to a print in six steps: design, plate, target (the printer, and which slot feeds each filament), slice, send and print. It keeps one run record per chat, and mimir's tools and cards read the same record.
