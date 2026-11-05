@@ -16,6 +16,7 @@ export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, 
 export type { DesignToolOptions } from './design-tools'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
+export { appPartInputs, type AppParts } from './app-parts'
 export { appDimensionInputs, type AppDimensions } from './app-dimensions'
 
 export { appPlateInputs } from './app-plate-inputs'

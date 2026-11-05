@@ -56,6 +56,8 @@ export type StepParams =
   | { op: 'simplify'; targetRatio: number }
   | { op: 'array.merged'; spec: ArraySpec }
   | { op: 'parts.add'; parts: HistoryMesh[]; label: string }
+  /** The parts put in a new order, no geometry changed: part i after the step is part `order[i]` before it. */
+  | { op: 'parts.order'; order: number[] }
   | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number }
   | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number }
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
@@ -585,6 +587,8 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
       return `Array of ${p.spec.kind === 'linear' ? p.spec.count * (p.spec.count2 ?? 1) : p.spec.count}, merged`
     case 'parts.add':
       return p.label
+    case 'parts.order':
+      return 'Reorder parts'
     case 'edge.fillet':
       return `Fillet ${len(p.radiusMm)}${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
     case 'edge.chamfer':

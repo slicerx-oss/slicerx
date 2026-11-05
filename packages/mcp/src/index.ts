@@ -45,6 +45,7 @@ import { appUnitTools } from './app-units'
 import { appPickFilterTools } from './app-pick-filter'
 import { appBrimTools } from './app-brim'
 import { mimirAskTools } from './mimir-ask'
+import { appPartTools } from './app-parts'
 import { appVolumeTools } from './app-volumes'
 import { appDimensionTools } from './app-dimensions'
 import { appPlateTools } from './app-plates'
@@ -242,7 +243,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sketchBoxes = appSketchTools(appLink, productName())
   // Model's Select Other: what is under a spot of the view, and picking one of those things.
   const select = appSelectTools(appLink, productName())
-  const volumes = [...appVolumeTools(appLink, productName()), ...appDimensionTools(appLink, productName())]
+  const volumes = [...appVolumeTools(appLink, productName()), ...appPartTools(appLink, productName()), ...appDimensionTools(appLink, productName())]
   // Push and pull as the person has it open in Model: its face and pending distance, and a distance typed in for them.
   const push = appModelPushTools(appLink, productName())
   // The open Model tool's operation preview: ok or error, its message, and whether the last good one is kept.

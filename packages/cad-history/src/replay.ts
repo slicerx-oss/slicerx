@@ -237,6 +237,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const p = s.params
   // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
+  // A new order changes no geometry, so it runs the same on meshes and on exact solids.
+  if (p.op === 'parts.order') {
+    if (p.order.length !== parts.length) throw new Broken(`This step orders ${p.order.length} parts, and the object has ${parts.length} here.`)
+    return p.order.map((k) => parts[k]!)
+  }
   if (exact && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     const done = await exactStep(
       call,

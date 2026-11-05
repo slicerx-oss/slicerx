@@ -131,6 +131,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("volumes.set", LinkClass::Edit),
     ("volumes.copy", LinkClass::Edit),
     ("volumes.remove", LinkClass::Edit),
+    // The parts inside an object: cloning one and putting them in a new order, each one undo step.
+    ("parts.list", LinkClass::Read),
+    ("parts.clone", LinkClass::Edit),
+    ("parts.order", LinkClass::Edit),
     ("project.set_overrides", LinkClass::Edit),
     ("settings.get", LinkClass::Read),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
@@ -464,6 +468,9 @@ mod tests {
         ("volumes.set", LinkClass::Edit),
         ("volumes.copy", LinkClass::Edit),
         ("volumes.remove", LinkClass::Edit),
+        ("parts.list", LinkClass::Read),
+        ("parts.clone", LinkClass::Edit),
+        ("parts.order", LinkClass::Edit),
         ("project.set_overrides", LinkClass::Edit),
         ("settings.get", LinkClass::Read),
         ("paint.get", LinkClass::Read),
