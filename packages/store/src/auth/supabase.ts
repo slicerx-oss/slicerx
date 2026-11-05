@@ -108,6 +108,7 @@ const apiTokenRow = z.object({
   last_used_at: z.string().nullable(),
   last_used_ip: z.string().nullable(),
   revoked_at: z.string().nullable(),
+  partner_app: z.string().nullable().optional(),
 })
 
 const toApiToken = (r: z.infer<typeof apiTokenRow>): ApiToken => ({
@@ -121,6 +122,7 @@ const toApiToken = (r: z.infer<typeof apiTokenRow>): ApiToken => ({
   ...(r.last_used_at ? { lastUsedAt: isoTime(r.last_used_at) } : {}),
   ...(r.last_used_ip ? { lastUsedIp: r.last_used_ip } : {}),
   ...(r.revoked_at ? { revokedAt: isoTime(r.revoked_at) } : {}),
+  ...(r.partner_app ? { partnerApp: r.partner_app } : {}),
 })
 
 const exportDoc = z.object({ format: z.literal('slicerx-account-export'), version: z.number(), exported_at: z.string() }).passthrough()
@@ -128,7 +130,7 @@ const policyRow = z.object({ grace_days: z.number().int(), removed: z.array(z.st
 
 const PROFILE_COLUMNS = 'id, handle, display_name, avatar_url, role, banned_at, ban_reason'
 const DEVICE_COLUMNS = 'id, user_id, device_id, name, platform, sign_pub, linked_at, revoked_at'
-const TOKEN_COLUMNS = 'id, name, prefix, scopes, rate_limit_per_minute, created_at, expires_at, last_used_at, last_used_ip, revoked_at'
+const TOKEN_COLUMNS = 'id, name, prefix, scopes, rate_limit_per_minute, created_at, expires_at, last_used_at, last_used_ip, revoked_at, partner_app'
 
 /** Removes every PKCE verifier supabase-js keeps for sign-ins in flight (the newest, the per-flow slots and their index). */
 export async function clearPendingVerifiers(storage: AuthStorage | undefined): Promise<void> {
@@ -306,6 +308,19 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
         p_scopes: input.scopes,
         ...(input.expiresInDays === undefined ? {} : { p_expires_in_days: input.expiresInDays as number }),
         ...(input.rateLimitPerMinute === undefined ? {} : { p_rate_limit_per_minute: input.rateLimitPerMinute }),
+      })
+      if (error) return fail(errorCode(error), error.message)
+      const created = rows(z.object({ id: z.string(), token: z.string() }), data)[0]
+      if (!created) return fail('unavailable', 'No token returned')
+      const saved = (await read(apiTokenRow, sb.from('api_tokens').select(TOKEN_COLUMNS).eq('id', created.id)))[0]
+      return saved ? ok({ token: toApiToken(saved), secret: created.token }) : fail('not_found', 'Token not readable after create')
+    },
+
+    async createPartnerToken(input) {
+      if (!(await uid())) return fail('not_signed_in', 'Sign in first')
+      const { data, error } = await sb.rpc('create_partner_token', {
+        p_partner_app: input.partnerApp.trim(),
+        ...(input.expiresInDays === undefined ? {} : { p_expires_in_days: input.expiresInDays }),
       })
       if (error) return fail(errorCode(error), error.message)
       const created = rows(z.object({ id: z.string(), token: z.string() }), data)[0]

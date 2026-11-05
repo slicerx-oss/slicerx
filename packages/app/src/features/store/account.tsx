@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings > Account: your data, deleting the account, and API tokens.
+// Settings > Account: your data, deleting the account, API tokens and partner app tokens.
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Button, Chip, Dialog } from '@slicerx/ui'
 import { appName, closeSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
-import { activeTokens, deletionBanner, exportFileName, graceLabel, rateLabel, revokedLabel, tokenState } from './account-logic'
+import { activeTokens, deletionBanner, exportFileName, graceLabel, ownTokens, rateLabel, revokedLabel, tokenState } from './account-logic'
+import { PartnerTokens } from './partner-tokens'
 import { signOutSession, useAccountLabel, useSession, useStore } from './queries'
 import { openExternal, privacyUrl } from './routes'
 import { openEditor, openUpload } from './sheets'
@@ -106,6 +107,7 @@ function SignedIn() {
   const signOut = () => signOutSession(store, client)
   const open = (url: string) => void openExternal(host, url)
   const live = activeTokens(tokens.data ?? [])
+  const own = ownTokens(tokens.data ?? [])
 
   return (
     <>
@@ -175,9 +177,9 @@ function SignedIn() {
       <section className="set-sec" aria-labelledby="tok-h">
         <h3 id="tok-h">API tokens</h3>
         <p className="sx-small sx-muted">Tokens let tools such as the {appName()} command line and MCP server act as you. Revoke one you no longer use, or all of them after a leak.</p>
-        {tokens.data?.length ? (
+        {own.length ? (
           <ul className="tok-list">
-            {tokens.data.map((t) => {
+            {own.map((t) => {
               const state = tokenState(t)
               return (
                 <li key={t.id} data-state={state}>
@@ -211,6 +213,8 @@ function SignedIn() {
           </Button>
         ) : null}
       </section>
+
+      <PartnerTokens store={store} tokens={tokens.data ?? []} pending={tokens.isPending} />
 
       <Dialog
         open={confirm}
