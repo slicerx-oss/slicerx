@@ -81,7 +81,7 @@ fn settings_tag(cfg: &PrintConfig) -> u64 {
         w.map(f64::to_bits).hash(&mut h);
     }
     // The first layer's settings read their modifiers' and parts' first layer settings ([`first_layer_mods`]).
-    if cfg.first_layer_line {
+    if cfg.first_layer {
         1u8.hash(&mut h);
     }
     h.finish()
@@ -832,19 +832,21 @@ fn mm_f32(v: f64) -> f32 {
 }
 
 /// What decides whether two regions share their walls: the loop count, the line width and the outer and inner wall
-/// widths. A region whose walls are wider or narrower walls itself, an outer wall along its boundary. On a first layer
-/// with a first layer width of its own every region prints its walls at its line width, so the loop count and the line
-/// width decide there (`line_only`).
-fn wall_key(cfg: &PrintConfig, line_only: bool) -> (u32, [i64; 3]) {
+/// widths of the settings the region prints with. A region whose walls are wider or narrower walls itself, an outer wall
+/// along its boundary. On the print's first layer those are its first layer settings ([`first_layer_mods`]): with
+/// `initial_layer_line_width` every region that keeps it prints its walls at that width and they share, whatever their
+/// widths above.
+fn wall_key(cfg: &PrintConfig) -> (u32, [i64; 3]) {
     #[allow(clippy::cast_possible_truncation, reason = "a width in microns")]
     let um = |w: f64| (w * 1000.0).round() as i64;
-    let line = um(cfg.line_width);
-    let walls = if line_only {
-        [line, line]
-    } else {
-        [um(cfg.outer_wall_width()), um(cfg.inner_wall_width())]
-    };
-    (cfg.wall_loops, [line, walls[0], walls[1]])
+    (
+        cfg.wall_loops,
+        [
+            um(cfg.line_width),
+            um(cfg.outer_wall_width()),
+            um(cfg.inner_wall_width()),
+        ],
+    )
 }
 
 /// The first part of a layer's paths ([`SliceSession::layer_start`]), which [`SliceSession::layer_finish`]
@@ -8673,7 +8675,6 @@ impl SliceSession {
         let layer_height = self.plan.thickness(layer);
         let top_or_bottom = layer == 0 || layer + 1 == n;
         let base_cfg = cfg;
-        let own_mods = mods;
         let mods = first_layer_mods(cfg, mods);
         let region_config = |j: usize| match here.region_cfg.get(j).copied().unwrap_or(0) {
             0 => base_cfg,
@@ -8683,16 +8684,11 @@ impl SliceSession {
         // modifier that only changes the infill does not put walls along its boundary. Walls on other
         // filaments (a modifier's own wall filament) are set apart: shared, they would print on the filament
         // of the region that walls the group.
-        // On a first layer printed at `initial_layer_line_width` a region's own line width still decides (its
-        // settings without the first layer's width), though its lines print at the first layer's.
+        // The widths are the ones each region prints at: on the first layer its first layer settings.
         let key_of = |j: usize, slot: u8| {
-            let c = match here.region_cfg.get(j).copied().unwrap_or(0) {
-                k if k != 0 && cfg.first_layer_line => own_mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
-                _ => region_config(j),
-            };
+            let c = region_config(j);
             let t = self.feature_tools(c, slot);
-            let line_only = layer == 0 && self.raft.is_none() && cfg.feature_widths.initial_layer.is_some();
-            (wall_key(c, line_only), t.outer, t.inner)
+            (wall_key(c), t.outer, t.inner)
         };
         let group_of = |ri: usize| -> Vec<usize> {
             let Some((slot, _)) = here.regions.get(ri) else {
@@ -9713,16 +9709,16 @@ impl SliceSession {
                 tool: *slot,
                 islands,
                 width: (region_k != 0).then(|| mm_f32(cfg.line_width)),
-                // On the print's first layer with `initial_layer_line_width` set the region's settings are its first
-                // layer's already, every line at that width; with no first layer width its walls print at their own
-                // widths, as the region walls itself then ([`wall_key`]). With first layer widths per feature, the
-                // plate's or the region's own, its settings are its first layer's too, each feature at its own.
+                // On the print's first layer the region's settings are its first layer's already: with an
+                // `initial_layer_line_width` of its own (or the plate's) every line prints at that width; with none
+                // (left out, or 0) its walls print at their own widths, as they are laid out. With first layer widths
+                // per feature, the plate's or the region's own, each feature prints at its own.
                 feature_widths: (region_k != 0)
                     .then(|| {
                         let lw = cfg.line_width;
                         match (
                             layer == 0 && self.raft.is_none() && !cfg.on_first_layer,
-                            base_cfg.feature_widths.initial_layer,
+                            cfg.first_layer_line,
                         ) {
                             (false, _) => Some([
                                 cfg.outer_wall_width(),
@@ -9732,10 +9728,10 @@ impl SliceSession {
                                 cfg.top_surface_width(),
                                 cfg.support_width(),
                             ]),
-                            (true, None) => {
+                            (true, false) => {
                                 Some([cfg.outer_wall_width(), cfg.inner_wall_width(), lw, lw, lw, lw])
                             }
-                            (true, Some(_)) => None,
+                            (true, true) => None,
                         }
                     })
                     .flatten()
@@ -14913,11 +14909,11 @@ fn shared_first_layer(plate: &Plate, config: &PrintConfig) -> Option<Plate> {
     Some(out)
 }
 
-/// The modifier and part settings a layer printed with `cfg` reads: each one's own first layer settings when `cfg` is a
-/// first layer's ([`PrintConfig::for_first_layer`], made from first layer widths per feature or from
-/// `initial_layer_line_width`), else `mods` as they are.
+/// The modifier and part settings a layer printed with `cfg` reads: each one's own first layer settings when `cfg` is the
+/// print's first layer's ([`PrintConfig::for_first_layer`]), else `mods` as they are. A modifier's or part's first
+/// layer widths apply whether or not the plate sets any.
 fn first_layer_mods<'m>(cfg: &PrintConfig, mods: &'m [PrintConfig]) -> std::borrow::Cow<'m, [PrintConfig]> {
-    if cfg.on_first_layer || cfg.first_layer_line {
+    if cfg.first_layer {
         std::borrow::Cow::Owned(mods.iter().map(PrintConfig::for_first_layer).collect())
     } else {
         std::borrow::Cow::Borrowed(mods)
@@ -15413,30 +15409,53 @@ mod wall_key_tests {
         let base = cfg(&json!({}));
         // A modifier or part that only sets a wall width, with the same loops and line width.
         assert_ne!(
-            wall_key(&base, false),
-            wall_key(&cfg(&json!({"inner_wall_line_width": 0.55})), false)
+            wall_key(&base),
+            wall_key(&cfg(&json!({"inner_wall_line_width": 0.55})))
         );
         assert_ne!(
-            wall_key(&base, false),
-            wall_key(&cfg(&json!({"outer_wall_line_width": 0.6})), false)
+            wall_key(&base),
+            wall_key(&cfg(&json!({"outer_wall_line_width": 0.6})))
         );
         // One that only changes the infill shares the walls around it.
         assert_eq!(
-            wall_key(&base, false),
-            wall_key(&cfg(&json!({"sparse_infill_density": "50%"})), false)
+            wall_key(&base),
+            wall_key(&cfg(&json!({"sparse_infill_density": "50%"})))
         );
         assert_eq!(
-            wall_key(&cfg(&json!({"sparse_infill_line_width": 0.55})), false),
-            wall_key(&base, false)
+            wall_key(&cfg(&json!({"sparse_infill_line_width": 0.55}))),
+            wall_key(&base)
         );
-        // On the first layer every region prints its walls at its line width: the wall widths do not split them.
+    }
+
+    #[test]
+    fn on_the_first_layer_regions_group_by_the_widths_they_print() {
+        // With initial_layer_line_width every wall of the first layer prints at it: a region's own wall or line widths
+        // above do not split it from the plate there, a first layer width of its own does.
+        let first = |v: serde_json::Value| {
+            let mut v = v;
+            v["initial_layer_line_width"] = json!(0.5);
+            cfg(&v).for_first_layer()
+        };
+        let base = first(json!({}));
         assert_eq!(
-            wall_key(&base, true),
-            wall_key(&cfg(&json!({"inner_wall_line_width": 0.55})), true)
+            wall_key(&base),
+            wall_key(&first(json!({"inner_wall_line_width": 0.55})))
+        );
+        assert_eq!(wall_key(&base), wall_key(&first(json!({"line_width": 0.6}))));
+        assert_ne!(
+            wall_key(&base),
+            wall_key(&first(json!({"initial_layer_inner_wall_line_width": 0.7})))
         );
         assert_ne!(
-            wall_key(&base, true),
-            wall_key(&cfg(&json!({"line_width": 0.5})), true)
+            wall_key(&base),
+            wall_key(&cfg(&json!({"line_width": 0.5, "initial_layer_line_width": 0.7})).for_first_layer())
+        );
+        // A region that sets it to 0 keeps its own widths on the first layer.
+        assert_ne!(
+            wall_key(&base),
+            wall_key(
+                &cfg(&json!({"initial_layer_line_width": 0, "outer_wall_line_width": 0.6})).for_first_layer()
+            )
         );
     }
 }
