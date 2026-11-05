@@ -50,6 +50,8 @@ describe('stock G-code', () => {
     expect(makers.filter((id) => !(stock.models[id]?.['machine_start_gcode']?.length))).toEqual([])
     // The H3C's shipped maker G-code is known as stock before its family is in packages/profiles/gcode.json.
     expect(Object.keys(stock.models['bambu-h3c'] ?? {}).sort()).toEqual(['change_filament_gcode', 'layer_change_gcode', 'machine_end_gcode', 'machine_pause_gcode', 'machine_start_gcode', 'time_lapse_gcode'])
+    // The MK3.5's shipped maker G-code is known as stock before its family is in packages/profiles/gcode.json.
+    expect(Object.keys(stock.models['prusa-mk3.5'] ?? {}).sort()).toEqual(['before_layer_change_gcode', 'change_filament_gcode', 'layer_change_gcode', 'machine_end_gcode', 'machine_pause_gcode', 'machine_start_gcode'])
   })
 })
 
