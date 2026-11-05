@@ -1325,25 +1325,26 @@ mod split {
         }
     }
 
-    /// the model part `path` read in pieces of about `piece` bytes on the rayon pool
+    /// the model part `path` read in pieces of about `piece` bytes on the rayon pool. at most two pieces per pool
+    /// thread are cut and not yet joined, so a part that inflates faster than it parses is never held whole
     pub(super) fn load(zip: &Zip<'_>, path: &str, piece: usize) -> Option<Model> {
         let (tx, mut rx) = mpsc::channel::<(usize, Option<Piece>)>();
+        let most = 2 * rayon::current_num_threads().max(1);
         let mut doctype = None;
-        let mut count = 0usize;
+        let (mut sent, mut got) = (0usize, 0usize);
         let mut joiner = Joiner::default();
         // the receiver is not shared between threads, so the scope takes it by unique borrow
         let parsed = &mut rx;
         let streamed = rayon::scope(|s| {
             let parsed = parsed;
-            let mut pending: Vec<u8> = Vec::new();
-            let mut searched = 0;
-            let mut send = |text: Vec<u8>, last: bool| {
-                let (i, tx) = (count, tx.clone());
-                count += 1;
+            let send = |i: usize, text: Vec<u8>, last: bool| {
+                let tx = tx.clone();
                 s.spawn(move |_| {
                     let _ = tx.send((i, parse(&text, i == 0, last)));
                 });
             };
+            let mut pending: Vec<u8> = Vec::new();
+            let mut searched = 0;
             let streamed = zip.stream(path, |chunk| {
                 if doctype.is_none() {
                     // as the reader on one thread looks for it: in the first piece the part inflates to
@@ -1358,16 +1359,32 @@ mod split {
                         break;
                     };
                     searched = 0;
+                    // too many pieces wait: help parse them on this thread, or wait briefly for one, never block
+                    // the pool
+                    while sent - got >= most {
+                        if let Ok((i, p)) = parsed.try_recv() {
+                            got += 1;
+                            joiner.add(i, p);
+                        } else if !matches!(rayon::yield_now(), Some(rayon::Yield::Executed))
+                            && let Ok((i, p)) = parsed.recv_timeout(std::time::Duration::from_millis(1))
+                        {
+                            got += 1;
+                            joiner.add(i, p);
+                        }
+                    }
                     let rest = pending.split_off(cut);
-                    send(std::mem::replace(&mut pending, rest), false);
+                    send(sent, std::mem::replace(&mut pending, rest), false);
+                    sent += 1;
                 }
                 // join what is parsed while the part inflates, so parsed pieces do not pile up
                 for (i, p) in parsed.try_iter() {
+                    got += 1;
                     joiner.add(i, p);
                 }
                 Ok(())
             });
-            send(pending, true);
+            send(sent, pending, true);
+            sent += 1;
             streamed
         });
         drop(tx);
@@ -1375,7 +1392,7 @@ mod split {
         for (i, p) in rx {
             joiner.add(i, p);
         }
-        joiner.finish(count, doctype.unwrap_or(false))
+        joiner.finish(sent, doctype.unwrap_or(false))
     }
 }
 
