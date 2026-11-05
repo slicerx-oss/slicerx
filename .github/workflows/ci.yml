@@ -13,13 +13,13 @@ on:
     types: [opened, synchronize, reopened, labeled]
   # the merge queue tests each queued pull request on top of main before it lands
   merge_group:
-  # by hand (write access): the integration test parts on a branch, with core (and crates, unless RUST_CRATES_ON_PC is
-  # false) on the self-hosted Linux runners as the merge queue runs them, to try a change to that path before it is
-  # queued
+  # by hand (write access): the integration test parts on a branch, with core-a and core-b (and crates, unless
+  # RUST_CRATES_ON_PC is false) on the self-hosted Linux runners as the merge queue runs them, to try a change to that
+  # path before it is queued
   workflow_dispatch:
     inputs:
       rust_tests_on_pc:
-        description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core, and crates unless RUST_CRATES_ON_PC is false)
+        description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core-a and core-b, and crates unless RUST_CRATES_ON_PC is false)
         type: boolean
         default: true
       rust_parts:
@@ -406,13 +406,13 @@ jobs:
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
   # breaks never lands; main runs them in the rust job and the macOS and Windows parts. They are split in four that run
-  # side by side: sx-core's two longest (firmware, requests), the rest of sx-core with the desktop shell's clippy and
-  # tests, and every other crate (with the MCP server's tests on the real core).
-  # On hosted runners (a pull request, or the queue with RUST_TESTS_ON_PC set to false) the rest of sx-core alone took
-  # 34 minutes and the desktop shell came after it, so there it is split in six: sx-core's other test files in two halves
-  # by weight (core-a, core-b, the same assignment as the macOS and Windows parts, scripts/ci/rust-part-weights.json),
-  # and the desktop shell's libraries, clippy and tests as a part of its own (desktop), so a stalled package download
-  # fails only that part.
+  # side by side: sx-core's two longest (firmware, requests), the rest of sx-core in two halves by weight (core-a,
+  # core-b, the same assignment as the macOS and Windows parts, scripts/ci/rust-part-weights.json), and every other
+  # crate (with the MCP server's tests on the real core).
+  # On the self-hosted runners the desktop shell's clippy and tests ride on core-a. On hosted runners (a pull request,
+  # or the queue with RUST_TESTS_ON_PC set to false) the rest of sx-core alone took 34 minutes, and there the desktop
+  # shell's libraries, clippy and tests are a part of their own (desktop), so a stalled package download fails only
+  # that part.
   rust-tests-part:
     name: rust tests (${{ matrix.part }})
     needs: detect
@@ -420,20 +420,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # core runs once, on the self-hosted runner, where it takes about 2 minutes; hosted it is core-a, core-b and desktop
-        part: ${{ ((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && fromJSON('["firmware","requests","core","crates"]') || fromJSON('["firmware","requests","core-a","core-b","crates","desktop"]') }}
-    # In the merge queue the two longest parts run on the self-hosted Linux runners (sx-pc), whose build directory stays
-    # warm between runs: there they take about 2 minutes, against 8 to 11 on a fresh hosted runner, and they leave the
-    # hosted job limit to the e2e shards. Each part has a runner of its own (labels sx-pc-core and sx-pc-crates), so
-    # each build directory only ever builds one part. A pull request always runs them hosted. Setting the repository
-    # variable RUST_TESTS_ON_PC to false sends them back to hosted runners at once; RUST_CRATES_ON_PC set to false sends
-    # only the crates part there, so its three groups build side by side while core keeps the PC's warm build. With
-    # crates hosted, core takes either self-hosted runner (label sx-pc), so two groups' core parts run at once; each
-    # runner keeps its own build directory ($HOME/target/<runner name>), so both stay warm on core alone. A run by hand
-    # follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
-    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((matrix.part == 'core' && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part))) || 'ubuntu-latest' }}
-    # Hosted, a half of core or the desktop shell part takes about 20 minutes, 40 covers a slow runner.
-    timeout-minutes: ${{ (startsWith(matrix.part, 'core-') || matrix.part == 'desktop') && 40 || 45 }}
+        # On the self-hosted runners the rest of sx-core was one part (core) until its test binaries alone took about 22
+        # minutes there beside another group's (determinism 102 s, gap_fill_monotonic_line 92 s, arrange_layer_one 86 s,
+        # session_cache 65 s, cancel_rerun 62 s, shard_bytes 61 s, ...): a whole hold took 13 to 19 minutes alone and 20
+        # to 24 beside another group's. So it is core-a and core-b there too. Hosted it is core-a, core-b and desktop.
+        part: ${{ ((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && fromJSON('["firmware","requests","core-a","core-b","crates"]') || fromJSON('["firmware","requests","core-a","core-b","crates","desktop"]') }}
+    # In the merge queue the core halves (and crates, unless RUST_CRATES_ON_PC is false) run on the self-hosted Linux
+    # runners (sx-pc), whose build directory stays warm between runs, and they leave the hosted job limit to the e2e
+    # shards. A pull request always runs them hosted. Setting the repository variable RUST_TESTS_ON_PC to false sends
+    # them back to hosted runners at once; RUST_CRATES_ON_PC set to false sends only the crates part there, so its three
+    # groups build side by side while core keeps the warm build. With crates hosted, core-a and core-b take either
+    # self-hosted runner (label sx-pc): one group's two halves run side by side, and since a runner takes one job at a
+    # time, no more than two core halves run on that machine at once, however many groups are queued. With crates there
+    # too, both halves take the runner labeled sx-pc-core, one after the other. Each runner keeps one build directory
+    # ($HOME/target/<runner name>) for whichever half it gets: both halves build the same sx-core library and
+    # dependencies with the same flags, so a directory per half would double the disk (about 57 GB each) and warm
+    # nothing more. A run by hand follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
+    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (startsWith(matrix.part, 'core-') || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((startsWith(matrix.part, 'core-') && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || (startsWith(matrix.part, 'core-') && fromJSON('["self-hosted","sx-pc-core"]')) || fromJSON('["self-hosted","sx-pc-crates"]')) || 'ubuntu-latest' }}
+    # Hosted, a half of core or the desktop shell part takes about 20 minutes, 40 covers a slow runner. On a self-hosted
+    # runner a core half may wait up to 20 minutes for the lock (SX_HEAVY_WAIT) and then hold it up to 40 (the engine
+    # limit below), so the core halves get 60.
+    timeout-minutes: ${{ startsWith(matrix.part, 'core-') && 60 || matrix.part == 'desktop' && 40 || 45 }}
     permissions:
       contents: read
       actions: write
@@ -471,32 +478,28 @@ jobs:
           # per runner (scripts/ci/README.md, "Disk")
           echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
           # engine test suites: none runs beside a GPU lane run, and each waits at most about 8 minutes for one (heavy.sh --class engine)
-          echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
+          # The limit is per hold. A core half's tests are estimated at about 11 minutes beside the other half; 2400 s
+          # leaves room for a third holder on the machine. The whole core hit 1500 s with two groups side by side.
+          echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 2400" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
-      # every other test file of sx-core, read from the directory so a new one is never left out
+      # every other test file of sx-core, from cargo's own target list so a new one is never left out; one heavy hold per
+      # half on a self-hosted runner (HEAVY is empty on a hosted one)
       - if: matrix.part == 'core-a' || matrix.part == 'core-b'
-        run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part == 'core-a' && 1 || 2 }} --of 2 --core-only
-      - if: matrix.part == 'core'
         run: |
-          args=""
-          for t in packages/core/tests/*.rs; do
-            n=$(basename "$t" .rs)
-            case $n in firmware | requests) ;; *) args="$args --test $n" ;; esac
-          done
           eval "$SX_GROUP_CHECK"
-          ${HEAVY:-} cargo test -p sx-core $args
+          ${HEAVY:-} node scripts/ci/windows-rust-tests.mjs ${{ matrix.part == 'core-a' && 1 || 2 }} --of 2 --core-only
       # The desktop shell (slicerx-desktop), which the workspace runs leave out: it links WebKitGTK and embeds the
-      # frontend. Its clippy and tests, bridge included, ride on the core part on the self-hosted runner (which has the
-      # system libraries), and are the desktop part on a hosted one, which installs them. A placeholder page is enough to
-      # compile it. Warm, this adds about a minute and a half to core, which still ends before firmware and requests.
+      # frontend. Its clippy and tests, bridge included, ride on core-a on a self-hosted runner (which has the system
+      # libraries), and are the desktop part on a hosted one, which installs them. A placeholder page is enough to
+      # compile it. Warm, this adds about a minute and a half to core-a.
       - if: matrix.part == 'desktop'
         name: Linux system libraries for the desktop shell
         # Some hosted runners stall on the package mirror for 10 minutes or more. The script cuts each try off and
         # retries, and fails here before the job's limit (scripts/ci/apt-desktop-libs.sh).
         timeout-minutes: 10
         run: bash scripts/ci/apt-desktop-libs.sh
-      - if: matrix.part == 'core' || matrix.part == 'desktop'
+      - if: matrix.part == 'desktop' || (matrix.part == 'core-a' && runner.environment != 'github-hosted')
         name: Desktop shell clippy and tests
         run: |
           [ -f apps/desktop/dist/index.html ] || { mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html; }
@@ -507,7 +510,7 @@ jobs:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       # A failing desktop test gets one rerun by exact name (cargo-retry.sh); one that passes only on the rerun fails
       # here unless scripts/ci/flaky.d or quarantine.d lists it ("Flaky tests" in scripts/ci/README.md).
-      - if: always() && (matrix.part == 'core' || matrix.part == 'desktop')
+      - if: always() && (matrix.part == 'desktop' || (matrix.part == 'core-a' && runner.environment != 'github-hosted'))
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
