@@ -59,7 +59,7 @@ import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
 import { FEATURE_COLORS, SCENE, resolveTheme, viewportThemeOf, type ResolvedTheme, type UiThemeLike, type ViewportTheme } from './palette'
 import { summarizePreview, type PreviewSummary } from './summary'
-import { CONTROL_PRESETS, buttonName, modifiersOf, orbitCodeFor, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
+import { CONTROL_PRESETS, buttonName, modifiersOf, orbitCodeFor, moveWaitsForSlop, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
@@ -3838,8 +3838,9 @@ class ViewportImpl implements Viewport {
               press = null
               // the lift is not a tap or a click now
               down = null
-              if (!this.holdPick) return void this.emit('contextpick', contextAt(at))
+              // a move the press started goes back, so a finger that drifts under the menu or list moves nothing
               this.dropStillDrag()
+              if (!this.holdPick) return void this.emit('contextpick', contextAt(at))
               this.emit('holdpick', { screen: [at.clientX, at.clientY], touch, hits: this.patchesOf(under) })
             }
             requestAnimationFrame(settle)
@@ -3981,8 +3982,8 @@ class ViewportImpl implements Viewport {
         pointerType: e.pointerType,
         pointerId: e.pointerId,
         at: [e.clientX, e.clientY],
-        // a mouse moves the model at once; a finger only once it is past the tap slop
-        live: !touch,
+        // on a phone a finger moves the model only once it is past the tap slop; anything else moves it at once
+        live: !moveWaitsForSlop(e.pointerType, this.movable),
       }
       this.controls.enabled = false
       el.setPointerCapture(e.pointerId)
