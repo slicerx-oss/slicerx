@@ -4203,8 +4203,9 @@ async fn mock_state(mocks: &common::Mocks) -> String {
         .to_owned()
 }
 
-/// The list carries the port saved for a printer's connection, which the app needs for the link to a page the
-/// connection's own server serves (a print server on port 5000, say). A printer saved without one lists none.
+/// The list carries the port saved for a printer's connection and whether it uses TLS, which the app needs for the
+/// link to a page the connection's own server serves (a print server on port 5000, say). A printer saved without them
+/// lists neither.
 #[tokio::test]
 async fn the_list_carries_the_saved_port() {
     let link = hub(None).await;
@@ -4216,12 +4217,19 @@ async fn the_list_carries_the_saved_port() {
     let cfg = json!({ "id": "pi", "name": "Pi", "plugin": "octoprint", "host": "192.168.1.31" });
     let r = call(&mut ws, 3, "printers.add", json!({ "config": cfg })).await;
     assert_eq!(r["result"]["id"], "pi", "{r}");
+    let cfg =
+        json!({ "id": "safe", "name": "Safe", "plugin": "prusalink", "host": "192.168.1.32", "tls": true });
+    let r = call(&mut ws, 5, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "safe", "{r}");
 
     let r = call(&mut ws, 4, "list", json!({})).await;
     let list = r["result"].as_array().unwrap();
     let by = |id: &str| list.iter().find(|p| p["id"] == id).unwrap().clone();
     assert_eq!(by("octo")["port"], 5001, "{r}");
     assert!(by("pi").get("port").is_none(), "{r}");
+    // A connection over TLS says so, so the link to its page is https.
+    assert_eq!(by("safe")["tls"], true, "{r}");
+    assert!(by("pi").get("tls").is_none(), "{r}");
 }
 
 /// A printer reached through an Obico tunnel, as the app adds it after the paste box: the tunnel host only,

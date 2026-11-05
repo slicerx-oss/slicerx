@@ -29,7 +29,11 @@ pub fn origin_allowed(origin: &str, extra: &[String]) -> bool {
 
 /// True for hosts on the local network: private and loopback IP ranges, link-local, and names
 /// that cannot resolve outside it (`*.local`, single label). The bridge refuses to connect
-/// printers anywhere else, so a paired page cannot use it to reach the internet.
+/// printers anywhere else, so a paired page cannot use it to reach the internet. A name a URL
+/// parser reads as an IPv4 number is refused too (`134744072` and `0x08080808` are 8.8.8.8 in a
+/// browser), as is an address with a leading zero, which the parse below refuses and a browser
+/// reads as octal. `@slicerx/printer-catalog`'s `isLanHost` is the same rule; both are tested
+/// against `packages/connect/fixtures/lan-hosts.json`.
 pub fn is_lan_host(host: &str) -> bool {
     if let Ok(ip) = host.parse::<IpAddr>() {
         return match ip {
@@ -46,10 +50,22 @@ pub fn is_lan_host(host: &str) -> bool {
     {
         return false;
     }
+    if ends_in_a_number(&h) {
+        return false;
+    }
     // `h` is lowercased above and these are DNS suffixes, not file extensions.
     #[allow(clippy::case_sensitive_file_extension_comparisons)]
     let local_suffix = h.ends_with(".local") || h.ends_with(".lan") || h.ends_with(".home.arpa");
     !h.contains('.') || local_suffix
+}
+
+/// The URL standard's "ends in a number" test: a host whose last label is digits, or `0x` and hex
+/// digits, is parsed as an IPv4 address, whatever the labels before it say.
+fn ends_in_a_number(h: &str) -> bool {
+    let last = h.rsplit('.').next().unwrap_or_default();
+    let hex = last.strip_prefix("0x").or_else(|| last.strip_prefix("0X"));
+    (!last.is_empty() && last.bytes().all(|b| b.is_ascii_digit()))
+        || hex.is_some_and(|x| x.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn lan_v4(ip: Ipv4Addr) -> bool {
@@ -94,35 +110,24 @@ mod tests {
         ));
     }
 
+    /// The hosts both this rule and the printer catalog's `isLanHost` are tested against.
     #[test]
     fn lan_hosts() {
-        for ok in [
-            "192.168.1.20",
-            "10.0.0.5",
-            "172.16.4.4",
-            "127.0.0.1",
-            "169.254.1.1",
-            "voron.local",
-            "printer",
-            "::1",
-            "fd00::5",
-            "fe80::1",
-            "bay-1.lan",
-        ] {
-            assert!(is_lan_host(ok), "{ok}");
+        let table: serde_json::Value =
+            serde_json::from_str(include_str!("../../fixtures/lan-hosts.json")).unwrap();
+        let list = |k: &str| -> Vec<String> {
+            table[k]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|h| h.as_str().unwrap().to_owned())
+                .collect()
+        };
+        for ok in list("lan") {
+            assert!(is_lan_host(&ok), "{ok}");
         }
-        for bad in [
-            "8.8.8.8",
-            "172.32.0.1",
-            "example.com",
-            "printer.example.org",
-            "2001:db8::1",
-            "",
-            "a b",
-            "192.168.1.1/x",
-            "user@host",
-        ] {
-            assert!(!is_lan_host(bad), "{bad}");
+        for bad in list("notLan") {
+            assert!(!is_lan_host(&bad), "{bad}");
         }
     }
 }

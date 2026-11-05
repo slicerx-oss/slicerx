@@ -14,6 +14,8 @@ export interface WebUiPrinter {
   host?: string | undefined
   /** The port saved with the printer, for its connection. */
   port?: number | undefined
+  /** The connection uses TLS: a page on the same server is https. */
+  tls?: boolean | undefined
   /** Set for a printer reached through a remote tunnel: its page is not on this network, so it gets no link. */
   tunnel?: string | undefined
 }
@@ -34,30 +36,44 @@ export function printerWebUiUrl(printer: WebUiPrinter, model?: PrinterModel): st
   const ui = webUiOf(printer.plugin, model)
   if (!ui) return null
   const port = ui.sharesPort ? (printer.port ?? methodOf(printer.plugin)?.defaultPort ?? ui.port) : ui.port
-  return webUiUrl(printer.host, port, ui.path)
+  return webUiUrl(printer.host, port, ui.path, ui.sharesPort && printer.tls ? 'https' : 'http')
 }
 
-/** `http://host:port/path` for a host on the local network; null for any other host, a bad port or a bad path. */
-export function webUiUrl(host: string, port: number, path = '/'): string | null {
+/**
+ * `http://host:port/path` (or https) for a host on the local network, written as a browser writes it: names in lower
+ * case without a trailing dot, IPv6 in its short form, no default port. Null for any other host, port or path.
+ */
+export function webUiUrl(host: string, port: number, path = '/', scheme: 'http' | 'https' = 'http'): string | null {
   const h = host.trim()
   if (!isLanHost(h)) return null
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null
   if (!/^\/[A-Za-z0-9\-._~/]*$/.test(path) || path.includes('//')) return null
-  const name = h.includes(':') ? `[${h}]` : h.replace(/\.$/, '')
-  return `http://${name}${port === 80 ? '' : `:${port}`}${path}`
+  const v6 = h.includes(':') ? ipv6Segments(h) : null
+  const name = v6 ? `[${shortIPv6(v6)}]` : h.replace(/\.$/, '').toLowerCase()
+  const fallback = scheme === 'https' ? 443 : 80
+  return `${scheme}://${name}${port === fallback ? '' : `:${port}`}${path}`
 }
 
 /**
  * True for a host the local network keeps to itself: a private, loopback or link-local IP address, a `.local`,
- * `.lan` or `.home.arpa` name, or a single label. The same rule as `is_lan_host` in sx-link.
+ * `.lan` or `.home.arpa` name, or a single label. A name a URL parser reads as an IPv4 number (its last label is
+ * digits, or 0x and hex digits, as in `134744072` or `0x08080808`) is refused, and so is an address with a leading
+ * zero, which a browser reads as octal: each would open a public address. The same rule as `is_lan_host` in sx-link;
+ * both are tested against `packages/connect/fixtures/lan-hosts.json`.
  */
 export function isLanHost(host: string): boolean {
   if (isIPv4(host)) return lanV4(host)
   if (host.includes(':')) return lanV6(host)
   const h = host.replace(/\.$/, '').toLowerCase()
   if (!h || h.length > 253 || !/^[a-z0-9.-]+$/.test(h)) return false
-  if (/^[0-9.]+$/.test(h)) return false
+  if (endsInANumber(h)) return false
   return !h.includes('.') || h.endsWith('.local') || h.endsWith('.lan') || h.endsWith('.home.arpa')
+}
+
+/** The URL standard's "ends in a number": a last label of digits, or 0x and hex digits, makes the host an IPv4 address. */
+function endsInANumber(h: string): boolean {
+  const last = h.split('.').at(-1) ?? ''
+  return /^\d+$/.test(last) || /^0x[0-9a-f]*$/.test(last)
 }
 
 function methodOf(plugin: string): ConnectionMethod | undefined {
@@ -68,9 +84,10 @@ function methodOf(plugin: string): ConnectionMethod | undefined {
   }
 }
 
+/** Four decimal octets without leading zeros, as Rust's parser takes them. */
 function isIPv4(host: string): boolean {
   const parts = host.split('.')
-  return parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)
+  return parts.length === 4 && parts.every((p) => /^(0|[1-9]\d{0,2})$/.test(p) && Number(p) <= 255)
 }
 
 function lanV4(host: string): boolean {
@@ -97,4 +114,23 @@ function ipv6Segments(host: string): number[] | null {
   const fill = 8 - a.length - b.length
   if (tail === undefined ? fill !== 0 : fill < 1) return null
   return [...a, ...Array<string>(tail === undefined ? 0 : fill).fill('0'), ...b].map((x) => parseInt(x, 16))
+}
+
+/** IPv6 as the URL standard writes it: lower-case hex without leading zeros, the first longest run of zeros as `::`. */
+function shortIPv6(segs: number[]): string {
+  let at = -1
+  let len = 1
+  for (let i = 0; i < segs.length; ) {
+    if (segs[i] !== 0) {
+      i++
+      continue
+    }
+    let j = i
+    while (j < segs.length && segs[j] === 0) j++
+    if (j - i > len) [at, len] = [i, j - i]
+    i = j
+  }
+  const hex = segs.map((x) => x.toString(16))
+  if (at < 0) return hex.join(':')
+  return `${hex.slice(0, at).join(':')}::${hex.slice(at + len).join(':')}`
 }

@@ -79,6 +79,8 @@ export function modelFor(p: { vendor: string; model: string }): PrinterModel | u
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
   const vendor = norm(p.vendor)
   const want = norm(p.model)
+  // An empty name would match every model by its first letters.
+  if (!vendor || !want) return undefined
   const pool = PRINTER_MODELS.filter((m) => vendor.startsWith(norm(m.brand)) || norm(m.brand).startsWith(vendor))
   return pool.find((m) => norm(m.name) === want) ?? pool.find((m) => norm(m.name).startsWith(want) || want.startsWith(norm(m.name)))
 }
