@@ -2246,7 +2246,7 @@ async fn n7_an_upload_in_flight_holds_a_start_and_two_starts_run_once() {
 }
 
 #[tokio::test]
-async fn n6_agents_list_no_queue_items_or_deliveries() {
+async fn n6_agents_read_the_queue_to_ask_for_a_start_but_never_queue_and_list_no_deliveries() {
     let link = hub(None).await;
     let mocks = common::Mocks::start("moonraker", &[]).await;
     let mut app = paired(&link).await;
@@ -2260,10 +2260,24 @@ async fn n6_agents_list_no_queue_items_or_deliveries() {
     )
     .await;
     let mut ag = agent(&link).await;
+    // An agent reads the queue so it can ask a person to start a queued plate (`queue.start`).
     let r = call(&mut ag, 2, "queue.list", json!({})).await;
-    assert_eq!(r["result"], json!([]), "{r}");
+    assert_eq!(r["result"].as_array().unwrap().len(), 1, "{r}");
     let r = call(&mut app, 4, "queue.list", json!({})).await;
     assert_eq!(r["result"].as_array().unwrap().len(), 1, "{r}");
+    let (g, _) = file("mine.gcode", 42);
+    let r = call(
+        &mut ag,
+        5,
+        "queue.add",
+        json!({ "printerId": "bay-4", "file": g }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // A scheduled plate keeps its time.
+    let id = call(&mut app, 6, "queue.list", json!({})).await["result"][0]["id"].clone();
+    let r = call(&mut ag, 6, "queue.start", json!({ "itemId": id })).await;
+    assert_eq!(r["error"]["code"], "bad_state", "{r}");
     let r = call(&mut ag, 3, "inbox.list", json!({})).await;
     assert_eq!(r["result"], json!([]), "{r}");
 }

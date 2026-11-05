@@ -54,6 +54,20 @@ pub(crate) struct GuardState {
     waits: std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>,
     /// When each printer last gave a detector a second look.
     grabbed: std::sync::Mutex<HashMap<String, u64>>,
+    /// Each printer's last answered plate check, the evidence a remote start needs (`remote_start.rs`).
+    looks: std::sync::Mutex<HashMap<String, PlateLook>>,
+}
+
+/// One answered plate check: the still the detector judged, when it was taken, what the detector
+/// said, and whether it compared the still with the person's empty-plate picture.
+#[derive(Clone)]
+pub(crate) struct PlateLook {
+    pub still: Still,
+    /// `Some(true)` clear, `Some(false)` something found, `None` the detector could not tell.
+    pub clear: Option<bool>,
+    /// The detector had the empty-plate picture to compare with. A look of the model alone, or one
+    /// the person overruled with "It's fine" and no spot, is not a comparison.
+    pub compared: bool,
 }
 
 /// Whether the guard watches this printer (on unless the person turned it off).
@@ -129,6 +143,8 @@ fn set_plate(b: &Bridge, printer: &str, still: Option<Still>) -> Rpc<()> {
         }
     }
     drop(settings);
+    // A look compared with the old picture says nothing about the new one.
+    lock(&b.hub.guard.looks).remove(printer);
     let mut plates = lock(&b.hub.guard.plates);
     match still {
         Some(s) => plates.insert(printer.to_owned(), s),
@@ -331,12 +347,17 @@ async fn check_plate(b: &Arc<Bridge>, printer: &str) -> Option<Plate> {
             .watch_plate_model_off
             .iter()
             .any(|x| x == printer);
-    Some(Plate {
-        clear: if overruled {
-            Some(true)
-        } else {
-            answer.get("clear").and_then(Value::as_bool)
+    let said = answer.get("clear").and_then(Value::as_bool);
+    lock(&b.hub.guard.looks).insert(
+        printer.to_owned(),
+        PlateLook {
+            still: still.clone(),
+            clear: said,
+            compared: has_reference && !overruled,
         },
+    );
+    Some(Plate {
+        clear: if overruled { Some(true) } else { said },
         bbox,
         note: answer
             .get("note")
@@ -406,6 +427,23 @@ pub(crate) async fn job_began(b: Arc<Bridge>, printer: String) {
     let mut ev = plate_event(&b, &printer, &p, state, "printer");
     ev.insert("monitorOnly".into(), json!(monitor));
     trip(&b, &printer, ev, Some(p.still));
+}
+
+/// Runs a plate check now and returns what it saw, for a remote start's card. `None` when no
+/// detector answered or the printer gave no still.
+pub(crate) async fn look_now(b: &Arc<Bridge>, printer: &str) -> Option<PlateLook> {
+    check_plate(b, printer).await?;
+    last_look(b, printer)
+}
+
+/// The printer's last answered plate check, if any.
+pub(crate) fn last_look(b: &Bridge, printer: &str) -> Option<PlateLook> {
+    lock(&b.hub.guard.looks).get(printer).cloned()
+}
+
+/// The person's empty-plate picture for a printer, for a remote start's card.
+pub(crate) fn reference(b: &Bridge, printer: &str) -> Option<Still> {
+    plate(b, printer)
 }
 
 // ---- calls ----

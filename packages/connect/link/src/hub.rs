@@ -191,6 +191,10 @@ pub(crate) struct HubSettings {
     /// no spot): until an empty-plate picture is taken, only a picture comparison holds a start.
     #[serde(default)]
     pub watch_plate_model_off: Vec<String>,
+    /// Printers whose person let an approver phone start a print from afar after a fresh plate
+    /// check, with the temperature limits for it (`remote_start.rs`). Off for every other printer.
+    #[serde(default)]
+    pub remote_start: BTreeMap<String, crate::remote_start::RemoteStart>,
 }
 
 fn agent_role() -> crate::roles::Role {
@@ -386,7 +390,7 @@ pub(crate) enum QueueState {
 }
 
 impl QueueState {
-    fn is_final(self) -> bool {
+    pub(crate) fn is_final(self) -> bool {
         matches!(
             self,
             QueueState::Started | QueueState::Expired | QueueState::Canceled | QueueState::Failed
