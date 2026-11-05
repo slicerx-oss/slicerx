@@ -18,6 +18,7 @@ vi.mock('../src/lib/use-printer', () => ({ usePrinter: () => ({ rows: [], printe
 const { HostContext } = await import('../src/host')
 const { PrinterHud } = await import('../src/features/fleet/hud-view')
 const { cameraRate, gauges, jobLine, slotGroups, speedChoices, doneAt } = await import('../src/features/fleet/hud')
+const { unitClimateText } = await import('@slicerx/contracts')
 const { get, set } = await import('../src/state/store')
 const { loadPrefs } = await import('../src/state/prefs')
 const { BATTLE_MIN_MS, forgetFirstLooks } = await import('../src/camera/idle')
@@ -117,6 +118,15 @@ describe('device view logic', () => {
     expect(slotGroups([{ id: 'A1' }, { id: 'B1' }, { id: '1', material: 'TPU' }], undefined, 'A1').map((x) => x.label)).toEqual(['AMS lite 1', 'AMS lite 2', 'External spool'])
   })
 
+  it('reads what each unit\'s sensors say: humidity, temperature and drying', () => {
+    expect(slotGroups(H2D_STATUS.slots, H2D_STATUS.live, 'H2D').map((x) => x.climate)).toEqual(['18% humidity · 27 °C', '9% humidity · 45 °C'])
+    expect(unitClimateText({ humidityPct: 11, humidityLevel: 3, tempC: 45.4, drying: true, dryMinutesLeft: 200 })).toBe('11% humidity · 45 °C · Drying, 3 h 20 min left')
+    expect(unitClimateText({ humidityLevel: 2, drying: true, dryMinutesLeft: 45 })).toBe('Humidity 2 of 5 (1 is dry) · Drying, 45 min left')
+    expect(unitClimateText({ drying: true })).toBe('Drying')
+    expect(unitClimateText({ drying: false })).toBe('')
+    expect(unitClimateText(undefined)).toBe('')
+  })
+
   it('offers the speed profiles the printer takes', () => {
     expect(speedChoices({ levels: [50, 100, 124, 166] }).map((p) => p.label)).toEqual(['Silent', 'Standard', 'Sport', 'Ludicrous'])
     expect(speedChoices({ min: 50, max: 150 }).map((p) => p.label)).toEqual(['Silent', 'Standard', 'Sport'])
@@ -206,6 +216,18 @@ describe('device view of a printing H2D', () => {
     expect(button('Light')?.getAttribute('aria-pressed')).toBe('true')
     expect(button('Pause')).toBeTruthy()
     expect(button('Stop')).toBeTruthy()
+  })
+
+  it('names the firmware the printer runs and shows each unit\'s humidity and drying in the filament drawer', async () => {
+    const { host } = fakeHost()
+    const units = H2D_STATUS.live!.units!.map((u) => (u.id === 'E' ? { ...u, climate: { humidityPct: 9, tempC: 45, drying: true, dryMinutesLeft: 200 } } : u))
+    const st = { ...H2D_STATUS, firmware: '01.04.00.00', live: { ...H2D_STATUS.live, units } }
+    ;(host as unknown as { printers: { status: () => Promise<PrinterStatus> } }).printers.status = async () => st
+    await show({ ...H2D, status: st }, host)
+    expect(q('.ph-model')?.textContent).toBe('Bambu Lab H2D, firmware 01.04.00.00')
+    await click(button('Show filament'))
+    const air = [...drawer('Filament').querySelectorAll('.ph-unit-air')].map((x) => x.textContent)
+    expect(air).toEqual(['18% humidity · 27 °C', '9% humidity · 45 °C · Drying, 3 h 20 min left'])
   })
 
   it('opens and closes the drawers by mouse and keyboard, and gives focus back to the tab', async () => {
