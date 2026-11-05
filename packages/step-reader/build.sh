@@ -22,8 +22,9 @@ mkdir -p "$work"
 cd "$work"
 [ -d emsdk ] || git clone -q --depth 1 "$EMSDK_URL" emsdk
 (cd emsdk && ./emsdk install "$EMSDK_VERSION" >/dev/null && ./emsdk activate "$EMSDK_VERSION" >/dev/null)
+# Sourced from inside its folder: under a plain POSIX sh such as dash the script cannot find where it is.
 # shellcheck disable=SC1091
-. ./emsdk/emsdk_env.sh >/dev/null 2>&1
+cd emsdk && . ./emsdk_env.sh >/dev/null 2>&1 && cd ..
 
 if [ ! -d src ]; then
   git clone -q "$OIJ_URL" src
