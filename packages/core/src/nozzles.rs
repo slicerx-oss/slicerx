@@ -818,6 +818,149 @@ impl Groups {
     }
 }
 
+/// Each extruder's nozzle size, mm, from `nozzle_diameter` (one entry per extruder; the first stands for a missing
+/// or unreadable one).
+pub(crate) fn sizes(cfg: &PrintConfig) -> Vec<f64> {
+    let read = |v: &serde_json::Value| {
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+            .filter(|d| d.is_finite() && *d > 0.0)
+    };
+    let list: Vec<Option<f64>> = match cfg.raw.get("nozzle_diameter") {
+        Some(serde_json::Value::Array(a)) => a.iter().map(read).collect(),
+        Some(serde_json::Value::String(s)) => s
+            .split(',')
+            .map(|t| t.trim().parse::<f64>().ok().filter(|d| d.is_finite() && *d > 0.0))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let first = list.first().copied().flatten().unwrap_or(cfg.nozzle_diameter);
+    if list.is_empty() {
+        return vec![first];
+    }
+    list.into_iter().map(|d| d.unwrap_or(first)).collect()
+}
+
+/// Two sizes count as one within a thousandth of a millimeter.
+fn same_size(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-3
+}
+
+/// The printer's nozzles are not all of one size.
+pub(crate) fn sizes_differ(cfg: &PrintConfig) -> bool {
+    let s = sizes(cfg);
+    s.split_first()
+        .is_some_and(|(first, rest)| rest.iter().any(|d| !same_size(*d, *first)))
+}
+
+/// A size as the messages write it: `0.4 mm`.
+fn mm(d: f64) -> String {
+    format!("{} mm", (d * 1000.0).round() / 1000.0)
+}
+
+/// A printer whose filaments share its nozzles by a map, with nozzles of different sizes, on the automatic map: the
+/// map is picked after the objects are sliced, so the objects print with the first nozzle's settings, as they always
+/// have, and the slice warns ([`auto_map_warning`]).
+fn auto_map_on_sizes(cfg: &PrintConfig) -> bool {
+    if !shared(cfg) || !sizes_differ(cfg) {
+        return false;
+    }
+    let mode = cfg
+        .raw
+        .get("filament_map_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Auto For Flush");
+    mode != "Manual" && mode != "Nozzle Manual"
+}
+
+/// Objects print with their own nozzle's size: the nozzles differ in size, and each filament's nozzle is known before
+/// the objects are sliced (one tool per filament, or a filament map set by hand).
+pub(crate) fn per_nozzle(cfg: &PrintConfig) -> bool {
+    sizes_differ(cfg) && !auto_map_on_sizes(cfg)
+}
+
+/// What the slice says about an automatic filament map on nozzles of different sizes (key `filament_map`); none
+/// otherwise. One place for the words, so a host that refuses the plate instead says the same.
+#[must_use]
+pub fn auto_map_warning(cfg: &PrintConfig) -> Option<String> {
+    if !auto_map_on_sizes(cfg) {
+        return None;
+    }
+    let list: Vec<String> = sizes(cfg).into_iter().map(mm).collect();
+    Some(format!(
+        "Set the filament map by hand to print each object with its own nozzle (filament_map): the nozzles are \
+         different sizes ({}), and on the automatic map every object's line widths and layer height follow the first \
+         nozzle",
+        list.join(", ")
+    ))
+}
+
+/// The nozzle a filament prints with: its extruder (0-based) and that nozzle's size, mm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Nozzle {
+    pub extruder: usize,
+    pub mm: f64,
+}
+
+/// Which nozzle filament `slot` (1-based) prints with, and its size: the extruder by the filament map
+/// ([`extruder_of_slot`]), the size from that extruder's `nozzle_diameter` entry. Every question of which nozzle prints
+/// something and how wide it is goes through here, so a printer whose tools are hotends of one extruder can give their
+/// sizes here too.
+pub(crate) fn nozzle_of_slot(cfg: &PrintConfig, slot: u8) -> Nozzle {
+    let extruder = extruder_of_slot(cfg, slot);
+    Nozzle {
+        extruder,
+        mm: size_of(cfg, extruder),
+    }
+}
+
+/// The nozzle an object prints with, from its filaments `slots` (1-based), when objects print with their own nozzle's
+/// size ([`per_nozzle`]) and that nozzle is not the first extruder's size (the object then prints with the plate's settings, as on a printer
+/// of one size). An object whose filaments go to nozzles of two sizes is refused.
+pub(crate) fn nozzle_of_object(cfg: &PrintConfig, name: &str, slots: &[u8]) -> crate::Result<Option<Nozzle>> {
+    if !per_nozzle(cfg) {
+        return Ok(None);
+    }
+    let mut used: Vec<Nozzle> = slots.iter().map(|&t| nozzle_of_slot(cfg, t)).collect();
+    used.sort_by_key(|n| n.extruder);
+    used.dedup_by_key(|n| n.extruder);
+    let Some(&first) = used.first() else {
+        return Ok(None);
+    };
+    if let Some(other) = used.iter().find(|n| !same_size(n.mm, first.mm)) {
+        return Err(crate::Error::Config {
+            key: "plate.objects.settings",
+            reason: format!(
+                "{name} prints on nozzles of two sizes ({} and {}); an object prints with one nozzle size, so give its \
+                 parts, features and supports filaments on nozzles of one size",
+                mm(first.mm),
+                mm(other.mm)
+            ),
+        });
+    }
+    Ok((!same_size(first.mm, size_of(cfg, 0))).then_some(first))
+}
+
+/// The size of extruder `e`'s nozzle, mm ([`nozzle_of_slot`] for a filament's).
+pub(crate) fn size_of(cfg: &PrintConfig, e: usize) -> f64 {
+    let s = sizes(cfg);
+    s.get(e)
+        .or_else(|| s.first())
+        .copied()
+        .unwrap_or(cfg.nozzle_diameter)
+}
+
+/// Why a plate printed layer by layer with a prime tower is refused when its objects have layer heights of their own
+/// (`object` names the first one that differs). The engine's refusal and the hosts' own checks say the same.
+#[must_use]
+pub fn tower_one_height(object: &str) -> String {
+    format!(
+        "With a prime tower the plate prints at one layer height, and {object} has a layer height of its own: the \
+         prime tower needs one layer height for every object. Each nozzle keeps its own line widths; only the layer \
+         height is shared. Give the objects the same layer height, turn the prime tower off, or print by object"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
