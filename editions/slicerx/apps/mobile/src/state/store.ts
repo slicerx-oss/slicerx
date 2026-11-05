@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { DEFAULT_POLICY, type ApprovalRequest, type PermissionPolicy, type SessionSummary } from '@slicerx/contracts'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import type { QuestionCard } from '../data/mimir-questions'
 
 export type AlertKind = 'finished' | 'failed' | 'attention'
 
@@ -54,6 +55,8 @@ export interface PocketState {
   alerts: Alert[]
   /** Approvals waiting for an answer, oldest first. */
   waiting: WaitingApproval[]
+  /** The question mimir waits on in SlicerX, one card per paired computer, oldest first. */
+  questions: QuestionCard[]
   /** The printer page on screen, so the approval sheet leaves that printer's cards to the page. */
   openPrinterId: string | null
   push: PushState
@@ -74,6 +77,7 @@ export const usePocket = create<PocketState>()(
     (): PocketState => ({
       alerts: [],
       waiting: [],
+      questions: [],
       openPrinterId: null,
       push: { kind: 'off' },
       notify: { printDone: true, printFailed: true, attention: true, approvals: true },
@@ -122,6 +126,14 @@ export function markAnswered(id: string, note: string): void {
 
 export function settleWaiting(id: string): void {
   set((s) => ({ waiting: s.waiting.filter((x) => x.id !== id) }))
+}
+
+/** Changes the question cards; `fn` returns the same array when nothing changed. */
+export function updateQuestions(fn: (cards: QuestionCard[]) => QuestionCard[]): void {
+  set((s) => {
+    const next = fn(s.questions)
+    return next === s.questions ? s : { questions: next }
+  })
 }
 
 export function setOpenPrinter(id: string | null): void {

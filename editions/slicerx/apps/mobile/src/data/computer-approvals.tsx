@@ -3,11 +3,13 @@
 // Listens for approvals the paired computer asks this phone to decide. They go into the store, so
 // the Printers tab can badge the printer and its page can show the card; the sheet shows the rest.
 // One answered somewhere else closes with a note (./answered).
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { ComputerApprovalSheet, type PendingComputerApproval } from '../components/computer-approval-sheet'
+import { ComputerQuestionSheet } from '../components/computer-question-sheet'
 import { notify } from '../notify/notifier'
-import { openComputerApprovals, watchComputerApprovals, watchResolvedApprovals, type ComputerApproval } from '../pair'
-import { addWaiting, get, markAnswered, settleWaiting, usePocket, type WaitingApproval } from '../state/store'
+import { answerComputerQuestion, openComputerApprovals, readComputerQuestion, watchComputerApprovals, watchComputerQuestions, watchResolvedApprovals, type ComputerApproval } from '../pair'
+import { addWaiting, get, markAnswered, settleWaiting, updateQuestions, usePocket, type WaitingApproval } from '../state/store'
+import { watchQuestions, type QuestionWatch } from './question-watch'
 import { watchAnswered } from './answered'
 import { forDisplay, relayBlock } from './verified-card'
 import { checkWork, MISMATCH, type WorkCheck } from './work-card'
@@ -31,6 +33,27 @@ export function ComputerApprovals() {
   const host = usePocketHost()
   const waiting = usePocket((s) => s.waiting)
   const openPrinterId = usePocket((s) => s.openPrinterId)
+  const questions = usePocket((s) => s.questions)
+  const questionWatch = useRef<QuestionWatch | null>(null)
+
+  // The question mimir waits on in SlicerX on each paired computer: one card per computer, in the same sheet.
+  useEffect(() => {
+    const w = watchQuestions({
+      onUpdate: (cb) => watchComputerQuestions(host, cb),
+      read: (pairingId) => readComputerQuestion(host, pairingId),
+      send: (pairingId, q, choiceId) => answerComputerQuestion(host, pairingId, q, choiceId),
+      cards: () => get().questions,
+      update: updateQuestions,
+      onNew: (c) => {
+        if (get().notify.approvals) notify({ title: 'mimir has a question', body: `${c.hostName} is waiting for your answer`, href: '/(tabs)' }).catch(() => undefined)
+      },
+    })
+    questionWatch.current = w
+    return () => {
+      w.stop()
+      questionWatch.current = null
+    }
+  }, [host])
 
   useEffect(() => {
     const answered = watchAnswered({
@@ -76,5 +99,8 @@ export function ComputerApprovals() {
   const settle = useCallback((id: string) => settleWaiting(id), [])
   // The printer page on screen shows its own cards inline.
   const forSheet: WaitingApproval[] = openPrinterId ? waiting.filter((w) => w.request.printerId !== openPrinterId) : waiting
-  return <ComputerApprovalSheet pending={forSheet} onSettled={settle} />
+  const answer = useCallback(async (pairingId: string, choiceId: string | null) => questionWatch.current?.answer(pairingId, choiceId), [])
+  const closeQuestion = useCallback((pairingId: string) => questionWatch.current?.dismiss(pairingId), [])
+  // An approval goes first; a question shows once no approval waits in the sheet.
+  return forSheet.length > 0 ? <ComputerApprovalSheet pending={forSheet} onSettled={settle} /> : <ComputerQuestionSheet questions={questions} onAnswer={answer} onClose={closeQuestion} />
 }

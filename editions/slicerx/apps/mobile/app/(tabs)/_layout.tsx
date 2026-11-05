@@ -14,7 +14,7 @@ const TABS: { key: string; label: string; icon: IconName }[] = [
 ]
 
 export default function TabsLayout() {
-  const attention = usePocket((s) => s.waiting.length > 0 || s.alerts.some((a) => !a.read && a.kind !== 'finished'))
+  const attention = usePocket((s) => s.waiting.length > 0 || s.questions.some((q) => q.answered === undefined) || s.alerts.some((a) => !a.read && a.kind !== 'finished'))
   return (
     <Tabs
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: t.color.ink0 } }}

@@ -6,6 +6,7 @@ import { useMemo, type ReactElement } from 'react'
 import { FlatList, StyleSheet, View } from 'react-native'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
+import { ChoiceCard } from './choice-card'
 import { Bubble, Citations, Diff, ErrorLine, PermLine, PlanList, Say, Summary, Think, ToolGroup, Who } from './blocks'
 import type { Block, Transcript } from './model'
 import { t } from '../theme'
@@ -36,12 +37,14 @@ export interface TranscriptListProps {
   transcript: Transcript
   onApprove: (r: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onDeny: (r: ApprovalRequest) => Promise<void>
+  /** Answers a question this phone's own mimir asks: a choice id, or null for Cancel. */
+  onAnswer?: ((askId: string, choiceId: string | null) => Promise<void>) | undefined
   onRetry?: () => void
   /** Shown when there are no turns yet. */
   empty?: ReactElement
 }
 
-export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }: TranscriptListProps) {
+export function TranscriptList({ transcript, onApprove, onDeny, onAnswer, onRetry, empty }: TranscriptListProps) {
   const data = useMemo(() => transcriptItems(transcript).reverse(), [transcript])
   if (data.length === 0 && empty) return <View style={{ flex: 1 }}>{empty}</View>
 
@@ -65,9 +68,20 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
       case 'approval':
         return <ApprovalCard request={b.request} resolution={b.resolution} actionable={!replay && !b.replay} onApprove={onApprove} onDeny={onDeny} />
       case 'choice': {
-        // the phone shows the question and the pick; answering stays on the desktop
-        const picked = b.choices.find((c) => c.id === b.picked)
-        return <Say text={picked ? `${b.question} **${picked.label}**` : b.question} streaming={false} />
+        // a question from this phone's own mimir is answered here while its run waits; a saved one shows its pick
+        const waits = !replay && !b.replay && b.picked === null && transcript.status === 'running'
+        const picked = b.dismissed ? '' : b.picked
+        return (
+          <ChoiceCard
+            title={b.title}
+            question={b.question}
+            choices={b.choices}
+            picked={picked}
+            testID={`choice-${b.askId}`}
+            {...(waits && onAnswer ? { onAnswer: (choiceId: string | null) => onAnswer(b.askId, choiceId) } : {})}
+            {...(b.picked === null && !waits ? { readOnly: 'This question was not answered.' } : {})}
+          />
+        )
       }
       case 'sheet': {
         // the phone shows the sizes and where each came from; confirming stays on the desktop

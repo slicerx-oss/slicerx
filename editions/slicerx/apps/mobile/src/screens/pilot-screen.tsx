@@ -27,6 +27,8 @@ export interface PilotScreenProps {
   onStop: () => void
   onApprove: (r: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onDeny: (r: ApprovalRequest) => Promise<void>
+  /** Answers a question card in this chat: a choice id, or null for Cancel. */
+  onAnswer?: ((askId: string, choiceId: string | null) => Promise<void>) | undefined
   onRetry?: () => void
   onOpenSession: (id: string) => void
   onNewSession: () => void
@@ -82,7 +84,7 @@ export function PilotScreen(p: PilotScreenProps) {
   return (
     <Screen header={header} scroll={false} testID="pilot-screen">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <TranscriptList transcript={p.transcript} onApprove={p.onApprove} onDeny={p.onDeny} empty={empty} {...(p.onRetry ? { onRetry: p.onRetry } : {})} />
+        <TranscriptList transcript={p.transcript} onApprove={p.onApprove} onDeny={p.onDeny} onAnswer={p.onAnswer} empty={empty} {...(p.onRetry ? { onRetry: p.onRetry } : {})} />
         <Composer
           onSend={p.onSend}
           onStop={p.onStop}
