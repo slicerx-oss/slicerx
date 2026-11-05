@@ -17,6 +17,32 @@ pub struct TierLimits {
     pub bytes_per_month: u64,
 }
 
+/// Caps on partner routes: a partner app's sealed byte stream between its desktop (through the hub)
+/// and its own phone. It is a general tunnel, so the defaults are strict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartnerLimits {
+    /// Partner routes one account may have open at once.
+    pub routes_per_account: u32,
+    /// Bytes one partner route may carry in a UTC day, both directions. Past it the route closes.
+    pub bytes_per_route_per_day: u64,
+    /// Bytes all of one account's partner routes may carry in a UTC day. Past it they all close,
+    /// and no new one opens until the next day.
+    pub bytes_per_account_per_day: u64,
+    /// A partner route that carries nothing this long closes, in milliseconds.
+    pub idle_ms: u64,
+}
+
+impl Default for PartnerLimits {
+    fn default() -> Self {
+        Self {
+            routes_per_account: 4,
+            bytes_per_route_per_day: 50_000_000,
+            bytes_per_account_per_day: 200_000_000,
+            idle_ms: 5 * 60 * 1000,
+        }
+    }
+}
+
 /// Everything the relay enforces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
@@ -49,6 +75,7 @@ pub struct Limits {
     pub refusals_before_close: u32,
     pub account: TierLimits,
     pub anonymous: TierLimits,
+    pub partner: PartnerLimits,
 }
 
 impl Default for Limits {
@@ -79,6 +106,7 @@ impl Default for Limits {
                 bytes_per_minute: 5_000_000,
                 bytes_per_month: 1_000_000_000,
             },
+            partner: PartnerLimits::default(),
         }
     }
 }
