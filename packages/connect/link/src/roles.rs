@@ -43,8 +43,9 @@ impl Role {
 /// Methods an agent connection may not call at all.
 const APP_ONLY: &[&str] = &[
     "print.local",
-    // The head moves, a running print loses an object, a stored file starts: a person at the app.
+    // The head moves or homes, a running print loses an object, a stored file starts: a person at the app.
     "jog",
+    "home",
     "objects.skip",
     "files.start",
     // What an AMS slot holds is the person's to say; an agent never writes it.
@@ -428,6 +429,8 @@ mod tests {
     fn agents_cannot_reach_the_person_only_methods() {
         for m in [
             "print.local",
+            "jog",
+            "home",
             "bed.confirmClear",
             "queue.add",
             "clients.revoke",
@@ -800,6 +803,7 @@ mod tests {
             "files.start",
             "objects.skip",
             "jog",
+            "home",
             "queue.add",
             "fleets.create",
             "fleets.delete",
