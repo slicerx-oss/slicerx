@@ -1081,7 +1081,7 @@ async fn dispatch(
         "watch.evidence" => crate::guard::evidence_call(b, &p).await,
         m if m.starts_with("adjust") => crate::adjust::call(b, m, &p).await,
         method @ ("files.list" | "history.list" | "issues.list" | "objects.list" | "objects.skip" | "jog"
-        | "files.start") => crate::device::call(b, method, &p).await,
+        | "home" | "files.start") => crate::device::call(b, method, &p).await,
         "cameras.discover" => discover_cameras(b, &p).await,
         "camera.webrtc" => {
             let id = str_arg(&p, "printerId")?;
@@ -1520,10 +1520,14 @@ pub(crate) async fn printer_status(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
     }
 }
 
-/// Adds `model` to a status object when the printer names its own model (Bambu Lab `get_version`).
+/// Adds `model` and `firmware` to a status object when the printer reports them itself (Bambu Lab
+/// `get_version`).
 fn note_model(s: &dyn PrinterSession, st: &mut serde_json::Map<String, Value>) {
     if let Some(m) = s.reported_model() {
         st.insert("model".into(), json!(m));
+    }
+    if let Some(f) = s.reported_firmware() {
+        st.insert("firmware".into(), json!(f));
     }
 }
 
