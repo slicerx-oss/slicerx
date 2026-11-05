@@ -76,6 +76,18 @@ describe('finished sketches in the design tools', () => {
     expect(q.operation).toBe('join')
   })
 
+  it('stores the parsed profile and path, not what was sent', async () => {
+    const { add, run } = host()
+    // a loop labeled a circle but drawn as segments is the segments; extra keys are dropped
+    const square = { start: [0, 0], segments: [{ type: 'line', to: [10, 0] }, { type: 'line', to: [10, 10] }, { type: 'line', to: [0, 10] }, { type: 'line', to: [0, 0] }] }
+    const chain = { start: [0, 0], segments: [{ type: 'line', to: [0, 20], extra: 1 }], note: 'x' }
+    await run('geom.sweep', { design: 'd1', profile: { frame: { origin: [0, 0, 0], normal: [0, 0, 1], junk: true }, loops: [{ type: 'circle', ...square }] }, path: { frame: { origin: [0, 0, 0], normal: [0, -1, 0] }, loops: [chain] } })
+    const p = add.mock.calls[0]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(p.profile.loops).toEqual([square])
+    expect(p.profile.frame).not.toHaveProperty('junk')
+    expect(p.path.loops).toEqual([{ start: [0, 0], segments: [{ type: 'line', to: [0, 20] }] }])
+  })
+
   it('says which sweep input is missing, doubled or needs a design', async () => {
     const { add, run } = host()
     await run('design.sketch', { loops: LOOPS })
@@ -89,8 +101,12 @@ describe('finished sketches in the design tools', () => {
     await expect(run('geom.sweep', { design: 'd1', profile, path: { ...path, loops: [{ points: [[0, 0], [5, 0]] }] } })).rejects.toThrow('path: give loops or points, not both')
     await expect(run('geom.sweep', { profile_sketch: 'k1', path })).rejects.toThrow('profile_sketch: finished sketches sweep on a design; give its id as design')
     await expect(run('geom.sweep', { profile, path_sketch: 'k1' })).rejects.toThrow('path_sketch: finished sketches sweep on a design; give its id as design')
-    await expect(run('geom.sweep', { design: 'd1', profile: { frame: { origin: [0, 0] }, loops: LOOPS }, path })).rejects.toThrow('profile: the frame needs origin and normal, each [x, y, z]')
-    await expect(run('geom.sweep', { design: 'd1', profile, path: { points: [[0, 0], [0, 10]] } })).rejects.toThrow('path: each point is [x, y, z]')
+    // a bad field is named by its path, into the loop form it is closest to
+    await expect(run('geom.sweep', { design: 'd1', profile: { frame: { origin: [0, 0] }, loops: LOOPS }, path })).rejects.toThrow(/^profile\.frame\.origin: /)
+    await expect(run('geom.sweep', { design: 'd1', profile, path: { points: [[0, 0], [0, 10]] } })).rejects.toThrow(/^path\.points\.0: /)
+    const bent = { start: [0, 0], segments: [{ type: 'line', to: [10, 0] }, { type: 'bend', to: [10, 10] }] }
+    await expect(run('geom.sweep', { design: 'd1', profile: { loops: [bent] }, path })).rejects.toThrow(/^profile\.loops\.0\.segments\.1\.type: /)
+    await expect(run('geom.sweep', { design: 'd1', profile, path: { loops: [{ start: [0, 0], segments: [{ type: 'line', to: [0, 'x'] }] }] } })).rejects.toThrow(/^path\.loops\.0\.segments\.0\.to\.1: /)
     expect(add).not.toHaveBeenCalled()
   })
 
