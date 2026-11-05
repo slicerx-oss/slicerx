@@ -3,7 +3,7 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, registerStepWasm, setCurrentEdition, setPrefsMirror, SlicerXApp, startGeomFor } from '@slicerx/app'
+import { editionLogo, registerCrashHost, registerSpaceMouseSource, registerStepWasm, setCurrentEdition, setPrefsMirror, SlicerXApp, startGeomFor } from '@slicerx/app'
 import { registerShellArch } from '@slicerx/app/link/watch-support'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
@@ -12,6 +12,7 @@ import { createDesktopHost } from './host'
 import { prefsWriter } from './host/prefs'
 import { createTauriCrash } from './host/crash'
 import { shellArch } from './host/platform'
+import { createTauriSpaceMouse } from './host/spacemouse'
 import { stepWasmUrl } from './host/step-wasm'
 import { blockReloadKeys } from './reload-keys'
 import { followAppTheme } from './window-theme'
@@ -43,6 +44,8 @@ followAppTheme()
 registerCrashHost(createTauriCrash())
 // The print watch does not run on Intel Macs, and the web view cannot tell them apart.
 registerShellArch(shellArch)
+// The 3D mouse is read by the shell (src-tauri/src/spacemouse.rs): the macOS and Linux web views have no WebHID.
+registerSpaceMouseSource(() => createTauriSpaceMouse())
 // The STEP reader's wasm comes from the app's resources, beside its MCP server; a release page leaves its own copy out.
 // The dev server still serves the package's file.
 if (!import.meta.env.DEV) registerStepWasm(() => stepWasmUrl())
