@@ -28,13 +28,14 @@ test('packed CLI, library and MCP handshake report the package version', async (
     assert.equal(expected, JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')).version)
     const cli = join(packed, 'dist/cli.js')
     assert.equal(execFileSync(process.execPath, [cli, '--version'], { encoding: 'utf8' }).trim(), expected)
-    // The packed server loads Ajv and the YAML parser on first use, not as it starts (packages/mcp/src/deferred.ts).
+    // The packed server loads Ajv, the YAML parser, zod-to-json-schema and the HTTP transport packages on first
+    // use, not as it starts (packages/mcp/scripts/build.mjs).
     const listLoaded = "import{registerHooks}from'node:module';const u=[];registerHooks({load(url,c,n){u.push(url);return n(url,c)}});process.on('exit',()=>process.stderr.write(JSON.stringify(u)))"
     const started = spawnSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(listLoaded)}`, cli, '--version'], { encoding: 'utf8' })
     assert.equal(started.stdout.trim(), expected)
     const loaded = JSON.parse(started.stderr)
     assert.ok(loaded.some((url) => url.includes('/@modelcontextprotocol/sdk/dist/esm/server/')), 'the start loads the SDK server')
-    assert.deepEqual(loaded.filter((url) => /\/node_modules\/(?:ajv|ajv-formats|yaml)\//.test(url)), [])
+    assert.deepEqual(loaded.filter((url) => /\/node_modules\/(?:ajv|ajv-formats|yaml|zod-to-json-schema|hono|@hono\/node-server)\//.test(url)), [])
     const library = await import(pathToFileURL(join(packed, 'dist/index.js')).href)
     assert.equal(library.SERVER_VERSION, expected)
     // A host that bundles the library (here with esbuild, as ES module and as CommonJS) and ships the bundle without
