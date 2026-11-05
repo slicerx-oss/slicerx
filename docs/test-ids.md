@@ -249,6 +249,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `object-lock`, `object-printable` | Lock, and leave out of the print |
 | `object-rename` | The name field that replaces the row's name while renaming |
 | `object-part-slot` | The filament ring of a part in the row's tree, one per part; opens the slot menu |
+| `object-part-row` | A part in the row's tree, one per part; `data-part-index` is its place. It drags to reorder the parts |
+| `object-part-more` | The part's More button: opens its Part menu |
+| `object-part-menu` | The Part menu |
+| `object-part-clone` | Clone, in the Part menu |
+| `object-part-up`, `object-part-down` | Move up and Move down, in the Part menu |
 | `objects-add-model` | Add, the main half of the Add button (opens the system's file dialog) |
 | `objects-from-vault` | From the Vault, in the Add menu |
 | `add-shape` | Add shape, in the Add menu (Design's shelf keeps its own button) |
