@@ -108,7 +108,7 @@ export interface World {
   broker: ReturnType<typeof createApprovalBroker>
   lan: ReturnType<typeof fakeLan>
   feed: TestFeed
-  phone(name: string, opts?: { accountId?: string; lan?: boolean; store?: PairingStore; socket?: SocketFactory; openRelay?: OpenRelay }): Phone
+  phone(name: string, opts?: { accountId?: string; lan?: boolean; store?: PairingStore; socket?: SocketFactory; openRelay?: OpenRelay; partner?: string }): Phone
 }
 
 export interface Phone {
@@ -211,6 +211,7 @@ export async function world(opts: { accountId?: string; services?: Partial<HostS
         lanTimeoutMs: 50,
         sessionTimeoutMs: 500,
         pairAnswerTimeoutMs: 300,
+        ...(p.partner !== undefined ? { partner: p.partner } : {}),
       })
       return { id, store, client }
     },

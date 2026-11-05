@@ -175,7 +175,7 @@ export interface OpenSessionParams {
 
 export class SessionError extends Error {
   constructor(
-    readonly code: 'timeout' | 'refused' | 'bad_accept' | 'closed' | 'outdated',
+    readonly code: 'timeout' | 'refused' | 'bad_accept' | 'closed' | 'outdated' | 'quota',
     message: string,
   ) {
     super(message)
@@ -216,6 +216,7 @@ export function openSession(pipe: Pipe, p: OpenSessionParams): Promise<SecureCha
       }
       if (f.k === 'refuse') {
         if (f.reason === 'update') return settle(new SessionError('outdated', 'The computer runs a newer SlicerX. Update this app to connect.'))
+        if (f.reason === 'quota') return settle(new SessionError('quota', 'This app used its relay allowance on that computer for today. It works again tomorrow, or on the same network now.'))
         return settle(new SessionError('refused', f.reason === 'busy' ? 'The host is busy' : 'The host does not know this device'))
       }
       if (f.k !== 'accept') return
