@@ -52,6 +52,9 @@ const RELAY_FRAME_LIMIT: usize = 2 << 20;
 pub(crate) enum PeerKind {
     Phone,
     Agent,
+    /// A partner app's own phone ([`crate::partner_route::partner_phone_app`]). Today it reads like a
+    /// phone without the approve right, and it may use its partner app's partner routes.
+    PartnerPhone,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -79,6 +82,9 @@ pub(crate) struct RemotePairing {
     /// app's phones. `None` for pairings from before tags: the first app that lists one claims it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// For a partner phone: the partner app it belongs to, by the name its partner key was made with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partner: Option<String>,
 }
 
 /// Who an app connection is, for tagging the phones it pairs: the remembered client it paired as,
@@ -121,9 +127,11 @@ struct Status {
     quota: Option<Value>,
 }
 
-enum Cmd {
+pub(crate) enum Cmd {
     /// Pairings changed: subscribe new routes, drop removed ones and their sessions.
     Pairings,
+    /// Partner routes (`partner_route.rs`).
+    Partner(crate::partner_route::Cmd),
     Quota,
     /// The app handed over a new account session, or took it back.
     Token,
@@ -141,6 +149,8 @@ pub(crate) struct Remote {
     runner: StdMutex<Option<(JoinHandle<()>, mpsc::UnboundedSender<Cmd>)>>,
     rtc_bind: StdMutex<Option<std::net::IpAddr>>,
     stills: StdMutex<HashMap<String, StillSlot>>,
+    /// Partner routes open on this hub.
+    pub(crate) partners: crate::partner_route::Routes,
 }
 
 fn valid_relay_url(url: &str) -> bool {
@@ -181,7 +191,21 @@ impl Remote {
             runner: StdMutex::new(None),
             rtc_bind: StdMutex::new(None),
             stills: StdMutex::new(HashMap::new()),
+            partners: crate::partner_route::Routes::default(),
         }
+    }
+
+    pub(crate) fn pairings(&self) -> Vec<RemotePairing> {
+        lock(&self.saved).pairings.clone()
+    }
+
+    /// The relay connection runs (remote access is on), connected now or not.
+    pub(crate) fn running(&self) -> bool {
+        lock(&self.runner).is_some()
+    }
+
+    pub(crate) fn partner_cmd(&self, cmd: crate::partner_route::Cmd) {
+        self.send(Cmd::Partner(cmd));
     }
 
     /// The still cache slot of one printer (known printers only, so the map stays small).
@@ -245,6 +269,13 @@ pub(crate) fn resume(b: &Arc<Bridge>) {
 }
 
 fn restart(b: &Arc<Bridge>) {
+    let on = {
+        let s = lock(&b.remote.saved);
+        s.enabled && s.relay.is_some()
+    };
+    if !on {
+        crate::partner_route::close_all(b, "remote_off");
+    }
     let mut runner = lock(&b.remote.runner);
     if let Some((h, _)) = runner.take() {
         h.abort();
@@ -309,6 +340,19 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     let key_text: String = arg(p, "deviceKey")?;
     let kind: PeerKind = arg(p, "kind")?;
     let peer: Value = arg(p, "peer")?;
+    // A partner phone names its partner app, as its partner key was made.
+    let partner = match (kind, p.get("partner").and_then(Value::as_str)) {
+        (PeerKind::PartnerPhone, Some(n)) if !n.trim().is_empty() && n.chars().count() <= 64 => {
+            Some(n.to_owned())
+        }
+        (PeerKind::PartnerPhone, _) => {
+            return Err(RpcError::new(
+                "bad_request",
+                "a partner phone needs its partner app's name",
+            ));
+        }
+        _ => None,
+    };
     let rights: Rights = p
         .get("rights")
         .map_or(Ok(Rights::default()), |r| serde_json::from_value(r.clone()))
@@ -322,8 +366,9 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     if !valid_identity(&peer) {
         return Err(RpcError::new("bad_request", "peer is not a public identity"));
     }
-    // Agents never get the approve right over the relay: a person answers cards.
-    let rights = if kind == PeerKind::Agent {
+    // Agents never get the approve right over the relay: a person answers cards. Neither does a
+    // partner phone, for now.
+    let rights = if matches!(kind, PeerKind::Agent | PeerKind::PartnerPhone) {
         Rights {
             approve: false,
             ..rights
@@ -353,6 +398,7 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
             added_at: crate::hub::now_ms(),
             client_id: None,
             owner,
+            partner,
         });
     }
     Remote::persist(b);
@@ -549,6 +595,7 @@ pub(crate) fn create_agent(
         added_at: crate::hub::now_ms(),
         client_id: Some(client_id.to_owned()),
         owner: None,
+        partner: None,
     };
     let (relay, host) = {
         let mut s = lock(&b.remote.saved);
@@ -781,6 +828,8 @@ struct Sess {
     /// replayed init, so it never pushes a live session out.
     proven: bool,
     ctx: Arc<crate::remote_rpc::SessCtx>,
+    /// Byte channels of the partner routes this session used, by route id.
+    routes: HashMap<String, Channel>,
 }
 
 impl Drop for Sess {
@@ -842,6 +891,12 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
             return false;
         }
     }
+    // Partner routes the relay forgot with the last connection open again.
+    for f in b.remote.partners.reopen() {
+        if sink.send(Message::text(f)).await.is_err() {
+            return false;
+        }
+    }
     let _ = sink.send(Message::text(r#"{"op":"quota"}"#)).await;
     set_status(b, |s| {
         s.connected = true;
@@ -887,6 +942,11 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     }
                     sessions.retain(|_, s| next.by_pairing.contains_key(&s.pairing_id));
                     current = next;
+                    crate::partner_route::pairings_changed(b);
+                }
+                Some(Cmd::Partner(c)) => {
+                    let mut phones = SessPhones { sessions: &mut sessions, out: &out_tx };
+                    crate::partner_route::on_cmd(b, c, &mut phones, &mut outgoing);
                 }
                 Some(Cmd::Quota) => outgoing.push(r#"{"op":"quota"}"#.to_owned()),
                 Some(Cmd::Token) => match auth_frame(b) {
@@ -1007,6 +1067,15 @@ fn on_relay_frame(
     let Ok(msg) = serde_json::from_str::<Value>(text) else {
         return false;
     };
+    {
+        let mut phones = SessPhones {
+            sessions: &mut *sessions,
+            out,
+        };
+        if crate::partner_route::on_relay(b, &msg, &mut phones) {
+            return false;
+        }
+    }
     match msg.get("op").and_then(Value::as_str) {
         Some("msg") => {}
         Some(op) => return on_relay_control(b, op, msg.clone(), outgoing),
@@ -1171,8 +1240,55 @@ fn on_init(
             opened: crate::hub::now_ms(),
             proven: false,
             ctx,
+            routes: HashMap::new(),
         },
     );
+}
+
+/// The relay loop's sessions, as partner routes use them.
+struct SessPhones<'a> {
+    sessions: &'a mut HashMap<String, Sess>,
+    out: &'a mpsc::UnboundedSender<(String, String)>,
+}
+
+impl crate::partner_route::Phones for SessPhones<'_> {
+    fn event(&mut self, pairing_id: &str, event: &str, data: Value) {
+        let msg = json!({ "t": "ev", "ev": event, "d": data }).to_string();
+        for (sid, s) in self.sessions.iter() {
+            if s.pairing_id == pairing_id {
+                let _ = self.out.send((sid.clone(), msg.clone()));
+            }
+        }
+    }
+
+    fn seal(&mut self, pairing_id: &str, route_id: &[u8], plain: &[u8]) -> Option<String> {
+        let s = self
+            .sessions
+            .values_mut()
+            .filter(|s| s.pairing_id == pairing_id && s.proven)
+            .max_by_key(|s| s.opened)?;
+        let ch = s
+            .routes
+            .entry(ps::b64(route_id))
+            .or_insert_with(|| s.channel.route(route_id));
+        let f = ch.seal(plain)?;
+        serde_json::to_string(&f).ok()
+    }
+
+    fn open(&mut self, pairing_id: &str, route_id: &[u8], body: &str) -> Option<Vec<u8>> {
+        let Some(SessionFrame::Data(f)) = ps::parse_frame(body) else {
+            return None;
+        };
+        let s = self
+            .sessions
+            .get_mut(&f.s)
+            .filter(|s| s.pairing_id == pairing_id)?;
+        let ch = s
+            .routes
+            .entry(ps::b64(route_id))
+            .or_insert_with(|| s.channel.route(route_id));
+        ch.open(&f)
+    }
 }
 
 #[cfg(test)]

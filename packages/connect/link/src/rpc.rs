@@ -588,6 +588,8 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
     // connection: while it was kept, the writer below never saw its channel end, so the hub never closed the
     // socket and the client waited on its close for good.
     crate::hub::lock(&bridge.live_clients).retain(|(_, t)| !t.same_channel(&tx));
+    // A partner desktop's routes go with its connection.
+    crate::partner_route::conn_closed(&bridge, conn.id);
     for (_, h) in conn.subs.drain() {
         h.abort();
     }
@@ -871,6 +873,15 @@ async fn dispatch(
             crate::app_link::app_call(b, conn.id, conn.origin.as_deref(), m, &p).await
         }
         m if m.starts_with("push.") => crate::push::call(b, m, &p).await,
+        m if m.starts_with("relay.partnerRoute.") => {
+            let who = crate::partner_route::Caller {
+                conn: conn.id,
+                role: conn.role,
+                partner: conn.partner.as_deref(),
+                tx,
+            };
+            crate::partner_route::call(b, &who, m, &p).await
+        }
         m if m.starts_with("remote.") => {
             crate::remote::call(b, m, &p, crate::remote::owner_of(conn.client.as_deref(), &p))
         }
