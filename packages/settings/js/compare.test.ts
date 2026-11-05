@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import type { PrintConfig } from '@slicerx/contracts/settings'
-import { compareConfigs, settingGroupLabel } from './compare'
-import { defaultConfig } from './schema'
+import { compareConfigs, SETTING_GROUP_ORDER, settingGroupLabel, settingGroupRank } from './compare'
+import { defaultConfig, SETTINGS } from './schema'
 
 const cfg = (o: Record<string, unknown>) => o as unknown as PrintConfig
 const process = () => defaultConfig('process') as PrintConfig
@@ -79,5 +79,41 @@ describe('compareConfigs', () => {
     // Line endings and trailing spaces alone are no change, as in the project review.
     const same = compareConfigs(a, cfg({ machine_end_gcode: 'M104 S0  \r\nM140 S0\r\n\r\nG28 X\r\nM84' }), { section: 'printer' })
     expect(same.differ).toBe(0)
+  })
+
+  it('puts every group in the settings order, and a group the order does not name after the rest', () => {
+    for (const section of ['process', 'filament', 'printer'] as const) {
+      const groups = compareConfigs(cfg({}), cfg({}), { section, all: true }).groups.map((g) => g.group)
+      const listedGroups = [...new Set(SETTINGS.filter((d) => d.section === section && d.mode !== 'hidden' && d.group !== 'network').map((d) => d.group))]
+      expect(groups.sort((x, y) => settingGroupRank(x) - settingGroupRank(y) || x.localeCompare(y))).toEqual(groups)
+      expect(new Set(groups)).toEqual(new Set(listedGroups))
+      for (const g of groups) expect(SETTING_GROUP_ORDER, `${section} ${g}`).toContain(g)
+    }
+    expect(settingGroupRank('something-new')).toBe(SETTING_GROUP_ORDER.length)
+    expect(settingGroupLabel('multimaterial')).toBe('Multi-material')
+  })
+
+  it('names keys the schema does not know, without a value or a row', () => {
+    const c = compareConfigs(cfg({ layer_height: 0.2, made_up_key: 1 }), cfg({ layer_height: 0.2, made_up_key: 2 }))
+    expect(c.unknownKeys).toEqual(['made_up_key'])
+    expect(c.differ).toBe(0)
+    expect(JSON.stringify(c.groups)).not.toContain('made_up_key')
+  })
+
+  it('lists both configs whole with all and no section, still without hidden or network keys', () => {
+    const c = compareConfigs(cfg({ layer_height: 0.2, inherits: 'x', print_host: 'a' }), cfg({ nozzle_temperature: [200], inherits: 'y', print_host: 'b' }), { all: true })
+    const keys = c.groups.flatMap((g) => g.rows).map((r) => r.key).sort()
+    expect(keys).toEqual(['layer_height', 'nozzle_temperature'])
+  })
+
+  it('reads a G-code list per filament, and a whitespace change under all as the same text', () => {
+    const list = compareConfigs(cfg({ filament_start_gcode: ['M106 S0', 'M106 S255'] }), cfg({ filament_start_gcode: ['M106 S0', 'M106 S128'] }), { section: 'filament', names: ['Mine', 'Theirs'] })
+    const row = list.groups.flatMap((g) => g.rows).find((r) => r.key === 'filament_start_gcode')!
+    expect(row.lines).toMatchObject({ added: 1, removed: 1 })
+    expect(row.lines!.unified.split('\n').slice(0, 2)).toEqual(['--- Mine', '+++ Theirs'])
+    const ws = compareConfigs(cfg({ machine_end_gcode: 'M84\n' }), cfg({ machine_end_gcode: 'M84   \r\n\r\n' }), { section: 'printer', all: true })
+    const end = ws.groups.flatMap((g) => g.rows).find((r) => r.key === 'machine_end_gcode')!
+    expect(end.differs).toBe(false)
+    expect(end.lines).toBeUndefined()
   })
 })
