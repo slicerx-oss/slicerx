@@ -23,6 +23,7 @@ import {
   printersFleet,
   setPilot,
   setState,
+  partnerAppToken,
   settingsAccount,
   shotsDir,
   shotsOn,
@@ -63,6 +64,10 @@ journey.describe('the main flows on a phone', () => {
 
   journey('Settings opens on its list of sections, with Account and Phone access', async ({ page }) => {
     await settingsAccount(page)
+  })
+
+  journey('Settings, Account issues a partner app token, shows it once and revokes it', async ({ page }, info) => {
+    await partnerAppToken(page, info, 'phone')
   })
 
   journey('the featured cover fits whole and centered in the hero', async ({ page }) => {
