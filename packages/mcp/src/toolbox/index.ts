@@ -24,6 +24,7 @@ import planSettings from './plan-settings'
 import prepareScriptReplacement from './prepare-script-replacement'
 import printWatchStatus from './print-watch-status'
 import printerList from './printer-list'
+import printerQueueStart from './printer-queue-start'
 import printerSnapshot from './printer-snapshot'
 import printerStatus from './printer-status'
 import printerTunnel from './printer-tunnel'
@@ -31,6 +32,7 @@ import projectLayerMarkAdd from './project-layer-mark-add'
 import projectLayerMarkRemove from './project-layer-mark-remove'
 import projectLayerMarks from './project-layer-marks'
 import remapToolheads from './remap-toolheads'
+import remoteStartPolicy from './remote-start-policy'
 import removeFromFleet from './remove-from-fleet'
 import renameFleet from './rename-fleet'
 import reviewScript from './review-script'
@@ -42,4 +44,4 @@ import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, remapToolheads, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]

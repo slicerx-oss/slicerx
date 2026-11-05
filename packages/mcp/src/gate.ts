@@ -56,7 +56,7 @@ export interface PersonHandOff {
  * cancel stop a printer, so they stay approvable here. The same list as the hub's
  * (sx-link roles.rs PERSON_ONLY).
  */
-const PERSON_ONLY_ACTIONS = new Set<string>(['printer.start', 'printer.resume', 'printer.gcode', 'printer.adjust'])
+const PERSON_ONLY_ACTIONS = new Set<string>(['printer.start', 'printer.resume', 'printer.gcode', 'printer.adjust', 'printer.skip'])
 
 // Home Assistant service calls switch power, so they wait for a person too, as on the hub.
 export function needsPerson(req: Pick<ApprovalRequest, 'actions'>): boolean {
@@ -70,7 +70,7 @@ const onlyStops = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.action
 export const forHub = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.actions.some((a) => (a.action.startsWith('printer.') && a.action !== 'printer.config') || a.action === 'plugin.call')
 
 export const personOnlyNote = (): string =>
-  `Starting, resuming, sending G-code, changing a running print or switching power needs a person to approve it in ${productName()} or on the phone. It cannot be approved through MCP. The request is registered; ask the user to approve it there.`
+  `Starting, resuming, sending G-code, changing a running print, skipping an object or switching power needs a person to approve it in ${productName()} or on the phone. It cannot be approved through MCP. The request is registered; ask the user to approve it there.`
 
 /** Progress lines a long tool sends, as MCP progress notifications when the client asked for them. */
 export type ToolProgress = (line: string, fraction?: number) => void
