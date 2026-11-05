@@ -72,7 +72,7 @@ pub use types::{
     Adjustment, Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, FanKind, Fans, FilamentSlot,
     FilamentUnit, FileInfo, Image, JobFile, JobKind, JogAxis, LiveUnit, Motion, PrintObject, PrintRecord,
     PrinterConfig, PrinterEvent, PrinterHardware, PrinterIssue, PrinterLive, PrinterState, PrinterStatus,
-    RemoteFile, Secrets, SlotSetting, StartOptions, StoredFile, Temp,
+    RemoteFile, Secrets, SlotSetting, StartOptions, StoredFile, Temp, UnitClimate,
 };
 
 /// One printer family. `connect` opens a session; nothing here changes a printer.
@@ -226,6 +226,11 @@ pub trait PrinterSession: Send + Sync {
     /// The model the printer itself reports ("A1", "A1 mini"), for printers that say it. The hub adds
     /// it to the status as `model`, so a printer added by address alone still reads as what it is.
     fn reported_model(&self) -> Option<String> {
+        None
+    }
+    /// The firmware version the printer itself reports ("01.04.00.00"), for printers that say it.
+    /// The hub adds it to the status as `firmware`.
+    fn reported_firmware(&self) -> Option<String> {
         None
     }
 }

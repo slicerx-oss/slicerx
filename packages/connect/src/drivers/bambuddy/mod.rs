@@ -713,6 +713,7 @@ fn live_units(body: &Value) -> Vec<LiveUnit> {
                 id,
                 kind: kind.to_owned(),
                 feeds: None,
+                climate: None,
             });
         }
     }
@@ -725,6 +726,7 @@ fn live_units(body: &Value) -> Vec<LiveUnit> {
             id: "external".to_owned(),
             kind: "external".to_owned(),
             feeds: None,
+            climate: None,
         });
     }
     out
