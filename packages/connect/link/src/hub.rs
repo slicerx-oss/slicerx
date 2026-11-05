@@ -357,8 +357,9 @@ impl StateDir {
         let _ = std::fs::remove_file(self.path.join(CODE_FILE));
     }
 
-    pub(crate) fn write_watch_code(&self, code: &str) -> std::io::Result<()> {
-        sx_connect::write_private(&self.path.join(WATCH_CODE_FILE), format!("{code}\n").as_bytes())
+    /// Older hubs wrote the detector code here; it never stays on disk.
+    pub(crate) fn remove_watch_code(&self) {
+        let _ = std::fs::remove_file(self.path.join(WATCH_CODE_FILE));
     }
 
     pub(crate) fn write_agent_code(&self, code: &str) -> std::io::Result<()> {
@@ -1381,6 +1382,9 @@ pub(crate) struct Send<'a> {
     pub opts: StartOptions,
     pub origin: StartOrigin,
     pub title: &'a str,
+    /// A queued plate's start: its item id and whether a phone approved it from afar. The fresh plate
+    /// check runs after the upload, right before the start command (`remote_start::before_start`).
+    pub queued: Option<(&'a str, bool)>,
 }
 
 /// The start params as the drivers bind them.

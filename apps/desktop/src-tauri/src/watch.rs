@@ -32,8 +32,11 @@ pub fn locate(exe_dir: Option<PathBuf>, resources: Option<PathBuf>) -> Option<(P
     Some((program, model))
 }
 
-/// Starts the watch once, pointed at the hub this app runs. A watch that cannot start leaves the app as it was.
-pub fn start(app: &AppHandle, hub_url: &str) {
+/// Starts the watch once, pointed at the hub this app runs, with a fresh detector code written on its stdin
+/// (`--code-stdin`): the code is never in a file, an argument or the environment, where a local agent could
+/// read it. `code` is asked for only when a watch is about to start. A watch that cannot start leaves the app as
+/// it was.
+pub fn start(app: &AppHandle, hub_url: &str, code: impl FnOnce() -> Option<String>) {
     let state = app.state::<Watch>();
     let mut slot = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(child) = slot.as_mut()
@@ -47,17 +50,29 @@ pub fn start(app: &AppHandle, hub_url: &str) {
     let Some((program, model)) = locate(exe_dir, app.path().resource_dir().ok()) else {
         return;
     };
+    let Some(code) = code() else {
+        return;
+    };
     let mut watch = Command::new(program);
     let child = crate::launch::no_window(&mut watch)
         .arg("--url")
         .arg(hub_url)
         .arg("--model")
         .arg(model)
-        .stdin(Stdio::null())
+        .arg("--code-stdin")
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
-    *slot = child.ok();
+    let Ok(mut child) = child else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write as _;
+        // One line, then the pipe closes.
+        let _ = writeln!(stdin, "{code}");
+    }
+    *slot = Some(child);
 }
 
 /// Stops the watch this app started, by its own handle.

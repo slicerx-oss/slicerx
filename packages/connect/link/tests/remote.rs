@@ -2779,3 +2779,128 @@ async fn r11_remote_start_limits_stay_within_the_printer_catalog() {
     assert_eq!(r["result"]["catalogMaxNozzleC"], 300, "{r}");
     assert_eq!(r["result"]["maxBedC"], 80, "{r}");
 }
+
+#[tokio::test]
+async fn s1_the_detector_code_is_never_written_where_an_agent_can_read_it() {
+    let dir = std::env::temp_dir().join(format!("sx-s1-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // A file left by an older hub goes too.
+    std::fs::write(dir.join("watch-code"), "OLDC-ODE1\n").unwrap();
+    let _s = setup_in(Some(dir.clone())).await;
+    assert!(!dir.join("watch-code").exists(), "no watch-code file");
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            let text = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
+            assert!(
+                !text.contains(WATCH_CODE),
+                "{} holds the detector code",
+                path.display()
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn s2_a_queued_plate_from_afar_is_checked_after_its_upload_right_before_the_start() {
+    let mut s = setup().await;
+    let mocks = idle_bay4_with_plate(&mut s).await;
+    call(
+        &mut s.app,
+        20,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    // Clear for the person's look and the check at approval; every later check cannot tell.
+    detector_as(
+        &s.link,
+        WATCH_CODE,
+        Arc::new(|n| {
+            if n <= 2 {
+                json!({ "clear": true, "compared": true })
+            } else {
+                json!({ "clear": null, "compared": true })
+            }
+        }),
+    )
+    .await;
+    let (mut phone, signer) = approver(&mut s, 90).await;
+    let (f, _) = gcode_file("plate.gcode", "M140 S55\nM104 S215\nG28\n");
+    let q = call(
+        &mut s.app,
+        30,
+        "queue.add",
+        json!({ "printerId": "bay-4", "file": f, "title": "Plate 2" }),
+    )
+    .await;
+    let item = q["result"]["item"]["id"].as_str().unwrap().to_owned();
+    let r = call(&mut s.agent, 31, "queue.start", json!({ "itemId": item })).await;
+    let request = r["result"]["request"].clone();
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &request, "approve", true),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let mut failed = false;
+    for _ in 0..60 {
+        let l = call(&mut s.app, 32, "queue.list", json!({})).await;
+        if l["result"][0]["state"] == "failed" {
+            failed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let log = mock_log(&mocks).await;
+    assert!(failed, "{log:?}");
+    assert!(
+        log.iter().any(|l| l.starts_with("upload")),
+        "the check comes after the upload: {log:?}"
+    );
+    assert!(!log.iter().any(|l| l.starts_with("start ")), "{log:?}");
+}
+
+#[tokio::test]
+async fn s4_an_unknown_model_keeps_the_default_limits_as_its_cap() {
+    let mut s = setup().await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let cfg = json!({ "id": "odd", "name": "Odd", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    call(
+        &mut s.app,
+        10,
+        "printers.add",
+        json!({ "config": cfg, "info": { "vendor": "Nobody", "model": "Mystery 9" } }),
+    )
+    .await;
+    let r = call(
+        &mut s.app,
+        11,
+        "remoteStart.set",
+        json!({ "printerId": "odd", "enabled": true, "maxNozzleC": 260 }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    // A model name alone never matches another vendor's catalog entry.
+    let cfg = json!({ "id": "fake", "name": "Fake", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    call(
+        &mut s.app,
+        12,
+        "printers.add",
+        json!({ "config": cfg, "info": { "vendor": "", "model": "X1 Carbon" } }),
+    )
+    .await;
+    let r = call(
+        &mut s.app,
+        13,
+        "remoteStart.set",
+        json!({ "printerId": "fake", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["catalogMaxNozzleC"], Value::Null, "{r}");
+}

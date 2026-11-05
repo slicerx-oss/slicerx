@@ -108,7 +108,8 @@ export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
   const plan = racePlan(timings)
   s.info('the hub\'s watch timings for this run', { ...timings, hold: plan })
   const read = (name) => readFileSync(join(hub, name), 'utf8').trim()
-  const files = await waitUntil(async () => (['pairing-code', 'watch-code', 'hub-key.pub'].every((f) => existsSync(join(hub, f))) ? true : null), { timeoutMs: 30_000, everyMs: 500 })
+  // The detector code is never on disk; the gate stands in for the detector with the app code narrowed to the watch role.
+  const files = await waitUntil(async () => (['pairing-code', 'hub-key.pub'].every((f) => existsSync(join(hub, f))) ? true : null), { timeoutMs: 30_000, everyMs: 500 })
   if (files.timedOut) return s.stop('the app\'s printer hub is running', `no codes in ${hub}`)
   const fake = await startFake()
   s.info('the fake Klipper printer (loopback only)', { port: fake.port, pid: fake.pid })
@@ -119,7 +120,7 @@ export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
     const hubKey = read('hub-key.pub')
     const at = url ? { url } : {}
     app = await connectLink({ ...at, code: read('pairing-code'), hubKey })
-    watch = await connectLink({ ...at, code: read('watch-code'), hubKey, role: 'watch' })
+    watch = await connectLink({ ...at, code: read('pairing-code'), hubKey, role: 'watch' })
     s.check('paired with the app\'s hub as an app and as a failure detector', app && watch)
     await app.removePrinter(PRINTER).catch(() => undefined)
     await app.addPrinter({ id: PRINTER, name: 'Gate watch (fake)', plugin: 'moonraker', host: '127.0.0.1', port: fake.port })

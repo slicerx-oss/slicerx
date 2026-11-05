@@ -1347,18 +1347,20 @@ test("Remote start: the printer's controls turn it on with its limits, and a cli
     // The limits show once it is on; a value the hub would refuse keeps Save off.
     const nozzle = section.getByLabel('Highest nozzle temperature (°C)')
     await expect(nozzle).toHaveValue('240')
-    await nozzle.fill('400')
-    await expect(section.getByRole('button', { name: 'Save limits' })).toBeDisabled()
+    // The catalog does not know this printer by its vendor and model, so 240 °C is its cap.
     await nozzle.fill('255')
+    await expect(section.getByRole('button', { name: 'Save limits' })).toBeDisabled()
+    await nozzle.fill('230')
     await section.getByRole('button', { name: 'Save limits' }).click()
-    await expect.poll(async () => (await admin.remoteStart.get('voron')).printers[0]?.maxNozzleC).toBe(255)
+    await expect.poll(async () => (await admin.remoteStart.get('voron')).printers[0]?.maxNozzleC).toBe(230)
     await expect(section).toContainText('No plate check yet')
+    await expect(section).toContainText('does not know this printer')
     // A client reads the same setting back, and cannot change it.
     const mcp = await mcpClient()
     try {
       const r = await mcp.call('slicerx_remote_start_policy', { printerId: 'voron' })
       const rows = (r.structuredContent as { printers: { printerId: string; enabled: boolean; maxNozzleC: number; maxBedC: number }[]; plateWindowSeconds: number }) ?? { printers: [], plateWindowSeconds: 0 }
-      expect(rows.printers[0]).toMatchObject({ printerId: 'voron', enabled: true, maxNozzleC: 255, maxBedC: 80 })
+      expect(rows.printers[0]).toMatchObject({ printerId: 'voron', enabled: true, maxNozzleC: 230, maxBedC: 80, catalogMaxNozzleC: null })
       expect(rows.plateWindowSeconds).toBe(60)
     } finally {
       await mcp.close()
