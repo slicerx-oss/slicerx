@@ -8,7 +8,7 @@ import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
   type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
@@ -361,8 +361,10 @@ function RemoteStart({ rs, printer }: { rs: NonNullable<DeviceHub['remoteStart']
       setBusy(false)
     }
   }
-  const n = remoteLimit(nozzle, REMOTE_NOZZLE_RANGE)
-  const b = remoteLimit(bed, REMOTE_BED_RANGE)
+  const nozzleRange = limitRange(REMOTE_NOZZLE_RANGE, row?.catalogMaxNozzleC)
+  const bedRange = limitRange(REMOTE_BED_RANGE, row?.catalogMaxBedC)
+  const n = remoteLimit(nozzle, nozzleRange)
+  const b = remoteLimit(bed, bedRange)
   const changed = row !== null && (n !== row.maxNozzleC || b !== row.maxBedC)
   return (
     <section aria-label="Remote start" className="remote-start">
@@ -374,24 +376,29 @@ function RemoteStart({ rs, printer }: { rs: NonNullable<DeviceHub['remoteStart']
         <Switch id={`rs-on-${printer.id}`} checked={row?.enabled ?? false} disabled={!row || busy} onChange={(v) => void save(v)} />
       </div>
       <p className="sx-small sx-muted">
-        The phone shows the camera's picture of the plate next to your empty-plate picture. The start goes through only when the camera guard compared them and found the plate clear in the last {windowS} seconds, the file stays within the temperatures below and heats no chamber, and you tick that the plate is clear.
+        The phone shows the camera's picture of the plate next to your empty-plate picture. The start goes through only when the camera guard compared them and found the plate clear in the last {windowS} seconds, the file stays within the temperatures below and sets no chamber heater, and you tick that the plate is clear. Right before the print starts, the camera checks the plate once more.
       </p>
       {row && !row.guard ? <p className="sx-small warn" role="note">The camera guard is off for this printer, so a start from afar is always refused.</p> : null}
       {row?.enabled ? (
         <div className="remote-start-limits">
           <label className="plate-form-row" htmlFor={`rs-nozzle-${printer.id}`}>
             <span>Highest nozzle temperature (°C)</span>
-            <input id={`rs-nozzle-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={REMOTE_NOZZLE_RANGE[0]} max={REMOTE_NOZZLE_RANGE[1]} step={1} value={nozzle} aria-invalid={n === null} onChange={(e) => setNozzle(e.currentTarget.value)} />
+            <input id={`rs-nozzle-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={nozzleRange[0]} max={nozzleRange[1]} step={1} value={nozzle} aria-invalid={n === null} onChange={(e) => setNozzle(e.currentTarget.value)} />
           </label>
           <label className="plate-form-row" htmlFor={`rs-bed-${printer.id}`}>
             <span>Highest bed temperature (°C)</span>
-            <input id={`rs-bed-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={REMOTE_BED_RANGE[0]} max={REMOTE_BED_RANGE[1]} step={1} value={bed} aria-invalid={b === null} onChange={(e) => setBed(e.currentTarget.value)} />
+            <input id={`rs-bed-${printer.id}`} className="sx-input num" type="number" inputMode="numeric" min={bedRange[0]} max={bedRange[1]} step={1} value={bed} aria-invalid={b === null} onChange={(e) => setBed(e.currentTarget.value)} />
           </label>
           {n === null || b === null ? (
             <p className="sx-small warn" role="note">
-              Nozzle {REMOTE_NOZZLE_RANGE[0]} to {REMOTE_NOZZLE_RANGE[1]} °C, bed {REMOTE_BED_RANGE[0]} to {REMOTE_BED_RANGE[1]} °C.
+              Nozzle {nozzleRange[0]} to {nozzleRange[1]} °C, bed {bedRange[0]} to {bedRange[1]} °C.
             </p>
           ) : null}
+          <p className="sx-small sx-muted">
+            {row.catalogMaxNozzleC !== null && row.catalogMaxBedC !== null
+              ? `${printer.name} goes up to ${row.catalogMaxNozzleC} °C at the nozzle and ${row.catalogMaxBedC} °C on the bed, so the limits stay at or below those.`
+              : `${appName()} does not know this printer's own limits, so they stay at or below ${REMOTE_NOZZLE_RANGE[1]} °C and ${REMOTE_BED_RANGE[1]} °C.`}
+          </p>
           <div className="calib-act">
             <Button size="sm" disabled={busy || !changed || n === null || b === null} onClick={() => n !== null && b !== null && void save(true, { maxNozzleC: n, maxBedC: b })}>
               Save limits

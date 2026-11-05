@@ -144,8 +144,8 @@ export type AgentWork =
   | { kind: 'print'; printerId: string; file: JobFile; opts?: StartOptions }
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
-  /** Skip one object of the running print; the hub pins the job it was asked in. */
-  | { kind: 'skip'; printerId: string; id: string }
+  /** Skip one object of the running print; `epoch` is the running print's bed epoch from the hub, and is hashed. */
+  | { kind: 'skip'; printerId: string; id: string; epoch: number }
   /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 

@@ -153,6 +153,14 @@ type Change = z.infer<typeof adjustment>
 type SkipChange = { kind: 'skip_object'; objectId: string }
 const isSkip = (c: Change): c is Change & SkipChange => c.kind === 'skip_object'
 
+/** The bed epoch of the print running now, from the printer bridge (`bed.state`): a skip names its print. */
+async function runningEpoch(ctx: ToolContext, printerId: string): Promise<number> {
+  const bed = (ctx.host.printers as { bed?: { state?(id: string): Promise<{ epoch?: number }> } }).bed
+  const epoch = typeof bed?.state === 'function' ? (await bed.state(printerId)).epoch : undefined
+  if (typeof epoch !== 'number') throw new AdjustRefused('Skipping an object goes through the printer bridge, which knows the print running now.')
+  return epoch
+}
+
 /** The printer a skip is for, by id. Skipping needs no limits: it stops extrusion for one object only. */
 async function skipTarget(i: { printerId: string; change: { objectId?: string | undefined } }, ctx: ToolContext): Promise<PrinterInfo> {
   // The hub's own rule for an object label (`object_id_ok` in sx-connect): nothing that could carry a second command.
@@ -194,7 +202,10 @@ export function createPrintAdjust() {
     args: (i) => `${i.printerId} ${i.change.kind}`,
     // A G-code change through an agent (MCP) is run by the hub once a person approves it.
     async agentWork(i, ctx) {
-      if (isSkip(i.change)) return { kind: 'skip', printerId: (await skipTarget({ printerId: i.printerId, change: i.change }, ctx)).id, id: i.change.objectId }
+      if (isSkip(i.change)) {
+        const info = await skipTarget({ printerId: i.printerId, change: i.change }, ctx)
+        return { kind: 'skip', printerId: info.id, id: i.change.objectId, epoch: await runningEpoch(ctx, info.id) }
+      }
       const { info, planned } = await plan(i as { printerId: string; change: Adjustment }, ctx)
       const line = planned.gcode[0]
       if (planned.gcode.length !== 1 || !line) throw new AdjustRefused('Only a single G-code change can wait for a person.')
@@ -207,7 +218,7 @@ export function createPrintAdjust() {
           title: `Skip object ${i.change.objectId} on ${info.name}?`,
           lines: [`Why: ${i.reason}`, `Stops printing object ${i.change.objectId}; the rest of the plate carries on.`],
           printerId: info.id,
-          actions: [{ action: 'printer.skip' as const, target: info.id, params: { printerId: info.id, id: i.change.objectId } }],
+          actions: [{ action: 'printer.skip' as const, target: info.id, params: { printerId: info.id, id: i.change.objectId, epoch: await runningEpoch(ctx, info.id) } }],
         }
       }
       const { info, planned } = await plan(i as { printerId: string; change: Adjustment }, ctx)
