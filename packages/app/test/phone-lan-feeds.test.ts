@@ -161,3 +161,42 @@ it('a phone paired on the LAN gets mimir approval and question cards, and its an
   conn.close()
   host.close()
 })
+
+it('a LAN approve that lands after the desktop decided is refused as not_found and leaves no audit line', async () => {
+  const env = defaultEnv
+  const relay = createMemoryRelay()
+  const services = pairHostServices({ printers: { list: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost })
+  const host = await createPairHost({ env, identity: createIdentity(env, 'Studio Mac', 'desktop'), store: memoryPairingStore(), kind: 'desktop', services, endpoints: { lan: [LAN], relay: RELAY } })
+  host.attachRelay(relay.connect({}))
+  const client = createPairClient({ env, identity: createIdentity(env, 'Pocket', 'ios'), store: memoryPairingStore(), relays: [RELAY], defaultRelay: RELAY, socket: fakeLan((pipe) => host.handlePipe(pipe)), openRelay: async () => relay.connect({}), accountId: null, lanTimeoutMs: 50, sessionTimeoutMs: 500, pairAnswerTimeoutMs: 300 })
+  const offer = host.createOffer()
+  const attempts: HostPairingAttempt[] = []
+  offer.onAttempt((a) => attempts.push(a))
+  const flow = await client.pair(offer.link)
+  await flow.sas
+  await flush()
+  flow.confirm()
+  attempts[0]!.confirm()
+  await Promise.all([flow.result, attempts[0]!.result])
+  const conn = await client.connect((await client.hosts())[0]!.pairingId)
+
+  // the card still shows to phones for a moment after the person clicked Deny on the desktop
+  let decidedOnDesktop = false
+  setPhoneApprovals({
+    pending: () => [REQUEST],
+    outcome: () => undefined,
+    resolve: async () => {
+      if (decidedOnDesktop) throw new Error('No approval apr_1 waits')
+    },
+  })
+  const [view] = await conn.approvals()
+  decidedOnDesktop = true
+  const code = await conn.approve(view!).then(
+    () => 'ok',
+    (e: unknown) => (e as { code?: string }).code,
+  )
+  expect(code).toBe('not_found')
+  expect(host.audit()).toEqual([])
+  conn.close()
+  host.close()
+})
