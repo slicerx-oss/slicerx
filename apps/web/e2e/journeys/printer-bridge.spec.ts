@@ -1324,3 +1324,47 @@ async function sheetShots(page: Page, box: Locator, name: string): Promise<void>
   if (before) await page.setViewportSize(before)
   await page.evaluate((t) => (window as unknown as Sx).__sx.setState(t), theme)
 }
+
+test("Remote start: the printer's controls turn it on with its limits, and a client reads it back", async ({ page }) => {
+  await paired(page)
+  type RemoteStartRead = { remoteStart: { get(id?: string): Promise<{ printers: { printerId: string; enabled: boolean; maxNozzleC: number; maxBedC: number }[] }>; set(id: string, on: boolean): Promise<unknown> } }
+  const admin = hub.admin as unknown as RemoteStartRead
+  try {
+    await page.getByRole('button', { name: 'Printers', exact: true }).first().click()
+    const card = page.getByTestId('printer-card').filter({ hasText: 'Voron' })
+    await card.getByTestId('printer-card-options').click()
+    await page.getByRole('menuitem', { name: 'Controls and files' }).click()
+    const dialog = page.getByRole('dialog', { name: /Voron: controls and files/ })
+    await dialog.getByRole('button', { name: 'Remote start' }).click()
+    const section = dialog.getByRole('region', { name: 'Remote start' })
+    const on = section.getByLabel(/Let a paired phone start prints away from home/)
+    // Off by default, and the hub agrees.
+    await expect(on).not.toBeChecked()
+    expect((await admin.remoteStart.get('voron')).printers[0]?.enabled).toBe(false)
+    await on.click()
+    await expect(on).toBeChecked()
+    await expect.poll(async () => (await admin.remoteStart.get('voron')).printers[0]?.enabled).toBe(true)
+    // The limits show once it is on; a value the hub would refuse keeps Save off.
+    const nozzle = section.getByLabel('Highest nozzle temperature (°C)')
+    await expect(nozzle).toHaveValue('240')
+    await nozzle.fill('400')
+    await expect(section.getByRole('button', { name: 'Save limits' })).toBeDisabled()
+    await nozzle.fill('255')
+    await section.getByRole('button', { name: 'Save limits' }).click()
+    await expect.poll(async () => (await admin.remoteStart.get('voron')).printers[0]?.maxNozzleC).toBe(255)
+    await expect(section).toContainText('No plate check yet')
+    // A client reads the same setting back, and cannot change it.
+    const mcp = await mcpClient()
+    try {
+      const r = await mcp.call('slicerx_remote_start_policy', { printerId: 'voron' })
+      const rows = (r.structuredContent as { printers: { printerId: string; enabled: boolean; maxNozzleC: number; maxBedC: number }[]; plateWindowSeconds: number }) ?? { printers: [], plateWindowSeconds: 0 }
+      expect(rows.printers[0]).toMatchObject({ printerId: 'voron', enabled: true, maxNozzleC: 255, maxBedC: 80 })
+      expect(rows.plateWindowSeconds).toBe(60)
+    } finally {
+      await mcp.close()
+    }
+    await page.keyboard.press('Escape')
+  } finally {
+    await admin.remoteStart.set('voron', false)
+  }
+})

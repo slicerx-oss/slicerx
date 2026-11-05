@@ -145,8 +145,22 @@ const adjustment = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('speed'), percent: z.number().min(10).max(300) }),
   z.object({ kind: z.literal('nozzle_temp'), celsius: z.number().min(0).max(400) }),
   z.object({ kind: z.literal('bed_temp'), celsius: z.number().min(0).max(200) }),
-  z.object({ kind: z.literal('pause') }),
+  // Pause, or skip one object of the running print (objectId, from the printer's object list): only its extrusion
+  // stops. One variant for both keeps the schema a local model reads within its room.
+  z.object({ kind: z.enum(['pause', 'skip_object']), objectId: z.string().max(64).optional() }),
 ])
+type Change = z.infer<typeof adjustment>
+type SkipChange = { kind: 'skip_object'; objectId: string }
+const isSkip = (c: Change): c is Change & SkipChange => c.kind === 'skip_object'
+
+/** The printer a skip is for, by id. Skipping needs no limits: it stops extrusion for one object only. */
+async function skipTarget(i: { printerId: string; change: { objectId?: string | undefined } }, ctx: ToolContext): Promise<PrinterInfo> {
+  // The hub's own rule for an object label (`object_id_ok` in sx-connect): nothing that could carry a second command.
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(i.change.objectId ?? '')) throw new AdjustRefused('objectId is an object id from the printer\'s object list.')
+  const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
+  if (!info) throw new AdjustRefused(`No printer ${i.printerId}`)
+  return info
+}
 
 /** Sends one console line: through the host's own call when it has one, else the printer plugin's gcode tool. */
 async function sendGcode(ctx: ToolContext, info: PrinterInfo, line: string): Promise<void> {
@@ -157,6 +171,7 @@ async function sendGcode(ctx: ToolContext, info: PrinterInfo, line: string): Pro
 }
 
 async function plan(i: { printerId: string; change: Adjustment }, ctx: ToolContext) {
+  if ((i.change as Change).kind === 'skip_object') throw new AdjustRefused('Skipping an object is not a limits change.')
   const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
   if (!info) throw new AdjustRefused(`No printer ${i.printerId}`)
   const status = await ctx.host.printers.status(info.id)
@@ -166,10 +181,10 @@ async function plan(i: { printerId: string; change: Adjustment }, ctx: ToolConte
 export function createPrintAdjust() {
   return defineTool({
     name: 'print.adjust',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'plugin',
     permission: 'start',
-    description: `Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. Every change shows the user an approval card and runs only if approved; ${ASSISTANT_NAME} never changes a print on its own. Changes outside check_print's limits are refused.`,
+    description: `Make one change to a running print: part fan, speed factor, nozzle or bed temperature, pause, or skip one object. Every change shows the user an approval card and runs only if approved; ${ASSISTANT_NAME} never changes a print on its own. Changes outside check_print's limits are refused.`,
     input: z.object({
       printerId: z.string(),
       change: adjustment,
@@ -179,13 +194,23 @@ export function createPrintAdjust() {
     args: (i) => `${i.printerId} ${i.change.kind}`,
     // A G-code change through an agent (MCP) is run by the hub once a person approves it.
     async agentWork(i, ctx) {
-      const { info, planned } = await plan(i, ctx)
+      if (isSkip(i.change)) return { kind: 'skip', printerId: (await skipTarget({ printerId: i.printerId, change: i.change }, ctx)).id, id: i.change.objectId }
+      const { info, planned } = await plan(i as { printerId: string; change: Adjustment }, ctx)
       const line = planned.gcode[0]
       if (planned.gcode.length !== 1 || !line) throw new AdjustRefused('Only a single G-code change can wait for a person.')
       return { kind: 'gcode', printerId: info.id, line }
     },
     async approval(i, ctx) {
-      const { info, planned } = await plan(i, ctx)
+      if (isSkip(i.change)) {
+        const info = await skipTarget({ printerId: i.printerId, change: i.change }, ctx)
+        return {
+          title: `Skip object ${i.change.objectId} on ${info.name}?`,
+          lines: [`Why: ${i.reason}`, `Stops printing object ${i.change.objectId}; the rest of the plate carries on.`],
+          printerId: info.id,
+          actions: [{ action: 'printer.skip' as const, target: info.id, params: { printerId: info.id, id: i.change.objectId } }],
+        }
+      }
+      const { info, planned } = await plan(i as { printerId: string; change: Adjustment }, ctx)
       return {
         title: planned.title,
         lines: [`Why: ${i.reason}`, ...planned.lines, ...(planned.gcode.length ? [`Sends: ${planned.gcode.join(' ; ')}`] : [])],
@@ -198,10 +223,12 @@ export function createPrintAdjust() {
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
+      // A skip runs on the hub once a person approves its card; there is no local path for it.
+      if (isSkip(i.change)) return { ok: false, summary: 'Skipping an object runs through the printer bridge, once a person approves the card.' }
       // Checked again: the print may have moved on while the card was open.
       let p: Awaited<ReturnType<typeof plan>>
       try {
-        p = await plan(i, ctx)
+        p = await plan(i as { printerId: string; change: Adjustment }, ctx)
       } catch (e) {
         if (e instanceof AdjustRefused) return { ok: false, summary: e.message }
         throw e
