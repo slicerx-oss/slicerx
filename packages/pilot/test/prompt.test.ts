@@ -128,11 +128,13 @@ describe('the scope rule for parts', () => {
   })
 
   it('names what is in scope in general terms', () => {
-    for (const s of ['outlines of lines, arcs and circles', 'extruded or turned around one axis', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
+    for (const s of ['outlines of lines, arcs and circles', 'extruded or turned around one axis', 'lofted through sections or swept along a path', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
   })
 
   it('names the kinds of shape that are out of scope in general terms', () => {
-    for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted or organic', 'curving freely in two directions', 'fit the curves of a body', 'varies in shape, size or angle along the part', 'loft', 'swept along a curved path', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
+    for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted or organic', 'curving freely in two directions', 'fit the curves of a body', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
+    // lofts and sweeps have their own tools, so they are not turned down
+    for (const s of ['(a loft)', 'swept along a curved path in space']) expect(SCOPE_LINE).not.toContain(s)
   })
 
   it('turns such a request down before any build or size question, with a buildable version offered', () => {
