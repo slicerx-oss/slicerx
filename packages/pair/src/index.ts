@@ -36,9 +36,10 @@ export {
   type IdentityStore,
   type PairingStore,
 } from './identity'
+export { PARTNER_NAME_MAX, partnerKey, partnerName } from './partner'
 export { createShortCode, DEFAULT_LINK_BASES, isLocalUrl, normalizeShortCode, OFFER_TTL_MS, parsePairingInput } from './offer'
 export { createCameraRelay, PHONE_FPS, type CameraRelay, type PairCameraHandle, type PairCameraSource } from './camera-relay'
-export { ExpoToken, MIMIR_QUESTION_V, MimirAnswerParams, MimirEnded, MimirQuestion, MimirState, PairError, PlateCheck, PushPrefs, RemoteQuota, RemoteStartCard, WorkSummary, type ApprovalView, type CameraQuality, type HostInfo, type JobState, type JobTarget, type JobUpdate, type LibraryEntry, type RpcErrorCode, type SliceOptions, type SliceSource, type SliceSummary, type SliceWhere } from './rpc'
+export { ExpoToken, PartnerPushParams, PushGateway, PUSH_PROVIDERS, type PushProvider, MIMIR_QUESTION_V, MimirAnswerParams, MimirEnded, MimirQuestion, MimirState, PairError, PlateCheck, PushPrefs, RemoteQuota, RemoteStartCard, WorkSummary, type ApprovalView, type CameraQuality, type HostInfo, type JobState, type JobTarget, type JobUpdate, type LibraryEntry, type RpcErrorCode, type SliceOptions, type SliceSource, type SliceSummary, type SliceWhere } from './rpc'
 export type { DevicePlatform, DeviceGrant, Endpoints, PublicIdentity, Rights } from './schema'
 export { connectRelay, memoryPipePair, openSocket, pipeFromSocket, relayPipe, type Pipe, type RelayClientOptions, type RelayConnection, type SocketFactory, type SocketLike } from './transport'
 export { defaultEnv, type PairEnv } from './crypto'

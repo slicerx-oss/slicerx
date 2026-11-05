@@ -78,6 +78,8 @@ export const PairingRecord = z.object({
   lastSeenAt: z.number().int().nonnegative().optional(),
   /** Phone side: unpaired here while the host could not be told. Kept, with its key, until the host confirms. */
   pendingRevoke: z.literal(true).optional(),
+  /** A partner phone's app name, bound into the pairing (partner.ts). Both sides keep it. */
+  partner: z.string().min(1).max(64).optional(),
 })
 export type PairingRecord = z.infer<typeof PairingRecord>
 
