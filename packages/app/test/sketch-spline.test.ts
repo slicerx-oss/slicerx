@@ -11,7 +11,7 @@ import { withStep } from '../src/cad/history/record'
 import { appDesignHost } from '../src/cad/design-host'
 import { afterReverse, fitKey, fromSolver, pointKey, splineCurveRefs, toSolver, type SketchConstraint } from '../src/cad/sketch-constraints'
 import { pointAt, settle } from '../src/cad/sketch-dimension'
-import { fromLoops, handles, moveHandle, profileRings, reverseChain, segPath, tangentAtEnd, toLoops, type Chain } from '../src/cad/sketch-model'
+import { entityPaths, fromLoops, handles, moveHandle, profileRings, reverseChain, segPath, tangentAtEnd, toLoops, type Chain } from '../src/cad/sketch-model'
 import { flattenSpan, RING_POINTS, span, SPLINE_TOL_MM, splineEndDir, splinePoints } from '../src/cad/sketch-spline'
 import { geom } from '../src/geom/client'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -78,9 +78,19 @@ describe('splines in the drawing', () => {
     expect(splinePoints([[0, 0], [90000, 0], [90000, 10]], false)).toBeNull()
     expect(segPath(sharp, 0)).toEqual([[0, 0], [90000, 0], [90000, 10]])
     // past the point budget
+    // a circle without its center or size is unread too
+    expect(fromLoops([{ type: 'circle', start: [0, 0], segments: [] } as never])).toBeNull()
+    // the budget counts the points after the first: exactly enough draws, one fewer does not
     const ok = splinePoints([[0, 0], [10, 5], [20, 0]], false)!
+    expect(splinePoints([[0, 0], [10, 5], [20, 0]], false, ok.length - 1)).toEqual(ok)
     expect(splinePoints([[0, 0], [10, 5], [20, 0]], false, ok.length - 2)).toBeNull()
     expect(RING_POINTS).toBe(65536)
+    // two spline segments share their loop's room, as in the engine: the second past it draws through its points
+    const zig = (x0: number): Vec2[] => Array.from({ length: 199 }, (_, i) => [x0 + (i + 1) * 2, i % 2 ? 200 : -200])
+    const two: Chain = { kind: 'chain', start: [0, 0], segs: [{ kind: 'spline', points: zig(0), to: [400, 0] }, { kind: 'spline', points: zig(400), to: [800, 0] }], closed: false }
+    const [first, second] = entityPaths(two)
+    expect(first!.points.length).toBeGreaterThan(RING_POINTS / 2)
+    expect(second!.points).toEqual([[400, 0], ...zig(400), [800, 0]])
   })
 
   it('leaves a spline along its end, for a tangent arc after it', () => {
@@ -130,7 +140,13 @@ describe('splines in the drawing', () => {
     // a closed spline loop's points go by i alone; one given a segment is not in the sketch
     const stray = [{ type: 'fix', point: { e: 0, at: 'point', seg: 0, i: 1 } }] as SketchConstraint[]
     await expect(host.settleSketch!({ loops: [BLOB], constraints: stray })).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringMatching(/does not have/) })
-    expect(pointAt(fromLoops([BLOB])!, { e: 0, at: 'point', seg: 0, i: 1 })).toBeNull()
+    const blob = fromLoops([BLOB])!
+    const d = fromLoops([D])!
+    expect(pointAt(blob, { e: 0, at: 'point', seg: 0, i: 1 })).toBeNull()
+    expect(pointAt(blob, { e: 0, at: 'point', i: 1 })).toEqual([2, 5])
+    for (const i of [1.5, -1, 9]) expect(pointAt(blob, { e: 0, at: 'point', i })).toBeNull()
+    expect(pointAt(d, { e: 0, at: 'point', i: 0 })).toBeNull()
+    expect(pointAt(d, { e: 0, at: 'point', seg: 1, i: 1 })).toEqual([11, 11])
   })
 
   it('draws the same curve the engine flattens', async () => {
