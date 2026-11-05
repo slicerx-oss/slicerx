@@ -311,6 +311,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
           <span className="ph-model">
             {row.vendor} {st.model ?? row.model}
             {st.ownName && st.ownName !== row.name ? `, named ${st.ownName} on the printer` : ''}
+            {st.firmware ? `, firmware ${st.firmware}` : ''}
           </span>
         </div>
         <Pill state={pill.tone}>{pill.label}</Pill>
@@ -413,6 +414,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
             {groups.map((g) => (
               <section key={g.id} className="ph-unit" aria-label={g.label}>
                 <h3>{g.feeds ? `${g.label}, feeds the ${g.feeds}` : g.label}</h3>
+                {g.climate ? <p className="ph-unit-air ph-num">{g.climate}</p> : null}
                 <ul>
                   {g.slots.map((s) => (
                     <li key={s.id} className="ph-slot" data-active={s.id === activeSlot || undefined} data-empty={s.material ? undefined : true}>
