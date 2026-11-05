@@ -8,7 +8,8 @@
 //! The projects in tests/fixtures/brim-efc are one 10 x 10 x 3 mm box on a 0.2 mm first layer with a 3 mm outer brim.
 //! `mk4p--e<C>-s<S>` is a Prusa MK4S project (settings in `Slic3r_PE.config`, 0.5 mm first layer lines) with
 //! `elefant_foot_compensation` C and `brim_separation` S. `p1s--e<C>-g0.5` is a Bambu Lab P1S project with
-//! compensation C and `brim_object_gap` 0.5.
+//! compensation C and `brim_object_gap` 0.5. `mk4p--w0.32-e0-s0` is the MK4S project on the 0.25 mm nozzle: 0.32 mm
+//! first layer lines, no compensation and no separation.
 //!
 //! The gap is the distance from the outer wall's centerline to the first brim loop's centerline on each of the four
 //! sides (bounding boxes of the paths on the first layer), mm.
@@ -29,6 +30,12 @@ use std::path::{Path, PathBuf};
 const TOL: f64 = 0.01;
 /// The gap at no compensation and no separation on these projects: half of each 0.5 mm line less their overlap, mm.
 const BASE_GAP: f64 = 0.479;
+
+/// The gap at no compensation and no separation for first layer lines `w` wide on a layer `h` high: a whole line less
+/// the overlap of two beads with rounded sides, `h (1 - pi / 4)` (half of it from each), mm.
+fn bead_gap(w: f64, h: f64) -> f64 {
+    w - h * (1.0 - std::f64::consts::FRAC_PI_4) / 2.0
+}
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/brim-efc/{name}.3mf"))
@@ -222,4 +229,11 @@ fn a_prusa_projects_brim_keeps_its_gap_to_the_compensated_wall() {
 fn a_bambu_lab_projects_brim_gap_grows_by_the_compensation() {
     assert_gap("p1s--e0-g0.5", BASE_GAP + 0.5);
     assert_gap("p1s--e0.2-g0.5", BASE_GAP + 0.5 + 0.2);
+}
+
+#[test]
+fn a_brim_on_0_32_mm_first_layer_lines_keeps_the_bead_gap() {
+    let want = bead_gap(0.32, 0.2);
+    assert!((want - 0.299).abs() < 5e-4, "{want}");
+    assert_gap("mk4p--w0.32-e0-s0", want);
 }
