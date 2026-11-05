@@ -136,8 +136,8 @@ describe('the scope rule for parts', () => {
     // lofts and sweeps have their own tools, so they are not turned down
     const out = SCOPE_LINE.slice(SCOPE_LINE.indexOf('Out of scope'), SCOPE_LINE.indexOf('For those'))
     expect(out).not.toMatch(/loft|swept|sweep|varies in shape/i)
-    expect(systemPrompt()).toContain('geom.loft through two or more closed profiles on their own planes')
-    expect(systemPrompt()).toContain('geom.sweep carrying one closed profile along an open path')
+    expect(systemPrompt()).toContain('geom.loft between profiles on several planes')
+    expect(systemPrompt()).toContain('geom.sweep along a path')
   })
 
   it('turns such a request down before any build or size question, with a buildable version offered', () => {
