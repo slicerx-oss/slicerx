@@ -323,7 +323,8 @@ export function printerProfileByName(name: string): string | undefined {
 }
 
 /**
- * SlicerX's own profile of the machine a knowledge printer is, for its model and clearances (printerLayer). First the
+ * SlicerX's own profile of the machine a knowledge printer is: its model and clearances (printerLayer), and the printer
+ * a slice of it starts its process, supports and filament from (ProfileCatalog.printerModel). First the
  * profile of that name (printerProfileByName). Else the model printer-models.json links to the entry ("Original
  * Prusa MK4S" is prusa-mk4s) whose bed is the entry's, x and y (the Voron files model the 300 mm kits); of several, the
  * single toolhead one (the XL, not the XL with 5 toolheads). None when that leaves no profile or more than one.

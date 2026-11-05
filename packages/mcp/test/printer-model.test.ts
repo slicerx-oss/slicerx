@@ -10,6 +10,15 @@ import { boxStl, connect, data, noSx, sxBin, type Harness } from './helpers'
 
 const KEYS = ['printer_model', 'extruder_clearance_radius', 'extruder_clearance_max_radius', 'extruder_clearance_height_to_rod', 'extruder_clearance_height_to_lid', 'extruder_clearance_dist_to_rod', 'nozzle_height'] as const
 
+/** The knowledge printers named other than SlicerX's profile of the machine, that profile, and its maker's default filament. */
+const LINKED = [
+  ['prusa_mk4s', 'prusa-mk4s', 'Prusa Research default PLA'],
+  ['prusa_xl', 'prusa-xl', 'Prusa Research default PLA'],
+  ['prusa_core_one', 'prusa-core-one', 'Prusa Research default PLA'],
+  ['voron_2_4', 'voron-2.4-300', 'Voron Design default PLA'],
+  ['voron_trident', 'voron-trident-300', 'Voron Design default PLA'],
+] as const
+
 /** The settings a project opened on `printer` slices with, the printer's model and clearances only. */
 async function resolved(printer: string): Promise<Record<string, unknown>> {
   const { McpProject } = await import('../src/project')
@@ -54,24 +63,56 @@ describe('a project on a printer from the knowledge base', () => {
     expect(await resolved('bambu_a2l')).toMatchObject({ printer_model: '', extruder_clearance_radius: 40 })
   })
 
-  it('slices the printers linked by another name from the generic process and supports, with their own clearances', async () => {
+  it("slices the printers linked by another name on their maker's process, supports and filament, as the app does on that machine", async () => {
     const { DataStore, resolveDataPaths } = await import('../src/data')
     const { ProfileCatalog } = await import('../src/profiles')
     const { resolveSliceConfig } = await import('../src/config')
     const { printerConfig } = await import('@slicerx/settings')
+    const { sectionOf } = await import('@slicerx/settings/defaults')
     const store = new DataStore(resolveDataPaths())
     const catalog = new ProfileCatalog(store)
-    for (const [printer, machine] of [['prusa_mk4s', 'prusa-mk4s'], ['prusa_xl', 'prusa-xl'], ['prusa_core_one', 'prusa-core-one'], ['voron_2_4', 'voron-2.4-300'], ['voron_trident', 'voron-trident-300']] as const) {
-      // The process and supports a slice starts from stay the ones a printer with no profile of its name gets.
-      expect(catalog.printerModel(`printer:${printer}`), printer).toBeUndefined()
-      const names = [`printer:${printer}`]
-      await catalog.prepare(names)
-      const { config } = resolveSliceConfig(store, catalog, names, undefined)
-      expect(config, printer).toMatchObject({ enable_support: true, support_on_build_plate_only: true, support_threshold_angle: 25, support_type: 'tree(auto)', internal_solid_infill_speed: [100], overhang_4_4_speed: ['0'] })
+    const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+    for (const [printer, machine, filament] of LINKED) {
+      expect(catalog.printerModel(`printer:${printer}`), printer).toBe(machine)
+      await catalog.prepare([`printer:${printer}`, `machine:${machine}`, 'process:standard'])
+      // The default process and Standard are the app's on the machine: the maker's Standard preset, key for key.
+      for (const tail of [[], ['process:standard']]) {
+        const knowledge = resolveSliceConfig(store, catalog, [`printer:${printer}`, ...tail], undefined)
+        const app = resolveSliceConfig(store, catalog, [`machine:${machine}`, ...tail], undefined).config as Record<string, unknown>
+        const config = knowledge.config as Record<string, unknown>
+        const differ = [...new Set([...Object.keys(app), ...Object.keys(config)])].filter((k) => sectionOf(k) === 'process' && !same(app[k], config[k]))
+        expect(differ, `${printer} ${tail.join(',')}`).toEqual([])
+        // The maker's Standard prints without supports.
+        expect(config['enable_support'], printer).toBe(false)
+        if (tail.length === 0) expect(knowledge.applied, printer).toContain(`default filament: ${filament}`)
+      }
       // The model and clearances still come from the machine's own profile.
+      const { config } = resolveSliceConfig(store, catalog, [`printer:${printer}`], undefined)
       const own = printerConfig(machine) as unknown as Record<string, unknown>
       expect(config, printer).toMatchObject({ printer_model: own['printer_model'], extruder_clearance_radius: own['extruder_clearance_radius'], extruder_clearance_height_to_rod: own['extruder_clearance_height_to_rod'], extruder_clearance_height_to_lid: own['extruder_clearance_height_to_lid'] })
     }
+  })
+
+  it('keeps the generic process and supports for a printer SlicerX has no profile of, and the same profile for one named as SlicerX does', async () => {
+    const { DataStore, resolveDataPaths } = await import('../src/data')
+    const { ProfileCatalog } = await import('../src/profiles')
+    const { resolveSliceConfig } = await import('../src/config')
+    const store = new DataStore(resolveDataPaths())
+    const catalog = new ProfileCatalog(store)
+    expect(catalog.printerModel('printer:bambu_a2l')).toBeUndefined()
+    await catalog.prepare(['printer:bambu_a2l'])
+    const a2l = resolveSliceConfig(store, catalog, ['printer:bambu_a2l'], undefined)
+    expect(a2l.config).toMatchObject({ enable_support: true, support_on_build_plate_only: true, support_threshold_angle: 25, support_type: 'tree(auto)', internal_solid_infill_speed: [100], overhang_4_4_speed: ['0'] })
+    expect(a2l.applied).toEqual(['process:slicerx-default', 'printer:bambu_a2l'])
+    expect(catalog.printerModel('printer:bambu_a1')).toBe('bambu-a1')
+  })
+
+  it("checks a project's G-code against the linked machine when the slice names the printer", async () => {
+    const { DataStore, resolveDataPaths } = await import('../src/data')
+    const { ProfileCatalog } = await import('../src/profiles')
+    const { slicePrinter } = await import('../src/config')
+    const catalog = new ProfileCatalog(new DataStore(resolveDataPaths()))
+    for (const [printer, machine] of LINKED) expect(slicePrinter(catalog, [`printer:${printer}`], [], { name: 'part.3mf', config: {} }), printer).toEqual({ printerId: machine })
   })
 
   it('links every knowledge printer to the one profile of the same machine', async () => {
