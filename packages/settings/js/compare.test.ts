@@ -116,4 +116,10 @@ describe('compareConfigs', () => {
     expect(end.differs).toBe(false)
     expect(end.lines).toBeUndefined()
   })
+
+  it('reads a list that repeats one value as that value, as the settings panel writes it', () => {
+    const c = compareConfigs(cfg({ fan_max_speed: [70, 70], nozzle_temperature: [220, 220], fan_min_speed: [30, 40] }), cfg({ fan_max_speed: [70], nozzle_temperature: [215], fan_min_speed: [30] }), { section: 'filament' })
+    expect(c.groups.flatMap((g) => g.rows).map((r) => r.key).sort()).toEqual(['fan_min_speed', 'nozzle_temperature'])
+    expect(c.differ).toBe(2)
+  })
 })
