@@ -7,7 +7,7 @@ import type { SettingValue } from '@slicerx/contracts'
 import { appMissingKeys, importProject, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
-import { MAX_TEXT_BYTES, openZip, type ZipReader } from './zip'
+import { MAX_ENTRY_BYTES, openZip, type ZipReader } from './zip'
 
 /**
  * The printer a project was made for, as inspect_project and a project slice report it: its name, and for a printer
@@ -356,7 +356,9 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
       plates.push({ index: Number.isFinite(id) ? id : plates.length + 1, ...(meta['plater_name'] ? { name: meta['plater_name'] } : {}), objects: node.children.filter((c) => c.name === 'model_instance').length, ...(seq === 'by layer' || seq === 'by object' ? { print_sequence: seq } : {}) })
     }
   }
-  if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.read(mainModel(zip.names()), MAX_TEXT_BYTES) ?? Buffer.alloc(0)) })
+  // The build sits at the end of the main model, after the geometry a plain 3MF keeps there, so the whole entry is read,
+  // up to the reader's entry limit rather than the text cap: a project's model can be over 100 MB.
+  if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.read(mainModel(zip.names()), MAX_ENTRY_BYTES) ?? Buffer.alloc(0)) })
 
   const types = listOf(prusa ? prusaRaw['filament_type'] : raw['filament_type'])
   const colors = prusa ? prusa.colors : listOf(raw['filament_colour'])
