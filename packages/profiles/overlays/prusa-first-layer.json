@@ -1,5 +1,5 @@
 {
- "comment": "The first layer line width and elephant foot compensation of the maker's Input Shaper print presets, written over the stock Prusa MK4 and MINI, whose resolved presets carry the generic values (120% first layer lines, no compensation). Every nozzle and tier: 0.32 mm lines and no compensation on the 0.25 mm nozzle, 0.5, 0.68 and 1 mm lines with 0.2 mm compensation on the 0.4, 0.6 and 0.8 mm nozzles, as the MK4S, XL and CORE One presets already have. Applied last to resolved/prusa.json by packages/settings/scripts/apply-overlay.ts, which gen-resolved.ts also runs. Values are in the profiles' own format, by printer model, nozzle size and quality tier.",
+ "comment": "The first layer line width, elephant foot compensation and brim gap of the maker's Input Shaper print presets, written over the stock Prusa MK4 and MINI, whose resolved presets carry the generic values (120% first layer lines, no compensation). Every nozzle and tier: 0.32 mm lines, no compensation and no brim gap on the 0.25 mm nozzle, 0.5, 0.68 and 1 mm lines with 0.2 mm compensation on the 0.4, 0.6 and 0.8 mm nozzles, as the MK4S, XL and CORE One presets already have. Applied last to resolved/prusa.json by packages/settings/scripts/apply-overlay.ts, which gen-resolved.ts also runs. Values are in the profiles' own format, by printer model, nozzle size and quality tier.",
  "source": {
   "process": "Prusa stock print presets for the MK4 Input Shaper and MINI & MINI+ Input Shaper, every nozzle"
  },
@@ -11,7 +11,8 @@
     "standard": {
      "preset": "0.12mm SPEED @MK4IS 0.25",
      "values": {
-      "initial_layer_line_width": "0.32"
+      "initial_layer_line_width": "0.32",
+      "brim_object_gap": "0"
      }
     }
    },
@@ -69,7 +70,8 @@
     "standard": {
      "preset": "0.12mm SPEED @MINIIS 0.25",
      "values": {
-      "initial_layer_line_width": "0.32"
+      "initial_layer_line_width": "0.32",
+      "brim_object_gap": "0"
      }
     }
    },
