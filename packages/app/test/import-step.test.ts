@@ -1,14 +1,14 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// STEP import: @slicerx/step-reader reads its fixtures (packages/step-reader/test/fixtures) into bodies, names and
+// STEP and IGES import: @slicerx/step-reader reads its fixtures (packages/step-reader/test/fixtures) into bodies, names and
 // objects, and the geometry engine repairs and adds them through addAutoImport. The engine runs live when built, else
 // replays fixtures/step-replies.json. The reader's own behavior is tested in that package.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
-import { loadOcct, readStep, StepError, toObj, type Occt, type StepQuality } from '@slicerx/step-reader'
+import { loadOcct, readCad, readStep, StepError, toObj, type Occt, type StepQuality } from '@slicerx/step-reader'
 import type { StepConverter } from '../src/state/import-step'
 import { addAutoImport, autoFormatOf, toBase64 } from '../src/state/import-auto'
 import { bounds, decompose, sizeOf } from '../src/plate/transform'
@@ -28,7 +28,7 @@ beforeAll(async () => {
 
 /** The worker's job, in process (step-worker.ts). */
 const convert: StepConverter = async ({ name, data, quality }) => {
-  const read = readStep(occt, new Uint8Array(data), name, quality as StepQuality | undefined, { appName: 'SlicerX' })
+  const read = readCad(occt, new Uint8Array(data), name, quality as StepQuality | undefined, { appName: 'SlicerX' })
   return { base64: toBase64(new TextEncoder().encode(toObj(read, { colors: false }))), notes: read.notes, triangles: read.triangles, toleranceMm: read.toleranceMm, unit: read.unit }
 }
 
@@ -40,6 +40,11 @@ describe('reading STEP files', () => {
   it('routes .step and .stp to the automatic import', () => {
     expect(autoFormatOf('a.STEP')).toBe('step')
     expect(autoFormatOf('b.stp')).toBe('step')
+  })
+
+  it('routes .igs and .iges to the automatic import', () => {
+    expect(autoFormatOf('a.igs')).toBe('iges')
+    expect(autoFormatOf('b.IGES')).toBe('iges')
   })
 
   it('names the app in a refusal, as before the reader moved into its package', () => {
@@ -92,6 +97,37 @@ describe('adding STEP files to the plate', () => {
 
   it('adds nothing when the file cannot be read', async () => {
     await expect(addAutoImport(host, 'empty.step', buffer(file('empty.step')), undefined, convert)).rejects.toThrow(/^empty\.step has no solids/)
+    expect(get().plate).toHaveLength(0)
+  })
+})
+
+describe('adding IGES files to the plate', () => {
+  it('adds an assembly of solids as two repaired objects in millimeters, with their names', async () => {
+    const ids = await addAutoImport(host, 'assembly.igs', buffer(file('assembly.igs')), undefined, convert)
+    expect(ids).toHaveLength(2)
+    const plate = get().plate
+    expect(plate.map((p) => p.name)).toEqual(['assembly', 'cube'])
+    expect(plate[0]!.parts.map((p) => p.name)).toEqual(['assembly base', 'assembly post'])
+    const s = sizeOf(bounds(plate[0]!.parts, plate[0]!.transform)!)
+    expect(s[0]).toBeCloseTo(20, 2)
+    expect(s[2]).toBeCloseTo(25, 2)
+  })
+
+  it('adds a file of loose surfaces in inches as one object at its real size, and says what it did', async () => {
+    const [id] = await addAutoImport(host, 'bracket-inch.iges', buffer(file('bracket-inch.iges')), undefined, convert)
+    const e = get().plate.find((p) => p.id === id)!
+    expect(get().plate).toHaveLength(1)
+    expect(decompose(e.transform).scale[0]).toBeCloseTo(1)
+    const s = sizeOf(bounds(e.parts, e.transform)!)
+    expect(s[0]).toBeCloseTo(50.8, 2)
+    expect(s[1]).toBeCloseTo(25.4, 2)
+    expect(s[2]).toBeCloseTo(6.35, 2)
+    // The engine's repair closes the seams between the surfaces.
+    expect(get().openNote?.text).toMatch(/^bracket-inch\.iges: Converted from inches to millimeters\. The file has surfaces and no solids, so they were joined into one body\. Repaired: closed \d+ holes\.$/)
+  })
+
+  it('adds nothing when the file is not IGES', async () => {
+    await expect(addAutoImport(host, 'not.igs', buffer(new TextEncoder().encode('solid x\nendsolid x\n')), undefined, convert)).rejects.toThrow(/^not\.igs is not an IGES file/)
     expect(get().plate).toHaveLength(0)
   })
 })
