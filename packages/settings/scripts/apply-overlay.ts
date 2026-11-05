@@ -6,11 +6,13 @@
 // It also applies packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) to
 // resolved/prusa.json and machine.json, so run it after machine.json is written again too, and
 // packages/profiles/overlays/prusa-brim.json (the maker's brim for every Prusa process tier) and
-// packages/profiles/overlays/prusa-first-layer.json (the MK4 and MINI first layer) to resolved/prusa.json. The list is
+// packages/profiles/overlays/prusa-first-layer.json (the MK4 and MINI first layer) to resolved/prusa.json, and
+// packages/profiles/overlays/creality-ender-3-v3.json (the plain Ender-3 V3's first layer and support widths) to its
+// presets in process-speeds.json, so run it after process-speeds.json is written again too. The list is
 // MAKER_OVERLAYS in js/overlay.ts.
 // Run: npx tsx scripts/apply-overlay.ts
 import { readFileSync, writeFileSync } from 'node:fs'
-import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, MAKER_OVERLAYS, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from '../js/overlay'
+import { applyFilamentOverlay, applyMachineOverlay, applyProcessPresetOverlay, applyResolvedOverlay, MAKER_OVERLAYS, type MachineFile, type MakerOverlay, type ResolvedBrand, type SpeedsFile, type VendorData } from '../js/overlay'
 import { printerProfile } from '../js/profiles'
 
 const profiles = (path: string): URL => new URL(`../../profiles/${path}`, import.meta.url)
@@ -31,5 +33,10 @@ for (const o of MAKER_OVERLAYS) {
     applyMachineOverlay(machine, overlay, nozzle)
     writeFileSync(profiles('machine.json'), JSON.stringify(machine, null, 1) + '\n')
   }
-  console.log(`overlay ${o.path}: ${Object.keys(overlay.filament).length} filament presets, ${Object.keys(overlay.machine).length} printers, ${Object.keys(overlay.process).length} process sets`)
+  if (o.processSpeeds) {
+    const speeds = JSON.parse(readFileSync(profiles('process-speeds.json'), 'utf8')) as SpeedsFile
+    applyProcessPresetOverlay(speeds, overlay)
+    writeFileSync(profiles('process-speeds.json'), JSON.stringify(speeds))
+  }
+  console.log(`overlay ${o.path}: ${Object.keys(overlay.filament).length} filament presets, ${Object.keys(overlay.machine).length} printers, ${Object.keys(overlay.process).length} process sets, ${Object.keys(overlay.process_presets ?? {}).length} process presets`)
 }
