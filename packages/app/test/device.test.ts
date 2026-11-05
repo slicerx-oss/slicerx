@@ -8,8 +8,8 @@ const refuse = (code: string) => Object.assign(new Error(`hub says ${code}`), { 
 
 function hub(over: Partial<DeviceHub['device']> = {}, askOnPrint = true): DeviceHub {
   return {
-    device: { files: async () => [], history: async () => [], issues: async () => [], objects: async () => [], jog: async () => undefined, skipObject: async () => undefined, startFile: async () => ({ started: true }), ...over },
-    bed: { state: async () => ({ askOnPrint }) },
+    device: { files: async () => [], history: async () => [], issues: async () => [], objects: async () => [], jog: async () => undefined, home: async () => undefined, skipObject: async () => undefined, startFile: async () => ({ started: true }), ...over },
+    bed: { state: async () => ({ askOnPrint }), confirmClear: async () => ({}) },
   }
 }
 

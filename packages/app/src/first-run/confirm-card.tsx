@@ -3,26 +3,13 @@
 // The one confirm card after a passing test: what the printer reported (model, firmware, each nozzle,
 // each filament unit and what its slots hold) and what the catalog adds (bed, toolhead). Each row says
 // where its value came from; a nozzle the printer did not report stays editable.
-import type { ExtruderInfo, FilamentUnit, PrinterHardware } from '@slicerx/contracts'
+import { FILAMENT_UNIT_LABEL, type ExtruderInfo, type FilamentUnit, type PrinterHardware } from '@slicerx/contracts'
 import { listPrinterProfiles } from '@slicerx/settings'
 import { Chip, Icon, Input, Seg } from '@slicerx/ui'
 import { bambuFamily, bambuGuide } from './bambu-lan'
 import { useState, type ReactNode } from 'react'
 import { buildVolumeText, currentModel, EMPTY_FORM, filamentText, modelLabel, NOZZLE_SIZES, NOZZLE_TYPE_LABELS, nozzleText, type NozzleType, type PrinterForm } from './printer-form'
 import { appName } from '../edition'
-
-const UNIT_LABELS: Record<FilamentUnit['kind'], string> = {
-  ams: 'AMS',
-  'ams-lite': 'AMS lite',
-  'ams-2-pro': 'AMS 2 Pro',
-  'ams-ht': 'AMS HT',
-  mmu: 'MMU',
-  'qidi-box': 'QIDI Box',
-  cfs: 'CFS',
-  toolchanger: 'Toolheads',
-  ace: 'ACE',
-  external: 'External spool',
-}
 
 const KINEMATICS: Record<string, string> = {
   'bed-slinger': 'Bed slinger',
@@ -54,7 +41,7 @@ export function unitName(u: FilamentUnit, hw: PrinterHardware): string {
   const ex = hw.extruders ?? []
   const feeds = u.tool === undefined ? undefined : ex.find((e) => e.tool === u.tool)
   const where = feeds && ex.length > 1 ? `, ${extruderName(feeds, ex.length).toLowerCase()}` : ''
-  return `${UNIT_LABELS[u.kind] ?? u.kind}${where}`
+  return `${FILAMENT_UNIT_LABEL[u.kind] ?? u.kind}${where}`
 }
 
 function Source({ printer }: { printer: boolean }) {
