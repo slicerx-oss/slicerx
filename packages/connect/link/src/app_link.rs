@@ -702,6 +702,21 @@ mod tests {
     }
 
     #[test]
+    fn a_read_only_grant_never_writes_a_saved_preset() {
+        // Copying into a saved preset or putting a copy back is an edit, so a read grant is refused with read_only; the
+        // app asks the person about each one on top of the grant.
+        for m in ["presets.copy", "presets.undo"] {
+            let class = link_class(m).expect(m);
+            assert_eq!(class, LinkClass::Edit, "{m}");
+            assert!(!permitted(Rights::Read, class), "{m}");
+            assert!(permitted(Rights::Edit, class), "{m}");
+        }
+        for m in ["presets.list", "presets.compare"] {
+            assert!(permitted(Rights::Read, link_class(m).expect(m)), "{m}");
+        }
+    }
+
+    #[test]
     fn grants_keep_their_rights_in_the_hub_file() {
         let g = Grant {
             rights: Rights::Read,
