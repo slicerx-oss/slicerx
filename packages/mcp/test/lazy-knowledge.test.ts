@@ -7,13 +7,19 @@ import { assistantText, DEFAULT_POLICY } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const parsed = vi.hoisted(() => ({ calls: 0 }))
-vi.mock('yaml', async (importOriginal) => {
-  const yaml = await importOriginal<typeof import('yaml')>()
+vi.mock('../src/deferred', async (importOriginal) => {
+  const deferred = await importOriginal<typeof import('../src/deferred')>()
   return {
-    ...yaml,
-    parse: (...args: Parameters<typeof yaml.parse>) => {
-      parsed.calls++
-      return yaml.parse(...args)
+    ...deferred,
+    yaml: () => {
+      const yaml = deferred.yaml()
+      return {
+        ...yaml,
+        parse: (...args: Parameters<typeof yaml.parse>) => {
+          parsed.calls++
+          return yaml.parse(...args)
+        },
+      }
     },
   }
 })
