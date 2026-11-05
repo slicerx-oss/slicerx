@@ -9,7 +9,8 @@ use crate::vec3::V2;
 
 /// chord error of a flattened spline, mm; arcs use the same, half the default slice resolution
 pub const TOL_MM: f64 = 0.005;
-const MAX_STEPS: usize = 1024;
+/// most steps one span may take; a span that needs more is refused, so the tolerance holds
+pub const MAX_STEPS: usize = 1024;
 
 fn sub(a: V2, b: V2) -> V2 {
     [a[0] - b[0], a[1] - b[1]]
@@ -70,14 +71,14 @@ pub fn spans(pts: &[V2], closed: bool) -> Vec<[V2; 4]> {
         .collect()
 }
 
-/// the points after `b[0]` along the span, every chord within [`TOL_MM`]
+/// the steps that keep every chord of the span within [`TOL_MM`], or None past [`MAX_STEPS`]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
-    reason = "clamped"
+    reason = "checked against MAX_STEPS first"
 )]
-pub fn flatten(b: &[V2; 4]) -> Vec<V2> {
+pub fn steps(b: &[V2; 4]) -> Option<usize> {
     // a polyline's error is at most h^2/8 of the largest second derivative
     let dd = |i: usize, j: usize, k: usize| {
         len([
@@ -86,7 +87,35 @@ pub fn flatten(b: &[V2; 4]) -> Vec<V2> {
         ])
     };
     let m = 6.0 * dd(0, 1, 2).max(dd(1, 2, 3));
-    let n = ((m / (8.0 * TOL_MM)).sqrt().ceil() as usize).clamp(1, MAX_STEPS);
+    let n = (m / (8.0 * TOL_MM)).sqrt().ceil();
+    (n.is_finite() && n <= MAX_STEPS as f64).then(|| (n as usize).max(1))
+}
+
+/// why a spline was not flattened
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dense {
+    /// span `n` bends too sharply for [`MAX_STEPS`]
+    Span(usize),
+    /// more points than the budget allows
+    Budget,
+}
+
+/// the points after the first along the spline through `pts`, at most `budget` of them
+pub fn flatten_all(pts: &[V2], closed: bool, budget: usize) -> Result<Vec<V2>, Dense> {
+    let mut out = Vec::new();
+    for (k, b) in spans(pts, closed).iter().enumerate() {
+        let n = steps(b).ok_or(Dense::Span(k))?;
+        if out.len() + n > budget {
+            return Err(Dense::Budget);
+        }
+        out.extend(flatten(b, n));
+    }
+    Ok(out)
+}
+
+/// the `n` points after `b[0]` along the span
+#[allow(clippy::cast_precision_loss, reason = "n is at most MAX_STEPS")]
+pub fn flatten(b: &[V2; 4], n: usize) -> Vec<V2> {
     (1..=n)
         .map(|s| {
             if s == n {
@@ -136,6 +165,9 @@ pub fn area2(spans: &[[V2; 4]]) -> f64 {
 mod tests {
     use super::*;
 
+    const GOLDEN_LEN: usize = 102;
+    const GOLDEN_P7: V2 = [4.959_081_098_252_148, 2.464_100_649_779_922];
+
     #[test]
     fn a_span_passes_its_points() {
         let s = spans(&[[0.0, 0.0], [10.0, 5.0], [20.0, 0.0]], false);
@@ -149,11 +181,107 @@ mod tests {
         assert!((a[0] * b[1] - a[1] * b[0]).abs() < 1e-9, "{a:?} {b:?}");
     }
 
+    fn bez(b: &[V2; 4], t: f64) -> V2 {
+        let u = 1.0 - t;
+        let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+        [
+            w[0] * b[0][0] + w[1] * b[1][0] + w[2] * b[2][0] + w[3] * b[3][0],
+            w[0] * b[0][1] + w[1] * b[1][1] + w[2] * b[2][1] + w[3] * b[3][1],
+        ]
+    }
+
+    fn off_chord(p: V2, a: V2, b: V2) -> f64 {
+        let ab = sub(b, a);
+        let l2 = ab[0] * ab[0] + ab[1] * ab[1];
+        let t = if l2 < 1e-24 {
+            0.0
+        } else {
+            (((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / l2).clamp(0.0, 1.0)
+        };
+        len(sub(p, [a[0] + ab[0] * t, a[1] + ab[1] * t]))
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss, reason = "small counts")]
+    fn every_chord_stays_within_the_tolerance() {
+        let star: Vec<V2> = (0..9)
+            .map(|i| {
+                let a = f64::from(i) * std::f64::consts::TAU / 9.0;
+                let r = if i % 2 == 0 { 40.0 } else { 3.0 };
+                [r * a.m_cos(), r * a.m_sin()]
+            })
+            .collect();
+        let shapes: [(Vec<V2>, bool); 4] = [
+            (star, true),
+            // a hairpin: out and straight back
+            (vec![[0.0, 0.0], [50.0, 0.0], [50.0, 0.5], [0.0, 0.5]], false),
+            // one long span between short ones
+            (vec![[0.0, 0.0], [1.0, 1.0], [800.0, 1.0], [801.0, 0.0]], false),
+            (vec![[0.0, 0.0], [30.0, 20.0], [60.0, -20.0], [90.0, 0.0]], false),
+        ];
+        for (pts, closed) in &shapes {
+            for b in &spans(pts, *closed) {
+                let n = steps(b).unwrap();
+                let mut poly = vec![b[0]];
+                poly.extend(flatten(b, n));
+                let mut worst = 0.0f64;
+                for k in 0..n {
+                    for j in 0..=64 {
+                        let t = (k as f64 + f64::from(j) / 64.0) / n as f64;
+                        worst = worst.max(off_chord(bez(b, t), poly[k], poly[k + 1]));
+                    }
+                }
+                assert!(worst <= TOL_MM + 1e-12, "{worst} on {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_span_past_max_steps_is_refused() {
+        let s = spans(&[[0.0, 0.0], [90_000.0, 0.0], [90_000.0, 10.0]], false);
+        assert!(s.iter().any(|b| steps(b).is_none()));
+        assert!(matches!(
+            flatten_all(
+                &[[0.0, 0.0], [90_000.0, 0.0], [90_000.0, 10.0]],
+                false,
+                usize::MAX
+            ),
+            Err(Dense::Span(_))
+        ));
+        let ok = [[0.0, 0.0], [10.0, 5.0], [20.0, 0.0]];
+        let n = flatten_all(&ok, false, usize::MAX).unwrap().len();
+        assert_eq!(flatten_all(&ok, false, n - 1), Err(Dense::Budget));
+    }
+
+    #[test]
+    fn the_end_direction_falls_back_past_a_handle_on_the_end() {
+        assert_eq!(
+            end_dir(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 0.0]]),
+            [1.0, 0.0]
+        );
+        assert_eq!(
+            end_dir(&[[0.0, 0.0], [0.0, 2.0], [0.0, 2.0], [0.0, 2.0]]),
+            [0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn a_fixed_spline_flattens_the_same_everywhere() {
+        let pts: Vec<V2> = vec![[6.0, 0.0], [2.0, 5.0], [-5.0, 3.0], [-4.0, -4.0], [3.0, -5.0]];
+        let flat = flatten_all(&pts, true, usize::MAX).unwrap();
+        assert_eq!(flat.len(), GOLDEN_LEN);
+        let p = flat[7];
+        assert!(
+            (p[0] - GOLDEN_P7[0]).abs() < 1e-12 && (p[1] - GOLDEN_P7[1]).abs() < 1e-12,
+            "{p:?}"
+        );
+    }
+
     #[test]
     fn a_straight_run_stays_straight() {
         let s = spans(&[[0.0, 0.0], [1.0, 0.0], [5.0, 0.0], [6.0, 0.0]], false);
         for b in &s {
-            for p in flatten(b) {
+            for p in flatten(b, steps(b).unwrap()) {
                 assert!(p[1].abs() < 1e-12, "{p:?}");
             }
         }
@@ -171,7 +299,7 @@ mod tests {
         let s = spans(&pts, true);
         let mut ring = vec![s[0][0]];
         for b in &s {
-            ring.extend(flatten(b));
+            ring.extend(flatten(b, steps(b).unwrap()));
         }
         ring.pop();
         let poly: f64 = (0..ring.len())

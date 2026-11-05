@@ -21,6 +21,10 @@ pub const CLOSE_MM: f64 = 0.001;
 const ARC_TOL_MM: f64 = sketch_spline::TOL_MM;
 const MIN_LEN_MM: f64 = 1e-6;
 const MAX_MM: f64 = 100_000.0;
+/// most points one loop may have once flattened
+pub const RING_POINTS: usize = 65_536;
+/// most points a whole sketch may have once flattened
+pub const SKETCH_POINTS: usize = 262_144;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -81,6 +85,7 @@ pub enum IssueKind {
     LoopsCross,
     BadArc,
     TooSmall,
+    TooDense,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -370,6 +375,27 @@ fn spline_points(
     Ok(pts.to_vec())
 }
 
+fn too_dense(l: usize, s: Option<usize>, d: sketch_spline::Dense, at: V2) -> Issue {
+    let name = l + 1;
+    let message = match (d, s) {
+        (sketch_spline::Dense::Span(k), Some(s)) => format!(
+            "Loop {name}: spline segment {} bends too sharply after its point {} to draw within {} mm; spread its points out.",
+            s + 1,
+            k + 1,
+            sketch_spline::TOL_MM
+        ),
+        (sketch_spline::Dense::Span(k), None) => format!(
+            "Loop {name}: the spline bends too sharply after its point {} to draw within {} mm; spread its points out.",
+            k + 1,
+            sketch_spline::TOL_MM
+        ),
+        (sketch_spline::Dense::Budget, _) => {
+            format!("Loop {name} has more than {RING_POINTS} points once its curves are drawn.")
+        }
+    };
+    issue(l, s, IssueKind::TooDense, message, Some(at))
+}
+
 fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
     flatten_as(l, lp, true)
 }
@@ -467,10 +493,8 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                 pts.first().copied(),
             ));
         }
-        let mut ring = Vec::new();
-        for b in sketch_spline::spans(&pts, true) {
-            ring.extend(sketch_spline::flatten(&b));
-        }
+        let mut ring =
+            sketch_spline::flatten_all(&pts, true, RING_POINTS).map_err(|d| too_dense(l, None, d, pts[0]))?;
         ring.rotate_right(1);
         let seg = vec![0; ring.len()];
         return Ok(Ring {
@@ -653,16 +677,14 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                         Some(pos),
                     ));
                 }
-                let spans = sketch_spline::spans(&through, false);
-                let mut pts = Vec::new();
-                for b in &spans {
-                    pts.extend(sketch_spline::flatten(b));
-                }
-                if let Some(b) = spans.last() {
+                let room = RING_POINTS.saturating_sub(pts.len());
+                let flat = sketch_spline::flatten_all(&through, false, room)
+                    .map_err(|d| too_dense(l, Some(s), d, pos))?;
+                if let Some(b) = sketch_spline::spans(&through, false).last() {
                     dir = sketch_spline::end_dir(b);
                 }
                 prims.push(Prim::Spline { to });
-                pts
+                flat
             }
             other => {
                 return Err(issue(
@@ -677,6 +699,9 @@ fn flatten_as(l: usize, lp: &Loop, closed: bool) -> std::result::Result<Ring, Is
                 ));
             }
         };
+        if pts.len() + new.len() > RING_POINTS {
+            return Err(too_dense(l, Some(s), sketch_spline::Dense::Budget, pos));
+        }
         for p in new {
             pts.push(p);
             seg.push(s);
@@ -804,14 +829,32 @@ fn no_profile(loops: &[Loop]) -> Option<Issue> {
     Some(issue(0, None, IssueKind::TooSmall, msg.to_owned(), None))
 }
 
-pub fn check(loops: &[Loop]) -> SketchCheck {
-    let mut issues = Vec::new();
+// each loop drawn, stopping once the sketch passes its point budget
+fn rings_of(loops: &[Loop], issues: &mut Vec<Issue>) -> Vec<(usize, Ring)> {
     let mut rings: Vec<(usize, Ring)> = Vec::new();
+    let mut total = 0;
     for (l, lp) in loops.iter().enumerate() {
         if lp.construction {
             continue;
         }
-        match flatten(l, lp) {
+        let r = flatten(l, lp);
+        if let Ok(r) = &r {
+            total += r.pts.len();
+            if total > SKETCH_POINTS {
+                issues.push(issue(
+                    l,
+                    None,
+                    IssueKind::TooDense,
+                    format!(
+                        "The sketch has more than {SKETCH_POINTS} points once its curves are drawn, from loop {} on.",
+                        l + 1
+                    ),
+                    r.pts.first().copied(),
+                ));
+                break;
+            }
+        }
+        match r {
             Ok(r) if r.pts.len() < 3 => issues.push(issue(
                 l,
                 None,
@@ -823,6 +866,12 @@ pub fn check(loops: &[Loop]) -> SketchCheck {
             Err(e) => issues.push(e),
         }
     }
+    rings
+}
+
+pub fn check(loops: &[Loop]) -> SketchCheck {
+    let mut issues = Vec::new();
+    let rings = rings_of(loops, &mut issues);
     issues.extend(no_profile(loops));
     let size = rings
         .iter()
@@ -1684,6 +1733,29 @@ mod tests {
         ]}]));
         let c = check(&big);
         assert!(c.ok && c.loops[0].area_mm2 > PI * 25.0 / 2.0, "{c:?}");
+    }
+
+    #[test]
+    fn a_tangent_arc_leaves_a_spline_along_its_end() {
+        let l = loops(json!([{ "start": [0, 0], "segments": [
+            { "type": "line", "to": [10, 0] },
+            { "type": "spline", "points": [[20, 4]], "to": [24, 14] },
+            { "type": "arc", "radiusMm": 6, "sweepDeg": 90 },
+            { "type": "line", "to": [0, 20] },
+            { "type": "line", "to": [0, 0] },
+        ]}]));
+        let r = flatten(0, &l[0]).unwrap();
+        // the last edge of the spline and the first of the arc
+        let last = r.seg.iter().rposition(|&s| s == 1).unwrap();
+        let first = r.seg.iter().position(|&s| s == 2).unwrap();
+        assert_eq!(first, last + 1);
+        let a = sub2(r.pts[last], r.pts[last - 1]);
+        let b = sub2(r.pts[first], r.pts[last]);
+        let cos = (a[0] * b[0] + a[1] * b[1]) / (len2(a) * len2(b));
+        // a chord of a 6 mm arc turns a little from its tangent; a kink would turn far more
+        assert!(cos > 0.999, "{cos}");
+        // and not along the line before, as with no spline direction
+        assert!(b[1] > b[0].abs() * 0.5, "{b:?}");
     }
 
     #[test]
