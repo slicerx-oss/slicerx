@@ -6,6 +6,7 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ### Fixed
 
+- On a phone, a one-finger drag on the selected model moves it on its plate only. The edge drag to another plate stays on the X and Y move arrows, and mouse, pen and tablet drags keep it.
 - A model added beside the others fades all the way in. The frame loop stopped after the fade's first frame when nothing else asked for a frame, so the new model could stay invisible until something redrew the view.
 
 ## [0.2.7] - 2026-10-30
