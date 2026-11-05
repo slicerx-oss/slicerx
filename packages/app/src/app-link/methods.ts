@@ -66,6 +66,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The slice preview only changes what the window shows, never the project.
   'paint.get': 'read',
   'paint.preview': 'read',
+  'paint.from_texture': 'read',
   'paint.apply': 'edit',
   'paint.clear': 'edit',
   'preview.get': 'read',
@@ -424,6 +425,7 @@ const HANDLERS: Record<string, Handler> = {
   'settings.get': async (args) => (await import('./project-settings')).readProjectSettings(args),
   'paint.get': async (args) => (await import('./paint')).readPaint(args),
   'paint.preview': async (args, client) => (await import('./paint')).previewPaint(args, client),
+  'paint.from_texture': async (args, client) => (await import('./paint')).previewFromTexture(args, client),
   'paint.apply': async (args, client) => (await import('./paint')).applyPaint(args, client),
   'paint.clear': async (args, client) => (await import('./paint')).clearLayer(args, client),
   'preview.get': () => previewState(),
