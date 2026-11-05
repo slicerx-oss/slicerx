@@ -802,7 +802,13 @@ async fn remote_start_ok(
         _ => "forbidden",
     };
     rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))?;
-    let _ = crate::guard::look_now(b, printer).await;
+    // A confirming look nobody answered would leave the earlier look standing in for it.
+    if crate::guard::look_now(b, printer).await.is_none() {
+        return Err(err(
+            "forbidden",
+            "the camera guard did not answer the check at approval; check the plate again",
+        ));
+    }
     rule(&facts(b, printer, heat), bed_clear).map_err(|w| err(code(&w), w.message()))
 }
 
