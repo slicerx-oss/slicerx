@@ -6,7 +6,7 @@
 // printer needs diagnosis.
 import { useState } from 'react'
 import { StyleSheet, View } from 'react-native'
-import type { ApprovalRequest, PrinterStatus, Temp } from '@slicerx/contracts'
+import { FILAMENT_UNIT_LABEL, unitClimateText, type ApprovalRequest, type PrinterStatus, type Temp } from '@slicerx/contracts'
 import type { FeedView } from '../camera/use-feed'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
@@ -213,8 +213,9 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
           {status.slots.length > 0 ? (
             <>
               <SectionLabel label={info.filamentSystem ? `Filament, ${info.filamentSystem.toUpperCase()}` : 'Filament'} />
-              <View style={styles.pad}>
+              <View style={[styles.pad, { gap: t.space(1.5) }]}>
                 <Slots slots={status.slots} />
+                <UnitClimates status={status} />
               </View>
             </>
           ) : null}
@@ -227,6 +228,11 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
           ) : null}
 
           <Hairline />
+          {status.firmware ? (
+            <Txt variant="caption" tone="dim" style={[styles.pad, { paddingTop: t.space(1.5) }]} testID="printer-firmware">
+              {`Firmware ${status.firmware}`}
+            </Txt>
+          ) : null}
           <Txt variant="mono" tone="dim" style={[styles.pad, { paddingTop: t.space(1.5), fontSize: 12 }]}>
             {`${info.plugin}${info.host ? `  ${info.host}` : ''}`}
           </Txt>
@@ -246,6 +252,28 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
         />
       ) : null}
     </Screen>
+  )
+}
+
+/** Each filament unit's humidity, temperature and drying, one line per unit that reports any. */
+function UnitClimates({ status }: { status: PrinterStatus }) {
+  const units = status.live?.units ?? []
+  const lines = units.flatMap((u) => {
+    const text = unitClimateText(u.climate)
+    // Two units of one kind are told apart by their slot letter.
+    const twin = units.filter((x) => x.kind === u.kind).length > 1
+    const name = `${FILAMENT_UNIT_LABEL[u.kind] ?? u.kind}${twin ? ` ${u.id}` : ''}`
+    return text ? [{ id: u.id, text: `${name}: ${text}` }] : []
+  })
+  if (lines.length === 0) return null
+  return (
+    <View style={{ gap: t.space(0.5) }}>
+      {lines.map((l) => (
+        <Txt key={l.id} variant="caption" tone="muted" testID={`unit-climate-${l.id}`}>
+          {l.text}
+        </Txt>
+      ))}
+    </View>
   )
 }
 
