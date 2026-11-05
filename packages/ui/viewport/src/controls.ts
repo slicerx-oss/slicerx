@@ -5,6 +5,7 @@
 // preset's bindings can be tested without a canvas. No three.js import here.
 
 import { productName } from '@slicerx/contracts/brand'
+import type { PlateTool } from './types'
 import { BAMBU_GIZMO, ORCA_GIZMO, PRUSA_GIZMO, withGizmoOverrides, type GizmoBindings, type GizmoOverrides } from './gizmobindings'
 
 /** Mirrors LookId in @slicerx/contracts so the viewport stays independent of that package. */
@@ -250,4 +251,45 @@ export function dragStartsOnModel(map: ControlsMap, mods: Modifiers, action: Dra
   if (mods.shift || mods.ctrl || mods.alt || mods.space) return false
   if (action !== 'rotate') return false
   return map.objectDrag === 'move-any' || selected
+}
+
+/**
+ * Which presses on a model may move it: any the preset and tool allow (`true`, the default), only a press on a model
+ * that is already selected ('selected', a phone), or none (`false`, a plate that is only viewed).
+ */
+export type ModelMoves = boolean | 'selected'
+
+/** How far a finger goes, in screen pixels, before a press on a model moves it. Under this the press is a tap or a hold. */
+export const TOUCH_MOVE_SLOP_PX = 8
+
+/** Whether a finger pressed at `press` and now at `at` has gone far enough to move the model it pressed. */
+export function touchMoveStarted(press: readonly [number, number], at: readonly [number, number]): boolean {
+  return Math.hypot(at[0] - press[0], at[1] - press[1]) > TOUCH_MOVE_SLOP_PX
+}
+
+/** A press on the plate, as the move rule reads it. */
+export interface PlatePress {
+  /** The model under the press, or null for empty space (which always turns the view). */
+  on: { selected: boolean } | null
+  tool: PlateTool
+  mods: Modifiers
+  /** The camera action the press resolved to (a finger always resolves to rotate). */
+  action: DragAction
+  /** False for a second finger: it joins the first to pinch or turn, it never moves a model. */
+  primary: boolean
+}
+
+/**
+ * Whether a press on the plate moves the model under it rather than the camera. With `moves` true, the select tool
+ * follows the preset (dragStartsOnModel) and the move and rotate tools always drag the model. With 'selected' (a
+ * phone), only a first finger on a model already selected moves it, with the select or move tool, the same as the
+ * desktop's own select drag; anywhere else the press turns the view.
+ */
+export function pressMovesModel(p: PlatePress, map: ControlsMap, moves: ModelMoves): boolean {
+  if (!moves || !p.on) return false
+  if (moves === 'selected') {
+    if (!p.primary || (p.tool !== 'select' && p.tool !== 'move')) return false
+    return p.on.selected && dragStartsOnModel(map, p.mods, p.action, true)
+  }
+  return p.tool !== 'select' || dragStartsOnModel(map, p.mods, p.action, p.on.selected)
 }

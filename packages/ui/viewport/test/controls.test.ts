@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { CONTROL_PRESETS, CONTROL_PRESET_IDS, dragStartsOnModel, orbitCodeFor, resolveDrag, resolveWheel, wheelKind, withRemap, type ControlsPresetId, type Modifiers } from '../src/controls'
+import { CONTROL_PRESETS, CONTROL_PRESET_IDS, dragStartsOnModel, orbitCodeFor, pressMovesModel, touchMoveStarted, type PlatePress, resolveDrag, resolveWheel, wheelKind, withRemap, type ControlsPresetId, type Modifiers } from '../src/controls'
 
 const none: Modifiers = { shift: false, ctrl: false, alt: false, space: false }
 const wheel = (o: Partial<{ deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; shiftKey: boolean }>) => ({ deltaX: 0, deltaY: 100, deltaMode: 0, ctrlKey: false, shiftKey: false, ...o })
@@ -85,6 +85,46 @@ describe('object drag', () => {
     expect(dragStartsOnModel(CONTROL_PRESETS.slicerx, { ...none, ctrl: true }, 'rotate', true)).toBe(false)
     expect(dragStartsOnModel(CONTROL_PRESETS.slicerx, { ...none, space: true }, 'pan', true)).toBe(false)
     expect(dragStartsOnModel(CONTROL_PRESETS['orcaslicer'], none, 'pan', true)).toBe(false)
+  })
+})
+
+describe('a press on the plate', () => {
+  const finger = (o: Partial<PlatePress> = {}): PlatePress => ({ on: { selected: true }, tool: 'select', mods: none, action: 'rotate', primary: true, ...o })
+
+  it('on a phone, a finger drag on the selected model moves it', () => {
+    for (const id of CONTROL_PRESET_IDS) expect(pressMovesModel(finger(), CONTROL_PRESETS[id], 'selected')).toBe(true)
+    expect(pressMovesModel(finger({ tool: 'move' }), CONTROL_PRESETS.slicerx, 'selected')).toBe(true)
+  })
+
+  it('on a phone, a finger drag on empty space or on a model not selected turns the view, whatever the preset', () => {
+    for (const id of CONTROL_PRESET_IDS) {
+      expect(pressMovesModel(finger({ on: null }), CONTROL_PRESETS[id], 'selected')).toBe(false)
+      expect(pressMovesModel(finger({ on: { selected: false } }), CONTROL_PRESETS[id], 'selected')).toBe(false)
+    }
+  })
+
+  it('on a phone, a second finger never moves a model, and the rotate and scale tools keep the drag on their handles', () => {
+    expect(pressMovesModel(finger({ primary: false }), CONTROL_PRESETS.slicerx, 'selected')).toBe(false)
+    for (const tool of ['rotate', 'scale'] as const) expect(pressMovesModel(finger({ tool }), CONTROL_PRESETS.slicerx, 'selected')).toBe(false)
+    expect(pressMovesModel(finger({ mods: { ...none, ctrl: true } }), CONTROL_PRESETS.slicerx, 'selected')).toBe(false)
+  })
+
+  it('a plate that is only viewed moves nothing', () => {
+    expect(pressMovesModel(finger(), CONTROL_PRESETS.slicerx, false)).toBe(false)
+    expect(pressMovesModel(finger({ tool: 'move' }), CONTROL_PRESETS.slicerx, false)).toBe(false)
+  })
+
+  it('on a desktop, the select tool follows the preset and the move tool drags any model', () => {
+    expect(pressMovesModel(finger({ on: { selected: false } }), CONTROL_PRESETS.slicerx, true)).toBe(false)
+    expect(pressMovesModel(finger({ on: { selected: false } }), CONTROL_PRESETS['bambu-studio'], true)).toBe(true)
+    expect(pressMovesModel(finger({ on: { selected: false }, tool: 'move' }), CONTROL_PRESETS.slicerx, true)).toBe(true)
+    expect(pressMovesModel(finger({ on: null }), CONTROL_PRESETS['bambu-studio'], true)).toBe(false)
+  })
+
+  it('a finger that stays within 8 px is a tap or a hold, not a move', () => {
+    expect(touchMoveStarted([100, 100], [100, 100])).toBe(false)
+    expect(touchMoveStarted([100, 100], [105, 106])).toBe(false)
+    expect(touchMoveStarted([100, 100], [109, 100])).toBe(true)
   })
 })
 

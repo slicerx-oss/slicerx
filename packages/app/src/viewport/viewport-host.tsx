@@ -205,6 +205,14 @@ export function phoneView(s: { workspace: string }): PhoneView {
 }
 
 /**
+ * Which presses on a model move it: on a phone only a drag that starts on a model already selected (anywhere else a
+ * finger turns the view), elsewhere any the tool and the controls preset allow.
+ */
+export function movableFor(phone: PhoneView): boolean | 'selected' {
+  return phone ? 'selected' : true
+}
+
+/**
  * The viewport tool for the app's tool. Scale shows the viewport's handles (x, y, z and the uniform corners), as move
  * and rotate show theirs. A phone in Slice views and prints, so it only selects; a phone in Model keeps the move,
  * rotate and scale handles and an open modeling tool's taps (a sketch draws with them), and every other tool selects
@@ -884,15 +892,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // Tools: the viewport has handles for move, rotate and scale, and lay on face; the numeric fields work too.
       const applyTool = () => {
-        // A phone in Slice views and prints: a tap selects and a drag turns the view, and nothing on the plate moves.
-        // A phone in Model keeps the handles, so a finger moves a model only by its arrows, rings or corners, never by
-        // dragging the model itself.
+        // On a phone a tap selects, and a one-finger drag that starts on the selected model moves it on the plate (in
+        // Slice and in Model); a drag anywhere else turns the view. A phone in Model keeps the handles too.
         const phone = phoneView(appStore.getState())
         const t = phone === 'slim' ? 'select' : toolStore.getState().tool
-        vp.setMovable?.(!phone)
+        vp.setMovable?.(movableFor(phone))
         vp.setTool?.(viewportTool(t, phone, !!brimVp.setBrimEars))
         vp.setRotateSpace?.(toolStore.getState().rotateSpace)
-        // a phone in Model has no drag on the model itself, so the arrows are how Move works there
+        // a phone in Model shows the arrows with Move, for a move along one axis
         vp.setMoveHandles?.(t === 'move' && (phone === 'model' || toolStore.getState().moveArrows))
         brimVp.setBrimHoverRadius?.(t === 'brim' ? headDiameter() / 2 : null)
       }
