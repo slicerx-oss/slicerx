@@ -717,6 +717,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tok-list li[data-state=revoked], .tok-list li[data-state=expired] { opacity: .6; }
 .ptk-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ptk-form .sx-input { flex: 1 1 180px; min-width: 0; }
+/* A partner phone row: name and Revoke on top, what it may do below, under the name. */
+.dev-list li.dev-partner { flex-wrap: wrap; }
+.dev-list li.dev-partner > .min0 { flex: 1 1 0; min-width: 0; }
+.dev-partner .dev-rights { flex-basis: 100%; display: grid; gap: 8px; padding-left: 28px; }
+.dev-partner .dev-rights .sx-btn { margin-left: 0; }
 .ptk-made { display: grid; gap: 8px; border-radius: var(--r-sm); padding: 10px 12px; background: var(--ink-2); font-size: var(--fs-md); }
 .ptk-made p { margin: 0; display: flex; gap: 6px; align-items: flex-start; }
 .ptk-made .sx-ic { color: var(--green); flex: none; }

@@ -37,6 +37,8 @@ export interface RemotePairing {
   deviceKey: string
   peer: PublicIdentity
   rights?: { request?: boolean; approve?: boolean }
+  /** A partner phone's app name, shown in Devices. */
+  partner?: string
 }
 
 /** The hub's remote.* methods, as the link client exposes them. */
@@ -49,7 +51,9 @@ export interface BridgeRemote {
   pairings: {
     put(p: RemotePairing & { kind: 'phone' | 'agent' }): Promise<unknown>
     remove(pairingId: string): Promise<unknown>
-    list(): Promise<{ pairingId: string; kind?: 'phone' | 'agent' }[]>
+    list(): Promise<{ pairingId: string; kind?: 'phone' | 'agent'; partner?: string; partnerClient?: string }[]>
+    /** Links a partner phone to one partner app key by id (null unlinks). */
+    link?(pairingId: string, clientId: string | null, opts?: { mismatchOk?: boolean }): Promise<unknown>
     /** Every phone pairing the hub holds that is not in `pairingIds` is removed. */
     sync?(pairingIds: string[]): Promise<unknown>
   }

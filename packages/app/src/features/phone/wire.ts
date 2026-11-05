@@ -40,7 +40,7 @@ export function pairSourceFor(s: PairStorage): PairSource {
       return toB64url((await ensureIdentity(s.identity, defaultEnv, s.name, s.kind)).dhSecret)
     },
     async pairings() {
-      return (await s.pairings.list()).map((r) => ({ pairingId: r.pairingId, deviceKey: r.deviceKey, peer: r.peer, rights: { request: r.rights.request, approve: r.rights.approve } }))
+      return (await s.pairings.list()).map((r) => ({ pairingId: r.pairingId, deviceKey: r.deviceKey, peer: r.peer, rights: { request: r.rights.request, approve: r.rights.approve }, ...(r.partner !== undefined ? { partner: r.partner } : {}) }))
     },
   }
 }
@@ -107,11 +107,14 @@ export function phoneAccessFor(bridge: ConnectedBridge, s: PairStorage, relayUrl
         set({ status: 'error', urls: [], devices: state.devices, error: e instanceof Error ? e.message : 'Phone access did not start' })
       }
     },
-    async offer() {
-      return (await build()).offer()
+    async offer(o) {
+      return (await build()).offer(o)
     },
     async revoke(id) {
       await (await build()).revoke(id)
+    },
+    async setPartnerRights(id, change) {
+      await (await build()).setPartnerRights?.(id, change)
     },
   }
 }
