@@ -56,6 +56,42 @@ describe('finished sketches in the design tools', () => {
     expect(d.history.steps.map((s) => s.sketch)).toEqual(['k1', 'k1'])
   })
 
+  it('sweeps a finished profile sketch along a finished open path sketch, copying both into the step', async () => {
+    const { add, run, sketches } = host()
+    await run('design.sketch', { loops: LOOPS, frame: { origin: FRAME.origin, normal: FRAME.normal, u: FRAME.u } })
+    const chain = [{ start: [0, 0] as [number, number], segments: [{ type: 'line' as const, to: [0, 20] as [number, number] }, { type: 'arc' as const, center: [10, 20] as [number, number], sweepDeg: -90 }] }]
+    await run('design.sketch', { loops: chain, frame: { origin: [0, 0, 0], normal: [0, -1, 0] } })
+    await run('geom.sweep', { design: 'd1', profile_sketch: 'k1', path_sketch: 'k2', name: 'Handle' })
+    const p = add.mock.calls[0]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(p.op).toBe('sketch.sweep')
+    expect(p.profile).toEqual({ frame: sketches[0]!.frame, loops: LOOPS })
+    expect(p.path).toEqual({ frame: sketches[1]!.frame, loops: chain })
+    expect(p.name).toBe('Handle')
+    // a new body is a new part
+    expect(add.mock.calls[0]![1]).toBe(0)
+    // a finished profile with an inline path in space
+    await run('geom.sweep', { design: 'd1', profile_sketch: 'k1', path: { points: [[0, 0, 5], [0, 20, 5]] }, operation: 'join', part: 0 })
+    const q = add.mock.calls[1]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(q.path).toEqual({ points: [[0, 0, 5], [0, 20, 5]] })
+    expect(q.operation).toBe('join')
+  })
+
+  it('says which sweep input is missing, doubled or needs a design', async () => {
+    const { add, run } = host()
+    await run('design.sketch', { loops: LOOPS })
+    const path = { points: [[0, 0, 0], [0, 0, 10]] }
+    const profile = { loops: LOOPS }
+    await expect(run('geom.sweep', { design: 'd1', profile, profile_sketch: 'k1', path })).rejects.toThrow('profile_sketch: give profile or profile_sketch, not both')
+    await expect(run('geom.sweep', { design: 'd1', path })).rejects.toThrow('profile: give the profile, or a finished sketch id as profile_sketch')
+    await expect(run('geom.sweep', { design: 'd1', profile, path, path_sketch: 'k1' })).rejects.toThrow('path_sketch: give path or path_sketch, not both')
+    await expect(run('geom.sweep', { design: 'd1', profile })).rejects.toThrow('path: give the path, or a finished sketch id as path_sketch')
+    await expect(run('geom.sweep', { design: 'd1', profile, path: {} })).rejects.toThrow('path: give the path as loops on a plane or as points')
+    await expect(run('geom.sweep', { design: 'd1', profile, path: { ...path, loops: [{ points: [[0, 0], [5, 0]] }] } })).rejects.toThrow('path: give loops or points, not both')
+    await expect(run('geom.sweep', { profile_sketch: 'k1', path })).rejects.toThrow('profile_sketch: finished sketches sweep on a design; give its id as design')
+    await expect(run('geom.sweep', { profile, path_sketch: 'k1' })).rejects.toThrow('path_sketch: finished sketches sweep on a design; give its id as design')
+    expect(add).not.toHaveBeenCalled()
+  })
+
   it('refuses a sketch with a shape, a sketch without a design, and a sketch on a host without a timeline', async () => {
     const { run } = host()
     await run('design.sketch', { loops: LOOPS })
