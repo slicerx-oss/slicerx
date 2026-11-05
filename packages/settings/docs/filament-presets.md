@@ -1,6 +1,6 @@
 # Filament presets
 
-6845 presets in 1116 products, with the resolved values of OrcaSlicer 2.4.2's filament profiles (commit 8500fcdc). 2207 presets are not in 2.4.2 and keep their values from OrcaSlicer main (commit 97700c5a) or, for Bambu Lab, Bambu Studio (commit da8b44ee); each vendor file lists them under `fallback`, and `loadFilamentPreset` reports the source. Brands 2.4.2 has no preset for at all: INSLOGIC, JAYO, PlastAR, Printalot. Each preset carries every filament setting the profile sets: nozzle temperatures (first layer, other layers, range), bed temperatures per plate, chamber temperature, fan minimum and maximum, cooling thresholds and slowdown, overhang and bridge fan, flow ratio, pressure advance, maximum volumetric speed, retraction overrides, shrinkage, density, diameter, cost, the soluble and support flags, the filament start and end G-code, and the compatible printers.
+6980 presets in 1119 products, with the resolved values of OrcaSlicer 2.4.2's filament profiles (commit 8500fcdc). 2342 presets are not in 2.4.2 and keep their values from OrcaSlicer main (commit 97700c5a) or, for Bambu Lab, Bambu Studio (commit da8b44ee, and the 2.9.1 release for the H3C, which the commit predates); each vendor file lists them under `fallback`, and `loadFilamentPreset` reports the source. Brands 2.4.2 has no preset for at all: INSLOGIC, JAYO, PlastAR, Printalot. Each preset carries every filament setting the profile sets: nozzle temperatures (first layer, other layers, range), bed temperatures per plate, chamber temperature, fan minimum and maximum, cooling thresholds and slowdown, overhang and bridge fan, flow ratio, pressure advance, maximum volumetric speed, retraction overrides, shrinkage, density, diameter, cost, the soluble and support flags, the filament start and end G-code, and the compatible printers.
 
 The files are in `packages/profiles/filaments/`, one per vendor folder, plus `index.json`. A vendor file holds the vendor's common values, each product's own values and each printer variant's differences. `loadFilamentPreset(vendor, family, variant)` merges them and types the values; keys only some slicers define come back in `extras` in the profile's own format. `js/filaments.test.ts` locks the files, and a private script diffs them against the 2.4.2 profiles (and the fallback sources) and fails on any difference.
 
@@ -12,7 +12,7 @@ Every filament setting is advanced in the schema, except the material (`filament
 
 | Vendor folder | Products | Presets | Brands |
 | --- | --- | --- | --- |
-| BBL | 235 | 2570 | Aliz, BETA, Bambu Lab, COEX 3D, FusRock, Generic, Numakers, Overture, Polymaker, SUNLU, addnorth, eSUN |
+| BBL | 238 | 2705 | Aliz, BETA, Bambu Lab, COEX 3D, FusRock, Generic, Numakers, Overture, Polymaker, SUNLU, addnorth, eSUN |
 | OrcaFilamentLibrary | 399 | 968 | Aliz, BETA, Bambu Lab, COEX 3D, DREMC, Elas, Elegoo, Eolas Prints, FDplast, FILL3D, FilAr, FusRock, Generic, GreenGate3D, INSLOGIC, JAYO, NIT, Numakers, Overture, PlastAR, Polymaker, Printalot, SUNLU, Valment, addnorth, eSUN |
 | Prusa | 48 | 548 | Generic, Prusa Polymers |
 | Creality | 108 | 833 | Creality, Generic, Polymaker, eSUN |
@@ -26,8 +26,8 @@ Every filament setting is advanced in the schema, except the material (`filament
 
 | Brand | Products | Presets | Materials |
 | --- | --- | --- | --- |
-| Generic | 264 | 1677 | ABS, ABS-CF, ASA, ASA-CF, BVOH, CoPE, EVA, FLEX, HIPS, PA, PA-CF, PA-GF, PA6-CF, PC, PC-CF, PCTG, PE, PE-CF, PET, PET-CF, PETG, PETG-CF, PETG-GF, PHA, PLA, PLA-CF, PP, PP-CF, PP-GF, PPA-CF, PPA-GF, PPS, PPS-CF, PVA, SBS, TPU, TPU-AMS |
-| Bambu Lab | 101 | 1446 | ABS, ABS-GF, ASA, ASA-AERO, ASA-CF, PA, PA-CF, PA-GF, PA6-CF, PC, PET-CF, PETG, PETG-CF, PLA, PLA-AERO, PLA-CF, PPA-CF, PPS-CF, PVA, TPU, TPU-AMS |
+| Generic | 265 | 1719 | ABS, ABS-CF, ASA, ASA-CF, BVOH, CoPE, EVA, FLEX, HIPS, PA, PA-CF, PA-GF, PA6-CF, PC, PC-CF, PCTG, PE, PE-CF, PET, PET-CF, PETG, PETG-CF, PETG-GF, PHA, PLA, PLA-CF, PP, PP-CF, PP-GF, PPA-CF, PPA-GF, PPS, PPS-CF, PVA, SBS, TPU, TPU-AMS |
+| Bambu Lab | 103 | 1539 | ABS, ABS-GF, ASA, ASA-AERO, ASA-CF, PA, PA-CF, PA-GF, PA6-CF, PC, PET-CF, PETG, PETG-CF, PLA, PLA-AERO, PLA-CF, PPA-CF, PPS-CF, PVA, TPU, TPU-AMS |
 | QIDI | 55 | 818 | ABS, ABS-GF, ASA, ASA-AERO, ASA-CF, PA-S, PA12-CF, PA6-CF, PAHT-CF, PAHT-GF, PAHT-S, PC-ABS-FR, PEBA, PET-CF, PET-GF, PETG, PETG-CF, PETG-GF, PLA, PLA-CF, PPS-CF, PPS-GF, TPU, TPU-AERO, TPU-GF, UltraPA, UltraPA-CF25 |
 | Polymaker | 151 | 697 | ABS, ASA, PA, PA-CF, PA-GF, PA6-CF, PET-CF, PETG, PETG-CF, PLA |
 | Creality | 38 | 440 | ABS, ASA, PA, PA-CF, PC, PETG, PETG-CF, PETG-GF, PLA, PLA-CF, TPU |

@@ -123,6 +123,18 @@ export const BAMBU: PrinterModel[] = [
     note: 'One printing nozzle plus a rack of swappable nozzles. The build volume is the area both nozzle positions reach.',
   }),
   bambu({
+    id: 'bambu-h3c',
+    name: 'H3C',
+    kinematics: 'corexy',
+    enclosed: true,
+    buildVolume: rect(330, 320, 325),
+    nozzles: STD,
+    nozzleCount: 9,
+    filamentSystem: 'ams',
+    find: FIND_H2,
+    note: 'Nine print tools that swap on one carriage, one of them for TPU. For now a print with several filaments is sliced as one nozzle that changes filament, with the first tool\'s nozzle size.',
+  }),
+  bambu({
     id: 'bambu-x2d',
     name: 'X2D',
     kinematics: 'corexy',

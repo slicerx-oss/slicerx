@@ -40,6 +40,8 @@ export interface PrinterProfile {
 export interface MachineEntry {
   /** The Orca profile the values were checked against; absent for a printer Orca has no profile for. */
   orca?: { vendor: string; profile: string; checked: string }
+  /** The Bambu Studio release the values come from, for a model OrcaSlicer has no profile for yet (`checked` is `bambu-studio-<release>`). */
+  bambuStudio?: string
   /** The Cura definition and print cores the values were resolved from (the UltiMaker S series). */
   cura?: { definition: string; printCores: string[] }
   machine: Record<string, unknown>

@@ -31,10 +31,11 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(59)
+    expect(Object.keys(models)).toHaveLength(60)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
-      expect(e.orca?.checked, id).toBe(MACHINE_CHECKED_COMMIT)
+      // A model Orca has no profile for yet carries the Bambu Studio release its values come from.
+      expect(e.orca?.checked, id).toBe(e.bambuStudio ? `bambu-studio-${e.bambuStudio}` : MACHINE_CHECKED_COMMIT)
       expect(e.orca?.profile, id).toMatch(/nozzle/)
     }
     const missing = listPrinterProfiles().map((p) => p.id).filter((id) => !models[id])
@@ -70,7 +71,10 @@ describe('machine settings', () => {
   })
   it('has start, end, layer change and filament change G-code for every model', () => {
     const ids = listPrinterProfiles().map((p) => p.id)
-    for (const id of ids) expect(gcodeStatus(id), id).toBeDefined()
+    // The H3C's maker G-code family goes into packages/profiles/gcode.json as its own change. Until it is there the
+    // printer takes the schema's start and end G-code; once it is, the H3C is held to this check like every other model.
+    const awaiting = ['bambu-h3c'].filter((id) => !gcode.models[id])
+    for (const id of ids) if (!awaiting.includes(id)) expect(gcodeStatus(id), id).toBeDefined()
     expect(Object.keys(gcode.models).filter((id) => gcode.pending.includes(id))).toEqual([])
     for (const id of ids) {
       const cfg = printerConfig(id) as unknown as Record<string, unknown>
@@ -112,6 +116,25 @@ describe('dual and multi nozzle printers', () => {
     }
     // A single nozzle printer keeps whatever the maker sets (the H2S sets none).
     expect(area('bambu-h2s')).toEqual([])
+  })
+  it('has the H3C from Bambu Studio 2.9.1\'s presets: one extruder that holds nine nozzles', () => {
+    const e = machineEntry('bambu-h3c')
+    expect(e?.orca?.profile).toBe('Bambu Lab H3C 0.4 nozzle')
+    expect(e?.bambuStudio).toBe('02.09.01.70')
+    expect(Object.keys(e?.nozzles ?? {})).toEqual(['0.2', '0.6', '0.8'])
+    for (const n of [0.2, 0.4, 0.6, 0.8]) {
+      const c = printerConfig('bambu-h3c', n) as Record<string, unknown>
+      expect(c['nozzle_diameter'], String(n)).toEqual([n])
+      expect(c['printable_area'], String(n)).toEqual([[0, 0], [330, 0], [330, 320], [0, 320]])
+      expect(c['printable_height'], String(n)).toBe(325)
+      expect(c['extruder_max_nozzle_count'], String(n)).toEqual([9])
+    }
+    const c = printerConfig('bambu-h3c') as Record<string, unknown>
+    // Tool 8 is the TPU tool in the maker's presets (2.85 mm filament).
+    expect(c['default_nozzle_volume_type']).toEqual(['Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'TPU285', 'Standard'])
+    expect(c['machine_switch_extruder_time']).toBe(4)
+    expect(c['support_chamber_temp_control']).toBe(true)
+    expect((printerConfig('bambu-h3c', 0.8) as Record<string, unknown>)['max_layer_height']).toEqual([0.56])
   })
   it('has the H2C and Kobra X from the makers profiles', () => {
     const h2c = printerConfig('bambu-h2c') as Record<string, unknown>

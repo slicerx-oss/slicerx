@@ -1599,6 +1599,8 @@ pub(crate) fn model_fans(model: &str) -> Option<ModelFans> {
         "A1" | "A1 mini" | "P1P" => (None, Some(false)),
         "P1S" | "X1 Carbon" | "X1E" | "X2D" | "H2D" | "H2D Pro" | "H2S" => (Some(true), None),
         "X1" | "P2S" => (None, None),
+        // The H3C's presets have the auxiliary fan and no air filtration.
+        "H3C" => (Some(true), Some(false)),
         _ => return None,
     };
     Some(ModelFans {
@@ -4446,6 +4448,7 @@ mod tests {
             ("BL-P001", "X1 Carbon"),
             ("O1D", "H2D"),
             ("O1C2", "H2C"),
+            ("N10", "H3C"),
             ("O1S", "H2S"),
         ] {
             assert_eq!(model_name(code).as_deref(), Some(name));
@@ -4619,6 +4622,7 @@ mod tests {
             "H2D Pro",
             "H2S",
             "H2C",
+            "H3C",
         ] {
             assert!(shows_chamber_temperature(m), "{m}");
         }
@@ -5037,6 +5041,16 @@ mod tests {
         assert_eq!(
             model_from_report(&json!({ "printer_type": "3DPrinter-X1-Carbon" })).as_deref(),
             Some("X1 Carbon")
+        );
+        // The H3C's code, as Bambu Studio 2.9.1's device file for it names its printer_type.
+        assert_eq!(
+            model_from_report(&json!({ "printer_type": "N10" })).as_deref(),
+            Some("H3C")
+        );
+        // An H3C reporting only its product name still gets a model.
+        assert_eq!(
+            model_from_version(&json!({ "module": [{ "name": "ota", "product_name": "Bambu Lab H3C" }] })).as_deref(),
+            Some("H3C")
         );
         assert_eq!(model_from_report(&json!({ "printer_type": "Z9" })), None);
         assert_eq!(model_from_report(&json!({})), None);

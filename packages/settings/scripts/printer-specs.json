@@ -61,6 +61,12 @@
     "https://bambulab.com/en/h2c"
    ]
   },
+  "bambu-h3c": {
+   "flavor": "marlin",
+   "sources": [
+    "https://bambulab.com/en-us/h3c/specs"
+   ]
+  },
   "bambu-h2d-pro": {
    "flavor": "marlin",
    "sources": [

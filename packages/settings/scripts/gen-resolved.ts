@@ -11,7 +11,8 @@
 // shrinks by more than 10 percent)
 // Or: npx tsx scripts/gen-resolved.ts <dump-dir> --only <model>,<model>   (a dump of those models only, every tier and
 // nozzle: their entries are replaced and every other model is kept as it is in the current files)
-// Last, the Bambu Lab output gets packages/profiles/overlays/bbl-2.8.json (Bambu Studio 2.8's values for the settings the
+// Last, the Bambu Lab output gets the whole entries of packages/profiles/overlays/bbl-2.9.json for the models the dump has
+// none for (the H3C, from Bambu Studio 2.9's presets), then packages/profiles/overlays/bbl-2.8.json (Bambu Studio 2.8's values for the settings the
 // engine reads, js/overlay.ts), so a regeneration keeps them. scripts/apply-overlay.ts applies it to filaments/BBL.json.
 // The Prusa output gets packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) the
 // same way, and apply-overlay.ts also writes it to machine.json, then packages/profiles/overlays/prusa-brim.json (the

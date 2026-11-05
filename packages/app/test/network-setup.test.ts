@@ -21,7 +21,7 @@ import { PRINTER_MODELS } from '@slicerx/printer-catalog'
 import { readdirSync, statSync } from 'node:fs'
 import { ConfirmCard } from '../src/first-run/confirm-card'
 import { Footer } from '../src/first-run/frame'
-import { bedOf, checkConnection, EMPTY_FORM, extruderNozzles, profileIdOf, testBlockers, withHardware, type PrinterForm } from '../src/first-run/printer-form'
+import { bedOf, brandTile, checkConnection, EMPTY_FORM, extruderNozzles, modelsForTile, pickModel, profileIdOf, searchSetup, testBlockers, withHardware, type PrinterForm } from '../src/first-run/printer-form'
 import { adoptFound, blockerHint, connectedText, foundText, TestCard, WhyNotReady, type PrinterController } from '../src/first-run/printer-step'
 import { failureCopy, failureKind } from '../src/first-run/test-failure'
 import { get, set } from '../src/state/store'
@@ -332,6 +332,23 @@ describe('where the access code is, drawn on the printer screen', () => {
 describe('the model grid', () => {
   const dir = resolve(__dirname, '../../profiles/printer-images')
   const files = readdirSync(dir).filter((f) => f.endsWith('.webp')).map((f) => f.slice(0, -5)).sort()
+
+  it('offers the Bambu Lab H3C under Bambu Lab and in search, with its picture, nine tools and the AMS', () => {
+    const h3c = modelsForTile(brandTile('bambu-lab')!).find((m) => m.id === 'bambu-h3c')
+    expect(h3c).toMatchObject({ name: 'H3C', kinematics: 'corexy', enclosed: true, nozzles: [0.2, 0.4, 0.6, 0.8], nozzleCount: 9, filamentSystem: 'ams' })
+    expect(searchSetup('h3c').models.map((m) => m.id)).toEqual(['bambu-h3c'])
+    expect(printerImage('bambu-h3c')).toMatch(/printer-images\/bambu-h3c\.webp$/)
+    const r = render(createElement(PrinterPicture, { model: h3c!, brand: 'Bambu Lab' }))
+    expect(r.el.querySelector('img')?.getAttribute('alt')).toBe('Bambu Lab H3C')
+    r.done()
+    const form = pickModel(EMPTY_FORM, 'bambu-h3c')
+    expect(form.nozzles).toHaveLength(9)
+    expect(form.nozzles[0]).toMatchObject({ size: 0.4 })
+    expect(form.connection).toBe('bambu-lan')
+    expect(profileIdOf(form)).toBe('bambu-h3c')
+    // A printer that announces itself as an H3C (model code N10) picks the H3C.
+    expect(adoptFound(EMPTY_FORM, { ...FOUND, name: 'Workshop H3C', model: 'H3C' }).modelId).toBe('bambu-h3c')
+  })
 
   it('every catalog printer resolves to a picture or the placeholder, never a broken image', () => {
     for (const m of PRINTER_MODELS) {

@@ -16,6 +16,7 @@
     "O1S": "H2S",
     "O1C2": "H2C",
     "O1C": "H2C",
+    "N10": "H3C",
     "3DPrinter-X1": "X1",
     "3DPrinter-X1-Carbon": "X1 Carbon"
   }
