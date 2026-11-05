@@ -38,7 +38,16 @@ export function createPhoneAccess(opts: PhoneAccessOptions): PhoneAccess {
     set({
       ...state,
       devices: list
-        .map((d) => ({ id: d.pairingId, name: d.name, platform: d.platform, online: d.online, ...(d.lastSeenAt !== undefined ? { lastSeenAt: d.lastSeenAt } : {}) })),
+        .map((d) => ({
+          id: d.pairingId,
+          name: d.name,
+          platform: d.platform,
+          online: d.online,
+          approve: d.rights.approve,
+          ...(d.partner !== undefined ? { send: d.rights.send === true } : {}),
+          ...(d.lastSeenAt !== undefined ? { lastSeenAt: d.lastSeenAt } : {}),
+          ...(d.partner !== undefined ? { partner: d.partner } : {}),
+        })),
     })
   }
 
@@ -78,9 +87,18 @@ export function createPhoneAccess(opts: PhoneAccessOptions): PhoneAccess {
         set({ status: 'error', urls: [], devices: state.devices, error: e instanceof Error ? e.message : 'The listener did not start' })
       }
     },
-    async offer() {
+    async offer(o) {
       if (!host || (state.status !== 'on' && state.status !== 'starting')) throw new Error('Turn on phone access first.')
-      return host.createOffer()
+      return host.createOffer(o?.partner !== undefined ? { partner: o.partner } : {})
+    },
+    async setPartnerRights(deviceId, change) {
+      if (!host) return
+      const d = (await host.devices()).find((x) => x.pairingId === deviceId)
+      if (!d || d.partner === undefined) return
+      await host.setRights(deviceId, { ...d.rights, ...change })
+      // The hub answers this phone away from home with the rights it was handed: hand them over again.
+      await opts.remote?.()?.sync()
+      await refreshDevices()
     },
     async revoke(deviceId) {
       await host?.revoke(deviceId)
