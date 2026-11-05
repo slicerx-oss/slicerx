@@ -392,6 +392,23 @@ impl Channel {
             .and_then(|f| serde_json::to_string(&f).ok())
     }
 
+    /// A byte channel for one partner route inside this session: its own keys (HKDF-SHA256 of each
+    /// session key, info `"sx-pair/v1 partner route"`, the 16 byte route id as salt) and its own
+    /// counters, so its frames never share a nonce with the session's messages and a frame sealed
+    /// for one route, or for the session, never opens on another.
+    #[must_use]
+    pub fn route(&self, route_id: &[u8]) -> Channel {
+        Channel {
+            sid: self.sid.clone(),
+            send_key: route_key(&self.send_key, route_id),
+            recv_key: route_key(&self.recv_key, route_id),
+            send_dir: self.send_dir,
+            recv_dir: self.recv_dir,
+            send_counter: 0,
+            last_recv: None,
+        }
+    }
+
     /// Opens a data frame. `None` when it fails to decrypt, is too large, belongs to another
     /// session or does not come after the last one.
     pub fn open(&mut self, f: &DataFrame) -> Option<Vec<u8>> {
@@ -406,6 +423,13 @@ impl Channel {
         self.last_recv = Some(f.c);
         Some(pt)
     }
+}
+
+/// The key of a partner route's byte channel, from one session key ([`Channel::route`]).
+pub fn route_key(session_key: &[u8; 32], route_id: &[u8]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&kdf(session_key, Some(route_id), "partner route", 32));
+    out
 }
 
 /// Host side: answers a current init whose MAC was checked with [`verify_init`]. `eph` and `nonce`
@@ -550,6 +574,44 @@ mod tests {
 
     fn arr<const N: usize>(s: &str) -> [u8; N] {
         hex(s).try_into().unwrap()
+    }
+
+    #[test]
+    fn a_partner_route_has_its_own_keys_and_counters_inside_the_session() {
+        // Pinned beside the TypeScript client (packages/pair, routeKey).
+        assert_eq!(
+            route_key(&[7; 32], &[9; 16]).to_vec(),
+            hex("dedc1af3d85a59eba92c9a693f45a1cdf0236601f4a1aca1ca6993662bacdcd2")
+        );
+        let mk = |send: u8, recv: u8, sd: u8, rd: u8| Channel {
+            sid: "s".to_owned(),
+            send_key: [send; 32],
+            recv_key: [recv; 32],
+            send_dir: sd,
+            recv_dir: rd,
+            send_counter: 0,
+            last_recv: None,
+        };
+        let mut device = mk(1, 2, DIR_DEVICE, DIR_HOST);
+        let mut host = mk(2, 1, DIR_HOST, DIR_DEVICE);
+        let mut up = device.route(&[3; 16]);
+        let mut host_up = host.route(&[3; 16]);
+        let mut other = host.route(&[4; 16]);
+        let f = up.seal(b"bytes").unwrap();
+        assert_eq!(f.c, 0);
+        assert!(
+            other.open(&f).is_none(),
+            "another route's channel does not open it"
+        );
+        assert!(
+            host.open(&f).is_none(),
+            "the session's own channel does not open it"
+        );
+        assert_eq!(host_up.open(&f).as_deref(), Some(&b"bytes"[..]));
+        // A message sealed for the session does not open on the route.
+        let req = device.seal(br#"{"t":"req","id":1,"m":"printers.list"}"#).unwrap();
+        assert!(host.route(&[3; 16]).open(&req).is_none());
+        assert_eq!(host.open(&req).map(|p| p.len()), Some(38));
     }
 
     #[test]

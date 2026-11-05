@@ -37,6 +37,10 @@ const WATCH_CODE: &str = "WTCH-CODE";
 const RELAY_SECRET: &[u8] = b"remote test relay secret";
 
 async fn relay() -> RelayHandle {
+    relay_with(sx_relay::quota::PartnerLimits::default()).await
+}
+
+async fn relay_with(partner: sx_relay::quota::PartnerLimits) -> RelayHandle {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     // The hub and the test devices share one address here; the mock printer polls every 50 ms.
     let roomy = sx_relay::quota::TierLimits {
@@ -46,6 +50,7 @@ async fn relay() -> RelayHandle {
     };
     let limits = sx_relay::quota::Limits {
         anonymous: roomy,
+        partner,
         ..sx_relay::quota::Limits::default()
     };
     sx_relay::spawn(
@@ -314,7 +319,10 @@ async fn setup() -> Setup {
 }
 
 async fn setup_in(state_dir: Option<std::path::PathBuf>) -> Setup {
-    let relay = relay().await;
+    setup_on(relay().await, state_dir).await
+}
+
+async fn setup_on(relay: RelayHandle, state_dir: Option<std::path::PathBuf>) -> Setup {
     let link = hub_in(state_dir).await;
     let mut app = paired(&link, CODE).await;
     let agent = paired(&link, AGENT_CODE).await;
@@ -2016,6 +2024,403 @@ async fn mimir_answers_over_the_relay_are_audited_checked_and_kept_from_other_de
         "only the answer the app took is audited"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// Partner routes: a partner desktop and its own phone trade sealed bytes through the hub.
+
+const ACCOUNT: &str = "5b1c9a2e-7d3f-4e61-8a0b-2c4d6e8f0a1b";
+
+/// A partner app's desktop on the hub's control socket, with its partner key.
+async fn partner_desktop(s: &mut Setup, name: &str) -> Ws {
+    let r = call(
+        &mut s.app,
+        60,
+        "clients.create",
+        json!({ "name": name, "role": "agent", "partner": true }),
+    )
+    .await;
+    let key = r["result"]["clientKey"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a key: {r}"))
+        .to_owned();
+    let mut ws = connect_async(format!("ws://127.0.0.1:{}/", s.link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let p = call(&mut ws, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(p["result"]["partner"], true, "{p}");
+    ws
+}
+
+/// Saves a partner phone for `app` and opens its session over the relay.
+async fn partner_phone(s: &mut Setup, app: &str, seed: u8) -> (Device, String) {
+    let key: [u8; 32] = rand_bytes();
+    let pairing_id = ps::b64(&[seed; 16]);
+    let r = call(
+        &mut s.app,
+        61,
+        "remote.pairings.put",
+        json!({ "pairingId": pairing_id, "deviceKey": ps::b64(&key), "kind": "partner_phone", "partner": app, "peer": identity(seed, "Chris's phone"), "rights": { "request": true, "approve": true } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    // The first request proves the session, so the hub seals for it.
+    let list = phone.call("partnerRoute.list", json!({})).await;
+    assert_eq!(list["r"], json!([]), "{list}");
+    (phone, pairing_id)
+}
+
+async fn sign_in(s: &mut Setup) {
+    let token = session_token(ACCOUNT, RELAY_SECRET);
+    call(&mut s.app, 62, "remote.token", json!({ "token": token })).await;
+    wait_tier(&mut s.app, "account").await;
+}
+
+/// The next frame on a relay route, as the relay delivers it.
+async fn on_route(ws: &mut Ws, route: &str) -> Option<Value> {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(3), ws.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) => {
+                let v: Value = serde_json::from_str(t.as_str()).ok()?;
+                if v["route"] == route {
+                    return Some(v);
+                }
+            }
+            Ok(Some(Ok(_))) => {}
+            _ => return None,
+        }
+    }
+}
+
+/// A route the partner desktop opened, as the phone learned it.
+struct Opened {
+    id: String,
+    id_bytes: Vec<u8>,
+    up: String,
+    down: String,
+    /// The phone's byte channel for the route.
+    chan: Channel,
+}
+
+async fn open_route(desktop: &mut Ws, phone: &mut Device, app: &str) -> Opened {
+    let r = call(desktop, 70, "relay.partnerRoute.open", json!({ "app": app })).await;
+    assert_eq!(r["result"]["state"], "open", "{r}");
+    let id = r["result"]["routeId"].as_str().unwrap().to_owned();
+    let ev = phone
+        .event("partnerRoute.opened", |d| d["routeId"] == id.as_str())
+        .await;
+    assert_eq!(ev["app"], app);
+    let (up, down) = (
+        ev["up"].as_str().unwrap().to_owned(),
+        ev["down"].as_str().unwrap().to_owned(),
+    );
+    assert!(up.starts_with("pr:") && down.starts_with("pr:"), "{ev}");
+    phone
+        .ws
+        .send(Message::text(json!({ "op": "sub", "route": down }).to_string()))
+        .await
+        .unwrap();
+    let id_bytes = ps::unb64(&id).unwrap();
+    let chan = phone.channel.route(&id_bytes);
+    Opened {
+        id,
+        id_bytes,
+        up,
+        down,
+        chan,
+    }
+}
+
+async fn phone_sends(phone: &mut Device, chan: &mut Channel, up: &str, bytes: &[u8]) {
+    let f = serde_json::to_string(&chan.seal(bytes).unwrap()).unwrap();
+    phone
+        .ws
+        .send(Message::text(
+            json!({ "op": "send", "to": up, "body": f }).to_string(),
+        ))
+        .await
+        .unwrap();
+}
+
+/// True when no reply to any request reaches the phone's session for `ms`.
+async fn no_reply(dev: &mut Device, ms: u64) -> bool {
+    let until = tokio::time::Instant::now() + Duration::from_millis(ms);
+    while tokio::time::Instant::now() < until {
+        let left = until - tokio::time::Instant::now();
+        let Ok(Some(Ok(Message::Text(t)))) = tokio::time::timeout(left, dev.ws.next()).await else {
+            continue;
+        };
+        let v: Value = serde_json::from_str(t.as_str()).unwrap();
+        if let Some(body) = v["body"].as_str()
+            && let Some(SessionFrame::Data(d)) = ps::parse_frame(body)
+            && let Some(plain) = dev.channel.open(&d)
+            && serde_json::from_slice::<Value>(&plain).is_ok_and(|m| m["t"] == "res")
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn b64(bytes: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+#[tokio::test]
+async fn a_partner_desktop_and_its_own_phone_trade_sealed_bytes_and_the_owner_closes_the_route() {
+    let mut s = setup().await;
+    sign_in(&mut s).await;
+    let mut desktop = partner_desktop(&mut s, "LayerMate").await;
+    let (mut phone, pairing_id) = partner_phone(&mut s, "LayerMate", 81).await;
+    let mut o = open_route(&mut desktop, &mut phone, "LayerMate").await;
+
+    // Phone to desktop: the bytes arrive as they were sent.
+    let from_phone = b"\x00\x01binary from the phone\xff";
+    phone_sends(&mut phone, &mut o.chan, &o.up, from_phone).await;
+    let d = app_event(&mut desktop, "partnerRoute.data", |d| {
+        d["routeId"] == o.id.as_str()
+    })
+    .await;
+    assert_eq!(d["data"], b64(from_phone));
+
+    // Desktop to phone, on the route's own relay route and byte channel.
+    let from_desktop = b"reply from the desktop app";
+    let r = call(
+        &mut desktop,
+        71,
+        "relay.partnerRoute.send",
+        json!({ "routeId": o.id, "data": b64(from_desktop) }),
+    )
+    .await;
+    assert_eq!(r["result"]["sent"], from_desktop.len(), "{r}");
+    let m = on_route(&mut phone.ws, &o.down).await.expect("a chunk on down");
+    let Some(SessionFrame::Data(f)) = ps::parse_frame(m["body"].as_str().unwrap()) else {
+        panic!("a data frame: {m}");
+    };
+    assert!(
+        phone.channel.open(&f).is_none(),
+        "the session's channel does not open a chunk"
+    );
+    assert_eq!(o.chan.open(&f).as_deref(), Some(&from_desktop[..]));
+
+    // The owner and agents see sizes and times, never the relay routes or the bytes.
+    let list = call(&mut s.app, 72, "relay.partnerRoute.list", json!({})).await;
+    let row = &list["result"]["routes"][0];
+    assert_eq!(row["routeId"], o.id.as_str(), "{list}");
+    assert_eq!(row["app"], "LayerMate");
+    assert_eq!(row["pairingId"], pairing_id.as_str());
+    assert_eq!(row["phone"], "Chris's phone");
+    assert_eq!(row["bytesIn"], from_phone.len());
+    assert_eq!(row["bytesOut"], from_desktop.len());
+    assert_eq!(list["result"]["caps"]["maxRoutes"], 4, "{list}");
+    let text = list.to_string();
+    assert!(!text.contains("pr:") && !text.contains("binary"), "{text}");
+    let seen = call(&mut s.agent, 73, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(seen["result"]["routes"][0]["routeId"], o.id.as_str(), "{seen}");
+    // The relay's partner caps come along once the hub has asked for its quota.
+    call(&mut s.app, 74, "remote.quota", json!({})).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let list = call(&mut s.app, 75, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(list["result"]["caps"]["relay"]["maxRoutes"], 4, "{list}");
+    assert_eq!(list["result"]["caps"]["relay"]["routes"], 1, "{list}");
+
+    // The person who owns the hub closes it: the desktop, the phone and the relay all hear it.
+    let r = call(
+        &mut s.app,
+        76,
+        "relay.partnerRoute.close",
+        json!({ "routeId": o.id }),
+    )
+    .await;
+    assert_eq!(r["result"]["closed"], true, "{r}");
+    let c = app_event(&mut desktop, "partnerRoute.closed", |d| {
+        d["routeId"] == o.id.as_str()
+    })
+    .await;
+    assert_eq!(c["reason"], "closed_by_owner");
+    let m = on_route(&mut phone.ws, &o.down)
+        .await
+        .expect("the relay closes down");
+    assert_eq!(m["op"], "partner.closed", "{m}");
+    let ev = phone
+        .event("partnerRoute.closed", |d| d["routeId"] == o.id.as_str())
+        .await;
+    assert_eq!(ev["reason"], "closed_by_owner");
+    let r = call(
+        &mut desktop,
+        77,
+        "relay.partnerRoute.send",
+        json!({ "routeId": o.id, "data": b64(b"late") }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+    let list = call(&mut s.app, 78, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(list["result"]["routes"], json!([]), "{list}");
+    let _ = o.id_bytes;
+}
+
+#[tokio::test]
+async fn hub_methods_sent_on_a_partner_route_are_refused_and_never_reach_a_printer() {
+    let mut s = setup().await;
+    sign_in(&mut s).await;
+    let mut desktop = partner_desktop(&mut s, "LayerMate").await;
+    let (mut phone, _) = partner_phone(&mut s, "LayerMate", 82).await;
+    let mut o = open_route(&mut desktop, &mut phone, "LayerMate").await;
+
+    // A request sealed for the session and sent on the route is refused: no reply, no bytes on.
+    let req = phone
+        .channel
+        .seal_text(&json!({ "t": "req", "id": 99, "m": "printers.list", "p": {} }).to_string())
+        .unwrap();
+    phone
+        .ws
+        .send(Message::text(
+            json!({ "op": "send", "to": o.up, "body": req }).to_string(),
+        ))
+        .await
+        .unwrap();
+    // A chunk that looks like a request is only bytes: it goes to the desktop and is never run.
+    let looks_like =
+        json!({ "t": "req", "id": 98, "m": "print.local", "p": { "printerId": "bay-4" } }).to_string();
+    phone_sends(&mut phone, &mut o.chan, &o.up, looks_like.as_bytes()).await;
+    let d = app_event(&mut desktop, "partnerRoute.data", |_| true).await;
+    assert_eq!(
+        d["data"],
+        b64(looks_like.as_bytes()),
+        "only the chunk reaches the desktop"
+    );
+    assert!(
+        no_reply(&mut phone, 500).await,
+        "nothing on the route is answered as a hub method"
+    );
+    let list = call(&mut s.app, 80, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(list["result"]["routes"][0]["refused"], 1, "{list}");
+    assert_eq!(list["result"]["routes"][0]["bytesIn"], looks_like.len(), "{list}");
+
+    // The route's methods are the partner desktop's alone, and only for itself.
+    let r = call(
+        &mut desktop,
+        81,
+        "relay.partnerRoute.open",
+        json!({ "app": "OtherMate" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let r = call(
+        &mut s.agent,
+        82,
+        "relay.partnerRoute.open",
+        json!({ "app": "LayerMate" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let r = call(
+        &mut s.agent,
+        83,
+        "relay.partnerRoute.close",
+        json!({ "routeId": o.id }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // The partner key still reaches nothing that moves a printer.
+    for m in ["print.local", "start", "gcode", "remote.status", "clients.create"] {
+        let r = call(&mut desktop, 84, m, json!({})).await;
+        assert_eq!(r["error"]["code"], "forbidden", "{m}: {r}");
+    }
+    // Over the session, the phone has no way to open or feed a route.
+    for m in [
+        "relay.partnerRoute.open",
+        "relay.partnerRoute.send",
+        "partnerRoute.send",
+    ] {
+        let r = phone.call(m, json!({ "app": "LayerMate" })).await;
+        assert_eq!(r["ok"], false, "{m}: {r}");
+    }
+    // An ordinary phone has no partner routes at all.
+    let key: [u8; 32] = rand_bytes();
+    put(&mut s.app, &key, "phone", 83).await;
+    let mut ours = Device::open(&s.relay, &key).await.expect("a session");
+    let r = ours.call("partnerRoute.list", json!({})).await;
+    assert_eq!(r["e"]["code"], "not_supported", "{r}");
+    let _ = (o.id_bytes, o.down);
+}
+
+#[tokio::test]
+async fn partner_routes_need_a_signed_in_hub_and_close_at_the_relay_cap_and_with_their_desktop() {
+    let small = sx_relay::quota::PartnerLimits {
+        bytes_per_route_per_day: 64,
+        ..sx_relay::quota::PartnerLimits::default()
+    };
+    let mut s = setup_on(relay_with(small).await, None).await;
+    let mut desktop = partner_desktop(&mut s, "LayerMate").await;
+    let (mut phone, _) = partner_phone(&mut s, "LayerMate", 84).await;
+
+    // An anonymous hub opens nothing: partner routes belong to an account.
+    let r = call(
+        &mut desktop,
+        90,
+        "relay.partnerRoute.open",
+        json!({ "app": "LayerMate" }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    assert!(
+        r["error"]["message"].as_str().unwrap_or("").contains("signed-in"),
+        "{r}"
+    );
+    let list = call(&mut s.app, 91, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(list["result"]["routes"], json!([]), "{list}");
+
+    // Past the relay's bytes for the route, it closes and the desktop hears why.
+    sign_in(&mut s).await;
+    let o = open_route(&mut desktop, &mut phone, "LayerMate").await;
+    let r = call(
+        &mut desktop,
+        92,
+        "relay.partnerRoute.send",
+        json!({ "routeId": o.id, "data": b64(&[7u8; 100]) }),
+    )
+    .await;
+    assert_eq!(r["result"]["sent"], 100, "the hub hands it on: {r}");
+    let c = app_event(&mut desktop, "partnerRoute.closed", |d| {
+        d["routeId"] == o.id.as_str()
+    })
+    .await;
+    assert_eq!(c["reason"], "route_cap", "{c}");
+    let ev = phone
+        .event("partnerRoute.closed", |d| d["routeId"] == o.id.as_str())
+        .await;
+    assert_eq!(ev["reason"], "route_cap");
+
+    // A route goes with the desktop connection that opened it.
+    let o = open_route(&mut desktop, &mut phone, "LayerMate").await;
+    drop(desktop);
+    let ev = phone
+        .event("partnerRoute.closed", |d| d["routeId"] == o.id.as_str())
+        .await;
+    assert_eq!(ev["reason"], "desktop_gone");
+    let list = call(&mut s.app, 93, "relay.partnerRoute.list", json!({})).await;
+    assert_eq!(list["result"]["routes"], json!([]), "{list}");
+
+    // Unpairing the phone closes its routes too.
+    let mut desktop = partner_desktop(&mut s, "LayerMate").await;
+    let o = open_route(&mut desktop, &mut phone, "LayerMate").await;
+    let r = call(
+        &mut s.app,
+        94,
+        "remote.pairings.remove",
+        json!({ "pairingId": ps::b64(&[84; 16]) }),
+    )
+    .await;
+    assert_eq!(r["result"]["removed"], true, "{r}");
+    let c = app_event(&mut desktop, "partnerRoute.closed", |d| {
+        d["routeId"] == o.id.as_str()
+    })
+    .await;
+    assert_eq!(c["reason"], "unpaired", "{c}");
 }
 
 // ---- remote start with a plate pass, a queued plate's start, and skipping one object from afar ----
