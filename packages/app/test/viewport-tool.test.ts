@@ -3,7 +3,7 @@
 // The tool the 3D view runs for the app's tool. Scale shows the view's scale handles; before, it ran plain selection,
 // so picking Scale and clicking a model showed nothing on the plate.
 import { describe, expect, it } from 'vitest'
-import { viewportTool } from '../src/viewport/viewport-host'
+import { movableFor, viewportTool } from '../src/viewport/viewport-host'
 
 describe('the viewport tool', () => {
   it('shows the scale handles for the scale tool', () => {
@@ -26,5 +26,16 @@ describe('the viewport tool', () => {
   it('runs the brim tool as a selection when the view has no brim mode', () => {
     expect(viewportTool('brim', false, true)).toBe('brim')
     expect(viewportTool('brim', false, false)).toBe('select')
+  })
+})
+
+describe('what a press on a model moves', () => {
+  it('on a phone, only a drag on a model already selected moves it, in Slice and in Model', () => {
+    expect(movableFor('slim')).toBe('selected')
+    expect(movableFor('model')).toBe('selected')
+  })
+
+  it('off a phone, the tool and the controls preset decide', () => {
+    expect(movableFor(false)).toBe(true)
   })
 })
