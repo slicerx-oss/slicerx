@@ -146,7 +146,7 @@ export function slotGroups(slots: readonly FilamentSlot[], live: PrinterLive | u
       const climate = unitClimateText(unit?.climate)
       g = {
         id: letter,
-        label: letter === 'external' ? 'External spool' : kind && kind !== 'external' ? FILAMENT_UNIT_LABEL[kind] : filamentUnitName(model, 'ams'),
+        label: letter === 'external' ? 'External spool' : ((kind && kind !== 'external' ? FILAMENT_UNIT_LABEL[kind] : undefined) ?? filamentUnitName(model, 'ams')),
         ...(unit?.feeds ? { feeds: `${unit.feeds} nozzle` } : {}),
         ...(climate ? { climate } : {}),
         slots: [],
