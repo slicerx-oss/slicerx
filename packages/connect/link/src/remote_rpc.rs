@@ -250,6 +250,14 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
         .ok_or_else(|| err("forbidden", "this device is no longer paired"))?;
     match method {
         "host.info" => host_info(b, &pairing),
+        // A partner phone's open partner routes, with the relay routes to use (partner_route.rs).
+        // The bytes themselves never come through here.
+        "partnerRoute.list" => crate::partner_route::phone_list(b, &pairing).ok_or_else(|| {
+            err(
+                "not_supported",
+                "partner routes are for a partner app's own phone",
+            )
+        }),
         "printers.list" => Ok(Value::Array(
             b.printers.lock().await.values().map(|r| r.info.clone()).collect(),
         )),
