@@ -157,8 +157,8 @@ describe('finished sketches in the design tools', () => {
     expect(solved.summary).toBe('Sketch 2 is in the timeline, 2 splines, 9 degrees of freedom left')
     const input = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design }).find((t) => t.name === 'design.sketch')!.input
     expect(input.safeParse({ loops, constraints: cons }).success).toBe(true)
-    expect(input.safeParse({ loops: [{ start: [0, 0], segments: [{ type: 'spline', points: [], to: [1, 1] }] }] }).success).toBe(false)
-    expect(input.safeParse({ loops: [{ type: 'spline', points: [[0, 0], [1, 1]] }] }).success).toBe(false)
+    await expect(run('design.sketch', { loops: [{ start: [0, 0], segments: [{ type: 'spline', points: [], to: [1, 1] }] }] })).rejects.toThrow(/needs 1 or more points/)
+    await expect(run('design.sketch', { loops: [{ type: 'spline', points: [[0, 0], [1, 1]] }] })).rejects.toThrow(/3 or more points/)
   })
 
   it('refuses constraints that conflict, and constraints on a host that cannot solve', async () => {

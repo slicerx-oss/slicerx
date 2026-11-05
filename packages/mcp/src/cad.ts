@@ -147,7 +147,7 @@ const segment = z
   .object({
     type: z.enum(['line', 'arc', 'spline']),
     to: vec2.optional(),
-    points: z.array(vec2).min(1).max(512).optional().describe('spline: the points it passes through between where it starts and to, in order'),
+    points: z.array(vec2).max(512).optional(),
     lengthMm: z.number().optional(),
     angleDeg: z.number().optional(),
     turnDeg: z.number().optional(),
@@ -158,16 +158,16 @@ const segment = z
     clockwise: z.boolean().optional(),
     large: z.boolean().optional(),
   })
-  .describe('{"type":"line","to":[u,v]}, {"type":"line","lengthMm":l,"angleDeg":a}, {"type":"line","lengthMm":l,"turnDeg":t}, {"type":"arc","center":[u,v],"sweepDeg":s}, {"type":"arc","to":[u,v],"through":[u,v]}, {"type":"arc","to":[u,v],"radiusMm":r,"clockwise"?:b,"large"?:b}, {"type":"arc","radiusMm":r,"sweepDeg":s} (tangent), or {"type":"spline","points":[[u,v],...],"to":[u,v]} (a smooth curve through the points to its end; flattened within 0.005 mm, half the default slice resolution, so every replay draws it the same)')
+  .describe('{"type":"line","to":[u,v]}, {"type":"line","lengthMm":l,"angleDeg":a}, {"type":"line","lengthMm":l,"turnDeg":t}, {"type":"arc","center":[u,v],"sweepDeg":s}, {"type":"arc","to":[u,v],"through":[u,v]}, {"type":"arc","to":[u,v],"radiusMm":r,"clockwise"?:b,"large"?:b}, {"type":"arc","radiusMm":r,"sweepDeg":s} (tangent), or {"type":"spline","points":[[u,v],...],"to":[u,v]} (smooth, within 0.005 mm)')
 
 const loop = z
   .union([
     z.object({ type: z.literal('circle'), center: vec2, diameterMm: z.number().positive() }),
     z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }),
-    z.object({ type: z.literal('spline'), points: z.array(vec2).min(3).max(4096) }),
+    z.object({ type: z.literal('spline'), points: z.array(vec2).max(4096) }),
     z.object({ points: z.array(vec2).min(3).max(4096) }),
   ])
-  .describe('A closed loop: {"points":[[u,v],...]} (straight sides), {"type":"spline","points":[[u,v],...]} (a smooth closed curve through the points), {"type":"circle","center":[u,v],"diameterMm":d}, or {"start":[u,v],"segments":[...]}. A loop inside another is a hole')
+  .describe('A closed loop: {"points":[[u,v],...]}, {"type":"spline","points":[[u,v],...]}, {"type":"circle","center":[u,v],"diameterMm":d}, or {"start":[u,v],"segments":[...]}. A loop inside another is a hole')
 
 const loops = z.array(loop).min(1).max(256)
 
@@ -186,13 +186,13 @@ const sketchConstraint = z
   .describe('Fields by type: a, b (points, or lines and circles by entity index), point, line, circle, value (mm, or degrees for angle)')
 
 // a finished sketch's constraints name its loops: points by loop, place and segment, lines and circles by loop and segment
-const loopPoint = z.object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter', 'point']), seg: z.number().int().min(0).optional(), i: z.number().int().min(0).optional() })
+const loopPoint = z.object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter', 'point']), seg: z.number().int().min(0).optional(), i: z.number().optional() })
 const loopCurve = z.object({ e: z.number().int().min(-1), seg: z.number().int().min(0) })
 const loopConstraint = z
   .object({ type: z.enum(SKETCH_CONSTRAINTS), driven: z.literal(true).optional(), expr: z.string().max(200).optional() })
   .catchall(z.union([z.number(), loopPoint, loopCurve]))
   .describe(
-    'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter | point, seg} (to and arcCenter take the segment; point is spline point i, {e, at: point, seg, i} among the points of a spline segment, or {e, at: point, i} on a closed spline loop; e -1 at start is the sketch origin). The points of a spline take point constraints; its curve takes none yet, so a spline segment is never a line, arc or circle below. A line, arc or circle is {e: loop, seg} (a circle is seg 0; e -1 seg 0 is the X axis of the sketch, so an angle from it sets the direction of a line). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
+    'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter | point, seg} (to and arcCenter take the segment; point is spline point i, no seg on a spline loop; e -1 at start is the sketch origin), a line, arc or circle is {e: loop, seg} (a circle is seg 0; e -1 seg 0 is the X axis of the sketch, so an angle from it sets the direction of a line). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
   )
 
 const shape = z
@@ -211,6 +211,17 @@ const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a
 const edgeRef = z
   .object({ a: vec3, b: vec3, face: vec3, center: vec3.optional(), keys: z.tuple([z.number(), z.number()]).optional() })
   .describe('An edge as slicerx_geom_edge_pick returns it: end points a and b, the normal of its first face, and on a design the keys of its two faces; pass it as is')
+
+/** Refuses a spline segment with no points and a closed spline of fewer than 3; the schema leaves the counts out to stay short. */
+function splinesOk(loops: readonly object[]): void {
+  loops.forEach((l, n) => {
+    if ('type' in l && l.type === 'spline' && 'points' in l && Array.isArray(l.points) && l.points.length < 3) throw new ToolInputError(`loops[${n}]: a closed spline needs 3 or more points`)
+    const segs = 'segments' in l && Array.isArray(l.segments) ? (l.segments as { type?: string; points?: unknown[] }[]) : []
+    segs.forEach((g, k) => {
+      if (g.type === 'spline' && !g.points?.length) throw new ToolInputError(`loops[${n}].segments[${k}]: a spline needs 1 or more points before to`)
+    })
+  })
+}
 
 /** ", 2 splines" for a sketch with splines in it, else nothing. */
 function splines(loops: readonly object[]): string {
@@ -424,7 +435,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. Splines are checked as drawn, flattened within 0.005 mm. Positions are as typed; slicerx_geom_sketch_solve solves constraints first.',
+    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. Positions are as typed; slicerx_geom_sketch_solve solves constraints first.',
     input: z.object({ loops }),
     async run(i) {
       const out = deps.designs && !deps.files.engine ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
@@ -460,7 +471,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description:
-      'Edit sketch loops as the sketch tools do, and get the loops back: "intersect" lists where segments cross; "trim" takes off the piece of a segment around a point, back to the nearest crossings (a curve that crosses nothing goes whole); "extend" runs an open loop\'s end segment on to the nearest curve; "mirror" adds copies of picked loops across a line; "pattern" adds copies along a step or round a center. Loops and segments count from 0. `from` gives, for each loop back, the loops it came from (a trim joins what is left to open chains its ends meet, and closes it when the ends meet). Mirror and pattern copy splines as their points; intersect, trim and extend refuse a sketch with a spline for now. Pass the loops on to slicerx_design_sketch or slicerx_geom_extrude.',
+      'Edit sketch loops as the sketch tools do, and get the loops back: "intersect" lists where segments cross; "trim" takes off the piece of a segment around a point, back to the nearest crossings (a curve that crosses nothing goes whole); "extend" runs an open loop\'s end segment on to the nearest curve; "mirror" adds copies of picked loops across a line; "pattern" adds copies along a step or round a center. Loops and segments count from 0. `from` gives, for each loop back, the loops it came from (a trim joins what is left to open chains its ends meet, and closes it when the ends meet). Intersect, trim and extend refuse splines. Pass the loops on to slicerx_design_sketch or slicerx_geom_extrude.',
     input: z.object({
       loops,
       op: z.enum(['intersect', 'trim', 'extend', 'mirror', 'pattern']),
@@ -559,7 +570,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.3.0',
     source: 'command',
     permission: 'slice',
-    description: 'Revolve a sketch profile (lines, arcs and splines) around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. With "design" it adds a step to the design; with no design it writes the result as an STL.',
+    description: 'Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. With "design" it adds a step to the design; with no design it writes the result as an STL.',
     input: z.object({
       loops: loops.optional(),
       sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch); its plane and loops are the shape, so leave shape and frame out. The step names the sketch'),
@@ -697,6 +708,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     description: `Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines, arcs and splines on the bed, any plane or a picked face. With constraints (dimensions among them) the sketch is solved first, as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch is kept driven (it reports the size). Returns the sketch's id and name, and with constraints the degrees of freedom left and which dimensions are driven; pass the id as sketch to slicerx_geom_extrude or slicerx_geom_revolve with a design to make a feature from it. Works on the project open in the app, through the app link.`,
     input: z.object({ loops, frame: frameSchema.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
     async run(i) {
+      splinesOk(i.loops)
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
       const frame = frameOf(i.frame)
