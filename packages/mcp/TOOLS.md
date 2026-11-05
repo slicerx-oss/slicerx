@@ -132,7 +132,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_sketch_solve` |  |  | read | Solve a constrained 2D sketch, as the sketch tool does: points, lines, circles and arcs held by constraints (coincident, horizontal, parallel, tangent, distance, angle and the rest). |
 | `slicerx_geom_split` |  |  | slice | Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. |
 | `slicerx_geom_subtract` |  |  | slice | Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. |
-| `slicerx_geom_sweep` |  |  | slice | Sweep one closed sketch profile along an open path to make a solid: the profile keeps its place and turn relative to the path (it does not twist about it), with straight sides between path points and flat ends. |
+| `slicerx_geom_sweep` |  |  | slice | Sweep a closed sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step. |
 | `slicerx_get_policy` | Permission policy | core | read, ungated | Show the permission policy the user set for this server: Allow, Ask first or Off for each action class, and per-printer exceptions. |
 | `slicerx_get_profile` | Get a profile | settings | read, ungated | Return the settings a profile sets, with inherits chains resolved. |
 | `slicerx_hollow` |  |  | slice | Hollow a solid part to a wall thickness and cut drain holes through the face that rests on the bed, for light parts, resin export or filling. |
