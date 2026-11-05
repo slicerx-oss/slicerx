@@ -6,9 +6,10 @@
 // pending approvals, so one client cannot list or approve another's requests.
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { httpTransport } from './http-transport'
 
 export interface HttpOptions {
   host: string
@@ -59,6 +60,7 @@ function tokenMatches(header: string | undefined, token: string): boolean {
 export async function startHttp(makeServer: () => McpServer, opts: HttpOptions): Promise<Server> {
   if (!opts.token || opts.token.length < 32) throw new Error('Refusing to serve HTTP without a bearer token of at least 32 characters.')
   const token = opts.token
+  const HttpTransport = await httpTransport()
   const allowedHosts = new Set([...LOOPBACK, ...(opts.allowedHosts ?? [])])
   const maxSessions = opts.maxSessions ?? 16
   const idleMs = opts.idleMs ?? 60 * 60 * 1000
@@ -102,7 +104,7 @@ export async function startHttp(makeServer: () => McpServer, opts: HttpOptions):
     // A request without a session id must be initialize; the transport refuses anything else.
     sweep()
     const server = makeServer()
-    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+    const transport: StreamableHTTPServerTransport = new HttpTransport({
       sessionIdGenerator: () => randomUUID(),
       // JSON responses instead of SSE, since no tool streams.
       enableJsonResponse: true,
