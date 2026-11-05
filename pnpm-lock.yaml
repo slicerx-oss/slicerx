@@ -195,6 +195,9 @@ importers:
       '@slicerx/pilot':
         specifier: workspace:*
         version: link:../../../../packages/pilot
+      '@slicerx/printer-catalog':
+        specifier: workspace:*
+        version: link:../../../../packages/connect/catalog
       '@slicerx/settings':
         specifier: workspace:*
         version: link:../../../../packages/settings
