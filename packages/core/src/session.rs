@@ -212,6 +212,9 @@ pub struct SliceSession {
     followers: Vec<SliceSession>,
     /// Per object of the sequence (this one first): its own setting overrides, when they differ.
     object_settings: Vec<serde_json::Value>,
+    /// Per object of the sequence (this one first): the extruder whose nozzle it prints with, when its size is not
+    /// the first extruder's ([`crate::nozzles::nozzle_of_object`]).
+    object_nozzles: Vec<Option<usize>>,
     /// Objects print layer by layer (each layer holds every object's paths) instead of one after
     /// the other.
     interleave: bool,
@@ -1390,14 +1393,19 @@ impl SliceSession {
             && printable
                 .windows(2)
                 .any(|w| matches!(w, [a, b] if (z_turn(a) - z_turn(b)).abs() > 1e-6));
-        let differing = printable.iter().any(|o| !o.settings.is_null()) || scoped || turned;
+        // Nozzles of different sizes: each object prints with its filament's nozzle, and one whose size is not the
+        // first extruder's gets a session of its own on that nozzle's settings.
+        let nozzles = object_nozzles(&printable, config)?;
+        let renozzled = nozzles.iter().any(Option::is_some);
+        let differing = printable.iter().any(|o| !o.settings.is_null()) || scoped || turned || renozzled;
         // Copies of one object on a layer-by-layer plate: each object is sliced once and printed at its copies.
         let copies = if config.print_by_object() || differing || !ranges.is_empty() || printable.len() < 2 {
             None
         } else {
             copies_of(&printable, config)
         };
-        if copies.is_none() && (!(config.print_by_object() || differing) || printable.len() < 2) {
+        if copies.is_none() && (!(config.print_by_object() || differing) || printable.len() < 2) && !renozzled
+        {
             let own = match (scoped, printable.first()) {
                 (true, Some(o)) => object_ranges(ranges, &o.id, false),
                 _ => ranges.to_vec(),
@@ -1438,8 +1446,18 @@ impl SliceSession {
         let printable_index: Vec<u16> = printable.iter().map(|o| plate_index_of(o)).collect();
         let mut subs: Vec<Self> = Vec::with_capacity(sliced.len());
         let mut own_cfgs: Vec<PrintConfig> = Vec::with_capacity(sliced.len());
+        let nozzle_of = |obj: &crate::plate::PlateObject| {
+            printable
+                .iter()
+                .position(|o| std::ptr::eq(*o, obj))
+                .and_then(|i| nozzles.get(i).copied().flatten())
+        };
         for obj in &sliced {
-            let own_cfg = object_config(config, &obj.settings)?;
+            let nozzle = nozzle_of(obj);
+            let own_cfg = match nozzle {
+                Some(e) => object_config(&config.for_nozzle(e)?, &obj.settings)?,
+                None => object_config(config, &obj.settings)?,
+            };
             let sub = Plate {
                 bed: plate.bed,
                 objects: vec![(*obj).clone()],
@@ -1470,6 +1488,25 @@ impl SliceSession {
                 hull_of(obj),
             )?;
             one.plate_index = plate_index_of(obj);
+            if nozzle.is_some() {
+                let far = own_cfg.widths_far_from_nozzle();
+                if !far.is_empty() {
+                    let list: Vec<String> = far.iter().map(|(k, w)| format!("{k} {w} mm")).collect();
+                    let d = own_cfg.nozzle_diameter;
+                    one.push_warning(SliceWarning {
+                        code: WarningCode::UnsupportedSetting,
+                        message: format!(
+                            "{} prints with a {d} mm nozzle, and these line widths are set for another size: {}; they \
+                             print as set (from {} to {} mm suits this nozzle)",
+                            obj.name,
+                            list.join(", "),
+                            (0.6 * d * 1000.0).round() / 1000.0,
+                            (2.0 * d * 1000.0).round() / 1000.0
+                        ),
+                        layer: None,
+                    });
+                }
+            }
             subs.push(one);
             own_cfgs.push(own_cfg);
         }
@@ -1518,6 +1555,7 @@ impl SliceSession {
         // Orca refuses a by-object plate whose objects stand closer than the clearance radius or taller than the
         // gantry; here it slices, and the collision check (`collide`) reports every move that would meet a part.
         first.object_settings = sliced.iter().map(|o| o.settings.clone()).collect();
+        first.object_nozzles = sliced.iter().map(|o| nozzle_of(o)).collect();
         first.interleave = !config.print_by_object();
         // Objects with layer heights of their own print layer by layer on the plate's layers, the union of
         // their layer tops; only the prime tower needs one layer height across the plate.
@@ -1536,15 +1574,14 @@ impl SliceSession {
             first.plan_plate_tools(config)?;
             if let Some(name) = mixed
                 .as_deref()
-                .filter(|_| first.plate_tools().is_some_and(|p| p.tower_top.is_some()))
+                // Only a tower that prints: with the tower off a plate of several filaments changes them in place.
+                .filter(|_| {
+                    first.tower_shape.is_some() && first.plate_tools().is_some_and(|p| p.tower_top.is_some())
+                })
             {
                 return Err(Error::Config {
                     key: "enable_prime_tower",
-                    reason: format!(
-                        "{name} has a layer height of its own, and a prime tower needs one layer height for every \
-                         object on the plate; give the objects the same layer height, turn the prime tower off, or \
-                         print by object"
-                    ),
+                    reason: crate::nozzles::tower_one_height(name),
                 });
             }
             // Each object plans its support layers as one session of the plate would: on the object's layers when
@@ -2024,6 +2061,7 @@ impl SliceSession {
             painted_objects,
             followers: Vec::new(),
             object_settings: Vec::new(),
+            object_nozzles: Vec::new(),
             interleave: false,
             plate_tools: None,
             overrides,
@@ -2978,9 +3016,14 @@ impl SliceSession {
 
     /// The settings of the `k`th object of the sequence: the plate's plus its own overrides.
     pub(crate) fn object_config(&self, k: usize, config: &PrintConfig) -> Result<PrintConfig> {
+        let nozzle = self.object_nozzles.get(k).copied().flatten();
+        let base = match nozzle {
+            Some(e) => std::borrow::Cow::Owned(config.for_nozzle(e)?),
+            None => std::borrow::Cow::Borrowed(config),
+        };
         match self.object_settings.get(k) {
-            Some(v) => object_config(config, v),
-            None => Ok(config.clone()),
+            Some(v) => object_config(&base, v),
+            None => Ok(base.into_owned()),
         }
     }
 
@@ -2998,6 +3041,7 @@ impl SliceSession {
     /// True when the `k`th object of the sequence carries settings of its own.
     pub(crate) fn has_object_settings(&self, k: usize) -> bool {
         self.object_settings.get(k).is_some_and(|v| !v.is_null())
+            || self.object_nozzles.get(k).copied().flatten().is_some()
     }
 
     /// The height range settings this object's last layer prints with, when a range covers it.
@@ -15144,6 +15188,103 @@ fn shapes_area(shapes: &Shapes) -> f64 {
 fn z_turn(o: &crate::plate::PlateObject) -> f64 {
     let t = &o.transform;
     f64::from(t[1]).m_atan2(f64::from(t[0])).to_degrees()
+}
+
+/// Per printable object: the extruder whose nozzle it prints with when the printer's nozzles differ in size and its
+/// nozzle is not the first extruder's size ([`crate::nozzles::nozzle_of_object`]). Refuses an object on nozzles of two
+/// sizes, and one whose nozzle is smaller than the plate's first layer is tall.
+fn object_nozzles(
+    printable: &[&crate::plate::PlateObject],
+    config: &PrintConfig,
+) -> Result<Vec<Option<usize>>> {
+    if !crate::nozzles::per_nozzle(config) {
+        return Ok(vec![None; printable.len()]);
+    }
+    printable
+        .iter()
+        .map(|o| {
+            let nozzle = crate::nozzles::nozzle_of_object(config, &o.name, &object_slots(o, config))?;
+            if let Some(n) = nozzle {
+                let d = n.mm;
+                let first = config.initial_layer_print_height;
+                if first > d + 1e-9 {
+                    return Err(Error::Config {
+                        key: "initial_layer_print_height",
+                        reason: format!(
+                            "the first layer is {first} mm, taller than the {d} mm nozzle {} prints with; lower the \
+                             first layer height to {d} mm or less",
+                            o.name
+                        ),
+                    });
+                }
+            }
+            Ok(nozzle.map(|n| n.extruder))
+        })
+        .collect()
+}
+
+/// The extruder whose nozzle `obj` prints with on `config` when the printer's nozzles differ in size and its nozzle is
+/// not the first extruder's size ([`crate::nozzles::nozzle_of_object`]); none otherwise.
+pub(crate) fn object_nozzle(obj: &crate::plate::PlateObject, config: &PrintConfig) -> Result<Option<usize>> {
+    if !crate::nozzles::per_nozzle(config) {
+        return Ok(None);
+    }
+    Ok(crate::nozzles::nozzle_of_object(config, &obj.name, &object_slots(obj, config))?.map(|n| n.extruder))
+}
+
+/// The filaments (1-based) `obj` prints with on `cfg`, its settings over the plate's: its parts' after the plate's
+/// overrides, the features its or its parts' settings move to another filament, its paint, and its supports' when
+/// supports or a raft print. Read from the settings as given, before any of them is checked.
+fn object_slots(obj: &crate::plate::PlateObject, cfg: &PrintConfig) -> Vec<u8> {
+    let setting = |k: &str| obj.settings.get(k).or_else(|| cfg.raw.get(k));
+    let number = |k: &str| {
+        setting(k).and_then(|v| match v {
+            serde_json::Value::Array(a) => a.first().and_then(serde_json::Value::as_f64),
+            serde_json::Value::Number(n) => n.as_f64(),
+            serde_json::Value::String(t) => t.split(',').next().and_then(|t| t.trim().parse().ok()),
+            serde_json::Value::Bool(b) => Some(f64::from(u8::from(*b))),
+            serde_json::Value::Null | serde_json::Value::Object(_) => None,
+        })
+    };
+    let mut out = Vec::new();
+    for p in obj.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
+        let slot = obj.slot_for(&p.name, p.slot);
+        out.push(slot);
+        let own = obj
+            .part_settings
+            .iter()
+            .chain(&obj.mesh.part_settings)
+            .find(|(n, _)| *n == p.name)
+            .map(|(_, v)| v);
+        let get = |k: &str| own.and_then(|v| v.get(k)).or_else(|| setting(k));
+        out.extend(feature_slots(get, slot).into_iter().filter(|&s| s > 0));
+        out.extend(p.paint.iter().map(|f| f.state).filter(|&s| s > 0));
+    }
+    let supports = obj
+        .settings
+        .get("enable_support")
+        .map_or(cfg.enable_support, |_| {
+            number("enable_support").is_some_and(|v| v != 0.0)
+        })
+        || number("raft_layers").is_some_and(|v| v >= 1.0);
+    if supports {
+        for key in ["support_filament", "support_interface_filament"] {
+            let asked = number(key).unwrap_or(0.0);
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a filament slot"
+            )]
+            let s = asked.clamp(0.0, 255.0).round() as u8;
+            // As `support_slot` reads it: a slot past the plate's filaments is the active one.
+            if s > 0 && filament_count(cfg).is_none_or(|n| usize::from(s) <= n) {
+                out.push(s);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 /// `plate` without the objects' own first layer heights when it prints layer by layer and they differ between its
