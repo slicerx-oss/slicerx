@@ -8,6 +8,7 @@ import { usePilotRun } from '@slicerx/pilot/run'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createDemoClient } from '../pilot/demo-client'
+import { onHomeNetwork } from './home-network'
 import { bundledKb } from './kb'
 import { get, set, usePocket } from '../state/store'
 import { usePocketHost } from './provider'
@@ -26,7 +27,8 @@ export function usePocketPilot() {
   const pilot = useMemo(
     () =>
       createPilot({
-        host: { printers: host.printers, slicer: host.slicer, llm: host.llm, approvals: host.approvals },
+        // Away from home (through the relay) mimir offers no link to a printer's own page.
+        host: { printers: host.printers, slicer: host.slicer, llm: host.llm, approvals: host.approvals, localNetwork: () => onHomeNetwork(host.printers) },
         config,
         policy: get().policy,
         kb: bundledKb(),
