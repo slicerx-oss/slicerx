@@ -669,9 +669,10 @@ fn tops(g: &str) -> BTreeMap<i64, f64> {
 #[test]
 fn a_classic_top_the_walls_edge_keeps_its_line_ends() {
     // With only_one_wall_top off and smart layers, the x-mark's step tops at z 5.92 and 6.07 start at the innermost
-    // wall's spacing edge, where the walls put them, and their lines end 0.05 spacing inside that surface: 695.90 and
-    // 2196.29 mm of top surface. Reading the edge from the infill area instead pulls every line end in, to 683.23
-    // and 2182.27.
+    // wall's spacing edge, where the walls put them, and their lines end 0.05 spacing inside that surface: 672.36 and
+    // 2127.23 mm of top surface, the lines laid at the spacing of their layers, which smart layers make thinner than
+    // the 0.2 mm setting (at the setting's spacing, 695.90 and 2196.29). Reading the edge from the infill area
+    // instead pulls every line end in (683.23 and 2182.27 at the setting's spacing).
     for model in ["bambu-a1", "bambu-p1s"] {
         let config = measured(
             model,
@@ -681,7 +682,7 @@ fn a_classic_top_the_walls_edge_keeps_its_line_ends() {
             ],
         );
         let t = tops(&slice(&xmark(), config));
-        for (z, want) in [(5.92, 695.90), (6.07, 2196.29)] {
+        for (z, want) in [(5.92, 672.36), (6.07, 2127.23)] {
             let got = t.get(&hundredths(z)).copied().unwrap_or(0.0);
             assert!(
                 (got - want).abs() <= 0.3,

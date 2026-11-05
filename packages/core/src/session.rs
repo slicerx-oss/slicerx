@@ -1112,6 +1112,16 @@ impl Families {
         }
     }
 
+    /// [`Families::new`] on a layer `layer_height` mm thick: its solid lines print their width at that height, which
+    /// variable layer heights can make thinner or thicker than the settings' `layer_height`, so they are laid at
+    /// that height's spacing.
+    fn at(cfg: &PrintConfig, layer_height: f64) -> Self {
+        Self {
+            solid_spacing: paths::t_units(cfg.spacing_at(cfg.solid_infill_width(), layer_height)),
+            ..Self::new(cfg)
+        }
+    }
+
     fn solid(self, dir: Dir) -> Family {
         Family {
             dir,
@@ -6307,7 +6317,7 @@ impl SliceSession {
                         cache: None,
                         tag: 0,
                         whole_lower: None,
-                        classic: classic_top_edges(cfg, w, overlap),
+                        classic: classic_top_edges(cfg, w, overlap, self.plan.thickness(l)),
                         band_top: None,
                     });
                     sparse.push(cls.sparse);
@@ -8597,7 +8607,8 @@ impl SliceSession {
         } else {
             surface_edge(cfg, layer_height, overlap / 100.0, loops)?
         };
-        let spacing = cfg.spacing_for(width);
+        // The surface's lines are laid at the spacing of this layer's own height.
+        let spacing = cfg.spacing_at(width, layer_height);
         // The lines' direction on the plate, as the surface fill turns them.
         let deg = frame_deg(
             self.template_angle(cfg, "solid_infill_rotate_template", layer),
@@ -8674,7 +8685,7 @@ impl SliceSession {
             .map(|i| &i.band_area)
             .filter(|a| !a.is_empty())
             .collect();
-        let narrowing = slit_narrowing(cfg, w);
+        let narrowing = slit_narrowing(cfg, w, self.plan.thickness(l));
         if bands.is_empty() || narrowing == 0 {
             return Some(inner);
         }
@@ -9026,7 +9037,7 @@ impl SliceSession {
                     } else {
                         cfg.infill_wall_overlap
                     } / 100.0;
-                    perimeters::classic_edges(cfg, loops, w, own_overlap, share)
+                    perimeters::classic_edges(cfg, loops, w, own_overlap, share, layer_height)
                 })
                 .flatten()
                 .filter(|_| !crate::tower::flag(cfg, "alternate_extra_wall"));
@@ -9502,7 +9513,7 @@ impl SliceSession {
                         cache: Some(&self.cache),
                         tag: cfg_tag,
                         whole_lower: None,
-                        classic: classic_top_edges(cfg, base_shell.w, base_overlap),
+                        classic: classic_top_edges(cfg, base_shell.w, base_overlap, self.plan.thickness(lu)),
                         band_top: None,
                     });
                     let (lines, paths) = sparse_of(lu, &cls.sparse);
@@ -9568,7 +9579,7 @@ impl SliceSession {
                         _ => 0.0,
                     },
                     slit_join: if crate::shells::slit_counts(cfg) {
-                        0.5 * f64::from(slit_narrowing(cfg, base_shell.w)) / SCALE
+                        0.5 * f64::from(slit_narrowing(cfg, base_shell.w, self.plan.thickness(layer))) / SCALE
                     } else {
                         0.0
                     },
@@ -9710,7 +9721,7 @@ impl SliceSession {
             // A region inside a modifier volume prints with the modifier's settings.
             let region_k = here.region_cfg.get(ri).copied().unwrap_or(0);
             let cfg = region_config(ri);
-            let fam = Families::new(cfg);
+            let fam = Families::at(cfg, layer_height);
             let own_shell;
             let sh = if region_k == 0 {
                 &base_shell
@@ -10083,7 +10094,7 @@ impl SliceSession {
                 });
             }
             // Narrow bands of internal solid infill are filled with variable-width beads instead of lines.
-            let solid_spacing_mm = cfg.spacing_for(cfg.solid_infill_width());
+            let solid_spacing_mm = cfg.spacing_at(cfg.solid_infill_width(), layer_height);
             let solid_name = match cfg.raw.get("internal_solid_infill_pattern") {
                 Some(serde_json::Value::String(s)) => s.as_str(),
                 _ => "monotonic",
@@ -10285,7 +10296,7 @@ impl SliceSession {
             }
             // The top surface prints at its own line width: its area is what the layer above leaves
             // uncovered, filled at that spacing (the layers under it keep the solid spacing).
-            let top_spacing = paths::t_units(cfg.spacing_for(cfg.top_surface_width()));
+            let top_spacing = paths::t_units(cfg.spacing_at(cfg.top_surface_width(), layer_height));
             if top_spacing != fam.solid_spacing && !top.is_empty() {
                 top = scan_area(
                     crate::infill::Family {
@@ -10462,9 +10473,9 @@ impl SliceSession {
                     surface_spacing
                 };
                 let surface_mm = spread(if which == 0 {
-                    cfg.spacing_for(cfg.top_surface_width())
+                    cfg.spacing_at(cfg.top_surface_width(), layer_height)
                 } else {
-                    cfg.spacing_for(cfg.solid_infill_width())
+                    cfg.spacing_at(cfg.solid_infill_width(), layer_height)
                 });
                 // A single wall under the top surfaces (`only_one_wall_top`) or on the first layer
                 // (`only_one_wall_first_layer`) moves the surface's edge where the rule was not measured, so those
@@ -11261,7 +11272,7 @@ impl SliceSession {
                     .filter(|i| !i.kept.is_empty())
                     .map(|i| (&i.kept, i.loops.iter().map(|(k, _)| k + 1).max().unwrap_or(0)))
                     .collect();
-                let solid_mm = cfg.spacing_for(cfg.solid_infill_width());
+                let solid_mm = cfg.spacing_at(cfg.solid_infill_width(), layer_height);
                 let gaps_of = |which: usize, mm_pitch: f64| {
                     let (Some(lines), Some(own), Some(target)) =
                         (curved.get(which), line_gaps.get(which), by_target.get(which))
@@ -11286,7 +11297,17 @@ impl SliceSession {
                             };
                             let from_edge = perimeters::offset(&area, -mm(e));
                             match (which == 0)
-                                .then(|| inner_wall_gaps(cfg, w, shapes, &inner, bands.as_ref(), &kept))
+                                .then(|| {
+                                    inner_wall_gaps(
+                                        cfg,
+                                        w,
+                                        layer_height,
+                                        shapes,
+                                        &inner,
+                                        bands.as_ref(),
+                                        &kept,
+                                    )
+                                })
                                 .flatten()
                             {
                                 // Beside inner walls the top's gap fill starts at their spacing edge. Where the
@@ -11328,7 +11349,11 @@ impl SliceSession {
                         crate::fillgap::gaps(&region, lines, mm_pitch, cfg)
                     }
                 };
-                work.gap_top = gaps_of(0, cfg.spacing_for(cfg.top_surface_width()).max(pitch[0]));
+                work.gap_top = gaps_of(
+                    0,
+                    cfg.spacing_at(cfg.top_surface_width(), layer_height)
+                        .max(pitch[0]),
+                );
                 work.gap_bottom = gaps_of(1, solid_mm.max(pitch[1]));
                 work.gap_shell = gaps_of(2, solid_mm);
             }
@@ -12654,13 +12679,25 @@ fn top_from_spacing_edge(cfg: &PrintConfig) -> bool {
     crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) && !crate::perimeters::one_wall_top(cfg)
 }
 
-/// The edges [`top_from_spacing_edge`] classifies a whole layer with, over `cfg.wall_loops` classic walls of line
-/// width `w` overlapping the infill area by `overlap` (internal units).
-fn classic_top_edges(cfg: &PrintConfig, w: i32, overlap: i32) -> Option<perimeters::ClassicEdges> {
+/// The edges [`top_from_spacing_edge`] classifies a whole layer `height` mm thick with, over `cfg.wall_loops` classic
+/// walls of line width `w` overlapping the infill area by `overlap` (internal units).
+fn classic_top_edges(
+    cfg: &PrintConfig,
+    w: i32,
+    overlap: i32,
+    height: f64,
+) -> Option<perimeters::ClassicEdges> {
     if !top_from_spacing_edge(cfg) || crate::tower::flag(cfg, "alternate_extra_wall") {
         return None;
     }
-    perimeters::classic_edges(cfg, cfg.wall_loops, w, overlap, cfg.infill_wall_overlap / 100.0)
+    perimeters::classic_edges(
+        cfg,
+        cfg.wall_loops,
+        w,
+        overlap,
+        cfg.infill_wall_overlap / 100.0,
+        height,
+    )
 }
 
 /// The areas of `bridges`, together.
@@ -12708,14 +12745,15 @@ fn classic_reedge(
 /// overlap's share of the inner wall's and the internal solid infill's spacings together, the overlap into the inner
 /// wall from both sides. On the stock P1S settings (0.45 mm inner walls, 0.42 mm internal solid infill, 0.2 mm layers,
 /// 15 percent) that is 0.160 mm. Only on two walls: with three or more the measured bridges and floating shell under a
-/// slope follow the slit as the walls lay it, so it is not narrowed (0).
-fn slit_narrowing(cfg: &PrintConfig, w: i32) -> i32 {
+/// slope follow the slit as the walls lay it, so it is not narrowed (0). The spacings are those of a layer `height`
+/// thick.
+fn slit_narrowing(cfg: &PrintConfig, w: i32, height: f64) -> i32 {
     if cfg.wall_loops != 2 {
         return 0;
     }
-    let p = perimeters::classic_pitch(cfg, w);
+    let p = perimeters::classic_pitch(cfg, w, height);
     let spacing = f64::from(p.spacing) / SCALE;
-    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let solid = cfg.spacing_at(cfg.solid_infill_width(), height);
     let wide = f64::from(p.inner - p.spacing) / SCALE;
     mm((cfg.infill_wall_overlap / 100.0).mul_add(spacing + solid, wide))
 }
@@ -12816,10 +12854,11 @@ fn one_wall_gap_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> f64 {
 /// infill area `bands` grown to the spacing edge of the inner walls beside it, not into the rest of the infill area
 /// `inner` nor past the outer wall's spacing edge, and the inside of the innermost wall's spacing edge on the islands
 /// that keep all their walls, `kept` (each outline with its wall count). Also how far the bands' part reaches past
-/// the infill area (internal units). `None` when the layer has neither.
+/// the infill area (internal units), on a layer `height` mm thick. `None` when the layer has neither.
 fn inner_wall_gaps(
     cfg: &PrintConfig,
     w: i32,
+    height: f64,
     shapes: &Shapes,
     inner: &Shapes,
     bands: Option<&Shapes>,
@@ -12828,11 +12867,12 @@ fn inner_wall_gaps(
     if bands.is_none() && kept.iter().all(|(_, loops)| *loops < 2) {
         return None;
     }
-    let laid = perimeters::classic_pitch(cfg, w);
+    let laid = perimeters::classic_pitch(cfg, w, height);
     let reach = (laid.inner - laid.spacing) / 2;
     let mut parts: Vec<Shapes> = Vec::new();
     if let Some(bands) = bands {
-        let outer_edge = laid.ext / 2 + mm(cfg.spacing_for(f64::from(laid.ext) / crate::geom::SCALE)) / 2;
+        let outer_edge =
+            laid.ext / 2 + mm(cfg.spacing_at(f64::from(laid.ext) / crate::geom::SCALE, height)) / 2;
         parts.push(perimeters::intersection(
             &perimeters::difference(
                 &perimeters::offset(bands, reach),
