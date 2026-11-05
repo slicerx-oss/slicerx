@@ -20,6 +20,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [your-own-mimir.md#print-runs](your-own-mimir.md#print-runs): print runs in an edition's mimir: what switching off the printers or design group removes, reading a run with `slicerx_mimir_run`, why an integrator never starts a print, and the busy printer rule
 - [holes.md](holes.md): `slicerx_geom_hole`, making a round hole another size (diameter, depth, counterbore or countersink) on a design or an STL, picked by its axis or its wall, with the hole read back before and after
 - [edge-drag.md](edge-drag.md): drag a part past a bed edge to send it to another plate with `@slicerx/viewport/edge-drag`: the plate adapter (plates, active plate, move with undo, drop target, obstacles), theming with `--sx-edge-*` properties, labels, accessibility and a check list
+- [cloud-slice.md](cloud-slice.md): cloud slicing over HTTPS from a phone or partner app on the person's own account: the partner app token the person issues and revokes, keeping it in secure storage, the routes, limits, errors and downloads, and `slicerx_cloud_access`
 - [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
 - [updates.md](updates.md): staying current: build from desktop-v or engine-v release tags, read each release's "For editions and integrations" section, and watch the urgent and integrators labels between releases
 

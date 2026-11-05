@@ -581,7 +581,7 @@ Questions to add to the interview in that case: which of the two they want, whet
 | They want | Plan |
 | --- | --- |
 | locked projects | `@slicerx/embed/sxlock` in any JavaScript runtime, or the `slicerx_sxlock_*` tools. Needs an `sxk_` token with `sxlock_open`, `sxlock_seal` or both, from the user's SlicerX account. Recipe D. |
-| cloud slicing | `slicerx_cloud_slice` and `slicerx_cloud_jobs`, with a token that has the `cloud_slice` scope and the server started with `--cloud-api <url>`. [quickstart.md](quickstart.md#token-scopes) lists the scopes and where the server reads each token. |
+| cloud slicing | `slicerx_cloud_slice`, `slicerx_cloud_jobs` and `slicerx_cloud_access`, with a token that has the `cloud_slice` scope (a partner app token the user makes under Settings, Account, Partner apps) and the server started with `--cloud-api <url>`. A phone app calls the HTTP API in [cloud-slice.md](cloud-slice.md). [quickstart.md](quickstart.md#token-scopes) lists the scopes and where the server reads each token. |
 
 ### Recipe D: locked projects (needs an account token)
 
