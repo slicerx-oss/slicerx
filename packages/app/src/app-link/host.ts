@@ -107,7 +107,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
     (r) => {
       console.info(`[app link] this window hosts the app link (origin ${r.origin ?? 'none'}, ${r.on ? 'on' : 'off'})`)
       // a phone that connects later reads it from the hub
-      tell({ waiting: phoneQuestion().waiting })
+      tell({ live: phoneQuestion().live, waiting: phoneQuestion().waiting })
     },
     (e: unknown) => console.warn(`[app link] this window cannot host the app link: ${e instanceof Error ? e.message : String(e)}`),
   )

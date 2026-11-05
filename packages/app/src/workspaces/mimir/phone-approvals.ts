@@ -3,7 +3,8 @@
 // mimir's approval cards for phones paired on the LAN. The mimir tab registers the cards waiting in its running reply;
 // the pairing host (approvalFeed) shows them to phones with the approve right and takes their signed decisions, which
 // go to the same pilot.resolveApproval a click on the card makes. Over the relay the hub carries mimir's cards itself.
-import type { ApprovalDecision, ApprovalRequest } from '@slicerx/contracts'
+import type { ApprovalDecision, ApprovalRequest, Pilot } from '@slicerx/contracts'
+import type { Transcript } from '@slicerx/pilot/ui'
 
 export interface PhoneApprovalCards {
   /** The approval cards waiting in the chat's running reply, oldest first. */
@@ -12,6 +13,25 @@ export interface PhoneApprovalCards {
   outcome(requestId: string): 'approve' | 'deny' | 'expired' | undefined
   /** Decides like a click on the card. Rejects when the card no longer waits. */
   resolve(requestId: string, decision: ApprovalDecision): Promise<void>
+}
+
+/** The mimir pane's cards: the ones still waiting in its running reply, and how each ended. */
+export function paneApprovalCards(transcript: () => Transcript, pilot: Pick<Pilot, 'resolveApproval'>): PhoneApprovalCards {
+  return {
+    pending: () => {
+      const t = transcript()
+      if (t.status !== 'running') return []
+      const out: ApprovalRequest[] = []
+      for (const turn of t.turns) for (const b of turn.blocks) if (b.kind === 'approval' && b.resolution === null && !b.replay) out.push(b.request)
+      return out
+    },
+    outcome: (id) => {
+      for (const turn of transcript().turns)
+        for (const b of turn.blocks) if (b.kind === 'approval' && b.request.id === id && b.resolution) return b.resolution.by === 'expiry' ? 'expired' : b.resolution.decision.kind
+      return undefined
+    },
+    resolve: (id, decision) => pilot.resolveApproval(id, decision),
+  }
 }
 
 let cards: PhoneApprovalCards | null = null
@@ -38,7 +58,10 @@ export function syncPhoneApprovals(): void {
 /** The chat whose approval cards LAN phones may decide registers here; null takes it away. */
 export function setPhoneApprovals(c: PhoneApprovalCards | null): void {
   cards = c
-  syncPhoneApprovals()
+  // the tab registers again whenever it rebuilds its runtime: its cards end only if no chat registers in the same turn,
+  // and the next registration's own cards decide what ended
+  if (c === null) queueMicrotask(() => cards === null && syncPhoneApprovals())
+  else syncPhoneApprovals()
 }
 
 /** The pairing host's view (`ApprovalFeed` in @slicerx/pair). */
