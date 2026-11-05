@@ -7,6 +7,8 @@
 // Cancel is an answer with no choice. An answer unlocks nothing on a printer: anything mimir does next asks for its
 // own approval. Agents never reach this; they may turn a question down (mimir.dismiss), never pick its answer.
 
+import { appName } from '../../edition'
+
 /** The question card version on the wire (`MIMIR_QUESTION_V` in @slicerx/pair). */
 export const PHONE_QUESTION_V = 1
 
@@ -46,7 +48,9 @@ export interface PhoneCards {
 
 /** The words a phone may show for each refusal, the same as the pairing host's. */
 export const PHONE_REFUSALS = {
-  closed: 'Open the mimir tab in SlicerX on your computer to answer this.',
+  get closed(): string {
+    return `Open the mimir tab in ${appName()} on your computer to answer this.`
+  },
   gone: 'This question was already answered or is no longer waiting.',
   choice: 'That is not one of the answers.',
 } as const
