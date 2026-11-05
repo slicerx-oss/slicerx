@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest'
 import speedsJson from '@slicerx/profiles/process-speeds.json'
 import printersJson from '../profiles/printers.json'
+import { settingDefault } from './defaults'
+import { processConfig } from './profiles'
 import { hasResolved, resolvedNozzles, resolvedProfile } from './resolved'
 import { stockLayer } from './stock-layer'
 
@@ -50,5 +52,58 @@ describe('resolved quality tiers', () => {
       }
     }
     expect(wrong.join('\n')).toBe('')
+  })
+})
+
+describe('plain Ender-3 V3 stock presets', () => {
+  const V3 = 'creality-ender-3-v3'
+  const one = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
+  const num = (values: Record<string, unknown>, k: string): number => Number(String(one(values[k] ?? settingDefault(k))).replace('%', ''))
+  const text = (values: Record<string, unknown>, k: string): string => String(one(values[k] ?? settingDefault(k)))
+  // The maker's presets: Fine, Standard and Draft on 0.4 mm, Optimal (our Fine), Standard and Draft on 0.6 mm. Strong
+  // takes Standard. Layer height, first layer height, top shell layers.
+  const TIERS: Record<string, Record<string, [number, number, number]>> = {
+    '0.4': { draft: [0.24, 0.2, 3], standard: [0.2, 0.2, 3], fine: [0.12, 0.12, 5], strong: [0.2, 0.2, 3] },
+    '0.6': { draft: [0.36, 0.36, 3], standard: [0.3, 0.3, 3], fine: [0.24, 0.24, 3], strong: [0.3, 0.3, 3] },
+  }
+
+  it('print every tier on 0.4 and 0.6 mm with the stock process', async () => {
+    const wrong: string[] = []
+    for (const [nozzle, tiers] of Object.entries(TIERS)) {
+      const wide = (a: string, b: string): string => (nozzle === '0.4' ? a : b)
+      for (const [tier, [layer, first, top]] of Object.entries(tiers)) {
+        const l = await stockLayer({ printerId: V3, tier: tier as 'draft', slots: [], nozzle: Number(nozzle) })
+        const want: [string, string | number, string | number][] = [
+          ['nozzle', l!.nozzle, Number(nozzle)],
+          ['layer_height', num(l!.values, 'layer_height'), layer],
+          ['initial_layer_print_height', num(l!.values, 'initial_layer_print_height'), first],
+          // The first layer prints 0.5 mm lines on both nozzles.
+          ['initial_layer_line_width', text(l!.values, 'initial_layer_line_width'), '0.5'],
+          ['top_shell_layers', num(l!.values, 'top_shell_layers'), top],
+          ['bottom_shell_layers', num(l!.values, 'bottom_shell_layers'), 3],
+          ['wall_loops', num(l!.values, 'wall_loops'), 3],
+          ['sparse_infill_pattern', text(l!.values, 'sparse_infill_pattern'), 'crosshatch'],
+          ['sparse_infill_density', num(l!.values, 'sparse_infill_density'), 15],
+          ['elefant_foot_compensation', num(l!.values, 'elefant_foot_compensation'), 0.15],
+          ['outer_wall_line_width', text(l!.values, 'outer_wall_line_width'), wide('0.42', '0.62')],
+          ['inner_wall_line_width', text(l!.values, 'inner_wall_line_width'), wide('0.45', '0.65')],
+          ['support_line_width', text(l!.values, 'support_line_width'), wide('0.42', '0.62')],
+          ['outer_wall_speed', num(l!.values, 'outer_wall_speed'), Number(wide('200', '120'))],
+          ['inner_wall_speed', num(l!.values, 'inner_wall_speed'), Number(wide('300', '150'))],
+        ]
+        for (const [k, got, exp] of want) if (got !== exp) wrong.push(`${nozzle} ${tier} ${k}: ${got}, stock ${exp}`)
+      }
+    }
+    expect(wrong.join('\n')).toBe('')
+  })
+
+  it('keep SlicerX process on the 0.8 mm nozzle, which has no stock machine preset', async () => {
+    expect((await resolvedNozzles(V3)).map(Number)).not.toContain(0.8)
+    for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
+      const l = await stockLayer({ printerId: V3, tier, slots: [], nozzle: 0.8 })
+      expect(l!.source, tier).toBe('slicerx')
+      const own = processConfig(tier, 0.8, V3) as unknown as Record<string, unknown>
+      for (const [k, v] of Object.entries(own)) expect(l!.values[k], `${tier} ${k}`).toEqual(v)
+    }
   })
 })

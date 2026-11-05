@@ -318,24 +318,26 @@ describe('Ender-3 V3 first layer and support widths', () => {
 
   it('gives every tier of the plain Ender-3 V3 the stock widths on the 0.4 mm nozzle', async () => {
     for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
+      // The app's printer layer reads the resolved presets.
       const layer = await stockLayer({ printerId: 'creality-ender-3-v3', tier, slots: [] })
       expect(layer!.nozzle, tier).toBe(0.4)
-      expect(layer!.source, tier).toBe('slicerx')
+      expect(layer!.source, tier).toBe('orca')
       expect(layer!.values['initial_layer_line_width'], tier).toBe('0.5')
       expect(layer!.values['support_line_width'], tier).toBe('0.42')
-      // The other widths stay SlicerX's 0.42 mm.
       expect(layer!.values['line_width'], tier).toBe('0.42')
       expect(layer!.values['outer_wall_line_width'], tier).toBe('0.42')
+      // SlicerX's own process route (processConfig, and process_config in Rust) still reads the overlay rows.
+      const cfg = processConfig(tier, 0.4, 'creality-ender-3-v3') as unknown as Record<string, unknown>
+      expect(cfg['initial_layer_line_width'], tier).toBe('0.5')
+      expect(cfg['support_line_width'], tier).toBe('0.42')
     }
   })
 
-  it('leaves the other nozzles and the other Ender-3 V3 models as they were', async () => {
-    for (const nozzle of [0.6, 0.8]) {
-      const layer = await stockLayer({ printerId: 'creality-ender-3-v3', tier: 'standard', slots: [], nozzle })
-      expect(layer!.nozzle).toBe(nozzle)
-      expect(layer!.values['initial_layer_line_width'] ?? '0', `${nozzle}`).toBe('0')
-      expect(layer!.values['support_line_width'] ?? '0', `${nozzle}`).toBe('0')
-    }
+  it('leaves the 0.8 mm nozzle and the other Ender-3 V3 models as they were', async () => {
+    const layer = await stockLayer({ printerId: 'creality-ender-3-v3', tier: 'standard', slots: [], nozzle: 0.8 })
+    expect(layer!.nozzle).toBe(0.8)
+    expect(layer!.values['initial_layer_line_width'] ?? '0').toBe('0')
+    expect(layer!.values['support_line_width'] ?? '0').toBe('0')
     for (const printerId of ['creality-ender-3-v3-se', 'creality-ender-3-v3-ke', 'creality-ender-3-v3-plus', 'creality-k1']) {
       const cfg = processConfig('standard', 0.4, printerId) as unknown as Record<string, unknown>
       expect(cfg['initial_layer_line_width'], printerId).toBeUndefined()
