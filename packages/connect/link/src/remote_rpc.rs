@@ -259,7 +259,7 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             )
         }),
         "printers.list" => Ok(Value::Array(
-            b.printers.lock().await.values().map(|r| r.info.clone()).collect(),
+            b.printers.lock().await.values().map(crate::rpc::listed).collect(),
         )),
         "fleets.list" => {
             serde_json::to_value(b.fleets.lock().await.all()).map_err(|_| err("failed", "fleets"))

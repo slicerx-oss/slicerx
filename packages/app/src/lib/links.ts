@@ -43,7 +43,7 @@ let printerOpener: ((url: string) => Promise<void>) | null = null
  * The desktop shell's opener for printers' own web pages. Those are local addresses the opener's allow list never
  * takes, so the shell checks each one is on the local network itself (src-tauri/src/printer_page.rs).
  */
-export function registerPrinterPageOpener(open: (url: string) => Promise<void>): void {
+export function registerPrinterPageOpener(open: ((url: string) => Promise<void>) | null): void {
   printerOpener = open
 }
 
@@ -52,26 +52,28 @@ export function registerPrinterPageOpener(open: (url: string) => Promise<void>):
  * from the saved printer. Anything else, such as a host off the local network, is refused before it leaves the app.
  */
 export async function openPrinterPage(url: string): Promise<void> {
-  if (!isPrinterPage(url)) {
+  const page = printerPage(url)
+  if (!page) {
     toast("That printer's address is not on your local network, so its page was not opened.", 'warn')
     return
   }
-  if (printerOpener) await openSafely(url, printerOpener)
-  else window.open(url, '_blank', 'noopener')
+  if (printerOpener) await openSafely(page, printerOpener)
+  else window.open(page, '_blank', 'noopener')
 }
 
-/** A printer page as `webUiUrl` builds it: http, a local host, a plain path. */
-function isPrinterPage(url: string): boolean {
+/** The address as a browser reads it, when that is a printer page as `webUiUrl` builds one: http or https, a local host, a plain path. */
+function printerPage(url: string): string | null {
   let u: URL
   try {
     u = new URL(url)
   } catch {
-    return false
+    return null
   }
-  if (u.protocol !== 'http:' || u.username || u.password || u.search || u.hash) return false
+  const scheme = u.protocol === 'https:' ? 'https' : u.protocol === 'http:' ? 'http' : null
+  if (!scheme || u.username || u.password || u.search || u.hash) return null
   const host = u.hostname.replace(/^\[|\]$/g, '')
-  const port = u.port ? Number(u.port) : 80
-  return webUiUrl(host, port, u.pathname) === url
+  const port = u.port ? Number(u.port) : scheme === 'https' ? 443 : 80
+  return webUiUrl(host, port, u.pathname, scheme) === u.href ? u.href : null
 }
 
 /** The link as the shell compares it with its allow list (allowPattern): parsed, so `https://a.example` gains its `/`. */

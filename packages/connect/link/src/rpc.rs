@@ -1926,10 +1926,11 @@ async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     Ok(strip_nulls(info))
 }
 
-/// A registered printer as `list` shows it: its info, with the tunnel it is reached through and the port saved for
-/// its connection taken from its config (a printer saved before the info carried them still says so). The app builds
-/// the link to the printer's own web page from the port.
-fn listed(r: &Registered) -> Value {
+/// A registered printer as `list` and the phone's `printers.list` show it: its info, with the tunnel it is reached
+/// through, the port saved for its connection and whether that connection uses TLS taken from its config (a printer
+/// saved before the info carried them still says so). The app builds the link to the printer's own web page from the
+/// port and the TLS flag.
+pub(crate) fn listed(r: &Registered) -> Value {
     let mut v = r.info.clone();
     if let Some(o) = v.as_object_mut() {
         if let Some(t) = r.config.tunnel {
@@ -1937,6 +1938,9 @@ fn listed(r: &Registered) -> Value {
         }
         if let Some(p) = r.config.port {
             o.insert("port".into(), json!(p));
+        }
+        if r.config.tls == Some(true) {
+            o.insert("tls".into(), json!(true));
         }
     }
     v

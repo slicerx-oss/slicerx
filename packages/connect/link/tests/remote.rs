@@ -527,6 +527,8 @@ async fn phones_read_printers_and_pause_with_a_signed_decision() {
 
     let list = phone.call("printers.list", json!({})).await;
     assert_eq!(list["r"][0]["id"], "bay-4", "{list}");
+    // The saved port, as the computer's own list carries it: the phone builds the printer's web page link from it.
+    assert_eq!(list["r"][0]["port"], mocks.port("moonraker"), "{list}");
     let st = phone
         .call("printers.status", json!({ "printerId": "bay-4" }))
         .await;

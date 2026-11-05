@@ -3,8 +3,9 @@
 //! Opens a printer's own web page (Mainsail, Fluidd, OctoPrint, Duet Web Control, PrusaLink) in the system browser.
 //! The page builds the address from the saved printer (`printerWebUi` in @slicerx/printer-catalog); the shell opens
 //! it only when it is a plain http or https address on the local network, by the rule the bridge applies before it
-//! connects a printer (`sx_link::is_lan_host`). The opener's own allow list takes fixed pages only, and a glob that
-//! took every local address would also take `http://10.example.com/`, so these go through here instead.
+//! connects a printer (`sx_link::is_lan_host`, which also refuses a name a browser reads as an IPv4 number). The
+//! opener's own allow list takes fixed pages only, and a glob that took every local address would also take
+//! `http://10.example.com/`, so these go through here instead.
 
 /// Opens `url` in the browser when it is a printer page on the local network.
 #[tauri::command]
@@ -80,6 +81,8 @@ mod tests {
             "http://[fd00::5]:7125/",
             "http://printer/",
             "http://192.168.1.20",
+            "http://VORON.LOCAL/",
+            "http://voron.local./",
         ] {
             let mut got = None;
             open_with(ok, |u| {
@@ -112,6 +115,16 @@ mod tests {
             "ftp://192.168.1.20/",
             "http:///",
             "",
+            // Names a browser reads as an IPv4 number, and octal octets: each is a public address there.
+            "http://134744072/",
+            "http://0x08080808/",
+            "http://0x7f/",
+            "http://01002004010/",
+            "http://010/",
+            "http://010.0.0.1/",
+            "http://8.8.8.8./",
+            "http://[::ffff:192.168.1.1]/",
+            "http://EVIL.COM/",
         ] {
             assert!(
                 open_with(bad, |_| panic!("{bad} reached the opener")).is_err(),
