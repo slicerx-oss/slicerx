@@ -21,7 +21,7 @@ connect = ["dep:sx-connect", "dep:sx-permit", "dep:sx-link", "dep:tokio", "dep:t
 cloud = []
 # Dev and test builds only: the agent bridge (src/agent_bridge, docs/agent-bridge.md). Never in `default`, never in a
 # release build: apps/desktop/release/check-agent-bridge.mjs fails a release binary or feature set that has it.
-agent-bridge = ["dep:getrandom", "dep:base64", "dep:libc", "dep:webkit2gtk", "dep:cairo-rs", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit", "dep:objc2-web-kit", "dep:block2"]
+agent-bridge = ["dep:getrandom", "dep:base64", "dep:libc", "dep:cairo-rs", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit", "dep:objc2-web-kit", "dep:block2"]
 
 [build-dependencies]
 tauri-build = { version = "=2.7.0", features = [] }
@@ -58,8 +58,8 @@ zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate
 # its files get an owner-only access list (agent_bridge/private.rs). The same version tauri uses.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dxgi", "Win32_System_SystemInformation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Threading"] }
-# Turns off the web view's browser keys (crash::disable_browser_keys) and captures the agent bridge's screenshots. The
-# same version tauri uses.
+# Turns off the web view's browser keys (crash::disable_browser_keys), watches for its page process stopping
+# (recover.rs) and captures the agent bridge's screenshots. The same version tauri uses.
 webview2-com = "=0.39.1"
 
 # The agent bridge's private export folder and files (src/agent_bridge/private.rs) on macOS and Linux. The same version
@@ -75,8 +75,10 @@ objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std
 objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"], optional = true }
 block2 = { version = "=0.6.2", optional = true }
 
+# A web view whose page process stopped (src/recover.rs) and the agent bridge's screenshots (src/agent_bridge/shot.rs).
+# The same version wry uses.
 [target.'cfg(target_os = "linux")'.dependencies]
-webkit2gtk = { version = "=2.0.2", optional = true }
+webkit2gtk = { version = "=2.0.2", features = ["v2_20"] }
 cairo-rs = { version = "=0.18.5", optional = true }
 # Starts the toolkit before the window system does, and hands a launch without a display to a running app over the
 # session bus (src/display.rs). The same versions tao and the single-instance plugin use.

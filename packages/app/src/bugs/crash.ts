@@ -3,6 +3,7 @@
 // The part of crash reporting that loads with the shell: the log capture, the desktop shell's crash host, and the
 // error listeners. Errors before the report code has loaded wait here and are handed to it when it starts
 // (reports.ts, loaded after the first frame), so nothing that crashes early is lost.
+import type { ViewCrash } from '../project/view-crash'
 import { startLogCapture } from './log'
 
 /** A crash the desktop shell recorded: a Rust panic, or the web view's process dying. */
@@ -37,6 +38,11 @@ export interface CrashHost {
   ack(files: string[]): Promise<void>
   /** Panics on a background thread of the shell, for the developer test command. */
   testPanic(): Promise<void>
+  /**
+   * When this page load follows the shell reloading a web view that stopped, what it knew then; null otherwise. Taking
+   * it clears it, so it is read once (project/view-crash.ts).
+   */
+  recovery?(): Promise<ViewCrash | null>
 }
 
 let crashHost: CrashHost | null = null
