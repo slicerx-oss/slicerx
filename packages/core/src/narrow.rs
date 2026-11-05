@@ -358,14 +358,22 @@ pub(crate) fn split_lines(region: &Shapes, dir: Dir, spacing: i64, spacing_mm: f
 /// How far a piece is pulled in for Bambu's narrow test, mm: a piece no circle of this radius fits in is narrow.
 const BAMBU_NARROW_MM: f64 = 3.0;
 
+/// A hair under the radius the circle check confirms, internal units (0.1 micron): a band exactly 6 mm wide is a tie
+/// that the offset settles.
+const DISC_HAIR: f64 = 1.0;
+
 /// Normal and narrow pieces as Bambu Lab printers decide them: each connected piece (an outline with its holes) is
 /// narrow as a whole when pulling it in by 3 mm leaves nothing, whatever the pattern, line direction or width, and
-/// normal as a whole otherwise. A piece is never cut into a narrow and a normal part.
+/// normal as a whole otherwise. A piece is never cut into a narrow and a normal part. What the pull leaves must hold
+/// the circle ([`perimeters::disc_fits`]): on a finely cut round ring the inward offset can leave a hairline sliver
+/// where the moved outlines cross, and a sliver is no room for lines.
 pub(crate) fn split_pieces(region: &Shapes) -> (Shapes, Shapes) {
     let (mut normal, mut narrow) = (Vec::new(), Vec::new());
     for shape in region {
         let one: Shapes = vec![shape.clone()];
-        if perimeters::offset(&one, -mm(BAMBU_NARROW_MM)).is_empty() {
+        if perimeters::offset(&one, -mm(BAMBU_NARROW_MM)).is_empty()
+            || !perimeters::disc_fits(shape, f64::from(mm(BAMBU_NARROW_MM)) - DISC_HAIR)
+        {
             narrow.push(shape.clone());
         } else {
             normal.push(shape.clone());
@@ -1033,6 +1041,55 @@ mod tests {
             }
         }
         assert!(caught > 0, "a bound of 5 spacings went unnoticed");
+    }
+
+    /// The diameter of the largest circle in `shape`, mm, to half a micron.
+    fn inscribed(shape: &[Vec<IntPoint<i32>>]) -> f64 {
+        let (mut lo, mut hi) = (0.0, 100.0);
+        while hi - lo > 0.0005 {
+            let mid = f64::midpoint(lo, hi);
+            if perimeters::disc_fits(shape, f64::from(mm(mid / 2.0))) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    /// A 40 mm square ring `w` wide round a square hole.
+    fn square_ring(w: f64) -> Vec<Vec<IntPoint<i32>>> {
+        let hole: Vec<[f64; 2]> = rect(w, w, 40.0 - w, 40.0 - w).into_iter().rev().collect();
+        shape(&[&rect(0.0, 0.0, 40.0, 40.0), &hole])
+    }
+
+    #[test]
+    fn the_largest_circle_in_a_sharp_corner_is_1_17_band_widths() {
+        // At a sharp 90 degree corner of a band w wide, the circle touches both outer sides and the hole's corner:
+        // 2 w / (1 + sin 45 degrees), about 1.172 w. A straight strip holds w.
+        let corner = 2.0 / (1.0 + std::f64::consts::FRAC_1_SQRT_2);
+        for w in [3.0, 4.0, 5.0] {
+            let d = inscribed(&square_ring(w));
+            assert!((d - corner * w).abs() < 0.002, "ring {w}: {d}");
+            let d = inscribed(&shape(&[&rect(0.0, 0.0, 40.0, w)]));
+            assert!((d - w).abs() < 0.002, "strip {w}: {d}");
+        }
+        // A hexagon ring (120 degree corners): 2 w / (1 + sin 60 degrees).
+        let hex = |r: f64| -> Vec<[f64; 2]> {
+            (0..6)
+                .map(|k| {
+                    let a = (60.0 * f64::from(k)).to_radians();
+                    [50.0 + r * a.m_cos(), 50.0 + r * a.m_sin()]
+                })
+                .collect()
+        };
+        let w = 4.0;
+        let (ro, ri) = (15.0, 15.0 - w);
+        let to_corner = 2.0 / 3.0_f64.sqrt();
+        let hole: Vec<[f64; 2]> = hex(ri * to_corner).into_iter().rev().collect();
+        let d = inscribed(&shape(&[&hex(ro * to_corner), &hole]));
+        let want = 2.0 * w / (1.0 + 60.0_f64.to_radians().m_sin());
+        assert!((d - want).abs() < 0.002, "hexagon {d} against {want}");
     }
 
     #[test]
