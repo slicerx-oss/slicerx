@@ -119,8 +119,9 @@ export function compareConfigs(a: PrintConfig, b: PrintConfig, opts: CompareOpti
       continue
     }
     if (!listed(def, section)) continue
-    // Only the number of slots differs: [70, 70] and [70] are the same setting.
-    if (sameValue(one(d.before), one(d.after))) continue
+    // Only the number of filament slots differs: [70, 70] and [70] are the same setting. A printer's lists are per
+    // extruder, and their length is how many extruders it has, so they are compared whole.
+    if (def.section !== 'printer' && sameValue(one(d.before), one(d.after))) continue
     // G-code text that differs only in line endings, trailing spaces or blank lines is the same text, as in the review.
     if (GCODE.has(d.key) && normalizeGcode(textOf(d.before) ?? '') === normalizeGcode(textOf(d.after) ?? '')) continue
     differing.add(d.key)
