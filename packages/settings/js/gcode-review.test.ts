@@ -48,6 +48,8 @@ describe('stock G-code', () => {
     const makers = Object.keys(machines.models).filter((id) => machines.models[id]!.orca && (gcode.models[id] ?? '').startsWith('maker_'))
     expect(makers).toContain('elegoo-centauri-carbon')
     expect(makers.filter((id) => !(stock.models[id]?.['machine_start_gcode']?.length))).toEqual([])
+    // The MK3.5's shipped maker G-code is known as stock before its family is in packages/profiles/gcode.json.
+    expect(Object.keys(stock.models['prusa-mk3.5'] ?? {}).sort()).toEqual(['before_layer_change_gcode', 'change_filament_gcode', 'layer_change_gcode', 'machine_end_gcode', 'machine_pause_gcode', 'machine_start_gcode'])
   })
 })
 

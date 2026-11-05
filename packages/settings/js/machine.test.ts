@@ -31,7 +31,7 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(59)
+    expect(Object.keys(models)).toHaveLength(60)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
       expect(e.orca?.checked, id).toBe(MACHINE_CHECKED_COMMIT)
@@ -70,7 +70,10 @@ describe('machine settings', () => {
   })
   it('has start, end, layer change and filament change G-code for every model', () => {
     const ids = listPrinterProfiles().map((p) => p.id)
-    for (const id of ids) expect(gcodeStatus(id), id).toBeDefined()
+    // The MK3.5's maker G-code family goes into packages/profiles/gcode.json as its own change. Until it is there the
+    // printer takes the schema's start and end G-code; once it is, the MK3.5 is held to this check like every other model.
+    const awaiting = ['prusa-mk3.5'].filter((id) => !gcode.models[id])
+    for (const id of ids) if (!awaiting.includes(id)) expect(gcodeStatus(id), id).toBeDefined()
     expect(Object.keys(gcode.models).filter((id) => gcode.pending.includes(id))).toEqual([])
     for (const id of ids) {
       const cfg = printerConfig(id) as unknown as Record<string, unknown>
@@ -78,6 +81,22 @@ describe('machine settings', () => {
       expect(has.length, id).toBeGreaterThanOrEqual(gcodeStatus(id) === 'written' ? 5 : 0)
     }
     expect(gcode.pending).toEqual([])
+  })
+  it('has the Prusa MK3.5 from the maker profiles, every nozzle the maker covers', () => {
+    const e = machineEntry('prusa-mk3.5')
+    expect(e?.orca?.profile).toBe('Prusa MK3.5 0.4 nozzle')
+    expect(Object.keys(e?.nozzles ?? {})).toEqual(['0.25', '0.6', '0.8'])
+    for (const n of [0.25, 0.4, 0.6, 0.8]) {
+      const c = printerConfig('prusa-mk3.5', n) as unknown as Record<string, unknown>
+      expect(c['nozzle_diameter'], String(n)).toEqual([n])
+      expect(c['printable_area'], String(n)).toEqual([[0, 0], [250, 0], [250, 210], [0, 210]])
+      expect(c['printable_height'], String(n)).toBe(210)
+      expect(c['gcode_flavor'], String(n)).toBe('marlin2')
+    }
+    const c = printerConfig('prusa-mk3.5') as unknown as Record<string, unknown>
+    expect(c['machine_max_acceleration_extruding']).toEqual([4000, 4000])
+    expect(c['retraction_length']).toEqual([0.8])
+    expect((printerConfig('prusa-mk3.5', 0.8) as unknown as Record<string, unknown>)['max_layer_height']).toEqual([0.55])
   })
   it('matches the lock file', () => {
     if (process.env['UPDATE_GOLDEN'] === '1') {

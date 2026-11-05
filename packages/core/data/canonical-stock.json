@@ -4215,6 +4215,78 @@
     },
     {
       "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "before_layer_change_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "7e9b1bc01d5791f2a263438829753df188b0381f2d09f7acde1498020a3a2c0e",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "f1b87512d72080408dd7eab57e28a89220c57b6d57c50606697c7d9740f764d0"
+    },
+    {
+      "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "change_filament_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "dd9965c086fc5fa6b3d9759ea204a568f355e53fdd4d495913857701f9887969",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "dd9965c086fc5fa6b3d9759ea204a568f355e53fdd4d495913857701f9887969"
+    },
+    {
+      "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "layer_change_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "255e325e01886ced6124b895bf71ea5c6d4ed3b4b9b2b5cec8aa966c61946a9c",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "cf72ed2743c529b5b89be0f17b1404619f12861c4f87c5e8477536eb02671bc8"
+    },
+    {
+      "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "machine_end_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "95d265f5a32b47ac526a76ef4785c2e09e4620ff9ca2d79fdf81ee3b194d0105",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "df795413f47e652a796a0b041182d84271f9ca26756f031f62734baf98e10993"
+    },
+    {
+      "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "machine_pause_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "43d19328811a140971bf03a59a148d489512adc9ded9a6008563f9e35aaf2933",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "43d19328811a140971bf03a59a148d489512adc9ded9a6008563f9e35aaf2933"
+    },
+    {
+      "identity": {
+        "model": "prusa-mk3.5",
+        "firmware": "marlin2"
+      },
+      "key": "machine_start_gcode",
+      "source": "OrcaSlicer",
+      "version": "2.4.2",
+      "exactFingerprint": "deec717b85e7f4bd8c0a0fb3ffec3716ed77369d54046d403395d9132402c9af",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "e35634cfc758134357ab40a65051171539268a187ca987c188e6d784c77ec224"
+    },
+    {
+      "identity": {
         "model": "prusa-mk4",
         "firmware": "marlin2"
       },

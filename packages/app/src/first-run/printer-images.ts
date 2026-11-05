@@ -41,6 +41,7 @@ export const IMAGE_IDS: ReadonlySet<string> = new Set([
   'prusa-core-one',
   'prusa-core-one-l',
   'prusa-mini-plus',
+  'prusa-mk3.5',
   'prusa-mk4',
   'prusa-mk4s',
   'prusa-xl-5-toolhead',

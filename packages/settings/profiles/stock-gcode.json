@@ -1322,6 +1322,26 @@
     "8ec32aca928a6178ca096653deaf7584"
    ]
   },
+  "prusa-mk3.5": {
+   "before_layer_change_gcode": [
+    "e5bd142d7bbf70e493e658eb4404f8a9"
+   ],
+   "change_filament_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "layer_change_gcode": [
+    "b8ac89b590f491aa4a4ea740b7b02b41"
+   ],
+   "machine_end_gcode": [
+    "95d265f5a32b47ac526a76ef4785c2e0"
+   ],
+   "machine_pause_gcode": [
+    "43d19328811a140971bf03a59a148d48"
+   ],
+   "machine_start_gcode": [
+    "cec84c74086da8a525aa6effd74d1937"
+   ]
+  },
   "prusa-mk4": {
    "before_layer_change_gcode": [
     "6025b62723a9d2534abf2ea8f7444268",
