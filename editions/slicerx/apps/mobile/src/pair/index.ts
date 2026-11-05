@@ -12,9 +12,11 @@ import type { PairedCamera } from '../camera/feed'
 import type { PushRegistrar } from '../notify/push'
 import type { JoinRequestView, PairedHostView, PairingScreenProps, PairingStage } from '../screens/pairing-screen'
 import { lazyCamera, lazyPush } from './lazy'
-import { pairService, type ComputerApproval, type ComputerQuestion, type ComputerResolved, type HostState, type PairService } from './service'
+import { pairService, type ComputerApproval, type ComputerResolved, type HostState, type PairService } from './service'
+import type { ComputerQuestion } from './questions'
 
-export type { ComputerApproval, ComputerQuestion, ComputerResolved } from './service'
+export type { ComputerApproval, ComputerResolved } from './service'
+export type { ComputerQuestion } from './questions'
 export { sendSlice, sliceOnComputer, type ComputerSliceOutcome } from './computer'
 export type PairingController = Omit<PairingScreenProps, 'onBack' | 'now'>
 

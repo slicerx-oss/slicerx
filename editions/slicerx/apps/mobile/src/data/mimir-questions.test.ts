@@ -66,3 +66,24 @@ describe('question cards from a paired computer', () => {
     expect(endedNote(Q, { askId: 'ask_1', choiceId: null, by: 'phone', name: '  Big\n  phone ' })).toBe('Canceled on Big phone.')
   })
 })
+
+describe('after review', () => {
+  it('a question still waiting after a word that it was gone comes back live', () => {
+    const gone = applyUpdate(shown(), live(null))
+    expect(gone[0]?.answered).toBe(GONE)
+    const back = applyUpdate(gone, live(Q))
+    expect(back[0]).toMatchObject({ reach: 'live' })
+    expect(back[0]?.answered).toBeUndefined()
+  })
+
+  it('a card answered for real stays answered when the same question is read again', () => {
+    const done = applyUpdate(shown(), live(null, { ended: { askId: 'ask_1', choiceId: 'same', by: 'app' } }))
+    expect(applyUpdate(done, live(Q))[0]?.answered).toBe('Answered in SlicerX: Yes, that one.')
+  })
+
+  it('never shows an internal choice id in a note', () => {
+    expect(endedNote(Q, { askId: 'ask_1', choiceId: 'c_3f2a', by: 'app' })).toBe('Answered in SlicerX.')
+    expect(endedNote(Q, { askId: 'ask_1', choiceId: 'opt1', by: 'phone', name: 'Pixel' })).toBe('Answered on Pixel.')
+    expect(answeredHere(shown(), 'pc-1', 'zzz')[0]?.answered).toBe('You answered.')
+  })
+})

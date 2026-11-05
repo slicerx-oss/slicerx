@@ -37,8 +37,14 @@ const SETTLES = new Set(['not_found', 'not_supported', 'bad_request', 'unavailab
 export function watchQuestions(d: QuestionWatchDeps): QuestionWatch {
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
-  /** A card that shows a note closes after a moment; a new question on that computer cancels the close. */
+  /** A card that shows a note closes after a moment; one that is live again (the question came back) keeps showing. */
   const schedule = () => {
+    for (const [key, t] of timers) {
+      if (!d.cards().some((c) => `${c.pairingId}:${c.question.askId}` === key && c.answered !== undefined)) {
+        clearTimeout(t)
+        timers.delete(key)
+      }
+    }
     for (const c of d.cards()) {
       const key = `${c.pairingId}:${c.question.askId}`
       if (c.answered === undefined || timers.has(key)) continue
