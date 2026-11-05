@@ -22,14 +22,17 @@ import { setPlateSettings } from '../../plate/plates'
 import { objectOverrides, sourceId } from '../../plate/object-settings'
 import { selectObject } from '../../plate/select'
 import { sleipnirCapText, SLEIPNIR_OFF, turnSleipnirOff } from '../../plate/sleipnir-cap'
-import { ownKeys, scopeValue, setScoped } from '../../plate/scope'
+import { ownKeys, scopeValue, setPlateOverride as setOverride, setScoped } from '../../plate/scope'
 import { plateSequence } from '../../plate/plate-sequence'
 import { get, markStale, set, useApp, type PlateMeta } from '../../state/store'
 import { appName } from '../../edition'
 import { useScope } from './scope-bar'
 
 import { printerFixes, searchMatch } from './setting-fixes'
-import { buildTabs, EDITABLE_PROCESS, offeredTabs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
+import { buildTabs, colorChanged, EDITABLE_PROCESS, offeredTabs, sectionDefs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
+import { FeatureFilamentTable, featureFilamentSummary } from './feature-filament-table'
+import { FEATURE_FILAMENT_KEYS, FEATURE_FILAMENT_ROWS, featureFilamentRows } from '../../plate/feature-filaments'
+import { useResolvedSlots } from '../../filament/use-slots'
 
 export { EDITABLE, LIST_ENUM_KEYS, PROCESS_EDITABLE, INTENTS, visibleLevels } from './settings-view'
 
@@ -43,16 +46,6 @@ const MONEY_PER: Readonly<Record<string, string>> = { 'money/h': 'h', 'money/kg'
 function on(v: SettingValue | undefined): boolean {
   const x = Array.isArray(v) ? v[0] : v
   return x === true || x === 1 || x === '1' || x === 'true'
-}
-
-function setOverride(key: string, value: SettingValue | undefined): void {
-  set((s) => {
-    const next = { ...s.overrides }
-    if (value === undefined) delete next[key]
-    else next[key] = value
-    return { overrides: next }
-  })
-  markStale()
 }
 
 /** Keys where 0 means "automatic" accept an empty field or "auto" as 0. */
@@ -449,6 +442,12 @@ export function ExpertSettings() {
       </>
     )
   }
+  // The feature filament table's rows carry the same chips as the other rows.
+  const tableChips = (key: string): ReactNode => {
+    const def = EDITABLE_PROCESS.find((d) => d.key === key)
+    const row = FEATURE_FILAMENT_ROWS.find((r) => r.key === key)
+    return def && row ? chipsFor({ ...def, label: `${row.label} filament` }) : null
+  }
   const field = (def: SettingDef, o: { idPrefix?: string; note?: ReactNode } = {}) => {
     const pin = { on: pins.includes(def.key), toggle: () => togglePin(def.key) }
     const key = `${o.idPrefix ?? 'set'}-${def.key}`
@@ -472,19 +471,22 @@ export function ExpertSettings() {
     }
     return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} {...extra} pin={pin} chips={chips} />
   }
+  const slots = useResolvedSlots()
+  const slice = useApp((s) => s.slice)
+  const ffSummary = useMemo(() => featureFilamentSummary(featureFilamentRows({ plate, objectSettings, overrides, slice }, config, scope), slots), [plate, objectSettings, overrides, slice, config, scope, slots])
   const searching = Boolean(q)
   const tabsAll = useMemo(() => buildTabs({ mode, changed, filamentCount, searching }), [mode, changed, filamentCount, searching])
   /** Why a row matched a search: its name, or a problem it helps with. */
   const matchOf = (def: SettingDef): { fix: string | null } | null => searchMatch(def, q)
   // a problem whose fix is a printer setting (retraction) links to it in Printer settings
   const elsewhere = useMemo(() => (q && !changedOnly ? printerFixes(q, SETTINGS) : []), [q, changedOnly])
-  const offered = offeredTabs(filamentCount)
+  const offered = offeredTabs(filamentCount, colorChanged(tabsAll, changed))
   const tabs = tabsAll.filter((t) => offered.some((o) => o.id === t.intent.id))
   const stored = useApp((s) => s.settingsTab)
   const tabId = offered.some((t) => t.id === stored) ? stored : 'quality'
   const tab = tabs.find((t) => t.intent.id === tabId)!
-  const totalChanged = tabsAll.reduce((n, t) => n + t.sections.reduce((m, s) => m + [...s.shown, ...s.more].filter((d) => changed(d.key)).length, 0), 0)
-  const tabChanged = (t: ViewTab) => t.sections.reduce((n, s) => n + [...s.shown, ...s.more].filter((d) => changed(d.key)).length, 0)
+  const totalChanged = tabsAll.reduce((n, t) => n + t.sections.reduce((m, s) => m + sectionDefs(s).filter((d) => changed(d.key)).length, 0), 0)
+  const tabChanged = (t: ViewTab) => t.sections.reduce((n, s) => n + sectionDefs(s).filter((d) => changed(d.key)).length, 0)
   const flat = searching || changedOnly
   // A search or the Changed chip lists matching rows from every tab, grouped by tab and section.
   const found = flat
@@ -495,13 +497,14 @@ export function ExpertSettings() {
             .map((s) => {
               const pick = (d: SettingDef) => (changedOnly ? changed(d.key) : true) && matchOf(d) !== null
               // In any mode a search reaches the Expert rows too; develop rows only in Developer.
-              return { s, shown: s.shown.filter(pick), more: s.more.filter(pick) }
+              // A search that finds a feature's filament shows the whole table, its one home.
+              return { s, shown: s.shown.filter(pick), more: s.more.filter(pick), table: (s.table ?? []).filter(pick) }
             })
-            .filter((x) => x.shown.length || x.more.length),
+            .filter((x) => x.shown.length || x.more.length || x.table.length),
         }))
         .filter((x) => x.sections.length)
     : []
-  const count = found.reduce((n, x) => n + x.sections.reduce((m, s) => m + s.shown.length + s.more.length, 0), 0)
+  const count = found.reduce((n, x) => n + x.sections.reduce((m, s) => m + s.shown.length + s.more.length + s.table.length, 0), 0)
 
   // Every press of a tab or a section header is held in place app wide (keepInPlace in @slicerx/ui). A tab picked under
   // a stuck tab row also shows the new tab from its start, with the row where it is, and the hold restarts from there.
@@ -572,9 +575,9 @@ export function ExpertSettings() {
       return next
     })
 
-  const pinned = pins.map((k) => EDITABLE_PROCESS.find((d) => d.key === k)).filter((d): d is SettingDef => Boolean(d))
+  const pinned = pins.filter((k) => !FEATURE_FILAMENT_KEYS.has(k)).map((k) => EDITABLE_PROCESS.find((d) => d.key === k)).filter((d): d is SettingDef => Boolean(d))
   const visibleSections = tab.sections.filter((s) => sectionHasRows(s, { mode, changed }))
-  const rowCount = visibleSections.reduce((n, s) => n + s.shown.length + sectionRows(s, { mode, changed, moreOpen: true }).more.length + (s.choices && !scoped ? 2 : 0), 0)
+  const rowCount = visibleSections.reduce((n, s) => n + s.shown.length + sectionRows(s, { mode, changed, moreOpen: true }).more.length + (s.table?.length ?? 0) + (s.choices && !scoped ? 2 : 0), 0)
   const searchable = EDITABLE_PROCESS.filter((d) => d.mode !== 'hidden' && (d.mode !== 'develop' || mode === 'developer')).length
   return (
     <div id="expert-panel" className="expert tiers" data-mode={mode}>
@@ -661,12 +664,13 @@ export function ExpertSettings() {
                     <Icon name={t.intent.icon} size={14} />
                     {t.intent.label}
                   </span>
-                  <span className="sx-mono">{sections.reduce((n, s) => n + s.shown.length + s.more.length, 0)}</span>
+                  <span className="sx-mono">{sections.reduce((n, s) => n + s.shown.length + s.more.length + s.table.length, 0)}</span>
                 </h4>
-                {sections.map(({ s, shown, more }) => (
+                {sections.map(({ s, shown, more, table }) => (
                   <div key={s.id} className="pset-sec" data-section={s.key}>
                     <div className="pset-sec-sub">{s.label}</div>
-                    <ul>
+                    {table.length ? <FeatureFilamentTable scope={scope} config={config} chips={tableChips} /> : null}
+                    <ul hidden={!shown.length && !more.length}>
                       {shown.map((d) => field(d, { note: fixNote(d) }))}
                       {more.length ? <li className="tier-divider" aria-hidden="true">Expert</li> : null}
                       {more.map((d) => field(d, { note: fixNote(d) }))}
@@ -688,7 +692,7 @@ export function ExpertSettings() {
                   const open = sectionOpen(savedSections, tab, s, { mode, changed })
                   const rows = sectionRows(s, { mode, changed, moreOpen: moreOpen.has(s.key) })
                   const all = [...s.shown, ...rows.more]
-                  const n = [...s.shown, ...s.more].filter((d) => changed(d.key)).length
+                  const n = sectionDefs(s).filter((d) => changed(d.key)).length
                   const listed = open ? rows : { shown: s.shown.filter((d) => changed(d.key)), more: rows.more.filter((d) => changed(d.key)), hidden: 0 }
                   const choices = s.choices && !scoped && open
                   return (
@@ -697,8 +701,10 @@ export function ExpertSettings() {
                         <Icon name="chevron-right" size={12} className="chev" />
                         <span className="t">{s.label}</span>
                         <span className="n">{n ? `${n} changed` : ''}</span>
-                        <span className="sum">{summaryOf(all, config)}</span>
+                        <span className="sum">{s.table ? ffSummary : summaryOf(all, config)}</span>
                       </button>
+                      {/* The table stays whole under a closed header while any of its rows is changed, as changed rows do. */}
+                      {s.table && (open || s.table.some((d) => changed(d.key))) ? <FeatureFilamentTable scope={scope} config={config} chips={tableChips} /> : null}
                       {choices || listed.shown.length || listed.more.length ? (
                         <ul>
                           {choices ? (

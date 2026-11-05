@@ -36,10 +36,11 @@ describe('settings sections', () => {
     for (const list of Object.values(SECTIONS)) expect(list.filter((s) => !s.match)).toHaveLength(1)
   })
 
-  it('lists the short Advanced set: 42 keys and the two overhang choices', () => {
+  it('lists the short Advanced set: 40 keys and the two overhang choices', () => {
     const tabs = buildTabs({ mode: 'advanced', changed: none, filamentCount: 2, searching: false })
     const shown = tabs.flatMap((t) => t.sections.flatMap((s) => s.shown))
-    expect(shown).toHaveLength(42)
+    // Support and support interface filament are in the Color tab's feature filament table, not rows.
+    expect(shown).toHaveLength(40)
     expect(tabs[0]!.sections.find((s) => s.id === 'overhangs')!.choices).toBe(true)
     // nothing above Advanced is listed until it changes
     expect(tabs.flatMap((t) => t.sections.flatMap((s) => sectionRows(s, { mode: 'advanced', changed: none, moreOpen: true }).more))).toHaveLength(0)

@@ -4,6 +4,7 @@
 // or corrupt, so every field is checked by hand and a bad one falls back to its default on its
 // own. No schema library: this runs before first paint and stays out of the shell budget.
 import { readUnits, type UnitPrefs } from '../cad/units'
+import { FEATURE_FILAMENT_KEYS } from '../plate/feature-filament-keys'
 import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState, type ToolDock } from '@slicerx/contracts'
 
 /** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
@@ -361,7 +362,8 @@ export function normalizePrefs(v: unknown): Prefs {
     sendChoices: or(record(r['sendChoices'], (k) => k.length <= 80, (x) => record(x, (k) => SEND_KEYS.includes(k), bool)), {}),
     ...opt('settingsTab', oneOf(r['settingsTab'], ['quality', 'strength', 'speed', 'supports', 'adhesion', 'multicolor', 'effects', 'output'] as const)),
     settingsSections: or(record(r['settingsSections'], (k) => /^[a-z]{1,20}\/[a-z]{1,20}$/.test(k), bool), {}),
-    settingsPins: or(list(r['settingsPins'], 24, (x) => (typeof x === 'string' && /^[a-z0-9_]{1,80}$/.test(x) ? x : undefined)), []),
+    // The feature filament settings are a table in the Color tab, not rows, so a pin saved for one before is dropped.
+    settingsPins: or(list(r['settingsPins'], 24, (x) => (typeof x === 'string' && /^[a-z0-9_]{1,80}$/.test(x) ? x : undefined))?.filter((k) => !FEATURE_FILAMENT_KEYS.has(k)), []),
     dryMarks: or(record(r['dryMarks'], (k) => k.length <= 120, (x) => (isRec(x) && num(x['at'], 0) !== undefined && str(x['spool'], 200) !== undefined ? { at: x['at'] as number, spool: x['spool'] as string } : undefined)), {}),
     presetSync: or(presetSync(r['presetSync']), { deleted: [], changes: [], lastAt: 0 }),
     printerNozzles: or(record(r['printerNozzles'], (k) => k.length <= 80, (x) => num(x, 0.1, 2)), {}),

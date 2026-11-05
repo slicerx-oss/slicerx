@@ -6,6 +6,7 @@
 // are plate-wide here (packages/core/src/layers.rs, plate_range_tops).
 import type { HeightRange, SettingValue } from '@slicerx/contracts'
 import type { PlateEntry } from '../state/store'
+import { FEATURE_FILAMENT_ROWS } from './feature-filament-keys'
 
 /** One range of an object, its heights from the object's bottom, mm. */
 export interface LayerRange {
@@ -30,12 +31,8 @@ export const RANGE_KEYS: readonly string[] = [
   'retraction_length',
   'retraction_speed',
   'retraction_minimum_travel',
-  'outer_wall_filament_id',
-  'inner_wall_filament_id',
-  'sparse_infill_filament_id',
-  'internal_solid_filament_id',
-  'top_surface_filament_id',
-  'bottom_surface_filament_id',
+  // The per-feature filaments the engine changes by height: the feature filament table's wall, infill and surface rows.
+  ...FEATURE_FILAMENT_ROWS.filter((r) => r.byHeight).map((r) => r.key),
 ]
 
 /** A file's ranges cut to what the plate can use, and the keys left out. */
