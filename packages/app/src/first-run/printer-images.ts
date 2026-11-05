@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Pictures of catalog printers for the model grid: the makers' cover images from the OrcaSlicer
-// profile resources, 240 px webp in packages/profiles/printer-images (AGPL-3.0-or-later, see
-// REUSE.toml). A model without one gets the drawn placeholder. A test keeps this list and the
-// folder in step.
+// profile resources (Bambu Studio 2.9.1's for the H3C), 240 px webp where the source is that
+// large, in packages/profiles/printer-images (AGPL-3.0-or-later, see REUSE.toml). A model
+// without one gets the drawn placeholder. A test keeps this list and the folder in step.
 
 /** Catalog model ids that have a picture. */
 export const IMAGE_IDS: ReadonlySet<string> = new Set([
@@ -11,6 +11,7 @@ export const IMAGE_IDS: ReadonlySet<string> = new Set([
   'bambu-a1-mini',
   'bambu-a1',
   'bambu-h2c',
+  'bambu-h3c',
   'bambu-h2d',
   'bambu-h2d-pro',
   'bambu-h2s',

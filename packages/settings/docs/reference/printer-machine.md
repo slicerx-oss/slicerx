@@ -135,7 +135,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 - Type: list of enum values, one per extruder
 - Default: ["Standard"]
-- Values: `Standard`, `High Flow` (High flow), `Hybrid`, `TPU High Flow` (TPU high flow), `E3D High Flow` (E3D high flow), `Extra High Flow` (Extra high flow)
+- Values: `Standard`, `High Flow` (High flow), `Hybrid`, `TPU High Flow` (TPU high flow), `E3D High Flow` (E3D high flow), `Extra High Flow` (Extra high flow), `TPU285` (TPU 2.85 mm)
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 

@@ -98,6 +98,12 @@ const MODELS: &[Model] = &[
         extra: &["O1C2"],
     },
     Model {
+        short: "H3C",
+        display: "Bambu Lab H3C",
+        id: "N10",
+        extra: &[],
+    },
+    Model {
         short: "H2S",
         display: "Bambu Lab H2S",
         id: "O1S",

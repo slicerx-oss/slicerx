@@ -12,11 +12,14 @@
 // widths of the maker's process presets in its rows of process-speeds.json, which SlicerX's own process route reads on the
 // 0.4 mm nozzle (processConfig and profileConfig, and process_config in Rust). The app's printer layer, preset import
 // parents and the MCP server's tiers read the model's resolved presets instead, with the same widths.
+// packages/profiles/overlays/bbl-2.9.json holds whole resolved entries from Bambu Studio 2.9's own presets for the Bambu Lab
+// models OrcaSlicer 2.4.2 has no presets for (the H3C): an entry the brand file lacks is written from them, and one it
+// has is left as it is.
 // scripts/gen-resolved.ts applies them before writing, and scripts/apply-overlay.ts applies them to the shipped files, so
 // a regeneration of any of these files keeps them. Applying one twice changes nothing.
 import { sameValue } from './diff'
-import { importFlat } from './import'
-import { defaultConfig } from './schema'
+import { importFlat, PROFILE_META_KEYS } from './import'
+import { defaultConfig, settingDef } from './schema'
 import type { SettingValue } from '@slicerx/contracts/settings'
 
 type Raw = Record<string, unknown>
@@ -41,6 +44,18 @@ export interface MakerOverlay {
    * takes these rows over SlicerX's process for the model's tiers on the 0.4 mm nozzle.
    */
   process_presets?: Record<string, Raw>
+  /**
+   * Whole resolved entries, by printer model, for models the brand's generated data has none for: per nozzle size the
+   * machine preset, its default filament and the process preset of each quality tier, values in the profile's own
+   * format and resolved with their parents. A model the data already has keeps its entry.
+   */
+  models?: Record<string, ModelPresets>
+}
+
+/** The maker's stock presets of one model, for an entry written whole. */
+export interface ModelPresets {
+  orca: { vendor: string; profile: string; checked?: string }
+  nozzles: Record<string, { machine: Values; filament: Values; process: Record<string, Values> }>
 }
 
 interface TierDiff { set: Raw; unset: string[] }
@@ -59,6 +74,8 @@ export const PRUSA_BRIM_OVERLAY = 'overlays/prusa-brim.json'
 export const PRUSA_FIRST_LAYER_OVERLAY = 'overlays/prusa-first-layer.json'
 /** The first layer and support line widths of the plain Ender-3 V3's process presets, relative to packages/profiles. */
 export const CREALITY_V3_OVERLAY = 'overlays/creality-ender-3-v3.json'
+/** Whole resolved entries from Bambu Studio 2.9's presets (the H3C), relative to packages/profiles. */
+export const BBL_29_OVERLAY = 'overlays/bbl-2.9.json'
 
 /**
  * Every maker overlay, in the order they apply: the brand whose resolved file it writes, the vendor filament file it
@@ -66,6 +83,8 @@ export const CREALITY_V3_OVERLAY = 'overlays/creality-ender-3-v3.json'
  * process-speeds.json.
  */
 export const MAKER_OVERLAYS: readonly { path: string; brand: string; filaments?: string; machineJson: boolean; processSpeeds?: boolean }[] = [
+  // First, so the 2.8 values for every process tier reach the entries it writes.
+  { path: BBL_29_OVERLAY, brand: 'bambu-lab', machineJson: false },
   { path: BBL_OVERLAY, brand: 'bambu-lab', filaments: 'filaments/BBL.json', machineJson: false },
   { path: PRUSA_OVERLAY, brand: 'prusa', machineJson: true },
   { path: PRUSA_BRIM_OVERLAY, brand: 'prusa', machineJson: false },
@@ -134,8 +153,61 @@ function applyPart(part: Part, machine: (Values & { filament?: Values }) | undef
   }
 }
 
+const KEEP_GCODE = new Set(['filament_start_gcode', 'filament_end_gcode'])
+/** A preset's values of one section, typed, without the keys at the schema default: what gen-resolved.ts keeps of a dump. */
+function sectionValues(raw: Raw, section: 'printer' | 'filament' | 'process'): Raw {
+  const out: Raw = {}
+  for (const [k, v] of Object.entries(importFlat(raw).config as Raw)) {
+    if ((k.endsWith('gcode') && !KEEP_GCODE.has(k)) || PROFILE_META_KEYS.has(k) || k === 'printer_notes' || k === 'filament_notes' || /^default_(print|filament)_profile$/.test(k) || /_settings_id$/.test(k)) continue
+    if (settingDef(k)?.section !== section) continue
+    if (!sameValue(v as SettingValue, defaults[k] as SettingValue)) out[k] = v
+  }
+  return out
+}
+
+/** One nozzle's part of an entry written whole: Standard is the base tier, the others are stored as differences from it. */
+function presetPart(n: ModelPresets['nozzles'][string], orca: Raw): Part & { orca: Raw } {
+  const tiers = Object.keys(n.process)
+  const base = tiers.includes('standard') ? 'standard' : tiers.sort()[0]!
+  const std = sectionValues(n.process[base]!.values, 'process')
+  const process: Record<string, Raw | TierDiff> = { [base]: std }
+  for (const tier of tiers.sort()) {
+    if (tier === base) continue
+    const cfg = sectionValues(n.process[tier]!.values, 'process')
+    const set: Raw = {}
+    for (const [k, v] of Object.entries(cfg)) if (!sameValue(v as SettingValue, std[k] as SettingValue)) set[k] = v
+    process[tier] = { set, unset: Object.keys(std).filter((k) => !(k in cfg)) }
+  }
+  const id = n.filament.values['filament_id']
+  const filamentId = Array.isArray(id) ? String(id[0] ?? '') : String(id ?? '')
+  return { orca: { ...orca, ...(filamentId ? { filamentId } : {}) }, base, machine: sectionValues(n.machine.values, 'printer'), filament: sectionValues(n.filament.values, 'filament'), process }
+}
+
+/** Writes the overlay's whole entries for the models the brand's data lacks, in place. */
+export function addModelEntries(data: ResolvedBrand, overlay: MakerOverlay, defaultNozzle: (model: string) => number): void {
+  let added = false
+  for (const [model, presets] of Object.entries(overlay.models ?? {})) {
+    if (data.models[model]) continue
+    added = true
+    const size = Object.keys(presets.nozzles).find((n) => Number(n) === defaultNozzle(model))
+    if (!size) throw new Error(`overlay: ${model} has no ${defaultNozzle(model)} mm nozzle presets`)
+    // The default nozzle names no process or filament, as the generated entries do; the others name theirs.
+    const entry: Entry & { orca: Raw } = presetPart(presets.nozzles[size]!, { ...presets.orca, process: '', filament: '' })
+    const others: Record<string, Part> = {}
+    for (const [n, p] of Object.entries(presets.nozzles).sort(([a], [b]) => Number(a) - Number(b))) {
+      if (n === size) continue
+      others[n] = presetPart(p, { vendor: presets.orca.vendor, profile: p.machine.preset, process: p.process['standard']?.preset ?? '', filament: p.filament.preset })
+    }
+    if (Object.keys(others).length) entry.nozzles = others
+    data.models[model] = entry
+  }
+  // In model order, as the generated files have them.
+  if (added) data.models = Object.fromEntries(Object.entries(data.models).sort(([a], [b]) => a.localeCompare(b)))
+}
+
 /** Applies the overlay's printer, default filament and process values to a brand's resolved file, in place. */
 export function applyResolvedOverlay(data: ResolvedBrand, overlay: MakerOverlay, defaultNozzle: (model: string) => number): void {
+  addModelEntries(data, overlay, defaultNozzle)
   const every = overlay.every_process?.values
   const models = new Set([...Object.keys(overlay.machine), ...Object.keys(overlay.process), ...(every ? Object.keys(data.models) : [])])
   for (const model of models) {

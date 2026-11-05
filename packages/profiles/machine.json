@@ -1,5 +1,5 @@
 {
- "comment": "Numeric and choice machine settings per printer model, Orca-format values, checked against the Orca commit below. Written by the private extract script; the public test locks these values.",
+ "comment": "Numeric and choice machine settings per printer model, Orca-format values, checked against the Orca commit below. A model Orca has no profile for yet names the Bambu Studio release its values were read from (bambuStudio), and its orca.checked is bambu-studio-<release>. Written by the private extract script; the public test locks these values.",
  "models": {
   "anycubic-kobra-x": {
    "machine": {
@@ -2042,6 +2042,621 @@
    "orca": {
     "checked": "97700c5",
     "profile": "Bambu Lab H2C 0.4 nozzle",
+    "vendor": "BBL"
+   }
+  },
+  "bambu-h3c": {
+   "bambuStudio": "02.09.01.70",
+   "machine": {
+    "auxiliary_fan": "1",
+    "bed_exclude_area": [],
+    "bed_temperature_formula": "by_highest_temp",
+    "best_object_pos": "0.5x0.5",
+    "cooling_filter_enabled": "0",
+    "default_nozzle_volume_type": [
+     "Standard",
+     "Standard",
+     "Standard",
+     "Standard",
+     "Standard",
+     "Standard",
+     "Standard",
+     "TPU285",
+     "Standard"
+    ],
+    "deretract_speed_extruder_change": [
+     "30",
+     "30",
+     "30"
+    ],
+    "deretraction_speed": [
+     "30",
+     "30",
+     "30"
+    ],
+    "enable_long_retraction_when_cut": "2",
+    "enable_pre_heating": "1",
+    "extruder_clearance_dist_to_rod": "56",
+    "extruder_clearance_height_to_lid": "172",
+    "extruder_clearance_height_to_rod": "26",
+    "extruder_clearance_max_radius": "95",
+    "extruder_clearance_radius": "30",
+    "extruder_colour": [
+     "#018001"
+    ],
+    "extruder_height_gap": "0",
+    "extruder_max_nozzle_count": [
+     "9"
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "extruder_printable_area": [],
+    "extruder_printable_height": [],
+    "extruder_type": [
+     "Direct Drive"
+    ],
+    "extruder_variant_list": [
+     "Direct Drive Standard,Direct Drive High Flow,Direct Drive TPU285"
+    ],
+    "fan_direction": "left",
+    "farthest_point_timelapse": "1",
+    "gcode_flavor": "marlin",
+    "grab_length": [
+     "0"
+    ],
+    "group_algo_with_time": "0",
+    "head_wrap_detect_zone": [],
+    "hotend_cooling_rate": [
+     "2",
+     "2",
+     "2"
+    ],
+    "hotend_heating_rate": [
+     "7.5",
+     "7.5",
+     "7.5"
+    ],
+    "long_retractions_when_cut": [
+     "0",
+     "0",
+     "0"
+    ],
+    "machine_bed_mass_Y": "0",
+    "machine_hotend_change_time": "0",
+    "machine_load_filament_time": "15",
+    "machine_max_acceleration_e": [
+     "5000",
+     "5000",
+     "5000",
+     "5000",
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000",
+     "5000",
+     "5000",
+     "5000",
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_travel": [
+     "9000",
+     "9000",
+     "9000",
+     "9000",
+     "9000",
+     "9000"
+    ],
+    "machine_max_acceleration_x": [
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000"
+    ],
+    "machine_max_acceleration_y": [
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000",
+     "25000"
+    ],
+    "machine_max_acceleration_z": [
+     "1000",
+     "1000",
+     "1000",
+     "1000",
+     "1000",
+     "1000"
+    ],
+    "machine_max_force_Y": "0",
+    "machine_max_jerk_e": [
+     "2.5",
+     "2.5",
+     "2.5",
+     "2.5",
+     "2.5",
+     "2.5"
+    ],
+    "machine_max_jerk_x": [
+     "9",
+     "9",
+     "9",
+     "9",
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9",
+     "9",
+     "9",
+     "9",
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "3",
+     "3",
+     "3",
+     "3",
+     "3",
+     "3"
+    ],
+    "machine_max_printed_mass": "0",
+    "machine_max_speed_e": [
+     "30",
+     "30",
+     "30",
+     "30",
+     "30",
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "1400",
+     "1400",
+     "1400",
+     "1400",
+     "1400",
+     "1400"
+    ],
+    "machine_max_speed_y": [
+     "1400",
+     "1400",
+     "1400",
+     "1400",
+     "1400",
+     "1400"
+    ],
+    "machine_max_speed_z": [
+     "35",
+     "35",
+     "35",
+     "35",
+     "35",
+     "35"
+    ],
+    "machine_min_extruding_rate": [
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0"
+    ],
+    "machine_prepare_compensation_time": "260",
+    "machine_switch_extruder_time": "4",
+    "machine_unload_filament_time": "28",
+    "master_extruder_id": "1",
+    "max_layer_height": [
+     "0.28"
+    ],
+    "min_layer_height": [
+     "0.08"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_flush_dataset": [
+     "1",
+     "2",
+     "2"
+    ],
+    "nozzle_height": "4",
+    "nozzle_volume": [
+     "125.9",
+     "125.9",
+     "125.9"
+    ],
+    "physical_extruder_map": [
+     "0"
+    ],
+    "print_in_clockwise": "0",
+    "printable_area": [
+     "0x0",
+     "330x0",
+     "330x320",
+     "0x320"
+    ],
+    "printable_height": "325",
+    "printer_extruder_id": [
+     "1",
+     "1",
+     "1"
+    ],
+    "printer_extruder_variant": [
+     "Direct Drive Standard",
+     "Direct Drive High Flow",
+     "Direct Drive TPU285"
+    ],
+    "printer_structure": "corexy",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%",
+     "0%",
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2",
+     "2",
+     "2"
+    ],
+    "retract_lift_above": [
+     "0",
+     "0",
+     "0"
+    ],
+    "retract_lift_below": [
+     "339",
+     "339",
+     "339"
+    ],
+    "retract_restart_extra": [
+     "0",
+     "0",
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0",
+     "0",
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1",
+     "1",
+     "1"
+    ],
+    "retraction_distances_when_cut": [
+     "18",
+     "18",
+     "18"
+    ],
+    "retraction_length": [
+     "0.8",
+     "0.8",
+     "0.8"
+    ],
+    "retraction_minimum_travel": [
+     "1",
+     "1",
+     "1"
+    ],
+    "retraction_speed": [
+     "30",
+     "30",
+     "30"
+    ],
+    "silent_mode": "0",
+    "single_extruder_multi_material": "1",
+    "support_air_filtration": "0",
+    "support_chamber_temp_control": "1",
+    "support_cooling_filter": "0",
+    "support_fast_purge_mode": "0",
+    "support_object_skip_flush": "0",
+    "upward_compatible_machine": [
+     "Bambu Lab H2S 0.4 nozzle",
+     "Bambu Lab A2L 0.4 nozzle"
+    ],
+    "wipe": [
+     "1",
+     "1",
+     "1"
+    ],
+    "wipe_distance": [
+     "2",
+     "2",
+     "2"
+    ],
+    "wrapping_exclude_area": [],
+    "z_hop": [
+     "0.4",
+     "0.4",
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift",
+     "Auto Lift",
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "before_layer_change_gcode",
+    "change_extrusion_role_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "default_nozzle_volume_type": [
+       "Standard"
+      ],
+      "deretract_speed_extruder_change": [
+       "30",
+       "30"
+      ],
+      "deretraction_speed": [
+       "30",
+       "30"
+      ],
+      "extruder_variant_list": [
+       "Direct Drive Standard,Direct Drive High Flow"
+      ],
+      "hotend_cooling_rate": [
+       "2",
+       "2"
+      ],
+      "hotend_heating_rate": [
+       "2",
+       "2"
+      ],
+      "long_retractions_when_cut": [
+       "0",
+       "0"
+      ],
+      "machine_max_acceleration_e": [
+       "5000",
+       "5000",
+       "5000",
+       "5000"
+      ],
+      "machine_max_acceleration_extruding": [
+       "20000",
+       "20000",
+       "20000",
+       "20000"
+      ],
+      "machine_max_acceleration_retracting": [
+       "5000",
+       "5000",
+       "5000",
+       "5000"
+      ],
+      "machine_max_acceleration_travel": [
+       "9000",
+       "9000",
+       "9000",
+       "9000"
+      ],
+      "machine_max_acceleration_x": [
+       "20000",
+       "20000",
+       "20000",
+       "20000"
+      ],
+      "machine_max_acceleration_y": [
+       "20000",
+       "20000",
+       "20000",
+       "20000"
+      ],
+      "machine_max_acceleration_z": [
+       "500",
+       "500",
+       "500",
+       "500"
+      ],
+      "machine_max_jerk_e": [
+       "2.5",
+       "2.5",
+       "2.5",
+       "2.5"
+      ],
+      "machine_max_jerk_x": [
+       "9",
+       "9",
+       "9",
+       "9"
+      ],
+      "machine_max_jerk_y": [
+       "9",
+       "9",
+       "9",
+       "9"
+      ],
+      "machine_max_jerk_z": [
+       "3",
+       "3",
+       "3",
+       "3"
+      ],
+      "machine_max_speed_e": [
+       "30",
+       "30",
+       "30",
+       "30"
+      ],
+      "machine_max_speed_x": [
+       "1000",
+       "1000",
+       "1000",
+       "1000"
+      ],
+      "machine_max_speed_y": [
+       "1000",
+       "1000",
+       "1000",
+       "1000"
+      ],
+      "machine_max_speed_z": [
+       "30",
+       "30",
+       "30",
+       "30"
+      ],
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "nozzle_flush_dataset": [
+       "1",
+       "2"
+      ],
+      "nozzle_volume": [
+       "125.9",
+       "125.9"
+      ],
+      "printer_extruder_id": [
+       "1",
+       "1"
+      ],
+      "printer_extruder_variant": [
+       "Direct Drive Standard",
+       "Direct Drive High Flow"
+      ],
+      "retract_before_wipe": [
+       "0%",
+       "0%"
+      ],
+      "retract_length_toolchange": [
+       "2",
+       "2"
+      ],
+      "retract_lift_above": [
+       "0",
+       "0"
+      ],
+      "retract_lift_below": [
+       "339",
+       "339"
+      ],
+      "retract_restart_extra": [
+       "0",
+       "0"
+      ],
+      "retract_restart_extra_toolchange": [
+       "0",
+       "0"
+      ],
+      "retract_when_changing_layer": [
+       "1",
+       "1"
+      ],
+      "retraction_distances_when_cut": [
+       "18",
+       "18"
+      ],
+      "retraction_length": [
+       "0.4",
+       "0.4"
+      ],
+      "retraction_minimum_travel": [
+       "1",
+       "1"
+      ],
+      "retraction_speed": [
+       "30",
+       "30"
+      ],
+      "upward_compatible_machine": [
+       "Bambu Lab H2S 0.2 nozzle",
+       "Bambu Lab A2L 0.2 nozzle"
+      ],
+      "wipe": [
+       "1",
+       "1"
+      ],
+      "wipe_distance": [
+       "2",
+       "2"
+      ],
+      "z_hop": [
+       "0.4",
+       "0.4"
+      ],
+      "z_hop_types": [
+       "Auto Lift",
+       "Auto Lift"
+      ]
+     },
+     "orcaProfile": "Bambu Lab H3C 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4",
+       "1.4",
+       "1.4"
+      ],
+      "upward_compatible_machine": [
+       "Bambu Lab H2S 0.6 nozzle",
+       "Bambu Lab A2L 0.6 nozzle"
+      ]
+     },
+     "orcaProfile": "Bambu Lab H3C 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retraction_length": [
+       "3",
+       "3",
+       "3"
+      ],
+      "upward_compatible_machine": [
+       "Bambu Lab H2S 0.8 nozzle",
+       "Bambu Lab A2L 0.8 nozzle"
+      ]
+     },
+     "orcaProfile": "Bambu Lab H3C 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "bambu-studio-02.09.01.70",
+    "profile": "Bambu Lab H3C 0.4 nozzle",
     "vendor": "BBL"
    }
   },

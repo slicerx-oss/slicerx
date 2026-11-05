@@ -10218,7 +10218,8 @@
     "Hybrid",
     "TPU High Flow",
     "E3D High Flow",
-    "Extra High Flow"
+    "Extra High Flow",
+    "TPU285"
    ],
    "mode": "develop",
    "default": [
@@ -10232,7 +10233,8 @@
     "Hybrid",
     "TPU high flow",
     "E3D high flow",
-    "Extra high flow"
+    "Extra high flow",
+    "TPU 2.85 mm"
    ]
   },
   {

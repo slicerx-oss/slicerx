@@ -5,11 +5,12 @@
 // The MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json) is checked the same way, in
 // resolved/prusa.json and machine.json, and the Prusa brim (packages/profiles/overlays/prusa-brim.json) and the MK4 and MINI
 // first layer (packages/profiles/overlays/prusa-first-layer.json) in resolved/prusa.json. The plain Ender-3 V3 widths
-// (packages/profiles/overlays/creality-ender-3-v3.json) are checked the same way in process-speeds.json.
+// (packages/profiles/overlays/creality-ender-3-v3.json) are checked the same way in process-speeds.json. The H3C's whole
+// entry (packages/profiles/overlays/bbl-2.9.json) is checked by writing it again from the overlay.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { applyFilamentOverlay, applyMachineOverlay, applyProcessPresetOverlay, applyResolvedOverlay, BBL_OVERLAY, CREALITY_V3_OVERLAY, MAKER_OVERLAYS, PRUSA_BRIM_OVERLAY, PRUSA_FIRST_LAYER_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type SpeedsFile, type VendorData } from './overlay'
+import { addModelEntries, applyFilamentOverlay, applyMachineOverlay, applyProcessPresetOverlay, applyResolvedOverlay, BBL_29_OVERLAY, BBL_OVERLAY, CREALITY_V3_OVERLAY, MAKER_OVERLAYS, PRUSA_BRIM_OVERLAY, PRUSA_FIRST_LAYER_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type SpeedsFile, type VendorData } from './overlay'
 import { printerConfig, printerProfile, processConfig, processSpeedSource } from './profiles'
 import { resolvedProfile } from './resolved'
 import { loadFilamentPreset } from './filaments'
@@ -343,5 +344,51 @@ describe('Ender-3 V3 first layer and support widths', () => {
       expect(cfg['initial_layer_line_width'], printerId).toBeUndefined()
       expect(cfg['support_line_width'], printerId).toBeUndefined()
     }
+  })
+})
+
+describe('Bambu Studio 2.9 presets for the H3C', () => {
+  const v29 = (): MakerOverlay => read<MakerOverlay>(BBL_29_OVERLAY)
+
+  it('is listed before the 2.8 overlay and writes whole entries only', () => {
+    const paths = MAKER_OVERLAYS.map((o) => o.path)
+    expect(paths.indexOf(BBL_29_OVERLAY)).toBeLessThan(paths.indexOf(BBL_OVERLAY))
+    expect(Object.keys(v29().models ?? {})).toEqual(['bambu-h3c'])
+    expect(v29().machine).toEqual({})
+    expect(v29().process).toEqual({})
+    expect(v29().filament).toEqual({})
+    expect(v29().source).toMatchObject({ app: 'Bambu Studio 02.09.01.70' })
+  })
+
+  it('leaves a model the data already has alone, and writes the shipped entry again from nothing', () => {
+    const shipped = readFileSync(profiles + 'resolved/bambu-lab.json', 'utf8')
+    const kept = JSON.parse(shipped) as ResolvedBrand
+    applyResolvedOverlay(kept, v29(), nozzle)
+    expect(JSON.stringify(kept) + '\n').toBe(shipped)
+    // Without the entry, the overlay writes it, and the 2.8 values for every tier go on top, as in the shipped file.
+    const data = JSON.parse(shipped) as ResolvedBrand
+    delete data.models['bambu-h3c']
+    applyResolvedOverlay(data, v29(), nozzle)
+    applyResolvedOverlay(data, overlay, nozzle)
+    expect(JSON.stringify(data) + '\n').toBe(shipped)
+  })
+
+  it('gives the H3C the maker presets on every nozzle, with Bambu PLA Basic as its filament', async () => {
+    for (const [n, layer] of [[0.2, 0.1], [0.4, 0.2], [0.6, 0.3], [0.8, 0.4]] as const) {
+      const r = await resolvedProfile('bambu-h3c', 'standard', n)
+      expect(r, String(n)).toBeDefined()
+      expect(r!.process['layer_height'] ?? defaultConfig()['layer_height'], String(n)).toBe(layer)
+      expect(r!.orca?.filamentId, String(n)).toBe('GFA00')
+    }
+    expect((await resolvedProfile('bambu-h3c', 'fine'))!.process['layer_height']).toBe(0.12)
+    const layer = await stockLayer({ printerId: 'bambu-h3c', tier: 'standard', slots: [] })
+    expect(layer!.source).toBe('orca')
+    expect(layer!.filamentIds).toEqual(['GFA00'])
+    expect(layer!.values['printable_height']).toBe(325)
+  })
+
+  it('needs a default nozzle preset to write an entry', () => {
+    const o: MakerOverlay = { filament: {}, machine: {}, process: {}, models: { m: { orca: { vendor: 'BBL', profile: 'x' }, nozzles: { '0.6': { machine: { preset: 'x', values: {} }, filament: { preset: 'f', values: {} }, process: {} } } } } }
+    expect(() => addModelEntries({ models: {} }, o, () => 0.4)).toThrow(/no 0.4 mm nozzle presets/)
   })
 })

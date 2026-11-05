@@ -61,7 +61,7 @@ fn every_preset_resolves_to_the_locked_values() {
             );
         }
     }
-    assert_eq!(presets, 6845);
+    assert_eq!(presets, 6980);
     let want: BTreeMap<String, String> = lock["families"]
         .as_object()
         .expect("families")
