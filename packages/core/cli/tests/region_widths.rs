@@ -204,3 +204,68 @@ fn on_the_first_layer_a_modifier_shares_the_walls_when_its_line_width_matches() 
         "outer walls at {above:?}"
     );
 }
+
+/// The x of each outer wall line along y on the layer at `z`, in tenths of a mm.
+fn outer_walls_at(gcode: &str, z: f64) -> BTreeSet<i64> {
+    layer_at(gcode, z)
+        .walls_at
+        .iter()
+        .filter(|((k, _), _)| k == "Outer wall")
+        .flat_map(|(_, x)| x)
+        .copied()
+        .collect()
+}
+
+#[test]
+fn on_the_first_layer_regions_share_walls_by_the_widths_they_print() {
+    // Every first layer line is 0.5 mm. A modifier that changes only the infill, or only a wall width above the first
+    // layer, prints the same 0.5 mm walls there and shares the walls around it: no walls along its boundary at x 110,
+    // one seam for each loop of the box.
+    for name in ["modifier-infill-only.3mf", "modifier-inner.3mf"] {
+        let first = outer_walls_at(&gcode(name), 0.2);
+        assert!(
+            first.iter().all(|x| *x < 1010 || *x > 1190),
+            "{name}: first layer outer walls at {first:?}"
+        );
+    }
+    // A modifier with the plate's 0.5 mm line width and a first layer width of its own, 0.7 mm, walls itself there
+    // at 0.7 mm, an outer wall on each side of the boundary.
+    let g = gcode("modifier-first-layer-line.3mf");
+    let l = layer_at(&g, 0.2);
+    assert_eq!(l.widths["Outer wall"], set(&["0.5", "0.7"]));
+    assert_eq!(l.widths["Inner wall"], set(&["0.5", "0.7"]));
+    let first = outer_walls_at(&g, 0.2);
+    assert!(
+        first.iter().any(|x| (1095..=1099).contains(x)) && first.iter().any(|x| (1101..=1105).contains(x)),
+        "first layer outer walls at {first:?}"
+    );
+}
+
+#[test]
+fn on_the_first_layer_a_modifier_without_a_first_layer_width_prints_its_own_widths() {
+    // The plate sets initial_layer_line_width 0.5; a modifier sets it to 0 and its outer wall to 0.6 mm. Its first
+    // layer walls print at its own widths, as they are laid out: 0.6 mm outer walls, 0.45 mm inner ones.
+    let l = layer_at(&gcode("modifier-first-layer-unset.3mf"), 0.2);
+    assert_eq!(l.widths["Outer wall"], set(&["0.5", "0.6"]));
+    assert_eq!(l.widths["Inner wall"], set(&["0.45", "0.5"]));
+}
+
+#[test]
+fn on_the_first_layer_the_skirt_and_brim_keep_the_first_layer_width() {
+    // The whole box is a modifier with a 0.7 mm first layer width of its own. Its walls print at 0.7 mm; the skirt and
+    // the brim, laid out at the plate's 0.5 mm, print at 0.5.
+    let l = layer_at(&gcode("whole-modifier-first-layer-line.3mf"), 0.2);
+    assert_eq!(l.widths["Outer wall"], set(&["0.7"]));
+    assert_eq!(l.widths["Skirt"], set(&["0.5"]));
+    assert_eq!(l.widths["Brim"], set(&["0.5"]));
+}
+
+#[test]
+fn on_the_first_layer_a_modifier_prints_its_own_first_layer_width_on_any_plate() {
+    // The plate leaves its first layer width unset (0), so its first layer prints its own 0.45 mm. A modifier with
+    // initial_layer_inner_wall_line_width 0.7 prints its first layer as those settings would on the plate: with no
+    // first layer line width of its own the 0.7 mm inner wall width is it, so its walls print at 0.7 mm.
+    let l = layer_at(&gcode("plate-unset-modifier-first-layer-inner.3mf"), 0.2);
+    assert_eq!(l.widths["Inner wall"], set(&["0.45", "0.7"]));
+    assert_eq!(l.widths["Outer wall"], set(&["0.45", "0.7"]));
+}
