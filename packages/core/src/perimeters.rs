@@ -2160,15 +2160,17 @@ impl ClassicPitch {
     }
 }
 
-/// [`ClassicPitch`] for `cfg`, whose walls are `w` wide without widths of their own.
-pub(crate) fn classic_pitch(cfg: &crate::config::PrintConfig, w: i32) -> ClassicPitch {
+/// [`ClassicPitch`] for `cfg`, whose walls are `w` wide without widths of their own, on a layer `layer_height` mm
+/// thick: variable layer heights can make it thinner or thicker than the settings' `layer_height`, and the walls print
+/// their widths at the layer's own height, so they are laid at that height's spacings.
+pub(crate) fn classic_pitch(cfg: &crate::config::PrintConfig, w: i32, layer_height: f64) -> ClassicPitch {
     let mm = crate::geom::mm;
     let (ext, inner) = if cfg.has_feature_widths() {
         (mm(cfg.outer_wall_width()), mm(cfg.inner_wall_width()))
     } else {
         (w, w)
     };
-    let pitch = |width: i32| mm(cfg.spacing_for(f64::from(width) / crate::geom::SCALE));
+    let pitch = |width: i32| mm(cfg.spacing_at(f64::from(width) / crate::geom::SCALE, layer_height));
     let spacing2 = if precise_inner_walls(cfg) {
         i32::midpoint(ext, inner)
     } else {
@@ -2199,20 +2201,21 @@ pub(crate) struct ClassicEdges {
     pub(crate) infill: i32,
 }
 
-/// [`ClassicEdges`] of `cfg` on `wall_loops` walls of line width `w`.
+/// [`ClassicEdges`] of `cfg` on `wall_loops` walls of line width `w`, on a layer `layer_height` mm thick.
 pub(crate) fn classic_edges(
     cfg: &crate::config::PrintConfig,
     wall_loops: u32,
     w: i32,
     overlap: i32,
     share: f64,
+    layer_height: f64,
 ) -> Option<ClassicEdges> {
     if wall_loops < 2 || cfg.arachne_walls() {
         return None;
     }
-    let p = classic_pitch(cfg, w);
+    let p = classic_pitch(cfg, w, layer_height);
     let edge = p.spacing_edge(wall_loops);
-    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let solid = cfg.spacing_at(cfg.solid_infill_width(), layer_height);
     let back = share * f64::midpoint(f64::from(p.spacing) / crate::geom::SCALE, solid);
     #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
     let infill = p.ext + p.inner * (wall_loops as i32 - 1) - overlap;
@@ -2256,11 +2259,11 @@ pub(crate) fn walls_for_top(
         )
     } else {
         let mm = crate::geom::mm;
-        let laid = classic_pitch(cfg, w);
+        let laid = classic_pitch(cfg, w, layer_height);
         let ClassicPitch {
             ext, inner, spacing2, ..
         } = laid;
-        let pitch = |width: i32| mm(cfg.spacing_for(f64::from(width) / crate::geom::SCALE));
+        let pitch = |width: i32| mm(cfg.spacing_at(f64::from(width) / crate::geom::SCALE, layer_height));
         // With sparse infill and two walls or more, a strip of infill area whose free width inside the innermost wall
         // (less the overlap) is under 0.15 of an inner spacing prints walls only: the infill area is opened by at least the strip
         // width that holds. That width is the free width plus how far the infill area reaches past the free
@@ -2294,7 +2297,10 @@ pub(crate) fn walls_for_top(
                 let line = f64::from(mm(cfg.line_width).max(1));
                 crate::session::surface_edge(cfg, layer_height, f64::from(overlap) / line, wall_loops).map(mm)
             };
-            let spacing = surface.map_or_else(|| mm(cfg.spacing_for(cfg.top_surface_width())), |n| n.spacing);
+            let spacing = surface.map_or_else(
+                || mm(cfg.spacing_at(cfg.top_surface_width(), layer_height)),
+                |n| n.spacing,
+            );
             // A hair under the spacing: a hundredth, or on Bambu Lab printers and inside one wall a thousandth, where
             // a strip 0.3 % too narrow for a line keeps its gap fill.
             let fits = if wall_loops == 1 || crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
