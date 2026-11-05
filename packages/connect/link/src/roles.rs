@@ -152,6 +152,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: it changes only what the window shows, never the project.
     ("paint.get", LinkClass::Read),
     ("paint.preview", LinkClass::Read),
+    ("paint.from_texture", LinkClass::Read),
     ("paint.apply", LinkClass::Edit),
     ("paint.clear", LinkClass::Edit),
     ("preview.get", LinkClass::Read),
@@ -510,6 +511,7 @@ mod tests {
         ("settings.get", LinkClass::Read),
         ("paint.get", LinkClass::Read),
         ("paint.preview", LinkClass::Read),
+        ("paint.from_texture", LinkClass::Read),
         ("paint.apply", LinkClass::Edit),
         ("paint.clear", LinkClass::Edit),
         ("preview.get", LinkClass::Read),

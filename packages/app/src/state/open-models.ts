@@ -222,6 +222,14 @@ export function recentCopy(name: string, data: ArrayBuffer, unlocked: boolean): 
 }
 
 export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: boolean } = {}): Promise<void> {
+  // An OBJ's MTL and images come with it: they are read for its texture (plate/texture-open.ts), not opened as models.
+  const textureFiles = refs.filter((r) => /\.(mtl|png|jpe?g)$/i.test(r.name))
+  if (textureFiles.length) {
+    refs = refs.filter((r) => !textureFiles.includes(r))
+    if (refs.length === 0) return (await import('../plate/texture-open')).onlyTextureFiles(textureFiles)
+  }
+  const textures: { src: import('../plate/texture-paint').TextureSource; ids: string[] }[] = []
+  let opened = false
   // A G-code file opens in Preview to view, not on the plate.
   const gcode = refs.filter((r) => isGcodeName(r.name))
   if (gcode.length) {
@@ -248,7 +256,12 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       const data = open?.data ?? (await host.files.read(ref))
       markOpenStage('read')
       const keep = recentCopy(name, data, !!open)
-      told = (await addBytes(host, name, data, scope)) || told
+      // A textured OBJ or 3MF keeps its texture, to paint the objects it adds once the open is done.
+      const tex = /\.(obj|3mf)$/i.test(name) ? await import('../plate/texture-open') : null
+      const src = tex ? await tex.textureBefore(host, name, data, textureFiles, open ? undefined : ref) : null
+      const before = tex && src ? tex.plateIds() : null
+      told = (await addBytes(host, name, src?.kind === 'obj' && tex ? tex.withoutMtllib(data) : data, scope)) || told
+      if (tex && src && before) textures.push({ src, ids: tex.addedSince(before) })
       if (keep) void import('../project/autosave').then((m) => m.recordRecent(name, keep))
     }
     scope?.run(() => undefined)
@@ -261,6 +274,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     // A new job: Slice's right pane starts shut again, so the view is clear.
     if (scope && !scope.superseded) jobOpened()
     if (!told || refs.length > 1) openNote(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
+    opened = !scope?.superseded
   } catch (e) {
     scope?.finish(false)
     // A newer open took over: it says what it opened.
@@ -274,4 +288,6 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       sayKept()
     }
   }
+  // After the open, so the paint is an undo step of its own.
+  if (opened && textures.length) await (await import('../plate/texture-open')).paintOpened(textures)
 }

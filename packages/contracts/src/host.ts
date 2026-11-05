@@ -30,6 +30,12 @@ export interface FileRef {
 export interface FileHost {
   open(opts: { accept: string[]; multiple?: boolean }): Promise<FileRef[]>
   read(ref: FileRef): Promise<ArrayBuffer>
+  /**
+   * A material or image file an opened OBJ names, from the OBJ's own folder, or null when there is none or it is over
+   * `maxBytes`. Desktop only:
+   * a file the system opened (a double click, Open with) brings its MTL and images this way.
+   */
+  readBeside?(ref: FileRef, name: string, maxBytes?: number): Promise<ArrayBuffer | null>
   save(suggestedName: string, data: ArrayBuffer | Blob, opts?: { accept?: string[] }): Promise<FileRef | null>
   /** Writes over a project file opened or saved before, without asking. Desktop only. */
   saveTo?(ref: FileRef, data: ArrayBuffer | Blob): Promise<FileRef | null>
