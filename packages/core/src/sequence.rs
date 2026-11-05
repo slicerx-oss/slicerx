@@ -491,6 +491,11 @@ fn slice_interleaved_by_height(
                     join_speeds(dst, &l);
                     let shift = u32::try_from(dst.points.len()).unwrap_or(0);
                     let (from, to) = (f64::from(l.height), f64::from(dst.height));
+                    if (from - to).abs() > 1e-6
+                        && !dst.own_heights.iter().any(|(o, _)| *o == sub.plate_index())
+                    {
+                        dst.own_heights.push((sub.plate_index(), l.height));
+                    }
                     dst.points.append(&mut l.points);
                     for mut p in l.paths {
                         p.start += shift;

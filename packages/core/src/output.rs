@@ -216,6 +216,10 @@ pub struct LayerPaths {
     /// Top of the layer, mm.
     pub z: f32,
     pub height: f32,
+    /// Plate objects whose paths on this layer come from layers of another thickness (objects at layer heights of
+    /// their own, merged onto the plate's layers): the object ([`PathInfo::owner`]) and its own layer thickness, mm,
+    /// which its height lines state. Empty when every path is the layer's own thickness.
+    pub own_heights: Vec<(u16, f32)>,
     /// Tool active when the layer starts (0 when none is known, as on the print's first layer, which starts on
     /// whatever the start G-code loads).
     pub start_tool: u8,
