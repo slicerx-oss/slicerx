@@ -5,7 +5,7 @@
 //! it only when it is a plain http or https address on the local network, by the rule the bridge applies before it
 //! connects a printer (`sx_link::is_lan_host`, which also refuses a name a browser reads as an IPv4 number). A single
 //! label normally resolves through the local search domain, but one that is also a top-level domain (`ai`) could
-//! resolve on the internet, so the shell asks the system resolver first and opens it only when some address it gets
+//! resolve on the internet, so the shell asks the system resolver first and opens it only when every address it gets
 //! is local. The opener's own allow list takes fixed pages only, and a glob that took every local address would also
 //! take `http://10.example.com/`, so these go through here instead.
 
@@ -24,8 +24,8 @@ pub async fn printer_page_open(url: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Hands `url` to `open` when [`page_host`] accepts it and, for a single-label name, `resolve` gives at least one
-/// local address.
+/// Hands `url` to `open` when [`page_host`] accepts it and, for a single-label name, every address `resolve` gives
+/// is local (and there is at least one).
 pub fn open_with(
     url: &str,
     resolve: impl FnOnce(&str) -> Vec<IpAddr>,
@@ -35,15 +35,14 @@ pub fn open_with(
         return Err("only a printer's own page on the local network opens here".into());
     };
     let name = host.strip_suffix('.').unwrap_or(host);
-    if !name.contains('.')
-        && !name.contains(':')
-        && !resolve(name)
-            .iter()
-            .any(|ip| sx_link::is_lan_host(&ip.to_string()))
-    {
-        return Err(format!(
-            "{name} does not resolve to an address on the local network"
-        ));
+    if !name.contains('.') && !name.contains(':') {
+        // Every address must be local: a browser may connect to any of them.
+        let found = resolve(name);
+        if found.is_empty() || !found.iter().all(|ip| sx_link::is_lan_host(&ip.to_string())) {
+            return Err(format!(
+                "{name} does not resolve only to addresses on the local network"
+            ));
+        }
     }
     open(url)
 }
@@ -126,13 +125,20 @@ mod tests {
         }
     }
 
-    /// A single-label name opens only when the resolver gives a local address; dotted names and addresses are not looked up.
+    /// A single-label name opens only when every address the resolver gives is local; dotted names and addresses are not looked up.
     #[test]
     fn a_single_label_opens_only_when_it_resolves_on_the_network() {
         let ip = |s: &str| s.parse::<IpAddr>().unwrap();
         let try_open = |url: &str, found: Vec<IpAddr>| open_with(url, move |_| found, |_| Ok(()));
         assert!(try_open("http://octopi/", vec![ip("192.168.1.30")]).is_ok());
-        assert!(try_open("http://mini:8080/", vec![ip("8.8.8.8"), ip("fd00::5")]).is_ok());
+        assert!(try_open("http://mini:8080/", vec![ip("8.8.8.8"), ip("fd00::5")]).is_err());
+        assert!(
+            try_open(
+                "http://mini:8080/",
+                vec![ip("192.168.1.31"), ip("fd00::5"), ip("fe80::1")]
+            )
+            .is_ok()
+        );
         assert!(try_open("http://ai/", vec![ip("8.8.8.8")]).is_err());
         assert!(try_open("http://octopi./", vec![]).is_err());
         let not_asked = |_: &str| -> Vec<IpAddr> { panic!("looked up a name that needs no lookup") };
