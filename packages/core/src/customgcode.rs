@@ -546,9 +546,14 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         ("initial_layer_print_height", n(cfg.initial_layer_print_height)),
         ("printable_height", n(cfg.printable_height)),
         ("max_print_height", n(cfg.printable_height)),
+        // Each filament's nozzle size, by the nozzle it prints with: two-nozzle start G-code reads it per extruder.
         (
             "nozzle_diameter",
-            list(std::iter::repeat_n(cfg.nozzle_diameter, tools)),
+            if crate::nozzles::per_nozzle(cfg) {
+                per(&|s| crate::nozzles::nozzle_of_slot(cfg, s).mm)
+            } else {
+                list(std::iter::repeat_n(cfg.nozzle_diameter, tools))
+            },
         ),
         (
             "temperature",
