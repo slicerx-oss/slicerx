@@ -113,14 +113,15 @@ function heightOf(v: SettingValue | undefined): number | null {
  * The warning for smart layer heights over layer heights objects set for themselves, or null when none does. The app's
  * layer plan is one for the whole plate, as the engine's own is, so an object's own layer height is not used. A part
  * never prints at a layer height of its own inside its object, so only objects are named. The wording matches the
- * engine's, which warns when it plans the layers itself.
+ * engine's, which warns when it plans the layers itself. `lead` names what replaces them: a plate's own layer heights
+ * say so in the same words.
  */
-export function smartLayerWarning(s: Pick<AppState, 'plate' | 'objectSettings'>): SliceWarning | null {
+export function smartLayerWarning(s: Pick<AppState, 'plate' | 'objectSettings'>, lead = 'Smart layer heights'): SliceWarning | null {
   const own: string[] = []
   for (const p of s.plate.filter((e) => e.printable !== false)) {
     const h = heightOf(objectOverrides(s, p)['layer_height'])
     if (h !== null) own.push(`${p.name} ${h} mm`)
   }
   const named = [...new Set(own)]
-  return named.length ? { code: 'unsupported_setting', message: `Smart layer heights replace the layer heights objects set for themselves (${named.join(', ')}).` } : null
+  return named.length ? { code: 'unsupported_setting', message: `${lead} replace the layer heights objects set for themselves (${named.join(', ')}).` } : null
 }

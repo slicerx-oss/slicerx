@@ -675,6 +675,12 @@ export interface PlateSettings {
    * Absent means the slicer picks them.
    */
   hotendMap?: number[]
+  /**
+   * The plate's own layer heights (plate/layer-profile.ts): [height above the bed, layer height] in mm, rising. When
+   * set, the plate slices at the layers it gives, in place of sleipnir's plan and the fixed layer height. A new plate
+   * never inherits it.
+   */
+  layerProfile?: [number, number][]
 }
 
 /**

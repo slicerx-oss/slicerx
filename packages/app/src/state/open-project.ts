@@ -197,6 +197,8 @@ async function addProjectShown(
   }
   // The app's plate made of each of the file's plates, with the file's plate number (the project's tower spots are per plate).
   const madePlates: { id: string; plateNo?: number }[] = []
+  // Each plate's objects with the layer height profiles the file gives them, taken once the settings are in.
+  const fileProfiles: { plateId: string; objects: import('../plate/layer-profile').FileObjectProfile[] }[] = []
   for (const [i, plate] of project.plates.entries()) {
     // A project opened as the job keeps the file's plates as they are, empty ones too, so plate N here is plate N in the
     // file. Added to plates the person already has, it brings only the plates with objects on them.
@@ -214,6 +216,7 @@ async function addProjectShown(
       // The file's first plate is the one the project opens onto, so it takes the file's name as the others do.
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, name: plate.name } : p)) })))
     }
+    if (wasEmpty && !geometryOnly && plate.objects.some((o) => o.layerProfile?.length)) fileProfiles.push({ plateId: madePlates[madePlates.length - 1]!.id, objects: plate.objects.map((o, k) => ({ name: o.name, ...(o.layerProfile ? { points: o.layerProfile } : {}), ...(made[k] ? { entry: made[k] } : {}) })) })
     mine(() => set((s) => ({ plate: [...s.plate, ...made], objectSettings: { ...s.objectSettings, ...fileObjectSettings }, selection: made[0]?.id ?? s.selection })))
     markOpenStage('objects')
     if (plate.marks?.length) {
@@ -351,6 +354,23 @@ async function addProjectShown(
         return { overrides }
       }),
     )
+  }
+  if (fileProfiles.length) {
+    // The file's own layer heights, kept inside what this printer prints.
+    const { layerLimits, plateProfileFromFile } = await import('../plate/layer-profile')
+    const { setPlateLayerProfile } = await import('../plate/plates')
+    const limits = layerLimits(resolveConfig(get().easy, get().overrides))
+    let clamped = false
+    const mixed: string[] = []
+    for (const { plateId, objects } of fileProfiles) {
+      const got = plateProfileFromFile(objects, limits)
+      if (!got) continue
+      mine(() => setPlateLayerProfile(plateId, got.points))
+      if (got.clamped) clamped = true
+      if (got.from) mixed.push(got.from)
+    }
+    if (mixed.length) note = `${note ? `${note} ` : ''}Its objects have different layer height profiles, and layers are shared on a plate, so ${mixed.length === 1 ? 'the plate uses the one of' : 'each plate uses the one of its tallest object:'} ${mixed.join(', ')}${mixed.length === 1 ? ', the tallest' : ''}.`
+    if (clamped) note = `${note ? `${note} ` : ''}Its layer height profile asks for layers this printer does not print, so those use the nearest it does (${limits.minMm} to ${limits.maxMm} mm).`
   }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
