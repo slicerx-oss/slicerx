@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { ConnectionField, ConnectionId, ConnectionMethod } from './types.ts'
+import type { ConnectionField, ConnectionId, ConnectionMethod, WebUi } from './types.ts'
 
 const host: ConnectionField = { key: 'host', label: 'IP address', secret: false, required: true, placeholder: '192.168.1.50' }
 const port = (placeholder: string): ConnectionField => ({ key: 'port', label: 'Port', secret: false, required: false, placeholder })
 const apiKey = (required: boolean): ConnectionField => ({ key: 'apiKey', label: 'API key', secret: true, required })
+/** A page on the same server as the connection, so it moves with the printer's port (see `WebUi.sharesPort`). */
+const samePort = (port: number): WebUi => ({ port, path: '/', sharesPort: true })
 
 export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
   {
@@ -45,6 +47,8 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
       { key: 'password', label: 'Password', secret: true, required: false },
     ],
     summary: 'Any Klipper printer that opens in Mainsail or Fluidd. An API key is needed only if your computer is not a trusted client; a printer that requires logins also takes its user name and password.',
+    // Mainsail or Fluidd, which most Klipper printers serve on port 80 (moonraker.md).
+    webUi: { port: 80, path: '/' },
   },
   {
     id: 'octoprint',
@@ -60,6 +64,7 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     },
     fields: [host, port('80 on OctoPi, 5000 otherwise'), apiKey(true)],
     summary: 'A Raspberry Pi running OctoPrint in front of the printer, with an application key.',
+    webUi: samePort(5000),
   },
   {
     id: 'prusalink',
@@ -79,6 +84,7 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
       { key: 'username', label: 'User name', secret: false, required: false, placeholder: 'maker' },
     ],
     summary: 'Prusa printers with PrusaLink. Enter the password the printer shows; the user name is maker. An API key from older firmware goes in the same field.',
+    webUi: samePort(80),
   },
   {
     id: 'duet',
@@ -90,6 +96,8 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     discovery: { kind: 'manual', detail: 'Duet boards are not found automatically. Enter the address or the board\'s .local name.' },
     fields: [host, { key: 'password', label: 'Password', secret: true, required: false, placeholder: 'reprap if none was set' }],
     summary: 'Duet 2 and Duet 3 boards with RepRapFirmware 3. A password is needed only if you set one.',
+    // Duet Web Control.
+    webUi: samePort(80),
   },
   {
     id: 'creality',

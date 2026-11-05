@@ -69,6 +69,9 @@ if (__SX_FEATURE_CONNECT__) {
     if (!maker) return null
     return hasOfficialMark(maker) ? <OfficialMark slug={maker} size={size} on={on} title={vendor} /> : <MakerTile maker={maker} size={size} />
   })
+  // A printer's own web page opens in the system browser; the shell checks it is on the local network.
+  const [{ registerPrinterPageOpener }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@tauri-apps/api/core')])
+  registerPrinterPageOpener((url) => invoke('printer_page_open', { url }))
 }
 
 // mimir signs in with ChatGPT through the Rust side; the webview never sees a token.

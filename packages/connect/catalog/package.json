@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test src/catalog.test.ts"
+    "test": "node --test src/catalog.test.ts src/web-ui.test.ts"
   },
   "dependencies": {
     "@slicerx/contracts": "workspace:*"
