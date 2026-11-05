@@ -35,6 +35,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 - `slicerx_slice_file` and `slicerx_estimate_file` name the arguments they do not take instead of dropping them without a word: the call still succeeds, and a warning (in `warnings`, the text and `notices` with the code `ignored_arguments`) lists each one. For `printer`, `process`, `filament` and `machine` it points to `profiles`, such as `"profiles": ["machine:snapmaker-u1", "process:standard"]`. Before, `{"printer": "Snapmaker U1"}` sliced on the generic machine with only the `no_printer` notice. A later release may refuse unknown arguments.
 - `slicerx_arrange` without the geometry engine (no sx-geom, or it fails) sets the copies it moves to a new plate in the middle of the bed, as the nest does and as the app's Arrange now does without the engine. Before, they stayed in the front left corner. When the middle would put a copy on an excluded area, the prime tower's room or past the bed edge, or a skirt round the whole print across an excluded area, they stay where they packed.
 
+### Fixed
+
+- `slicerx_inspect_project` reads a project whose main model is over 64 MiB unzipped, such as a project from another slicer that keeps all its geometry in `3D/3dmodel.model`, and so do `slicerx_slice_file` and `slicerx_estimate_file` with `project_settings` or `plate` and the layer mark tools. Before, each was refused with `invalid_model` ("3D/3dmodel.model is over the 67108864 byte limit"), so the file could not be used at all. The app that wrote the file is read from the start of the model only, and a project with no plates of its own still counts its printable build items as one plate. A main model up to 512 MiB unzipped is read. Opening such a file as designs no longer stops at the 64 MiB limit before the engine reads it.
+
 ## [0.2.7] - 2026-10-30
 
 ### Added

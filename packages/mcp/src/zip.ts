@@ -18,7 +18,8 @@ export interface ZipReader {
   text(name: string): string | undefined
   /**
    * The entry's first `bytes` bytes (all of them when it is shorter), inflating no more of it than that takes; undefined
-   * when the archive has no such entry. An entry larger than `text` reads throws, as `text` does.
+   * when the archive has no such entry. An entry larger than `text` reads gives its start too; `bytes` past
+   * `MAX_TEXT_BYTES` throws.
    */
   head(name: string, bytes: number): Buffer | undefined
 }
@@ -106,10 +107,11 @@ function zipOf(total: number, pread: (at: number, len: number) => Buffer, label:
   }
   const head = (name: string, bytes: number): Buffer | undefined => {
     const e = entries.get(name)
-    if (!e || e.usize > MAX_TEXT_BYTES || (e.method !== 0 && e.method !== 8)) return read(name, MAX_TEXT_BYTES)?.subarray(0, bytes)
+    if (!e || (e.method !== 0 && e.method !== 8)) return read(name, MAX_TEXT_BYTES)?.subarray(0, bytes)
     const start = dataAt(e)
     if (e.method === 0) return Buffer.from(pread(start, Math.min(e.size, bytes)))
-    // Inflate a growing start of the stream until it gives `bytes`; all of it is inflated as `read` does.
+    // Inflate a growing start of the stream until it gives `bytes`, at most MAX_TEXT_BYTES of output each time, so an
+    // entry over that size gives its start as a smaller one does; all of a shorter entry is inflated as `read` does.
     for (let take = Math.min(e.size, 16 * 1024); ; take = Math.min(e.size, take * 4)) {
       const out = inflate(name, pread(start, take), MAX_TEXT_BYTES, take < e.size)
       if (out.length >= bytes || take >= e.size) return out.subarray(0, bytes)
