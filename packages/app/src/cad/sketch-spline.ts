@@ -7,7 +7,11 @@ import type { Vec2 as V2 } from '@slicerx/cad-history'
 
 /** Chord error of a flattened spline, mm: half the default slice resolution, the same as arcs. */
 export const SPLINE_TOL_MM = 0.005
-const MAX_STEPS = 1024
+/** Most steps one span may take; a span that needs more is refused, as the engine refuses it. */
+export const SPLINE_MAX_STEPS = 1024
+/** Most points one loop and one sketch may have once flattened, as in the engine. */
+export const RING_POINTS = 65_536
+export const SKETCH_POINTS = 262_144
 
 const len = (a: V2): number => Math.hypot(a[0], a[1])
 const knot = (a: V2, b: V2): number => Math.max(Math.sqrt(len([b[0] - a[0], b[1] - a[1]])), 1e-12)
@@ -38,11 +42,13 @@ export function spans(pts: readonly V2[], closed: boolean): [V2, V2, V2, V2][] {
   return out
 }
 
-/** The points after `b[0]` along a span. */
-export function flattenSpan(b: readonly [V2, V2, V2, V2]): V2[] {
+/** The points after `b[0]` along a span, or null when it bends too sharply to stay within the tolerance. */
+export function flattenSpan(b: readonly [V2, V2, V2, V2]): V2[] | null {
   const dd = (i: number, j: number, k: number) => len([b[i]![0] - 2 * b[j]![0] + b[k]![0], b[i]![1] - 2 * b[j]![1] + b[k]![1]])
   const m = 6 * Math.max(dd(0, 1, 2), dd(1, 2, 3))
-  const n = Math.min(MAX_STEPS, Math.max(1, Math.ceil(Math.sqrt(m / (8 * SPLINE_TOL_MM)))))
+  const steps = Math.ceil(Math.sqrt(m / (8 * SPLINE_TOL_MM)))
+  if (!(steps <= SPLINE_MAX_STEPS)) return null
+  const n = Math.max(1, steps)
   const out: V2[] = []
   for (let s = 1; s <= n; s++) {
     if (s === n) {
@@ -57,11 +63,18 @@ export function flattenSpan(b: readonly [V2, V2, V2, V2]): V2[] {
   return out
 }
 
-/** A spline as a polyline: through `pts` with both ends, or round them back to the first when `closed`. */
-export function splinePoints(pts: readonly V2[], closed: boolean): V2[] {
+/**
+ * A spline as a polyline: through `pts` with both ends, or round them back to the first when `closed`. Null when the
+ * engine would refuse it: a span past the step limit, or more than `budget` points.
+ */
+export function splinePoints(pts: readonly V2[], closed: boolean, budget = RING_POINTS): V2[] | null {
   if (pts.length < 2) return [...pts]
   const out: V2[] = [pts[0]!]
-  for (const b of spans(pts, closed)) out.push(...flattenSpan(b))
+  for (const b of spans(pts, closed)) {
+    const f = flattenSpan(b)
+    if (!f || out.length + f.length > budget + 1) return null
+    out.push(...f)
+  }
   return out
 }
 

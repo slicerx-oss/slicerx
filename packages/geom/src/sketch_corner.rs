@@ -111,6 +111,12 @@ pub fn corners(loops: &[Loop], corners: &[CornerRef], cut: CornerCut) -> Result<
         let Some(lp) = loops.get(l) else {
             return Err(Error::invalid("corners", format!("there is no loop {}", l + 1)));
         };
+        if lp.kind.as_deref() == Some("spline") {
+            return Err(Error::invalid(
+                "corners",
+                format!("loop {} is a smooth spline and has no corners", l + 1),
+            ));
+        }
         let (start, prims) = sketch::resolve(l, lp).map_err(|i| Error::invalid("loops", i.message))?;
         let n = prims.len();
         let starts: Vec<V2> = (0..n)
