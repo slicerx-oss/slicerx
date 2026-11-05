@@ -1526,14 +1526,18 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let t = Instant::now();
     let refused = |e: sx_core::Error| with_printer_note(e.to_string(), stock_checked.then_some(&config.raw));
     let (out, meta, hits, layer_gcode) = slice_checked(&plate, &config, &marks).map_err(refused)?;
-    let mut gcode = Vec::new();
-    let opts = sx_core::EmitOptions {
-        layer_gcode,
-        ..Default::default()
+    // The G-code as emitted is freed once it is finalized: the two are as big as each other.
+    let (gcode, timing, stats) = {
+        let mut gcode = Vec::new();
+        let opts = sx_core::EmitOptions {
+            layer_gcode,
+            ..Default::default()
+        };
+        let stats = sx_core::emit_gcode_with(&out, &config, config.gcode_flavor, &opts, &mut gcode)
+            .map_err(refused)?;
+        let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
+        (gcode, timing, stats)
     };
-    let stats =
-        sx_core::emit_gcode_with(&out, &config, config.gcode_flavor, &opts, &mut gcode).map_err(refused)?;
-    let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
     let time_s = sx_core::firmware::footer_time(&gcode).unwrap_or(stats.time_s);
     if let Some(why) = plate_refusal(
         meta.as_ref(),
@@ -1558,12 +1562,6 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     } else {
         gcode
     };
-    let mut sxpv = sx_core::preview_buffers(&out);
-    if !timing.layer_s.is_empty() {
-        #[allow(clippy::cast_possible_truncation, reason = "seconds of a layer")]
-        let layer_s: Vec<f32> = timing.layer_s.iter().map(|&t| t as f32).collect();
-        sx_core::preview::set_layer_times(&mut sxpv, &layer_s);
-    }
     let ms = t.elapsed().as_secs_f64() * 1000.0;
     // G-code goes to the file, or to stdout without `-o` (`-o -` too), so stdout
     // never carries anything else; the summary below goes to stderr.
@@ -1571,11 +1569,12 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         Some(p) if p != "-" => std::fs::write(p, &gcode)?,
         _ => std::io::Write::write_all(&mut std::io::stdout().lock(), &gcode)?,
     }
+    // The preview is built only when asked for, after the G-code is written and freed: on a large plate each is tens
+    // of megabytes.
+    let gcode_len = gcode.len();
+    drop(gcode);
     if let Some(p) = flag(args, "--preview") {
-        if preview_format(args)? == Some(sx_core::api::PreviewFormat::V2) {
-            sxpv = sx_core::preview_v2::encode(&sxpv)?;
-        }
-        std::fs::write(p, &sxpv)?;
+        write_preview(args, p, &out, &timing.layer_s)?;
     }
     for w in &out.warnings {
         eprintln!("warning: {}", w.message);
@@ -1588,12 +1587,27 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         "{} layers, {:.1} ms, {} bytes of G-code, {:.0} s estimated, filament {:?} mm, {} tool changes, file name {file_name}",
         out.layer_count,
         ms,
-        gcode.len(),
+        gcode_len,
         time_s,
         stats.filament_mm.iter().map(|v| v.round()).collect::<Vec<_>>(),
         stats.tool_changes
     );
     Ok(ExitCode::SUCCESS)
+}
+
+/// The preview of a slice of `sx slice`, with its layers' times from the finished file, written to `path`.
+fn write_preview(args: &[String], path: &str, out: &sx_core::SliceOutput, layer_s: &[f64]) -> Res<()> {
+    let mut sxpv = sx_core::preview_buffers(out);
+    if !layer_s.is_empty() {
+        #[allow(clippy::cast_possible_truncation, reason = "seconds of a layer")]
+        let layer_s: Vec<f32> = layer_s.iter().map(|&t| t as f32).collect();
+        sx_core::preview::set_layer_times(&mut sxpv, &layer_s);
+    }
+    if preview_format(args)? == Some(sx_core::api::PreviewFormat::V2) {
+        sxpv = sx_core::preview_v2::encode(&sxpv)?;
+    }
+    std::fs::write(path, &sxpv)?;
+    Ok(())
 }
 
 struct Bench {
