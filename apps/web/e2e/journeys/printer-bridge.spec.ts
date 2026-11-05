@@ -23,6 +23,7 @@ import { bridgeOn, connectApp, ctl, detectorPairing, hub, logOf, mockLog, report
 import { plateReady } from '../fixtures'
 import { expect, journey as test } from '../journey'
 import { boxOnPlate, calm, command, debugHooks, layeredX, patch, printerHud, sliceLayered, startSlice, toSlice } from './lib/slice'
+import { setState } from './lib/shell'
 
 // Setup already done, as after any first launch: printer setup opened by a test then records no unfinished onboarding
 // that a reload would open again (bridge-hub.ts seed).
@@ -495,6 +496,79 @@ test('Partner app: a named key shown once, listed in Devices, and revoking it cu
   await expect.poll(() => partner.list().then(() => 'open', () => 'closed'), { timeout: 10_000 }).toBe('closed')
   await expect(connectLink({ url: hub.linkUrl, clientKey: key, hubKey })).rejects.toThrow()
   partner.close()
+})
+
+// A partner route needs a signed-in relay and a paired partner phone, which this hub has not got: the hub's
+// relay.partnerRoute.list and close answers come from a stand-in on the page's socket, shaped as sx-link answers them
+// (partner_route.rs, tested end to end in packages/connect/link/tests/remote.rs). Everything else reaches the real hub.
+test('Devices lists an open partner route with its app, phone, time and bytes, and Close ends it', async ({ page }) => {
+  const now = Date.now()
+  let routes = [{ routeId: 'cm91dGUtaWQtb25lLTE2Yg', app: 'LayerMate', pairingId: 'UVFRUVFRUVFRUVFRUVFRUQ', phone: "Chris's phone", state: 'open', openedAt: now - 12 * 60_000, lastAt: now, bytesIn: 4_600_000, bytesOut: 1_200_000, refused: 0 }]
+  const closed: string[] = []
+  // Only for this test: later tests get the hub's own answers on a socket opened through this route.
+  let stub = true
+  await page.routeWebSocket(hub.route, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      let msg: { id?: unknown; method?: unknown; params?: { routeId?: string } } = {}
+      try {
+        if (typeof m === 'string') msg = JSON.parse(m) as typeof msg
+      } catch {
+        // The handshake.
+      }
+      if (stub && msg.method === 'relay.partnerRoute.list') {
+        ws.send(JSON.stringify({ id: msg.id, result: { routes, caps: { maxRoutes: 4, maxChunkBytes: 262144, relay: null } } }))
+        return
+      }
+      if (stub && msg.method === 'relay.partnerRoute.close') {
+        const id = msg.params?.routeId ?? ''
+        closed.push(id)
+        routes = routes.filter((r) => r.routeId !== id)
+        ws.send(JSON.stringify({ id: msg.id, result: { closed: true } }))
+        ws.send(JSON.stringify({ event: 'partnerRoute.changed', data: { routeId: id, app: 'LayerMate', state: 'closed' } }))
+        return
+      }
+      server.send(m)
+    })
+    ws.onClose(() => server.close())
+  })
+  await repair(page)
+  const home = page.viewportSize() ?? { width: 1440, height: 900 }
+  const scheme0 = (await page.locator('html').getAttribute('data-scheme')) ?? 'dark'
+  try {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+    const row = page.getByTestId('partner-route-cm91dGUtaWQtb25lLTE2Yg')
+    await expect(row).toContainText("LayerMate to Chris's phone")
+    await expect(row).toContainText('open 12 min, 4.6 MB in, 1.2 MB out')
+    await expect(row.getByRole('button', { name: 'Close' })).toBeVisible()
+    // The row's text and its Close button sit side by side, inside the list, at every width.
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await row.scrollIntoViewIfNeeded()
+      const [list, text, close] = await Promise.all([page.getByTestId('partner-routes').boundingBox(), row.locator('.min0').boundingBox(), row.getByRole('button', { name: 'Close' }).boundingBox()])
+      expect(list && text && close).toBeTruthy()
+      if (!list || !text || !close) continue
+      expect(close.x + close.width).toBeLessThanOrEqual(list.x + list.width + 0.5)
+      expect(text.x + text.width).toBeLessThanOrEqual(close.x + 0.5)
+      for (const scheme of ['light', 'dark']) {
+        await setState(page, { scheme })
+        await expect(page.locator('html')).toHaveAttribute('data-scheme', scheme)
+        await page.getByTestId('partner-routes').screenshot({ path: test.info().outputPath(`partner-routes-${width}-${scheme}.png`) })
+        await page.screenshot({ path: test.info().outputPath(`partner-routes-page-${width}-${scheme}.png`) })
+      }
+    }
+    await page.setViewportSize(home)
+    await row.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByTestId('partner-routes')).toHaveCount(0)
+    expect(closed).toEqual(['cm91dGUtaWQtb25lLTE2Yg'])
+    await sawToast(page, /Closed the route from LayerMate to Chris's phone/)
+  } finally {
+    await page.setViewportSize(home)
+    await setState(page, { scheme: scheme0 })
+    stub = false
+    await page.keyboard.press('Escape')
+  }
 })
 
 // Agent first: a client reads the integrations list Settings > mimir shows, with the same states and bays.
