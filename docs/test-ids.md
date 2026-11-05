@@ -138,6 +138,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `printer-card-open`, `printer-card-options` | A card's open area and its options button; both are off while the bridge reconnects |
 | `printer-card-tunnel` | A card's line for a printer reached through Obico: the mark and this month's tunnel data |
 | `printer-card-repaste`, `printer-card-repaste-menu` | Paste a new Obico address: the line on the card of a printer whose Obico access is gone, and the item in a tunnel printer's options menu |
+| `printer-card-web-ui` | Open the printer's own web page, in a card's options menu (only on the printer's network) |
 | `printer-repaste`, `printer-repaste-box`, `printer-repaste-save` | The Paste a new Obico address dialog, its paste box (the field and host line keep the `setup-obico-paste` and `setup-obico-host` ids) and its Save address button |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
 | `setup-skip-all` | Skip, use defaults |
@@ -711,3 +712,4 @@ Ids that tests read for their text:
 | `ph-placeholder` | The phone view's placeholder |
 | `ph-no-camera` | The live view's line under the placeholder when the printer has no camera, so the camera guard can't watch it |
 | `ph-camera-rate` | The live view's camera frame rate, the pictures a second reaching it over the last 10 seconds |
+| `ph-web-ui` | Open the printer's own web page from the printer view (only on the printer's network) |
