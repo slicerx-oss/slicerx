@@ -11,7 +11,7 @@ const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const LOOPS = [{ type: 'circle' as const, center: [0, 0] as [number, number], diameterMm: 10 }]
 const FRAME = { origin: [0, 0, 5] as [number, number, number], normal: [0, -1, 0] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 0, 1] as [number, number, number] }
 
-function host(settle?: DesignHost['settleSketch']) {
+function host(settle?: DesignHost['settleSketch'], engine?: DesignHost['call']) {
   const d: Design = { id: 'd1', name: 'Clip', history: { version: 1, base: [], steps: [] }, transform: I, parts: [], status: [], madeBy: {}, redo: [] }
   const sketches: SketchItem[] = []
   const add = vi.fn(async (_d: Design, part: number, params: StepParams, _l?: string, opts?: { sketch?: string }) => {
@@ -35,6 +35,7 @@ function host(settle?: DesignHost['settleSketch']) {
       return k
     },
     ...(settle ? { settleSketch: settle } : {}),
+    ...(engine ? { call: engine } : {}),
   }
   const tools = designToolset(h)
   const run = (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)
@@ -147,8 +148,10 @@ describe('finished sketches in the design tools', () => {
       { type: 'spline', points: [[5, 3], [8, 4], [6, 7]] },
     ]
     const settle = vi.fn(async (k: { loops: unknown[]; constraints: SketchConstraint[] }) => ({ loops: k.loops as SketchItem['loops'], constraints: k.constraints, status: 'ok' as const, dof: 9 }))
-    const { run, sketches } = host(settle)
+    const check = vi.fn(async () => ({ ok: true, issues: [] }))
+    const { run, sketches } = host(settle, check as unknown as DesignHost['call'])
     const made = await run('design.sketch', { loops })
+    expect(check).toHaveBeenCalledWith('sketch.check', { loops })
     expect(made.summary).toBe('Sketch 1 is in the timeline, 2 splines')
     expect(sketches[0]!.loops).toEqual(loops)
     const cons = [{ type: 'fix', point: { e: 0, at: 'point', seg: 1, i: 0 } }, { type: 'distance', a: { e: 1, at: 'point', i: 0 }, b: { e: 1, at: 'point', i: 2 }, value: 4 }]
@@ -159,6 +162,41 @@ describe('finished sketches in the design tools', () => {
     expect(input.safeParse({ loops, constraints: cons }).success).toBe(true)
     await expect(run('design.sketch', { loops: [{ start: [0, 0], segments: [{ type: 'spline', points: [], to: [1, 1] }] }] })).rejects.toThrow(/needs 1 or more points/)
     await expect(run('design.sketch', { loops: [{ type: 'spline', points: [[0, 0], [1, 1]] }] })).rejects.toThrow(/3 or more points/)
+    // a spline segment with no end never reaches the timeline, where the drawing could not read it
+    await expect(run('design.sketch', { loops: [{ start: [0, 0], segments: [{ type: 'spline', points: [[5, 5], [10, 0]] }] }] })).rejects.toThrow(/needs its end as to/)
+    // a spline point needs a whole i
+    expect(input.safeParse({ loops, constraints: [{ type: 'fix', point: { e: 1, at: 'point' } }] }).success).toBe(false)
+    expect(input.safeParse({ loops, constraints: [{ type: 'fix', point: { e: 1, at: 'point', i: 1.5 } }] }).success).toBe(false)
+    expect(sketches).toHaveLength(2)
+  })
+
+  it('refuses a spline the engine cannot draw before it reaches the timeline', async () => {
+    const message = 'Loop 1: spline segment 1 bends too sharply after its point 1 to draw within 0.005 mm; spread its points out.'
+    const { run, sketches } = host(undefined, (async () => ({ ok: false, issues: [{ loop: 0, segment: 0, kind: 'tooDense', message }] })) as unknown as DesignHost['call'])
+    const sharp = [{ start: [0, 0], segments: [{ type: 'spline', points: [[90000, 0]], to: [90000, 10] }, { type: 'line', to: [0, 0] }] }]
+    await expect(run('design.sketch', { loops: sharp })).rejects.toThrow(/bends too sharply/)
+    expect(sketches).toHaveLength(0)
+  })
+
+  it('takes splines in every sketch tool, checked against the loops of slicerx_geom_revolve', () => {
+    const tools = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design })
+    const tool = (name: string) => tools.find((t) => t.name === name)!
+    const seg = { start: [0, 0], segments: [{ type: 'spline', points: [[5, 5]], to: [10, 0] }, { type: 'line', to: [0, 0] }] }
+    const closed = { type: 'spline', points: [[0, 0], [10, 0], [5, 8]] }
+    const bad = { start: [0, 0], segments: [{ type: 'curve', to: [1, 1] }] }
+    const inputs: [string, string, (l: unknown[]) => unknown][] = [
+      ['geom.sketch_check', '1.1.0', (l) => ({ loops: l })],
+      ['geom.sketch_edit', '1.1.0', (l) => ({ loops: l, op: 'intersect' })],
+      ['geom.extrude', '1.3.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
+      ['geom.revolve', '1.3.0', (l) => ({ loops: l, axis: { point: [0, 0], direction: [0, 1] } })],
+      ['design.sketch', '1.2.0', (l) => ({ loops: l })],
+    ]
+    for (const [name, version, input] of inputs) {
+      expect(tool(name).version, name).toBe(version)
+      expect(tool(name).input.safeParse(input([seg, closed])).success, name).toBe(true)
+      expect(tool(name).input.safeParse(input([bad])).success, name).toBe(false)
+    }
+    expect(tool('geom.extrude').input.safeParse({ shape: { type: 'circle', diameterMm: 4 }, frame: { origin: [0, 0, 0] }, distance_mm: 2 }).success).toBe(false)
   })
 
   it('refuses constraints that conflict, and constraints on a host that cannot solve', async () => {
