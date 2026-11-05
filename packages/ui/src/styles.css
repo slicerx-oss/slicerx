@@ -198,6 +198,13 @@ button { cursor: pointer; }
 /* segmented control */
 .sx-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--field-bg); border: 1px solid var(--field-line); --muted: var(--field-muted); --dim: var(--field-dim); }
 .sx-seg[data-full] { display: flex; width: 100%; }
+/* A row wider than its box (seg.tsx marks it data-overflow) scrolls sideways inside it with no scroll bar; an edge with
+   options past it fades out over 24 px rather than cutting an option in half. */
+.sx-seg { max-width: 100%; }
+.sx-seg[data-overflow] { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; --seg-fade-s: 0px; --seg-fade-e: 0px; mask-image: linear-gradient(90deg, transparent, black var(--seg-fade-s), black calc(100% - var(--seg-fade-e)), transparent); }
+.sx-seg[data-overflow]::-webkit-scrollbar { display: none; }
+.sx-seg[data-more-start] { --seg-fade-s: 24px; }
+.sx-seg[data-more-end] { --seg-fade-e: 24px; }
 /* A control that sets the text size or weight draws at the default ones, so pressing it never moves or resizes it (spec 8). */
 .sx-type-steady { --text-scale: 1; --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-body: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-title: 28px; --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; }
 .sx-seg[data-full] > button { flex: 1; }
