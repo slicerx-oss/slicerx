@@ -118,8 +118,22 @@ impl MemoryBackend {
                 scopes: scopes.iter().map(|&x| x.to_owned()).collect(),
                 allowed: true,
                 retry_after_s: None,
+                partner_app: None,
             },
         );
+    }
+
+    /// Registers a partner app token for a user: `cloud_slice` only, issued to `app`.
+    pub fn add_partner_token(&self, token: &str, user_id: &str, app: &str) {
+        self.add_token(token, user_id, &[crate::backend::CLOUD_SLICE_SCOPE]);
+        if let Some(grant) = self.lock().tokens.get_mut(token) {
+            grant.partner_app = Some(app.to_owned());
+        }
+    }
+
+    /// Revokes a token: it no longer resolves, as `revoke_api_token` does.
+    pub fn revoke_token(&self, token: &str) {
+        self.lock().tokens.remove(token);
     }
 
     /// Invites an account to cloud slicing with its limits. The memory clock
@@ -427,6 +441,7 @@ impl Backend for MemoryBackend {
             finished_at: None,
             plate_count: Some(i32::try_from(plates).unwrap_or(i32::MAX)),
             plate_index: None,
+            token_id: new.token_id,
         };
         s.jobs.push((job.clone(), None));
         Ok(job)
@@ -448,6 +463,18 @@ impl Backend for MemoryBackend {
             .iter()
             .rev()
             .filter(|(j, _)| j.user_id == user_id)
+            .take(limit as usize)
+            .map(|(j, _)| j.clone())
+            .collect())
+    }
+
+    async fn token_jobs(&self, user_id: &str, token_id: &str, limit: u32) -> Result<Vec<Job>> {
+        Ok(self
+            .lock()
+            .jobs
+            .iter()
+            .rev()
+            .filter(|(j, _)| j.user_id == user_id && j.token_id.as_deref() == Some(token_id))
             .take(limit as usize)
             .map(|(j, _)| j.clone())
             .collect())

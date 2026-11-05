@@ -147,15 +147,19 @@ export type Delivery = z.infer<typeof delivery>
 
 export const meshUpload = z.object({ sha256, bytes: z.number().int().optional() })
 
-/** `GET /v1/access`: whether the caller is invited to cloud slicing, with the limits. */
+/**
+ * `GET /v1/access`: whether the caller is invited to cloud slicing, with the limits. A partner app token also gets
+ * `partnerApp`, the app's name the person issued it to.
+ */
 export const cloudAccess = z.union([
   z.object({
     invited: z.literal(true),
     jobsPerDay: z.number().int(),
     jobsToday: z.number().int(),
     maxUploadBytes: z.number().int(),
+    partnerApp: z.string().optional(),
   }),
-  z.object({ invited: z.literal(false) }),
+  z.object({ invited: z.literal(false), partnerApp: z.string().optional() }),
 ])
 export type CloudAccess = z.infer<typeof cloudAccess>
 
