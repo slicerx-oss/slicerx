@@ -325,6 +325,16 @@
   "label extra_fine 0.4 creality-k1": "82f82367",
   "process strong 0.4 creality-k1": "0aea60a2",
   "label strong 0.4 creality-k1": "2fae8650",
+  "process draft 0.4 creality-ender-3-v3": "3476a002",
+  "label draft 0.4 creality-ender-3-v3": "e15ddeca",
+  "process standard 0.4 creality-ender-3-v3": "4f49f3a3",
+  "label standard 0.4 creality-ender-3-v3": "40408f86",
+  "process fine 0.4 creality-ender-3-v3": "ba40c9f5",
+  "label fine 0.4 creality-ender-3-v3": "5eef912e",
+  "process extra_fine 0.4 creality-ender-3-v3": "8ccb762b",
+  "label extra_fine 0.4 creality-ender-3-v3": "82f82367",
+  "process strong 0.4 creality-ender-3-v3": "34ed090e",
+  "label strong 0.4 creality-ender-3-v3": "2fae8650",
   "process draft 0.4 elegoo-neptune-4": "920448a8",
   "label draft 0.4 elegoo-neptune-4": "e15ddeca",
   "process standard 0.4 elegoo-neptune-4": "0d92b919",
@@ -378,6 +388,7 @@
   "merged bambu-x1-carbon pla fine": "bc05c1e7",
   "merged prusa-mk4s petg strong": "903c7dbf",
   "merged voron-2.4-300 tpu_95a draft": "747530df",
-  "merged flsun-v400 abs ": "c7ec0079"
+  "merged flsun-v400 abs ": "c7ec0079",
+  "merged creality-ender-3-v3 pla standard": "9154a6b8"
  }
 }

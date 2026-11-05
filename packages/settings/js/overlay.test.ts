@@ -4,12 +4,13 @@
 // again changes nothing, so a regeneration that dropped it fails here. Rerun scripts/apply-overlay.ts after regenerating.
 // The MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json) is checked the same way, in
 // resolved/prusa.json and machine.json, and the Prusa brim (packages/profiles/overlays/prusa-brim.json) and the MK4 and MINI
-// first layer (packages/profiles/overlays/prusa-first-layer.json) in resolved/prusa.json.
+// first layer (packages/profiles/overlays/prusa-first-layer.json) in resolved/prusa.json. The plain Ender-3 V3 widths
+// (packages/profiles/overlays/creality-ender-3-v3.json) are checked the same way in process-speeds.json.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_BRIM_OVERLAY, PRUSA_FIRST_LAYER_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
-import { printerConfig, printerProfile } from './profiles'
+import { applyFilamentOverlay, applyMachineOverlay, applyProcessPresetOverlay, applyResolvedOverlay, BBL_OVERLAY, CREALITY_V3_OVERLAY, MAKER_OVERLAYS, PRUSA_BRIM_OVERLAY, PRUSA_FIRST_LAYER_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type SpeedsFile, type VendorData } from './overlay'
+import { printerConfig, printerProfile, processConfig, processSpeedSource } from './profiles'
 import { resolvedProfile } from './resolved'
 import { loadFilamentPreset } from './filaments'
 import { defaultConfig } from './schema'
@@ -261,5 +262,84 @@ describe('Prusa MK4 and MINI first layer', () => {
     const mk4s = await stockLayer({ printerId: 'prusa-mk4s', tier: 'standard', slots: [] })
     expect(mk4s!.values['initial_layer_line_width']).toBe('0.5')
     expect(mk4s!.values['elefant_foot_compensation']).toBe(0.2)
+  })
+})
+
+describe('process preset overlay', () => {
+  const file = (): SpeedsFile => ({ presets: { 'A/a': { travel_speed: '300', default_jerk: '9' }, 'A/b': { travel_speed: '200' } }, models: { m: { standard: 'A/a' } } })
+
+  it('writes raw values into the named preset only, keys sorted, and twice changes nothing', () => {
+    const f = file()
+    const o: MakerOverlay = { filament: {}, machine: {}, process: {}, process_presets: { 'A/a': { support_line_width: '0.42', initial_layer_line_width: '0.5' } } }
+    applyProcessPresetOverlay(f, o)
+    expect(Object.keys(f.presets['A/a']!)).toEqual(['default_jerk', 'initial_layer_line_width', 'support_line_width', 'travel_speed'])
+    expect(f.presets['A/a']).toEqual({ default_jerk: '9', initial_layer_line_width: '0.5', support_line_width: '0.42', travel_speed: '300' })
+    expect(f.presets['A/b']).toEqual({ travel_speed: '200' })
+    const once = JSON.stringify(f)
+    applyProcessPresetOverlay(f, o)
+    expect(JSON.stringify(f)).toBe(once)
+    // An overlay without the section leaves the file alone.
+    applyProcessPresetOverlay(f, { filament: {}, machine: {}, process: {} })
+    expect(JSON.stringify(f)).toBe(once)
+  })
+
+  it('refuses a preset the file does not have and a key the schema does not know', () => {
+    expect(() => applyProcessPresetOverlay(file(), { filament: {}, machine: {}, process: {}, process_presets: { 'A/c': { travel_speed: '1' } } })).toThrow(/no process preset A\/c/)
+    expect(() => applyProcessPresetOverlay(file(), { filament: {}, machine: {}, process: {}, process_presets: { 'A/a': { not_a_setting: '1' } } })).toThrow(/not a setting/)
+  })
+})
+
+describe('Ender-3 V3 first layer and support widths', () => {
+  const v3 = (): MakerOverlay => read<MakerOverlay>(CREALITY_V3_OVERLAY)
+  const tiers = ['draft', 'standard', 'fine', 'extra_fine', 'strong'] as const
+
+  it('is applied to process-speeds.json and listed with the maker overlays', () => {
+    const shipped = readFileSync(profiles + 'process-speeds.json', 'utf8')
+    const f = JSON.parse(shipped) as SpeedsFile
+    applyProcessPresetOverlay(f, v3())
+    expect(JSON.stringify(f)).toBe(shipped)
+    expect(MAKER_OVERLAYS.find((o) => o.path === CREALITY_V3_OVERLAY)).toMatchObject({ processSpeeds: true, machineJson: false })
+  })
+
+  it('writes only the two widths, on the plain Ender-3 V3 presets no other model uses', () => {
+    const f = read<SpeedsFile>('process-speeds.json')
+    const own = new Set(tiers.map((t) => processSpeedSource('creality-ender-3-v3', t)))
+    expect(Object.keys(v3().process_presets ?? {}).sort()).toEqual([...own].sort())
+    for (const [name, values] of Object.entries(v3().process_presets ?? {})) {
+      expect(values, name).toEqual({ initial_layer_line_width: '0.5', support_line_width: '0.42' })
+      const users = Object.entries(f.models).filter(([, m]) => Object.values(m).includes(name)).map(([id]) => id)
+      expect(users, name).toEqual(['creality-ender-3-v3'])
+    }
+    expect(v3().machine).toEqual({})
+    expect(v3().process).toEqual({})
+    expect(v3().filament).toEqual({})
+    expect(v3().every_process).toBeUndefined()
+  })
+
+  it('gives every tier of the plain Ender-3 V3 the stock widths on the 0.4 mm nozzle', async () => {
+    for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
+      const layer = await stockLayer({ printerId: 'creality-ender-3-v3', tier, slots: [] })
+      expect(layer!.nozzle, tier).toBe(0.4)
+      expect(layer!.source, tier).toBe('slicerx')
+      expect(layer!.values['initial_layer_line_width'], tier).toBe('0.5')
+      expect(layer!.values['support_line_width'], tier).toBe('0.42')
+      // The other widths stay SlicerX's 0.42 mm.
+      expect(layer!.values['line_width'], tier).toBe('0.42')
+      expect(layer!.values['outer_wall_line_width'], tier).toBe('0.42')
+    }
+  })
+
+  it('leaves the other nozzles and the other Ender-3 V3 models as they were', async () => {
+    for (const nozzle of [0.6, 0.8]) {
+      const layer = await stockLayer({ printerId: 'creality-ender-3-v3', tier: 'standard', slots: [], nozzle })
+      expect(layer!.nozzle).toBe(nozzle)
+      expect(layer!.values['initial_layer_line_width'] ?? '0', `${nozzle}`).toBe('0')
+      expect(layer!.values['support_line_width'] ?? '0', `${nozzle}`).toBe('0')
+    }
+    for (const printerId of ['creality-ender-3-v3-se', 'creality-ender-3-v3-ke', 'creality-ender-3-v3-plus', 'creality-k1']) {
+      const cfg = processConfig('standard', 0.4, printerId) as unknown as Record<string, unknown>
+      expect(cfg['initial_layer_line_width'], printerId).toBeUndefined()
+      expect(cfg['support_line_width'], printerId).toBeUndefined()
+    }
   })
 })
