@@ -178,6 +178,42 @@ describe('finished sketches in the design tools', () => {
     expect(sketches).toHaveLength(0)
   })
 
+  it('reads each loop by the form its keys name, keeps only its fields, and names the field that is wrong', () => {
+    const input = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design }).find((t) => t.name === 'design.sketch')!.input
+    const issues = (v: unknown) => {
+      const r = input.safeParse(v)
+      return r.success ? [] : r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`)
+    }
+    const square = { start: [0, 0], segments: [{ type: 'line', to: [10, 0] }, { type: 'line', to: [10, 10] }, { type: 'line', to: [0, 0] }] }
+    // a circle with a chain's fields is a circle missing its center, not a chain
+    expect(issues({ loops: [{ type: 'circle', ...square }] }).join(' ')).toMatch(/^loops\.0\.center: /)
+    expect(issues({ loops: [{ type: 'circle', points: [[0, 0], [1, 0], [0, 1]] }] }).join(' ')).toMatch(/loops\.0\.center/)
+    expect(issues({ loops: [{ type: 'polygon', points: [[0, 0], [1, 0], [0, 1]] }] })).toEqual([expect.stringMatching(/^loops\.0: a loop is \{points\}/)])
+    expect(issues({ loops: [square, square, { start: [0, 0], segments: [{ type: 'spline', points: [[1, 1]] }] }] })).toEqual(['loops.2.segments.0.to: a spline needs its end as to'])
+    expect(issues({ loops: [square], frame: { origin: [0, 0, 0] } }).join(' ')).toMatch(/^frame\.normal: /)
+    // what reaches the tool is the parsed loops, with stray fields dropped
+    const r = input.safeParse({ loops: [{ ...square, stray: 1, segments: square.segments.map((g) => ({ ...g, extra: true })) }] })
+    expect(r.success && r.data.loops).toEqual([square])
+  })
+
+  it('checks the solved loops too, and refuses a sketch past the point budget whichever loop tips it', async () => {
+    const closed = { type: 'spline', points: [[0, 0], [10, 0], [10, 10], [0, 10]] }
+    const merged = { type: 'spline', points: [[0, 0], [10, 0], [10, 0], [0, 10]] }
+    const settle = vi.fn(async (k: { loops: unknown[]; constraints: SketchConstraint[] }) => ({ loops: [merged] as SketchItem['loops'], constraints: k.constraints, status: 'ok' as const, dof: 4 }))
+    const check = vi.fn(async (_op: string, req: { loops: unknown[] }) =>
+      JSON.stringify(req.loops) === JSON.stringify([merged]) ? { ok: false, issues: [{ loop: 0, kind: 'zeroLength', message: 'Loop 1: the spline has the same point twice in a row (point 3).' }] } : { ok: true, issues: [] },
+    )
+    const { run, sketches } = host(settle, check as unknown as DesignHost['call'])
+    const cons = [{ type: 'coincident', a: { e: 0, at: 'point', i: 1 }, b: { e: 0, at: 'point', i: 2 } }]
+    await expect(run('design.sketch', { loops: [closed], constraints: cons })).rejects.toThrow(/same point twice/)
+    expect(check).toHaveBeenCalledTimes(2)
+    expect(sketches).toHaveLength(0)
+    const budget = 'The sketch has more than 262144 points once its curves are drawn, from loop 2 on.'
+    const over = host(undefined, (async () => ({ ok: false, issues: [{ loop: 1, kind: 'tooDense', message: budget }] })) as unknown as DesignHost['call'])
+    await expect(over.run('design.sketch', { loops: [closed, { points: [[20, 0], [30, 0], [25, 5]] }] })).rejects.toThrow(/262144 points/)
+    expect(over.sketches).toHaveLength(0)
+  })
+
   it('takes splines in every sketch tool, checked against the loops of slicerx_geom_revolve', () => {
     const tools = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design })
     const tool = (name: string) => tools.find((t) => t.name === name)!

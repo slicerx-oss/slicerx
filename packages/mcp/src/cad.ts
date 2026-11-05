@@ -160,29 +160,69 @@ const segment = z
   })
   .describe('{"type":"line","to":[u,v]}, {"type":"line","lengthMm":l,"angleDeg":a}, {"type":"line","lengthMm":l,"turnDeg":t}, {"type":"arc","center":[u,v],"sweepDeg":s}, {"type":"arc","to":[u,v],"through":[u,v]}, {"type":"arc","to":[u,v],"radiusMm":r,"clockwise"?:b,"large"?:b}, {"type":"arc","radiusMm":r,"sweepDeg":s} (tangent), or {"type":"spline","points":[[u,v],...],"to":[u,v]} (smooth, within 0.005 mm)')
 
+const circleLoop = z.object({ type: z.literal('circle'), center: vec2, diameterMm: z.number().positive() })
+const chainLoop = z.object({ start: vec2, segments: z.array(segment).min(1).max(512) })
+const splineLoop = z.object({ type: z.literal('spline'), points: z.array(vec2).max(4096) })
+const pointsLoop = z.object({ points: z.array(vec2).min(3).max(4096) })
 const loop = z
   .union([
-    z.object({ type: z.literal('circle'), center: vec2, diameterMm: z.number().positive() }),
-    z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }),
-    z.object({ type: z.literal('spline'), points: z.array(vec2).max(4096) }),
-    z.object({ points: z.array(vec2).min(3).max(4096) }),
+    circleLoop,
+    chainLoop,
+    splineLoop,
+    pointsLoop,
   ])
   .describe('A closed loop: {"points":[[u,v],...]}, {"type":"spline","points":[[u,v],...]}, {"type":"circle","center":[u,v],"diameterMm":d}, or {"start":[u,v],"segments":[...]}. A loop inside another is a hole')
 
 const loops = z.array(loop).min(1).max(256)
 
-// The sketch tools other than slicerx_geom_revolve check their loops and frame against the same schemas, but theirs
-// only point there: spelling them out in each tool would cost a small local model's context several times over.
-function against<T extends z.ZodTypeAny>(full: T) {
-  return (v: unknown, ctx: z.RefinementCtx) => {
-    const r = full.safeParse(v)
-    if (!r.success) for (const e of r.error.issues) ctx.addIssue({ code: 'custom', message: e.message, path: e.path })
-  }
-}
-const loopsRef = z.array(z.unknown()).min(1).max(256).superRefine(against(loops)).describe('Closed loops as for slicerx_geom_revolve')
-const frameRef = z.unknown().superRefine(against(frameSchema)).describe('As for slicerx_geom_revolve')
 type Loops = z.infer<typeof loops>
 type Frame = z.infer<typeof frameSchema>
+
+// The sketch tools other than slicerx_geom_revolve parse their loops and frame with the same schemas but advertise
+// only a one-line shape: spelling the schemas out in each tool would cost a small local model's context several
+// times over. Each loop is read by the form its keys name, so an error names the field (loops.2.segments.0.to).
+const LOOP_FORMS = 'a loop is {points}, {type: "circle", center, diameterMm}, {type: "spline", points} or {start, segments}'
+function formOf(v: unknown): z.ZodType | null {
+  if (!v || typeof v !== 'object') return null
+  const type = (v as { type?: unknown }).type
+  if (type === 'circle') return circleLoop
+  if (type === 'spline') return splineLoop
+  if (type !== undefined) return null
+  if ('start' in v) return chainLoop
+  return 'points' in v ? pointsLoop : null
+}
+const loopsRef = z
+  .array(z.unknown())
+  .min(1)
+  .max(256)
+  .transform((v, ctx): Loops => {
+    const out: Loops = []
+    v.forEach((l, k) => {
+      const form = formOf(l)
+      if (!form) return void ctx.addIssue({ code: 'custom', message: LOOP_FORMS, path: [k] })
+      const r = form.safeParse(l)
+      if (!r.success) return void r.error.issues.forEach((e) => ctx.addIssue({ code: 'custom', message: e.message, path: [k, ...e.path] }))
+      const segs = (r.data as { segments?: { type: string; to?: unknown; points?: unknown[] }[] }).segments ?? []
+      segs.forEach((g, j) => {
+        if (g.type === 'spline' && !g.to) ctx.addIssue({ code: 'custom', message: 'a spline needs its end as to', path: [k, 'segments', j, 'to'] })
+        if (g.type === 'spline' && !g.points?.length) ctx.addIssue({ code: 'custom', message: 'a spline needs 1 or more points before to', path: [k, 'segments', j, 'points'] })
+      })
+      out.push(r.data as Loops[number])
+    })
+    return out
+  })
+  .describe('Closed loops, as {points: [[u,v],...]}, {type: "circle", center, diameterMm}, {type: "spline", points} or {start, segments: [{type: line | arc | spline, to, ...}]}; one inside another is a hole')
+const frameRef = z
+  .unknown()
+  .transform((v, ctx): Frame => {
+    const r = frameSchema.safeParse(v)
+    if (!r.success) {
+      r.error.issues.forEach((e) => ctx.addIssue({ code: 'custom', message: e.message, path: e.path }))
+      return z.NEVER
+    }
+    return r.data
+  })
+  .describe('Plane {origin, normal}, or a face_pick frame; none is the bed')
 
 const sketchEntity = z.discriminatedUnion('type', [
   z.object({ type: z.literal('line'), a: z.number().int().min(0), b: z.number().int().min(0) }),
@@ -364,7 +404,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const splinesDraw = async (l: Loops): Promise<void> => {
     if (!splines(l)) return
     const out = await engine('sketch.check', { loops: l })
-    const bad = (Array.isArray(out['issues']) ? (out['issues'] as { loop: number; kind: string; message: string }[]) : []).filter((x) => ['zeroLength', 'tooSmall', 'tooDense'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {})))
+    // a sketch past the point budget is named on the loop that tips it, which need not be a spline
+    const bad = (Array.isArray(out['issues']) ? (out['issues'] as { loop: number; kind: string; message: string }[]) : []).filter((x) => x.kind === 'tooDense' || (['zeroLength', 'tooSmall'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {}))))
     if (bad.length) throw new ToolInputError(`loops: ${bad.map((x) => x.message).join(' ')}`)
   }
 
@@ -573,8 +614,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'
       if (i.sketch !== undefined && (i.shape || i.frame)) throw new ToolInputError('sketch: the sketch gives the shape and plane; leave shape and frame out')
-      const f = i.frame as Frame | undefined
-      if (i.shape?.type === 'sketch') splinesOk(i.shape.loops as Loops)
+      const f = i.frame
+      if (i.shape?.type === 'sketch') splinesOk(i.shape.loops)
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
@@ -737,12 +778,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve.`,
     input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
     async run(i) {
-      const loopsIn = i.loops as Loops
+      const loopsIn = i.loops
       splinesOk(loopsIn)
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
       await splinesDraw(loopsIn)
-      const frame = frameOf(i.frame as Frame | undefined)
+      const frame = frameOf(i.frame)
       if (!i.constraints?.length) {
         const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }))
         return { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
@@ -750,6 +791,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
       const solved = await host.settleSketch(plain({ loops: loopsIn, constraints: i.constraints as unknown as SketchConstraint[] }))
       if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
+      // the solve moves spline points: two on one spot, or one dragged far, is refused here too
+      await splinesDraw(solved.loops)
       const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }))
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
