@@ -90,7 +90,7 @@ describe('Partner app key', () => {
 })
 
 describe('Partner routes in Devices', () => {
-  it('lists open routes with their sizes and closes one, and shows nothing while none is open', async () => {
+  it('lists open routes with their sizes and ends one, and shows nothing while none is open', async () => {
     const hub = fakeHub()
     const open: PartnerRouteRow[] = [
       { routeId: 'route-1', app: 'LayerMate', phone: "Chris's phone", state: 'open', openedAt: Date.now() - 12 * 60_000, lastAt: Date.now(), bytesIn: 4_600_000, bytesOut: 1200 },
@@ -113,7 +113,7 @@ describe('Partner routes in Devices', () => {
     render(createElement(DeviceRows))
     const row = await screen.findByTestId('partner-route-route-1')
     expect(row.textContent).toContain("LayerMate to Chris's phone")
-    expect(row.textContent).toContain('open 12 min, 4.6 MB in, 1 KB out')
+    expect(row.textContent).toContain('12 min, 4.6 MB in, 1 KB out')
     await act(async () => void fireEvent.click(screen.getByTestId('partner-route-close-route-1')))
     expect(closed).toEqual(['route-1'])
     await waitFor(() => expect(screen.queryByTestId('partner-routes')).toBeNull())
