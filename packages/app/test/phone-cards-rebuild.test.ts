@@ -7,7 +7,7 @@
 import type { ApprovalRequest, PilotEvent } from '@slicerx/contracts'
 import { emptyTranscript, foldEvents, startTurn, type Transcript } from '@slicerx/pilot/ui'
 import { afterEach, describe, expect, it } from 'vitest'
-import { onPhoneQuestion, phoneQuestion, resetPhoneQuestions, setPhoneCards, type PhoneCards, type PhoneState } from '../src/workspaces/mimir/phone-answers'
+import { answerFromPhone, onPhoneQuestion, phoneQuestion, resetPhoneQuestions, setPhoneCards, syncPhoneQuestion, type PhoneCards, type PhoneState } from '../src/workspaces/mimir/phone-answers'
 import { paneApprovalCards, phoneApprovalFeed, resetPhoneApprovals, setPhoneApprovals, syncPhoneApprovals } from '../src/workspaces/mimir/phone-approvals'
 
 const settle = async () => {
@@ -62,6 +62,34 @@ describe('questions while the tab rebuilds, switches or closes', () => {
     await settle()
     expect(seen.some((s) => s.ended)).toBe(false)
     expect(seen.at(-1)).toMatchObject({ live: true, waiting: null })
+  })
+
+  it('New conversation: the old transcript still shows for one render, and phones never hear the old question canceled', async () => {
+    const seen: PhoneState[] = []
+    setPhoneCards(cardsFor('s_1'))
+    onPhoneQuestion((s) => seen.push(s))
+    // the pane registers the new chat while the old transcript is still on screen
+    let old = true
+    setPhoneCards(cardsFor('s_2', () => (old ? OPEN : null)))
+    // a phone answer for the new chat with the old question is refused
+    await expect(answerFromPhone({ sessionId: 's_2', askId: 'ask_1', choiceId: 'same' }, { name: 'Pocket' })).rejects.toMatchObject({ code: 'not_found' })
+    old = false
+    syncPhoneQuestion()
+    await settle()
+    expect(seen.some((s) => s.ended)).toBe(false)
+    expect(seen.some((s) => s.waiting?.sessionId === 's_2')).toBe(false)
+    expect(seen.at(-1)).toMatchObject({ live: true, waiting: null })
+  })
+
+  it('a tab closed with nothing waiting and opened again tells phones it is live again', async () => {
+    const seen: PhoneState[] = []
+    setPhoneCards(cardsFor('s_1', () => null))
+    onPhoneQuestion((s) => seen.push(s))
+    setPhoneCards(null)
+    await settle()
+    expect(seen.at(-1)).toEqual({ live: false, waiting: null })
+    setPhoneCards(cardsFor('s_1', () => null))
+    expect(seen.at(-1)).toEqual({ live: true, waiting: null })
   })
 
   it('a question that cannot travel (13 choices, a long id) shows phones nothing', () => {
