@@ -24,6 +24,7 @@ import {
   noHorizontalScroll,
   printersFleet,
   setupSteps,
+  partnerAppToken,
   settingsAccount,
   shotsDir,
   shotsOn,
@@ -87,6 +88,10 @@ journey.describe('the main flows of the browser build', () => {
 
   journey('Settings opens with Account and Phone access', async ({ page }) => {
     await settingsAccount(page)
+  })
+
+  journey('Settings, Account issues a partner app token, shows it once and revokes it', async ({ page }, info) => {
+    await partnerAppToken(page, info, 'desktop')
   })
 
   journey('side panes collapse to a rail and remember it', async ({ page }) => {
