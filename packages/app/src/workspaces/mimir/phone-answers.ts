@@ -73,6 +73,8 @@ const byPhone = new Map<string, { choiceId: string | null; name: string }>()
 const answeredOn = new Map<string, string>()
 /** When each question was first seen, so `at` stays put while it waits. */
 const seenAt = new Map<string, number>()
+/** The chat each question was first seen in. A question never travels under another chat's id. */
+const seenIn = new Map<string, string>()
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
@@ -81,6 +83,14 @@ function toPhone(sessionId: string, open: NonNullable<ReturnType<PhoneCards['ope
   const choices = open.choices
   if (choices.length === 0 || choices.length > 12 || choices.some((c) => !c.id || c.id.length > 64)) return null
   if (!sessionId || sessionId.length > 128 || !open.askId || open.askId.length > 200) return null
+  // New conversation registers the new chat while the old transcript still shows for a render: its question is not this chat's
+  const first = seenIn.get(open.askId)
+  if (first !== undefined && first !== sessionId) return null
+  if (first === undefined) {
+    seenIn.set(open.askId, sessionId)
+    // kept after the question ends, so the old chat's question never travels under a new chat; the newest 200
+    if (seenIn.size > 200) seenIn.delete(seenIn.keys().next().value!)
+  }
   let at = seenAt.get(open.askId)
   if (at === undefined) {
     at = now
@@ -148,7 +158,8 @@ export function onPhoneQuestion(cb: (s: PhoneState) => void): () => void {
 export async function answerFromPhone(a: { sessionId: string; askId: string; choiceId: string | null }, phone: { name: string }): Promise<void> {
   if (!cards) throw new PhoneAnswerError('unavailable', PHONE_REFUSALS.closed)
   const open = cards.open()
-  if (!open || open.askId !== a.askId || cards.sessionId() !== a.sessionId) throw new PhoneAnswerError('not_found', PHONE_REFUSALS.gone)
+  // only the question phones were shown, in the chat it was shown in
+  if (!open || open.askId !== a.askId || cards.sessionId() !== a.sessionId || current?.askId !== a.askId || current.sessionId !== a.sessionId) throw new PhoneAnswerError('not_found', PHONE_REFUSALS.gone)
   if (a.choiceId !== null && !open.choices.some((c) => c.id === a.choiceId)) throw new PhoneAnswerError('bad_request', PHONE_REFUSALS.choice)
   const mine = !byPhone.has(a.askId)
   if (mine) byPhone.set(a.askId, { choiceId: a.choiceId, name: phone.name.slice(0, 64) || 'Phone' })
@@ -184,5 +195,6 @@ export function resetPhoneQuestions(): void {
   listeners.clear()
   byPhone.clear()
   seenAt.clear()
+  seenIn.clear()
   answeredOn.clear()
 }
