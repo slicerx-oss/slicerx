@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalHost, Host, PrinterHost } from '@slicerx/contracts'
-import { connectBridge, resetBridge, setBridgeConnector, type ConnectedBridge, type RememberedClient } from '../src/link/bridge'
+import { connectBridge, resetBridge, setBridgeConnector, type ConnectedBridge, type PartnerRouteRow, type RememberedClient } from '../src/link/bridge'
 import { DeviceRows } from '../src/link/devices'
 import { AgentPanel } from '../src/pilot-connect/agent-panel'
 
@@ -86,5 +86,40 @@ describe('Partner app key', () => {
     await act(async () => void fireEvent.click(screen.getByTestId('device-revoke-client-1')))
     expect(hub.calls).toContain('revoke client-1')
     await waitFor(() => expect(screen.getByTestId('devices-empty')).toBeTruthy())
+  })
+})
+
+describe('Partner routes in Devices', () => {
+  it('lists open routes with their sizes and closes one, and shows nothing while none is open', async () => {
+    const hub = fakeHub()
+    const open: PartnerRouteRow[] = [
+      { routeId: 'route-1', app: 'LayerMate', phone: "Chris's phone", state: 'open', openedAt: Date.now() - 12 * 60_000, lastAt: Date.now(), bytesIn: 4_600_000, bytesOut: 1200 },
+    ]
+    const closed: string[] = []
+    let changed: (() => void) | null = null
+    hub.bridge.partnerRoutes = {
+      list: async () => open.slice(),
+      async close(id) {
+        closed.push(id)
+        open.splice(0, 1)
+      },
+      onChanged(cb) {
+        changed = cb
+        return () => void (changed = null)
+      },
+    }
+    setBridgeConnector({ automatic: true, connect: async () => hub.bridge })
+    expect(await connectBridge(host())).toBe(true)
+    render(createElement(DeviceRows))
+    const row = await screen.findByTestId('partner-route-route-1')
+    expect(row.textContent).toContain("LayerMate to Chris's phone")
+    expect(row.textContent).toContain('open 12 min, 4.6 MB in, 1 KB out')
+    await act(async () => void fireEvent.click(screen.getByTestId('partner-route-close-route-1')))
+    expect(closed).toEqual(['route-1'])
+    await waitFor(() => expect(screen.queryByTestId('partner-routes')).toBeNull())
+    // A route a partner opens later shows up when the hub says the list changed.
+    open.push({ routeId: 'route-2', app: 'QueueMate', phone: null, state: 'opening', openedAt: Date.now(), lastAt: Date.now(), bytesIn: 0, bytesOut: 0 })
+    await act(async () => void changed?.())
+    expect((await screen.findByTestId('partner-route-route-2')).textContent).toContain('QueueMate to its phone')
   })
 })
