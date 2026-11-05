@@ -136,3 +136,25 @@ it('the computer goes out of reach: the card stays without buttons until it is b
   expect(h.cards()[0]?.reach).toBe('live')
   h.w.stop()
 })
+
+it('a relay word that the question went away, then the same question again, keeps the card (a runtime rebuild)', () => {
+  const h = harness()
+  h.push({})
+  h.push({ waiting: null })
+  expect(h.cards()[0]?.answered).toBe(GONE)
+  h.push({})
+  jest.advanceTimersByTime(QUESTION_NOTE_MS)
+  expect(h.cards()).toHaveLength(1)
+  expect(h.cards()[0]).toMatchObject({ reach: 'live' })
+  expect(h.cards()[0]?.answered).toBeUndefined()
+  h.w.stop()
+})
+
+it('SlicerX closing reads as closed, not answered', () => {
+  const h = harness()
+  h.push({})
+  h.push({ live: false, waiting: null })
+  expect(h.cards()[0]).toMatchObject({ reach: 'closed' })
+  expect(h.cards()[0]?.answered).toBeUndefined()
+  h.w.stop()
+})

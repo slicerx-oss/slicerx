@@ -29,6 +29,8 @@ export interface QuestionCard {
   answered?: string | undefined
   /** The answer this phone sent, so its own echo never reads as one from somewhere else. */
   mine?: { choiceId: string | null } | undefined
+  /** Closed only because the question stopped showing, with no word of an answer: it comes back if the question does. */
+  gone?: true | undefined
 }
 
 /** One word from a computer about its question. `reachable` false: the connection dropped. */
@@ -41,7 +43,8 @@ export interface QuestionUpdate {
   reachable?: boolean | undefined
 }
 
-const label = (q: MimirQuestion, id: string | null) => (id === null ? null : (q.choices.find((c) => c.id === id)?.label ?? id))
+/** The choice's label; undefined for a choice this card does not know, so an internal id never shows as text. */
+const label = (q: MimirQuestion, id: string | null) => (id === null ? null : q.choices.find((c) => c.id === id)?.label)
 
 /** The one plain line a card shows when it cannot be answered here. */
 export function readOnlyLine(c: Pick<QuestionCard, 'reach' | 'hostName'>): string | undefined {
@@ -62,15 +65,15 @@ export function endedNote(q: MimirQuestion, e: MimirEnded, mine?: { choiceId: st
   const name = (e.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
   if (mine && e.by === 'phone' && mine.choiceId === e.choiceId) return yourNote(q, mine.choiceId)
   const picked = label(q, e.choiceId)
-  if (e.by === 'app') return picked === null ? 'Canceled in SlicerX.' : `Answered in SlicerX: ${picked}.`
+  if (e.by === 'app') return picked === null ? 'Canceled in SlicerX.' : picked === undefined ? 'Answered in SlicerX.' : `Answered in SlicerX: ${picked}.`
   const where = name ? `on ${name}` : 'on another phone'
-  return picked === null ? `Canceled ${where}.` : `Answered ${where}: ${picked}.`
+  return picked === null ? `Canceled ${where}.` : picked === undefined ? `Answered ${where}.` : `Answered ${where}: ${picked}.`
 }
 
 /** The note for an answer this phone sent. */
 export function yourNote(q: MimirQuestion, choiceId: string | null): string {
   const picked = label(q, choiceId)
-  return picked === null ? 'Canceled.' : `You picked ${picked}.`
+  return picked === null ? 'Canceled.' : picked === undefined ? 'You answered.' : `You picked ${picked}.`
 }
 
 /** The note for a card its computer no longer lists. */
@@ -93,6 +96,8 @@ export function applyUpdate(cards: readonly QuestionCard[], u: QuestionUpdate): 
   if (u.waiting && u.live && u.reachable !== false) {
     if (card && card.question.askId === u.waiting.askId && card.question.sessionId === u.waiting.sessionId) {
       const reach = reachOf(u, u.waiting)
+      // it only stopped showing (the computer's chat rebuilt, an event missed): it still waits, so it is live again
+      if (card.gone) return put({ pairingId: card.pairingId, hostName: u.hostName, question: card.question, reach })
       return card.reach === reach && card.hostName === u.hostName ? (cards as QuestionCard[]) : put({ ...card, hostName: u.hostName, reach })
     }
     // a different question: it takes the shown one's place, which ended without a word reaching here
@@ -106,8 +111,9 @@ export function applyUpdate(cards: readonly QuestionCard[], u: QuestionUpdate): 
   }
   // live, nothing waits: the shown question ended, here or somewhere else
   const ended = u.ended && u.ended.askId === card.question.askId ? u.ended : undefined
-  const note = ended ? endedNote(card.question, ended, card.mine) : card.mine ? yourNote(card.question, card.mine.choiceId) : GONE
-  return put({ ...card, answered: note })
+  if (ended) return put({ ...card, answered: endedNote(card.question, ended, card.mine) })
+  if (card.mine) return put({ ...card, answered: yourNote(card.question, card.mine.choiceId) })
+  return put({ ...card, answered: GONE, gone: true })
 }
 
 /** This phone sent an answer the computer took. */
@@ -119,7 +125,7 @@ export function answeredHere(cards: readonly QuestionCard[], pairingId: string, 
 export function refused(cards: readonly QuestionCard[], pairingId: string, code: string): QuestionCard[] {
   return cards.map((c) => {
     if (c.pairingId !== pairingId || c.answered !== undefined) return c
-    if (code === 'not_found') return { ...c, answered: GONE }
+    if (code === 'not_found') return { ...c, answered: GONE, gone: true }
     if (code === 'not_supported' || code === 'bad_request') return { ...c, reach: 'unsupported' }
     if (code === 'unavailable') return { ...c, reach: 'closed' }
     if (code === 'closed') return { ...c, reach: 'unreachable' }
