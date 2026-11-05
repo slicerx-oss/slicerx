@@ -41,6 +41,8 @@ sx-stills = { path = "../stills" }
 tokio = { version = "=1.53.3", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util", "signal"] }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio-tungstenite = "=0.30.0"
+# Partner names compare after NFKC, as packages/pair's partnerKey does.
+unicode-normalization = "=0.1.24"
 x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
 curve25519-dalek = "=5.0.0"
 # Direct WebRTC video from the hub to a phone away from home (sans-IO, pure Rust crypto).

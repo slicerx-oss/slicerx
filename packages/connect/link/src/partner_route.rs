@@ -34,15 +34,22 @@ pub(crate) const MAX_CHUNK: usize = 256 * 1024;
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const ID_BYTES: usize = 16;
 
-/// The partner app a paired phone belongs to, when it is a partner phone. Everything about partner
-/// routes asks this one function, so the partner phone pairing plugs in here: today a pairing the
-/// app saved with kind `partner_phone` and the partner's name.
+/// The partner app a paired phone belongs to, when it is a partner phone: the name it paired under
+/// (bound into the pairing by packages/pair). The name is a label the app chose, not proof of who
+/// made it, so routes never go by it: see [`linked_key`].
 pub(crate) fn partner_phone_app(p: &RemotePairing) -> Option<&str> {
-    if p.kind == PeerKind::PartnerPhone {
+    if p.kind == PeerKind::Phone {
         p.partner.as_deref()
     } else {
         None
     }
+}
+
+/// The partner app key (client id) the person linked this partner phone to in Devices. Only the
+/// connection holding that key opens routes to the phone.
+pub(crate) fn linked_key(p: &RemotePairing) -> Option<&str> {
+    partner_phone_app(p)?;
+    p.partner_client.as_deref()
 }
 
 type Answer = Result<(), (String, String)>;
@@ -67,6 +74,8 @@ struct Route {
     id: String,
     id_bytes: [u8; ID_BYTES],
     app: String,
+    /// The partner app key that opened it, which the phone must stay linked to.
+    client: String,
     pairing_id: String,
     /// Relay routes: `up` from the phone, `down` to it. Only the phone learns them, in its session.
     up: String,
@@ -229,7 +238,7 @@ pub(crate) fn pairings_changed(b: &Bridge) {
         .filter(|r| {
             b.remote
                 .pairing(&r.pairing_id)
-                .is_none_or(|p| partner_phone_app(&p) != Some(r.app.as_str()))
+                .is_none_or(|p| linked_key(&p) != Some(r.client.as_str()))
         })
         .map(|r| r.id.clone())
         .collect();
@@ -246,12 +255,26 @@ pub(crate) fn close_all(b: &Bridge, reason: &'static str) {
     }
 }
 
+/// The phones the person linked to this very key in Devices (one, with `wanted`); a matching name is
+/// not enough.
+fn linked_phones(b: &Bridge, client: &str, wanted: Option<&str>) -> Vec<String> {
+    b.remote
+        .pairings()
+        .into_iter()
+        .filter(|x| linked_key(x) == Some(client))
+        .map(|x| x.pairing_id)
+        .filter(|id| wanted.is_none_or(|w| w == id))
+        .collect()
+}
+
 /// Who is calling `relay.partnerRoute.*`.
 pub(crate) struct Caller<'a> {
     pub conn: u64,
     pub role: Role,
     /// The partner app's name, from its key.
     pub partner: Option<&'a str>,
+    /// The partner app key's client id.
+    pub client: Option<&'a str>,
     pub tx: &'a mpsc::UnboundedSender<Message>,
 }
 
@@ -329,21 +352,21 @@ async fn open(b: &Arc<Bridge>, who: &Caller<'_>, p: &Value) -> Result<Value, Rpc
             "a partner app opens routes only for itself",
         ));
     }
-    let wanted = p.get("pairingId").and_then(Value::as_str);
-    let phones: Vec<String> = b
-        .remote
-        .pairings()
-        .into_iter()
-        .filter(|x| partner_phone_app(x) == Some(partner))
-        .map(|x| x.pairing_id)
-        .filter(|id| wanted.is_none_or(|w| w == id))
-        .collect();
+    let Some(client) = who.client else {
+        return Err(RpcError::new(
+            "forbidden",
+            "partner routes need a remembered partner key",
+        ));
+    };
+    let phones = linked_phones(b, client, p.get("pairingId").and_then(Value::as_str));
     let pairing_id = match phones.as_slice() {
         [one] => one.clone(),
         [] => {
             return Err(RpcError::new(
                 "not_found",
-                format!("no {partner} phone is paired with this hub"),
+                format!(
+                    "no {partner} phone is linked to this key; the person links one in Settings, Printer bridge, Devices"
+                ),
             ));
         }
         _ => {
@@ -377,6 +400,7 @@ async fn open(b: &Arc<Bridge>, who: &Caller<'_>, p: &Value) -> Result<Value, Rpc
                 id: id.clone(),
                 id_bytes,
                 app: partner.to_owned(),
+                client: client.to_owned(),
                 pairing_id: pairing_id.clone(),
                 up: format!("pr:{}", ps::b64(&up)),
                 down: format!("pr:{}", ps::b64(&down)),

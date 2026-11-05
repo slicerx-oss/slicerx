@@ -291,3 +291,89 @@ describe.skipIf(!linkBuilt)('a phone reaching sx-link through the hosted relay',
     }
   }, 30_000)
 })
+
+describe.skipIf(!linkBuilt)('a partner phone reaching sx-link through the hosted relay', () => {
+  it('pairs under its partner name, reaches the hub with the app closed, approves nothing, and registers its own push', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sx-partner-'))
+    const own = await startRelay()
+    // No printers, so no alert fires and the hub posts no push anywhere.
+    const link = spawn(linkBin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
+    try {
+      let out = ''
+      const { linkUrl, code } = await new Promise<{ linkUrl: string; code: string }>((resolve, reject) => {
+        link.stdout.on('data', (d: Buffer) => {
+          out += d.toString()
+          const u = /ws:\/\/127\.0\.0\.1:\d+/.exec(out)
+          const c = /pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(out)
+          if (u && c) resolve({ linkUrl: u[0], code: c[1] ?? '' })
+        })
+        link.once('exit', () => reject(new Error('sx-link exited early')))
+      })
+      // The person picks Pair a partner phone in the app; the partner app pairs over the LAN under its name.
+      const w = await world({ realClock: true, seed: 'partner-hub' })
+      const lanPhone = w.phone('Pixel 8', { partner: 'Example Phone' })
+      const offer = w.host.createOffer({ partner: 'Example Phone' })
+      const attempts: HostPairingAttempt[] = []
+      offer.onAttempt((a) => attempts.push(a))
+      const flow = await lanPhone.client.pair(offer.link)
+      await flow.sas
+      await until(() => attempts.length === 1)
+      expect(attempts[0]?.partner).toBe('Example Phone')
+      flow.confirm()
+      attempts[0]?.confirm()
+      expect((await flow.result).ok).toBe(true)
+      const rec = (await w.hostStore.list())[0]
+      if (!rec) throw new Error('no pairing')
+      expect(rec.partner).toBe('Example Phone')
+      expect(rec.rights.approve).toBe(false)
+
+      const app = new WebSocket(`${linkUrl}/`)
+      await new Promise((r) => app.addEventListener('open', r, { once: true }))
+      const port = Number(new URL(linkUrl).port)
+      let nextId = 100
+      const linkRpc = async <T,>(method: string, params?: Record<string, unknown>): Promise<T> => {
+        const r = await linkCall(app, nextId++, method, params ?? {})
+        if (r.error) throw new LinkError(r.error.code as never, r.error.message ?? '')
+        return r.result as T
+      }
+      const hello = await checkHub(linkRpc, port)
+      expect(await pairWithCode(linkRpc, hello, code)).toMatchObject({ paired: true })
+      const put = await linkCall(app, 2, 'remote.pairings.put', { pairingId: rec.pairingId, deviceKey: rec.deviceKey, kind: 'phone', peer: rec.peer, rights: rec.rights, partner: rec.partner })
+      expect(put.result).toEqual({ saved: true })
+      const conf = await linkCall(app, 3, 'remote.configure', { enabled: true, relay: own.url, host: w.hostId.public, hostDh: toB64url(w.hostId.dhSecret) })
+      expect(conf.result).toMatchObject({ enabled: true })
+      for (let i = 0; i < 100; i++) {
+        const s = (await linkCall(app, 10 + i, 'remote.status', {})).result as { connected?: boolean }
+        if (s.connected) break
+        await settle()
+      }
+
+      // Away from home: the partner app reaches the hub through the relay alone.
+      const away = w.phone('Pixel 8', { partner: 'Example Phone', store: lanPhone.store, lan: false, openRelay: () => connectRelay({ url: own.url, socket: (u) => new WebSocket(u) as unknown as SocketLike }) })
+      const conn = await away.client.connect(rec.pairingId)
+      expect(conn.via).toBe('relay')
+      expect(conn.info.partner).toBe('Example Phone')
+      expect(conn.info.push).toBe(true)
+      expect(conn.info.rights.approve).toBe(false)
+      expect(await conn.printers()).toEqual([])
+      expect(await conn.approvals()).toEqual([])
+      await expect(conn.mimirQuestions()).rejects.toMatchObject({ code: 'forbidden' })
+      await conn.push.registerPartner({ provider: 'expo', token: 'ExponentPushToken[partnerpartner01]', platform: 'android', prefs: { printDone: true, printFailed: true, attention: true, approvals: true } })
+      const status = (await linkCall(app, 200, 'push.status', {})).result as { registrations: { partner?: string; provider: string; mayApprove: boolean }[] }
+      expect(status.registrations).toEqual([expect.objectContaining({ partner: 'Example Phone', provider: 'expo', mayApprove: false })])
+      const devices = (await linkCall(app, 201, 'partners.devices', {})).result as { devices: { partner: string; online: boolean }[] }
+      expect(devices.devices).toEqual([expect.objectContaining({ partner: 'Example Phone', online: true })])
+
+      // Revoked in Devices: the hub stops answering the pairing and drops its push registration.
+      expect((await linkCall(app, 202, 'remote.pairings.remove', { pairingId: rec.pairingId })).result).toEqual({ removed: true })
+      conn.close()
+      await expect(away.client.connect(rec.pairingId)).rejects.toThrow()
+      expect(((await linkCall(app, 203, 'push.status', {})).result as { registrations: unknown[] }).registrations).toEqual([])
+      app.close()
+    } finally {
+      link.kill()
+      own.proc.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+})

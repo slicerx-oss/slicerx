@@ -7,6 +7,14 @@
 //!
 //! The relay sees routes and sealed frames only. Device keys live in the secret store (the
 //! keychain on macOS), never in `remote.json`.
+//!
+//! A partner phone (another company's phone app, paired in the app under its own name with
+//! `@slicerx/pair`) is a phone with `partner` set. The name labels the pairing; it proves nothing
+//! about who made the app. The person links a partner phone to one partner app key in Devices
+//! (`remote.pairings.link`, by key id) before that key may open routes to it. It has our phone's rights over the relay, with the
+//! approve right off until the person turns it on for that phone. Its relay use is capped per day
+//! (`PARTNER_BYTES_PER_DAY`) so one partner app cannot spend the person's whole relay allowance, and at
+//! most `MAX_PARTNER_PAIRINGS` are kept.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -45,16 +53,30 @@ const MAX_SESSIONS: usize = 64;
 /// Sessions at once per pairing; a new one closes the oldest.
 const SESSIONS_PER_PAIRING: usize = 2;
 const MAX_PAIRINGS: usize = 64;
+/// Partner phones kept at once, inside `MAX_PAIRINGS`.
+pub(crate) const MAX_PARTNER_PAIRINGS: usize = 8;
+/// Relay bytes (in and out) one partner phone may use per UTC day. Past it, its requests hear `quota`
+/// and new sessions are refused until the day turns. Our own phones have no such cap.
+pub(crate) const PARTNER_BYTES_PER_DAY: u64 = 256 * 1024 * 1024;
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// Longest partner name, as in packages/pair (`PARTNER_NAME_MAX`).
+const PARTNER_NAME_MAX: usize = 64;
+/// Each partner app's relay bytes today, by partner name (`partner_key`), kept across restarts and
+/// re-pairing.
+const PARTNER_USE_FILE: &str = "partner-use.json";
+/// The relay byte count is written at most this often, and at once when an app reaches its cap.
+const PARTNER_USE_SAVE_MS: u64 = 30_000;
 const RELAY_FRAME_LIMIT: usize = 2 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PeerKind {
+    /// Our phone, or a partner phone (`partner` set on its pairing, see
+    /// [`crate::partner_route::partner_phone_app`]). `partner_phone` is read as a phone too: a partner
+    /// phone has our phone's rights, so it is one kind with a name, not a second kind.
+    #[serde(alias = "partner_phone")]
     Phone,
     Agent,
-    /// A partner app's own phone ([`crate::partner_route::partner_phone_app`]). Today it reads like a
-    /// phone without the approve right, and it may use its partner app's partner routes.
-    PartnerPhone,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -82,9 +104,38 @@ pub(crate) struct RemotePairing {
     /// app's phones. `None` for pairings from before tags: the first app that lists one claims it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
-    /// For a partner phone: the partner app it belongs to, by the name its partner key was made with.
+    /// The partner app name a partner phone paired under (bound into its pairing by packages/pair).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partner: Option<String>,
+    /// The partner app key (client id) the person linked this partner phone to in Devices. Only that
+    /// key opens partner routes to it; names are never matched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partner_client: Option<String>,
+}
+
+/// How partner names compare, as packages/pair's `partnerKey`: NFKC, lower case, spaces collapsed.
+pub(crate) fn partner_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    let folded: String = name.nfkc().collect::<String>().to_lowercase();
+    folded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A partner name as packages/pair's `partnerName` keeps it: control characters as spaces, spaces
+/// collapsed, trimmed, 1 to 64 characters with a letter or digit.
+pub(crate) fn partner_name(input: &str) -> Option<String> {
+    let cleaned: String = input
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let t = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let n = t.chars().count();
+    ((1..=PARTNER_NAME_MAX).contains(&n) && t.chars().any(char::is_alphanumeric)).then_some(t)
 }
 
 /// Who an app connection is, for tagging the phones it pairs: the remembered client it paired as,
@@ -125,6 +176,8 @@ struct Status {
     signed_in: bool,
     /// The relay's last `quota` answer.
     quota: Option<Value>,
+    /// Pairings with a live (proven) session now.
+    online: std::collections::HashSet<String>,
 }
 
 pub(crate) enum Cmd {
@@ -151,6 +204,45 @@ pub(crate) struct Remote {
     stills: StdMutex<HashMap<String, StillSlot>>,
     /// Partner routes open on this hub.
     pub(crate) partners: crate::partner_route::Routes,
+    /// Relay bytes each partner app used today, by `partner_key` of its name.
+    partner_use: StdMutex<PartnerUse>,
+}
+
+/// Partner relay bytes for one UTC day, by partner name, as kept in `partner-use.json`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct PartnerUse {
+    day: u64,
+    bytes: HashMap<String, u64>,
+    #[serde(skip)]
+    saved_at: u64,
+}
+
+impl PartnerUse {
+    fn roll(&mut self, now: u64) {
+        if self.day != now / DAY_MS {
+            self.day = now / DAY_MS;
+            self.bytes.clear();
+        }
+    }
+}
+
+/// Counts `n` relay bytes for a partner app and writes the count when due. False once it is past
+/// the day's allowance.
+pub(crate) fn partner_spend(b: &Bridge, key: &str, n: usize) -> bool {
+    let (ok, save) = b.remote.partner_spend(key, n, crate::hub::now_ms());
+    if save && let Some(dir) = &b.hub.dir {
+        let snapshot = lock(&b.remote.partner_use).clone();
+        if let Err(e) = dir.save(PARTNER_USE_FILE, &snapshot) {
+            eprintln!("sx-link: could not save {PARTNER_USE_FILE}: {e}");
+        }
+    }
+    ok
+}
+
+/// The usage key of a pairing: its partner name folded, for a partner phone.
+pub(crate) fn usage_key(p: &RemotePairing) -> Option<String> {
+    (p.kind == PeerKind::Phone).then_some(())?;
+    p.partner.as_deref().map(partner_key)
 }
 
 fn valid_relay_url(url: &str) -> bool {
@@ -192,6 +284,10 @@ impl Remote {
             rtc_bind: StdMutex::new(None),
             stills: StdMutex::new(HashMap::new()),
             partners: crate::partner_route::Routes::default(),
+            partner_use: StdMutex::new(
+                dir.and_then(|d| d.load::<PartnerUse>(PARTNER_USE_FILE))
+                    .unwrap_or_default(),
+            ),
         }
     }
 
@@ -206,6 +302,42 @@ impl Remote {
 
     pub(crate) fn partner_cmd(&self, cmd: crate::partner_route::Cmd) {
         self.send(Cmd::Partner(cmd));
+    }
+
+    /// The partner phones the hub holds.
+    pub(crate) fn partner_pairings(&self) -> Vec<RemotePairing> {
+        lock(&self.saved)
+            .pairings
+            .iter()
+            .filter(|p| p.kind == PeerKind::Phone && p.partner.is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// Counts `n` relay bytes for a partner app (`key`, its `partner_key`). The first answer is false
+    /// once it is past `PARTNER_BYTES_PER_DAY` today; the second says to write the count now.
+    fn partner_spend(&self, key: &str, n: usize, now: u64) -> (bool, bool) {
+        let mut u = lock(&self.partner_use);
+        u.roll(now);
+        let before = u.bytes.get(key).copied().unwrap_or(0);
+        let after = before.saturating_add(n as u64);
+        u.bytes.insert(key.to_owned(), after);
+        let crossed = before <= PARTNER_BYTES_PER_DAY && after > PARTNER_BYTES_PER_DAY;
+        let save = crossed || now.saturating_sub(u.saved_at) >= PARTNER_USE_SAVE_MS;
+        if save {
+            u.saved_at = now;
+        }
+        (after <= PARTNER_BYTES_PER_DAY, save)
+    }
+
+    /// Relay bytes a partner app (`key`) used today.
+    pub(crate) fn partner_used(&self, key: &str, now: u64) -> u64 {
+        let u = lock(&self.partner_use);
+        if u.day == now / DAY_MS {
+            u.bytes.get(key).copied().unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     /// The still cache slot of one printer (known printers only, so the map stays small).
@@ -340,19 +472,6 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     let key_text: String = arg(p, "deviceKey")?;
     let kind: PeerKind = arg(p, "kind")?;
     let peer: Value = arg(p, "peer")?;
-    // A partner phone names its partner app, as its partner key was made.
-    let partner = match (kind, p.get("partner").and_then(Value::as_str)) {
-        (PeerKind::PartnerPhone, Some(n)) if !n.trim().is_empty() && n.chars().count() <= 64 => {
-            Some(n.to_owned())
-        }
-        (PeerKind::PartnerPhone, _) => {
-            return Err(RpcError::new(
-                "bad_request",
-                "a partner phone needs its partner app's name",
-            ));
-        }
-        _ => None,
-    };
     let rights: Rights = p
         .get("rights")
         .map_or(Ok(Rights::default()), |r| serde_json::from_value(r.clone()))
@@ -366,9 +485,24 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     if !valid_identity(&peer) {
         return Err(RpcError::new("bad_request", "peer is not a public identity"));
     }
-    // Agents never get the approve right over the relay: a person answers cards. Neither does a
-    // partner phone, for now.
-    let rights = if matches!(kind, PeerKind::Agent | PeerKind::PartnerPhone) {
+    // A partner phone's app name. Phones only: an agent is never a partner phone.
+    let partner = match p.get("partner") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(n)) if kind == PeerKind::Phone => Some(partner_name(n).ok_or_else(|| {
+            RpcError::new(
+                "bad_request",
+                "partner is 1 to 64 characters with a letter or digit",
+            )
+        })?),
+        Some(_) => {
+            return Err(RpcError::new(
+                "bad_request",
+                "partner is a phone's partner app name",
+            ));
+        }
+    };
+    // Agents never get the approve right over the relay: a person answers cards.
+    let rights = if kind == PeerKind::Agent {
         Rights {
             approve: false,
             ..rights
@@ -381,6 +515,17 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
         if s.pairings.len() >= MAX_PAIRINGS && !s.pairings.iter().any(|x| x.pairing_id == pairing_id) {
             return Err(RpcError::new("rate_limited", "too many remote pairings"));
         }
+        let partners = s
+            .pairings
+            .iter()
+            .filter(|x| x.partner.is_some() && x.pairing_id != pairing_id)
+            .count();
+        if partner.is_some() && partners >= MAX_PARTNER_PAIRINGS {
+            return Err(RpcError::new(
+                "rate_limited",
+                "too many partner phones; remove one in Devices first",
+            ));
+        }
     }
     b.secrets()
         .set(&format!("{KEY_PREFIX}{pairing_id}"), &ps::b64(&key))
@@ -388,6 +533,15 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     lock(&b.remote.keys).insert(pairing_id.clone(), key);
     {
         let mut s = lock(&b.remote.saved);
+        // A re-put of the same phone keeps the key the person linked it to, while it is the same partner.
+        let partner_client = s
+            .pairings
+            .iter()
+            .find(|x| {
+                x.pairing_id == pairing_id
+                    && x.partner.as_deref().map(partner_key) == partner.as_deref().map(partner_key)
+            })
+            .and_then(|x| x.partner_client.clone());
         s.pairings.retain(|x| x.pairing_id != pairing_id);
         let owner = if kind == PeerKind::Phone { owner } else { None };
         s.pairings.push(RemotePairing {
@@ -399,6 +553,7 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
             client_id: None,
             owner,
             partner,
+            partner_client,
         });
     }
     Remote::persist(b);
@@ -418,6 +573,7 @@ pub(crate) fn call(
         "remote.configure" => configure(b, p),
         "remote.pairings.list" => Ok(json!(lock(&b.remote.saved).pairings)),
         "remote.pairings.put" => put_pairing(b, p, owner),
+        "remote.pairings.link" => link_partner(b, p),
         "remote.pairings.remove" => {
             let pairing_id: String = arg(p, "pairingId")?;
             let removed = {
@@ -427,6 +583,7 @@ pub(crate) fn call(
                 before != s.pairings.len()
             };
             forget_key(b, &pairing_id)?;
+            forget_push(b, &pairing_id);
             Remote::persist(b);
             b.remote.send(Cmd::Pairings);
             Ok(json!({ "removed": removed }))
@@ -488,6 +645,7 @@ fn sync_pairings(b: &Arc<Bridge>, p: &Value, owner: Option<&str>) -> Result<Valu
     };
     for id in &gone {
         forget_key(b, id)?;
+        forget_push(b, id);
     }
     // Claims change the saved list too.
     Remote::persist(b);
@@ -495,6 +653,109 @@ fn sync_pairings(b: &Arc<Bridge>, p: &Value, owner: Option<&str>) -> Result<Valu
         b.remote.send(Cmd::Pairings);
     }
     Ok(json!({ "removed": gone }))
+}
+
+/// `remote.pairings.link {pairingId, clientId, mismatchOk?}`: the person links a partner phone to one
+/// partner app key (`clientId` null unlinks). Only that key opens partner routes to the phone. A key
+/// whose name does not fold to the phone's partner name is refused with `mismatch` unless the app
+/// passes `mismatchOk` after the person confirmed the warning in Devices.
+fn link_partner(b: &Arc<Bridge>, p: &Value) -> Result<Value, crate::rpc::RpcError> {
+    use crate::rpc::{RpcError, arg};
+    let pairing_id: String = arg(p, "pairingId")?;
+    let client = match p.get("clientId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(c)) => Some(c.clone()),
+        Some(_) => {
+            return Err(RpcError::new(
+                "bad_request",
+                "clientId is a partner app key's id or null",
+            ));
+        }
+    };
+    let key_name = match &client {
+        Some(c) => Some(
+            lock(&b.hub.clients)
+                .iter()
+                .find(|k| k.partner && &k.id == c)
+                .map(|k| k.name.clone())
+                .ok_or_else(|| RpcError::new("not_found", "no partner app key with that id"))?,
+        ),
+        None => None,
+    };
+    let mismatch_ok = p.get("mismatchOk").and_then(Value::as_bool) == Some(true);
+    {
+        let mut s = lock(&b.remote.saved);
+        let Some(x) = s
+            .pairings
+            .iter_mut()
+            .find(|x| x.pairing_id == pairing_id && x.partner.is_some())
+        else {
+            return Err(RpcError::new(
+                "not_found",
+                "no partner phone with that pairing id",
+            ));
+        };
+        if let (Some(k), Some(phone)) = (&key_name, &x.partner)
+            && partner_key(k) != partner_key(phone)
+            && !mismatch_ok
+        {
+            return Err(RpcError::new(
+                "mismatch",
+                format!(
+                    "this phone says it is {phone}, and the key is named {k}; confirm to link them anyway"
+                ),
+            ));
+        }
+        x.partner_client = client;
+    }
+    Remote::persist(b);
+    crate::partner_route::pairings_changed(b);
+    Ok(json!({ "linked": true }))
+}
+
+/// A removed phone gets no more alerts: its push registrations (tagged with its pairing id) go too.
+fn forget_push(b: &Arc<Bridge>, pairing_id: &str) {
+    if crate::push::forget_pairing(b, pairing_id) {
+        let b = b.clone();
+        tokio::spawn(async move { crate::hub_rpc::save(&b).await });
+    }
+}
+
+/// `partners.devices`: the partner phones the hub answers over the relay, for Devices and for clients
+/// (`slicerx_partner_devices`). Never a key: the app name, the phone's name and platform, its rights,
+/// when it was added, whether it is connected now, its relay use today and its push registration.
+pub(crate) fn partner_devices(b: &Bridge) -> Value {
+    let now = crate::hub::now_ms();
+    let online = lock(&b.remote.status).online.clone();
+    let regs = b.hub.push.regs();
+    let enabled = lock(&b.remote.saved).enabled;
+    let devices: Vec<Value> = b
+        .remote
+        .partner_pairings()
+        .iter()
+        .map(|p| {
+            let push = regs
+                .iter()
+                .find(|r| r.partner.is_some() && r.tag.as_deref() == Some(p.pairing_id.as_str()));
+            json!({
+                "pairingId": p.pairing_id,
+                "partner": p.partner,
+                "name": p.peer.get("name"),
+                "platform": p.peer.get("platform"),
+                "rights": { "request": p.rights.request, "approve": p.rights.approve },
+                "addedAt": crate::hub::iso(p.added_at),
+                "online": online.contains(&p.pairing_id),
+                "relayBytesToday": usage_key(p).map_or(0, |k| b.remote.partner_used(&k, now)),
+                "partnerKeyId": p.partner_client,
+                "push": push.map(|r| json!({ "provider": serde_json::to_value(r.provider).unwrap_or(Value::Null), "platform": r.platform })),
+            })
+        })
+        .collect();
+    json!({
+        "remoteAccess": enabled,
+        "devices": devices,
+        "limits": { "partnerPhones": MAX_PARTNER_PAIRINGS, "relayBytesPerDay": PARTNER_BYTES_PER_DAY },
+    })
 }
 
 /// Drops a pairing's device key from memory and the secret store. A key the store could not delete
@@ -596,6 +857,7 @@ pub(crate) fn create_agent(
         client_id: Some(client_id.to_owned()),
         owner: None,
         partner: None,
+        partner_client: None,
     };
     let (relay, host) = {
         let mut s = lock(&b.remote.saved);
@@ -620,9 +882,17 @@ pub(crate) fn revoke_client(b: &Arc<Bridge>, client_id: &str) {
             .map(|p| p.pairing_id.clone())
             .collect();
         s.pairings.retain(|p| p.client_id.as_deref() != Some(client_id));
+        // A revoked partner key no longer reaches the partner phones linked to it.
+        for p in &mut s.pairings {
+            if p.partner_client.as_deref() == Some(client_id) {
+                p.partner_client = None;
+            }
+        }
         gone
     };
+    crate::partner_route::pairings_changed(b);
     if gone.is_empty() {
+        Remote::persist(b);
         return;
     }
     for id in &gone {
@@ -830,6 +1100,72 @@ struct Sess {
     ctx: Arc<crate::remote_rpc::SessCtx>,
     /// Byte channels of the partner routes this session used, by route id.
     routes: HashMap<String, Channel>,
+    /// A partner phone's session: its partner name (`partner_key`), whose relay bytes count against
+    /// `PARTNER_BYTES_PER_DAY`.
+    usage: Option<String>,
+    /// Its partner phone went past the day's relay bytes: streams stopped, nothing more goes out.
+    spent: bool,
+}
+
+impl Sess {
+    /// Counts an incoming frame of a partner phone; true once it is past the day's relay allowance.
+    fn over_allowance(&self, b: &Bridge, n: usize) -> bool {
+        self.usage
+            .as_deref()
+            .is_some_and(|k| self.spent || !partner_spend(b, k, n))
+    }
+
+    /// Counts route bytes for a partner phone; false when it is spent and the bytes must not go.
+    fn spend(&mut self, b: &Bridge, n: usize) -> bool {
+        let Some(k) = self.usage.clone() else { return true };
+        if self.spent || !partner_spend(b, &k, n) {
+            self.spent = true;
+            self.ctx.close();
+            return false;
+        }
+        true
+    }
+
+    /// One short `quota` answer, so the partner app can tell the person why, then nothing more today.
+    fn spend_out(&mut self, id: u64, outgoing: &mut Vec<String>) {
+        if self.spent {
+            return;
+        }
+        self.spent = true;
+        self.ctx.close();
+        let e = json!({ "t": "res", "id": id, "ok": false, "e": { "code": "quota", "message": "this app used its relay allowance on this computer for today" } });
+        if let Some(f) = self.channel.seal_text(&e.to_string()) {
+            outgoing.push(json!({ "op": "send", "to": self.device_route, "body": f }).to_string());
+        }
+    }
+
+    /// Seals a reply or event for the device. A partner phone past the day's relay allowance gets
+    /// nothing more: its camera streams and watches stop.
+    fn reply(&mut self, b: &Bridge, plain: &str, outgoing: &mut Vec<String>) {
+        if self.spent {
+            return;
+        }
+        let Some(f) = self.channel.seal_text(plain) else {
+            return;
+        };
+        if !self.spend(b, f.len()) {
+            return;
+        }
+        outgoing.push(json!({ "op": "send", "to": self.device_route, "body": f }).to_string());
+    }
+}
+
+/// The session count and the pairings with a live (proven) session, for Settings and Devices.
+fn set_live(b: &Bridge, sessions: &HashMap<String, Sess>) {
+    let online = sessions
+        .values()
+        .filter(|x| x.proven)
+        .map(|x| x.pairing_id.clone())
+        .collect();
+    set_status(b, |s| {
+        s.sessions = sessions.len();
+        s.online = online;
+    });
 }
 
 impl Drop for Sess {
@@ -924,11 +1260,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                 _ => break,
             },
             reply = out_rx.recv() => {
-                if let Some((sid, plain)) = reply
-                    && let Some(s) = sessions.get_mut(&sid)
-                    && let Some(f) = s.channel.seal_text(&plain)
-                {
-                    outgoing.push(json!({ "op": "send", "to": s.device_route, "body": f }).to_string());
+                if let Some((sid, plain)) = reply && let Some(s) = sessions.get_mut(&sid) {
+                    s.reply(b, &plain, &mut outgoing);
                 }
             }
             cmd = cmds.recv() => match cmd {
@@ -945,7 +1278,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     crate::partner_route::pairings_changed(b);
                 }
                 Some(Cmd::Partner(c)) => {
-                    let mut phones = SessPhones { sessions: &mut sessions, out: &out_tx };
+                    let mut phones = SessPhones { b, sessions: &mut sessions, out: &out_tx };
                     crate::partner_route::on_cmd(b, c, &mut phones, &mut outgoing);
                 }
                 Some(Cmd::Quota) => outgoing.push(r#"{"op":"quota"}"#.to_owned()),
@@ -964,7 +1297,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                 }
             }
         }
-        set_status(b, |s| s.sessions = sessions.len());
+        set_live(b, &sessions);
         for o in outgoing {
             if sink.send(Message::text(o)).await.is_err() {
                 return started.elapsed() > Duration::from_secs(30);
@@ -1069,6 +1402,7 @@ fn on_relay_frame(
     };
     {
         let mut phones = SessPhones {
+            b,
             sessions: &mut *sessions,
             out,
         };
@@ -1114,6 +1448,7 @@ fn on_relay_frame(
             let Some(s) = sessions.get_mut(&f.s) else {
                 return false;
             };
+            let over = s.over_allowance(b, body.len());
             let Ok(envelope) = serde_json::from_slice::<Value>(&plain) else {
                 return false;
             };
@@ -1131,6 +1466,10 @@ fn on_relay_frame(
                 .take(40)
                 .collect::<String>();
             let params = envelope.get("p").cloned().unwrap_or(Value::Null);
+            if over {
+                s.spend_out(id, outgoing);
+                return false;
+            }
             let (b, out, sid, ctx) = (b.clone(), out.clone(), f.s.clone(), s.ctx.clone());
             // A few requests at a time per session; past that the device hears `busy` at once.
             if ctx.inflight.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= crate::remote_rpc::IN_FLIGHT
@@ -1186,6 +1525,17 @@ fn on_init(
     let Some((_, device_route)) = routes.by_pairing.get(pairing_id) else {
         return;
     };
+    let pairing = b.remote.pairing(pairing_id);
+    let usage = pairing.as_ref().and_then(usage_key);
+    // A partner app past the day's relay allowance is told so, and gets no session until the day turns.
+    if usage
+        .as_deref()
+        .is_some_and(|k| b.remote.partner_used(k, crate::hub::now_ms()) > PARTNER_BYTES_PER_DAY)
+    {
+        let refuse = json!({ "k": "refuse", "s": init.s, "reason": "quota" }).to_string();
+        outgoing.push(json!({ "op": "send", "to": device_route, "body": refuse }).to_string());
+        return;
+    }
     // An older phone hears that it needs an update; it never gets the old key schedule.
     if !ps::init_current(init) {
         let refuse = json!({ "k": "refuse", "s": init.s, "reason": "update" }).to_string();
@@ -1227,7 +1577,7 @@ fn on_init(
         return;
     };
     outgoing.push(json!({ "op": "send", "to": device_route, "body": body }).to_string());
-    let Some(pairing) = b.remote.pairing(pairing_id) else {
+    let Some(pairing) = pairing else {
         return;
     };
     let ctx = crate::remote_rpc::SessCtx::new(b, init.s.clone(), &pairing, out.clone());
@@ -1241,12 +1591,15 @@ fn on_init(
             proven: false,
             ctx,
             routes: HashMap::new(),
+            usage,
+            spent: false,
         },
     );
 }
 
 /// The relay loop's sessions, as partner routes use them.
 struct SessPhones<'a> {
+    b: &'a Bridge,
     sessions: &'a mut HashMap<String, Sess>,
     out: &'a mpsc::UnboundedSender<(String, String)>,
 }
@@ -1272,7 +1625,9 @@ impl crate::partner_route::Phones for SessPhones<'_> {
             .entry(ps::b64(route_id))
             .or_insert_with(|| s.channel.route(route_id));
         let f = ch.seal(plain)?;
-        serde_json::to_string(&f).ok()
+        let text = serde_json::to_string(&f).ok()?;
+        // Route bytes count against a partner phone's daily relay allowance too.
+        s.spend(self.b, text.len()).then_some(text)
     }
 
     fn open(&mut self, pairing_id: &str, route_id: &[u8], body: &str) -> Option<Vec<u8>> {
@@ -1283,6 +1638,9 @@ impl crate::partner_route::Phones for SessPhones<'_> {
             .sessions
             .get_mut(&f.s)
             .filter(|s| s.pairing_id == pairing_id)?;
+        if !s.spend(self.b, body.len()) {
+            return None;
+        }
         let ch = s
             .routes
             .entry(ps::b64(route_id))
@@ -1294,6 +1652,73 @@ impl crate::partner_route::Phones for SessPhones<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn partner_names_are_cleaned_as_the_pair_package_does() {
+        assert_eq!(
+            partner_name("  Example Phone  ").as_deref(),
+            Some("Example Phone")
+        );
+        assert_eq!(
+            partner_name("Example\nPhone\t Pro").as_deref(),
+            Some("Example Phone Pro")
+        );
+        assert_eq!(partner_name(&"x".repeat(64)).map(|s| s.len()), Some(64));
+        assert_eq!(partner_name(&"x".repeat(65)), None);
+        assert_eq!(partner_name("   "), None);
+        assert_eq!(partner_name("--"), None);
+        assert_eq!(partner_name("\u{2028}"), None);
+    }
+
+    #[test]
+    fn a_partner_app_has_a_daily_relay_allowance_by_name() {
+        let r = Remote::load(None, &sx_connect::MemorySecrets::new());
+        let day = 3 * DAY_MS;
+        assert!(r.partner_spend("example phone", 1024, day).0);
+        let big = usize::try_from(PARTNER_BYTES_PER_DAY).unwrap();
+        let (ok, save) = r.partner_spend("example phone", big, day + 1);
+        assert!(!ok, "past the day's allowance");
+        assert!(save, "the count is written when the cap is reached");
+        assert!(r.partner_used("example phone", day) > PARTNER_BYTES_PER_DAY);
+        assert!(
+            r.partner_spend("other app", 1024, day).0,
+            "another partner app has its own"
+        );
+        assert_eq!(
+            r.partner_used("example phone", day + DAY_MS),
+            0,
+            "a new day starts again"
+        );
+        assert!(r.partner_spend("example phone", 1024, day + DAY_MS).0);
+    }
+
+    #[test]
+    fn partner_names_fold_the_same_way_for_keys_and_phones() {
+        assert_eq!(partner_key("Example Phone"), partner_key("example phone"));
+        assert_eq!(partner_key("Example  Phone"), partner_key("example phone"));
+        assert_eq!(
+            partner_key("\u{ff25}xample Phone"),
+            partner_key("Example Phone"),
+            "fullwidth folds under NFKC"
+        );
+        assert_ne!(partner_key("Example Phone"), partner_key("Example Phones"));
+    }
+
+    #[test]
+    fn the_relay_count_survives_a_restart_and_a_new_pairing() {
+        let dir = std::env::temp_dir().join(format!("sx-partner-use-{}", crate::hub::now_ms()));
+        let state = StateDir::open(&dir).unwrap();
+        let r = Remote::load(Some(&state), &sx_connect::MemorySecrets::new());
+        let now = crate::hub::now_ms();
+        let big = usize::try_from(PARTNER_BYTES_PER_DAY).unwrap();
+        let (ok, save) = r.partner_spend("example phone", big + 1, now);
+        assert!(!ok && save);
+        state.save(PARTNER_USE_FILE, &*lock(&r.partner_use)).unwrap();
+        // A new hub (a restart) reads the count back. It is kept by name, so a new pairing of the same app shares it.
+        let again = Remote::load(Some(&state), &sx_connect::MemorySecrets::new());
+        assert!(again.partner_used("example phone", now) > PARTNER_BYTES_PER_DAY);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn jwt(claims: &Value) -> String {
         use base64::Engine as _;
