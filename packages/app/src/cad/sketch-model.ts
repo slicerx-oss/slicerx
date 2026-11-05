@@ -5,12 +5,17 @@
 // plain functions over it, so the panel only wires them to the view. There is no constraint solver
 // and no history: what is drawn is what the engine gets, and sketch.check says what is wrong with it.
 import type { SketchLoop, Vec2 } from '../geom/cad'
+import { splineEndDir, splinePoints } from './sketch-spline'
 import { arcCenter, arcTangent, circle2, offsetFrom, polygon, rect3, rectCenter, slot, slotCenters, type SlotMode } from './sketch-shapes'
 
 export type V2 = Vec2
-export type Seg = { kind: 'line'; to: V2 } | { kind: 'arc'; to: V2; through: V2 }
-/** Segments run on from `start`; a closed chain's last segment ends exactly on `start`. */
-export interface Chain { kind: 'chain'; start: V2; segs: Seg[]; closed: boolean; construction?: boolean }
+/** A spline runs from where the segment starts through `points` to `to`. */
+export type Seg = { kind: 'line'; to: V2 } | { kind: 'arc'; to: V2; through: V2 } | { kind: 'spline'; to: V2; points: V2[] }
+/**
+ * Segments run on from `start`; a closed chain's last segment ends exactly on `start`. A smooth chain is a closed
+ * spline loop: one spline segment from `start` round to it, with no corner there.
+ */
+export interface Chain { kind: 'chain'; start: V2; segs: Seg[]; closed: boolean; smooth?: true; construction?: boolean }
 export interface Circle { kind: 'circle'; center: V2; diameterMm: number; construction?: boolean }
 export type Entity = Chain | Circle
 export type Sketch = readonly Entity[]
@@ -38,7 +43,8 @@ export function toLoops(sketch: Sketch): SketchLoop[] {
   return sketch.map((e): SketchLoop => {
     const c = e.construction ? { construction: true as const } : {}
     if (e.kind === 'circle') return { type: 'circle', center: e.center, diameterMm: e.diameterMm, ...c }
-    return { start: e.start, segments: e.segs.map((s) => (s.kind === 'line' ? { type: 'line' as const, to: s.to } : { type: 'arc' as const, to: s.to, through: s.through })), ...c }
+    if (e.smooth) return { type: 'spline', points: [e.start, ...(e.segs[0]?.kind === 'spline' ? e.segs[0].points : [])], ...c }
+    return { start: e.start, segments: e.segs.map((s) => (s.kind === 'line' ? { type: 'line' as const, to: s.to } : s.kind === 'spline' ? { type: 'spline' as const, points: s.points, to: s.to } : { type: 'arc' as const, to: s.to, through: s.through })), ...c }
   })
 }
 
@@ -82,6 +88,7 @@ function circlePoints(center: V2, r: number): V2[] {
 export function segPath(c: Chain, i: number): V2[] {
   const s = c.segs[i]!
   const from = segStart(c, i)
+  if (s.kind === 'spline') return c.smooth ? splinePoints([c.start, ...s.points], true) : splinePoints([from, ...s.points, s.to], false)
   return s.kind === 'line' ? [from, s.to] : arcPoints(from, s.through, s.to)
 }
 
@@ -91,7 +98,7 @@ export function entityPaths(e: Entity): { points: V2[]; closed?: boolean; seg: n
   return e.segs.map((_, i) => ({ points: segPath(e, i), seg: i }))
 }
 
-export type HandleRef = { e: number; at: 'start' } | { e: number; at: 'to' | 'through'; seg: number } | { e: number; at: 'center' | 'rim' }
+export type HandleRef = { e: number; at: 'start' } | { e: number; at: 'to' | 'through'; seg: number } | { e: number; at: 'point'; seg: number; i: number } | { e: number; at: 'center' | 'rim' }
 
 /** Every point a drag can move: chain ends and corners, arc middles, circle centers and a rim point. */
 export function handles(sketch: Sketch): { refs: HandleRef[]; points: V2[] } {
@@ -110,6 +117,11 @@ export function handles(sketch: Sketch): { refs: HandleRef[]; points: V2[] } {
         refs.push({ e: i, at: 'through', seg: k })
         points.push(s.through)
       }
+      if (s.kind === 'spline')
+        s.points.forEach((q, j) => {
+          refs.push({ e: i, at: 'point', seg: k, i: j })
+          points.push(q)
+        })
       // A closed chain's last corner is its start.
       if (!(e.closed && k === e.segs.length - 1)) {
         refs.push({ e: i, at: 'to', seg: k })
@@ -133,6 +145,7 @@ export function moveHandle(sketch: Sketch, ref: HandleRef, p: V2): Entity[] {
       const k = ref.seg
       return { ...e, segs: e.segs.map((s, j) => (j !== k ? s : ref.at === 'to' ? { ...s, to: p } : s.kind === 'arc' ? { ...s, through: p } : s)) }
     }
+    if (ref.at === 'point') return { ...e, segs: e.segs.map((s, j) => (j !== ref.seg || s.kind !== 'spline' ? s : { ...s, points: s.points.map((q, n) => (n === ref.i ? p : q)) })) }
     return e
   })
 }
@@ -142,7 +155,7 @@ export function deleteSegment(sketch: Sketch, e: number, seg: number): Entity[] 
   const out: Entity[] = []
   sketch.forEach((x, i) => {
     if (i !== e) return void out.push(x)
-    if (x.kind === 'circle') return
+    if (x.kind === 'circle' || x.smooth) return
     const c = x.construction ? { construction: true } : {}
     if (x.closed) {
       if (x.segs.length <= 1) return
@@ -166,7 +179,7 @@ export function reverseChain(c: Chain): Chain {
   for (let k = c.segs.length - 1; k >= 0; k--) {
     const s = c.segs[k]!
     const to = ends[k]!
-    segs.push(s.kind === 'line' ? { kind: 'line', to } : { kind: 'arc', to, through: s.through })
+    segs.push(s.kind === 'line' ? { kind: 'line', to } : s.kind === 'spline' ? { kind: 'spline', to, points: [...s.points].reverse() } : { kind: 'arc', to, through: s.through })
   }
   return { ...c, start: ends[ends.length - 1]!, segs }
 }
@@ -228,6 +241,8 @@ export function sketchTargets(sketch: Sketch, skip?: HandleRef): SnapTargets {
       if (s.kind === 'line') {
         points.push({ at: [(from[0] + s.to[0]) / 2, (from[1] + s.to[1]) / 2], kind: 'midpoint' })
         edges.push({ a: from, b: s.to })
+      } else if (s.kind === 'spline') {
+        for (const q of s.points) points.push({ at: q, kind: 'vertex' })
       } else {
         const c = arcThrough(from, s.through, s.to)
         if (c) points.push({ at: c.center, kind: 'center' })
@@ -345,6 +360,7 @@ export function tangentAtEnd(c: Chain): V2 | null {
   if (!s || c.closed) return null
   const from = segStart(c, i)
   if (s.kind === 'line') return len(sub(s.to, from)) < EPS ? null : [(s.to[0] - from[0]) / dist(s.to, from), (s.to[1] - from[1]) / dist(s.to, from)]
+  if (s.kind === 'spline') return splineEndDir([from, ...s.points, s.to])
   const a = arcThrough(from, s.through, s.to)
   if (!a) return null
   const r: V2 = [(s.to[0] - a.center[0]) / a.r, (s.to[1] - a.center[1]) / a.r]
@@ -792,7 +808,7 @@ export function extent(sketch: Sketch): { center: V2; radius: number } | null {
 }
 
 /**
- * Engine loops back into drawn entities, for reopening a saved sketch: lines, three point arcs, arcs
+ * Engine loops back into drawn entities, for reopening a saved sketch: lines, three point arcs, splines, arcs
  * by center and sweep (what corner rounding returns), circles and point rings. Null when a loop uses
  * a form the editor does not draw (lengths and angles), so the caller can say so.
  */
@@ -802,6 +818,12 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
     const k = l.construction ? { construction: true } : {}
     if ('type' in l && l.type === 'circle') {
       out.push({ kind: 'circle', center: pt(l.center[0], l.center[1]), diameterMm: l.diameterMm, ...k })
+      continue
+    }
+    if ('type' in l && l.type === 'spline') {
+      const [first, ...rest] = l.points
+      if (!first || rest.length < 2) return null
+      out.push({ kind: 'chain', start: pt(first[0], first[1]), segs: [{ kind: 'spline', points: rest.map((q) => pt(q[0], q[1])), to: pt(first[0], first[1]) }], closed: true, smooth: true, ...k })
       continue
     }
     if ('points' in l) {
@@ -815,6 +837,7 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
     let at: V2 = l.start
     for (const g of l.segments) {
       if (g.type === 'line' && 'to' in g && g.to) segs.push({ kind: 'line', to: pt(g.to[0], g.to[1]) })
+      else if (g.type === 'spline') segs.push({ kind: 'spline', points: g.points.map((q) => pt(q[0], q[1])), to: pt(g.to[0], g.to[1]) })
       else if (g.type === 'arc' && 'through' in g && g.through && 'to' in g && g.to) segs.push({ kind: 'arc', to: pt(g.to[0], g.to[1]), through: pt(g.through[0], g.through[1]) })
       else if (g.type === 'arc' && 'center' in g && g.center && 'sweepDeg' in g && typeof g.sweepDeg === 'number') {
         const c = g.center
@@ -888,6 +911,7 @@ export function pickedText(sketch: Sketch, picked: { e: number; seg: number } | 
   if (!s) return ''
   const from = segStart(e, picked.seg)
   if (s.kind === 'line') return `Line, ${f(dist(from, s.to))} ${u}`
+  if (s.kind === 'spline') return `Spline through ${s.points.length + 2} points`
   const a = arcThrough(from, s.through, s.to)
   return a ? `Arc, radius ${f(a.r)} ${u}` : 'Arc'
 }

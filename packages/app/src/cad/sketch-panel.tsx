@@ -13,7 +13,7 @@
 // here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
 // renders no React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, afterReverse, curveStates, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, afterReverse, curveStates, fitKey, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
 import { dimensionFor, isDimension, measured, pointAt, pointHit, settle, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
@@ -798,7 +798,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     // a chain turned round to go on from its start keeps its constraints on the same points
     const turned = reversedChain(l.sketch, r.sketch)
     const was = l.sketch[turned]
-    let cons = turned >= 0 && was?.kind === 'chain' ? afterReverse(l.constraints, turned, was.segs.length) : l.constraints
+    let cons = turned >= 0 && was?.kind === 'chain' ? afterReverse(l.constraints, turned, was.segs.length, was.segs.map((g) => (g.kind === 'spline' ? g.points.length : 0))) : l.constraints
     if (!quiet) {
       const more = inferred(l.sketch, r.sketch, landed, cons, l.draft.tool)
       if (more.length) cons = [...cons, ...more]
@@ -925,7 +925,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     if (t - lastDrag.current < DRAG_GAP_MS) mergeNext.current = true
     lastDrag.current = t
     const moved = moveHandle(l.sketch, ref, to)
-    const key = ref.at === 'start' ? `${ref.e}:start` : ref.at === 'to' ? `${ref.e}:to:${ref.seg}` : ref.at === 'center' ? `${ref.e}:center` : null
+    const e = l.sketch[ref.e]
+    const key = ref.at === 'start' ? `${ref.e}:start` : ref.at === 'to' ? `${ref.e}:to:${ref.seg}` : ref.at === 'center' ? `${ref.e}:center` : ref.at === 'point' ? (e?.kind === 'chain' && e.smooth ? fitKey(ref.e, undefined, ref.i + 1) : fitKey(ref.e, ref.seg, ref.i)) : null
     if (!l.constraints.length || key === null) return setSketch(moved)
     const { solver, map } = toSolver(moved, l.constraints)
     const point = map.point.get(key)

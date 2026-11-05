@@ -25,6 +25,13 @@ export function pointAt(sketch: Sketch, r: SketchPointRef): V2 | null {
   if (e.kind === 'circle') return r.at === 'center' ? e.center : null
   if (r.at === 'start') return e.start
   if (r.at === 'to') return e.segs[r.seg]?.to ?? null
+  if (r.at === 'point') {
+    // a smooth chain's point 0 is its start
+    const s = e.segs[r.seg ?? 0]
+    if (s?.kind !== 'spline') return null
+    if (r.seg === undefined) return e.smooth ? (r.i === 0 ? e.start : (s.points[r.i - 1] ?? null)) : null
+    return s.points[r.i] ?? null
+  }
   if (r.at === 'arcCenter') {
     const s = e.segs[r.seg]
     return s?.kind === 'arc' ? (arcThrough(segStart(e, r.seg), s.through, s.to)?.center ?? null) : null
@@ -52,6 +59,7 @@ export function pointHit(sketch: Sketch, at: V2, tol: number): SketchPointRef | 
       // a closed chain's last end is its start
       if (!(e.closed && k === e.segs.length - 1)) take({ e: i, at: 'to', seg: k })
       if (s.kind === 'arc') take({ e: i, at: 'arcCenter', seg: k })
+      if (s.kind === 'spline') s.points.forEach((_, j) => take(e.smooth ? { e: i, at: 'point', i: j + 1 } : { e: i, at: 'point', seg: k, i: j }))
     })
   })
   return best
@@ -69,6 +77,8 @@ function curveAt(sketch: Sketch, r: SketchCurveRef): Curve | null {
   if (!s) return null
   const a = segStart(e, r.seg)
   if (s.kind === 'line') return { kind: 'line', a, b: s.to }
+  // a spline is no line or circle to measure
+  if (s.kind === 'spline') return null
   const arc = arcThrough(a, s.through, s.to)
   return arc ? { kind: 'arc', center: arc.center, r: arc.r } : null
 }

@@ -29,6 +29,7 @@ function dirAt(c: Chain, i: number, end: boolean): V2 | null {
     const d = dist(from, s.to)
     return d < EPS ? null : [(s.to[0] - from[0]) / d, (s.to[1] - from[1]) / d]
   }
+  if (s.kind === 'spline') return null
   const a = arcThrough(from, s.through, s.to)
   if (!a) return null
   const p = end ? s.to : from
