@@ -633,6 +633,30 @@ fn nothing_left(shape: &[Vec<IntPoint<i32>>], d: f64) -> bool {
         && disc_fit(shape, d, DISC_FIT_CELLS) == DiscFit::Nowhere
 }
 
+/// Most cells [`disc_fits`] looks at before the round shrink settles it.
+const DISC_FITS_CELLS: usize = 4096;
+
+/// True when a disc of radius `d` internal units fits inside `shape`: some point of it lies `d` or more from every
+/// edge. A mitered inward offset only measures the width between straight edges, so the corner of a band, where it
+/// widens, never counts there; this is the largest circle the shape really holds. It reads distances to the edges, so
+/// it is not fooled by the hairline sliver an inward offset can leave where the moved outlines of a finely cut round
+/// ring cross (a ring 5 mm wide kept such a sliver when shrunk by 3 mm). When the search runs out of cells (a disc
+/// that only just fits, or only just does not), the round shrink, with arcs at the concave corners, decides.
+pub(crate) fn disc_fits(shape: &[Vec<IntPoint<i32>>], d: f64) -> bool {
+    if shrinks_away(shape, d) {
+        return false;
+    }
+    match disc_fit(shape, d, DISC_FITS_CELLS) {
+        DiscFit::Fits => true,
+        DiscFit::Nowhere => false,
+        DiscFit::Undecided => {
+            #[allow(clippy::cast_possible_truncation, reason = "a distance in internal units")]
+            let r = d.round() as i32;
+            !shrink_round(&vec![shape.to_vec()], r).is_empty()
+        }
+    }
+}
+
 /// One square of [`disc_fit`]'s search: its center, half its side, and the most any point in it can be from the
 /// nearest edge.
 struct FitCell {
