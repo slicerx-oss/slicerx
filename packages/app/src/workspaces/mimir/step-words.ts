@@ -22,6 +22,7 @@ const WORDS: Record<string, Words | null> = {
   'design.new': { doing: 'Starting the design', done: 'Started the design' },
   'geom.extrude': { doing: 'Extruding the sketch', done: 'Extruded the sketch', caption: 'Extrude, Z', camera: 'iso' },
   'geom.revolve': { doing: 'Revolving the profile', done: 'Revolved the profile', caption: 'Revolve', camera: 'iso' },
+  'geom.loft': { doing: 'Lofting through the profiles', done: 'Lofted through the profiles', caption: 'Loft', camera: 'iso' },
   'geom.push_pull': { doing: 'Pushing the face', done: 'Pushed the face', caption: 'Push/pull' },
   'geom.fillet': { doing: 'Rounding the edges', done: 'Rounded the edges', caption: 'Fillet' },
   'geom.chamfer': { doing: 'Beveling the edges', done: 'Beveled the edges', caption: 'Chamfer' },

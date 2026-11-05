@@ -28,6 +28,7 @@ Errors are one plain sentence of the form `field: what is wrong`, ready to show 
 | `sketch.check` | Whether sketch loops close and do not cross, which are holes, and each problem with its loop and segment | `loops` |
 | `shape.extrude` | Extrude a rectangle, circle, slot, polygon, text, free sketch or SVG outline as a new body, joined to a target or cut from it | `frame`, `shape`, `placement`, `spec`, `target` |
 | `sketch.revolve` | Revolve sketch loops around an axis in their plane | `frame`, `loops`, `axis`, `angleDeg`, `operation`, `target` |
+| `sketch.loft` | Loft a solid through 2 to 64 closed profiles in order, each one loop on its own plane, with straight sides between them and flat ends | `profiles` (each `frame`, `loops`), `operation`, `target` |
 | `face.push` | Move a flat face along its normal: out adds material, in cuts | `mesh`, `triangle`, `at`, `distanceMm` |
 | `boolean` | Union, difference or intersection of closed meshes | `op`, `a`, `b` |
 | `edge.fillet`, `edge.chamfer` | Round or bevel straight edges between flat faces | `mesh`, `edges`, `radiusMm` or `distanceMm` |

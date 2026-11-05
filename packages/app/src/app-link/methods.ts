@@ -131,6 +131,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.sketch_check': 'read',
   'geom.extrude': 'edit',
   'geom.revolve': 'edit',
+  'geom.loft': 'edit',
   'geom.push_pull': 'edit',
   'geom.boolean': 'edit',
   'geom.fillet': 'edit',

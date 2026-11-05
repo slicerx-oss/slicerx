@@ -73,7 +73,7 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'loft', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -178,6 +178,22 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     expect(await vol('union')).toBeCloseTo(9000, 2)
     expect(await vol('subtract')).toBeCloseTo(7000, 2)
     expect(await vol('intersect')).toBeCloseTo(1000, 2)
+  })
+
+  it('lofts a square to a circle into an STL, and refuses profiles that cross', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const square = { points: [[-10, -10], [10, -10], [10, 10], [-10, 10]] }
+    const circle = { type: 'circle', center: [0, 0], diameterMm: 10 }
+    const r = await h.call('slicerx_geom_loft', { profiles: [{ loops: [square] }, { frame: { origin: [0, 0, 30], normal: [0, 0, 1] }, loops: [circle] }] })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: MeshOut }>(r).output
+    expect(out.watertight).toBe(true)
+    expect(out.shells).toBe(1)
+    expect(out.volumeMm3).toBeGreaterThan(30 * 78.5)
+    expect(out.volumeMm3).toBeLessThan(30 * 400)
+    const bad = await h.call('slicerx_geom_loft', { profiles: [{ loops: [square] }, { loops: [circle] }] })
+    expect(bad.isError).toBe(true)
+    expect(JSON.stringify(bad.content)).toMatch(/profiles 1 and 2 touch or cross/)
   })
 
   it('revolves a profile and checks a sketch', async () => {

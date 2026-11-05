@@ -40,6 +40,8 @@ use crate::sketch_corner;
 #[cfg(feature = "cad")]
 use crate::sketch_edit;
 #[cfg(feature = "cad")]
+use crate::sketch_loft;
+#[cfg(feature = "cad")]
 use crate::sketch_solve;
 #[cfg(feature = "threads")]
 use crate::thread::{self, ThreadSpec, ThreadTarget};
@@ -159,6 +161,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.curves" => loops(req).and_then(|l| to_value(&sketch::curves(&l)?)),
         #[cfg(feature = "cad")]
         "sketch.revolve" => sketch_revolve_op(req, enc, files),
+        #[cfg(feature = "cad")]
+        "sketch.loft" => sketch_loft_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.snaps" => sketch_snaps_op(req, files),
         #[cfg(feature = "cad")]
@@ -394,6 +398,20 @@ fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result
     };
     let polys = sketch::polygons(&loops(req)?)?;
     let tool = sketch::revolve(&frame.checked()?, &polys, axis.point, axis.direction, angle)?;
+    let world = target.as_ref().map(Item::world);
+    let r = face::apply(tool, op, world.as_ref())?;
+    tool_reply(r, target.as_ref(), op, enc)
+}
+
+#[cfg(feature = "cad")]
+fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let profiles: Vec<sketch_loft::Profile> = field(req, "profiles")?;
+    let op: face::Operation = field_or_default(req, "operation")?;
+    let target = match req.get("target") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(item(v, "target", files)?),
+    };
+    let tool = sketch_loft::loft(&profiles)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc)
@@ -1427,5 +1445,55 @@ mod tests {
             &json!({ "loops": ext, "loop": 1, "end": "start" }).to_string(),
         );
         assert!(err.unwrap_err().to_string().contains("nothing to extend to"));
+    }
+
+    #[test]
+    fn sketch_loft_op() {
+        assert!(crate::json::operations().contains(&"sketch.loft"));
+        let square = json!({ "points": [[-10, -10], [10, -10], [10, 10], [-10, 10]] });
+        let circle = json!({ "type": "circle", "center": [0, 0], "diameterMm": 10 });
+        let up = |z: f64| json!({ "origin": [0, 0, z], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] });
+        let profiles = json!([{ "loops": [square] }, { "frame": up(30.0), "loops": [circle] }]);
+        let out = run("sketch.loft", &json!({ "profiles": profiles }));
+        assert_eq!(out["watertight"], true);
+        assert_eq!(out["shells"], 1);
+        let v = out["volumeMm3"].as_f64().unwrap();
+        assert!(v > 30.0 * 78.5 && v < 30.0 * 400.0, "{v}");
+        assert_eq!(out["bounds"]["max"][2], 30.0);
+        // joined to a box under it and cut from a block around it
+        let base =
+            json!({ "mesh": MeshOut::Flat.mesh(&build::box_mesh([-15.0, -15.0, -5.0], [15.0, 15.0, 0.0])) });
+        let joined = run(
+            "sketch.loft",
+            &json!({ "profiles": profiles, "operation": "join", "target": base }),
+        );
+        assert_eq!(joined["shells"], 1);
+        assert!((joined["volumeMm3"].as_f64().unwrap() - (v + 4500.0)).abs() < 1e-3);
+        let block =
+            json!({ "mesh": MeshOut::Flat.mesh(&build::box_mesh([-20.0, -20.0, 0.0], [20.0, 20.0, 40.0])) });
+        let cut = run(
+            "sketch.loft",
+            &json!({ "profiles": profiles, "operation": "cut", "target": block }),
+        );
+        assert!((cut["volumeMm3"].as_f64().unwrap() - (64_000.0 - v)).abs() < 1e-3);
+        assert!(cut["report"]["touches"].as_bool().unwrap());
+        let err = call(
+            "sketch.loft",
+            &json!({ "profiles": [{ "loops": [square] }, { "loops": [circle] }] }).to_string(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(
+            err,
+            "loft: profiles 1 and 2 touch or cross; space them apart along the loft"
+        );
+        let one = call(
+            "sketch.loft",
+            &json!({ "profiles": [{ "loops": [square] }] }).to_string(),
+        );
+        assert_eq!(
+            one.unwrap_err().to_string(),
+            "profiles: a loft needs 2 or more profiles"
+        );
     }
 }
