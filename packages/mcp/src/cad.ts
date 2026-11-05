@@ -120,6 +120,25 @@ const faceRef = z
 const modelOrDesign = modelArg.optional().describe('Absolute path to an STL file, an http(s) URL, or a built-in model such as sample:x-mark; or give "design" instead')
 const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0 (default 0)')
 
+/**
+ * `v` parsed by `schema`, or a ToolInputError naming the first bad field by its path under `field` (into the closest
+ * branch of a union), such as "profile.loops.0.segments.1.to: Invalid input: expected array, received undefined".
+ */
+function parsedAt<T extends z.ZodType>(schema: T, v: unknown, field: string): z.infer<T> {
+  const r = schema.safeParse(v)
+  if (r.success) return r.data
+  type Issue = { path: PropertyKey[]; message: string; code?: string; errors?: Issue[][] }
+  const first = (issues: readonly Issue[], base: PropertyKey[]): { path: PropertyKey[]; message: string } => {
+    const e = issues[0]!
+    const path = [...base, ...e.path]
+    const branches = e.code === 'invalid_union' && e.errors ? e.errors.filter((b) => b.length) : []
+    if (branches.length) return first([...branches].sort((a, b) => a.length - b.length)[0]!, path)
+    return { path, message: e.message }
+  }
+  const at = first(r.error.issues as unknown as Issue[], [field])
+  throw new ToolInputError(`${at.path.map(String).join('.')}: ${at.message}`)
+}
+
 const frameSchema = z
   .object({ origin: vec3, normal: vec3, u: vec3.optional(), v: vec3.optional() })
   .describe('Sketch plane: the "frame" of slicerx_geom_face_pick, or {"origin":[x,y,z],"normal":[x,y,z]} for any plane. Shape and sketch coordinates are [u, v] in it. Absent: the bed (origin 0,0,0, normal +Z, u along +X)')
@@ -609,7 +628,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  // Kept small: a local model gets every build tool's schema on each build turn. The engine checks loops and frames.
+  // Kept small: a local model gets every build tool's schema on each build turn. The tool parses the profile and path
+  // against the full schemas below, so the step and the app get the parsed loops, and a bad field is named by its path.
+  const chain = z.union([z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }), z.object({ points: z.array(vec2).min(2).max(4096) })])
+  const sweepProfile = z.object({ frame: frameSchema.optional(), loops })
+  const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
   const sweep = defineTool({
     name: 'geom.sweep',
     version: '1.0.0',
@@ -633,24 +656,18 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.path && !i.path.loops && !i.path.points) throw new ToolInputError('path: give the path as loops on a plane or as points')
       if (i.path?.loops && i.path.points) throw new ToolInputError('path: give loops or points, not both')
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Swept'
-      const fr = (raw: unknown, field: string): z.infer<typeof frameSchema> | undefined => {
-        if (raw === undefined || raw === null) return undefined
-        const f = (typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-        const v = (x: unknown): x is V3 => Array.isArray(x) && x.length === 3 && x.every((n) => typeof n === 'number' && Number.isFinite(n))
-        if (!v(f['origin']) || !v(f['normal']) || (f['u'] !== undefined && !v(f['u']))) throw new ToolInputError(`${field}: the frame needs origin and normal, each [x, y, z]`)
-        return { origin: f['origin'], normal: f['normal'], ...(f['u'] ? { u: f['u'] as V3 } : {}) }
-      }
-      const pf = fr(i.profile?.frame, 'profile')
-      const qf = fr(i.path?.frame, 'path')
-      const profileLoops = i.profile?.loops as unknown as SketchLoop[]
-      const pathLoops = i.path?.loops as unknown as SketchLoop[] | undefined
-      const points = i.path?.points as unknown as V3[] | undefined
-      if (points?.some((q) => q.length !== 3)) throw new ToolInputError('path: each point is [x, y, z]')
+      const prof = i.profile ? parsedAt(sweepProfile, i.profile, 'profile') : undefined
+      const pth = i.path ? parsedAt(sweepPath, i.path, 'path') : undefined
+      const pf = prof?.frame
+      const qf = pth?.frame
+      const profileLoops = prof?.loops as SketchLoop[] | undefined
+      const pathLoops = pth?.loops as SketchLoop[] | undefined
+      const points = pth?.points
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
         const k = i.profile_sketch ? finished(i.profile_sketch) : null
-        const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops }
+        const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops! }
         const j = i.path_sketch ? finished(i.path_sketch) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
         const params: StepParams = plain({ op: 'sketch.sweep', profile, path, operation: i.operation, name: i.name })
