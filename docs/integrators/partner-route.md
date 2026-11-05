@@ -7,7 +7,7 @@ The route carries bytes only. Nothing sent on it reaches a bridge method, a prin
 ## What you need
 
 - A partner app key, made by the user in SlicerX (see [partner-app-key.md](partner-app-key.md)).
-- Your phone app paired with the user's bridge as a partner phone, under the same app name as your key.
+- Your phone app paired with the user's bridge as a partner phone ([partner-phone.md](partner-phone.md)), and the user linked that phone to your key in Settings, Printer bridge, Devices (Its app on this computer). The link is by key, never by name: a phone that paired under your name but is not linked to your key is not yours to reach. If your key's name differs from the name your phone paired under, SlicerX warns the user before linking them, so use the same name for both.
 - Remote access turned on in SlicerX, with the user signed in to their SlicerX account. Partner routes belong to an account, so a bridge that is not signed in can't open one.
 
 ## Desktop side
@@ -70,4 +70,4 @@ The bridge also keeps at most 4 routes open in all, and a chunk is at most 256 K
 
 ## What the user sees
 
-The user sees every open route in SlicerX, Settings, Printer bridge, Devices: your app's name, the phone, how long it has been open and the bytes in and out, with End route, which closes it at once. Removing your phone's pairing or your key ends its routes too. The bridge and the relay keep sizes and times only, never your bytes. AI agents connected to the bridge can read the same list (`slicerx_partner_routes`), and none of them can open or close a route.
+The user sees every open route in SlicerX, Settings, Printer bridge, Devices: your app's name, the phone, how long it has been open and the bytes in and out, with End route, which closes it at once. Removing your phone's pairing or your key, or unlinking the phone from your key, ends its routes too. The bridge and the relay keep sizes and times only, never your bytes. AI agents connected to the bridge can read the same list (`slicerx_partner_routes`), and none of them can open or close a route.
