@@ -6,7 +6,6 @@
 // link, by the same rule the bridge applies before it connects a printer (`is_lan_host` in sx-link), so a saved
 // host that points elsewhere cannot send anyone to an outside site.
 import { connectionMethod } from './methods.ts'
-import { ROOT_TLDS } from './root-tlds.ts'
 import type { ConnectionId, ConnectionMethod, PrinterModel, WebUi } from './types.ts'
 
 /** What the link is built from: the fields of a saved printer (`PrinterInfo` in @slicerx/contracts). */
@@ -41,13 +40,12 @@ export function printerWebUiUrl(printer: WebUiPrinter, model?: PrinterModel): st
 }
 
 /**
- * `http://host:port/path` (or https) for a host on the local network that is not a root-zone TLD (a single label
- * such as `ai` can resolve on the internet), written as a browser writes it: names in lower
+ * `http://host:port/path` (or https) for a host on the local network, written as a browser writes it: names in lower
  * case without a trailing dot, IPv6 in its short form, no default port. Null for any other host, port or path.
  */
 export function webUiUrl(host: string, port: number, path = '/', scheme: 'http' | 'https' = 'http'): string | null {
   const h = host
-  if (!isLanHost(h) || isRootTld(h)) return null
+  if (!isLanHost(h)) return null
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null
   if (!/^\/[A-Za-z0-9\-._~/]*$/.test(path) || path.includes('//')) return null
   const v6 = h.includes(':') ? ipv6Segments(h) : null
@@ -58,7 +56,7 @@ export function webUiUrl(host: string, port: number, path = '/', scheme: 'http' 
 
 /**
  * True for a host meant for the local network: a private, loopback or link-local IP address, a `.local`, `.lan` or
- * `.home.arpa` name, or a single label (the web link also refuses a single label that is a root-zone TLD). A name a URL parser reads as an IPv4 number (its last label is
+ * `.home.arpa` name, or a single label. A name a URL parser reads as an IPv4 number (its last label is
  * digits, or 0x and hex digits, as in `134744072` or `0x08080808`) is refused, and so is an address with a leading
  * zero, which a browser reads as octal: each would open a public address. The same rule as `is_lan_host` in sx-link;
  * both are tested against `packages/connect/fixtures/lan-hosts.json`.
@@ -78,12 +76,6 @@ export function isLanHost(host: string): boolean {
 function endsInANumber(h: string): boolean {
   const last = h.split('.').at(-1) ?? ''
   return /^\d+$/.test(last) || /^0x[0-9a-f]*$/.test(last)
-}
-
-/** A single label that is a top-level domain of the DNS root zone, such as `ai` or `com`. */
-export function isRootTld(host: string): boolean {
-  const h = host.replace(/\.$/, '').toLowerCase()
-  return !h.includes('.') && ROOT_TLDS.has(h)
 }
 
 function methodOf(plugin: string): ConnectionMethod | undefined {
