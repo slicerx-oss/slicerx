@@ -9,6 +9,10 @@ import { LinkError, runCall, useDesignHost, useLinkSession } from './methods'
 import { bindRunPrinters } from './mimir-run'
 import { bindPreviewSource } from './preview-source'
 import { bindVaultStore } from './vault'
+import { answerFromPhone, onPhoneQuestion, phoneQuestion, PhoneAnswerError } from '../workspaces/mimir/phone-answers'
+
+/** A phone answer's refusal as the hub reads it: not_found stays, a choice the question lacks is invalid_input. */
+const PHONE_CODES = { not_found: 'not_found', bad_request: 'invalid_input', unavailable: 'not_ready' } as const
 
 export interface LinkAsk {
   askId: number
@@ -86,9 +90,25 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
     timers.add(t)
   })
   const stopEnded = link.onAskEnded(drop)
+  // mimir's question for paired phones over the relay: the hub keeps what this window says and asks it for answers
+  const tell = (st: Parameters<NonNullable<BridgeAppLink['mimirState']>>[0]) => void link.mimirState?.(st).catch(() => undefined)
+  const stopQuestion = link.mimirState ? onPhoneQuestion(tell) : () => undefined
+  const stopPhone =
+    link.onPhoneAnswer?.((a) => {
+      answerFromPhone(a.answer, { name: a.phone.name })
+        .then(
+          () => link.reply(a.callId, { ok: true, value: { answered: true } }),
+          (e: unknown) => link.reply(a.callId, { ok: false, code: e instanceof PhoneAnswerError ? PHONE_CODES[e.code] : 'not_ready', message: e instanceof Error ? e.message : String(e) }),
+        )
+        .catch(() => undefined)
+    }) ?? (() => undefined)
   // One line either way, so a window that cannot host (an origin the hub does not take) shows why in the console.
   link.host().then(
-    (r) => console.info(`[app link] this window hosts the app link (origin ${r.origin ?? 'none'}, ${r.on ? 'on' : 'off'})`),
+    (r) => {
+      console.info(`[app link] this window hosts the app link (origin ${r.origin ?? 'none'}, ${r.on ? 'on' : 'off'})`)
+      // a phone that connects later reads it from the hub
+      tell({ waiting: phoneQuestion().waiting })
+    },
     (e: unknown) => console.warn(`[app link] this window cannot host the app link: ${e instanceof Error ? e.message : String(e)}`),
   )
   return () => {
@@ -98,6 +118,8 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
     stopCall()
     stopAsk()
     stopEnded()
+    stopQuestion()
+    stopPhone()
     for (const t of timers) clearTimeout(t)
     useLinkSession(null)
     linkAsks.setState({ link: null, asks: [] })

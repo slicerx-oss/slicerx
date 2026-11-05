@@ -59,6 +59,10 @@ export interface BridgeAppLink {
   onAskEnded(cb: (askId: number) => void): () => void
   reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
   answer(askId: number, decision: 'allow' | 'read' | 'deny'): Promise<void>
+  /** A paired phone answering mimir's question (sx-link `appLink.phoneAnswer`); answer it with `reply`. Absent on an older client. */
+  onPhoneAnswer?(cb: (a: { callId: number; answer: { sessionId: string; askId: string; choiceId: string | null }; phone: { deviceId: string | null; name: string } }) => void): () => void
+  /** Tells approver phones the question mimir waits on now (sx-link `appLink.mimirState`). Absent on an older client. */
+  mimirState?(state: import('../workspaces/mimir/phone-answers').PhoneState): Promise<void>
   grants(): Promise<{ clientId: string; name: string; rights: 'read' | 'edit' | null; grantedAt: string | null; denied: boolean }[]>
   revoke(clientId: string): Promise<void>
 }
