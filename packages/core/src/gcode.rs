@@ -2529,6 +2529,14 @@ fn emit_layer(
             },
         }
     };
+    // A path of an object at a layer height of its own, merged onto this layer, states that object's thickness.
+    #[allow(clippy::cast_possible_truncation, reason = "a height in thousandths is small")]
+    let own_height = |owner: u16, stated: (i64, i64)| -> (i64, i64) {
+        match l.own_heights.iter().find(|(o, _)| *o == owner) {
+            Some((_, own)) if stated.1 == layer_h => (stated.0, (f64::from(*own) * 1000.0).round() as i64),
+            _ => stated,
+        }
+    };
     #[allow(clippy::cast_possible_truncation, reason = "a width in thousandths is small")]
     let mut width_written = if l.below_wipe.overhang_wall {
         label(Feature::OverhangWall, l.below_wipe.width_mm, 1.0).0
@@ -3567,8 +3575,10 @@ fn emit_layer(
             1.0
         };
         #[allow(clippy::cast_possible_truncation, reason = "a line width is small")]
-        let (width_label, height_label) =
-            label(p.feature, (f64::from(p.width_mm) * tower_flow) as f32, p.flow);
+        let (width_label, height_label) = own_height(
+            p.owner,
+            label(p.feature, (f64::from(p.width_mm) * tower_flow) as f32, p.flow),
+        );
         if feature != Some(p.feature) {
             if let Some(rc) = role_ctx.as_mut() {
                 match crate::customgcode::role_change(
