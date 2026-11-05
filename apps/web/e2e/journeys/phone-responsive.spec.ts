@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The phone journey: the app in a phone window with a finger. Model in the build that models only (the bar of fixed slots,
-// its sheets, the sketch's tools, a finger that selects, turns the view, drags a gizmo handle and holds), the slim Slice
-// studio (Simple settings, no modeling or plate tools, a finger that never moves the model), the controls after a slice,
+// its sheets, the sketch's tools, a finger that selects, turns the view, moves the selected model, drags a gizmo handle
+// and holds), the slim Slice studio (Simple settings, no modeling or plate tools, a finger that moves the selected model
+// and turns the view anywhere else), the controls after a slice,
 // the touch tip, and long names. One page serves the whole file. The Model build and the Slice build differ by a boot flag
 // the app reads at load, so a test that needs the other one reloads the page (boot below); the rest share the page as it is.
 //
@@ -195,21 +196,36 @@ test.describe('phone', () => {
       await expect.poll(async () => (await state(page)).selection).toBe(null)
     })
 
-    test('a finger drags a move arrow and moves the model along it only, and a drag on the model turns the view', async ({ page }) => {
+    test('a finger drags a move arrow and moves the model along it only, and a drag on the model moves it only once selected', async ({ page }) => {
       await boot(page, 'model')
       const id = await addBox(page)
       await expect(page.getByTestId('phone-handle-move')).toHaveAttribute('aria-checked', 'true')
       const cdp = await page.context().newCDPSession(page)
-      // a drag that starts on the model itself turns the view and leaves the model where it is. Framed, the model's
-      // middle is the move arrows' origin, so the drag starts on the low X and Y side, away from all three arrows.
+      // Framed, the model's middle is the move arrows' origin, so a drag on the model starts on its low X and Y side,
+      // away from all three arrows. In four steps, so the first move is already past the 8 px a held finger may wander.
+      // Each step waits for the page to take it, one a frame, so on a slow runner a drag still inside that read as a
+      // finger held for Select Other, whose list then took the drag.
+      const drag = async () => {
+        const body = await screenOf(page, await pointIn(page, id, [0.2, 0.2, 0.5]))
+        await finger(cdp, body, { x: body.x + 60, y: body.y + 10 }, 0, 4)
+        await page.waitForTimeout(300)
+      }
       const before = (await state(page)).plate[0]!.transform.join(',')
-      const body = await screenOf(page, await pointIn(page, id, [0.2, 0.2, 0.5]))
-      // In four steps, so the first move is already past the 8 px a held finger may wander. Each step waits for the
-      // page to take it, one a frame, so on a slow runner a drag still inside that read as a finger held for Select
-      // Other, whose list then took the arrow drag below.
-      await finger(cdp, body, { x: body.x + 60, y: body.y + 10 }, 0, 4)
-      await page.waitForTimeout(300)
+      // not selected: a drag that starts on the model turns the view and leaves the model where it is
+      await setState(page, { selection: null, selectedIds: [] })
+      await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
+      await drag()
       expect((await state(page)).plate[0]!.transform.join(',')).toBe(before)
+      // selected: the same drag moves the model on the plate, flat on the bed, and one undo puts it back
+      await setState(page, { selection: id, selectedIds: [id] })
+      await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
+      const t0 = (await state(page)).plate[0]!.transform
+      await drag()
+      await expect.poll(async () => Math.hypot((await state(page)).plate[0]!.transform[12]! - t0[12]!, (await state(page)).plate[0]!.transform[13]! - t0[13]!)).toBeGreaterThan(2)
+      expect(Math.abs((await state(page)).plate[0]!.transform[14]! - t0[14]!)).toBeLessThan(0.01)
+      expect((await state(page)).selection).toBe(id)
+      await page.locator('body').press('ControlOrMeta+z')
+      await expect.poll(async () => (await state(page)).plate[0]!.transform.join(',')).toBe(t0.join(','))
       // the X arrow: from the model's middle along X, most of the way to its tip
       const tip = await page.evaluate(() => {
         const vp = (window as unknown as { __vp: { moveTarget(): unknown; arrowLayout(t: unknown): { origin: [number, number, number]; length: number } } }).__vp
@@ -418,21 +434,45 @@ test.describe('phone', () => {
       await shutSheet(page)
     })
 
-    test('a finger on the model selects it or turns the view, and never moves it', async ({ page }) => {
+    test('a finger on the model selects it, a drag on empty space turns the view, and a drag on the selected model moves it', async ({ page }) => {
       await boot(page, 'slice')
       await shutSheet(page)
+      await setState(page, { selection: null, selectedIds: [] })
       const before = (await state(page)).plate.map((p) => p.transform.join(','))
       const box = (await page.locator('.vp-canvas').boundingBox())!
-      const x = box.x + box.width / 2
-      const y = box.y + box.height / 2
-      // a tap, then a press and drag starting on the model
-      await page.touchscreen.tap(x, y)
-      await page.mouse.move(x, y)
-      await page.mouse.down()
-      await page.mouse.move(x + 60, y + 20, { steps: 8 })
-      await page.mouse.up()
-      await page.waitForTimeout(300)
-      expect((await state(page)).plate.map((p) => p.transform.join(','))).toEqual(before)
+      const id = (await state(page)).plate[0]!.id
+      const transforms = async () => (await state(page)).plate.map((p) => p.transform.join(','))
+      const cdp = await page.context().newCDPSession(page)
+      const look = () => page.evaluate(() => (window as unknown as { __vp: { camera: { position: { toArray(): number[] } } } }).__vp.camera.position.toArray().join(','))
+      try {
+        // a drag on the model before it is selected turns the view and moves nothing
+        let at = await screenOf(page, await middleOf(page, id))
+        const view0 = await look()
+        await finger(cdp, at, { x: at.x + 60, y: at.y + 20 }, 0, 4)
+        await page.waitForTimeout(300)
+        expect(await transforms()).toEqual(before)
+        expect(await look()).not.toBe(view0)
+        // a tap selects it, and moves nothing
+        at = await screenOf(page, await middleOf(page, id))
+        await page.touchscreen.tap(at.x, at.y)
+        await expect.poll(async () => (await state(page)).selection).toBe(id)
+        await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
+        expect(await transforms()).toEqual(before)
+        // a drag on empty space, at the left of the view, still turns it and moves nothing
+        const view1 = await look()
+        const side = { x: box.x + 30, y: box.y + box.height * 0.45 }
+        await finger(cdp, side, { x: side.x + 60, y: side.y + 10 }, 0, 4)
+        await page.waitForTimeout(300)
+        expect(await transforms()).toEqual(before)
+        expect(await look()).not.toBe(view1)
+        // a drag that starts on the selected model moves it on the plate
+        at = await screenOf(page, await middleOf(page, id))
+        const t0 = (await state(page)).plate[0]!.transform
+        await finger(cdp, at, { x: at.x + 40, y: at.y + 10 }, 0, 4)
+        await expect.poll(async () => { const t = (await state(page)).plate[0]!.transform; return Math.hypot(t[12]! - t0[12]!, t[13]! - t0[13]!) }).toBeGreaterThan(2)
+      } finally {
+        await cdp.detach()
+      }
     })
 
     test('the Vault and the printers are a tap away', async ({ page }) => {

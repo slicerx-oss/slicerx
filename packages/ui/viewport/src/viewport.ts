@@ -59,7 +59,7 @@ import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
 import { FEATURE_COLORS, SCENE, resolveTheme, viewportThemeOf, type ResolvedTheme, type UiThemeLike, type ViewportTheme } from './palette'
 import { summarizePreview, type PreviewSummary } from './summary'
-import { CONTROL_PRESETS, buttonName, dragStartsOnModel, modifiersOf, orbitCodeFor, resolveDrag, resolveWheel, type ControlsMap, type ControlsPresetId } from './controls'
+import { CONTROL_PRESETS, buttonName, modifiersOf, orbitCodeFor, pressMovesModel, resolveDrag, resolveWheel, touchMoveStarted, type ControlsMap, type ControlsPresetId, type ModelMoves } from './controls'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
@@ -211,9 +211,14 @@ interface Drag {
   startX: number
   center: [number, number]
   startYaw: number
-  /** Where the press was, client pixels, and its pointer type. */
+  /** Where the press was, client pixels, and its pointer type and id. */
   press: [number, number]
   pointerType: string
+  pointerId: number
+  /** Where the pointer is now, client pixels. */
+  at: [number, number]
+  /** A finger's move has gone past the tap slop and moves the model; until then the press is a tap or a hold. */
+  live: boolean
   /** The edge hook's view of this move: not asked yet (undefined), declined or not a move (null), or following. */
   edge?: EdgeTrack | null
 }
@@ -362,8 +367,8 @@ class ViewportImpl implements Viewport {
   private perspFov = 30
   private aoLevel = 1
   private tool: PlateTool = 'select'
-  /** False where the plate is only viewed (a phone): presses select, drags turn the view, and nothing moves. */
-  private movable = true
+  /** Which presses on a model may move it (setMovable): any, only one on a model already selected (a phone), or none. */
+  private movable: ModelMoves = true
   private pr = 1
   private aoOn: boolean
   private dirty = true
@@ -1946,8 +1951,8 @@ class ViewportImpl implements Viewport {
     for (const [objectId, indices] of hits) this.emit('brimselect', { objectId, indices, mode })
   }
 
-  /** Lets presses on a model move it (the default), or only select it. */
-  setMovable(on: boolean): void {
+  /** Lets presses on a model move it (the default), only on a model already selected ('selected'), or only select it. */
+  setMovable(on: ModelMoves): void {
     this.movable = on
     if (!on) this.drag = null
   }
@@ -3656,6 +3661,23 @@ class ViewportImpl implements Viewport {
       if (press) clearTimeout(press.timer)
       press = null
     }
+    // A finger's move on a model that a second finger joins: the first finger is handed to the camera (true while it is).
+    let handing = false
+    /**
+     * A second finger while a first one moves a model: the move was the start of a pinch. The model goes back, and the
+     * first finger goes to the camera as if it had just pressed, so both fingers zoom and turn the view.
+     */
+    const pinchFromMove = (d: Drag): void => {
+      this.cancelDrag()
+      stopPress()
+      down = null
+      handing = true
+      try {
+        el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: d.pointerId, pointerType: 'touch', isPrimary: true, clientX: d.at[0], clientY: d.at[1], button: 0, buttons: 1, bubbles: true }))
+      } finally {
+        handing = false
+      }
+    }
     const setRay = (e: { clientX: number; clientY: number }): void => {
       const r = el.getBoundingClientRect()
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, (-(e.clientY - r.top) / r.height) * 2 + 1)
@@ -3771,6 +3793,9 @@ class ViewportImpl implements Viewport {
       if (first) requestAnimationFrame(flushProbe)
     }
     const onDown = (e: PointerEvent): void => {
+      if (handing) return
+      const d0 = this.drag
+      if (d0 && d0.pointerType === 'touch' && e.pointerType === 'touch' && e.pointerId !== d0.pointerId) return pinchFromMove(d0)
       const p0 = pick(e)
       const action = this.routeDrag(e, () => p0?.point ?? null)
       down = { x: e.clientX, y: e.clientY }
@@ -3923,11 +3948,11 @@ class ViewportImpl implements Viewport {
         if (this.paintDown(e, p)) e.stopPropagation()
         return
       }
-      // a plate that is only viewed: the press selects on release, as a click does, and a drag turns the view
-      if (!this.movable) return
-      const explicit = this.tool !== 'select'
-      // With the select tool the preset decides whether the press moves the model or orbits the view.
-      if (!explicit && !dragStartsOnModel(this.controlsMap, modifiersOf(e, this.spaceDown), action, this.selection.includes(p.entry.id))) return
+      // A plate that is only viewed: the press selects on release, as a click does, and a drag turns the view. With the
+      // select tool the preset decides whether the press moves the model or orbits the view; on a phone only a finger on
+      // a model already selected moves it.
+      const on = { selected: this.selection.includes(p.entry.id) }
+      if (!pressMovesModel({ on, tool: this.tool, mods: modifiersOf(e, this.spaceDown), action, primary: e.isPrimary }, this.controlsMap, this.movable)) return
       // with Ctrl (Cmd) the press is a click that adds or takes out an object, not a drag
       if (e.ctrlKey || e.metaKey) return
       // a press on one object of a multi-selection drags all of it; anywhere else it picks that one object
@@ -3954,6 +3979,10 @@ class ViewportImpl implements Viewport {
         startYaw: Math.atan2(m[1] ?? 0, m[0] ?? 1),
         press: [e.clientX, e.clientY],
         pointerType: e.pointerType,
+        pointerId: e.pointerId,
+        at: [e.clientX, e.clientY],
+        // a mouse moves the model at once; a finger only once it is past the tap slop
+        live: !touch,
       }
       this.controls.enabled = false
       el.setPointerCapture(e.pointerId)
@@ -4058,6 +4087,12 @@ class ViewportImpl implements Viewport {
           if (this.brim.setHover(bp ? [bp[0], bp[1]] : null)) this.invalidate()
         }
         return
+      }
+      if (e.pointerId !== d.pointerId) return
+      d.at = [e.clientX, e.clientY]
+      if (!d.live) {
+        if (!touchMoveStarted(d.press, d.at)) return
+        d.live = true
       }
       const bed = this.stage.bed
       const m = new Matrix4().fromArray(d.start)
@@ -4183,7 +4218,8 @@ class ViewportImpl implements Viewport {
         this.drag = null
         this.controls.enabled = true
         // Model with faces or edges in the pick filter: a press that never moved is a click, and picks what is under it.
-        const click = (this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5
+        // A finger that never went past the tap slop is a tap the same way.
+        const click = !d.live || ((this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5)
         if (click) {
           if (d.edge) this.edgeHook?.cancel()
           // put back any sub-click nudge the drag made
