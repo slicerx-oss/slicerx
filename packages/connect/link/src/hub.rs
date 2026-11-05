@@ -426,6 +426,14 @@ pub(crate) struct QueueItem {
     pub request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<StandingApproval>,
+    /// The partner app that queued this plate, if one did; a partner reads and asks to start only
+    /// its own plates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued_by: Option<String>,
+    /// The approval came from a phone away from home: the start runs a fresh plate check first and
+    /// is refused when the hub no longer holds that approval (after a restart).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remote_approved: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at_ms: Option<u64>,
 }
@@ -454,6 +462,21 @@ impl QueueItem {
             if let Some(a) = &self.approval {
                 o.insert("approvedUntil".into(), json!(iso(a.expires_at_ms)));
             }
+        }
+        v
+    }
+
+    /// What an agent or partner app reads of a queued plate: which plate, where, its state and when
+    /// it is due. No file hash, options, card or approval.
+    pub(crate) fn to_client_json(&self) -> Value {
+        let mut v = json!({
+            "id": self.id,
+            "printerId": self.printer_id,
+            "name": self.title.clone().unwrap_or_else(|| self.name.clone()),
+            "state": self.state,
+        });
+        if let (Some(at), Some(o)) = (self.start_after_ms, v.as_object_mut()) {
+            o.insert("startAfter".into(), json!(iso(at)));
         }
         v
     }
@@ -550,6 +573,9 @@ pub(crate) struct Hub {
     observed: StdMutex<HashMap<String, Observed>>,
     /// Detector subscriptions: id to the printers they cover (`None`: all).
     watchers: StdMutex<HashMap<u64, Option<Vec<String>>>>,
+    /// The subscriptions of the camera guard's own detector (not an agent narrowed to the watch
+    /// role): only these get plate checks and looks.
+    detectors: StdMutex<std::collections::HashSet<u64>>,
     next_watcher: std::sync::atomic::AtomicU64,
     /// The camera guard's frames, trips and plate checks.
     pub guard: crate::guard::GuardState,
@@ -617,6 +643,7 @@ impl Hub {
             finding_alerts: StdMutex::new(HashMap::new()),
             last_finding: StdMutex::new(HashMap::new()),
             watchers: StdMutex::new(HashMap::new()),
+            detectors: StdMutex::new(std::collections::HashSet::new()),
             printer_locks: StdMutex::new(HashMap::new()),
             pause_steps: (Duration::from_mins(30), Duration::from_hours(2)),
             auto_paused: StdMutex::new(HashMap::new()),
@@ -791,19 +818,23 @@ impl Hub {
     }
 
     /// A detector started watching `only` (or every printer). Returns the id for `remove_watcher`.
-    pub(crate) fn add_watcher(&self, only: Option<Vec<String>>) -> u64 {
+    pub(crate) fn add_watcher(&self, only: Option<Vec<String>>, detector: bool) -> u64 {
         let id = self.next_watcher.fetch_add(1, Ordering::Relaxed);
         lock(&self.watchers).insert(id, only);
+        if detector {
+            lock(&self.detectors).insert(id);
+        }
         id
     }
 
     pub(crate) fn remove_watcher(&self, id: u64) {
         lock(&self.watchers).remove(&id);
+        lock(&self.detectors).remove(&id);
     }
 
-    /// True while a detector is subscribed to frames.
-    pub(crate) fn has_watchers(&self) -> bool {
-        !lock(&self.watchers).is_empty()
+    /// True while the camera guard's own detector is subscribed: plate checks and looks wait for it.
+    pub(crate) fn has_detector(&self) -> bool {
+        !lock(&self.detectors).is_empty()
     }
 
     pub(crate) fn note_finding(&self, printer: &str, now: u64) {
@@ -1254,6 +1285,8 @@ pub(crate) fn new_item(
         message: None,
         request_id: None,
         approval: None,
+        remote_approved: false,
+        queued_by: None,
         ended_at_ms: None,
     })
 }

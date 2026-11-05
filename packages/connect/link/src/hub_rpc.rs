@@ -625,11 +625,14 @@ pub(crate) async fn grant(b: &Arc<Bridge>, broker: &ApprovalBroker, p: &Value) -
         .map_err(|e| RpcError::new("bad_request", e.to_string()))?;
     broker.grant_with(&id, true).map_err(|e| grant_error(&e))?;
     let (not_before, until) = (standing.not_before_ms, standing.expires_at_ms);
+    // A start approved from afar is checked again right before its start command.
+    let remote = bool_arg(p, "remoteStart");
     let updated = b.hub.update_item(&item.id, |i| {
         i.approval = Some(standing);
         i.request_id = None;
         i.state = QueueState::Approved;
         i.message = None;
+        i.remote_approved = remote;
     });
     if let Some(u) = &updated {
         b.hub.emit("queue", u.to_json());
@@ -654,7 +657,22 @@ fn grant_error(e: &sx_permit::Error) -> RpcError {
 }
 
 /// A card for a queued or scheduled plate was declined: the plate leaves the queue.
+/// A card a client asked for (`queue.start`) only declines the card: the plate stays queued.
 pub(crate) fn declined(b: &Bridge, request_id: &str) {
+    let asked = lock(&b.remote_start.asked).remove(request_id).is_some();
+    if asked && let Some(item) = b.hub.item_for_request(request_id) {
+        if let Some(u) = b.hub.update_item(&item.id, |i| {
+            i.request_id = None;
+            i.approval = None;
+            i.remote_approved = false;
+            i.state = QueueState::Waiting;
+            i.message = Some("the card a client asked for was declined".into());
+        }) {
+            b.hub.emit("queue", u.to_json());
+            b.hub.save_queue();
+        }
+        return;
+    }
     if let Some(item) = b.hub.item_for_request(request_id)
         && let Some(done) = b.hub.finish_item(
             &item.id,
@@ -688,26 +706,37 @@ async fn raise_card(b: &Arc<Bridge>, item: &QueueItem, now: u64) {
     raise_card_asked(b, item, now, None).await;
 }
 
-/// Raises the card for a queued plate; `asked` names a partner app that asked for it (`queue.start`).
+/// Who asked for a queued plate's card (`queue.start`), when it was not the person in the app.
+pub(crate) struct Asker<'a> {
+    /// How the card names them, such as "`LayerMate`, a partner app".
+    pub words: String,
+    /// A partner app's name, for the card's `partner`.
+    pub partner: Option<&'a str>,
+}
+
+/// Raises the card for a queued plate; `asked` says who asked for it (`queue.start`).
 async fn raise_card_asked(
     b: &Arc<Bridge>,
     item: &QueueItem,
     now: u64,
-    asked: Option<&str>,
+    asked: Option<&Asker<'_>>,
 ) -> Option<sx_permit::ApprovalRequest> {
     let broker = b.broker.as_ref()?;
     let name = known_printer(b, &item.printer_id)
         .await
         .unwrap_or_else(|_| item.printer_id.clone());
     let mut card = card_for(item, &name, now);
-    if let Some(partner) = asked {
-        card.lines.insert(0, format!("Asked by {partner}, a partner app"));
+    if let Some(a) = asked {
+        card.lines.insert(0, format!("Asked by {}", a.words));
     }
     if broker.register(card.clone()).is_err() {
         return None;
     }
-    if let Some(partner) = asked {
-        lock(&b.card_partners).insert(card.id.clone(), partner.to_owned());
+    if let Some(a) = asked {
+        lock(&b.remote_start.asked).insert(card.id.clone(), a.words.clone());
+        if let Some(partner) = a.partner {
+            lock(&b.card_partners).insert(card.id.clone(), partner.to_owned());
+        }
     }
     if let Some(u) = b.hub.update_item(&item.id, |i| {
         i.request_id = Some(card.id.clone());
@@ -731,7 +760,8 @@ async fn raise_card_asked(
 /// waiting); a person approves it in the app, at the printer, or on an approver phone under the
 /// remote start rule (`remote_start.rs`). Nobody who asks can answer it. A scheduled plate keeps its
 /// time, and a printer with a print on it is refused until that print is off the plate.
-pub(crate) async fn queue_start(b: &Arc<Bridge>, partner: Option<&str>, p: &Value) -> Rpc<Value> {
+pub(crate) async fn queue_start(b: &Arc<Bridge>, asker: Option<&Asker<'_>>, p: &Value) -> Rpc<Value> {
+    let partner = asker.and_then(|a| a.partner);
     let broker = b
         .broker
         .as_ref()
@@ -740,6 +770,8 @@ pub(crate) async fn queue_start(b: &Arc<Bridge>, partner: Option<&str>, p: &Valu
     let item = b
         .hub
         .item(&id)
+        // A partner reaches only plates it queued.
+        .filter(|i| partner.is_none() || i.queued_by.as_deref() == partner)
         .ok_or_else(|| RpcError::new("not_found", format!("no queue item {id}")))?;
     if item.state.is_final() {
         return Err(RpcError::new("bad_state", "this plate already left the queue"));
@@ -761,7 +793,14 @@ pub(crate) async fn queue_start(b: &Arc<Bridge>, partner: Option<&str>, p: &Valu
     };
     match item.state {
         QueueState::AwaitingApproval if item.request_id.as_deref().is_some_and(|r| broker.is_open(r)) => {
-            return Ok(reply(&item));
+            let open = item.request_id.clone().unwrap_or_default();
+            // The card waiting already says who asked, or nobody needs saying: it stands.
+            if asker.is_none() || lock(&b.remote_start.asked).contains_key(&open) {
+                return Ok(reply(&item));
+            }
+            // A card the hub raised on its own is replaced by one that says who asked.
+            let _ = broker.deny(&open);
+            resolved(b, &open, false, "agent", None);
         }
         QueueState::Approved => return Ok(reply(&item)),
         _ => {}
@@ -782,12 +821,12 @@ pub(crate) async fn queue_start(b: &Arc<Bridge>, partner: Option<&str>, p: &Valu
             i.state = QueueState::Waiting;
         })
         .unwrap_or(item);
-    let card = raise_card_asked(b, &item, now_ms(), partner)
+    let card = raise_card_asked(b, &item, now_ms(), asker)
         .await
         .ok_or_else(|| RpcError::new("failed", "the card could not be raised"))?;
     b.hub.save_queue();
     let item = b.hub.item(&item.id).unwrap_or(item);
-    b.hub.audit(json!({ "origin": if partner.is_some() { "partner" } else { "client" }, "action": "queue.start", "itemId": item.id, "requestId": card.id }));
+    b.hub.audit(json!({ "origin": if partner.is_some() { "partner" } else if asker.is_some() { "agent" } else { "local_click" }, "action": "queue.start", "itemId": item.id, "requestId": card.id }));
     Ok(reply(&item))
 }
 
@@ -806,6 +845,12 @@ async fn start_item(b: &Arc<Bridge>, item: &QueueItem) {
     };
     if sha256_hex(&data) != item.sha256 {
         return fail("the stored file changed after it was approved");
+    }
+    // A start approved from afar: a fresh compared plate check right now, within its time.
+    if let Err(why) =
+        crate::remote_start::before_start(b, &item.id, &item.printer_id, item.remote_approved).await
+    {
+        return fail(&why.message());
     }
     // An unattended start never goes onto a dirty plate; the guard's card says what it saw.
     if let Err(e) = crate::guard::before_start(b, &item.printer_id, false).await {
@@ -872,6 +917,7 @@ pub(crate) async fn run_queue(b: &Arc<Bridge>) {
                         if state == QueueState::Waiting {
                             i.approval = None;
                             i.request_id = None;
+                            i.remote_approved = false;
                         }
                     }) {
                         b.hub.emit("queue", u.to_json());
