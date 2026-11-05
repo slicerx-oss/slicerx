@@ -15,6 +15,8 @@ export function stepIcon(p: StepParams): IconName {
       return p.shape.type === 'circle' && p.spec.operation === 'cut' ? 'hole-fit' : 'on-face'
     case 'sketch.revolve':
       return 'revolve'
+    case 'sketch.loft':
+      return 'extrude'
     case 'subtract':
       return 'subtract-shape'
     case 'hollow':
