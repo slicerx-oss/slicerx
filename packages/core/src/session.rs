@@ -12135,6 +12135,10 @@ impl SliceSession {
             let by_object = several && objects_of.iter().any(|&o| Some(&o) != objects_of.first());
             let mut finished: Vec<(u8, Vec<Vec<IntPoint<i32>>>)> = Vec::new();
             let mut finished_of: Vec<usize> = Vec::new();
+            // Each island's brim areas, then what other objects' brims leave of them: where two brims meet, the object
+            // on the lower filament keeps its whole brim, and on one filament the lower object index does, so the
+            // islands claim in that order. The brims print in island order as before.
+            let mut planned: Vec<(Shapes, u8, usize, Vec<Shapes>, bool)> = Vec::new();
             for ((island, owner), object) in union.iter().zip(&owners).zip(&objects_of) {
                 let one: Shapes = vec![island.clone()];
                 let brim_mm = if auto_brim {
@@ -12160,10 +12164,37 @@ impl SliceSession {
                 };
                 let areas =
                     crate::brim::island_areas(cfg, kind, &one, islands, width_even, spacing_mm, gap_mm, ears);
-                let areas = match claims.as_mut() {
-                    Some(c) => c.take(*object, areas),
-                    None => areas,
+                // A brim kept apart from the others (`combine_brims` off) that runs into another object's outline is cut
+                // short by it, as by its brim; the object's own islands do not cut it. Merged brims keep their order.
+                let cut = !combine && claims.is_some() && {
+                    let mut theirs: Shapes = union
+                        .iter()
+                        .zip(&objects_of)
+                        .filter(|(_, o)| *o != object)
+                        .map(|(i, _)| i.clone())
+                        .collect();
+                    if let Some(n) = self.near_brims.as_ref() {
+                        theirs.extend(n.others.iter().cloned());
+                    }
+                    !theirs.is_empty() && {
+                        let theirs = perimeters::offset_round(&theirs, mm(gap_mm));
+                        areas.iter().any(|a| perimeters::overlap(a, &theirs))
+                    }
                 };
+                planned.push((one, slot, *object, areas, cut));
+            }
+            if let Some(c) = claims.as_mut() {
+                let mut order: Vec<usize> = (0..planned.len()).collect();
+                order.sort_by_key(|&i| planned.get(i).map(|p| (p.1, p.2)));
+                for i in order {
+                    if let Some(p) = planned.get_mut(i) {
+                        let (areas, cut) = c.take(p.2, std::mem::take(&mut p.3));
+                        p.3 = areas;
+                        p.4 |= cut;
+                    }
+                }
+            }
+            for (one, slot, object, areas, cut) in planned {
                 let areas = clear(areas);
                 // As in OrcaSlicer, where each extruder reaches only part of the bed (H2D, H2C), a brim is cut to
                 // the reach of the extruder that prints it (the ring outside get_extruder_printable_polygons is a
@@ -12180,11 +12211,23 @@ impl SliceSession {
                 if combine {
                     by_slot.entry(slot).or_default().extend(areas);
                 } else {
+                    // Brims kept apart: one another object cut short prints from the outside in.
+                    let left = cut.then(|| perimeters::union_all(&areas.iter().collect::<Vec<_>>()));
+                    let cut = left.as_ref().map(|a| crate::brim::Cut {
+                        areas: a,
+                        outline: &one,
+                    });
                     finished.push((
                         slot,
-                        crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg)),
+                        crate::brim::finish(
+                            &areas,
+                            &bodies,
+                            spacing_mm,
+                            crate::brim::whole_loops(cfg),
+                            cut.as_ref(),
+                        ),
                     ));
-                    finished_of.push(*object);
+                    finished_of.push(object);
                 }
             }
             // A plate that prints every brim before the objects (`brims_first`) prints the whole brim with its lowest
@@ -12198,7 +12241,8 @@ impl SliceSession {
                 }
             }
             for (slot, areas) in by_slot {
-                let loops = crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg));
+                let loops =
+                    crate::brim::finish(&areas, &bodies, spacing_mm, crate::brim::whole_loops(cfg), None);
                 finished.push((slot, self.brims_in_object_order(cfg, loops)));
                 finished_of.push(0);
             }
