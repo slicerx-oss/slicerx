@@ -39,6 +39,7 @@ mod net;
 mod own_names;
 pub mod pair_session;
 mod pairing;
+mod partner_route;
 mod push;
 mod remote;
 mod remote_cam;

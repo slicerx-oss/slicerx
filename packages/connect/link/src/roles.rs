@@ -362,6 +362,11 @@ const PARTNER_METHODS: &[&str] = &[
     "approvals.pending",
     "pause",
     "cancel",
+    // A sealed byte stream to the partner's own phone. It carries no hub method (partner_route.rs).
+    "relay.partnerRoute.open",
+    "relay.partnerRoute.send",
+    "relay.partnerRoute.close",
+    "relay.partnerRoute.list",
 ];
 
 /// Whether a partner app may call `method`.
@@ -773,9 +778,15 @@ mod tests {
             "approvals.pending",
             "pause",
             "cancel",
+            "relay.partnerRoute.open",
+            "relay.partnerRoute.send",
+            "relay.partnerRoute.close",
+            "relay.partnerRoute.list",
         ] {
             assert!(partner_allowed(m), "{m}");
         }
+        // Partner routes are the partner's alone: a detector never reaches them.
+        assert!(!allowed(Role::Watch, "relay.partnerRoute.open"));
         for m in [
             "start",
             "resume",
