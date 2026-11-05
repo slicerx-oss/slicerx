@@ -555,7 +555,23 @@ describe('turning down the question mimir waits on, through a scripted hub', () 
 })
 
 describe("the person's saved presets, through a scripted hub", () => {
-  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+  // A preset write is a saved profile change: the person's policy here allows it, and the app asks them each time.
+  const allow = { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'allow' } } as const
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS, policy: allow })
+
+  it('asks first under the default policy, before anything reaches the app', async () => {
+    const seen: string[] = []
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      seen.push(method)
+      return {}
+    })
+    const h = await connect({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    for (const [tool, args] of [['slicerx_app_preset_copy', { preset: 'Fast draft', key: 'layer_height', with: 'Fine detail' }], ['slicerx_app_preset_undo', { undoId: 'pu_1' }]] as const) {
+      const r = await h.call(tool, args)
+      expect(data<{ status: string; permission: string }>(r), tool).toMatchObject({ status: 'approval_required', permission: 'profile' })
+    }
+    expect(seen.filter((m) => m.startsWith('presets.'))).toEqual([])
+  })
 
   it('lists, compares, copies and puts back, each through the app link and read back', async () => {
     const seen: { method: string; args: Record<string, unknown> }[] = []
@@ -591,6 +607,30 @@ describe("the person's saved presets, through a scripted hub", () => {
     expect(text(again)).toMatch(/not_found/)
     expect(seen.map((s) => s.method)).toEqual(['presets.list', 'presets.compare', 'presets.copy', 'presets.compare', 'presets.undo', 'presets.undo'])
     expect(seen[2]!.args).toEqual({ preset: 'Fast draft', key: 'layer_height', with: 'Fine detail' })
+  })
+})
+
+describe('saved preset writes from a client allowed to read only, through a scripted hub', () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS, policy: { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'allow' } } as const })
+
+  it('refuses the copy and the undo with not_supported, and the preset stays as it was', async () => {
+    let layer = 0.28
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method === 'presets.copy' || method === 'presets.undo') throw { code: 'read_only', message: 'the person allowed Bench agent to read the open project, not to change it' }
+      if (method === 'presets.compare') return { preset: { name: 'Fast draft' }, with: { name: 'Fine detail' }, differ: layer === 0.28 ? 1 : 0, groups: [], unknownKeys: [] }
+      return {}
+    })
+    const h = await connect(opts(hub))
+    for (const [tool, args] of [['slicerx_app_preset_copy', { preset: 'Fast draft', key: 'layer_height', with: 'Fine detail' }], ['slicerx_app_preset_undo', { undoId: 'pu_1' }]] as const) {
+      const r = await h.call(tool, args)
+      expect(r.isError, tool).toBe(true)
+      const e = data<{ error: { code: string; message: string; details?: { appLink?: string } } }>(r).error
+      expect(e.code, tool).toBe('not_supported')
+      expect(e.details?.appLink, tool).toBe('read_only')
+      expect(e.message).toMatch(/not to change it/)
+    }
+    expect(layer).toBe(0.28)
+    expect(data<{ output: { differ: number } }>(await h.call('slicerx_app_preset_compare', { preset: 'Fast draft', with: 'Fine detail' })).output.differ).toBe(1)
   })
 })
 
