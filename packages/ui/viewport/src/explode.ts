@@ -14,6 +14,11 @@ export interface ExplodeSpec {
   ids: readonly string[]
   spread: number
   axis: ExplodeAxis
+  /**
+   * How many of each object's first parts are spread, by id: the parts it prints. What follows them (modifier, blocker
+   * and negative volumes) stays with the object. Every part when an object is left out.
+   */
+  parts?: Readonly<Record<string, number>>
 }
 
 /** Each part's box in bed coordinates (the object's group frame's parent), from its geometry and the object's transform. */
@@ -29,10 +34,14 @@ export function partBoxes(entry: ObjectEntry): PartBox[] {
 /**
  * Moves the part meshes of `entry` by `spread` percent along `axis`, or back home at 0. Offsets are worked out in bed
  * coordinates and turned into the group's own frame, so a rotated or scaled object still spreads along the bed's axes.
- * Returns the offsets in bed coordinates, mm, one per part.
+ * Only the first `count` parts spread (the parts it prints); the rest stay home. Returns the offsets of those parts in bed
+ * coordinates, mm, one per part.
  */
-export function applyExplode(entry: ObjectEntry, spread: number, axis: ExplodeAxis): Vec3[] {
-  const offsets = entry.parts.length < 2 || spread <= 0 ? entry.parts.map((): Vec3 => [0, 0, 0]) : explodeOffsets(partBoxes(entry), spread, axis)
+export function applyExplode(entry: ObjectEntry, spread: number, axis: ExplodeAxis, count = entry.parts.length): Vec3[] {
+  const n = Math.max(0, Math.min(count, entry.parts.length))
+  const spreadOf = n < 2 || spread <= 0 ? null : explodeOffsets(partBoxes(entry).slice(0, n), spread, axis)
+  // parts past `count` (volumes) stay with the object
+  const offsets = entry.parts.map((_, i): Vec3 => spreadOf?.[i] ?? [0, 0, 0])
   const toLocal = new Matrix3().setFromMatrix4(entry.group.matrix)
   const invertible = Math.abs(toLocal.determinant()) > 1e-12
   if (invertible) toLocal.invert()
@@ -44,5 +53,5 @@ export function applyExplode(entry: ObjectEntry, spread: number, axis: ExplodeAx
     p.mesh.updateMatrix()
     p.mesh.matrixWorldNeedsUpdate = true
   })
-  return offsets
+  return offsets.slice(0, Math.max(n, 0))
 }

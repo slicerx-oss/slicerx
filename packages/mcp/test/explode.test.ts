@@ -4,7 +4,7 @@
 // control) without touching the design, and the app tools read and set the open app's spread through the app link.
 import { describe, expect, it, vi } from 'vitest'
 import { explodeOffsets } from '@slicerx/contracts/explode'
-import { appExplodeTools, type AppExplode } from '../src/app-explode'
+import { appExplodeTools, explodeSummary, type AppExplode } from '../src/app-explode'
 import type { AppLinkCaller } from '../src/app-route'
 import type { Designs } from '../src/design'
 import { designRenderTools, partBox } from '../src/design-render'
@@ -59,6 +59,20 @@ describe('design.render', () => {
     expect(design.parts).toBe(parts)
   })
 
+  it('moves the parts by the fixed amounts for a known case', async () => {
+    // two 10 mm blocks side by side at identity, along X at 100 percent: a step of 10 mm and a quarter, half each way
+    const { render, engine } = host([block(0), block(10)])
+    const r = await render.run(render.input.parse({ design: 'd1', spread: 100, axis: 'x' }) as never, {} as never)
+    expect((r.output as { offsetsMm: number[][] }).offsetsMm).toEqual([[-6.25, 0, 0], [6.25, 0, 0]])
+    expect(sent(engine).objects.map((o) => o.transform.slice(12, 15))).toEqual([[-6.25, 0, 0], [6.25, 0, 0]])
+  })
+
+  it('measures a part through the design transform', () => {
+    // a quarter turn about Z and a move of (5, 6, 0): the block's own (x, y) goes to (5 - y, 6 + x)
+    const turned = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 5, 6, 0, 1]
+    expect(partBox(block(10) as never, turned)).toEqual({ min: [-5, 16, 0], max: [5, 26, 10] })
+  })
+
   it('checks the spread and the axis before anything is drawn', () => {
     const { render } = host([block(0)])
     for (const bad of [{ design: 'd1', spread: 101 }, { design: 'd1', spread: -1 }, { design: 'd1', axis: 'w' }]) expect(render.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false)
@@ -67,9 +81,9 @@ describe('design.render', () => {
 
 describe('app explode tools', () => {
   it('read and set the spread, each answer read back from the app', async () => {
-    let state: AppExplode = { spread: 0, axis: 'radial', targets: [{ id: 'k', name: 'Kit', parts: 3 }], drawn: { } }
+    let state: AppExplode = { spread: 0, axis: 'radial', targets: [{ id: 'k', name: 'Kit', parts: 3 }], shown: false, held: false, drawn: {} }
     const call = vi.fn(async (method: string, args?: Record<string, unknown>) => {
-      if (method === 'explode.set') state = { ...state, ...args, drawn: { k: [[-5, 0, 0], [0, 0, 0], [5, 0, 0]] } }
+      if (method === 'explode.set') state = { ...state, ...args, shown: true, drawn: { k: [[-5, 0, 0], [0, 0, 0], [5, 0, 0]] } }
       return state
     })
     const [get, set] = appExplodeTools({ call } as AppLinkCaller, 'SlicerX')
@@ -90,5 +104,15 @@ describe('app explode tools', () => {
     await expect(set2!.run(set2!.input.parse({ spread: 40 }) as never, {} as never)).rejects.toMatchObject({ code: 'not_found' })
     const [get3] = appExplodeTools(undefined, 'SlicerX')
     await expect(get3!.run({} as never, {} as never)).rejects.toMatchObject({ code: 'not_configured' })
+    for (const code of ['app_closed', 'app_link_off', 'forbidden', 'unauthorized']) {
+      const off = { call: async () => { throw Object.assign(new Error(code), { code }) } } as unknown as AppLinkCaller
+      await expect(appExplodeTools(off, 'SlicerX')[0]!.run({} as never, {} as never), code).rejects.toMatchObject({ code: 'not_configured' })
+    }
+    const busy = { call: async () => { throw Object.assign(new Error('an edit tool is open'), { code: 'busy' }) } } as unknown as AppLinkCaller
+    await expect(appExplodeTools(busy, 'SlicerX')[1]!.run({ spread: 30 } as never, {} as never)).rejects.toMatchObject({ code: 'busy' })
+  })
+
+  it('says when the spread is not drawn now', () => {
+    expect(explodeSummary({ spread: 40, axis: 'z', targets: [{ id: 'k', name: 'Kit', parts: 2 }], shown: false, held: true, drawn: {} })).toBe('Spread 40 percent along Z: Kit (2 parts). Not drawn now: the view shows the toolpaths or an edit tool is open.')
   })
 })

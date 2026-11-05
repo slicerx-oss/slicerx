@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { APP_LINK_METHODS, LinkError, runCall } from '../src/app-link/methods'
 import { exportTargets, meshExportBytes } from '../src/export/mesh'
-import { explodeShown, explodeSpec, explodeTargets, setExplode } from '../src/plate/explode'
+import { explodedFrom, explodeShown, explodeSpec, explodeTargets, setExplode, toolpathsDrawn } from '../src/plate/explode'
 import { history } from '../src/plate/history'
 import { compose } from '../src/plate/transform'
 import { isDirty, markClean, startDirtyTracking } from '../src/project/unsaved'
@@ -21,7 +21,7 @@ const entry = (id: string, parts: number): PlateEntry =>
 const slicer = { loadModel: async () => { throw new Error('nothing here loads a model') } }
 
 beforeEach(() => {
-  set({ plate: [entry('kit', 3), entry('solo', 1)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: 'kit', selectedIds: ['kit'], explode: { spread: 0, axis: 'radial' }, revealHold: false })
+  set({ plate: [entry('kit', 3), entry('solo', 1)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: 'kit', selectedIds: ['kit'], explode: { spread: 0, axis: 'radial' }, explodeHeld: false, revealHold: false, workspace: 'prepare', modelMode: 'slice', sliceLook: 'print', preview: null })
 })
 
 describe('exploded view', () => {
@@ -35,7 +35,7 @@ describe('exploded view', () => {
     expect(explodeShown(get(), false)).toBe(false)
     set({ selection: 'kit', selectedIds: ['kit', 'solo'] })
     setExplode({ spread: 60, axis: 'z' })
-    expect(explodeSpec(get(), false)).toEqual({ ids: ['kit'], spread: 60, axis: 'z' })
+    expect(explodeSpec(get(), false)).toEqual({ ids: ['kit'], spread: 60, axis: 'z', parts: { kit: 3 } })
     expect(explodeSpec(get(), true)).toBeNull()
   })
 
@@ -49,6 +49,10 @@ describe('exploded view', () => {
     expect(meshExportBytes(exportTargets('plate'), 'stl')).toEqual(stl)
     // no slice input moved, so no new slice, and the plate the project saves is the same object
     expect(inputsChanged(before, get())).toBe(false)
+    expect(get().plate).toBe(before.plate)
+    // and through the app link, as a client sets it
+    await runCall('explode.set', { spread: 80, axis: 'radial' })
+    expect(await plateObjects(slicer, get(), get().plates[0], get().plate)).toEqual(whole)
     expect(get().plate).toBe(before.plate)
   })
 
@@ -78,6 +82,23 @@ describe('exploded view', () => {
     expect(get().explode.spread).toBe(0)
   })
 
+  it('spreads the parts an object prints and leaves its volumes with it', () => {
+    const withVolume = { ...entry('vol', 1), volumes: [{ role: 'modifier', name: 'm', part: cube(0) }] } as unknown as PlateEntry
+    const twoAndVolume = { ...entry('pair', 2), volumes: [{ role: 'negative', name: 'n', part: cube(0) }] } as unknown as PlateEntry
+    set({ plate: [withVolume, twoAndVolume], selection: 'vol', selectedIds: ['vol', 'pair'] })
+    // one part and a volume is nothing to spread; two parts and a volume spread their two parts only
+    expect(explodeTargets()).toEqual(['pair'])
+    setExplode({ spread: 50 })
+    expect(explodeSpec(get(), false)).toMatchObject({ ids: ['pair'], parts: { pair: 2 } })
+  })
+
+  it('asks the same question for the bar and the view: are the toolpaths drawn in place of the models', () => {
+    const preview = {} as never
+    expect(toolpathsDrawn({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths', preview })).toBe(true)
+    expect(toolpathsDrawn({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'print', preview })).toBe(false)
+    expect(toolpathsDrawn({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths', preview: null })).toBe(false)
+  })
+
   it('clamps and rounds the spread', () => {
     setExplode({ spread: 140 })
     expect(get().explode.spread).toBe(100)
@@ -101,10 +122,52 @@ describe('app link exploded view', () => {
   })
 
   it('reads the spread, its targets, and sets it with the state read back', async () => {
-    expect(await runCall('explode.get', {})).toEqual({ spread: 0, axis: 'radial', targets: [{ id: 'kit', name: 'kit.3mf', parts: 3 }], drawn: null })
+    expect(await runCall('explode.get', {})).toEqual({ spread: 0, axis: 'radial', targets: [{ id: 'kit', name: 'kit.3mf', parts: 3 }], shown: false, held: false, drawn: null })
     expect(await runCall('explode.set', { spread: 60, axis: 'z' })).toMatchObject({ spread: 60, axis: 'z', targets: [{ id: 'kit' }] })
     expect(get().explode).toEqual({ spread: 60, axis: 'z' })
     expect(await runCall('explode.set', { axis: 'x' })).toMatchObject({ spread: 60, axis: 'x' })
+  })
+
+  it('reads back the offsets the view draws, rounded, and whether it draws them', async () => {
+    const off = explodedFrom(() => ({ kit: [[-12.3456, 0, 0], [0, 0, 0], [12.3456, 0, 0.004]] }))
+    try {
+      const r = (await runCall('explode.set', { spread: 40 })) as { drawn: Record<string, number[][]>; shown: boolean; held: boolean }
+      expect(r.drawn).toEqual({ kit: [[-12.35, 0, 0], [0, 0, 0], [12.35, 0, 0]] })
+      expect(r.shown).toBe(true)
+      expect(r.held).toBe(false)
+    } finally {
+      off()
+    }
+  })
+
+  it('reads shown false when the view draws nothing: no 3D view, or one that drew no offsets', async () => {
+    expect(await runCall('explode.set', { spread: 40 })).toMatchObject({ spread: 40, drawn: null, shown: false })
+    const off = explodedFrom(() => ({}))
+    try {
+      expect(await runCall('explode.get', {})).toMatchObject({ spread: 40, drawn: {}, shown: false })
+    } finally {
+      off()
+    }
+  })
+
+  it('refuses a spread the view cannot draw now, and says why', async () => {
+    set({ sliceLook: 'toolpaths', preview: {} as never })
+    expect(await refused({ spread: 30 })).toBe('busy')
+    expect(await runCall('explode.get', {})).toMatchObject({ shown: false })
+    set({ sliceLook: 'print', preview: null, explodeHeld: true })
+    expect(await refused({ spread: 30 })).toBe('busy')
+    expect(get().explode.spread).toBe(0)
+    // the axis can still be picked, and spread 0 is always fine
+    expect(await runCall('explode.set', { axis: 'y', spread: 0 })).toMatchObject({ axis: 'y', spread: 0, held: true, shown: false })
+  })
+
+  it('changes neither value when one is bad, and takes spread 0 with nothing to spread', async () => {
+    setExplode({ spread: 20, axis: 'x' })
+    expect(await refused({ spread: 50, axis: 'w' })).toBe('invalid_input')
+    expect(await refused({ spread: -1, axis: 'z' })).toBe('invalid_input')
+    expect(get().explode).toEqual({ spread: 20, axis: 'x' })
+    set({ selection: 'solo', selectedIds: ['solo'] })
+    expect(await runCall('explode.set', { spread: 0 })).toMatchObject({ spread: 0, targets: [], shown: false })
   })
 
   it('refuses a bad call and a spread with nothing to spread, changing nothing', async () => {

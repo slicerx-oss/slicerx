@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A small Bambu-style project for the exploded view, made from our own boxes: one object of three parts that sit
+// A small 3MF project for the exploded view, made from our own boxes, in the layout the project reader imports
+// (components in a separate model file, parts listed in model_settings.config, the Application tag it reads): one object of three parts that sit
 // together (a base, a post standing on it and a cap on the post), each on its own filament, and a single box beside it.
 import type { Page } from '@playwright/test'
 import { expect } from './fixtures'
