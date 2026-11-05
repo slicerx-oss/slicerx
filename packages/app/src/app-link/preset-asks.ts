@@ -46,3 +46,7 @@ export function askPresetWrite(client: { id: string; name: string }, title: stri
     presetAsks.setState((s) => ({ asks: [...s.asks, { id, client, title, lines, answer: finish }] }))
   })
 }
+
+// Test hook: with localStorage 'slicerx.debug' set (as for window.__sx), scripts reach the waiting questions as
+// window.__presetAsks, to show one for a screenshot without a hub.
+if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage.getItem('slicerx.debug')) Object.assign(window, { __presetAsks: { ask: askPresetWrite, store: presetAsks } })
