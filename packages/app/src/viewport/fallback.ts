@@ -194,6 +194,9 @@ export function createFallbackViewport(canvas: HTMLCanvasElement): Drive {
     setToolColors: schedule,
     setRenderMode: schedule,
     setSelection: schedule,
+    // the flat stand-in draws every object whole: the exploded view is for the 3D view only
+    setExplode: () => undefined,
+    exploded: () => ({}),
     view: schedule,
     setMode(m) {
       mode = m

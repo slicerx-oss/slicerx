@@ -24,6 +24,7 @@ import type {
   Workspace,
 } from '@slicerx/contracts'
 import { FLUSH_DEFAULTS, type FlushSettings } from '../filament/flush-defaults'
+import type { ExplodeAxis } from '@slicerx/contracts/explode'
 import type { CalibId } from '../calibration/tests'
 import type { SlotSetup } from '../filament/slots'
 import type { UserPreset, PresetKind } from '../presets/store'
@@ -556,6 +557,12 @@ export interface AppState {
   slotDialog: number | null
   /** The filament slot hovered or focused in the Slice sidebar's rail (and the legend): the viewport picks it out. Not saved. */
   hoverSlot: number | null
+  /**
+   * Exploded view of the selected objects with 2 parts or more (plate/explode.ts): how far apart the parts are drawn (0
+   * to 100 percent) and along which axis. Display only: no slice, export, undo step or saved project reads it, and it
+   * goes back to 0 when the selection changes or a project opens. Not saved.
+   */
+  explode: { spread: number; axis: ExplodeAxis }
   /** The body whose timeline item is hovered: the tree picks it out. Not saved. */
   hoverBody: string | null
   /** The filament rail lists the slots nothing on the plate uses too. Not saved. */
@@ -924,6 +931,7 @@ export const appStore = createStore<AppState>()(() => ({
   slotMatch: {},
   slotDialog: null,
   hoverSlot: null,
+  explode: { spread: 0, axis: 'radial' },
   hoverBody: null,
   showUnusedSlots: false,
   flushOpen: false,
@@ -994,6 +1002,15 @@ const setup0 = appStore.getState().setup
 noteSetupOpen(setup0?.step ?? null, setup0 !== null)
 appStore.subscribe((s, prev) => {
   if (s.setup !== prev.setup && (s.setup === null || prev.setup === null)) noteSetupOpen(s.setup?.step ?? null, s.setup?.step === 'welcome' || s.setup?.rerun === true)
+})
+
+// The exploded view belongs to the selection it was set for: a new selection, or a project starting to open, draws the
+// parts whole again. The axis stays as picked.
+appStore.subscribe((s, prev) => {
+  if (s.explode.spread === 0) return
+  const picked = (x: AppState) => selectedIds(x).join('\n')
+  if ((s.selection !== prev.selection || s.selectedIds !== prev.selectedIds) && picked(s) !== picked(prev)) appStore.setState({ explode: { ...s.explode, spread: 0 } })
+  else if (s.revealHold && !prev.revealHold) appStore.setState({ explode: { ...s.explode, spread: 0 } })
 })
 
 appStore.subscribe((s, prev) => {

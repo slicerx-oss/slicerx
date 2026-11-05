@@ -63,6 +63,7 @@ import { CONTROL_PRESETS, buttonName, dragMayLeaveBed, modifiersOf, orbitCodeFor
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
+import { applyExplode, type ExplodeSpec } from './explode'
 import { GapLines, type GapLine } from './gaps'
 import { CLEARANCE_RED_LIGHT, ClearanceZones, type ClearanceSpec } from './clearance'
 import { PickRings, type PickRing } from './pick-rings'
@@ -316,6 +317,9 @@ class ViewportImpl implements Viewport {
   private readonly spot = new Strikes()
   private readonly mats = new MaterialCache()
   private readonly objects = new Map<string, ObjectEntry>()
+  /** The exploded view asked for (setExplode), and the offsets it drew each object's parts at, bed mm. */
+  private explode: ExplodeSpec | null = null
+  private explodedAt = new Map<string, [number, number, number][]>()
   private readonly listeners = new Map<keyof ViewportEvents, Set<Listener>>()
   private readonly frameMs = new Ring()
   private readonly renderMs = new Ring()
@@ -1529,6 +1533,7 @@ class ViewportImpl implements Viewport {
     // object taking another's place (the engine's import replacing the quick draw is meant to be invisible).
     const removed = replaced || [...before.keys()].some((id) => !this.objects.has(id))
     if (added.length && hadAny && !removed && !this.swapping) this.fadeIn(added)
+    this.applyExplode()
     this.objectsMoved()
     this.applyToolpathLook()
     // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
@@ -1657,7 +1662,35 @@ class ViewportImpl implements Viewport {
       o.group.matrix.fromArray(m)
       o.group.matrixWorldNeedsUpdate = true
     }
+    // a spread along a bed axis follows the object's new turn
+    if (this.explode) this.applyExplode()
     this.objectsMoved()
+  }
+
+  setExplode(spec: ExplodeSpec | null): void {
+    const was = this.explode
+    this.explode = spec && spec.spread > 0 && spec.ids.length ? { ids: [...spec.ids], spread: spec.spread, axis: spec.axis } : null
+    if (!was && !this.explode) return
+    this.applyExplode()
+    this.objectsMoved()
+  }
+
+  exploded(): Record<string, [number, number, number][]> {
+    return Object.fromEntries([...this.explodedAt])
+  }
+
+  /** Draws the part meshes where the exploded view puts them, and every other object's parts at home. */
+  private applyExplode(): void {
+    const spec = this.explode
+    const on = new Set(spec?.ids ?? [])
+    const next = new Map<string, [number, number, number][]>()
+    for (const [id, o] of this.objects) {
+      if (spec && on.has(id) && o.parts.length > 1) next.set(id, applyExplode(o, spec.spread, spec.axis))
+      else if (this.explodedAt.has(id) || o.parts.some((p) => p.mesh.position.lengthSq() > 0)) applyExplode(o, 0, 'radial')
+    }
+    // parked objects go back home too, so one that returns is drawn whole
+    for (const { entry } of this.parked.values()) if (entry.parts.some((p) => p.mesh.position.lengthSq() > 0)) applyExplode(entry, 0, 'radial')
+    this.explodedAt = next
   }
 
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void {
