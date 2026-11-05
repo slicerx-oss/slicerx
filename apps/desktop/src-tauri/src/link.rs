@@ -50,7 +50,9 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
 
     let mut slot = state.0.lock().await;
     if let Some(link) = slot.as_ref() {
-        crate::watch::start(&app, &format!("ws://{}", link.addr()));
+        crate::watch::start(&app, &format!("ws://{}", link.addr()), || {
+            link.fresh_watch_code().ok().map(|c| c.to_string())
+        });
         return Ok(info(link));
     }
     let data = app.path().app_data_dir().ok();
@@ -68,7 +70,9 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
     let state = data.map(|d| d.join("hub"));
     let link = start_bridge(hub_port(), secrets, state).await?;
     let out = info(&link);
-    crate::watch::start(&app, &out.url);
+    crate::watch::start(&app, &out.url, || {
+        link.fresh_watch_code().ok().map(|c| c.to_string())
+    });
     *slot = Some(link);
     Ok(out)
 }
