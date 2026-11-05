@@ -23,6 +23,7 @@ import { importFlat, PROFILE_META_KEYS } from '../js/import'
 import { settingDef } from '../js/schema'
 import { sameValue } from '../js/diff'
 import { applyResolvedOverlay, MAKER_OVERLAYS, type MakerOverlay, type ResolvedBrand } from '../js/overlay'
+import { noStockNozzle } from '../js/resolved'
 import machineJson from '../../profiles/machine.json'
 import printersJson from '../profiles/printers.json'
 import speedsJson from '../../profiles/process-speeds.json'
@@ -171,7 +172,8 @@ if (ONLY) {
       if (tiers.includes('standard') && e.base !== 'standard') problems.push(`${brand}/${model}: the output is based on ${e.base}, not standard`)
       const want = Object.keys((MACHINES[model] as { nozzles?: Record<string, unknown> } | undefined)?.nozzles ?? {}).map(size)
       const have = new Set(Object.keys(e.nozzles ?? {}).map(size))
-      const missing = want.filter((n) => !have.has(n))
+      // A nozzle the stock profiles have no machine preset for (NO_STOCK_NOZZLE in js/resolved.ts) cannot be in a dump.
+      const missing = want.filter((n) => !have.has(n) && !noStockNozzle(model, n))
       if (missing.length > 0) problems.push(`${brand}/${model}: Orca has nozzle variants ${missing.join(', ')} that the output lacks`)
     }
   }
