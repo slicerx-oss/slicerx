@@ -230,8 +230,9 @@ async function addProjectShown(
       brought.add(k)
       pinned.add(k)
     }
-    // against the project printer's Standard layer, whatever goal the plate is on, as the MCP server measures them
-    for (const k of [...r.changed, ...pp.realChanges(project.settings, await pp.standardLayer(), true)]) real.add(k)
+    // against the project printer's Standard layer, whatever goal the plate is on, as the MCP server measures them; the
+    // plate's own layer only when there is no Standard one
+    for (const k of pp.realChanges(project.settings, await pp.standardLayer(), true) ?? r.changed) real.add(k)
     note = r.note
     // What its settings did not carry over, with the engine choices and walls SlicerX used: Settings > Presets shows it.
     const { projectReport } = await import('@slicerx/settings')
@@ -250,19 +251,20 @@ async function addProjectShown(
     // Every value it holds goes over the printer's, also one equal to the current value, so the nearest goal below
     // does not replace it; the note counts the real changes.
     const { values: changed, taken: values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
-    const n = Object.keys(changed).length
     const pins = Object.keys(values).length
+    // Its real changes against the Standard layer, whatever goal the plate is on; the note counts them.
     const { realChanges, standardLayer } = await import('../project/project-printer')
-    for (const k of [...Object.keys(changed), ...realChanges(project.settings, await standardLayer(), false)]) real.add(k)
-    // Our own project reopened as it was brings nothing and keeps its goal.
-    const apply = pins > 0 && (n > 0 || !own)
+    for (const k of realChanges(project.settings, await standardLayer(), false) ?? Object.keys(changed)) real.add(k)
+    const n = real.size
+    // Our own project reopened with nothing changed against the plate brings nothing and keeps its goal.
+    const apply = pins > 0 && (Object.keys(changed).length > 0 || !own)
     if (apply) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
     // A PrusaSlicer project made for another printer stays on this one, and its note offers the printer it was made for.
     const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values, n, [...real]) : null
     if (offer) {
       note = `${offer.text}${note ? ` ${note}` : ''}`
       offerNote = { ...(offer.action ? { action: offer.action } : {}), details: offer.details, ...(offer.settle ? { settle: offer.settle } : {}) }
-    } else if (n) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
+    } else if (n && apply) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
     if (apply) {
       for (const k of Object.keys(values)) {
         brought.add(k)

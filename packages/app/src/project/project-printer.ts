@@ -226,7 +226,7 @@ export async function switchToOfferedPrinter(source: string, settings: Record<st
   // longer the project's, so New project leaves a later edit to it alone; a real change and a person's own stay. With
   // no printer layer the values stay. A key an object, part or modifier still brings stays the project's. Real changes
   // are those against this printer's Standard layer, and those the open counted on the printer before.
-  const real = new Set([...realAtOpen, ...realChanges(settings, await standardLayer(), false)])
+  const real = new Set([...realAtOpen, ...(realChanges(settings, await standardLayer(), false) ?? Object.keys(changes))])
   set((s) => {
     if (!s.profile || !s.projectSettings) return {}
     const layer = resolveConfig(s.easy, {}) as unknown as Record<string, SettingValue | undefined>
@@ -265,9 +265,9 @@ export async function standardLayer(): Promise<Record<string, SettingValue> | nu
   return layer ? layerConfig(layer.values, { ...EASY_DEFAULTS, varyLayerHeight: false }, new Set(['smartLayer', 'varyLayerHeight'])) : null
 }
 
-/** The keys a project's settings change against the Standard layer (`standardLayer`), its real changes. */
-export function realChanges(settings: Record<string, unknown>, standard: Record<string, SettingValue> | null, bambu: boolean): string[] {
-  if (!standard) return []
+/** The keys a project's settings change against the Standard layer (`standardLayer`), its real changes; null without one. */
+export function realChanges(settings: Record<string, unknown>, standard: Record<string, SettingValue> | null, bambu: boolean): string[] | null {
+  if (!standard) return null
   return Object.keys(projectSettingChanges(bambu ? { ...projectDefaults(settings), ...settings } : settings, standard as never).values)
 }
 
