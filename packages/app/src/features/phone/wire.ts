@@ -3,12 +3,13 @@
 // Builds Phone access when the printer bridge connects: the pairing host (identity, pairings, the services a
 // paired phone may use) and the LAN listener behind one switch. The app entry only names where the secrets are
 // kept (setPairStorage). The pairing code is loaded on first use, so nothing here costs startup while the switch is off.
-import type { IdentityStore, PairingStore } from '@slicerx/pair'
+import type { HostServices, IdentityStore, PairingStore } from '@slicerx/pair'
 import type { ConnectedBridge } from '../../link/bridge'
 import type { PhoneAccess, PhoneState } from '../../lib/phone'
 import { PHONE_OFF } from '../../lib/phone'
 import { getRemoteAccess, type PairSource } from './remote'
 import { phoneQuestionFeed } from '../../workspaces/mimir/phone-answers'
+import { phoneApprovalFeed } from '../../workspaces/mimir/phone-approvals'
 
 export interface PairStorage {
   identity: IdentityStore
@@ -44,6 +45,21 @@ export function pairSourceFor(s: PairStorage): PairSource {
   }
 }
 
+/**
+ * What the pairing host offers phones over this bridge. Phones with the approve right also decide mimir's approval cards
+ * and answer its question cards, the way a click on each does; over the relay the hub carries both itself.
+ */
+export function pairHostServices(bridge: Pick<ConnectedBridge, 'printers' | 'approvals' | 'camera' | 'push'>): HostServices {
+  return {
+    printers: bridge.printers,
+    approvals: bridge.approvals,
+    ...(bridge.camera ? { camera: bridge.camera } : {}),
+    ...(bridge.push ? { push: bridge.push } : {}),
+    approvalFeed: phoneApprovalFeed,
+    questionFeed: phoneQuestionFeed,
+  }
+}
+
 /** Phone access over this bridge. Off until switched on; the pairing host is built then. */
 export function phoneAccessFor(bridge: ConnectedBridge, s: PairStorage, relayUrl: string | null, port?: number): PhoneAccess {
   let inner: PhoneAccess | null = null
@@ -70,14 +86,7 @@ export function phoneAccessFor(bridge: ConnectedBridge, s: PairStorage, relayUrl
           store: s.pairings,
           kind: s.kind,
           ...(relayUrl ? { endpoints: { lan: [], relay: relayUrl } } : {}),
-          services: {
-            printers: bridge.printers,
-            approvals: bridge.approvals,
-            ...(bridge.camera ? { camera: bridge.camera } : {}),
-            ...(bridge.push ? { push: bridge.push } : {}),
-            // approver phones answer mimir's question cards the way a click does
-            questionFeed: phoneQuestionFeed,
-          },
+          services: pairHostServices(bridge),
         })
       },
     })
