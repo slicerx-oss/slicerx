@@ -135,6 +135,9 @@ pub struct PlateResult {
     pub debris: Option<f64>,
     /// What was compared and why, for the app.
     pub note: String,
+    /// The verdict came from comparing the plate with the person's empty-plate picture, not from
+    /// the model alone. A start approved away from home needs it.
+    pub compared: bool,
 }
 
 /// `watch.look` data: one frame of a printer the guard paused for a hand, to look at again.

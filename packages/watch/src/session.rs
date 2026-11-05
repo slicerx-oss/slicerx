@@ -172,6 +172,7 @@ impl<D: Detector> Session<D> {
             bbox: None,
             debris: None,
             note: String::new(),
+            compared: false,
         };
         let Some(now) =
             picture(&c.frame).filter(|rgb| assess(&rgb.gray(), rgb.width, rgb.height) == Quality::Usable)
@@ -187,6 +188,7 @@ impl<D: Detector> Session<D> {
                 let b = Thumb::sized(&empty, &mask, PLATE_W, PLATE_H);
                 let spot = a.spot(&b, &c.ignore, SPOT_PIXELS);
                 out.clear = Some(spot.is_none());
+                out.compared = true;
                 out.note = match &spot {
                     Some(s) => format!(
                         "differs from the empty plate in one spot ({:.1} % of the plate)",
@@ -576,6 +578,9 @@ mod tests {
         });
         let res = plate_result(&mut session, &plate_check(&empty, Some(&empty), &json!([])));
         assert_eq!(res.clear, Some(true), "{res:?}");
+        // A verdict against the empty plate says so; one without a picture does not.
+        assert!(res.compared, "{res:?}");
+        assert!(!plate_result(&mut session, &plate_check(&empty, None, &json!([]))).compared);
         let res = plate_result(&mut session, &plate_check(&dirty, Some(&empty), &json!([])));
         assert_eq!((res.clear, res.check_id.as_str()), (Some(false), "c1"), "{res:?}");
         let [left, top, right, bottom] = res.bbox.unwrap();
