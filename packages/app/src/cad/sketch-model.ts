@@ -5,7 +5,7 @@
 // plain functions over it, so the panel only wires them to the view. There is no constraint solver
 // and no history: what is drawn is what the engine gets, and sketch.check says what is wrong with it.
 import type { SketchLoop, Vec2 } from '../geom/cad'
-import { splineEndDir, splinePoints } from './sketch-spline'
+import { RING_POINTS, splineEndDir, splinePoints } from './sketch-spline'
 import { arcCenter, arcTangent, circle2, offsetFrom, polygon, rect3, rectCenter, slot, slotCenters, type SlotMode } from './sketch-shapes'
 
 export type V2 = Vec2
@@ -84,19 +84,28 @@ function circlePoints(center: V2, r: number): V2[] {
   return out
 }
 
-/** One segment as a polyline, both ends included. */
-export function segPath(c: Chain, i: number): V2[] {
+/**
+ * One segment as a polyline, both ends included. A spline segment takes at most `room` points after its start, what
+ * the engine leaves it in the loop's ring.
+ */
+export function segPath(c: Chain, i: number, room = RING_POINTS - 1): V2[] {
   const s = c.segs[i]!
   const from = segStart(c, i)
   // one the engine refuses draws through its points, and the sketch check says why
-  if (s.kind === 'spline') return c.smooth ? (splinePoints([c.start, ...s.points], true) ?? [c.start, ...s.points, c.start]) : (splinePoints([from, ...s.points, s.to], false) ?? [from, ...s.points, s.to])
+  if (s.kind === 'spline') return c.smooth ? (splinePoints([c.start, ...s.points], true) ?? [c.start, ...s.points, c.start]) : (splinePoints([from, ...s.points, s.to], false, room) ?? [from, ...s.points, s.to])
   return s.kind === 'line' ? [from, s.to] : arcPoints(from, s.through, s.to)
 }
 
 /** An entity as polylines to draw: one per segment for a chain, one closed ring for a circle. */
 export function entityPaths(e: Entity): { points: V2[]; closed?: boolean; seg: number }[] {
   if (e.kind === 'circle') return [{ points: circlePoints(e.center, e.diameterMm / 2), closed: true, seg: 0 }]
-  return e.segs.map((_, i) => ({ points: segPath(e, i), seg: i }))
+  // the ring counts its start and each segment's points after it, as the engine counts them
+  let used = 1
+  return e.segs.map((_, i) => {
+    const points = segPath(e, i, RING_POINTS - used)
+    used += points.length - 1
+    return { points, seg: i }
+  })
 }
 
 export type HandleRef = { e: number; at: 'start' } | { e: number; at: 'to' | 'through'; seg: number } | { e: number; at: 'point'; seg: number; i: number } | { e: number; at: 'center' | 'rim' }
@@ -818,6 +827,7 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
   for (const l of loops) {
     const k = l.construction ? { construction: true } : {}
     if ('type' in l && l.type === 'circle') {
+      if (!Array.isArray(l.center) || typeof l.diameterMm !== 'number') return null
       out.push({ kind: 'circle', center: pt(l.center[0], l.center[1]), diameterMm: l.diameterMm, ...k })
       continue
     }
