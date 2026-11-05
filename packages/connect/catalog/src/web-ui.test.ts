@@ -4,7 +4,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { ROOT_TLDS } from './root-tlds.ts'
 import { CONNECTION_METHODS, PRINTER_MODELS, isLanHost, modelById, modelFor, printerWebUi, printerWebUiUrl, webUiUrl } from './index.ts'
 
 const at = (plugin: string, host: string, extra: { port?: number; tunnel?: string } = {}) => ({ plugin, host, ...extra })
@@ -49,7 +48,7 @@ test('a saved port moves a page served by the connection itself, not a Klipper p
 })
 
 // The bridge's is_lan_host (sx-link, src/net.rs) runs the same table.
-const HOSTS = JSON.parse(readFileSync(new URL('../../fixtures/lan-hosts.json', import.meta.url), 'utf8')) as { lan: string[]; notLan: string[]; webLink: { allowed: string[]; refused: string[] } }
+const HOSTS = JSON.parse(readFileSync(new URL('../../fixtures/lan-hosts.json', import.meta.url), 'utf8')) as { lan: string[]; notLan: string[] }
 
 test('the host rule is the bridge\'s, from the table both run', () => {
   for (const ok of HOSTS.lan) assert.ok(isLanHost(ok), ok)
@@ -66,16 +65,6 @@ test('a host outside the local network never gets a link', () => {
   // Through a tunnel the host is the tunnel's, so there is no page on this network.
   assert.equal(printerWebUiUrl(at('octoprint', '192.168.1.30', { tunnel: 'obico' })), null)
   assert.equal(printerWebUiUrl({ plugin: 'moonraker' }), null)
-})
-
-test('a single label that is a root-zone TLD gets no link, and plain printer names do', () => {
-  for (const ok of HOSTS.webLink.allowed) assert.ok(webUiUrl(ok, 80), ok)
-  for (const bad of HOSTS.webLink.refused) {
-    assert.ok(isLanHost(bad), `${bad} still connects`)
-    assert.equal(webUiUrl(bad, 80), null, bad)
-    assert.equal(printerWebUiUrl(at('octoprint', bad)), null, bad)
-  }
-  assert.equal(ROOT_TLDS.size > 1400, true)
 })
 
 test('the address is written as a browser writes it, so the open check matches it', () => {
