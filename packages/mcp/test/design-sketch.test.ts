@@ -89,6 +89,8 @@ describe('finished sketches in the design tools', () => {
     await expect(run('geom.sweep', { design: 'd1', profile, path: { ...path, loops: [{ points: [[0, 0], [5, 0]] }] } })).rejects.toThrow('path: give loops or points, not both')
     await expect(run('geom.sweep', { profile_sketch: 'k1', path })).rejects.toThrow('profile_sketch: finished sketches sweep on a design; give its id as design')
     await expect(run('geom.sweep', { profile, path_sketch: 'k1' })).rejects.toThrow('path_sketch: finished sketches sweep on a design; give its id as design')
+    await expect(run('geom.sweep', { design: 'd1', profile: { frame: { origin: [0, 0] }, loops: LOOPS }, path })).rejects.toThrow('profile: the frame needs origin and normal, each [x, y, z]')
+    await expect(run('geom.sweep', { design: 'd1', profile, path: { points: [[0, 0], [0, 10]] } })).rejects.toThrow('path: each point is [x, y, z]')
     expect(add).not.toHaveBeenCalled()
   })
 
