@@ -9,9 +9,10 @@
 //! sections longer than one spacing are kept, chains of short ones are dropped, and the area the kept
 //! sections cover is the normal infill.
 //!
-//! Bambu Lab printers decide per connected piece instead ([`split_pieces`], card ohvk spec 2): a piece no 3 mm
-//! inward offset survives (no 6 mm circle fits) is narrow as a whole, any other piece keeps its lines, thin arms
-//! included.
+//! Bambu Lab printers decide per connected piece instead ([`split_pieces`], card ohvk spec 2): a piece that holds no
+//! 6 mm circle is narrow as a whole, any other piece keeps its lines, thin arms included. The circle is the largest the
+//! piece really holds ([`holds_lines`]), so the corner of a ring, where the band widens, can keep a ring's lines that a
+//! straight band of the same width would not.
 
 use crate::fm::Fm as _;
 use crate::geom::mm;
@@ -355,28 +356,53 @@ pub(crate) fn split_lines(region: &Shapes, dir: Dir, spacing: i64, spacing_mm: f
     (normal_out, keep)
 }
 
-/// How far a piece is pulled in for Bambu's narrow test, mm: a piece no circle of this radius fits in is narrow.
+/// Radius of the circle Bambu's narrow test looks for on a straight band, mm: a band narrower than 6 mm is narrow.
 const BAMBU_NARROW_MM: f64 = 3.0;
 
-/// A hair under the radius the circle check confirms, internal units (0.1 micron): a band exactly 6 mm wide is a tie
-/// that the offset settles.
-const DISC_HAIR: f64 = 1.0;
+/// How far past its edges a piece reaches for Bambu's narrow test, internal units: half the line spacing of the
+/// innermost wall, so the piece's outer edge sits at that wall's centerline, where the wall's bead and the solid
+/// infill meet. The circle the piece must hold grows by the same reach on both sides, so a straight band is decided by
+/// its own width as before; only a corner, where the grown piece widens, can hold the circle where the band alone
+/// could not.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "half a line spacing in internal units"
+)]
+pub(crate) fn corner_reach(cfg: &crate::config::PrintConfig) -> i32 {
+    if cfg.wall_loops == 0 {
+        return 0;
+    }
+    let width = if cfg.wall_loops > 1 {
+        cfg.inner_wall_width()
+    } else {
+        cfg.outer_wall_width()
+    };
+    (cfg.spacing_for(width) / 2.0 * crate::geom::SCALE).round() as i32
+}
+
+/// Whether a piece keeps its lines on a Bambu Lab printer: the piece grown by `reach` ([`corner_reach`]) holds a
+/// circle 6 mm plus twice the reach across. The circle is the largest the shape really holds, so the corner of a ring,
+/// where the band widens, counts; on a straight band the test is the 6 mm width test.
+pub(crate) fn holds_lines(piece: &[Vec<IntPoint<i32>>], reach: i32) -> bool {
+    let r = f64::from(mm(BAMBU_NARROW_MM)) + f64::from(reach.max(0));
+    if reach <= 0 {
+        return perimeters::disc_fits(piece, r);
+    }
+    perimeters::offset_round(&vec![piece.to_vec()], reach)
+        .iter()
+        .any(|grown| perimeters::disc_fits(grown, r))
+}
 
 /// Normal and narrow pieces as Bambu Lab printers decide them: each connected piece (an outline with its holes) is
-/// narrow as a whole when pulling it in by 3 mm leaves nothing, whatever the pattern, line direction or width, and
-/// normal as a whole otherwise. A piece is never cut into a narrow and a normal part. What the pull leaves must hold
-/// the circle ([`perimeters::disc_fits`]): on a finely cut round ring the inward offset can leave a hairline sliver
-/// where the moved outlines cross, and a sliver is no room for lines.
-pub(crate) fn split_pieces(region: &Shapes) -> (Shapes, Shapes) {
+/// narrow as a whole when it does not hold the circle [`holds_lines`] asks for, whatever the pattern, line direction
+/// or width, and normal as a whole otherwise. A piece is never cut into a narrow and a normal part.
+pub(crate) fn split_pieces(region: &Shapes, reach: i32) -> (Shapes, Shapes) {
     let (mut normal, mut narrow) = (Vec::new(), Vec::new());
     for shape in region {
-        let one: Shapes = vec![shape.clone()];
-        if perimeters::offset(&one, -mm(BAMBU_NARROW_MM)).is_empty()
-            || !perimeters::disc_fits(shape, f64::from(mm(BAMBU_NARROW_MM)) - DISC_HAIR)
-        {
-            narrow.push(shape.clone());
-        } else {
+        if holds_lines(shape, reach) {
             normal.push(shape.clone());
+        } else {
+            narrow.push(shape.clone());
         }
     }
     (normal, narrow)
@@ -702,8 +728,8 @@ mod tests {
         // A 40 mm bar just under and just over 6 mm wide.
         let thin = vec![shape(&[&rect(0.0, 0.0, 40.0, 5.95)])];
         let wide = vec![shape(&[&rect(0.0, 0.0, 40.0, 6.05)])];
-        assert_eq!(split_pieces(&thin), (Vec::new(), thin.clone()));
-        assert_eq!(split_pieces(&wide), (wide.clone(), Vec::new()));
+        assert_eq!(split_pieces(&thin, 0), (Vec::new(), thin.clone()));
+        assert_eq!(split_pieces(&wide, 0), (wide.clone(), Vec::new()));
         // Turned, it is the same: no line direction enters the test.
         let diag = |w: f64| {
             let (c, s) = (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2);
@@ -713,8 +739,8 @@ mod tests {
                 .collect();
             vec![shape(&[&pts])]
         };
-        assert!(split_pieces(&diag(5.95)).0.is_empty());
-        assert!(split_pieces(&diag(6.05)).1.is_empty());
+        assert!(split_pieces(&diag(5.95), 0).0.is_empty());
+        assert!(split_pieces(&diag(6.05), 0).1.is_empty());
     }
 
     #[test]
@@ -731,13 +757,13 @@ mod tests {
             [0.0, 12.0],
         ];
         let piece = vec![shape(&[&t])];
-        assert_eq!(split_pieces(&piece), (piece.clone(), Vec::new()));
+        assert_eq!(split_pieces(&piece, 0), (piece.clone(), Vec::new()));
         // Two pieces side by side are decided apart.
         let two = vec![
             shape(&[&rect(0.0, 0.0, 30.0, 5.0)]),
             shape(&[&rect(0.0, 11.0, 30.0, 23.0)]),
         ];
-        let (normal, narrow) = split_pieces(&two);
+        let (normal, narrow) = split_pieces(&two, 0);
         assert_eq!((normal, narrow), (vec![two[1].clone()], vec![two[0].clone()]));
     }
 
@@ -1093,10 +1119,36 @@ mod tests {
     }
 
     #[test]
+    fn a_sharp_ring_keeps_its_lines_where_its_corner_holds_6_mm() {
+        // A 5.3 mm ring's corners hold a 6.2 mm circle; a 5.0 mm ring's hold 5.86 mm, and a 5.3 mm strip 5.3 mm.
+        let wide = vec![square_ring(5.3)];
+        assert_eq!(split_pieces(&wide, 0), (wide.clone(), Vec::new()));
+        let thin = vec![square_ring(5.0)];
+        assert_eq!(split_pieces(&thin, 0), (Vec::new(), thin.clone()));
+        let strip = vec![shape(&[&rect(0.0, 0.0, 40.0, 5.3)])];
+        assert_eq!(split_pieces(&strip, 0), (Vec::new(), strip.clone()));
+    }
+
+    #[test]
+    fn the_corner_reach_leaves_a_straight_band_as_it_was() {
+        // The circle grows with the reach, so a strip is still decided at 6 mm.
+        let reach = mm(0.2035);
+        let strip = |w: f64| vec![shape(&[&rect(0.0, 0.0, 40.0, w)])];
+        assert!(split_pieces(&strip(5.95), reach).0.is_empty());
+        assert!(split_pieces(&strip(6.05), reach).1.is_empty());
+        // At a ring's corner the grown piece rounds the hole's corner, which widens it a little: a 5.1 mm ring holds
+        // the circle with the reach (6.04 mm) and not without (5.98 mm); a 5.0 mm ring holds it with neither.
+        let ring = |w: f64| vec![square_ring(w)];
+        assert!(split_pieces(&ring(5.1), reach).1.is_empty());
+        assert!(split_pieces(&ring(5.1), 0).0.is_empty());
+        assert!(split_pieces(&ring(5.0), reach).0.is_empty());
+    }
+
+    #[test]
     fn a_ring_round_a_hole_is_narrow() {
         // A 12 mm square round a 7 mm hole: a 2.5 mm ring.
         let hole: Vec<[f64; 2]> = rect(2.5, 2.5, 9.5, 9.5).into_iter().rev().collect();
         let ring = vec![shape(&[&rect(0.0, 0.0, 12.0, 12.0), &hole])];
-        assert_eq!(split_pieces(&ring), (Vec::new(), ring.clone()));
+        assert_eq!(split_pieces(&ring, 0), (Vec::new(), ring.clone()));
     }
 }

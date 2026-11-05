@@ -317,6 +317,8 @@ pub(crate) struct Below<'a> {
     /// The internal bridges of the piece's own layer ([`Below::beside`]): a piece along one of them does not float
     /// on the lower layer's band.
     own_bridges: &'a [crate::bridging::Bridged],
+    /// How far past its edges a lower narrow piece reaches for the narrow test ([`crate::narrow::corner_reach`]).
+    corner_reach: i32,
 }
 
 impl<'a> Below<'a> {
@@ -355,6 +357,7 @@ impl<'a> Below<'a> {
             overlap_only: overlap_only(cfg),
             lower_narrow: std::sync::OnceLock::new(),
             own_bridges: &[],
+            corner_reach: crate::narrow::corner_reach(cfg),
         }
     }
 
@@ -440,7 +443,7 @@ impl<'a> Below<'a> {
             let Some((_, shell)) = self.band else {
                 return (Shapes::new(), Shapes::new());
             };
-            crate::narrow::split_pieces(shell)
+            crate::narrow::split_pieces(shell, self.corner_reach)
                 .1
                 .into_iter()
                 .partition(|piece| piece.len() > 1)
