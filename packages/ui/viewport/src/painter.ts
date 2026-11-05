@@ -336,7 +336,7 @@ export class Painter {
     const layer = (this.stroke as NonNullable<Painter['stroke']>).layer
     const pp = this.get(hit.entry.id, hit.part, layer)
     mesh.updateWorldMatrix(true, false)
-    const local = mesh.worldToLocal(hit.point.clone())
+    const local = hit.entry.group.worldToLocal(hit.point.clone())
     const scale = mesh.matrixWorld.getMaxScaleOnAxis() || 1
     const rLocal = s.radiusMm / scale
     const state = this.state()
@@ -395,7 +395,7 @@ export class Painter {
     const mesh = hit.entry.parts[hit.part]?.mesh
     const src = mesh?.userData.source as { positions: Float32Array; indices: Uint32Array | Uint16Array } | undefined
     if (!mesh || !src) return []
-    const local = mesh.worldToLocal(hit.point.clone())
+    const local = hit.entry.group.worldToLocal(hit.point.clone())
     const pp = this.get(hit.entry.id, hit.part, layer)
     const tri = trianglePoints(src.positions, src.indices, hit.face)
     const target = stateAt(tri, pp.map.get(hit.face) ?? { state: 0 }, [local.x, local.y, local.z])
@@ -444,8 +444,9 @@ export class Painter {
     const mesh = entry.parts[part]?.mesh
     const src = mesh?.userData.source as { positions: Float32Array; indices: Uint32Array | Uint16Array } | undefined
     if (!mesh || !src) return []
-    mesh.updateWorldMatrix(true, false)
-    const e = mesh.matrixWorld.elements
+    // heights are where the part prints: the object's frame, never a spread part's drawn place
+    entry.group.updateWorldMatrix(true, false)
+    const e = entry.group.matrixWorld.elements
     // World height of a local point p is row 1 of the matrix times p, plus the y translation.
     const row: V3 = [e[1] ?? 0, e[5] ?? 0, e[9] ?? 0]
     const sc = Math.hypot(...row) || 1

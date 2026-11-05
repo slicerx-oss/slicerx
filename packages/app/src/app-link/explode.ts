@@ -4,7 +4,7 @@
 // offsets the view draws their parts at; explode.set changes the spread or the axis, as the Spread control over the view
 // does, and answers with all of it read back. Display only, like the slice preview: no slice, export, undo step or
 // saved project reads it, and it goes back to 0 when the selection changes.
-import { EXPLODE_AXES, explodedNow, explodeTargets, setExplode, type ExplodeAxis } from '../plate/explode'
+import { EXPLODE_AXES, explodedNow, explodeTargets, setExplode, toolpathsDrawn, type ExplodeAxis } from '../plate/explode'
 import { get } from '../state/store'
 import { LinkError } from './methods-error'
 
@@ -18,6 +18,10 @@ export function readExplode() {
     spread: s.explode.spread,
     axis: s.explode.axis,
     targets: s.plate.filter((p) => ids.has(p.id)).map((p) => ({ id: p.id, name: p.name, parts: p.parts.length })),
+    // whether the view draws the spread now: not while the slice's toolpaths stand in for the models or an edit tool
+    // holds the parts where they print, and only when the view says it drew every target (the 2D view draws none)
+    shown: s.explode.spread > 0 && ids.size > 0 && !toolpathsDrawn(s) && !s.explodeHeld && drawn !== null && [...ids].every((id) => (drawn[id]?.length ?? 0) > 0),
+    held: s.explodeHeld,
     // null while no 3D view is up; objects drawn whole are left out
     drawn: drawn ? Object.fromEntries(Object.entries(drawn).map(([id, list]) => [id, list.map((o) => o.map(round))])) : null,
   }
@@ -32,6 +36,8 @@ export function setExplodeLink(args: Record<string, unknown>) {
   if (spread !== undefined && (typeof spread !== 'number' || !Number.isFinite(spread) || spread < 0 || spread > 100)) throw new LinkError('invalid_input', 'spread is a number from 0 to 100 (percent)')
   if (axis !== undefined && !EXPLODE_AXES.includes(axis as ExplodeAxis)) throw new LinkError('invalid_input', `axis is one of ${EXPLODE_AXES.join(', ')}`)
   if (typeof spread === 'number' && spread > 0 && explodeTargets().length === 0) throw new LinkError('not_found', 'select an object with 2 parts or more first (ui.select); the spread applies to the selection')
+  if (typeof spread === 'number' && spread > 0 && toolpathsDrawn(get())) throw new LinkError('busy', 'the view shows the slice toolpaths, not the models; switch the look back to the models first')
+  if (typeof spread === 'number' && spread > 0 && get().explodeHeld) throw new LinkError('busy', 'an edit tool is open and keeps the parts where they print; close it first')
   setExplode({ ...(typeof spread === 'number' ? { spread } : {}), ...(axis !== undefined ? { axis: axis as ExplodeAxis } : {}) })
   return readExplode()
 }

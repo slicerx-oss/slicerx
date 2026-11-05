@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Exploded view: the offset math (one function for the view, the app link and the picture tools) and the scene side,
 // which moves only the part meshes inside their object's group.
-import { Matrix4, MeshBasicMaterial, Vector3 } from 'three'
+import { Matrix3, Matrix4, MeshBasicMaterial, Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { explodeOffsets, type PartBox } from '@slicerx/contracts/explode'
 import { applyExplode } from '../src/explode'
@@ -85,16 +85,51 @@ describe('the exploded view in the scene', () => {
     for (const p of e.parts) expect(p.mesh.position.lengthSq()).toBe(0)
   })
 
-  it('spreads a turned object along the bed axis', () => {
+  /** How far each part is drawn from home, in the object's parent frame (the bed's): its offset through the object's turn. */
+  const bedDelta = (e: ReturnType<typeof buildObject>, i: number) => e.parts[i]!.mesh.position.clone().applyMatrix3(new Matrix3().setFromMatrix4(e.group.matrix))
+
+  it('spreads a quarter turned object along the bed axis named, not its own', () => {
     // a quarter turn about Z: the object's own X runs along the bed's Y
     const t = new Matrix4().makeRotationZ(Math.PI / 2)
-    const e = buildObject({ id: 'a', name: 'a', parts: [cube(0), cube(10)], transform: t.toArray() }, () => mat, mat)
+    for (const [axis, k] of [['x', 0], ['y', 1]] as const) {
+      const e = buildObject({ id: 'a', name: 'a', parts: [cube(0), cube(10)], transform: t.toArray() }, () => mat, mat)
+      const o = applyExplode(e, 100, axis)
+      for (let i = 0; i < 2; i++) {
+        const d = bedDelta(e, i)
+        const want = new Vector3(...o[i]!)
+        expect(d.distanceTo(want), `${axis} part ${i}`).toBeLessThan(1e-9)
+        // only the named axis moves, by the step: the longest part (10 mm) and a quarter, half each way
+        expect(Math.abs(d.getComponent(k))).toBeCloseTo(6.25)
+        expect(Math.abs(d.getComponent(1 - k)) + Math.abs(d.z)).toBeCloseTo(0)
+      }
+    }
+  })
+
+  it('lifts along the bed Z for a tilted object, and keeps a mirrored one on its axis', () => {
+    // tilted a quarter turn about X: the object's own Y now runs along the bed's Z
+    const tilt = new Matrix4().makeRotationX(Math.PI / 2)
+    const e = buildObject({ id: 'a', name: 'a', parts: [cube(0), cube(10)], transform: tilt.toArray() }, () => mat, mat)
     applyExplode(e, 100, 'z')
-    e.group.updateMatrixWorld(true)
-    const lifted = new Vector3().setFromMatrixPosition(e.parts[1]!.mesh.matrixWorld)
-    const home = new Vector3().setFromMatrixPosition(e.parts[0]!.mesh.matrixWorld)
-    expect(lifted.z - home.z).toBeGreaterThan(0)
-    expect(lifted.x - home.x).toBeCloseTo(0)
-    expect(lifted.y - home.y).toBeCloseTo(0)
+    const up = bedDelta(e, 1)
+    expect(up.z).toBeCloseTo(12.5)
+    expect(Math.abs(up.x) + Math.abs(up.y)).toBeCloseTo(0)
+    const mirrored = buildObject({ id: 'm', name: 'm', parts: [cube(0), cube(10)], transform: new Matrix4().makeScale(-1, 1, 1).toArray() }, () => mat, mat)
+    const o = applyExplode(mirrored, 100, 'x')
+    for (let i = 0; i < 2; i++) expect(bedDelta(mirrored, i).distanceTo(new Vector3(...o[i]!))).toBeLessThan(1e-9)
+  })
+
+  it('leaves a flattened object (scale 0) at home without throwing', () => {
+    const flat = buildObject({ id: 'f', name: 'f', parts: [cube(0), cube(10)], transform: new Matrix4().makeScale(0, 1, 1).toArray() }, () => mat, mat)
+    expect(() => applyExplode(flat, 100, 'y')).not.toThrow()
+    for (const p of flat.parts) expect(p.mesh.position.lengthSq()).toBe(0)
+  })
+
+  it('spreads only the parts it prints: volumes after them stay with the object', () => {
+    const e = buildObject({ id: 'v', name: 'v', parts: [cube(0), cube(10), cube(20)], transform: new Matrix4().toArray() }, () => mat, mat)
+    const o = applyExplode(e, 100, 'x', 2)
+    expect(o).toHaveLength(2)
+    expect(e.parts[0]!.mesh.position.x).toBeCloseTo(-6.25)
+    expect(e.parts[1]!.mesh.position.x).toBeCloseTo(6.25)
+    expect(e.parts[2]!.mesh.position.lengthSq()).toBe(0)
   })
 })

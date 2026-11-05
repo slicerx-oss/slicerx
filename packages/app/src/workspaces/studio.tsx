@@ -126,7 +126,6 @@ function ModelSize({ model }: { model: boolean }) {
 export function Studio() {
   const host = useHost()
   const hasPreview = useApp((s) => s.preview !== null)
-  const sliceLook = useApp((s) => s.sliceLook)
   const struck = useApp((s) => collisionsOf(s).some((c) => c.severity === 'hit'))
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
@@ -318,7 +317,7 @@ export function Studio() {
               </div>
             ) : null}
             {/* Last in the column: showing it for a selection of several parts moves nothing above it. */}
-            {mimir ? null : <ExplodeBar toolpaths={!cad && hasPreview && sliceLook === 'toolpaths'} />}
+            {mimir ? null : <ExplodeBar />}
           </div>
           {/* On a phone the view switch shares the top row with the look button, as its own item next to that row; the
               legend chip goes under them. */}

@@ -563,6 +563,8 @@ export interface AppState {
    * goes back to 0 when the selection changes or a project opens. Not saved.
    */
   explode: { spread: number; axis: ExplodeAxis }
+  /** An edit tool holds the parts where they print (the view's explodehold): the Spread control waits, disabled. Not saved. */
+  explodeHeld: boolean
   /** The body whose timeline item is hovered: the tree picks it out. Not saved. */
   hoverBody: string | null
   /** The filament rail lists the slots nothing on the plate uses too. Not saved. */
@@ -932,6 +934,7 @@ export const appStore = createStore<AppState>()(() => ({
   slotDialog: null,
   hoverSlot: null,
   explode: { spread: 0, axis: 'radial' },
+  explodeHeld: false,
   hoverBody: null,
   showUnusedSlots: false,
   flushOpen: false,

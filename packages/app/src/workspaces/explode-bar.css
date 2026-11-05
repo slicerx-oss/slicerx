@@ -5,6 +5,9 @@
 /* room for "100%" at all times, so the slider and the options never shift as the value changes */
 .explode-value { flex: none; width: 4.5ch; text-align: right; font: var(--fw-medium) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
 .explode-axis { flex: none; }
+/* While an edit tool holds the parts home: the hint takes a row of its own under the controls, which stay put. */
+.explode-bar[data-held] { flex-wrap: wrap; row-gap: var(--s-1); }
+.explode-hint { flex: 1 0 100%; margin: 0; padding-bottom: var(--s-1); font-size: var(--fs-sm); color: var(--muted); }
 .explode-axis > button { min-width: 32px; }
 /* Slice on a desktop: the plate toolbar sits at the top middle of the view (top 56 px at most, 40 px tall), so the bar
    starts under it and never runs beneath it, wherever the toolbar is placed. */
@@ -18,3 +21,5 @@
 :root[data-phone] .explode-axis { grid-area: axis; justify-self: end; }
 :root[data-phone] .explode-axis > button { height: 40px; min-width: 44px; }
 :root[data-phone] .explode-bar .explode-range { grid-area: range; width: 100%; height: 44px; }
+:root[data-phone] .explode-bar[data-held] { grid-template-areas: "label value axis" "range range range" "hint hint hint"; }
+:root[data-phone] .explode-hint { grid-area: hint; }
