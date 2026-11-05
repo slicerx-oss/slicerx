@@ -269,3 +269,126 @@ fn on_the_first_layer_a_modifier_prints_its_own_first_layer_width_on_any_plate()
     assert_eq!(l.widths["Inner wall"], set(&["0.45", "0.7"]));
     assert_eq!(l.widths["Outer wall"], set(&["0.45", "0.7"]));
 }
+
+/// On the layer at `layer_z`, the filament laid in the box x0..x1, y0..y1 as a share of the box filled `depth` mm
+/// deep (relative E, 1.75 mm filament; each straight move counts for its part inside the box), and the ends of the
+/// bottom surface lines inside it. Arcs would need their own sweep, so the layer must have none.
+fn band(gcode: &str, layer_z: f64, depth: f64, (x0, x1, y0, y1): (f64, f64, f64, f64)) -> (f64, usize) {
+    let (mut kind, mut x, mut y, mut at_z) = (String::new(), 0.0_f64, 0.0_f64, 0.0_f64);
+    let (mut volume, mut ends) = (0.0_f64, 0_usize);
+    let area = std::f64::consts::PI * 0.875 * 0.875;
+    let inside = |px: f64, py: f64| px > x0 && px < x1 && py > y0 && py < y1;
+    for line in gcode.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        let field = |c: char| {
+            code.split_whitespace()
+                .skip(1)
+                .find_map(|f| f.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        let arc = code.starts_with("G2 ") || code.starts_with("G3 ");
+        if !(code.starts_with("G1 ") || code.starts_with("G0 ") || arc) {
+            continue;
+        }
+        let (nx, ny) = (field('X').unwrap_or(x), field('Y').unwrap_or(y));
+        at_z = field('Z').unwrap_or(at_z);
+        let fed = field('E').unwrap_or(0.0);
+        if (at_z - layer_z).abs() < 1e-3 && fed > 0.0 {
+            assert!(!arc, "an arc on the layer at {layer_z}: {line}");
+            // The part of the move inside the box (Liang-Barsky).
+            let (dx, dy) = (nx - x, ny - y);
+            let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+            let mut keep = true;
+            for (step, room) in [(-dx, x - x0), (dx, x1 - x), (-dy, y - y0), (dy, y1 - y)] {
+                if step.abs() < 1e-12 {
+                    keep &= room >= 0.0;
+                } else if step < 0.0 {
+                    t0 = t0.max(room / step);
+                } else {
+                    t1 = t1.min(room / step);
+                }
+            }
+            if keep && t1 > t0 {
+                volume += fed * area * (t1 - t0);
+            }
+            if kind == "Bottom surface" {
+                ends += usize::from(inside(x, y)) + usize::from(inside(nx, ny));
+            }
+        }
+        (x, y) = (nx, ny);
+    }
+    (volume / ((x1 - x0) * (y1 - y0) * depth), ends)
+}
+
+#[test]
+fn on_the_first_layer_regions_that_share_walls_print_one_bottom_surface() {
+    // A modifier that only changes the infill shares the box's walls on the first layer. Its bottom surface and the
+    // box's are one: the lines run across the boundary at x 110 with no ends near it, and the 1 mm band along it takes
+    // as much filament as the rest of the layer, not the overlap of two surfaces that each stop short of it.
+    // The same where the plate leaves its first layer width unset and the modifier sets only its sparse infill width,
+    // which the bottom surface covers on the first layer.
+    for name in [
+        "modifier-infill-only.3mf",
+        "modifier-inner.3mf",
+        "plate-unset-modifier-sparse-width.3mf",
+    ] {
+        let g = gcode(name);
+        let (at, ends) = band(&g, 0.2, 0.2, (109.5, 110.5, 97.0, 103.0));
+        let (away, _) = band(&g, 0.2, 0.2, (106.0, 108.0, 97.0, 103.0));
+        assert_eq!(
+            ends, 0,
+            "{name}: bottom surface line ends within 0.5 mm of the boundary"
+        );
+        assert!(
+            (at / away - 1.0).abs() < 0.03,
+            "{name}: filament at the boundary {at:.3} of the band, {away:.3} away from it"
+        );
+    }
+}
+
+#[test]
+fn on_the_first_layer_each_object_prints_its_own_bottom_surface() {
+    // Two boxes, at x 70 to 90 and 105 to 125; the second is a part with its own inner wall width. On the first layer
+    // both print 0.5 mm walls and share a wall group, yet each box's bottom surface prints under its own object label,
+    // so cancelling one object leaves the other whole.
+    let g = gcode("two-objects-part-inner.3mf");
+    let (mut kind, mut object, mut at_z, mut x) = (String::new(), String::new(), 0.0_f64, 0.0_f64);
+    let mut checked = 0;
+    for line in g.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            continue;
+        }
+        if let Some(o) = line.strip_prefix("M486 S") {
+            o.split_whitespace().next().unwrap_or("").clone_into(&mut object);
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        if !(code.starts_with("G1 ") || code.starts_with("G0 ")) {
+            continue;
+        }
+        let field = |c: char| {
+            code.split_whitespace()
+                .skip(1)
+                .find_map(|f| f.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        at_z = field('Z').unwrap_or(at_z);
+        let moves = field('X').is_some() || field('Y').is_some();
+        x = field('X').unwrap_or(x);
+        if (at_z - 0.2).abs() < 1e-3
+            && moves
+            && kind == "Bottom surface"
+            && field('E').is_some_and(|e| e > 0.0)
+        {
+            let want = if x < 100.0 { "0" } else { "1" };
+            assert_eq!(object, want, "bottom surface at x {x} under object {object}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}

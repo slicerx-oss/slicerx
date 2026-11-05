@@ -900,3 +900,125 @@ fn a_steep_slope_gets_base_support_without_interface() {
     let gentle = run(30.0);
     assert!(feature_length(&gentle, "Support interface") > 10.0, "30 degrees");
 }
+
+/// A 30 mm cube with a modifier over its left half (x below 115 on the plate) that sets `key` to `value`.
+fn half_modifier(key: &str, value: &str) -> Vec<u8> {
+    let parts = [
+        (
+            "normal_part",
+            cuboid([0.0, 0.0, 0.0], [30.0, 30.0, 20.0]),
+            String::new(),
+        ),
+        (
+            "modifier_part",
+            cuboid([-1.0, -1.0, -1.0], [15.0, 31.0, 21.0]),
+            meta(key, value),
+        ),
+    ];
+    let parts: Vec<(&str, Solid, &str)> = parts
+        .iter()
+        .map(|(s, m, x)| (*s, m.clone(), x.as_str()))
+        .collect();
+    project(&parts, "")
+}
+
+#[test]
+fn a_modifier_keeps_its_infill_on_a_first_layer_without_a_bottom() {
+    // No bottom shells: the first layer is sparse infill. The modifier's 80% density shares the cube's walls there but
+    // keeps its own infill, so its half takes several times the right half's 15%.
+    let config =
+        json!({ "sparse_infill_density": "15%", "bottom_shell_layers": 0, "bottom_shell_thickness": 0 });
+    let run = slice(&half_modifier("sparse_infill_density", "80%"), config).unwrap();
+    let ms = moves(&run);
+    let first = ms
+        .iter()
+        .filter(|m| m.feature == "Sparse infill")
+        .map(|m| m.z)
+        .fold(f64::INFINITY, f64::min);
+    let infill = |left: bool| -> f64 {
+        ms.iter()
+            .filter(|m| m.feature == "Sparse infill" && (m.z - first).abs() < 1e-3)
+            .filter(|m| {
+                if left {
+                    m.mid()[0] < 113.0
+                } else {
+                    m.mid()[0] > 117.0
+                }
+            })
+            .map(Move::len)
+            .sum()
+    };
+    let (l, r) = (infill(true), infill(false));
+    assert!(r > 0.0, "the right half has its 15% infill on the first layer");
+    assert!(
+        l > 3.0 * r,
+        "the modifier's half is denser on the first layer: {l:.0} mm against {r:.0} mm"
+    );
+}
+
+#[test]
+fn a_modifier_keeps_its_bottom_filament_on_the_first_layer() {
+    // Two filaments on a printer other than Bambu Lab's, where the bottom surface follows the sparse infill's filament.
+    // The modifier moves its sparse infill to filament 2, so its half of the first layer's bottom prints on 2 and the
+    // rest on 1, though the two share the cube's walls.
+    let config = json!({ "filament_colour": ["#ff0000", "#00ff00"], "nozzle_temperature": [220, 220] });
+    let run = slice(&half_modifier("sparse_infill_filament_id", "2"), config).unwrap();
+    let text = String::from_utf8_lossy(&run.gcode);
+    let (mut tool, mut feature, mut x, mut z) = (0_u8, String::new(), 0.0_f64, 0.0_f64);
+    let (mut left, mut right) = (
+        std::collections::BTreeSet::new(),
+        std::collections::BTreeSet::new(),
+    );
+    let mut first = f64::INFINITY;
+    let mut bottoms = Vec::new();
+    for line in text.lines() {
+        if let Some(n) = line
+            .strip_prefix('T')
+            .and_then(|t| t.split_whitespace().next())
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            tool = n;
+            continue;
+        }
+        if let Some(f) = line.strip_prefix(";TYPE:") {
+            f.trim().clone_into(&mut feature);
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        if !(code.starts_with("G1 ") || code.starts_with("G0 ")) {
+            continue;
+        }
+        let field = |c: char| {
+            code.split_whitespace()
+                .skip(1)
+                .find_map(|f| f.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        let moved = field('X').is_some() || field('Y').is_some();
+        let (nx, nz) = (field('X').unwrap_or(x), field('Z').unwrap_or(z));
+        if moved && feature == "Bottom surface" && field('E').is_some_and(|e| e > 0.0) {
+            first = first.min(nz);
+            bottoms.push((nz, nx, tool + 1));
+        }
+        (x, z) = (nx, nz);
+    }
+    for (bz, bx, t) in bottoms {
+        if (bz - first).abs() < 1e-3 {
+            if bx < 113.0 {
+                left.insert(t);
+            } else if bx > 117.0 {
+                right.insert(t);
+            }
+        }
+    }
+    assert_eq!(
+        left.into_iter().collect::<Vec<_>>(),
+        [2],
+        "the modifier's half of the first layer's bottom"
+    );
+    assert_eq!(
+        right.into_iter().collect::<Vec<_>>(),
+        [1],
+        "the rest of the first layer's bottom"
+    );
+}
