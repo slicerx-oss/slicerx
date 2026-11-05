@@ -15,7 +15,8 @@
 // engine reads, js/overlay.ts), so a regeneration keeps them. scripts/apply-overlay.ts applies it to filaments/BBL.json.
 // The Prusa output gets packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) the
 // same way, and apply-overlay.ts also writes it to machine.json, then packages/profiles/overlays/prusa-brim.json (the
-// maker's brim for every Prusa process tier). The list is MAKER_OVERLAYS in js/overlay.ts.
+// maker's brim for every Prusa process tier) and packages/profiles/overlays/prusa-first-layer.json (the MK4 and MINI first
+// layer). The list is MAKER_OVERLAYS in js/overlay.ts.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { defaultConfig } from '../js/defaults'
 import { importFlat, PROFILE_META_KEYS } from '../js/import'

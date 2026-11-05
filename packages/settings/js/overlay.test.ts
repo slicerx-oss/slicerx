@@ -3,11 +3,12 @@
 // The Bambu Studio 2.8 overlay (packages/profiles/overlays/bbl-2.8.json) is in the shipped Bambu Lab data: applying it
 // again changes nothing, so a regeneration that dropped it fails here. Rerun scripts/apply-overlay.ts after regenerating.
 // The MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json) is checked the same way, in
-// resolved/prusa.json and machine.json, and the Prusa brim (packages/profiles/overlays/prusa-brim.json) in resolved/prusa.json.
+// resolved/prusa.json and machine.json, and the Prusa brim (packages/profiles/overlays/prusa-brim.json) and the MK4 and MINI
+// first layer (packages/profiles/overlays/prusa-first-layer.json) in resolved/prusa.json.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_BRIM_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
+import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_BRIM_OVERLAY, PRUSA_FIRST_LAYER_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
 import { printerConfig, printerProfile } from './profiles'
 import { resolvedProfile } from './resolved'
 import { loadFilamentPreset } from './filaments'
@@ -200,5 +201,62 @@ describe('Prusa brim for every process tier', () => {
       expect(layer!.values['brim_loop_rounding'], printerId).toBeUndefined()
       expect(layer!.values['brim_use_efc_outline'] ?? false, printerId).toBe(false)
     }
+  })
+})
+
+describe('Prusa MK4 and MINI first layer', () => {
+  const first = read<MakerOverlay>(PRUSA_FIRST_LAYER_OVERLAY)
+  // The stock MK4 IS and MINI IS print presets, every nozzle: first layer line width and elephant foot compensation.
+  const stock: Record<string, { width: string; efc: number | undefined }> = {
+    '0.25': { width: '0.32', efc: undefined },
+    '0.4': { width: '0.5', efc: 0.2 },
+    '0.6': { width: '0.68', efc: 0.2 },
+    '0.8': { width: '1', efc: 0.2 },
+  }
+
+  it('is applied to resolved/prusa.json', () => {
+    const shipped = readFileSync(profiles + 'resolved/prusa.json', 'utf8')
+    const data = JSON.parse(shipped) as ResolvedBrand
+    applyResolvedOverlay(data, first, nozzle)
+    expect(JSON.stringify(data) + '\n').toBe(shipped)
+  })
+
+  it('writes only the two first layer keys, on the MK4 and the MINI', () => {
+    expect(Object.keys(first.process).sort()).toEqual(['prusa-mini-plus', 'prusa-mk4'])
+    for (const [model, sizes] of Object.entries(first.process)) {
+      for (const [size, tiers] of Object.entries(sizes)) {
+        for (const [tier, o] of Object.entries(tiers)) {
+          const want: Record<string, string> = { initial_layer_line_width: stock[size]!.width }
+          if (stock[size]!.efc !== undefined) want['elefant_foot_compensation'] = String(stock[size]!.efc)
+          expect(o.values, `${model} ${size} ${tier}`).toEqual(want)
+        }
+      }
+    }
+    expect(first.machine).toEqual({})
+    expect(first.filament).toEqual({})
+    expect(first.every_process).toBeUndefined()
+  })
+
+  it('gives every MK4 and MINI nozzle and tier the stock first layer', async () => {
+    for (const printerId of ['prusa-mk4', 'prusa-mini-plus']) {
+      for (const size of printerProfile(printerId)!.nozzles) {
+        for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
+          const layer = await stockLayer({ printerId, tier, slots: [], nozzle: size })
+          const want = stock[String(size)]!
+          expect(layer!.nozzle, `${printerId} ${size} ${tier}`).toBe(size)
+          expect(layer!.values['initial_layer_line_width'], `${printerId} ${size} ${tier}`).toBe(want.width)
+          expect(layer!.values['elefant_foot_compensation'] ?? 0, `${printerId} ${size} ${tier}`).toBe(want.efc ?? 0)
+          // The whole brim keys still reach every tier, so the gap to the part stays the brim gap at this compensation.
+          expect(layer!.values['brim_use_efc_outline'], `${printerId} ${size} ${tier}`).toBe(true)
+          expect(layer!.values['brim_loop_rounding'], `${printerId} ${size} ${tier}`).toBe('whole')
+        }
+      }
+    }
+  })
+
+  it('leaves the other Prusa models as they were', async () => {
+    const mk4s = await stockLayer({ printerId: 'prusa-mk4s', tier: 'standard', slots: [] })
+    expect(mk4s!.values['initial_layer_line_width']).toBe('0.5')
+    expect(mk4s!.values['elefant_foot_compensation']).toBe(0.2)
   })
 })
