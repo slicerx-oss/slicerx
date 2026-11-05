@@ -25,6 +25,7 @@ import partnerRoutes from './partner-routes'
 import pendingApprovals from './pending-approvals'
 import planSettings from './plan-settings'
 import prepareScriptReplacement from './prepare-script-replacement'
+import presetCompare from './preset-compare'
 import printWatchStatus from './print-watch-status'
 import printerList from './printer-list'
 import printerQueueStart from './printer-queue-start'
@@ -49,4 +50,4 @@ import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, arrangeFile, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, partnerDevices, partnerRoutes, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSetSlot, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, pushStatus, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, arrangeFile, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, partnerDevices, partnerRoutes, pendingApprovals, planSettings, prepareScriptReplacement, presetCompare, printWatchStatus, printerList, printerQueueStart, printerSetSlot, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, pushStatus, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
