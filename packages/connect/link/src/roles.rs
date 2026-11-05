@@ -181,6 +181,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // read: these change only how the window behaves; project print settings have separate methods.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
+    ("explode.get", LinkClass::Read),
+    ("explode.set", LinkClass::Read),
     // The window as the person sees it (workspace, tab, selection, plate shown, printer chosen, panels open).
     // Switching workspace or tab is read: only what the window shows. Selection and panels are an edit: the person's
     // next click acts on them. Never the project; the printer is read, never picked.
@@ -554,6 +556,8 @@ mod tests {
         ("plates.move", LinkClass::Edit),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
+        ("explode.get", LinkClass::Read),
+        ("explode.set", LinkClass::Read),
         ("ui.get", LinkClass::Read),
         ("ui.set", LinkClass::Read),
         ("ui.select", LinkClass::Edit),

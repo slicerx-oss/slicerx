@@ -56,6 +56,7 @@ import { enableEdgeDrag } from '@slicerx/viewport/edge-drag'
 import { appEdgeDrag } from '../plate/edge-drag/adapter'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
 import { drawnFrom } from './drawn'
+import { explodedFrom, explodeSpec } from '../plate/explode'
 import { viewportStatsFrom } from './stats'
 import { currentSlice, sliceStage } from '../lib/slice-timing'
 
@@ -117,6 +118,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   setExcludedAreas?: Viewport['setExcludedAreas']
   setGcodeMarkers?: Viewport['setGcodeMarkers']
   setProbeFaces?: Viewport['setProbeFaces']
+  /** The exploded view of the selection; the 2D fallback draws parts whole. */
+  setExplode?: Viewport['setExplode']
+  exploded?: Viewport['exploded']
   zoomToSelection?: Viewport['zoomToSelection']
   showSelection?: Viewport['showSelection']
   zoomToBed?: Viewport['zoomToBed']
@@ -427,6 +431,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       vpRef.current = vp
       offs.push(drawnFrom(() => vp.drawnObjects()), viewportStatsFrom(() => vp.stats?.() ?? null))
+      if (vp.exploded) offs.push(explodedFrom(() => vp.exploded?.() ?? {}))
       offs.push(clearViewportLook)
       set({ viewportBackend: vp.backendName() })
       let prev = appStore.getState()
@@ -436,6 +441,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       let highlightKey = ''
       let towerBefore: ShownTower | null = null
       let keyBefore = ''
+      let explodeKey = ''
       // Test hook: with localStorage 'slicerx.debug' and 'slicerx.warmupWaitsForOpen' set, the toolpath shader warm-up
       // waits until the first file open starts (a plate restored at start is not one), so a test can open a project
       // before it as a person can at launch.
@@ -601,6 +607,16 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           const stale = s.slice.status !== 'done' || s.slice.stale
           ;(vp as unknown as Viewport).setToolpathLook?.(plateView && s.sliceLook === 'toolpaths' && s.preview !== null, stale)
           ;(vp as unknown as Viewport).setPrintLook?.(plateView && s.sliceLook === 'print', Number(resolveConfig(s.easy, s.overrides)['layer_height']) || 0.2)
+        }
+        // The exploded view of the selection: display only, and off while the toolpaths stand in for the models.
+        if (vp.setExplode && (first || s.explode !== prev.explode || s.plate !== prev.plate || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.sliceLook !== prev.sliceLook || s.preview !== prev.preview)) {
+          const spec = explodeSpec(s, s.workspace === 'prepare' && !designing(s) && s.sliceLook === 'toolpaths' && s.preview !== null)
+          const key = spec ? JSON.stringify(spec) : ''
+          // a rebuilt plate takes the spread again (setPlate does), so only a change of what is asked goes in
+          if (first || key !== explodeKey) {
+            explodeKey = key
+            vp.setExplode(spec)
+          }
         }
         // Design models on a plain ground grid; the bed comes back in Slice. The camera stays where it is.
         if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(designing(s))

@@ -96,6 +96,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // window behaves, never the project.
   'look.get': 'read',
   'look.set': 'read',
+  // The exploded view of the selection: like the preview, it changes only how the view draws the parts, never the
+  // project, the slice or the undo history.
+  'explode.get': 'read',
+  'explode.set': 'read',
   // The window as the person sees it: the workspace, the tab, the selection, the plate shown, the printer chosen and the
   // panels open. Switching the workspace or tab changes only what the window shows, like the preview. Setting the
   // selection and opening or closing panels is an edit: the person's next click or key acts on them. Neither changes the
@@ -471,6 +475,8 @@ const HANDLERS: Record<string, Handler> = {
   ])),
   'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
+  'explode.get': async () => (await import('./explode')).readExplode(),
+  'explode.set': async (args) => (await import('./explode')).setExplodeLink(args),
   'ui.get': async () => (await import('./ui')).readUi(),
   'ui.set': async (args) => (await import('./ui')).setUi(args),
   'ui.select': async (args) => (await import('./ui')).selectUi(args),

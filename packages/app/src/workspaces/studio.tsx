@@ -25,6 +25,7 @@ import { ViewportHost } from '../viewport/viewport-host'
 import { ZoneLegend } from './zone-legend'
 import { PrepareLeft, PrepareObjects, SliceBlock } from './prepare/prepare-panes'
 import { LayerDock, Legend } from './preview/preview-hud'
+import { ExplodeBar } from './explode-bar'
 import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
@@ -125,6 +126,7 @@ function ModelSize({ model }: { model: boolean }) {
 export function Studio() {
   const host = useHost()
   const hasPreview = useApp((s) => s.preview !== null)
+  const sliceLook = useApp((s) => s.sliceLook)
   const struck = useApp((s) => collisionsOf(s).some((c) => c.severity === 'hit'))
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
@@ -315,6 +317,8 @@ export function Studio() {
                 ) : null}
               </div>
             ) : null}
+            {/* Last in the column: showing it for a selection of several parts moves nothing above it. */}
+            {mimir ? null : <ExplodeBar toolpaths={!cad && hasPreview && sliceLook === 'toolpaths'} />}
           </div>
           {/* On a phone the view switch shares the top row with the look button, as its own item next to that row; the
               legend chip goes under them. */}
