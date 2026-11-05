@@ -117,6 +117,8 @@ async function addProjectShown(
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()
+  // The plate settings the open pinned from the project's values, which the layer it lands on may already give.
+  const pinned = new Set<string>()
   const rangesLeft = new Set<string>()
   // Each object's own settings from the file, by its plate entry, as the object settings panel sets them.
   const fileObjectSettings: Record<string, Record<string, SettingValue>> = {}
@@ -220,7 +222,10 @@ async function addProjectShown(
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
     const r = mine(() => pp.applyProjectSettings(name, project.settings, match))
     markOpenStage('settings')
-    for (const k of r.keys) brought.add(k)
+    for (const k of r.keys) {
+      brought.add(k)
+      pinned.add(k)
+    }
     note = r.note
     // What its settings did not carry over, with the engine choices and walls SlicerX used: Settings > Presets shows it.
     const { projectReport } = await import('@slicerx/settings')
@@ -236,16 +241,22 @@ async function addProjectShown(
     mine(() => set({ projectImport: null }))
     // Our own project, or a PrusaSlicer one: its print and filament settings on the current printer.
     const { projectSettingChanges } = await import('../export/project-settings')
-    const { values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
-    const n = Object.keys(values).length
-    if (n) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
+    // Every value it holds goes over the printer's, also one equal to the current value, so the nearest goal below
+    // does not replace it; the note counts the real changes.
+    const { values: changed, taken: values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
+    const n = Object.keys(changed).length
+    const pins = Object.keys(values).length
+    if (pins) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
     // A PrusaSlicer project made for another printer stays on this one, and its note offers the printer it was made for.
-    const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values) : null
+    const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values, n) : null
     if (offer) {
       note = `${offer.text}${note ? ` ${note}` : ''}`
       offerNote = { ...(offer.action ? { action: offer.action } : {}), details: offer.details, ...(offer.settle ? { settle: offer.settle } : {}) }
     } else if (n) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
-    for (const k of Object.keys(values)) brought.add(k)
+    for (const k of Object.keys(values)) {
+      brought.add(k)
+      pinned.add(k)
+    }
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
     markOpenStage('settings')
     mine(() => undefined)
@@ -256,6 +267,26 @@ async function addProjectShown(
   if (wasEmpty && get().goal === 'custom') {
     const { nearestGoal } = await import('../lib/goal-edits')
     mine(() => set((s) => ({ goalBase: nearestGoal(resolveConfig(s.easy, s.overrides), s.profile?.goalValues) })))
+  }
+  // A pinned value equal to the layer the plate now sits on is let go, so it follows a later goal, filament or printer
+  // change as the layer's own values do; one that differs (a 0.2 mm gap on a Fine layer) stays. A person's own stays.
+  // With no printer there is no layer yet, so the values stay until one is built. A value let go is no longer the
+  // project's, so New project leaves a later edit to it alone.
+  if (pinned.size) {
+    await (await import('./profile-sync')).profileReady()
+    mine(() =>
+      set((s) => {
+        if (!s.profile) return {}
+        const layer = resolveConfig(s.easy, {}) as unknown as Record<string, SettingValue | undefined>
+        const overrides = { ...s.overrides }
+        for (const k of pinned) {
+          if (overridesBefore[k] !== undefined || !(k in overrides) || JSON.stringify(overrides[k]) !== JSON.stringify(layer[k])) continue
+          delete overrides[k]
+          brought.delete(k)
+        }
+        return { overrides }
+      }),
+    )
   }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
@@ -269,7 +300,8 @@ async function addProjectShown(
     const prior: Record<string, SettingValue | null> = {}
     for (const k of brought) {
       const was = overridesBefore[k]
-      if (JSON.stringify(get().overrides[k]) !== JSON.stringify(was)) prior[k] = was === undefined ? null : was
+      // A person's own override the open kept as it was is recorded too, so New project gives it back.
+      if (was !== undefined || JSON.stringify(get().overrides[k]) !== JSON.stringify(was)) prior[k] = was === undefined ? null : was
     }
     mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])], prior: { ...prior, ...(wasEmpty ? {} : s.projectSettings?.prior) } } })))
   }
@@ -291,11 +323,11 @@ async function addProjectShown(
 }
 
 /** The open note's line about the printer a PrusaSlicer project was made for, and its Switch to (project-printer.ts). */
-async function printerOffer(host: Host, name: string, settings: Record<string, unknown>, applied: Record<string, SettingValue>): Promise<import('../project/project-printer').PrinterNote | null> {
+async function printerOffer(host: Host, name: string, settings: Record<string, unknown>, applied: Record<string, SettingValue>, changed: number): Promise<import('../project/project-printer').PrinterNote | null> {
   const [{ projectPrinterNote }, { profileReady }] = await Promise.all([import('../project/project-printer'), import('./profile-sync')])
   await profileReady()
   const printers = host.printers ? await host.printers.list().catch(() => []) : []
-  return projectPrinterNote(name, settings, printers, applied)
+  return projectPrinterNote(name, settings, printers, applied, changed)
 }
 
 /** A joined object, the file's objects it was made of, and where it was before the open placed it on this bed. */
