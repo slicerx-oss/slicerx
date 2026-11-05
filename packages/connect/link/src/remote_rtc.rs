@@ -54,12 +54,16 @@ impl Drop for Slot {
     }
 }
 
+/// Counts the bytes a stream sends; false stops it (a partner phone past its daily allowance).
+pub(crate) type Meter = Arc<dyn Fn(usize) -> bool + Send + Sync>;
+
 /// Answers a phone's offer and starts the stream. Returns the answer SDP and the task.
 pub(crate) async fn start(
     b: &Arc<Bridge>,
     printer: String,
     offer: &str,
     stun: Option<String>,
+    meter: Option<Meter>,
     on_end: impl FnOnce(&'static str) + Send + 'static,
 ) -> Result<(String, tokio::task::JoinHandle<()>), (&'static str, String)> {
     let slot = Slot::take().ok_or(("busy", "too many direct camera streams at once".to_owned()))?;
@@ -98,7 +102,7 @@ pub(crate) async fn start(
     let b = b.clone();
     let task = tokio::spawn(async move {
         let _slot = slot;
-        let reason = Box::pin(run(&b, &printer, rtc, socket)).await;
+        let reason = Box::pin(run(&b, &printer, rtc, socket, meter)).await;
         on_end(reason);
     });
     Ok((sdp, task))
@@ -148,6 +152,10 @@ fn drain(rtc: &mut Rtc, socket: &UdpSocket, st: &mut State) -> Result<Instant, &
         match rtc.poll_output() {
             Ok(Output::Timeout(t)) => return Ok(t),
             Ok(Output::Transmit(t)) => {
+                // Past a partner phone's daily allowance the stream ends; phones know "ended".
+                if st.meter.as_ref().is_some_and(|m| !m(t.contents.len())) {
+                    return Err("ended");
+                }
                 let _ = socket.try_send_to(&t.contents, t.destination);
             }
             Ok(Output::Event(e)) => match e {
@@ -179,14 +187,24 @@ impl Drop for AbortOnDrop {
 
 #[derive(Default)]
 struct State {
+    meter: Option<Meter>,
     connected: bool,
     video: Option<Mid>,
     channel: Option<str0m::channel::ChannelId>,
     want_key: bool,
 }
 
-async fn run(b: &Arc<Bridge>, printer: &str, mut rtc: Rtc, socket: UdpSocket) -> &'static str {
-    let mut st = State::default();
+async fn run(
+    b: &Arc<Bridge>,
+    printer: &str,
+    mut rtc: Rtc,
+    socket: UdpSocket,
+    meter: Option<Meter>,
+) -> &'static str {
+    let mut st = State {
+        meter,
+        ..State::default()
+    };
     let Ok(local) = socket.local_addr() else {
         return "ended";
     };

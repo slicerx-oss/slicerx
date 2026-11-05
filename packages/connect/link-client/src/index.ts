@@ -516,13 +516,77 @@ export interface HubSettings {
   watchMasks: Record<string, [number, number][]>
 }
 
+/** One push registration as the hub lists it: never the token, only its last six characters. */
+export interface PushRegistration {
+  tokenEnd: string
+  platform: 'ios' | 'android'
+  prefs: PushPrefs
+  tag?: string
+  createdAt: string
+  /** `expo` for our phones and partner Expo tokens; `apns` or `fcm` for a partner token sent through its gateway. */
+  provider: 'expo' | 'apns' | 'fcm'
+  /** The partner app name, for a partner phone's own token. */
+  partner?: string
+  /** The partner gateway's host name, for `apns` and `fcm`. */
+  gatewayHost?: string | null
+  /** Pushes this partner phone had in the last hour. */
+  sentThisHour?: number
+  /** A partner phone gets approval alerts only while this is true (it may approve). */
+  mayApprove?: boolean
+}
+
+/** What a client reads back about phone alerts (`push.status`, `slicerx_push_status`). */
+export interface PushStatus {
+  /** Whether the hub posts pushes at all. */
+  sending: boolean
+  registrations: PushRegistration[]
+  own: number
+  partners: number
+  limits: { partnerPushesPerHour: number; partnerRegistrations: number; registrations: number }
+}
+
 export interface LinkPush {
   /** `token` is the phone's Expo push token. `tag` is an opaque id (the pairing id) for `unregister({tag})`. */
   register(reg: { token: string; platform: 'ios' | 'android'; prefs: PushPrefs; tag?: string }): Promise<void>
+  /**
+   * App only: a partner phone on the LAN registered its own token with the app's pairing host, which hands it
+   * over with that pairing's id (`tag`), its partner name and whether it may approve. Delivered through the
+   * partner's own push project (Expo) or gateway (APNs, FCM); the hub never holds a partner's keys.
+   */
+  registerPartner?(reg: { provider: 'expo' | 'apns' | 'fcm'; token: string; platform: 'ios' | 'android'; prefs: PushPrefs; gateway?: string; tag: string; partner: string; approvals: boolean }): Promise<void>
+  /** App only: whether a partner phone (by its pairing id) may approve now, so approval alerts follow Devices. */
+  partnerApprovals?(tag: string, approvals: boolean): Promise<void>
   /** Removes by token, or every registration with the tag (a revoked pairing). Resolves with the count. */
   unregister(by: { token?: string; tag?: string }): Promise<number>
   /** Tokens are not returned, only their last six characters. */
-  list(): Promise<{ tokenEnd: string; platform: 'ios' | 'android'; prefs: PushPrefs; tag?: string; createdAt: string }[]>
+  list(): Promise<PushRegistration[]>
+  /** Whether the hub sends, every registration and the partner limits. Readable by agents. */
+  status(): Promise<PushStatus>
+}
+
+/** A partner phone the hub answers over the relay (`partners.devices`, `slicerx_partner_devices`). Never a key. */
+export interface PartnerDevice {
+  pairingId: string
+  /** The partner app name the phone paired under. */
+  partner: string
+  /** The phone's own name and platform. */
+  name: string
+  platform: string
+  rights: { request: boolean; approve: boolean }
+  addedAt: string
+  online: boolean
+  /** Relay bytes this partner app used today, over all its phones (kept by name across restarts). */
+  relayBytesToday: number
+  /** The partner app key the person linked this phone to in Devices; only it opens partner routes. */
+  partnerKeyId?: string | null
+  push: { provider: 'expo' | 'apns' | 'fcm'; platform: 'ios' | 'android' } | null
+}
+
+export interface PartnerDevices {
+  /** Whether remote access is on, so partner phones reach the hub away from home. */
+  remoteAccess: boolean
+  devices: PartnerDevice[]
+  limits: { partnerPhones: number; relayBytesPerDay: number }
 }
 
 /** A device's public pair identity (`PublicIdentity` in packages/pair). */
@@ -754,6 +818,8 @@ export interface LinkHost extends PrinterHost {
   onAlert(cb: (a: HubAlert) => void): () => void
   /** Phone push registrations (Expo). */
   push: LinkPush
+  /** Partner phones the hub answers over the relay, read only (agents too). */
+  partners: { devices(): Promise<PartnerDevices> }
   /**
    * Remembered clients (Settings, Devices), app only. `create` makes a key for an AI agent, a
    * partner app (`partner: true`, role agent) or a failure detector: it is in this reply once and
@@ -809,9 +875,15 @@ export interface LinkHost extends PrinterHost {
     /** The relay's quota as the hub hears it: on connect, every five minutes and after `quota()`. */
     onQuota(cb: (q: RemoteQuota) => void): () => void
     pairings: {
-      put(p: { pairingId: string; deviceKey: string; kind: 'phone' | 'agent' | 'partner_phone'; peer: PairIdentity; rights?: { request?: boolean; approve?: boolean }; /** A partner phone's partner app, by its key's name. */ partner?: string }): Promise<{ saved: boolean }>
+      /** `partner`: a partner phone's app name (bound into its pairing by @slicerx/pair). Phones only. */
+      put(p: { pairingId: string; deviceKey: string; kind: 'phone' | 'agent' | 'partner_phone'; peer: PairIdentity; rights?: { request?: boolean; approve?: boolean }; partner?: string }): Promise<{ saved: boolean }>
       remove(pairingId: string): Promise<{ removed: boolean }>
-      list(): Promise<{ pairingId: string; kind: 'phone' | 'agent'; peer: PairIdentity; rights: { request: boolean; approve: boolean }; addedAt: number; clientId?: string }[]>
+      /**
+       * App only: links a partner phone to one partner app key by id (null unlinks). Only that key opens partner routes
+       * to it. A key named otherwise than the phone is refused with `mismatch` unless `mismatchOk` (the person said yes).
+       */
+      link(pairingId: string, clientId: string | null, opts?: { mismatchOk?: boolean }): Promise<{ linked: boolean }>
+      list(): Promise<{ pairingId: string; kind: 'phone' | 'agent'; peer: PairIdentity; rights: { request: boolean; approve: boolean }; addedAt: number; clientId?: string; partner?: string; partnerClient?: string }[]>
       /**
        * The app's full list of phone pairings: the hub removes every phone pairing not in it (agents stay).
        * An empty list is refused while the hub holds phones unless `removeAll` is set, so a pair store that
@@ -1519,6 +1591,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       pairings: {
         put: (p) => call('remote.pairings.put', { ...p, ...(opts.appId ? { appId: opts.appId } : {}) }),
         remove: (pairingId) => call('remote.pairings.remove', { pairingId }),
+        link: (pairingId, clientId, o) => call('remote.pairings.link', { pairingId, clientId, ...(o?.mismatchOk ? { mismatchOk: true } : {}) }),
         list: () => call('remote.pairings.list'),
         sync: (pairingIds, o) => call('remote.pairings.sync', { pairingIds, ...(o?.removeAll ? { removeAll: true } : {}), ...(opts.appId ? { appId: opts.appId } : {}) }),
       },
@@ -1530,7 +1603,13 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     push: {
       register: async (reg) => void (await call('push.register', reg)),
       unregister: async (by) => (await call<{ unregistered: number }>('push.unregister', by)).unregistered,
+      registerPartner: async (reg) => void (await call('push.registerPartner', reg)),
+      partnerApprovals: async (tag, approvals) => void (await call('push.partnerApprovals', { tag, approvals })),
       list: () => call('push.list'),
+      status: () => call<PushStatus>('push.status'),
+    },
+    partners: {
+      devices: () => call<PartnerDevices>('partners.devices'),
     },
     device: {
       files: (printerId) => call<StoredFile[]>('files.list', { printerId }),

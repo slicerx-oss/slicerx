@@ -935,10 +935,13 @@ async fn dispatch(
                 conn: conn.id,
                 role: conn.role,
                 partner: conn.partner.as_deref(),
+                client: conn.client.as_deref(),
                 tx,
             };
             crate::partner_route::call(b, &who, m, &p).await
         }
+        // The partner phones the hub answers over the relay (read only, no keys).
+        "partners.devices" => Ok(crate::remote::partner_devices(b)),
         m if m.starts_with("remote.") => {
             crate::remote::call(b, m, &p, crate::remote::owner_of(conn.client.as_deref(), &p))
         }

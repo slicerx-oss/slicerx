@@ -83,8 +83,13 @@ impl SessCtx {
             forwarder: StdMutex::new(None),
             inflight: std::sync::atomic::AtomicUsize::new(0),
         });
-        let approver = pairing.kind == PeerKind::Phone && pairing.rights.approve;
-        let task = tokio::spawn(forward(b.clone(), sid, out, ctx.jobs.clone(), approver));
+        let task = tokio::spawn(forward(
+            b.clone(),
+            sid,
+            out,
+            ctx.jobs.clone(),
+            pairing.pairing_id.clone(),
+        ));
         *lock(&ctx.forwarder) = Some(task);
         ctx
     }
@@ -127,9 +132,15 @@ async fn forward(
     sid: String,
     out: mpsc::UnboundedSender<(String, String)>,
     jobs: Arc<StdMutex<HashMap<String, (String, String)>>>,
-    approver: bool,
+    pairing_id: String,
 ) {
     let mut rx = b.hub.events.subscribe();
+    // The approve right as it is now: turning it off in the app stops cards and questions at once.
+    let approver = || {
+        b.remote
+            .pairing(&pairing_id)
+            .is_some_and(|p| p.kind == PeerKind::Phone && p.rights.approve)
+    };
     loop {
         let ev = match rx.recv().await {
             Ok(v) => v,
@@ -141,7 +152,7 @@ async fn forward(
         }
         let data = ev.get("data").cloned().unwrap_or(Value::Null);
         match ev.get("event").and_then(Value::as_str) {
-            Some("approval") if approver => {
+            Some("approval") if approver() => {
                 if let Some(id) = data.get("id").and_then(Value::as_str) {
                     // A start card says whether a phone could approve it, from its file read once.
                     read_card_heat(&b, id).await;
@@ -153,13 +164,13 @@ async fn forward(
                     emit(&out, &sid, "approval.request", view);
                 }
             }
-            Some("approval.resolved") if approver => {
+            Some("approval.resolved") if approver() => {
                 if let Some(r) = phone_resolved(&data) {
                     emit(&out, &sid, "approval.resolved", r);
                 }
             }
             Some("remote.quota") => emit(&out, &sid, "remote.quota", data),
-            Some("mimir.question") if approver => emit(&out, &sid, "mimir.question", data),
+            Some("mimir.question") if approver() => emit(&out, &sid, "mimir.question", data),
             Some("approval.done") => {
                 let Some(rid) = data.get("requestId").and_then(Value::as_str) else {
                     continue;
@@ -364,11 +375,21 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             });
             Ok(json!({}))
         }
-        _ => Err(err(
-            "not_supported",
-            format!("{method} is not available over remote access"),
-        )),
+        _ => partner_or_none(b, &pairing, method, &p).await,
     }
+}
+
+/// A partner phone's own push token, for its own pairing only (push.rs); nothing else is remote.
+async fn partner_or_none(b: &Arc<Bridge>, pairing: &RemotePairing, method: &str, p: &Value) -> Reply {
+    if matches!(method, "push.registerPartner" | "push.unregisterPartner") {
+        return crate::push::remote_partner(b, pairing, method, p)
+            .await
+            .map_err(|e| from_rpc(&e));
+    }
+    Err(err(
+        "not_supported",
+        format!("{method} is not available over remote access"),
+    ))
 }
 
 /// Only a paired phone with the approve right reads or answers mimir's questions.
@@ -492,7 +513,12 @@ async fn camera_rtc(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing
     // The slot is taken before the await, so two calls at once cannot both pass the check.
     let id = reserve_stream(ctx)?;
     let (out, sid) = (ctx.out.clone(), ctx.sid.clone());
-    let started = crate::remote_rtc::start(b, printer, sdp, b.remote.stun(), move |reason| {
+    // A partner phone's direct video counts against its daily allowance like its relay bytes.
+    let meter = crate::remote::usage_key(pairing).map(|k| {
+        let b = b.clone();
+        Arc::new(move |n: usize| crate::remote::partner_spend(&b, &k, n)) as crate::remote_rtc::Meter
+    });
+    let started = crate::remote_rtc::start(b, printer, sdp, b.remote.stun(), meter, move |reason| {
         emit(
             &out,
             &sid,
@@ -557,13 +583,14 @@ fn host_info(b: &Bridge, p: &RemotePairing) -> Reply {
         .remote
         .host_identity()
         .ok_or_else(|| err("failed", "remote access is not set up"))?;
-    Ok(json!({
+    let mut info = json!({
         "identity": identity,
         "kind": "link",
         "slicing": [],
         "printers": true,
         "camera": true,
-        "push": false,
+        // Partner phones register their own push token here; our phone does it through the app.
+        "push": p.partner.is_some(),
         "mimir": true,
         // Starts under the remote start rule, with `plate.check` for the card's pictures.
         "remoteStart": true,
@@ -575,7 +602,11 @@ fn host_info(b: &Bridge, p: &RemotePairing) -> Reply {
         // The STUN server direct video uses (our own, next to the relay), so the phone does not
         // need a third party's.
         "stun": b.remote.stun(),
-    }))
+    });
+    if let (Some(name), Some(o)) = (&p.partner, info.as_object_mut()) {
+        o.insert("partner".into(), json!(name));
+    }
+    Ok(info)
 }
 
 async fn watch(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, p: &Value) -> Reply {
