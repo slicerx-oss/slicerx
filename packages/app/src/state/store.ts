@@ -45,6 +45,7 @@ import { normalizeEasy } from '../lib/easy-values'
 import { freshVary } from '../lib/sleipnir-default'
 import { GENERIC_BED } from '../adapters/generic-bed'
 import { loadUserThemes } from '../theme/load'
+import { DEFAULT_SPACE_MOUSE, type SpaceMouseSettings } from '@slicerx/viewport/spacemouse'
 import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, MULTI_BODY_DEFAULT, savePrefs, type Appearance, type HandPrinter, type MultiBodyPref, type PrinterBay, type Prefs } from './prefs'
 import type { DryMark } from '../filament/dry-marks'
 import { noteSetupOpen, setupOpenAtReload } from '../first-run/onboarding'
@@ -500,6 +501,8 @@ export interface AppState {
   mimirNotice: number | null
   /** Settings > Appearance > Motion; null until picked, which means the edition's default. */
   motion: 'system' | 'full' | 'reduced' | null
+  /** Settings > Controls > 3D mouse (@slicerx/viewport spacemouse.ts). Off until turned on. */
+  spaceMouse: SpaceMouseSettings
   /** The pre-alpha agreement accepted on this install, or null. */
   agreement: { version: number; acceptedAt: string } | null
   /** The agreement covers the window until it is accepted (pre-alpha builds). */
@@ -904,6 +907,7 @@ export const appStore = createStore<AppState>()(() => ({
   mimirMemorySync: prefs.mimirMemorySync ?? false,
   mimirNotice: prefs.mimirNotice ?? null,
   motion: prefs.motion ?? null,
+  spaceMouse: prefs.spaceMouse ?? DEFAULT_SPACE_MOUSE,
   agreement: prefs.agreement ?? null,
   agreementOpen: false,
   installId: prefs.installId ?? null,
@@ -998,7 +1002,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'legendOpen', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'printerDocks', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'legendOpen', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'printerDocks', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'spaceMouse', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -1070,6 +1074,7 @@ appStore.subscribe((s, prev) => {
       mimirMemorySync: s.mimirMemorySync,
       ...(s.mimirNotice ? { mimirNotice: s.mimirNotice } : {}),
       ...(s.motion ? { motion: s.motion } : {}),
+      spaceMouse: s.spaceMouse,
       agreement: s.agreement,
       ...(s.installId ? { installId: s.installId } : {}),
       setupPilotOff: s.setupPilotOff,

@@ -11,6 +11,7 @@ import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef, useState } from 'react'
 import { brandAccent, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
+import { onSpaceMouseFrame } from './spacemouse'
 import { effectiveSlot, mapSlot, resolveSlots, slotFinish, type ResolvedSlot } from '../filament/slots'
 import { activeMeta } from '../plate/plates'
 import { bake } from '../plate/mesh-ops'
@@ -79,6 +80,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   stats?: Viewport['stats']
   /** Camera and mouse controls, tools and camera calls; the 2D fallback has none of them. */
   setControls?: Viewport['setControls']
+  /** 3D mouse settings and the device's axes. */
+  setSpaceMouse?: Viewport['setSpaceMouse']
+  spaceMouseInput?: Viewport['spaceMouseInput']
   setTheme?: Viewport['setTheme']
   setLook?: Viewport['setLook']
   look?: Viewport['look']
@@ -659,6 +663,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         // The look and feel picks the mouse map; overrides from Settings sit on top.
         if ((first || s.lookAndFeel !== prev.lookAndFeel) && vp.setControls && vp.controlsApi) vp.setControls(controlsFor(vp.controlsApi, s.lookAndFeel ?? { id: defaultLook.current }))
+        if ((first || s.spaceMouse !== prev.spaceMouse) && vp.setSpaceMouse) vp.setSpaceMouse(s.spaceMouse)
         prev = s
       }
       vp.setMode(modeRef.current)
@@ -674,6 +679,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       offs.push(onThemeChange(syncScene))
       offs.push(appStore.subscribe((s, p) => s.appearance.colorVision !== p.appearance.colorVision && syncScene()))
       offs.push(appStore.subscribe((s) => apply(s, false)))
+      // the 3D mouse's axes, read while Settings > Controls > 3D mouse is on (spacemouse.ts, started with the app)
+      if (vp.spaceMouseInput) offs.push(onSpaceMouseFrame((f) => vp.spaceMouseInput?.(f)))
       // The loading wisp runs the plate edge once a loading model is drawn, until the open is done; a held open shows
       // no plate to run along.
       let wispOn = false

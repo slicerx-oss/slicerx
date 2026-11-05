@@ -26,6 +26,8 @@ import { slicePanes } from '../lib/slice-panes'
 import { findPlate, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
 import { viewportLookState } from '../viewport/viewport-look'
+import { spaceMouseStatus } from '../viewport/spacemouse'
+import { normalizeSpaceMouse, SPACE_AXES, SPACE_SENSITIVITY, type SpaceMouseSettings } from '@slicerx/viewport/spacemouse'
 import { readViewportStats } from '../viewport/stats'
 import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
 import { drawnPlate, platesState } from './plate-state'
@@ -330,19 +332,49 @@ function lookState() {
   const sceneOverrides = editionSceneOverrides(config, scheme)
   // the 3D view's look, absent while no 3D view is up (viewport-look.ts)
   const viewport = viewportLookState()
-  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides, scene, sceneOverrides }, ...(viewport ? { viewport } : {}) }
+  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), spaceMouse: spaceMouseState(), theme: { scheme, visuals, overrides, scene, sceneOverrides }, ...(viewport ? { viewport } : {}) }
+}
+
+/** Settings > Controls > 3D mouse, with where the device stands (status: unsupported, off, none, connected, busy, error). */
+function spaceMouseState() {
+  const st = spaceMouseStatus()
+  return { ...get().spaceMouse, status: st.state, ...(st.state === 'connected' || (st.state === 'busy' && st.name) ? { device: st.name } : {}) }
+}
+
+/** A 3D mouse change from look.set, checked whole before anything changes: on or off, sensitivity, invert, dominant axis. */
+function spaceMousePatch(v: unknown): SpaceMouseSettings {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new LinkError('invalid_input', 'spaceMouse is an object: enabled, sensitivity, invert, dominantAxis')
+  const r = v as Record<string, unknown>
+  const extra = Object.keys(r).filter((k) => !['enabled', 'sensitivity', 'invert', 'dominantAxis'].includes(k))
+  if (extra.length) throw new LinkError('invalid_input', `spaceMouse takes enabled, sensitivity, invert and dominantAxis only, not ${extra.join(', ')}`)
+  if (!Object.keys(r).length) throw new LinkError('invalid_input', 'spaceMouse needs at least one of enabled, sensitivity, invert, dominantAxis')
+  for (const k of ['enabled', 'dominantAxis']) if (r[k] !== undefined && typeof r[k] !== 'boolean') throw new LinkError('invalid_input', `spaceMouse.${k} is true or false`)
+  const sens = r['sensitivity']
+  if (sens !== undefined && (typeof sens !== 'number' || !Number.isFinite(sens) || sens < SPACE_SENSITIVITY.min || sens > SPACE_SENSITIVITY.max)) throw new LinkError('invalid_input', `spaceMouse.sensitivity is a number from ${SPACE_SENSITIVITY.min} to ${SPACE_SENSITIVITY.max}`)
+  const inv = r['invert']
+  if (inv !== undefined) {
+    if (typeof inv !== 'object' || inv === null || Array.isArray(inv)) throw new LinkError('invalid_input', `spaceMouse.invert is an object of ${SPACE_AXES.join(', ')}`)
+    for (const [k, x] of Object.entries(inv)) {
+      if (!(SPACE_AXES as readonly string[]).includes(k)) throw new LinkError('invalid_input', `spaceMouse.invert takes ${SPACE_AXES.join(', ')}, not ${k}`)
+      if (typeof x !== 'boolean') throw new LinkError('invalid_input', `spaceMouse.invert.${k} is true or false`)
+    }
+  }
+  const cur = get().spaceMouse
+  return normalizeSpaceMouse({ ...cur, ...r, invert: { ...cur.invert, ...(inv as Record<string, boolean> | undefined) } })
 }
 
 /**
  * Sets the view preferences the person sets in Settings > Look and feel: `modelFraming` (selection: frame on every
- * pick, open: only when Model opens or an object is added) and `toolbarSize` (large, medium or small). Both are checked
- * before either changes, and the answer is the preferences read back. Nothing else in Settings is reachable here.
+ * pick, open: only when Model opens or an object is added) and `toolbarSize` (large, medium or small), and the 3D mouse
+ * from Settings > Controls (`spaceMouse`: enabled, sensitivity, invert, dominantAxis). Everything is checked before
+ * anything changes, and the answer is the preferences read back. Nothing else in Settings is reachable here.
  */
 function setLook(args: Record<string, unknown>) {
-  const extra = Object.keys(args).filter((k) => k !== 'modelFraming' && k !== 'toolbarSize')
-  if (extra.length) throw new LinkError('invalid_input', `look.set takes modelFraming and toolbarSize only, not ${extra.join(', ')}`)
+  const extra = Object.keys(args).filter((k) => k !== 'modelFraming' && k !== 'toolbarSize' && k !== 'spaceMouse')
+  if (extra.length) throw new LinkError('invalid_input', `look.set takes modelFraming, toolbarSize and spaceMouse only, not ${extra.join(', ')}`)
   const { modelFraming, toolbarSize } = args
-  if (modelFraming === undefined && toolbarSize === undefined) throw new LinkError('invalid_input', 'give modelFraming, toolbarSize or both')
+  if (modelFraming === undefined && toolbarSize === undefined && args['spaceMouse'] === undefined) throw new LinkError('invalid_input', 'give modelFraming, toolbarSize, spaceMouse or more than one')
+  const spaceMouse = args['spaceMouse'] === undefined ? undefined : spaceMousePatch(args['spaceMouse'])
   if (modelFraming !== undefined) {
     if (!editionHasCad(currentEdition())) throw new LinkError('not_found', `this edition of ${appName()} has no Frame the view setting`)
     if (!FRAMINGS.includes(modelFraming as (typeof FRAMINGS)[number])) throw new LinkError('invalid_input', `modelFraming is one of ${FRAMINGS.join(', ')}`)
@@ -354,6 +386,7 @@ function setLook(args: Record<string, unknown>) {
       ...(modelFraming !== undefined ? { modelFraming: modelFraming as (typeof FRAMINGS)[number] } : {}),
       ...(toolbarSize !== undefined ? { toolbarSize: toolbarSize as (typeof TOOLBAR_SIZES)[number] } : {}),
     },
+    ...(spaceMouse ? { spaceMouse } : {}),
   })
   return lookState()
 }

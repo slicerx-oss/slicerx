@@ -25,7 +25,7 @@ describe('app look tools', () => {
     }
     const [tool] = appLookTools({ call: async () => look } as unknown as AppLinkCaller, 'Harbor')
     expect((await tool!.run({} as never, {} as never)).output).toEqual(look)
-    expect(tool!.version).toBe('1.1.0')
+    expect(tool!.version).toBe('1.2.0')
   })
   it('read the preferences and set them, each answer read back from the app', async () => {
     let look: AppLook = { toolbarSize: 'large', modelFraming: 'selection' }
@@ -82,5 +82,29 @@ describe('app look tools', () => {
     expect(read.summary).toBe('Toolbar size Large (32 px); Frame the view: Always; 3D view look: Light studio.')
     const own = await appLookTools({ call: async () => ({ ...look, viewport: { ...look.viewport!, preset: 'dark-precision', themeBackdrop: true } }) } as unknown as AppLinkCaller, 'SlicerX')[0]!.run({} as never, {} as never)
     expect(own.summary).toBe("Toolbar size Large (32 px); Frame the view: Always; 3D view look: Dark precision with the theme's backdrop.")
+  })
+
+  it('reads the 3D mouse back and sets any of its fields, forwarding only what was given', async () => {
+    let look: AppLook = { toolbarSize: 'large', spaceMouse: { enabled: false, sensitivity: 1, invert: { panX: false, panY: false, zoom: false, tilt: false, spin: false }, dominantAxis: false, status: 'off' } }
+    const call = vi.fn(async (method: string, args?: Record<string, unknown>) => {
+      if (method === 'look.set') {
+        const sm = args?.['spaceMouse'] as Partial<NonNullable<AppLook['spaceMouse']>>
+        look = { ...look, spaceMouse: { ...look.spaceMouse!, ...sm, invert: { ...look.spaceMouse!.invert, ...sm.invert }, status: 'connected', device: 'SpaceMouse Compact' } }
+      }
+      return look
+    })
+    const [get, set] = appLookTools({ call } as AppLinkCaller, 'SlicerX')
+    expect((await get!.run({} as never, {} as never)).summary).toBe('Toolbar size Large (32 px); 3D mouse off, sensitivity 1.')
+    const out = await set!.run(set!.input.parse({ spaceMouse: { enabled: true, sensitivity: 1.5, invert: { zoom: true } } }) as never, {} as never)
+    expect(call).toHaveBeenLastCalledWith('look.set', { spaceMouse: { enabled: true, sensitivity: 1.5, invert: { zoom: true } } })
+    expect((out.output as AppLook).spaceMouse).toMatchObject({ enabled: true, sensitivity: 1.5, invert: { zoom: true, spin: false }, status: 'connected' })
+    expect(out.summary).toBe('Toolbar size Large (32 px); 3D mouse on, connected (SpaceMouse Compact), sensitivity 1.5.')
+    expect(set!.version).toBe('1.1.0')
+  })
+
+  it('checks the 3D mouse fields before anything leaves', () => {
+    const [, set] = appLookTools({ call: vi.fn() } as unknown as AppLinkCaller, 'SlicerX')
+    for (const bad of [{ spaceMouse: {} }, { spaceMouse: { sensitivity: 5 } }, { spaceMouse: { sensitivity: 0.1 } }, { spaceMouse: { enabled: 'on' } }, { spaceMouse: { invert: { roll: true } } }, { spaceMouse: { invert: { zoom: 1 } } }, { spaceMouse: { speed: 2 } }, { spaceMouse: true }]) expect(set!.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false)
+    for (const good of [{ spaceMouse: { enabled: true } }, { spaceMouse: { dominantAxis: true, invert: { tilt: true, spin: false } } }, { toolbarSize: 'small', spaceMouse: { sensitivity: 4 } }]) expect(set!.input.safeParse(good).success, JSON.stringify(good)).toBe(true)
   })
 })

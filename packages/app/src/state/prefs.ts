@@ -6,6 +6,7 @@
 import { readUnits, type UnitPrefs } from '../cad/units'
 import { FEATURE_FILAMENT_KEYS } from '../plate/feature-filament-keys'
 import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState, type ToolDock } from '@slicerx/contracts'
+import { normalizeSpaceMouse, type SpaceMouseSettings } from '@slicerx/viewport/spacemouse'
 
 /** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
 export type MultiBodyPref = 'ask' | 'parts' | 'objects'
@@ -60,6 +61,8 @@ export interface Prefs {
   mimirNotice?: number | undefined
   /** Settings > Appearance > Motion; absent means the edition's default. */
   motion?: 'system' | 'full' | 'reduced' | undefined
+  /** Settings > Controls > 3D mouse: on or off, speed, inverted axes and dominant axis mode. */
+  spaceMouse?: SpaceMouseSettings | undefined
   /** The pre-alpha agreement the person accepted, and when (ISO date). */
   agreement?: { version: number; acceptedAt: string } | null | undefined
   /** Random id of this install, sent with bug reports so the rate limit and repeats can be told apart. */
@@ -344,6 +347,7 @@ export function normalizePrefs(v: unknown): Prefs {
     mimirMemorySync: or(bool(r['mimirMemorySync']), false),
     ...opt('mimirNotice', num(r['mimirNotice'], 1, 1e6)),
     ...opt('motion', oneOf(r['motion'], ['system', 'full', 'reduced'] as const)),
+    ...opt('spaceMouse', isRec(r['spaceMouse']) ? normalizeSpaceMouse(r['spaceMouse']) : undefined),
     agreement: or(nullable(r['agreement'], (x) => (isRec(x) && num(x['version'], 1, 1e6) !== undefined && str(x['acceptedAt'], 40) ? { version: x['version'] as number, acceptedAt: x['acceptedAt'] as string } : undefined)), null),
     ...opt('installId', typeof r['installId'] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r['installId']) ? r['installId'] : undefined),
     cadTools: or(bool(r['cadTools']), true),
