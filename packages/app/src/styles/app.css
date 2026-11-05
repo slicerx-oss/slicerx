@@ -929,6 +929,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .calib-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .calib-problem { color: var(--red); }
 .calib-act { margin: 10px 0 4px; }
+/* Printer controls, Remote start: the switch, then the two limits with their labels on the left and the numbers right aligned. */
+.remote-start { display: grid; gap: var(--s-2); }
+.remote-start-limits { display: grid; gap: var(--s-2); }
+.remote-start-limits .plate-form-row { grid-template-columns: minmax(0, 1fr) 96px; font-size: var(--fs-md); color: var(--fg); }
+.remote-start-limits .sx-input { font-variant-numeric: tabular-nums; text-align: right; }
 .calib-result { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-soft); display: grid; gap: 10px; }
 .calib-result h4 { margin: 0; display: flex; gap: 6px; align-items: center; }
 .calib-steps { margin: 0; padding-left: 18px; color: var(--muted); }
