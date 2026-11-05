@@ -91,7 +91,9 @@ pub(crate) enum Rule {
     /// The path ends at the object nearest the bed's origin (`origin_last`, also when the key is unset).
     OriginLast,
     /// A chain of the nearest objects with no object held to one link, printed from the end `chain` picks, and the
-    /// brims print first in a chain of their own (`chain`, a Prusa project's).
+    /// brims print first in a chain of their own (`chain`, a Prusa project's). The Prusa project read sets it; a
+    /// request may too. It also marks the project for its part rule: where two parts of an object in one filament
+    /// overlap, the later part prints the overlap. A third Prusa-only behavior gets a key of its own.
     Chain,
 }
 
