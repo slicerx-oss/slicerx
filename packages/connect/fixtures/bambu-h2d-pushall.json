@@ -46,7 +46,9 @@
           "id": "0",
           "info": "1003",
           "humidity": "4",
+          "humidity_raw": "22",
           "temp": "26.0",
+          "dry_time": 0,
           "tray": [
             { "id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "F2F2F2FF", "remain": 82 },
             { "id": "1", "tray_type": "PLA", "tray_sub_brands": "PLA Matte", "tray_color": "1A1A1AFF", "remain": 64 },
@@ -58,7 +60,9 @@
           "id": "128",
           "info": "1104",
           "humidity": "3",
+          "humidity_raw": "11",
           "temp": "45.0",
+          "dry_time": 200,
           "tray": [
             { "id": "0", "tray_type": "PAHT-CF", "tray_sub_brands": "PAHT-CF", "tray_color": "2B2B2BFF", "remain": 90 }
           ]

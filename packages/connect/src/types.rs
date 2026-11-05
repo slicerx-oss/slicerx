@@ -160,6 +160,30 @@ pub struct LiveUnit {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feeds: Option<String>,
+    /// What the unit's own sensors read, read only. Absent when the unit reports none of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climate: Option<UnitClimate>,
+}
+
+/// The air inside a filament unit and its dryer, as the unit reports them. Every field is absent
+/// when the unit does not say.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnitClimate {
+    /// Relative humidity in percent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub humidity_pct: Option<u8>,
+    /// Humidity as a level from 1 (dry) to 5 (wet), for units that report no percentage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub humidity_level: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp_c: Option<f64>,
+    /// Whether the unit is drying its filament now. Absent on units that cannot dry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drying: Option<bool>,
+    /// Minutes of drying left, while it dries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_minutes_left: Option<u32>,
 }
 
 impl PrinterStatus {
