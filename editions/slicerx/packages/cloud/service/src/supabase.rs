@@ -404,6 +404,16 @@ impl Backend for SupabaseBackend {
         .await
     }
 
+    async fn token_jobs(&self, user_id: &str, token_id: &str, limit: u32) -> Result<Vec<Job>> {
+        self.rows(self.rest(Method::GET, "cloud_jobs").query(&[
+            ("user_id", eq(user_id)),
+            ("token_id", eq(token_id)),
+            ("order", "created_at.desc".to_owned()),
+            ("limit", limit.to_string()),
+        ]))
+        .await
+    }
+
     async fn cancel_job(&self, user_id: &str, id: &str) -> Result<bool> {
         let rows: Vec<Value> = self
             .rows(
