@@ -927,6 +927,78 @@
     },
     {
       "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "change_filament_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "d287c3b081612c9974a4a2b6f58c0dabb523a6da78321f01fb52e144bab2c1ce",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "ae9026bc9bd4d1229833679c29540b1860fd53b45e75b721d10e8139f35b4a08"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "layer_change_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "4f57f4e2c2c9871b4a2b7e3391a79729d52028835f8ab9a777c21bfebd06582e",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "7e8d6cdaf079ed85493456046729482a14681558d8b3cc40c99fddbb38f90e36"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "machine_end_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "de585869dd4e2852f72876a3aeff91efd767980d371f74f83e3d189f67e1a475",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "cffce55eab7078904f1bf43440524893ab806bfbf3ca925155e661ef7b4ef67e"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "machine_pause_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "3ba8fe3c593046dd6662a6befdebff2f4695dfa447462bc1e0414fadc3c5637c",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "3ba8fe3c593046dd6662a6befdebff2f4695dfa447462bc1e0414fadc3c5637c"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "machine_start_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "20f3d99a8f3d3add2cd875fbc45b4e08a78bfde24b1c3ac7fea3f8b3e536139c",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "b1628e6dd0f7e73e8a94e12598950354eb73dad6369be6077d845b883fc4adcf"
+    },
+    {
+      "identity": {
+        "model": "bambu-h3c",
+        "firmware": "marlin"
+      },
+      "key": "time_lapse_gcode",
+      "source": "BambuStudio",
+      "version": "2.9.1",
+      "exactFingerprint": "d3ec38211fba5bbc93d01831c53625eb47254de43ba323d4ebd947fffefd6386",
+      "canonicalVersion": 1,
+      "canonicalFingerprint": "c7c3d772ee70266ef1a26777bf5cb528bb621cb14a0bbcc5c70eef7643b40a7d"
+    },
+    {
+      "identity": {
         "model": "bambu-p1p",
         "firmware": "marlin"
       },

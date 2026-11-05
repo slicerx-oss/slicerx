@@ -13,7 +13,8 @@
    "02.08.02.61",
    "02.08.03.66",
    "02.08.04.57",
-   "02.08.04.61"
+   "02.08.04.61",
+   "02.09.01.70"
   ],
   "orcaSlicerApp": [
    "2.4.2"
@@ -257,7 +258,8 @@
     "cb53360c80a4b673a2f193eb6350f216",
     "d37bbe479fe8a4c05da8a66bba75bc5c",
     "e9720e6da70de22a496855509068009d",
-    "f2095f821395f48cfb2218a2e21141d7"
+    "f2095f821395f48cfb2218a2e21141d7",
+    "ff32d1cce9de4964c1972fba63ff97dd"
    ],
    "machine_pause_gcode": [
     "3ba8fe3c593046dd6662a6befdebff2f"
@@ -287,6 +289,7 @@
     "85dd1a11ed77bf310e7575f714f440cd",
     "90e719b19de80698f14ae184c06c365c",
     "94cf1826e35c8f266667cec36ebd85c2",
+    "95e010791db5d6d17e7ba58ace712ba3",
     "9934b5811d3a30ea64517fec23284157",
     "9c4363d849ae5f6a5cd03d84dd7713f2",
     "9f92e0aa8c74ff3b8cf601893013cc43",
@@ -315,6 +318,7 @@
     "1270d54a9c8aa4ec6c60c397d23e61ed",
     "2bcab0e91b4a5e9848572b3e934e3cb5",
     "32d26ca0d66abd7c426ee97569e60bc7",
+    "37af3080901041ae94d899504f01d038",
     "4267b3c3dfbadf57393cb9bcbd6b10a3",
     "456cfa0a10876fe0537b0824940c85aa",
     "4a68885c4af23a66cd1412eff02391de",
@@ -410,6 +414,26 @@
    ],
    "wrapping_detection_gcode": [
     "f817040fc494765e7da465d90450e3cd"
+   ]
+  },
+  "bambu-h3c": {
+   "change_filament_gcode": [
+    "777c4e48e7c6d13c2cab991f4e4eb7c1"
+   ],
+   "layer_change_gcode": [
+    "bd96008a665ddde0a275824b1ed29763"
+   ],
+   "machine_end_gcode": [
+    "ffa87bf6f323c2f52a09455206873333"
+   ],
+   "machine_pause_gcode": [
+    "3ba8fe3c593046dd6662a6befdebff2f"
+   ],
+   "machine_start_gcode": [
+    "105b89bfd61cb33a7366aef6e5de4615"
+   ],
+   "time_lapse_gcode": [
+    "8f05998596388c9ad2199a73f17ccedf"
    ]
   },
   "bambu-p1p": {
@@ -577,6 +601,7 @@
     "2c210417043d2de48b3d968acc9aa931",
     "523dd4fb281563e007848b6a180e0135",
     "5d678058a521067b74b913fc03cef5bc",
+    "66eaaabf32fb6fdbe0e110b428dc021b",
     "701cfb2877171c36d41dea45d3e3af56",
     "81ec3a6ba1e6e24a59e2bc090aa0de82",
     "9a69a79bd2cf755c80c3c5cd3405e9b5",
@@ -606,6 +631,7 @@
     "03cfc034e18aa17b24808b3c2b8c0817",
     "057ae945a5d791e0a1521badf72c8940",
     "0b8e910e2f70a66c6f94411d33c7a9ea",
+    "19000bb0851e9e7a22e5354b21201001",
     "2dfb416bcd245f8aaa193dd1fbf044a0",
     "396e7c4bd0c4532d8565686ef8394d93",
     "53196986c6609a9bec593645b2d40663",
@@ -625,6 +651,7 @@
     "0c161ba479a62166880c6ed61819f852",
     "11d9c407774ef6f6793b6f04b27eb641",
     "122cb56bdcec9fbe6bb8f6e306aa4879",
+    "2c69e6e56322ec37399a1e77324f0afe",
     "40f2b50f2aebc16af2e216cec2319d19",
     "42918799aa7870b6c6b1f907546d8d4c",
     "50b1f6e72818c18300d904daaee57614",
@@ -646,7 +673,8 @@
     "0c39e7c24df8e97e1c525f8b3d8d1351",
     "1622e29af0875d71f8598299fedc7150",
     "34a3cfd38677986be4dba15248d3c4ab",
-    "c9b39716bcb1dced560f2d1830a2c92f"
+    "c9b39716bcb1dced560f2d1830a2c92f",
+    "e0bcf23a11c806390adb813ac9450bf7"
    ],
    "wrapping_detection_gcode": [
     "229a9f0cce9cf4d6f1cdfbded70ca157",
@@ -1004,25 +1032,30 @@
   "bambu-x2d": {
    "change_filament_gcode": [
     "38844f5a26ac41ecbbc85a3dcc04e2cb",
-    "7af7a97f0dd5f81f8d6d0a1881c18b0d"
+    "7af7a97f0dd5f81f8d6d0a1881c18b0d",
+    "96822485c401aef54c84183bf3528aee"
    ],
    "layer_change_gcode": [
     "1783c8cc1832acdfc85ada39c6a7428c",
-    "a91368c22d6e470684304fb7aa8e8df6"
+    "a91368c22d6e470684304fb7aa8e8df6",
+    "be91c4d3c8c2cd760fa9f38f1bdf27b6"
    ],
    "machine_end_gcode": [
     "13b6bc55ba05d2331ed97988aec70dfb",
-    "352cc7d05a4219a18bcda49b3db7910d"
+    "352cc7d05a4219a18bcda49b3db7910d",
+    "757d99fbb60df415143aad73215fb244"
    ],
    "machine_pause_gcode": [
     "3ba8fe3c593046dd6662a6befdebff2f"
    ],
    "machine_start_gcode": [
+    "4e65d19eeacbcdeaee503cabd1407bab",
     "94d6d870df5af951fee7f3bb613a8077",
     "af27abc81ad986cb6efdfc753ca558e6"
    ],
    "time_lapse_gcode": [
     "11f4ac45c6237a976fcfa5404e226bc9",
+    "4922c626d1afc8183f53a4182ea7eed0",
     "7d9465550e3b2e5c537dfecfbc29c30d"
    ]
   },

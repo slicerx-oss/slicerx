@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Applies packages/profiles/overlays/bbl-2.8.json (Bambu Studio 2.8's values for the settings the engine reads) to the
+// Writes the whole entries of packages/profiles/overlays/bbl-2.9.json (Bambu Studio 2.9's presets for the H3C, which
+// OrcaSlicer 2.4.2 has none for) into resolved/bambu-lab.json where the file has none for the model, then applies
+// packages/profiles/overlays/bbl-2.8.json (Bambu Studio 2.8's values for the settings the engine reads) to the
 // shipped Bambu Lab data: filaments/BBL.json and resolved/bambu-lab.json. Run it after anything that writes either file
 // again (gen-resolved.ts runs it on its own output). Applying it twice changes nothing.
 // It also applies packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) to
@@ -38,5 +40,5 @@ for (const o of MAKER_OVERLAYS) {
     applyProcessPresetOverlay(speeds, overlay)
     writeFileSync(profiles('process-speeds.json'), JSON.stringify(speeds))
   }
-  console.log(`overlay ${o.path}: ${Object.keys(overlay.filament).length} filament presets, ${Object.keys(overlay.machine).length} printers, ${Object.keys(overlay.process).length} process sets, ${Object.keys(overlay.process_presets ?? {}).length} process presets`)
+  console.log(`overlay ${o.path}: ${Object.keys(overlay.filament).length} filament presets, ${Object.keys(overlay.machine).length} printers, ${Object.keys(overlay.process).length} process sets, ${Object.keys(overlay.process_presets ?? {}).length} process presets, ${Object.keys(overlay.models ?? {}).length} whole models`)
 }

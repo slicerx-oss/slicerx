@@ -30,7 +30,7 @@ On Windows, discovery that listens for announcements (SSDP, mDNS, UDP broadcast 
 
 ### Bambu Lab
 
-Models covered: A1 and A1 mini (model codes N2S and N1), P1P (C11) and P1S (C12), X1 (BL-P002), X1 Carbon (BL-P001), X1E (C13), P2S (N7), H2D (O1D), H2D Pro (O1E), H2S (O1S), H2C (O1C2 in Orca profiles, Studio also has O1C). A2L is N9 and is out of scope.
+Models covered: A1 and A1 mini (model codes N2S and N1), P1P (C11) and P1S (C12), X1 (BL-P002), X1 Carbon (BL-P001), X1E (C13), P2S (N7), H2D (O1D), H2D Pro (O1E), H2S (O1S), H2C (O1C2 in Orca profiles, Studio also has O1C), H3C (N10, from the model_id and printer_type in Bambu Studio 2.9.1's own files; not yet checked on a printer). A2L is N9 and is out of scope.
 
 #### Discovery
 

@@ -365,6 +365,18 @@ describe('the Prusa Core One L', () => {
   })
 })
 
+describe('the Bambu Lab H3C', () => {
+  it('is found by a client and comes with its own machine settings', async () => {
+    const h = await connect()
+    const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query: 'bambu h3c' }))
+    expect(hits.output.map((x) => x.id)).toContain('bambu-h3c')
+    const p = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:bambu-h3c' }))
+    expect(p.config['printable_height']).toBe(325)
+    expect(p.config['printable_area']).toEqual([[0, 0], [330, 0], [330, 320], [0, 320]])
+    expect(p.config['extruder_max_nozzle_count']).toEqual([9])
+  })
+})
+
 describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()

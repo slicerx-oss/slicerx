@@ -37,8 +37,8 @@ async function table(): Promise<{ files: Record<string, string>; families: Recor
 
 describe('filament presets', () => {
   it('covers the brands and materials people print with', () => {
-    expect(filamentPresetCount()).toBe(6845)
-    expect(listFilamentFamilies()).toHaveLength(1116)
+    expect(filamentPresetCount()).toBe(6980)
+    expect(listFilamentFamilies()).toHaveLength(1119)
     const brands = filamentBrands()
     for (const b of ['Bambu Lab', 'Generic', 'Polymaker', 'eSUN', 'SUNLU', 'Elegoo', 'Overture', 'Prusa Polymers', 'HATCHBOX', 'JAYO', 'Creality', 'QIDI', 'Snapmaker']) expect(brands, b).toContain(b)
     const types = new Set(listFilamentFamilies().map((f) => f.type))
@@ -63,6 +63,14 @@ describe('filament presets', () => {
     // A product 2.4.2 does not have keeps main's values, and says so.
     const jayo = listFilamentFamilies({ brand: 'JAYO' })[0]!
     expect((await loadFilamentPreset(jayo.vendor, jayo.family, jayo.variants[0]))!.source).toMatchObject({ app: 'OrcaSlicer main', commit: FILAMENT_SOURCES.orcaMain })
+    // The H3C's presets come from the Bambu Studio release that added the printer, and say so; its 2.85 mm TPU is for the
+    // TPU tool only.
+    const pla = await loadFilamentPreset('BBL', 'Bambu PLA Basic', 'BBL H3C')
+    expect(pla).toMatchObject({ filamentId: 'GFA00', source: { app: 'Bambu Studio', commit: '02.09.01.70' } })
+    const tpu = (await loadFilamentPreset('BBL', 'Bambu TPU 75A(2.85mm)', 'BBL H3C'))!.config as unknown as Record<string, unknown>
+    expect(tpu['filament_diameter']).toEqual([2.85])
+    expect(tpu['filament_extruder_variant']).toEqual(['Direct Drive TPU285'])
+    expect(listFilamentFamilies({ brand: 'Bambu Lab' }).find((f) => f.family === 'Bambu PLA Basic')!.variants).toContain('BBL H3C 0.2 nozzle')
   })
   it('marks every filament setting advanced, except material, brand and color', () => {
     for (const d of SETTINGS.filter((s) => s.section === 'filament')) expect(d.mode, d.key).toBe(['filament_type', 'filament_vendor', 'default_filament_colour'].includes(d.key) ? 'simple' : d.group === 'profile' && d.key !== 'filament_notes' ? 'hidden' : 'advanced')

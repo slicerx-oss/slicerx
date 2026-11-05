@@ -355,6 +355,34 @@
    ]
   },
   {
+   "id": "bambu-h3c",
+   "brand": "bambu-lab",
+   "vendor": "Bambu Lab",
+   "model": "H3C",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 330,
+    "y": 320,
+    "z": 325
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 9,
+   "flavor": "marlin",
+   "directDrive": true,
+   "limits": {},
+   "sources": [
+    "https://bambulab.com/en-us/h3c/specs"
+   ]
+  },
+  {
    "id": "bambu-x2d",
    "brand": "bambu-lab",
    "vendor": "Bambu Lab",

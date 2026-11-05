@@ -19,13 +19,19 @@ const num = (c: unknown, k: string): number[] => ((c as Record<string, unknown>)
 describe('process tier speeds', () => {
   it('follow the maker for each printer and tier', () => {
     const models = listPrinterProfiles().map((p) => p.id).filter((id) => processSpeedSource(id, 'standard'))
-    expect(models).toHaveLength(64)
+    expect(models).toHaveLength(65)
     expect(PROCESS_SPEED_SOURCES.bambuStudio).toMatch(/^[0-9a-f]{7,}$/)
     expect(processSpeedSource('bambu-p2s', 'fine')).toBe('Bambu Studio/BBL/0.12mm High Quality @BBL P2S')
     expect(processSpeedSource('bambu-p2s', 'strong')).toBe(processSpeedSource('bambu-p2s', 'standard'))
     // The P2S preset in Bambu Studio's source ships a travel speed of 1000 at every quality.
     for (const tier of ['draft', 'standard', 'fine', 'extra_fine']) expect(num(processConfig(tier, 0.4, 'bambu-p2s'), 'travel_speed')[0], tier).toBe(1000)
     expect(num(processConfig('standard', 0.4, 'prusa-mk4s'), 'outer_wall_speed')[0]).toBe(170)
+    // The H3C's tiers come from Bambu Studio 2.9.1's presets; its outer wall runs 200 mm/s on the Standard hotend.
+    expect(processSpeedSource('bambu-h3c', 'standard')).toBe('Bambu Studio/BBL/0.20mm Standard @BBL H3C')
+    expect(processSpeedSource('bambu-h3c', 'draft')).toBe('Bambu Studio/BBL/0.24mm Standard @BBL H3C')
+    expect(processSpeedSource('bambu-h3c', 'fine')).toBe('Bambu Studio/BBL/0.12mm High Quality @BBL H3C')
+    expect(processSpeedSource('bambu-h3c', 'extra_fine')).toBe('Bambu Studio/BBL/0.08mm High Quality @BBL H3C')
+    expect(num(processConfig('standard', 0.4, 'bambu-h3c'), 'outer_wall_speed')[0]).toBe(200)
   })
   it('puts the tuned quality values on the Fine tier of the P2S and H2 family only', () => {
     const p2s = processConfig('fine', 0.4, 'bambu-p2s') as unknown as Record<string, unknown>
