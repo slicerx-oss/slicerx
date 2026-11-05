@@ -28,6 +28,10 @@ test('printers-status-h2d.json carries what the device view reads', () => {
   assert.ok(s.live?.units?.every((u) => s.slots.some((slot) => slot.id.startsWith(u.id))))
   for (const v of Object.values(s.live?.fans ?? {})) assert.ok(typeof v === 'number' && v >= 0 && v <= 100)
   assert.equal(typeof s.live?.speedPercent, 'number')
+  // Each unit reads its humidity (1 dry to 5 wet) and temperature; the AMS HT can dry and says it is not drying now.
+  const climate = Object.fromEntries((s.live?.units ?? []).map((u) => [u.id, u.climate]))
+  assert.deepEqual(climate['A'], { humidityPct: 18, humidityLevel: 2, tempC: 27 })
+  assert.deepEqual(climate['E'], { humidityPct: 9, humidityLevel: 3, tempC: 45, drying: false })
 })
 
 test('printers-events.json matches PrinterEvent', () => {

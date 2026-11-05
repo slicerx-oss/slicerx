@@ -284,6 +284,21 @@ test('the app makes an agent key through clients.create', async () => {
   assert.deepEqual(h.sent().find((s) => s.method === 'clients.create')?.params, { name: 'ChatGPT', role: 'agent' })
 })
 
+test('device.home asks the hub to home one printer and passes a refusal through with its code', async () => {
+  const real = await hubKeys()
+  let plateAnswered = false
+  const h = hubWith(real, (method) => {
+    if (method === 'bed.confirmClear') plateAnswered = true
+    if (method === 'home' && !plateAnswered) throw Object.assign(new Error('the last print may still be on the plate'), { code: 'bed_check' })
+    return method === 'home' ? { ok: true } : {}
+  })
+  const host = await connectLink({ code: 'APPS-CODE', WebSocket: h.WS })
+  await assert.rejects(host.device.home('bay-1'), (e: unknown) => e instanceof LinkError && (e.code as string) === 'bed_check')
+  await host.bed.confirmClear('bay-1')
+  assert.equal(await host.device.home('bay-1'), undefined)
+  assert.deepEqual(h.sent().filter((s) => s.method === 'home').map((s) => s.params), [{ printerId: 'bay-1' }, { printerId: 'bay-1' }])
+})
+
 test('a dropped connection says so once, rejects the call in flight and every later one, and a close is told apart', async () => {
   const keys = await hubKeys()
   // start never answers: the socket drops while it is in flight.
