@@ -29,6 +29,7 @@
     "firmware": 324,
     "floating_shell": 39,
     "footprint": 7,
+    "gap_fill_monotonic_line": 184,
     "gcode_lint_cases": 1,
     "gcode_safety": 5,
     "internal_solid": 61,
