@@ -379,6 +379,21 @@ describe('the model grid', () => {
     expect(PRINTER_MODELS.filter((m) => m.brand === 'bambu-lab' && !IMAGE_IDS.has(m.id))).toEqual([])
   })
 
+  it('offers the Prusa MK3.5 under Prusa and in search, with its picture and the maker nozzles', () => {
+    const mk35 = modelsForTile(brandTile('prusa')!).find((m) => m.id === 'prusa-mk3.5')
+    expect(mk35).toMatchObject({ name: 'MK3.5', kinematics: 'bed-slinger', enclosed: false, nozzles: [0.25, 0.4, 0.6, 0.8] })
+    expect(mk35?.filamentSystem).toBeUndefined()
+    expect(searchSetup('mk3.5').models.map((m) => m.id)).toEqual(['prusa-mk3.5'])
+    expect(printerImage('prusa-mk3.5')).toMatch(/printer-images\/prusa-mk3\.5\.webp$/)
+    const r = render(createElement(PrinterPicture, { model: mk35!, brand: 'Prusa Research' }))
+    expect(r.el.querySelector('img')?.getAttribute('alt')).toBe('Prusa Research MK3.5')
+    r.done()
+    const form = pickModel(EMPTY_FORM, 'prusa-mk3.5')
+    expect(form.nozzles).toEqual([{ size: 0.4, other: '', type: 'brass' }])
+    expect(form.connection).toBe('prusalink')
+    expect(profileIdOf(form)).toBe('prusa-mk3.5')
+  })
+
   it('falls back to the placeholder when a picture fails to load', () => {
     const m = PRINTER_MODELS.find((x) => x.id === 'bambu-h2d')!
     const r = render(createElement(PrinterPicture, { model: m, brand: 'Bambu Lab' }))

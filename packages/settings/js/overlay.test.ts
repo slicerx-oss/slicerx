@@ -191,7 +191,7 @@ describe('Prusa brim for every process tier', () => {
   })
 
   it('reaches the printer layer of the Prusa catalog printers and no other maker', async () => {
-    for (const printerId of ['prusa-mk4', 'prusa-mk4s', 'prusa-mini-plus', 'prusa-xl', 'prusa-xl-5-toolhead', 'prusa-core-one', 'prusa-core-one-l']) {
+    for (const printerId of ['prusa-mk4', 'prusa-mk4s', 'prusa-mini-plus', 'prusa-xl', 'prusa-xl-5-toolhead', 'prusa-core-one', 'prusa-core-one-l', 'prusa-mk3.5']) {
       for (const tier of ['draft', 'standard', 'fine', 'strong'] as const) {
         const layer = await stockLayer({ printerId, tier, slots: [] })
         expect(layer!.values['brim_loop_rounding'], `${printerId} ${tier}`).toBe('whole')
