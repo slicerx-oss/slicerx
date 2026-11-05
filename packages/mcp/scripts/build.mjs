@@ -11,6 +11,7 @@
 // built @slicerx/step-reader with its NOTICE, license texts and SOURCE.md, checked against the SHA-256 lines there.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,28 +46,36 @@ const jsonAsString = {
   },
 }
 
-// In the server's CLI entries, Ajv and the YAML parser load on first use (src/deferred.ts, src/sdk-ajv.ts). The npm
-// build's src/deferred.ts requires yaml from node_modules when first asked, and the launcher points the SDK's import
-// of its Ajv provider at dist/sdk-ajv.js (src/launch.ts). The self-contained build has no node_modules, so both files
-// become require() calls that esbuild bundles as modules that run only when first called, and the SDK's server and
-// client import the stand-in for their provider. The library entries keep the static yaml import, so a host that
-// bundles them takes yaml in.
+// In the server's CLI entries, modules a stdio start does not use load on first use. The YAML parser
+// (src/deferred.ts): the npm build requires yaml from node_modules when first asked. The SDK's HTTP transport
+// (src/http-transport.ts): both builds import it dynamically when the server starts with --http. The SDK's Ajv
+// provider and zod-to-json-schema: the launcher points the SDK's imports of them at dist/sdk-ajv.js and
+// dist/sdk-zod-json.js (src/launch.ts, src/sdk-defer-hook.ts). The self-contained build has no node_modules, so its
+// loaders become require() calls that esbuild bundles as modules that run only when first called, and the SDK's
+// imports go to the stand-ins as it bundles. The library entries keep their static imports, so a host that bundles
+// them takes these modules in.
 const srcFile = (name) => join(pkg, 'src', name)
-const sdkImporter = /[\\/]@modelcontextprotocol[\\/]sdk[\\/]dist[\\/]esm[\\/](?:server|client)[\\/]index\.js$/
+// zod-to-json-schema is the SDK's dependency, not this package's, so it resolves from the SDK's folder.
+const sdkDir = dirname(createRequire(join(pkg, 'package.json')).resolve('@modelcontextprotocol/sdk/server/mcp.js'))
+const ajvImporter = /[\\/]@modelcontextprotocol[\\/]sdk[\\/]dist[\\/]esm[\\/](?:server|client)[\\/]index\.js$/
+const zodJsonImporter = /[\\/]@modelcontextprotocol[\\/]sdk[\\/]dist[\\/]esm[\\/]server[\\/]zod-json-schema-compat\.js$/
 const deferredCli = {
   name: 'deferred-cli',
   setup(b) {
-    const replace = (name, contents) =>
+    const replace = (name, contents, resolveDir) =>
       b.onLoad({ filter: new RegExp(`[\\\\/]${name.replace('.', '\\.')}$`) }, (args) =>
-        args.path === srcFile(name) ? { contents, loader: 'js', resolveDir: dirname(args.path) } : undefined,
+        args.path === srcFile(name) ? { contents, loader: 'js', resolveDir: resolveDir ?? dirname(args.path) } : undefined,
       )
+    replace('http-transport.ts', "export const httpTransport = async () => (await import('@modelcontextprotocol/sdk/server/streamableHttp.js')).StreamableHTTPServerTransport\n")
     if (!standalone) {
       replace('deferred.ts', "import { createRequire } from 'node:module'\nconst load = createRequire(import.meta.url)\nexport const yaml = () => load('yaml')\n")
       return
     }
     replace('deferred.ts', "export const yaml = () => require('yaml')\n")
     replace('sdk-ajv-load.ts', "export const sdkAjv = () => require('@modelcontextprotocol/sdk/validation/ajv')\n")
-    b.onResolve({ filter: /^\.\.\/validation\/ajv-provider\.js$/ }, (args) => (sdkImporter.test(args.importer) ? { path: srcFile('sdk-ajv.ts') } : undefined))
+    replace('sdk-zod-json-load.ts', "export const sdkZodToJsonSchema = () => require('zod-to-json-schema').zodToJsonSchema\n", sdkDir)
+    b.onResolve({ filter: /^\.\.\/validation\/ajv-provider\.js$/ }, (args) => (ajvImporter.test(args.importer) ? { path: srcFile('sdk-ajv.ts') } : undefined))
+    b.onResolve({ filter: /^zod-to-json-schema$/ }, (args) => (zodJsonImporter.test(args.importer) ? { path: srcFile('sdk-zod-json.ts') } : undefined))
   },
 }
 
@@ -101,15 +110,16 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  define: { SX_MCP_MAIN: JSON.stringify(`./${mainName}`), ...(standalone ? {} : { SX_MCP_AJV: JSON.stringify('./sdk-ajv.js') }) },
+  define: { SX_MCP_MAIN: JSON.stringify(`./${mainName}`), ...(standalone ? {} : { SX_MCP_DEFER: JSON.stringify({ ajv: './sdk-ajv.js', zodJson: './sdk-zod-json.js' }) }) },
   legalComments: 'inline',
   logLevel: 'warning',
 })
-// The npm build's stand-in for the SDK's Ajv provider: a file of its own, since the SDK's import is pointed at it.
+// The npm build's stand-ins for the SDK's Ajv provider and zod-to-json-schema: files of their own, since the SDK's
+// imports are pointed at them.
 if (!standalone) {
   await build({
-    entryPoints: [join(pkg, 'src', 'sdk-ajv.ts')],
-    outfile: join(pkg, 'dist', 'sdk-ajv.js'),
+    entryPoints: [join(pkg, 'src', 'sdk-ajv.ts'), join(pkg, 'src', 'sdk-zod-json.ts')],
+    outdir: join(pkg, 'dist'),
     bundle: true,
     platform: 'node',
     format: 'esm',
