@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The device page's methods: the printer's file list, print history, reported problems, the
-//! objects of the running print, and the three that act: `jog`, `objects.skip` and `files.start`.
+//! objects of the running print, and the four that act: `jog`, `home`, `objects.skip` and
+//! `files.start`.
 //!
 //! Reading is open to every role. Acting is app role only (roles.rs), never over the relay, and
 //! each act goes through the same token gate as everything else: the hub mints a token for the
@@ -12,6 +13,8 @@
 //! outside the limits is refused with the allowed range, never clamped, so what moves is what the
 //! button said. Where the printer reports homed axes and the head position, an unhomed axis and a
 //! move past the axis range are refused; where it does not report the position, Z only moves up.
+//! `home` sends `G28` under the same rules: idle or finished only, and on a finished printer only
+//! once the plate is known to be clear, since homing Z lowers the nozzle to the plate.
 //! `objects.skip` only while a print is running, and only in the job the person was looking at (the
 //! bed epoch it read). `files.start` follows `print.local`'s bed rule, and a file this hub did not
 //! upload, or one the printer cannot describe, reads as unverified: the call refuses until it is
@@ -236,6 +239,42 @@ async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         return Err(e);
     }
     moved?;
+    Ok(json!({ "ok": true }))
+}
+
+/// Why the printer may not home now. Homing Z brings the nozzle down to the plate, so a finished
+/// print the hub does not know was taken off is asked about first, as a jog down is.
+pub(crate) fn home_problem(state: PrinterState, bed_clear: bool) -> Rpc<()> {
+    if state != PrinterState::Idle && state != PrinterState::Finished {
+        return Err(RpcError::new(
+            "bad_state",
+            "the printer only homes while it is idle",
+        ));
+    }
+    if state == PrinterState::Finished && !bed_clear {
+        return Err(RpcError::new(
+            "bed_check",
+            "the last print may still be on the plate; confirm the plate is clear before homing",
+        ));
+    }
+    Ok(())
+}
+
+/// `home {printerId}`: `G28`, every axis.
+async fn home(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let printer = str_arg(p, "printerId")?;
+    let s = session(b, &printer).await?;
+    let held = b.hub.printer_lock(&printer);
+    let _g = held.lock().await;
+    let st = observe(b, &printer)
+        .await
+        .filter(|s| s.state != PrinterState::Offline)
+        .ok_or_else(|| RpcError::new("unreachable", "the printer did not answer"))?;
+    let bed_clear = b.hub.bed(&printer).state == sx_permit::BedState::Clear;
+    home_problem(st.state, bed_clear)?;
+    settle_absolute(b, &printer, s.as_ref()).await?;
+    let t = mint_gcode(b, &printer, "G28", "Home the printer")?;
+    s.send_gcode("G28", &t).await?;
     Ok(json!({ "ok": true }))
 }
 
@@ -560,6 +599,7 @@ pub(crate) async fn call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rpc<Value>
         }
         "objects.skip" => skip(b, p).await,
         "jog" => jog(b, p).await,
+        "home" => home(b, p).await,
         "files.start" => start_stored(b, p).await,
         other => Err(RpcError::new("bad_request", format!("unknown method {other}"))),
     }
@@ -754,6 +794,25 @@ mod tests {
         );
         assert!(jog_problem(JogAxis::Z, -1.0, &known, done, true).is_ok());
         assert!(jog_problem(JogAxis::Z, 1.0, &known, done, false).is_ok());
+    }
+
+    #[test]
+    fn home_only_while_idle_and_never_onto_a_plate_that_may_hold_a_print() {
+        assert!(home_problem(PrinterState::Idle, false).is_ok());
+        assert!(home_problem(PrinterState::Finished, true).is_ok());
+        assert_eq!(
+            home_problem(PrinterState::Finished, false).unwrap_err().code,
+            "bed_check"
+        );
+        for s in [
+            PrinterState::Printing,
+            PrinterState::Paused,
+            PrinterState::Preparing,
+            PrinterState::Error,
+        ] {
+            assert_eq!(home_problem(s, true).unwrap_err().code, "bad_state", "{s:?}");
+        }
+        assert_eq!(sx_connect::gcode_line_problem("G28"), None);
     }
 
     fn obj(id: &str, name: &str) -> PrintObject {

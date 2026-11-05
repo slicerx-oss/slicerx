@@ -2672,6 +2672,7 @@ async fn a_partner_app_pauses_and_cancels_but_never_approves_a_start_resumes_sen
         ("print.local", json!({ "printerId": "bay-4", "file": f, "bedClear": true })),
         ("objects.skip", json!({ "printerId": "bay-4", "ids": ["a"] })),
         ("jog", json!({ "printerId": "bay-4" })),
+        ("home", json!({ "printerId": "bay-4" })),
         ("queue.add", json!({ "printerId": "bay-4", "file": f })),
         ("fleets.create", json!({ "name": "x" })),
         ("watch.report", json!({})),
@@ -3113,6 +3114,41 @@ async fn a_jog_is_three_small_lines_only_while_idle_and_inside_the_limits() {
 }
 
 #[tokio::test]
+async fn home_sends_g28_only_while_idle_and_asks_about_a_finished_plate() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut ws = paired(&link).await;
+    add_bay4(&mut ws, &mocks).await;
+    let home = json!({ "printerId": "bay-4" });
+    let g28 = |log: Vec<String>| log.into_iter().filter(|l| l == "gcode G28").count();
+
+    // An unhomed printer homes, and then reads as homed.
+    mocks
+        .set_motion("moonraker", json!({ "homed": "", "position": [0, 0, 0] }))
+        .await;
+    let r = call(&mut ws, 60, "home", home.clone()).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 1);
+    assert_eq!(mocks.state().await["moonraker"]["homed"], "xyz");
+
+    // Never mid-print.
+    started_print(&mut ws, "plate.gcode").await;
+    let r = call(&mut ws, 61, "home", home.clone()).await;
+    assert_eq!(r["error"]["code"], "bad_state", "{r}");
+
+    // Homing Z lowers the nozzle onto the plate, so a finished print needs the plate confirmed clear.
+    mocks.set_state("moonraker", "finished").await;
+    let r = call(&mut ws, 62, "home", home.clone()).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 1, "refusals sent nothing");
+    let r = call(&mut ws, 63, "bed.confirmClear", home.clone()).await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(&mut ws, 64, "home", home.clone()).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 2);
+}
+
+#[tokio::test]
 async fn a_jog_knows_where_the_head_is_and_restores_absolute_mode() {
     let link = hub(None).await;
     let mocks = common::Mocks::start("moonraker", &[]).await;
@@ -3345,6 +3381,33 @@ async fn an_ams_slot_is_written_only_from_the_app_with_a_card_a_person_approved(
     .await;
     assert_eq!(r["error"]["code"], "refused", "{r}");
     assert!(r["error"]["message"].as_str().unwrap().contains("RFID"), "{r}");
+}
+
+// The device page reads what the printer says about itself: its firmware version, and the humidity,
+// temperature and drying of each filament unit, on the status and on every status event.
+#[tokio::test]
+async fn an_h2d_status_carries_its_firmware_and_each_units_humidity_and_drying() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    mocks.control("/bambu", json!({ "model": "O1D" })).await;
+    let mut app = paired(&link).await;
+    add_bambu(&mut app, &mocks).await;
+    let r = until(&mut app, "status", |r| {
+        r["result"]["firmware"].is_string() && r["result"]["live"]["units"].is_array()
+    })
+    .await;
+    assert_eq!(r["result"]["firmware"], "01.04.00.00", "{r}");
+    let units = r["result"]["live"]["units"].as_array().unwrap();
+    assert_eq!(
+        units[0]["climate"],
+        json!({ "humidityPct": 22, "humidityLevel": 2, "tempC": 26.0, "drying": false }),
+        "{r}"
+    );
+    assert_eq!(
+        units[1]["climate"],
+        json!({ "humidityPct": 11, "humidityLevel": 3, "tempC": 45.0, "drying": true, "dryMinutesLeft": 200 }),
+        "{r}"
+    );
 }
 
 // On an H2D, a slot set from the app shows in the printer's next report, in the AMS and in the AMS
@@ -3613,7 +3676,7 @@ async fn agents_and_the_watch_cannot_move_skip_or_start_but_may_read() {
     let mut app = paired(&link).await;
     add_bay4(&mut app, &mocks).await;
     let mut ag = agent(&link).await;
-    for (id, m) in [(2, "jog"), (3, "objects.skip"), (4, "files.start")] {
+    for (id, m) in [(2, "jog"), (3, "objects.skip"), (4, "files.start"), (9, "home")] {
         let r = call(
             &mut ag,
             id,
@@ -3641,6 +3704,7 @@ async fn agents_and_the_watch_cannot_move_skip_or_start_but_may_read() {
         (3, "files.list"),
         (4, "objects.skip"),
         (5, "files.start"),
+        (6, "home"),
     ] {
         let r = call(&mut w, id, m, json!({ "printerId": "bay-4" })).await;
         assert_eq!(r["error"]["code"], "forbidden", "{m}: {r}");
