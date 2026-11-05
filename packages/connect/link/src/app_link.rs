@@ -102,19 +102,26 @@ pub(crate) struct Link {
     waits: StdMutex<AppLinkWaits>,
     /// When the last question ended in a deny or with no answer.
     quiet_since: StdMutex<Option<Instant>>,
+    /// The question mimir waits on in the app, as the app last said (`appLink.mimirState`), for
+    /// approver phones. Gone with the app's connection.
+    mimir: StdMutex<Option<Value>>,
 }
 
 impl Link {
     /// A connection closed. When it hosted the link, the link has no host and its calls and
-    /// questions end now (their waiters see the app close).
-    pub(crate) fn closed(&self, conn: u64) {
+    /// questions end now (their waiters see the app close). Returns true when it was the host, so
+    /// phones hear that mimir can no longer take an answer.
+    pub(crate) fn closed(&self, conn: u64) -> bool {
         let mut host = lock(&self.host);
-        if *host == Some(conn) {
+        let was_host = *host == Some(conn);
+        if was_host {
             *host = None;
+            *lock(&self.mimir) = None;
         }
         drop(host);
         lock(&self.calls).retain(|_, (h, _)| *h != conn);
         lock(&self.asks).retain(|_, (h, _)| *h != conn);
+        was_host
     }
 
     /// The person turned the link off: every question and call in flight ends now.
@@ -373,6 +380,89 @@ async fn relay(
     }
 }
 
+/// How long a phone's answer waits for the app.
+const PHONE_ANSWER_TIMEOUT: Duration = Duration::from_secs(10);
+/// The largest question the app may hand phones, as JSON.
+const MAX_MIMIR_STATE: usize = 16 * 1024;
+
+/// mimir's question state for approver phones (`mimir.questions` in the pair protocol): `live`
+/// while the app hosts the link, and the question it waits on.
+pub(crate) fn mimir_state(b: &Bridge) -> Value {
+    let live = lock(&b.app_link.host).is_some();
+    let waiting = if live {
+        lock(&b.app_link.mimir).clone().unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+    json!({ "live": live, "waiting": waiting })
+}
+
+/// A paired phone's answer to mimir's question (`mimir.answer`), handed to the app's connection as
+/// `appLink.phoneAnswer` and answered with `appLink.reply`. The phone is the person's own device
+/// with the approve right, so the agent switch (`app_link` in the hub settings) does not apply,
+/// and it is never an `app.call` method an agent could reach. `unavailable` while the app is closed.
+pub(crate) async fn phone_answer(b: &Bridge, phone: &Value, answer: Value) -> Rpc<Value> {
+    let link = &b.app_link;
+    let host = (*lock(&link.host))
+        .ok_or_else(|| RpcError::new("app_closed", format!("{} is not open", crate::app_name())))?;
+    let id = link.id();
+    let (tx, rx) = oneshot::channel();
+    lock(&link.calls).insert(id, (host, tx));
+    b.hub.emit_to(
+        "appLink.phoneAnswer",
+        json!({ "callId": id, "answer": answer, "phone": phone }),
+        host,
+    );
+    let out = tokio::time::timeout(PHONE_ANSWER_TIMEOUT, rx).await;
+    lock(&link.calls).remove(&id);
+    match out {
+        Ok(Ok(r)) => r,
+        Ok(Err(_)) => Err(RpcError::new(
+            "app_closed",
+            format!("{} closed during the answer", crate::app_name()),
+        )),
+        Err(_) => Err(RpcError::new(
+            "timeout",
+            format!("{} did not take the answer in time", crate::app_name()),
+        )),
+    }
+}
+
+/// `appLink.mimirState {waiting, ended?}`: the app's word on mimir's question, for approver
+/// phones: the question it waits on now (or null) and, when one just ended, which and where. Only
+/// the link's host says it.
+fn mimir_state_from_app(b: &Bridge, conn: u64, p: &Value) -> Rpc<Value> {
+    let link = &b.app_link;
+    if *lock(&link.host) != Some(conn) {
+        return Err(RpcError::new(
+            "forbidden",
+            "only the app that hosts the link says this",
+        ));
+    }
+    let waiting = match p.get("waiting") {
+        None | Some(Value::Null) => Value::Null,
+        Some(v @ Value::Object(_)) if v.to_string().len() <= MAX_MIMIR_STATE => v.clone(),
+        Some(_) => {
+            return Err(RpcError::new(
+                "bad_request",
+                "waiting is a question or null, at most 16 KB",
+            ));
+        }
+    };
+    let ended = match p.get("ended") {
+        None | Some(Value::Null) => None,
+        Some(v @ Value::Object(_)) if v.to_string().len() <= 1024 => Some(v.clone()),
+        Some(_) => return Err(RpcError::new("bad_request", "ended is an object")),
+    };
+    *lock(&link.mimir) = (!waiting.is_null()).then(|| waiting.clone());
+    let mut ev = json!({ "live": true, "waiting": waiting });
+    if let (Some(e), Some(o)) = (ended, ev.as_object_mut()) {
+        o.insert("ended".into(), e);
+    }
+    b.hub.emit("mimir.question", ev);
+    Ok(json!({ "ok": true }))
+}
+
 /// Whether a connection that came from `origin` may host the link: the desktop app's own window
 /// (the Tauri webview), an origin the hub was started with (`--allow-origin`), and in a development
 /// build a local page (`http://localhost` or `http://127.0.0.1`, as `net.rs` reads them). Never the
@@ -449,6 +539,7 @@ pub(crate) async fn app_call(
             let _ = tx.send(out);
             Ok(json!({ "delivered": true }))
         }
+        "appLink.mimirState" => mimir_state_from_app(b, conn, p),
         "appLink.answer" => {
             let id = id_arg(p, "askId")?;
             let rights = match str_arg(p, "decision")?.as_str() {

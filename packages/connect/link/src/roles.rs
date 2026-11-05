@@ -631,6 +631,7 @@ mod tests {
             "appLink.answer",
             "appLink.grants",
             "appLink.revoke",
+            "appLink.mimirState",
         ] {
             assert!(!allowed(Role::Agent, m), "{m}");
             assert!(!allowed(Role::Watch, m), "{m}");

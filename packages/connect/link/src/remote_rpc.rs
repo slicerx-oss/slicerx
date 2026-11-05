@@ -8,7 +8,8 @@
 //! or scheduled), resume, raw G-code and adjustments are approved in the app or at the printer, and
 //! a bed answer sent over the relay is ignored. Never remote: `print.local`, `bed.confirmClear`
 //! (the person must be at the printer), resume, uploads and starts, secrets, printer setup,
-//! clients and settings.
+//! clients and settings. Approver phones also read and answer the question mimir waits on in the
+//! app (`mimir.questions`, `mimir.answer`), which unlocks nothing on a printer.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -148,6 +149,7 @@ async fn forward(
                 }
             }
             Some("remote.quota") => emit(&out, &sid, "remote.quota", data),
+            Some("mimir.question") if approver => emit(&out, &sid, "mimir.question", data),
             Some("approval.done") => {
                 let Some(rid) = data.get("requestId").and_then(Value::as_str) else {
                     continue;
@@ -305,6 +307,11 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
         "remote.quota" => Ok(b.remote.quota().unwrap_or(Value::Null)),
         "approvals.decide" => decide(b, ctx, &pairing, &p).await,
         "jobs.control" => control(b, ctx, &pairing, &p).await,
+        "mimir.questions" => {
+            approver_phone(&pairing)?;
+            Ok(crate::app_link::mimir_state(b))
+        }
+        "mimir.answer" => mimir_answer(b, &pairing, &p).await,
         "pairing.revoke" => {
             // Reply first: removing the pairing ends the session the reply travels on.
             let (b, id) = (b.clone(), pairing.pairing_id.clone());
@@ -323,6 +330,83 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             "not_supported",
             format!("{method} is not available over remote access"),
         )),
+    }
+}
+
+/// Only a paired phone with the approve right reads or answers mimir's questions.
+fn approver_phone(pairing: &RemotePairing) -> Result<(), (&'static str, String)> {
+    if pairing.kind == PeerKind::Phone && pairing.rights.approve {
+        Ok(())
+    } else {
+        Err(err("forbidden", "this device may not answer mimir's questions"))
+    }
+}
+
+/// The version of `mimir.answer` this hub reads (`MIMIR_QUESTION_V` in rpc.ts).
+const MIMIR_ANSWER_V: u64 = 1;
+
+/// A phone's answer to mimir's question, checked here and handed to the app, which takes the
+/// first answer only. Not signed: it unlocks nothing on a printer; anything mimir does next asks
+/// for its own approval. The audit line names the device, the question and the choice.
+async fn mimir_answer(b: &Arc<Bridge>, pairing: &RemotePairing, p: &Value) -> Reply {
+    approver_phone(pairing)?;
+    if p.get("v").and_then(Value::as_u64) != Some(MIMIR_ANSWER_V) {
+        return Err(err("bad_request", "this hub reads answers of version 1"));
+    }
+    let text = |key: &str, max: usize| {
+        p.get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty() && s.len() <= max)
+            .map(str::to_owned)
+            .ok_or_else(|| err("bad_request", format!("{key} is required")))
+    };
+    let session_id = text("sessionId", 128)?;
+    let ask_id = text("askId", 200)?;
+    let choice_id = match p.get("choiceId") {
+        Some(Value::Null) => Value::Null,
+        Some(Value::String(s)) if !s.is_empty() && s.len() <= 64 => json!(s),
+        _ => return Err(err("bad_request", "choiceId is a choice id or null")),
+    };
+    let device = pairing.peer.get("deviceId").cloned().unwrap_or(Value::Null);
+    let name: String = pairing
+        .peer
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("Phone")
+        .chars()
+        .take(64)
+        .collect();
+    let answer = json!({ "sessionId": session_id, "askId": ask_id, "choiceId": choice_id });
+    let phone = json!({ "deviceId": device, "name": name });
+    match crate::app_link::phone_answer(b, &phone, answer).await {
+        Ok(_) => {
+            b.hub.audit(json!({
+                "origin": "phone",
+                "via": "relay",
+                "action": "mimir.answer",
+                "deviceId": device,
+                "deviceName": name,
+                "sessionId": session_id,
+                "askId": ask_id,
+                "choiceId": choice_id,
+            }));
+            Ok(json!({ "answered": true }))
+        }
+        Err(e) => Err(match e.code.as_str() {
+            "not_found" => err(
+                "not_found",
+                "this question was already answered or is no longer waiting",
+            ),
+            "invalid_input" => err("bad_request", "that is not one of the question's answers"),
+            "timeout" => err("timeout", e.message.chars().take(500).collect::<String>()),
+            _ => err(
+                "unavailable",
+                format!(
+                    "{} on this computer cannot take the answer now",
+                    crate::app_name()
+                ),
+            ),
+        }),
     }
 }
 
@@ -442,6 +526,7 @@ fn host_info(b: &Bridge, p: &RemotePairing) -> Reply {
         "printers": true,
         "camera": true,
         "push": false,
+        "mimir": true,
         "rights": {
             "request": p.rights.request,
             "approve": p.rights.approve && p.kind == PeerKind::Phone,
