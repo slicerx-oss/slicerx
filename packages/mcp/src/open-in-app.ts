@@ -13,9 +13,9 @@ import { ToolInputError, typesText } from './models'
  * files and its file associations, which the tests hold this list to). Projects, locked projects, models (a STEP file
  * is meshed by the app's own reader as it opens) and G-code, which opens in the preview.
  */
-export const APP_OPENS: readonly string[] = ['.sx3mf', '.3mf', '.sxlock', '.stl', '.obj', '.amf', '.step', '.stp', '.gcode']
+export const APP_OPENS: readonly string[] = ['.sx3mf', '.3mf', '.sxlock', '.stl', '.obj', '.amf', '.step', '.stp', '.igs', '.iges', '.gcode']
 
-/** ".sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp or .gcode" */
+/** ".sx3mf, .3mf, .sxlock, .stl, .obj, .amf, .step, .stp, .igs, .iges or .gcode" */
 export const APP_OPENS_TEXT = typesText(APP_OPENS)
 
 /** The system's opener for a file: open on macOS, start on Windows, xdg-open elsewhere. */

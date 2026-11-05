@@ -118,9 +118,9 @@ async function startFresh(host: Host): Promise<boolean> {
 
 /** Returns true when it already told the person what it did (a toast of its own). */
 async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: OpenScope): Promise<boolean> {
-  if (/\.(stl|obj|amf|step|stp)$/i.test(name)) {
-    // Every mesh goes through the engine: repaired, unit detected, loose bodies split. STEP files are
-    // meshed first in a worker of their own.
+  if (/\.(stl|obj|amf|step|stp|igs|iges)$/i.test(name)) {
+    // Every mesh goes through the engine: repaired, unit detected, loose bodies split. STEP and IGES
+    // files are meshed first in a worker of their own.
     const { addAutoImport } = await import('./import-auto')
     try {
       await addAutoImport(host, name, data, undefined, undefined, scope)

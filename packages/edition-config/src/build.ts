@@ -123,6 +123,7 @@ export function desktopFileTypes(config: EditionConfig): { ext: string[]; name: 
     { ext: ['obj'], name: 'OBJ model', role: 'Editor' },
     { ext: ['amf'], name: 'AMF model', role: 'Editor' },
     { ext: ['step', 'stp'], name: 'STEP model', role: 'Editor' },
+    { ext: ['igs', 'iges'], name: 'IGES model', role: 'Editor' },
     { ext: ['sx3mf'], name: `${name} 3MF file`, role: 'Editor' },
     { ext: ['sxlock'], name: `Locked ${name} project`, role: 'Editor' },
     { ext: ['gcode'], name: 'G-code', role: 'Viewer' },

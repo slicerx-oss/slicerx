@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// STEP files for clients: read one with the optional @slicerx/step-reader package, in a worker thread with a deadline,
+// STEP and IGES files for clients: read one with the optional @slicerx/step-reader package, in a worker thread with a deadline,
 // a 100 MB input cap and a memory cap, and say what is in it. With output stl or obj the meshes are written to a new
 // file under the server's output folder, which every model path check allows, so the mesh tools and slicing take it.
 // The reader comes from the folder SLICERX_STEP_READER_DIR names, else the step-reader folder beside the self-contained
@@ -14,7 +14,7 @@ import { productName } from '@slicerx/contracts'
 import { resolveModel, ToolInputError } from '../models'
 import { serverTool, type ServerToolDeps } from './deps'
 
-export const STEP_EXTENSIONS = ['.step', '.stp'] as const
+export const STEP_EXTENSIONS = ['.step', '.stp', '.igs', '.iges'] as const
 // The reader ships in the integrator kit as its own tarball, beside slicerx-mcp.tgz; ./kit is the kit folder.
 const INSTALL = 'npm install ./kit/slicerx-step-reader.tgz'
 /** Names a folder holding the built reader (node.js and the files beside it), used before anything else. */
@@ -57,7 +57,19 @@ export function setBundledStepReader(dir: string): void {
   stepModule.bundled = dir
 }
 
-async function reader(): Promise<StepModule> {
+/**
+ * The reader, refusing an IGES file when the installed reader is older than IGES support (it reads STEP only and has no
+ * cadFormat), instead of letting it call the file "not a STEP file".
+ */
+async function reader(path: string): Promise<StepModule> {
+  const step = await load()
+  if (/\.(igs|iges)$/i.test(path) && typeof (step as Partial<StepModule>).cadFormat !== 'function') {
+    throw new ToolInputError(`The @slicerx/step-reader installed beside this server reads STEP files only. Reading IGES files needs a newer one: install the slicerx-step-reader.tgz from the same kit as this server (${INSTALL}) and start the server again.`, 'not_supported', { install: INSTALL })
+  }
+  return step
+}
+
+async function load(): Promise<StepModule> {
   try {
     return await stepModule.load()
   } catch (e) {
@@ -78,7 +90,7 @@ async function reader(): Promise<StepModule> {
 const bounds = z.object({ min: z.tuple([z.number(), z.number(), z.number()]), max: z.tuple([z.number(), z.number(), z.number()]) }).nullable()
 
 export const stepReadShape = {
-  file: z.string().describe('The STEP file that was read'),
+  file: z.string().describe('The STEP or IGES file that was read'),
   unit: z.enum(['millimeter', 'centimeter', 'meter', 'inch', 'foot']).nullable().describe('The length unit the file declares; every size here is in mm'),
   triangles: z.number().int(),
   tolerance_mm: z.number().describe('Chord tolerance the file was meshed at'),
@@ -98,16 +110,16 @@ export const stepReadShape = {
 export default (d: ServerToolDeps) =>
   serverTool({
     name: 'step_read',
-    title: 'Read a STEP file',
-    version: '1.1.0',
+    title: 'Read a STEP or IGES file',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
     ungated: true,
     description:
-      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) as ${productName()} reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package, the kit's slicerx-step-reader.tgz (${INSTALL}), which the server bundled with the desktop app includes; without it the call is refused with not_supported. To open a STEP file in the app instead, use slicerx_open_in_app.`,
+      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) or an IGES file (.igs or .iges) as ${productName()} reads it: the objects it becomes (touching bodies stay together; an IGES file of loose surfaces and no solids becomes a body per group of touching surfaces), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_not_iges, step_iges_compressed, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package, the kit's slicerx-step-reader.tgz (${INSTALL}), which the server bundled with the desktop app includes; without it the call is refused with not_supported. To open the file in the app instead, use slicerx_open_in_app.`,
     input: z.object({
-      model: z.string().min(1).describe('Absolute path or http(s) URL of a .step or .stp file'),
+      model: z.string().min(1).describe('Absolute path or http(s) URL of a .step, .stp, .igs or .iges file'),
       quality: z.enum(['normal', 'coarser', 'finer']).default('normal').describe('Chord tolerance: coarser 0.05 mm, normal 0.01 mm, finer 0.003 mm'),
       output: z.enum(['none', 'stl', 'obj']).default('none').describe('Also write the meshes to an STL or OBJ file in the output folder'),
     }),
@@ -115,7 +127,7 @@ export default (d: ServerToolDeps) =>
     hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
     async run(args) {
       const path = await resolveModel(d.policy, args.model, STEP_EXTENSIONS)
-      const step = await reader()
+      const step = await reader(path)
       const name = basename(path)
       let read
       try {

@@ -30,7 +30,7 @@ export function createWebFiles(): FileHost {
     const list = e.dataTransfer?.files
     if (!list || list.length === 0) return
     e.preventDefault()
-    const refs = [...list].filter((f) => /\.(stl|3mf|sx3mf|sxlock|obj|amf|step|stp|gcode|json)$/i.test(f.name)).map(remember)
+    const refs = [...list].filter((f) => /\.(stl|3mf|sx3mf|sxlock|obj|amf|step|stp|igs|iges|gcode|json)$/i.test(f.name)).map(remember)
     if (refs.length) for (const l of listeners) l(refs, 'drop')
   })
 

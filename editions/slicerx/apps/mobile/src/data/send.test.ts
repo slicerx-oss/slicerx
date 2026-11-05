@@ -124,9 +124,9 @@ describe('libraryModel downloads', () => {
 })
 
 describe('picking a file on the phone', () => {
-  it('sends a STEP file to desktop or web, since the phone has no STEP reader', () => {
-    expect(STEP_ON_PHONE).toBe("STEP files can't be opened on the phone. Open this file on desktop or web.")
-    for (const name of ['bracket.step', 'BRACKET.STP', 'assembly.stp']) expect(pickedFileProblem(name)).toBe(STEP_ON_PHONE)
+  it('sends a STEP or IGES file to desktop or web, since the phone has no reader for them', () => {
+    expect(STEP_ON_PHONE).toBe("STEP and IGES files can't be opened on the phone. Open this file on desktop or web.")
+    for (const name of ['bracket.step', 'BRACKET.STP', 'assembly.stp', 'bracket.igs', 'BRACKET.IGES']) expect(pickedFileProblem(name)).toBe(STEP_ON_PHONE)
   })
 
   it('takes STL, 3MF and OBJ, and names them for anything else', () => {

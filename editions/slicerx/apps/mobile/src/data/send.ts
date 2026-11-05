@@ -108,12 +108,12 @@ export async function sliceAndSend(host: PocketHost, input: SendInput, onPhase: 
   return outcome
 }
 
-/** STEP files are read on desktop and web only; the phone has no STEP reader. */
-export const STEP_ON_PHONE = 'STEP files can\'t be opened on the phone. Open this file on desktop or web.'
+/** STEP and IGES files are read on desktop and web only; the phone has no reader for them. */
+export const STEP_ON_PHONE = 'STEP and IGES files can\'t be opened on the phone. Open this file on desktop or web.'
 
 /** Why a picked file cannot be sliced from the phone, or null when it can. */
 export function pickedFileProblem(name: string): string | null {
-  if (/\.(step|stp)$/i.test(name)) return STEP_ON_PHONE
+  if (/\.(step|stp|igs|iges)$/i.test(name)) return STEP_ON_PHONE
   if (!/\.(stl|3mf|obj)$/i.test(name)) return 'Pick an STL, 3MF or OBJ file'
   return null
 }
