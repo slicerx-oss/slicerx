@@ -102,3 +102,20 @@ it('shows the job stage with the job, not as a problem', async () => {
   expect(screen.getByTestId('printer-job-stage')).toHaveTextContent('Calibrating flow dynamics')
   expect(screen.queryByTestId('printer-message')).toBeNull()
 })
+
+// What the printer says about itself: the firmware it runs, and each filament unit's humidity, temperature and drying.
+it('shows the firmware and each filament unit\'s humidity and drying', async () => {
+  const live = { units: [{ id: 'A', kind: 'ams-2-pro' as const, climate: { humidityPct: 22, tempC: 26 } }, { id: 'B', kind: 'ams-ht' as const, climate: { humidityPct: 11, tempC: 45, drying: true, dryMinutesLeft: 200 } }] }
+  const slots = [{ id: 'A1', material: 'PLA' }, { id: 'B1', material: 'PETG' }]
+  const h2d = { ...idle, status: { ...idle.status!, firmware: '01.04.00.00', slots, live } }
+  await render(<PrinterDetailScreen {...props({ printer: h2d })} />)
+  expect(screen.getByTestId('printer-firmware')).toHaveTextContent('Firmware 01.04.00.00')
+  expect(screen.getByTestId('unit-climate-A')).toHaveTextContent('AMS 2 Pro: 22% humidity · 26 °C')
+  expect(screen.getByTestId('unit-climate-B')).toHaveTextContent('AMS HT: 11% humidity · 45 °C · Drying, 3 h 20 min left')
+})
+
+it('leaves the firmware and unit lines out when the printer does not report them', async () => {
+  await render(<PrinterDetailScreen {...props({ printer: idle })} />)
+  expect(screen.queryByTestId('printer-firmware')).toBeNull()
+  expect(screen.queryByTestId(/^unit-climate-/)).toBeNull()
+})
