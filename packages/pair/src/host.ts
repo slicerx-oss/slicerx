@@ -1043,14 +1043,21 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const request = job?.state === 'pending' ? job.request : svc.approvalFeed?.pending().find((r) => r.id === p.requestId)
     if (!request) throw new PairError('not_found', 'This request was already decided or has expired')
     if (!verifyDecision(rec.peer.signPub, request, p)) throw new PairError('forbidden', 'The decision does not match the request')
-    auditLog.push({ requestId: p.requestId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, decision: p.decision, at: env.now(), requestHash: p.requestHash, sig: p.sig })
+    const audit = () => auditLog.push({ requestId: p.requestId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, decision: p.decision, at: env.now(), requestHash: p.requestHash, sig: p.sig })
     if (job) {
+      audit()
       void resolveJob(job, p.decision, rec.peer.name, p.bedClear === true)
     } else if (svc.approvalFeed) {
-      await svc.approvalFeed.decide(p.requestId, p.decision === 'approve' ? (p.bedClear === true ? { kind: 'approve', bedClear: true } : { kind: 'approve' }) : { kind: 'deny', reason: `Denied on ${rec.peer.name}` }, {
-        deviceId: rec.peer.deviceId,
-        name: rec.peer.name,
-      })
+      // decided elsewhere a moment before (the card on the computer): already decided, and nothing to audit
+      try {
+        await svc.approvalFeed.decide(p.requestId, p.decision === 'approve' ? (p.bedClear === true ? { kind: 'approve', bedClear: true } : { kind: 'approve' }) : { kind: 'deny', reason: `Denied on ${rec.peer.name}` }, {
+          deviceId: rec.peer.deviceId,
+          name: rec.peer.name,
+        })
+      } catch {
+        throw new PairError('not_found', 'This request was already decided or has expired')
+      }
+      audit()
     }
     return {}
   }
