@@ -236,7 +236,7 @@ pub fn corners(loops: &[Loop], corners: &[CornerRef], cut: CornerCut) -> Result<
                     };
                     segs.push(line(end));
                 }
-                Prim::Arc { .. } => segs.push(lp.segments[i].clone()),
+                Prim::Arc { .. } | Prim::Spline { .. } => segs.push(lp.segments[i].clone()),
             }
         }
         if let Some(p) = plans.get(&0) {

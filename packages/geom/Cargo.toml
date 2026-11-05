@@ -23,6 +23,10 @@ name = "sx-geom"
 path = "src/bin/sx-geom.rs"
 
 [[test]]
+name = "sketch_spline"
+required-features = ["cad"]
+
+[[test]]
 name = "nest_bench"
 required-features = ["nest"]
 
