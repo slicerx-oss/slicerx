@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! Crash reports from the shell (docs/bug-intake.md). A panic hook writes a report file before the
-//! process goes down, and on macOS so does the web view's content process stopping. The page takes
+//! process goes down, and so does the web view's page process stopping (recover.rs). The page takes
 //! the files at its next start (`crash_take`), queues them as bug reports and acknowledges them
 //! (`crash_ack`), which deletes them. `crash_take` also counts page loads, so the page can tell
 //! that it reloaded within one run of the shell. On Windows the web view's own reload keys are off.
@@ -154,11 +154,9 @@ pub fn install_hook() {
     });
 }
 
-/// The web view's content process stopped (macOS): record it and load the page again.
-#[cfg(target_os = "macos")]
-pub fn webview_terminated<R: tauri::Runtime>(webview: &tauri::Webview<R>) {
-    let _ = write_report(&dir(), "webview", "The window's web content process stopped", "");
-    let _ = webview.reload();
+/// A web view whose page process stopped (recover.rs, which also loads the page again or asks).
+pub fn report_webview(title: &str, detail: &str) {
+    let _ = write_report(&dir(), "webview", title, detail);
 }
 
 /// WebView2 acts on browser keys the page leaves alone: F5 and Ctrl+R reload the window, which also ends the

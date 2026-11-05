@@ -7,6 +7,7 @@ const invoked = vi.hoisted(() => [] as [string, unknown][])
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (cmd: string, args?: unknown) => {
     invoked.push([cmd, args])
+    if (cmd === 'crash_recovery_take') return { unsaved: true, at: 5 }
     return cmd === 'crash_take' ? { reports: [], pageLoads: 1, os: 'macOS 15.1 (aarch64)' } : undefined
   },
 }))
@@ -20,17 +21,19 @@ describe('the crash host', () => {
     await host.take(false, '0f15b63a')
     await host.ack(['crash-1-2-3.json'])
     await host.testPanic()
+    expect(await host.recovery?.()).toEqual({ unsaved: true, at: 5 })
     expect(invoked).toEqual([
       ['crash_take', { pageLoad: true }],
       ['crash_take', { pageLoad: false, commit: '0f15b63a' }],
       ['crash_ack', { files: ['crash-1-2-3.json'] }],
       ['crash_test_panic', undefined],
+      ['crash_recovery_take', undefined],
     ])
   })
 
   it('registers every crash command with the shell', () => {
     const main = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
-    for (const c of ['crash::crash_take', 'crash::crash_ack', 'crash::crash_test_panic', 'crash::install_hook()']) expect(main, c).toContain(c)
+    for (const c of ['crash::crash_take', 'crash::crash_ack', 'crash::crash_test_panic', 'crash::install_hook()', 'recover::crash_recovery_take', 'recover::watch(app.handle())']) expect(main, c).toContain(c)
   })
 
   it('keeps the base connect-src the edition config extends', async () => {
