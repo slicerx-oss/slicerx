@@ -11,6 +11,7 @@ import { syncTimeline, timelineFiles, type History, type Timeline } from '@slice
 import { areaOrigin } from './area'
 import { plateObjectsFromGcode } from './gcode-objects'
 import { layerMarksXml, MARKS_PART, type WriteMark } from './layer-marks'
+import { LAYER_HEIGHTS_PART, layerHeightsText, profileLine } from './layer-heights'
 import { md5Hex } from './md5'
 import { escapeText, paintTextMaxState } from './paint-text'
 import { TextChunks, zip, zipCompressed, type ZipInput } from './zip'
@@ -122,6 +123,21 @@ function placed(p: MeshInput, m: readonly number[]): MeshInput {
   const indices = Uint32Array.from(p.indices)
   for (let t = 0; t + 2 < indices.length; t += 3) [indices[t + 1], indices[t + 2]] = [indices[t + 2]!, indices[t + 1]!]
   return { name: p.name, slot: p.slot, positions: out, indices }
+}
+
+/** The lowest and highest z of the parts under a column-major 4x4, mm; null for no vertex. */
+function zSpan(parts: readonly MeshInput[], m: readonly number[]): [number, number] | null {
+  const at = (i: number) => m[i] ?? 0
+  let lo = Infinity
+  let hi = -Infinity
+  for (const p of parts) {
+    for (let i = 0; i + 2 < p.positions.length; i += 3) {
+      const z = at(2) * (p.positions[i] ?? 0) + at(6) * (p.positions[i + 1] ?? 0) + at(10) * (p.positions[i + 2] ?? 0) + at(14)
+      if (z < lo) lo = z
+      if (z > hi) hi = z
+    }
+  }
+  return hi >= lo ? [lo, hi] : null
 }
 
 /** Text written as it goes: plain strings and mesh XML made on demand. */
@@ -297,6 +313,11 @@ export interface PlateSettingsInput {
   filamentOrder?: readonly number[]
   /** On a printer with two extruders: the extruder of each slot (index slot - 1, 1 the left, 2 the right) set by hand. */
   nozzleMap?: readonly number[]
+  /**
+   * The plate's own layer heights: [height above the bed, layer height] in mm, rising. Written for each of the plate's
+   * objects as its layer_height_profile (Metadata/layer_heights_profile.txt), the form other slicers read.
+   */
+  layerProfile?: readonly (readonly [number, number])[]
 }
 
 /**
@@ -669,6 +690,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   const brimLines: string[] = []
   const rangesCfg: string[] = []
   const painted: { id: number; paint: PaintOfPart }[] = []
+  const profileLines: string[] = []
   const fileIds = new Map<string, number>()
   let nextId = 1
   const thumbs = new Map<number, ReturnType<typeof gcodeThumbnails>>()
@@ -721,6 +743,11 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
       // Settings by height (layer_config_ranges.xml), objects numbered from 1 in build order as for the brim ears.
       if (obj.layerRanges?.length) rangesCfg.push(`<object id="${build.length + 1}">${obj.layerRanges.map((r) => `<range min_z="${f(r.minZ)}" max_z="${f(r.maxZ)}">${Object.entries(r.settings).map(([k, v]) => `<option opt_key="${esc(k)}">${esc(String(v))}</option>`).join('')}</range>`).join('')}</object>`)
       if (pts?.length) brimLines.push(`object_id=${build.length + 1}|${pts.map((q) => q.map(f).join(' ')).join(' ')}`)
+      // The plate's own layer heights, as each object's profile from its bottom (objects numbered as for the ranges).
+      const profile = plate.settings.layerProfile
+      const zs = profile?.length ? zSpan(obj.parts, obj.transform) : null
+      const line = profile?.length && zs ? profileLine(build.length + 1, profile, zs[0], zs[1]) : null
+      if (line) profileLines.push(line)
       build.push(`<item objectid="${objId}" transform="${transformAttr(t)}" printable="${obj.printable === false ? 0 : 1}"/>`)
       const own = input.objectSettings?.[obj.instanceOf ?? obj.id] ?? {}
       const src = input.sx ? obj.source : undefined
@@ -792,6 +819,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   ]
   if (input.settings) files.push({ name: 'Metadata/project_settings.config', data: JSON.stringify(input.settings, null, 2) })
   if (rangesCfg.length) files.push({ name: 'Metadata/layer_config_ranges.xml', data: `<?xml version="1.0" encoding="utf-8"?>\n<objects>${rangesCfg.join('')}</objects>\n` })
+  const heights = layerHeightsText(profileLines)
+  if (heights) files.push({ name: LAYER_HEIGHTS_PART, data: heights })
   if (brimLines.length) files.push({ name: 'Metadata/brim_ear_points.txt', data: `brim_points_format_version=0\n${brimLines.join('\n')}\n` })
   const dims = dimensionsJson(input.plates.flatMap((p) => p.objects), fileIds)
   if (dims) files.push({ name: 'Metadata/slicerx_dimensions.json', data: dims })
