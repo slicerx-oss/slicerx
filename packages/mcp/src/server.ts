@@ -113,7 +113,21 @@ export function jsonSchema(schema: z.ZodType, io: 'input' | 'output'): Record<st
   const out = z.toJSONSchema(schema, { target: 'draft-2020-12', io, unrepresentable: 'any' }) as Record<string, unknown>
   // no dialect line: 2020-12 is the default, and some readers refuse any $schema they do not expect
   delete out['$schema']
-  return { type: 'object', properties: {}, ...out }
+  return { type: 'object', properties: {}, ...tuplesForEveryReader(out) as Record<string, unknown> }
+}
+
+/**
+ * A fixed tuple without `items: false`. The MCP SDK client checks results with a draft-07 validator, which skips
+ * `prefixItems` and reads `items: false` as an array that holds no items, so it refused every box and point. The
+ * tuple's `minItems` and `maxItems` keep its length for every reader, and 2020-12 readers still check each position.
+ */
+function tuplesForEveryReader(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(tuplesForEveryReader)
+  if (!node || typeof node !== 'object') return node
+  const out: Record<string, unknown> = {}
+  const tuple = 'prefixItems' in node
+  for (const [k, v] of Object.entries(node)) if (!(tuple && k === 'items' && v === false)) out[k] = tuplesForEveryReader(v)
+  return out
 }
 
 export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptions = {}): McpServer {
