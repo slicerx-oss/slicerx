@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The device view's logic: what each part shows for one printer's status, and what it hides when the
 // printer does not report it. Pure functions, so the view stays a thin layer over the status stream.
-import type { FilamentSlot, PrinterLive, PrinterState, PrinterStatus, Temp } from '@slicerx/contracts'
+import { FILAMENT_UNIT_LABEL, unitClimateText, type FilamentSlot, type FilamentUnit, type PrinterLive, type PrinterState, type PrinterStatus, type Temp } from '@slicerx/contracts'
 import { filamentUnitName } from '@slicerx/printer-catalog'
 import type { Prefs } from '../../state/prefs'
 import { recordDuration } from './device'
@@ -114,7 +114,6 @@ export function fans(live: PrinterLive | undefined): Fan[] {
   return rows
 }
 
-const UNIT_KIND: Record<string, string> = { ams: 'AMS', 'ams-lite': 'AMS lite', 'ams-2-pro': 'AMS 2 Pro', 'ams-ht': 'AMS HT', mmu: 'MMU', 'qidi-box': 'QIDI Box', cfs: 'CFS', toolchanger: 'Toolheads', ace: 'ACE' }
 
 export interface SlotGroup {
   /** The slot letter (`A`), or `external`. */
@@ -122,6 +121,8 @@ export interface SlotGroup {
   label: string
   /** The nozzle it feeds on a printer with two, as words: "left nozzle". */
   feeds?: string
+  /** What the unit's sensors read, as words: "22% humidity · 26 °C". Absent when it reports none. */
+  climate?: string
   slots: FilamentSlot[]
 }
 
@@ -141,7 +142,15 @@ export function slotGroups(slots: readonly FilamentSlot[], live: PrinterLive | u
     let g = groups.find((x) => x.id === letter)
     if (!g) {
       const unit = live?.units?.find((u) => u.id === letter)
-      g = { id: letter, label: letter === 'external' ? 'External spool' : (UNIT_KIND[unit?.kind ?? ''] ?? filamentUnitName(model, 'ams')), ...(unit?.feeds ? { feeds: `${unit.feeds} nozzle` } : {}), slots: [] }
+      const kind = unit?.kind as FilamentUnit['kind'] | undefined
+      const climate = unitClimateText(unit?.climate)
+      g = {
+        id: letter,
+        label: letter === 'external' ? 'External spool' : kind && kind !== 'external' ? FILAMENT_UNIT_LABEL[kind] : filamentUnitName(model, 'ams'),
+        ...(unit?.feeds ? { feeds: `${unit.feeds} nozzle` } : {}),
+        ...(climate ? { climate } : {}),
+        slots: [],
+      }
       groups.push(g)
     }
     g.slots.push(s)

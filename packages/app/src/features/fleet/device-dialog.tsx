@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// One printer's controls: move the head, the printer's own files and print history, what it reports as
-// wrong, and skipping objects of the running print. Opens from the printer card; loaded on first open.
+// One printer's controls: the firmware it runs, move and home the head, the printer's own files and print history,
+// what it reports as wrong, skipping objects of the running print, and remote start. Opens from the printer card;
+// loaded on first open.
 import { Button, Dialog, Pill, Switch } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  bedKnownClear, deviceError, deviceHub, filamentText, homePrinter, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
   type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
@@ -55,6 +56,7 @@ export function DeviceDialog({ printer, status, onClose }: { printer: PrinterInf
   ]
   return (
     <Dialog open onClose={onClose} title={`${printer.name}: controls and files`} footer={<Button variant="primary" onClick={onClose}>Close</Button>}>
+      {status.firmware ? <p className="sx-small sx-muted" data-testid="device-firmware">Firmware {status.firmware}</p> : null}
       {pauseNoteOf(status) ? <p className="sx-small warn" role="note">{pauseNoteOf(status)}</p> : null}
       {!hub ? (
         <p className="sx-small sx-muted">Connect the {appName()} link to use these. They are only available from the app on your own network.</p>
@@ -82,7 +84,18 @@ export function DeviceDialog({ printer, status, onClose }: { printer: PrinterInf
 function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; status: PrinterStatus }) {
   const [step, setStep] = useState<number>(1)
   const [busy, setBusy] = useState(false)
+  const [askPlate, setAskPlate] = useState(false)
   const blocked = jogBlockedReason(status.state)
+  // A confirm asked for one state never applies once the printer has moved on.
+  useEffect(() => setAskPlate(false), [status.state])
+  const home = async (plateClear: boolean) => {
+    setBusy(true)
+    const a = await homePrinter(hub, printer.id, plateClear)
+    setBusy(false)
+    setAskPlate(a.kind === 'ask-bed')
+    if (a.kind === 'homed') toast(`Homing ${printer.name}`, 'ok')
+    else if (a.kind === 'error') toast(a.message, 'error')
+  }
   const go = async (axis: 'x' | 'y' | 'z', sign: 1 | -1) => {
     setBusy(true)
     try {
@@ -101,6 +114,18 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
   return (
     <section aria-label="Move the head">
       <p className="sx-small">Moves the head by hand, 0.1 to 10 mm a step. Home the printer first if it refuses.</p>
+      <div className="calib-act">
+        <Button size="sm" disabled={busy || blocked !== null || askPlate} onClick={() => void home(false)} tip={{ title: 'Home', body: 'Moves every axis to its end stop, so the printer knows where the head is.', ...(blocked ? { reason: blocked } : {}) }}>
+          Home
+        </Button>
+      </div>
+      {askPlate ? (
+        <div role="alertdialog" aria-label="Confirm home" className="calib-act">
+          <p className="sx-small">Is the build plate clear? Homing lowers the nozzle to the plate.</p>
+          <Button variant="primary" disabled={busy} onClick={() => void home(true)}>Plate is clear, home</Button>
+          <Button variant="ghost" onClick={() => setAskPlate(false)}>Cancel</Button>
+        </div>
+      ) : null}
       <div className="calib-act" role="group" aria-label="Step size">
         {JOG_STEPS_MM.map((s) => (
           <Button key={s} size="sm" variant={step === s ? 'primary' : 'ghost'} aria-pressed={step === s} onClick={() => setStep(s)}>
