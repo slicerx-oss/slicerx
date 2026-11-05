@@ -37,8 +37,8 @@ import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
 import { cardWaits, openChoice } from './card-waits'
-import { setPhoneCards, syncPhoneQuestion } from './phone-answers'
-import { setPhoneApprovals, syncPhoneApprovals } from './phone-approvals'
+import { PHONE_REFUSALS, setPhoneCards, syncPhoneQuestion } from './phone-answers'
+import { paneApprovalCards, setPhoneApprovals, syncPhoneApprovals } from './phone-approvals'
 import './mimir.css'
 import './mimir-phone.css'
 
@@ -195,7 +195,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         for (const turn of shown.current.turns) for (const b of turn.blocks) if (b.kind === 'choice' && b.askId === askId) return b.picked
         return undefined
       },
-      answer: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.reject(new Error('No question here')),
+      answer: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.reject(new Error(PHONE_REFUSALS.gone)),
     })
     return () => setPhoneCards(null)
   }, [sessionId, live, pilot])
@@ -203,22 +203,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   // a phone paired on the LAN with the approve right decides the approval cards waiting here, as a click does
   useEffect(() => {
     if (!live) return
-    setPhoneApprovals({
-      pending: () => {
-        const t = shown.current
-        if (t.status !== 'running') return []
-        const out: ApprovalRequest[] = []
-        for (const turn of t.turns) for (const b of turn.blocks) if (b.kind === 'approval' && b.resolution === null && !b.replay) out.push(b.request)
-        return out
-      },
-      outcome: (id) => {
-        for (const turn of shown.current.turns)
-          for (const b of turn.blocks)
-            if (b.kind === 'approval' && b.request.id === id && b.resolution) return b.resolution.by === 'expiry' ? 'expired' : b.resolution.decision.kind
-        return undefined
-      },
-      resolve: (id, decision) => pilot.resolveApproval(id, decision),
-    })
+    setPhoneApprovals(paneApprovalCards(() => shown.current, pilot))
     return () => setPhoneApprovals(null)
   }, [sessionId, live, pilot])
   useEffect(() => syncPhoneApprovals(), [transcript])

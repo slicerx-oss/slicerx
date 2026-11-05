@@ -543,6 +543,8 @@ export interface AppLinkPhoneAnswer {
 
 /** mimir's question as the app hands it to approver phones (`mimir.questions` in the pair protocol). */
 export interface AppLinkMimirState {
+  /** A chat that can take an answer is open; false reads as SlicerX closed on phones. Absent means true. */
+  live?: boolean
   waiting: { v: number; sessionId: string; askId: string; title: string; question: string; choices: { id: string; label: string }[]; at: number } | null
   ended?: { askId: string; choiceId: string | null; by: 'app' | 'phone'; name?: string }
 }

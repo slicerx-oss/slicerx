@@ -28,6 +28,8 @@ export interface PhoneEnded {
 }
 
 export interface PhoneState {
+  /** A chat that can take an answer is open. False reads as SlicerX closed, never as an answer. */
+  live: boolean
   waiting: PhoneQuestion | null
   ended?: PhoneEnded
 }
@@ -42,6 +44,13 @@ export interface PhoneCards {
   answer(askId: string, choiceId: string | null): Promise<void>
 }
 
+/** The words a phone may show for each refusal, the same as the pairing host's. */
+export const PHONE_REFUSALS = {
+  closed: 'Open the mimir tab in SlicerX on your computer to answer this.',
+  gone: 'This question was already answered or is no longer waiting.',
+  choice: 'That is not one of the answers.',
+} as const
+
 /** A refusal with the code the pairing host reads (`QuestionFeed` in @slicerx/pair). */
 export class PhoneAnswerError extends Error {
   constructor(
@@ -54,6 +63,8 @@ export class PhoneAnswerError extends Error {
 }
 
 let cards: PhoneCards | null = null
+/** Whether phones were last told a chat is open. */
+let liveTold = false
 let current: PhoneQuestion | null = null
 const listeners = new Set<(s: PhoneState) => void>()
 /** Questions a phone answered, with its pick and its name; the first answer only. */
@@ -88,29 +99,38 @@ export function syncPhoneQuestion(now = Date.now(), force = false): void {
   const was = same(current, next) ? null : current
   current = next
   let ended: PhoneEnded | undefined
-  // a chat that went away ended nothing: its run stopped with it, and phones hear it is no longer live
-  if (was && !cards) {
-    seenAt.delete(was.askId)
-    byPhone.delete(was.askId)
-  } else if (was) {
+  if (was) {
     seenAt.delete(was.askId)
     const phone = byPhone.get(was.askId)
     byPhone.delete(was.askId)
-    if (phone) ended = { askId: was.askId, choiceId: phone.choiceId, by: 'phone', name: phone.name }
-    else {
-      const picked = cards?.picked(was.askId)
-      ended = { askId: was.askId, choiceId: picked ? picked : null, by: 'app' }
+    // a chat that went away, or another chat on screen, ended nothing: only the chat that asked can say how it ended
+    if (cards && cards.sessionId() === was.sessionId) {
+      if (phone) ended = { askId: was.askId, choiceId: phone.choiceId, by: 'phone', name: phone.name }
+      else {
+        const picked = cards.picked(was.askId)
+        ended = { askId: was.askId, choiceId: picked ? picked : null, by: 'app' }
+      }
     }
   }
-  const state: PhoneState = { waiting: current, ...(ended ? { ended } : {}) }
+  const state: PhoneState = { live: cards !== null, waiting: current, ...(ended ? { ended } : {}) }
+  liveTold = state.live
   for (const cb of [...listeners]) cb(state)
 }
 
-/** The chat whose question cards phones may answer registers here; null takes it away. */
+/**
+ * The chat whose question cards phones may answer registers here; null takes it away. The tab registers again whenever
+ * it rebuilds its runtime, so a null is told to phones only if no chat registers in the same turn: a rebuild with the
+ * question still waiting tells them nothing.
+ */
 export function setPhoneCards(c: PhoneCards | null): void {
-  const changed = (cards === null) !== (c === null)
+  const was = cards !== null
   cards = c
-  syncPhoneQuestion(Date.now(), changed)
+  if (c === null) {
+    if (was) queueMicrotask(() => cards === null && syncPhoneQuestion(Date.now(), true))
+    return
+  }
+  // live again after a real close: say so even when the question is the same
+  syncPhoneQuestion(Date.now(), !was && !liveTold)
 }
 
 /** The question phones see now. `live` is whether a chat that can take an answer is registered. */
@@ -126,17 +146,17 @@ export function onPhoneQuestion(cb: (s: PhoneState) => void): () => void {
 
 /** A paired phone's answer. `choiceId` null cancels the question. The first answer wins. */
 export async function answerFromPhone(a: { sessionId: string; askId: string; choiceId: string | null }, phone: { name: string }): Promise<void> {
-  if (!cards) throw new PhoneAnswerError('unavailable', 'the mimir tab is not open in the app')
+  if (!cards) throw new PhoneAnswerError('unavailable', PHONE_REFUSALS.closed)
   const open = cards.open()
-  if (!open || open.askId !== a.askId || cards.sessionId() !== a.sessionId) throw new PhoneAnswerError('not_found', 'this question was already answered or is no longer waiting')
-  if (a.choiceId !== null && !open.choices.some((c) => c.id === a.choiceId)) throw new PhoneAnswerError('bad_request', "that is not one of the question's answers")
+  if (!open || open.askId !== a.askId || cards.sessionId() !== a.sessionId) throw new PhoneAnswerError('not_found', PHONE_REFUSALS.gone)
+  if (a.choiceId !== null && !open.choices.some((c) => c.id === a.choiceId)) throw new PhoneAnswerError('bad_request', PHONE_REFUSALS.choice)
   const mine = !byPhone.has(a.askId)
   if (mine) byPhone.set(a.askId, { choiceId: a.choiceId, name: phone.name.slice(0, 64) || 'Phone' })
   try {
     await cards.answer(a.askId, a.choiceId)
   } catch {
     if (mine) byPhone.delete(a.askId)
-    throw new PhoneAnswerError('not_found', 'this question was already answered or is no longer waiting')
+    throw new PhoneAnswerError('not_found', PHONE_REFUSALS.gone)
   }
   answeredOn.set(a.askId, byPhone.get(a.askId)?.name ?? (phone.name.slice(0, 64) || 'Phone'))
   if (answeredOn.size > 200) answeredOn.delete(answeredOn.keys().next().value!)
@@ -152,13 +172,14 @@ export function phoneAnsweredOn(askId: string): { kind: 'phone'; name: string } 
 /** The pairing host's view (`QuestionFeed` in @slicerx/pair). */
 export const phoneQuestionFeed = {
   state: () => phoneQuestion(),
-  onChange: (cb: (s: { live: boolean; waiting: PhoneQuestion | null; ended?: PhoneEnded }) => void) => onPhoneQuestion((s) => cb({ live: cards !== null, ...s })),
+  onChange: (cb: (s: PhoneState) => void) => onPhoneQuestion(cb),
   answer: (a: { sessionId: string; askId: string; choiceId: string | null }, by: { deviceId: string; name: string }) => answerFromPhone(a, by),
 }
 
 /** For tests: forget everything. */
 export function resetPhoneQuestions(): void {
   cards = null
+  liveTold = false
   current = null
   listeners.clear()
   byPhone.clear()
