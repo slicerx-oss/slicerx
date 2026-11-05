@@ -43,6 +43,8 @@ const MAX_STILL_B64: usize = 700_000;
 /// A still is shared by every remote request for that printer this long, and only one fetch per
 /// printer runs at a time, so remote requests cannot crowd out the camera.
 const STILL_FRESH_MS: u64 = 2_000;
+/// The longest `approvals.list` waits for start cards' files to be read.
+const LIST_HEAT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 /// Requests one session may have running at once; more are refused with `busy`.
 pub(crate) const IN_FLIGHT: usize = 4;
 
@@ -312,10 +314,22 @@ pub(crate) async fn handle(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, method: &str, p:
             Ok(json!({}))
         }
         "approvals.list" => {
+            // Files not read yet are read four at a time, for two seconds at most; a card still being
+            // read lists with `heat_pending` and its read carries on.
             let pending = b.broker.as_ref().map(|br| br.pending()).unwrap_or_default();
-            for id in pending.iter().filter(|id| decidable(b, id)).take(200) {
-                read_card_heat(b, id).await;
-            }
+            let ids: Vec<String> = pending
+                .into_iter()
+                .filter(|id| decidable(b, id))
+                .take(200)
+                .collect();
+            let reads = futures::stream::iter(ids)
+                .map(|id| {
+                    let b = b.clone();
+                    async move { read_card_heat(&b, &id).await }
+                })
+                .buffer_unordered(4)
+                .collect::<Vec<()>>();
+            let _ = tokio::time::timeout(LIST_HEAT_WAIT, reads).await;
             Ok(approvals_list(b, &pairing))
         }
         // The relay's numbers for this hub (tier, used, cap), as Settings shows them.
@@ -650,7 +664,8 @@ fn approvable_remotely(b: &Bridge, id: &str) -> Remote {
 
 /// Reads what a start card's file heats, once per file, so the card and the decision can say.
 async fn read_card_heat(b: &Arc<Bridge>, id: &str) {
-    if let Remote::Start { sha256, .. } = approvable_remotely(b, id) {
+    if let Remote::Start { sha256, printer, .. } = approvable_remotely(b, id) {
+        crate::remote_start::refresh_cap(b, &printer).await;
         let (b2, id2, sha2) = (b.clone(), id.to_owned(), sha256.clone());
         crate::remote_start::read_heat(b, &sha256, move || {
             b2.agent_work.print_data(&id2).or_else(|| b2.hub.job_data(&sha2))
@@ -824,6 +839,7 @@ async fn remote_start_ok(
 ) -> Result<(Value, Value), (&'static str, String)> {
     use crate::remote_start::{Why, facts, look_audit, rule};
     let fail = |w: Why| err(w.code(), w.message());
+    crate::remote_start::refresh_cap(b, printer).await;
     rule(&facts(b, printer, sha256), bed_clear).map_err(fail)?;
     let seen = crate::guard::last_look(b, printer)
         .as_ref()

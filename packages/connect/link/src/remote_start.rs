@@ -81,6 +81,9 @@ pub(crate) struct State {
     /// Cards for queued plates a client asked for (`queue.start`), by request id, with who asked.
     /// Denying one leaves the plate in the queue.
     pub(crate) asked: Mutex<HashMap<String, String>>,
+    /// Each printer's hard cap on the limits, from the catalog for its vendor and model, or the
+    /// defaults when the catalog does not know it. A printer not looked up yet gets the defaults.
+    caps: Mutex<HashMap<String, (u32, u32)>>,
 }
 
 /// Why a remote start was refused. `reason()` is the machine word, `message()` what the phone says.
@@ -240,9 +243,24 @@ pub(crate) fn heat_ok(limits: RemoteStart, heat: Option<&sx_connect::JobHeat>) -
     Ok(())
 }
 
-/// The printer's remote start setting, `None` while it is off.
+/// The printer's remote start setting, `None` while it is off, clamped again to the printer's cap on
+/// every read (a setting from an older hub, or a printer whose model changed, never goes above it).
 pub(crate) fn policy(b: &Bridge, printer: &str) -> Option<RemoteStart> {
-    lock(&b.hub.settings).remote_start.get(printer).copied()
+    let stored = lock(&b.hub.settings).remote_start.get(printer).copied()?;
+    let held = lock(&b.remote_start.caps).get(printer).copied();
+    Some(clamp(stored, Some(held.unwrap_or_else(|| cap(None)))))
+}
+
+/// The hard cap on a printer's limits: the catalog's for its vendor and model, else the defaults.
+pub(crate) fn cap(catalog: Option<(u32, u32)>) -> (u32, u32) {
+    catalog.unwrap_or((DEFAULT_MAX_NOZZLE_C, DEFAULT_MAX_BED_C))
+}
+
+/// Looks the printer up in the catalog and keeps its cap for the rule's reads.
+pub(crate) async fn refresh_cap(b: &Bridge, printer: &str) -> Option<(u32, u32)> {
+    let catalog = catalog_for(b, printer).await;
+    lock(&b.remote_start.caps).insert(printer.to_owned(), cap(catalog));
+    catalog
 }
 
 /// What the rule reads about one start.
@@ -305,23 +323,29 @@ pub(crate) async fn read_heat(b: &Arc<Bridge>, sha256: &str, data: impl FnOnce()
         }
         h.insert(sha256.to_owned(), None);
     }
-    let heat = match data() {
-        Some(d) => {
-            let read = tokio::task::spawn_blocking(move || sx_connect::job_heat(&d));
-            match tokio::time::timeout(HEAT_WAIT, read).await {
-                Ok(Ok(h)) => h,
-                _ => sx_connect::JobHeat {
-                    unknown: Some("reading the file took too long".into()),
-                    ..sx_connect::JobHeat::default()
-                },
+    let data = data();
+    let (b2, sha) = (b.clone(), sha256.to_owned());
+    // The read finishes and is kept even when the caller stops waiting for it.
+    let done = tokio::spawn(async move {
+        let heat = match data {
+            Some(d) => {
+                let read = tokio::task::spawn_blocking(move || sx_connect::job_heat(&d));
+                match tokio::time::timeout(HEAT_WAIT, read).await {
+                    Ok(Ok(h)) => h,
+                    _ => sx_connect::JobHeat {
+                        unknown: Some("reading the file took too long".into()),
+                        ..sx_connect::JobHeat::default()
+                    },
+                }
             }
-        }
-        None => sx_connect::JobHeat {
-            unknown: Some("the file is not on the hub".into()),
-            ..sx_connect::JobHeat::default()
-        },
-    };
-    lock(&b.remote_start.heat).insert(sha256.to_owned(), Some(heat));
+            None => sx_connect::JobHeat {
+                unknown: Some("the file is not on the hub".into()),
+                ..sx_connect::JobHeat::default()
+            },
+        };
+        lock(&b2.remote_start.heat).insert(sha, Some(heat));
+    });
+    let _ = done.await;
 }
 
 /// A start approved from afar: `key` is the card's request id (an agent's print) or the queue item id.
@@ -334,21 +358,34 @@ pub(crate) fn forget(b: &Bridge, key: &str) {
     lock(&b.remote_start.approved).remove(key);
 }
 
+/// Whether a start needs the remote start check, from the queued plate's mark (`Some`, which decides:
+/// a local approval never counts an old remote one) or, for an agent's print (`None`), the approval
+/// the hub holds. `Ok(Some(at))` is a remote approval given at `at`; a queued plate marked remote whose
+/// approval the hub no longer holds (a restart) is refused.
+pub(crate) fn needs_check(mark: Option<bool>, held: Option<Instant>) -> Result<Option<Instant>, Why> {
+    match (mark, held) {
+        (Some(false), _) | (None, None) => Ok(None),
+        (Some(true), None) => Err(Why::StartLate),
+        (_, Some(at)) => Ok(Some(at)),
+    }
+}
+
 /// Right before the start command of a start approved from afar: it must come within
-/// [`START_WITHIN`] of the approval, and a fresh plate check must pass as at the approval. `Ok(false)`
-/// for a start that was not approved from afar; `remote` says the start is known to have been
-/// approved from afar (a queued plate's mark kept across a restart), so a missing approval refuses.
+/// [`START_WITHIN`] of the approval, and a fresh plate check must pass as at the approval. `mark` is a
+/// queued plate's own word on whether a phone approved it (see [`needs_check`]). `Ok(false)` for a
+/// start that was not approved from afar.
 pub(crate) async fn before_start(
     b: &Arc<Bridge>,
     key: &str,
     printer: &str,
-    remote: bool,
+    mark: Option<bool>,
 ) -> Result<bool, Why> {
-    let Some(a) = lock(&b.remote_start.approved).remove(key) else {
-        return if remote { Err(Why::StartLate) } else { Ok(false) };
+    let held = lock(&b.remote_start.approved).remove(key).map(|a| a.at);
+    let Some(at) = needs_check(mark, held)? else {
+        return Ok(false);
     };
     let outcome = async {
-        if a.at.elapsed() > START_WITHIN {
+        if at.elapsed() > START_WITHIN {
             return Err(Why::StartLate);
         }
         let look = crate::guard::look_now(b, printer).await.ok_or(Why::NoAnswer)?;
@@ -421,13 +458,11 @@ pub(crate) fn catalog_limits(vendor: &str, model: &str) -> Option<(u32, u32)> {
             .unwrap_or_default()
     });
     let (v, m) = (norm(vendor), norm(model));
-    if m.is_empty() {
+    // Vendor and model together, never a model name alone: another maker's printer could share it.
+    if v.is_empty() || m.is_empty() {
         return None;
     }
-    let found = list.iter().find(|c| {
-        let both = format!("{}{}", c.vendor, c.model);
-        (c.model == m && (v.is_empty() || c.vendor == v)) || both == format!("{v}{m}") || both == m
-    })?;
+    let found = list.iter().find(|c| c.vendor == v && c.model == m)?;
     Some((found.nozzle?, found.bed?))
 }
 
@@ -443,7 +478,7 @@ fn row(b: &Bridge, printer: &str, catalog: Option<(u32, u32)>) -> Value {
     let p = policy(b, printer);
     let look = crate::guard::last_look(b, printer);
     let pass = plate_pass(look.as_ref().map(Look::from), b.hub.bed(printer).ended_at_ms);
-    let limits = p.unwrap_or_else(|| clamp(RemoteStart::default(), catalog));
+    let limits = p.unwrap_or_else(|| clamp(RemoteStart::default(), Some(cap(catalog))));
     json!({
         "printerId": printer,
         "enabled": p.is_some(),
@@ -487,7 +522,8 @@ pub(crate) async fn get_call(b: &Bridge, p: &Value) -> Rpc<Value> {
     };
     let mut rows = Vec::new();
     for id in &ids {
-        rows.push(row(b, id, catalog_for(b, id).await));
+        let catalog = refresh_cap(b, id).await;
+        rows.push(row(b, id, catalog));
     }
     Ok(json!({
         "printers": rows,
@@ -498,7 +534,7 @@ pub(crate) async fn get_call(b: &Bridge, p: &Value) -> Rpc<Value> {
 }
 
 /// `remoteStart.set {printerId, enabled, maxNozzleC?, maxBedC?}` (app only, audited). Limits above the
-/// printer catalog's for the model are refused.
+/// printer's cap (the catalog's for its vendor and model, else the defaults) are refused.
 pub(crate) async fn set_call(b: &std::sync::Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = str_arg(p, "printerId")?;
     if !b.has_printer(&printer).await {
@@ -508,44 +544,33 @@ pub(crate) async fn set_call(b: &std::sync::Arc<Bridge>, p: &Value) -> Rpc<Value
         .get("enabled")
         .and_then(Value::as_bool)
         .ok_or_else(|| RpcError::new("bad_request", "enabled is true or false"))?;
-    let catalog = catalog_for(b, &printer).await;
-    let top = |range: &std::ops::RangeInclusive<u32>, cat: Option<u32>| {
-        cat.map_or(*range.end(), |c| c.min(*range.end()))
+    let catalog = refresh_cap(b, &printer).await;
+    let (cap_nozzle, cap_bed) = cap(catalog);
+    let why = if catalog.is_some() {
+        ", the printer's own limit"
+    } else {
+        ", the cap for a printer the catalog does not know"
     };
-    let limit =
-        |key: &str, range: &std::ops::RangeInclusive<u32>, cat: Option<u32>, default: u32| -> Rpc<u32> {
-            let hi = top(range, cat);
-            match p.get(key) {
-                None | Some(Value::Null) => Ok(default.min(hi)),
-                Some(v) => v
-                    .as_u64()
-                    .and_then(|n| u32::try_from(n).ok())
-                    .filter(|n| *n >= *range.start() && *n <= hi)
-                    .ok_or_else(|| {
-                        RpcError::new(
-                            "bad_request",
-                            format!(
-                                "{key} is a whole number from {} to {hi}{}",
-                                range.start(),
-                                if cat.is_some() {
-                                    ", the printer's own limit"
-                                } else {
-                                    ""
-                                }
-                            ),
-                        )
-                    }),
-            }
-        };
+    let limit = |key: &str, range: &std::ops::RangeInclusive<u32>, cap: u32, default: u32| -> Rpc<u32> {
+        let hi = cap.min(*range.end());
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(default.min(hi)),
+            Some(v) => v
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| *n >= *range.start() && *n <= hi)
+                .ok_or_else(|| {
+                    RpcError::new(
+                        "bad_request",
+                        format!("{key} is a whole number from {} to {hi}{why}", range.start()),
+                    )
+                }),
+        }
+    };
     let was = policy(b, &printer).unwrap_or_default();
     let next = RemoteStart {
-        max_nozzle_c: limit(
-            "maxNozzleC",
-            &NOZZLE_RANGE,
-            catalog.map(|c| c.0),
-            was.max_nozzle_c,
-        )?,
-        max_bed_c: limit("maxBedC", &BED_RANGE, catalog.map(|c| c.1), was.max_bed_c)?,
+        max_nozzle_c: limit("maxNozzleC", &NOZZLE_RANGE, cap_nozzle, was.max_nozzle_c)?,
+        max_bed_c: limit("maxBedC", &BED_RANGE, cap_bed, was.max_bed_c)?,
     };
     {
         let mut s = lock(&b.hub.settings);
@@ -710,7 +735,6 @@ mod tests {
             b"M303 E0 S240 C8\n",
             b"M104 S215\nM104 S{first_layer_temperature[0]}\n",
             b"M104 S215\nSET_HEATER_TEMPERATURE HEATER=enclosure TARGET=60\n",
-            b"M104 S215\nM191 S0\n",
             b"M104 S215\nPRINT_START KEEP_WARM_TEMP=60\n",
         ] {
             assert!(verdict(g).is_err(), "{}", String::from_utf8_lossy(g));
@@ -726,6 +750,10 @@ mod tests {
     fn limits_follow_the_printer_catalog() {
         assert_eq!(catalog_limits("Bambu Lab", "X1 Carbon"), Some((300, 110)));
         assert_eq!(catalog_limits("", "Unknown Printer 9000"), None);
+        // A model name alone never matches: the vendor has to agree.
+        assert_eq!(catalog_limits("", "X1 Carbon"), None);
+        assert_eq!(catalog_limits("Someone Else", "X1 Carbon"), None);
+        assert_eq!(cap(None), (240, 80));
         let x1 = catalog_limits("Bambu Lab", "X1 Carbon");
         assert_eq!(
             clamp(
@@ -741,5 +769,27 @@ mod tests {
             }
         );
         assert_eq!(clamp(RemoteStart::default(), x1), RemoteStart::default());
+    }
+
+    #[test]
+    fn a_local_approval_never_counts_an_old_remote_one() {
+        let then = Some(Instant::now());
+        // A queued plate the person approved in the app: an approval left from afar does not hold it.
+        assert_eq!(needs_check(Some(false), then), Ok(None));
+        assert_eq!(needs_check(Some(true), then), Ok(then));
+        assert_eq!(needs_check(Some(true), None), Err(Why::StartLate));
+        assert_eq!(needs_check(None, then), Ok(then));
+        assert_eq!(needs_check(None, None), Ok(None));
+    }
+
+    #[test]
+    fn autotemp_counts_chamber_off_is_fine_and_a_bare_start_macro_is_unknown() {
+        // Marlin's autotemp raises the nozzle to B.
+        assert!(verdict(b"M104 S200 B260\n").is_err());
+        assert_eq!(verdict(b"M104 S215\nM141 S0\nM191 S0\n"), Ok(()));
+        assert!(verdict(b"M104 S215\nM141 S40\n").is_err());
+        // A start macro with no temperature arguments heats from its own defaults.
+        assert!(verdict(b"PRINT_START\nM104 S215\n").is_err());
+        assert!(verdict(b"START_PRINT\nM104 S215\n").is_err());
     }
 }

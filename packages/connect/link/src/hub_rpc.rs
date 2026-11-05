@@ -317,6 +317,13 @@ async fn start_plate_inner(
     let t = mint("printer.upload", &upload_params(s.printer, s.name, &sha))?;
     let rf = session.upload(file, &to_connect(&t)).await?;
     record_upload(b, &rf, size).await;
+    // A queued plate approved from afar: a fresh compared plate check now, after the upload and right
+    // before the start command, within its time of the approval.
+    if let Some((item, remote)) = s.queued {
+        crate::remote_start::before_start(b, item, s.printer, Some(remote))
+            .await
+            .map_err(|why| RpcError::new("plate_check", why.message()))?;
+    }
     let t = mint("printer.start", &start_params(s.printer, &rf, &s.opts))?;
     crate::device::settle_absolute(b, s.printer, session.as_ref()).await?;
     session.start(&rf, s.opts.clone(), &to_connect(&t)).await?;
@@ -399,6 +406,7 @@ pub(crate) async fn print_local(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
             opts,
             origin: StartOrigin::LocalClick,
             title: &title,
+            queued: None,
         },
         bool_arg(p, "bedClear"),
     )
@@ -625,8 +633,12 @@ pub(crate) async fn grant(b: &Arc<Bridge>, broker: &ApprovalBroker, p: &Value) -
         .map_err(|e| RpcError::new("bad_request", e.to_string()))?;
     broker.grant_with(&id, true).map_err(|e| grant_error(&e))?;
     let (not_before, until) = (standing.not_before_ms, standing.expires_at_ms);
-    // A start approved from afar is checked again right before its start command.
+    // A start approved from afar is checked again right before its start command; any other approval
+    // replaces a remote one left on the plate.
     let remote = bool_arg(p, "remoteStart");
+    if !remote {
+        crate::remote_start::forget(b, &item.id);
+    }
     let updated = b.hub.update_item(&item.id, |i| {
         i.approval = Some(standing);
         i.request_id = None;
@@ -846,12 +858,6 @@ async fn start_item(b: &Arc<Bridge>, item: &QueueItem) {
     if sha256_hex(&data) != item.sha256 {
         return fail("the stored file changed after it was approved");
     }
-    // A start approved from afar: a fresh compared plate check right now, within its time.
-    if let Err(why) =
-        crate::remote_start::before_start(b, &item.id, &item.printer_id, item.remote_approved).await
-    {
-        return fail(&why.message());
-    }
     // An unattended start never goes onto a dirty plate; the guard's card says what it saw.
     if let Err(e) = crate::guard::before_start(b, &item.printer_id, false).await {
         return fail(&e.message);
@@ -868,6 +874,7 @@ async fn start_item(b: &Arc<Bridge>, item: &QueueItem) {
             opts: item.opts.clone(),
             origin: approval.origin,
             title: &title,
+            queued: Some((&item.id, item.remote_approved)),
         },
         true,
     )
@@ -920,6 +927,10 @@ pub(crate) async fn run_queue(b: &Arc<Bridge>) {
                             i.remote_approved = false;
                         }
                     }) {
+                        // An approval that lapsed takes its remote approval with it.
+                        if state == QueueState::Waiting {
+                            crate::remote_start::forget(b, &item.id);
+                        }
                         b.hub.emit("queue", u.to_json());
                     }
                     changed = true;

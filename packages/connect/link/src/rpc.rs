@@ -49,7 +49,9 @@ pub(crate) struct Bridge {
     secrets: Arc<dyn SecretStore>,
     code: PairingCode,
     agent_code: PairingCode,
-    watch_code: PairingCode,
+    /// The detector code: in memory only, never on disk, handed to the detector the app spawns
+    /// (`Link::fresh_watch_code`).
+    pub(crate) watch_code: StdMutex<PairingCode>,
     identity: crate::identity::HubIdentity,
     pub(crate) extra_origins: Vec<String>,
     port: u16,
@@ -170,7 +172,7 @@ impl Bridge {
             secrets,
             code,
             agent_code,
-            watch_code,
+            watch_code: StdMutex::new(watch_code),
             identity,
             extra_origins,
             port,
@@ -719,10 +721,11 @@ fn pake_answer(
         client_nonce: &h.client,
         hub_nonce: &h.hub,
     };
+    let watch = crate::hub::lock(&bridge.watch_code).clone();
     let codes = [
         ("app", bridge.code.raw()),
         ("agent", bridge.agent_code.raw()),
-        ("watch", bridge.watch_code.raw()),
+        ("watch", watch.raw()),
     ];
     let mut failed = false;
     let answer = sx_cpace::pair::Answer::new(&codes, &ctx, &ya, || {

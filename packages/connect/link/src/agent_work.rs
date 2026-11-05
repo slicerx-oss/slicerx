@@ -439,7 +439,7 @@ async fn execute(b: &Arc<Bridge>, request_id: &str, work: Work, token: &Approval
             crate::hub_rpc::record_upload(b, &rf, size).await;
             // A start approved from afar: a fresh compared plate check now, after the upload, within
             // its time of the approval.
-            crate::remote_start::before_start(b, request_id, &printer, false)
+            crate::remote_start::before_start(b, request_id, &printer, None)
                 .await
                 .map_err(|why| RpcError::new("plate_check", why.message()))?;
             crate::hub_rpc::start_with_token_held(b, &json!({ "file": rf, "opts": opts, "token": token }))

@@ -7,12 +7,14 @@
 //! Lines are read the way firmware reads them: comments (`;` and parentheses), a leading line number
 //! (`N123`) and a checksum (`*71`) are dropped, and a word is a letter and a number with or without
 //! spaces (`M104S300`, `M104 S 300`). Heater commands: `M104`, `M109`, `M140` and `M190` with any
-//! subcode (`M104.1`), RepRapFirmware's `G10` with `S` or `R` and `M568`, with values in
-//! RepRapFirmware's colon lists (`S200:210`). Any `M141` or `M191` sets the chamber, even one that
-//! turns it off. An autotune (`M303`), a heater value that is not a plain number (an unrendered
-//! template), a Klipper `SET_HEATER_TEMPERATURE` for a heater other than an extruder or the bed, and a
-//! macro argument naming a temperature or heater this reader does not know set `unknown`. Macro
-//! arguments match by exact name, never by part of a name (`NOZZLE_DIAMETER=0.4` is no temperature).
+//! subcode (`M104.1`), Marlin's autotemp ceiling (`M104 B`), RepRapFirmware's `G10` with `S` or `R`
+//! and `M568`, with values in RepRapFirmware's colon lists (`S200:210`). An `M141` or `M191` with a
+//! target above 0 sets the chamber; `S0` turns it off and heats nothing. An autotune (`M303`), a heater
+//! value that is not a plain number (an unrendered template), a Klipper `SET_HEATER_TEMPERATURE` for a
+//! heater other than an extruder or the bed, a macro argument naming a temperature or heater this
+//! reader does not know, and a known start macro (`PRINT_START`) given no nozzle temperature, which
+//! then heats from its own defaults, set `unknown`. Macro arguments match by exact name, never by part
+//! of a name (`NOZZLE_DIAMETER=0.4` is no temperature).
 //!
 //! A `.gcode.3mf` is read through every G-code entry inside it, up to [`MAX_TOTAL`] bytes
 //! uncompressed in all. An archive past that, one that does not open, and a read past its time set
@@ -21,7 +23,7 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 
 /// The highest target of each heater a file sets, in degrees Celsius; `None` when the file never
-/// sets it. `chamber` is set by any chamber command. `unknown` names the first thing the reader could
+/// sets it. `chamber` is set by any chamber target above 0. `unknown` names the first thing the reader could
 /// not vouch for: a caller treats such a file as unreadable.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JobHeat {
@@ -59,6 +61,8 @@ const BED_KEYS: &[&str] = &[
     "BED_TEMP_0",
 ];
 const CHAMBER_KEYS: &[&str] = &["CHAMBER", "CHAMBER_TEMP", "CHAMBER_TEMPERATURE"];
+/// Start macros that heat from their own defaults when the file gives them no nozzle temperature.
+const START_MACROS: &[&str] = &["PRINT_START", "START_PRINT", "PRINTSTART", "STARTPRINT"];
 
 impl JobHeat {
     fn raise(slot: &mut Option<f64>, v: f64) {
@@ -254,7 +258,13 @@ fn command_heat(line: &str, heat: &mut JobHeat) {
         out
     };
     match (letter, number) {
-        ('M', Some(104 | 109 | 568)) => {
+        // `B` is Marlin's autotemp ceiling: the nozzle may climb to it.
+        ('M', Some(104 | 109)) => {
+            for v in read(heat, &['S', 'R', 'B']) {
+                JobHeat::raise(&mut heat.nozzle, v);
+            }
+        }
+        ('M', Some(568)) => {
             for v in read(heat, &['S', 'R']) {
                 JobHeat::raise(&mut heat.nozzle, v);
             }
@@ -264,9 +274,11 @@ fn command_heat(line: &str, heat: &mut JobHeat) {
                 JobHeat::raise(&mut heat.bed, v);
             }
         }
+        // Turning the chamber heater off (`S0`) heats nothing; any other target is a chamber.
         ('M', Some(141 | 191)) => {
-            let top = read(heat, &['S', 'R']).into_iter().fold(0.0, f64::max);
-            JobHeat::raise(&mut heat.chamber, top);
+            for v in read(heat, &['S', 'R']).into_iter().filter(|v| *v > 0.0) {
+                JobHeat::raise(&mut heat.chamber, v);
+            }
         }
         ('M', Some(303)) => heat.unknown(|| format!("`{line}` tunes a heater")),
         // RepRapFirmware's tool temperatures; without S or R it is a retraction or an offset.
@@ -311,6 +323,10 @@ fn macro_heat(line: &str, heat: &mut JobHeat) {
         }
         return;
     }
+    // A start macro run with no nozzle temperature heats from its own defaults, which the file does not show.
+    if START_MACROS.contains(&name.as_str()) && !args.iter().any(|(k, _)| NOZZLE_KEYS.contains(&k.as_str())) {
+        heat.unknown(|| format!("`{name}` gets no nozzle temperature, so it heats from its own defaults"));
+    }
     for (k, v) in &args {
         // Klipper names extruders by object (`ACTIVATE_EXTRUDER EXTRUDER=extruder1`): not a temperature.
         if k == "EXTRUDER" && v.to_ascii_lowercase().starts_with("extruder") {
@@ -329,6 +345,8 @@ fn macro_heat(line: &str, heat: &mut JobHeat) {
             continue;
         };
         match value_max(v) {
+            // A chamber of 0 is a chamber heater left off.
+            Some(n) if CHAMBER_KEYS.contains(&k.as_str()) && n <= 0.0 => {}
             Some(n) => JobHeat::raise(slot, n),
             None => heat.unknown(|| format!("`{name}` sets {k} to `{v}`, which is not a number")),
         }
@@ -387,9 +405,17 @@ mod tests {
     #[test]
     fn fails_closed_on_chambers_tuning_templates_and_unknown_heaters() {
         assert_eq!(gcode_heat("M141 S45\n").chamber, Some(45.0));
-        assert_eq!(gcode_heat("M191 S0\n").chamber, Some(0.0));
-        assert_eq!(gcode_heat("M141\n").chamber, Some(0.0));
-        assert_eq!(gcode_heat("PRINT_START CHAMBER=50\n").chamber, Some(50.0));
+        // A chamber heater turned off heats nothing.
+        assert_eq!(gcode_heat("M191 S0\n").chamber, None);
+        assert_eq!(gcode_heat("M141\n").chamber, None);
+        assert_eq!(gcode_heat("PRINT_START EXTRUDER=200 CHAMBER=0\n").chamber, None);
+        assert_eq!(
+            gcode_heat("PRINT_START EXTRUDER=200 CHAMBER=50\n").chamber,
+            Some(50.0)
+        );
+        assert_eq!(gcode_heat("M104 S200 B260\n").nozzle, Some(260.0));
+        assert!(gcode_heat("PRINT_START\nM104 S215\n").unknown.is_some());
+        assert!(gcode_heat("START_PRINT BED=60\n").unknown.is_some());
         for g in [
             "M303 E0 S240 C8\n",
             "M104 S{first_layer_temperature[0]}\n",

@@ -7,22 +7,23 @@ use std::sync::Arc;
 use sx_connect::{FileSecrets, KeychainSecrets, SecretStore};
 use sx_link::{
     APP_CODE_SECRET, BrokerGate, DEFAULT_PORT, INBOX_TOKEN_SECRET, InboxConfig, LinkConfig, MdnsConfig,
-    PairLimits, default_state_dir, read_agent_code, read_pairing_code, read_watch_code, serve_with_approvals,
-    service,
+    PairLimits, default_state_dir, read_agent_code, read_pairing_code, serve_with_approvals, service,
 };
 use sx_permit::ApprovalBroker;
 
 const USAGE: &str = "usage:
   sx-link [--port 47615] [--state-dir DIR | --no-state] [--headless] [--secrets keychain|file]
           [--allow-origin ORIGIN] [--inbox-url https://cloud.example] [--no-mdns] [--loopback]
+          [--detector PATH-TO-SX-WATCH]
+                                                 --detector starts the camera guard's detector and hands
+                                                 it its code over stdin; the code is never on disk
                                                  without --port, 47615 (a test-hub build: the port a
                                                  test or dev run sets, 1024 or above)
                                                  --loopback keeps every socket on 127.0.0.1 (tests): the
                                                  phone listener, printer discovery and direct video, mDNS off
-  sx-link code [--agent|--watch] [--state-dir DIR]
+  sx-link code [--agent] [--state-dir DIR]
                                                  print the running hub's app code, with --agent the code
-                                                 for the MCP server and other tools, with --watch the
-                                                 code for a failure detector (sx-watch)
+                                                 for the MCP server and other tools
   sx-link service print|install|uninstall [--state-dir DIR]
                                                  run the hub as a login item (macOS) or a user service (Linux)";
 
@@ -68,10 +69,12 @@ fn print_code(args: &[String]) {
         fail("no state directory; pass --state-dir");
     };
     let agent = args.iter().any(|a| a == "--agent");
-    let watch = args.iter().any(|a| a == "--watch");
-    let read = if watch {
-        read_watch_code(&dir)
-    } else if agent {
+    if args.iter().any(|a| a == "--watch") {
+        fail(
+            "the detector code is never written down: start the detector with `sx-link --detector PATH`, or let the app start it",
+        );
+    }
+    let read = if agent {
         read_agent_code(&dir)
     } else {
         // The app code is in the keychain when the hub uses it, else in the state directory.
@@ -169,6 +172,7 @@ async fn run(args: Vec<String>) {
     let mut headless = false;
     let mut secrets_kind: Option<String> = None;
     let mut loopback = false;
+    let mut detector: Option<PathBuf> = None;
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -196,6 +200,10 @@ async fn run(args: Vec<String>) {
             },
             "--no-mdns" => mdns.disabled = true,
             "--loopback" => loopback = true,
+            "--detector" => match it.next() {
+                Some(p) => detector = Some(PathBuf::from(p)),
+                None => fail("--detector needs the path of sx-watch"),
+            },
             "-h" | "--help" => {
                 eprintln!("{USAGE}");
                 return;
@@ -291,7 +299,35 @@ async fn run(args: Vec<String>) {
         // The agent code is not printed: tools read it from the state directory.
         println!("agent code (MCP server, scripts): run `sx-link code --agent`");
     }
+    // The detector gets its code over stdin, once; nothing else ever sees it.
+    let mut started = detector.map(|path| start_detector(&link, &path));
     wait_for_stop().await;
+    if let Some(child) = started.as_mut() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Starts the camera guard's detector with a fresh code on its stdin. The caller stops it, by its own
+/// handle, when the hub stops.
+fn start_detector(link: &sx_link::Link, path: &std::path::Path) -> std::process::Child {
+    use std::io::Write as _;
+    let code = link
+        .fresh_watch_code()
+        .unwrap_or_else(|e| fail(&format!("no detector code: {e}")));
+    let mut child = std::process::Command::new(path)
+        .arg("--url")
+        .arg(format!("ws://{}", link.addr()))
+        .arg("--code-stdin")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the detector {}: {e}", path.display())));
+    // One line, then the pipe closes.
+    if let Some(mut pipe) = child.stdin.take() {
+        let _ = writeln!(pipe, "{code}");
+    }
+    println!("detector started: {}", path.display());
+    child
 }
 
 /// A test or dev run's hub port setting. Only a `test-hub` build reads the variable, so a release sx-link never

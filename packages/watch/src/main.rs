@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! sx-watch: watches every printing printer through sx-link and reports failures.
 //!
-//!     sx-watch [--url ws://127.0.0.1:47615] [--state-dir <sx-link state dir>]
+//!     sx-watch --code-stdin [--url ws://127.0.0.1:47615] [--state-dir <sx-link state dir>]
 //!              [--model <sx-watch-siglip2.onnx>] [--huginn <printer,printer>] [--huginn-model gpt-5.6-luna]
 //!     sx-watch --collect <dir> [--every-s 60]   # save normal frames locally, report nothing
 //!
-//! The watch code comes from `SX_WATCH_CODE` or the hub's `watch-code` file (mode 0600), never
-//! from the command line. The hub's key comes from `hub-key.pub` in the same directory and is
-//! pinned. The model is looked for beside this binary (or `--model`, `SX_WATCH_MODEL`); without
+//! The app, or `sx-link --detector`, starts sx-watch and writes its detector code on its stdin, one
+//! line, once. The code is never in a file, the command line or the environment, where a local agent
+//! could read it and answer plate checks as the camera guard. The hub's key comes from `hub-key.pub`
+//! in the state directory and is pinned. The model is looked for beside this binary (or `--model`, `SX_WATCH_MODEL`); without
 //! it the watch runs the stub, which reports nothing. `--huginn` (or `SX_WATCH_HUGINN`) lists
 //! the printers whose suspected failures huginn confirms on the ChatGPT plan saved in the
 //! keychain; it is off unless given. Without `--url`, a build with the `test-hub` feature (tests and dev runs, never the
@@ -40,24 +41,17 @@ fn default_state_dir() -> Option<PathBuf> {
     home.map(|h| h.join(".local/state/slicerx/hub"))
 }
 
-fn read_secret(path: &std::path::Path) -> Result<String, String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let mode = std::fs::metadata(path)
-            .map_err(|e| format!("{}: {e}", path.display()))?
-            .permissions()
-            .mode();
-        if mode & 0o077 != 0 {
-            return Err(format!(
-                "{} is readable by other users; sx-link writes it with mode 0600",
-                path.display()
-            ));
-        }
+/// The detector code from the first line of `input` (the stdin the app or sx-link writes it to).
+fn code_from(input: &mut impl std::io::BufRead) -> Result<String, String> {
+    let mut line = String::new();
+    input
+        .read_line(&mut line)
+        .map_err(|e| format!("cannot read the detector code from stdin: {e}"))?;
+    let code = line.trim().to_owned();
+    if code.is_empty() {
+        return Err("no detector code on stdin".into());
     }
-    std::fs::read_to_string(path)
-        .map(|s| s.trim().to_owned())
-        .map_err(|e| format!("{}: {e}", path.display()))
+    Ok(code)
 }
 
 /// The hub's address: `--url` when given, else the loopback port a test or dev run names in `SX_TEST_HUB_PORT` (a port
@@ -93,17 +87,19 @@ fn options() -> Result<Options, String> {
             .cloned()
     };
     if args.iter().any(|a| a == "--code") {
-        return Err("--code is not accepted, since other users can read command lines. Set SX_WATCH_CODE or keep the hub's watch-code file.".into());
+        return Err("--code is not accepted, since other programs can read command lines. The app or `sx-link --detector` starts sx-watch and hands it the code on stdin (--code-stdin).".into());
     }
     let url = hub_url(arg("--url"), test_hub_setting().as_deref());
     let dir = arg("--state-dir")
         .map(PathBuf::from)
         .or_else(default_state_dir)
         .ok_or("no state directory; pass --state-dir")?;
-    let code = match std::env::var("SX_WATCH_CODE") {
-        Ok(c) if !c.trim().is_empty() => c,
-        _ => read_secret(&dir.join("watch-code"))?,
-    };
+    // The code arrives once, on stdin, from the app or sx-link that started this detector. It is never
+    // read from a file, an argument or the environment, where a local agent could find it.
+    if !args.iter().any(|a| a == "--code-stdin") {
+        return Err("sx-watch is started by the app or by `sx-link --detector`, which hand it its code on stdin (--code-stdin)".into());
+    }
+    let code = code_from(&mut std::io::stdin().lock())?;
     let hub_key = std::fs::read_to_string(dir.join("hub-key.pub"))
         .ok()
         .map(|s| s.trim().to_owned())
@@ -220,7 +216,17 @@ async fn watch<D: Detector>(opts: &Options, mut session: Session<D>, confirm: Op
 
 #[cfg(test)]
 mod tests {
-    use super::hub_url;
+    use super::{code_from, hub_url};
+
+    #[test]
+    fn the_code_comes_from_the_first_line_of_stdin_only() {
+        assert_eq!(
+            code_from(&mut "ABCD-EFGH\nmore\n".as_bytes()),
+            Ok("ABCD-EFGH".to_owned())
+        );
+        assert!(code_from(&mut "".as_bytes()).is_err());
+        assert!(code_from(&mut "\n".as_bytes()).is_err());
+    }
 
     #[test]
     fn url_wins_then_the_run_port_then_the_default() {

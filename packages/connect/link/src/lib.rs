@@ -217,13 +217,6 @@ pub fn read_pairing_code(state_dir: &std::path::Path) -> std::io::Result<String>
         .to_owned())
 }
 
-/// The running hub's detector code, for `sx-watch` (file mode 0600).
-pub fn read_watch_code(state_dir: &std::path::Path) -> std::io::Result<String> {
-    Ok(std::fs::read_to_string(state_dir.join(hub::WATCH_CODE_FILE))?
-        .trim()
-        .to_owned())
-}
-
 /// The running hub's agent code, for the MCP server and other tools (file mode 0600).
 pub fn read_agent_code(state_dir: &std::path::Path) -> std::io::Result<String> {
     Ok(std::fs::read_to_string(state_dir.join(hub::AGENT_CODE_FILE))?
@@ -259,6 +252,15 @@ impl Link {
     /// The agent code, for the MCP server and other tools: pairing with it gives the `agent` role.
     pub fn agent_code(&self) -> &PairingCode {
         &self.agent_code
+    }
+
+    /// A new detector code, for the detector the caller is about to start: hand it over the child's
+    /// stdin (`sx-watch --code-stdin`), never a file, an argument or the environment. The code before it
+    /// stops working, so call it once per start and stop any detector started with the old one first.
+    pub fn fresh_watch_code(&self) -> std::io::Result<PairingCode> {
+        let code = PairingCode::random().map_err(|e| std::io::Error::other(e.to_string()))?;
+        *hub::lock(&self.bridge.watch_code) = code.clone();
+        Ok(code)
     }
 
     /// The hub's public key (Ed25519, base64). Clients check `hello` against it before pairing.
@@ -409,7 +411,9 @@ pub async fn serve_with_approvals(
             d.write_code(&code.to_string())?;
         }
         d.write_agent_code(&agent_code.to_string())?;
-        d.write_watch_code(&watch_code.to_string())?;
+        // The detector code never goes on disk, where the agent code is: a local agent could read it
+        // and pass for the camera guard. A file an older hub left goes.
+        d.remove_watch_code();
     }
     let identity = identity::HubIdentity::open(dir.as_ref().map(hub::StateDir::path))?;
     let hub_key = identity.public_b64();

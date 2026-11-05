@@ -49,10 +49,12 @@ export interface RemoteStartRow {
 /** The limits the hub takes for a remote start, in °C (`remote_start.rs`). */
 export const REMOTE_NOZZLE_RANGE = [150, 300] as const
 export const REMOTE_BED_RANGE = [0, 120] as const
+/** The cap for a printer the catalog does not know by its vendor and model: the defaults. */
+export const REMOTE_UNKNOWN_CAP = { nozzle: 240, bed: 80 } as const
 
-/** The range a limit may take on this printer: the hub's, capped at the catalog's limit for the model. */
-export function limitRange([lo, hi]: readonly [number, number], catalog: number | null | undefined): [number, number] {
-  return [lo, typeof catalog === 'number' ? Math.min(hi, catalog) : hi]
+/** The range a limit may take on this printer: the hub's, capped at the catalog's limit for the model, or at `unknown` when the catalog does not know it. */
+export function limitRange([lo, hi]: readonly [number, number], catalog: number | null | undefined, unknown: number): [number, number] {
+  return [lo, Math.min(hi, typeof catalog === 'number' ? catalog : unknown)]
 }
 
 /** A typed limit the hub would take, or null. */

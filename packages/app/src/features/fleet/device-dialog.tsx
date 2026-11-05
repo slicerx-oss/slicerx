@@ -8,7 +8,7 @@ import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  bedKnownClear, deviceError, deviceHub, filamentText, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
   type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
@@ -361,8 +361,8 @@ function RemoteStart({ rs, printer }: { rs: NonNullable<DeviceHub['remoteStart']
       setBusy(false)
     }
   }
-  const nozzleRange = limitRange(REMOTE_NOZZLE_RANGE, row?.catalogMaxNozzleC)
-  const bedRange = limitRange(REMOTE_BED_RANGE, row?.catalogMaxBedC)
+  const nozzleRange = limitRange(REMOTE_NOZZLE_RANGE, row?.catalogMaxNozzleC, REMOTE_UNKNOWN_CAP.nozzle)
+  const bedRange = limitRange(REMOTE_BED_RANGE, row?.catalogMaxBedC, REMOTE_UNKNOWN_CAP.bed)
   const n = remoteLimit(nozzle, nozzleRange)
   const b = remoteLimit(bed, bedRange)
   const changed = row !== null && (n !== row.maxNozzleC || b !== row.maxBedC)
@@ -397,7 +397,7 @@ function RemoteStart({ rs, printer }: { rs: NonNullable<DeviceHub['remoteStart']
           <p className="sx-small sx-muted">
             {row.catalogMaxNozzleC !== null && row.catalogMaxBedC !== null
               ? `${printer.name} goes up to ${row.catalogMaxNozzleC} °C at the nozzle and ${row.catalogMaxBedC} °C on the bed, so the limits stay at or below those.`
-              : `${appName()} does not know this printer's own limits, so they stay at or below ${REMOTE_NOZZLE_RANGE[1]} °C and ${REMOTE_BED_RANGE[1]} °C.`}
+              : `${appName()} does not know this printer's own limits, so they stay at or below ${REMOTE_UNKNOWN_CAP.nozzle} °C and ${REMOTE_UNKNOWN_CAP.bed} °C.`}
           </p>
           <div className="calib-act">
             <Button size="sm" disabled={busy || !changed || n === null || b === null} onClick={() => n !== null && b !== null && void save(true, { maxNozzleC: n, maxBedC: b })}>
