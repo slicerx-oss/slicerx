@@ -33,7 +33,7 @@ describe('slicerx_step_read', () => {
     await withServer(async (h) => {
       const tool = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_step_read')
       expect(tool).toBeDefined()
-      expect(Object.keys(tool!.inputSchema.properties ?? {}).sort()).toEqual(['model', 'output', 'quality'])
+      expect(Object.keys(tool!.inputSchema.properties ?? {}).sort()).toEqual(['filaments', 'max_filaments', 'model', 'output', 'quality'])
       expect(tool!.outputSchema).toBeDefined()
       expect(tool!.title).toBe('Read a STEP or IGES file')
       expect(tool!.description).toMatch(/or an IGES file \(\.igs or \.iges\)/)
