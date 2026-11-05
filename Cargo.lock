@@ -5703,6 +5703,7 @@ dependencies = [
  "libm",
  "manifold-rust",
  "miniz_oxide 0.9.1",
+ "png 0.18.1",
  "rayon",
  "read-fonts",
  "rustc-hash",
@@ -5712,6 +5713,7 @@ dependencies = [
  "sx-brep",
  "sx-i-overlay",
  "thiserror 2.0.21",
+ "zune-jpeg",
 ]
 
 [[package]]

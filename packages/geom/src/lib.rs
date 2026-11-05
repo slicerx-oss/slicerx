@@ -23,6 +23,7 @@ pub mod boolean;
 pub mod build;
 #[cfg(feature = "calib")]
 pub mod calib;
+pub mod color_slots;
 pub mod convex;
 pub mod cut;
 #[cfg(feature = "cad")]
@@ -46,6 +47,8 @@ pub mod hollow;
 pub mod import;
 pub mod json;
 mod json_cad;
+#[cfg(feature = "texture")]
+mod json_texture;
 pub mod layers;
 pub mod measure;
 pub mod mesh;
@@ -86,6 +89,8 @@ pub mod solids;
 pub mod split;
 #[cfg(feature = "svg")]
 pub mod svg;
+#[cfg(feature = "texture")]
+pub mod texture;
 #[cfg(feature = "threads")]
 pub mod thread;
 pub mod vec3;
