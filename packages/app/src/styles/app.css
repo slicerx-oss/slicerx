@@ -1030,6 +1030,40 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .app-experimental-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; }
 .preset-name .preset-for { color: var(--muted); }
 
+/* Compare presets: what differs by settings group, the two sides in two columns and a copy button per row. The rows are
+   flat (part of the page); on a narrow panel the label takes its own line above the two values. */
+.cmp { container: cmp / inline-size; }
+.cmp-picks { flex-wrap: wrap; }
+.cmp-picks > .cmp-pick { flex: 1 1 160px; }
+.cmp-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.cmp-bar > p { margin: 0; font-variant-numeric: tabular-nums; }
+.cmp-tools { display: inline-flex; align-items: center; gap: 8px; }
+.cmp-tools > label { color: var(--muted); cursor: pointer; }
+.cmp-list { --cmp-cols: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 28px; display: grid; gap: 12px; }
+.cmp-head { display: grid; grid-template-columns: var(--cmp-cols); gap: 8px; padding: 0 8px 4px; border-bottom: 1px solid var(--line-soft); color: var(--muted); font-weight: var(--fw-semibold); }
+.cmp-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-head::after { content: ''; }
+.cmp-group { display: grid; gap: 4px; }
+.cmp-group-h { margin: 0; padding: 0 8px; font: var(--fw-semibold) var(--fs-xs) var(--f-body); color: var(--muted); }
+.cmp-table { width: 100%; border-collapse: collapse; }
+.cmp-table tbody { display: grid; border: 1px solid var(--line-soft); border-radius: 10px; }
+.cmp-table tr { display: grid; grid-template-columns: var(--cmp-cols); gap: 8px; align-items: center; min-height: 34px; padding: 0 8px; }
+.cmp-table tr + tr { border-top: 1px solid var(--line-soft); }
+.cmp-table th, .cmp-table td { padding: 4px 0; text-align: left; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.cmp-table th { font-weight: var(--fw-medium); color: var(--fg); display: grid; gap: 4px; }
+.cmp-table td { color: var(--muted); }
+.cmp-table tr[data-differs='true'] td { color: var(--fg); }
+.cmp-note { color: var(--dim); font-size: var(--fs-xs); font-weight: var(--fw-regular, 400); }
+.cmp-act { display: flex; justify-content: flex-end; }
+/* The copy button keeps a 44 px target on touch screens, padded invisibly past its 28 px face. */
+@media (pointer: coarse) { .cmp-act .sx-btn { position: relative; } .cmp-act .sx-btn::before { content: ''; position: absolute; inset: calc((var(--h-sm) - var(--h-lg)) / 2); } }
+@container cmp (max-width: 420px) {
+  .cmp-list { --cmp-cols: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+  .cmp-head > .cmp-head-label { display: none; }
+  .cmp-table tr { row-gap: 0; padding-top: 4px; }
+  .cmp-table th { grid-column: 1 / -1; padding-bottom: 0; }
+}
+
 /* Preset import report */
 .imp-report { display: grid; gap: 6px; margin-top: 8px; }
 .imp-sum { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: var(--fw-medium); }
