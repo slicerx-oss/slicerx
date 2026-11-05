@@ -131,6 +131,12 @@ impl<'a> Zip<'a> {
         self.entry(name).is_some()
     }
 
+    /// the size an entry declares, inflated
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn size(&self, name: &str) -> Option<usize> {
+        self.entry(name).map(|e| e.size)
+    }
+
     fn entry(&self, name: &str) -> Option<&Entry> {
         let name = name.trim_start_matches('/');
         self.entries

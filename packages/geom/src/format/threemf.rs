@@ -36,7 +36,7 @@ pub enum PartKind {
 }
 
 /// painted triangles as the file writes them: (triangle, code)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paint {
     pub color: Vec<(u32, String)>,
     pub seam: Vec<(u32, String)>,
@@ -394,7 +394,7 @@ fn root_part(rels: &str) -> Option<String> {
     found
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 struct MeshObject {
     name: String,
     positions: Vec<[f32; 3]>,
@@ -465,7 +465,7 @@ impl MeshObject {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 struct Model {
     objects: HashMap<u32, MeshObject>,
     build: Vec<Item>,
@@ -474,7 +474,7 @@ struct Model {
     doctype: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Item {
     object: u32,
     transform: Transform,
@@ -512,16 +512,21 @@ fn transform(s: Option<&str>, owner: u32, at: usize) -> std::result::Result<Tran
     }
 }
 
-/// reads a model part as it inflates
+/// reads a model part as it inflates; a big one is read in pieces on several threads where the build has them
 fn load_model(zip: &Zip<'_>, path: &str) -> Result<Model> {
-    let mut p = ModelParser {
-        model: Model {
-            unit_scale: 1.0,
-            ..Model::default()
-        },
-        current: None,
-        meta_name: None,
-    };
+    #[cfg(not(target_arch = "wasm32"))]
+    if zip.size(path).is_some_and(|n| n >= split::MIN_SIZE)
+        && rayon::current_num_threads() > 1
+        && let Some(m) = split::load(zip, path, split::PIECE)
+    {
+        return Ok(m);
+    }
+    load_model_whole(zip, path)
+}
+
+/// reads a model part on this thread as it inflates
+fn load_model_whole(zip: &Zip<'_>, path: &str) -> Result<Model> {
+    let mut p = ModelParser::new(true);
     let mut buf: Vec<u8> = Vec::new();
     let mut head = true;
     // the whole tags of a piece; returns how much of it they cover
@@ -577,6 +582,38 @@ struct ModelParser {
     current: Option<(u32, MeshObject)>,
     /// the name of an open `<metadata>`
     meta_name: Option<String>,
+    /// reads from the start of the model part; a later piece may not hold a `<model>` tag
+    first: bool,
+    /// a later piece that starts inside an object: `current` gathers that object's vertices and triangles until it
+    /// closes, and any other tag that would change it stops the piece
+    joining: bool,
+    /// what `joining` gathered, once its object closed in this piece
+    joined: Option<MeshObject>,
+}
+
+impl ModelParser {
+    fn new(first: bool) -> Self {
+        Self {
+            model: Model {
+                unit_scale: 1.0,
+                ..Model::default()
+            },
+            current: (!first).then(|| (0, MeshObject::default())),
+            meta_name: None,
+            first,
+            joining: !first,
+            joined: None,
+        }
+    }
+}
+
+/// the first triangle of `o` with a corner past its vertices, and how many vertices it has
+fn bad_corner(o: &MeshObject) -> Option<(usize, usize)> {
+    let n = o.positions.len();
+    o.triangles
+        .iter()
+        .position(|tri| tri.iter().any(|&i| i as usize >= n))
+        .map(|k| (k, n))
 }
 
 fn id_of(t: &Tag<'_>, key: &str, owner: u32) -> std::result::Result<u32, Refused> {
@@ -659,6 +696,19 @@ impl ModelParser {
     }
 
     fn tag(&mut self, t: &Tag<'_>) -> std::result::Result<(), Refused> {
+        if self.joining {
+            match t.name {
+                "object" if t.kind == xml::Kind::Close => {
+                    self.joining = false;
+                    self.joined = self.current.take().map(|(_, o)| o);
+                    return Ok(());
+                }
+                "object" | "component" | "metadata" | "item" | "model" => {
+                    return Err(Refused("piece", 0, 0, String::new()));
+                }
+                _ => {}
+            }
+        }
         match t.name {
             "vertex" if t.opens() => self.vertex(t)?,
             "triangle" if t.opens() => self.triangle(t)?,
@@ -676,12 +726,7 @@ impl ModelParser {
                 if t.closes()
                     && let Some((id, o)) = self.current.take()
                 {
-                    let n = o.positions.len();
-                    if let Some(k) = o
-                        .triangles
-                        .iter()
-                        .position(|tri| tri.iter().any(|&i| i as usize >= n))
-                    {
+                    if let Some((k, n)) = bad_corner(&o) {
                         return Err(Refused("index", id, k, n.to_string()));
                     }
                     self.model.objects.insert(id, o);
@@ -724,6 +769,9 @@ impl ModelParser {
                 }
             }
             "model" if t.opens() => {
+                if !self.first {
+                    return Err(Refused("piece", 0, 0, String::new()));
+                }
                 self.model.unit_scale = match t.attr("unit").unwrap_or("millimeter") {
                     "micron" => 0.001,
                     "millimeter" => 1.0,
@@ -1114,4 +1162,408 @@ fn prusa_meta(text: &str) -> Meta {
         Ok(())
     });
     out
+}
+
+/// A big model part read in pieces on several threads. The part inflates on this thread and is cut, as it comes, right
+/// before a `<vertex` or `<triangle` tag that follows a whole tag; every piece is parsed on its own and the pieces are
+/// joined in order: an object a cut runs through takes the vertices and triangles of the pieces after it, its paint
+/// numbered on. The model is the one the whole part read on one thread gives. Whatever the pieces cannot settle on
+/// their own (an error, a cut inside a comment, a `<metadata>` open across a cut, any tag but a vertex or triangle
+/// where a piece starts inside an object) gives `None`, and the caller reads the part on one thread instead.
+#[cfg(not(target_arch = "wasm32"))]
+mod split {
+    use super::{MeshObject, Model, ModelParser, Zip, bad_corner, xml};
+    use std::sync::mpsc;
+
+    /// parts smaller than this read on one thread
+    pub(super) const MIN_SIZE: usize = 8 << 20;
+    /// about how much text a piece holds
+    pub(super) const PIECE: usize = 2 << 20;
+
+    /// one piece, parsed
+    pub(super) struct Piece {
+        model: Model,
+        /// for a piece after the first: what it read into the object open at its start, and whether that object closed
+        head: Option<(MeshObject, bool)>,
+        /// the object still open at the piece's end
+        tail: Option<(u32, MeshObject)>,
+    }
+
+    /// the first place at or after `from` where `text` may be cut: right before a `<vertex` or `<triangle` tag whose
+    /// `<` follows a `>`, with only white space between
+    pub(super) fn cut_from(text: &[u8], from: usize) -> Option<usize> {
+        let mut at = from.max(1);
+        while let Some(lt) = text.get(at..).and_then(|t| t.iter().position(|&b| b == b'<')) {
+            let lt = at + lt;
+            at = lt + 1;
+            let rest = text.get(lt + 1..).unwrap_or_default();
+            let named = [b"vertex".as_slice(), b"triangle".as_slice()].iter().any(|n| {
+                rest.starts_with(n)
+                    && rest
+                        .get(n.len())
+                        .is_some_and(|&c| c.is_ascii_whitespace() || c == b'/' || c == b'>')
+            });
+            let after_tag = text
+                .get(..lt)
+                .and_then(|t| t.iter().rposition(|b| !b.is_ascii_whitespace()))
+                .and_then(|i| text.get(i))
+                == Some(&b'>');
+            if named && after_tag {
+                return Some(lt);
+            }
+        }
+        None
+    }
+
+    /// one piece parsed on its own; `None` when it cannot be settled alone
+    pub(super) fn parse(text: &[u8], first: bool, last: bool) -> Option<Piece> {
+        let s = std::str::from_utf8(text).ok()?;
+        let mut p = ModelParser::new(first);
+        let used = xml::scan(s, |t| p.tag(&t)).ok()?;
+        // a piece before the last ends with a whole tag and white space, which is no part of a tag the parser reads;
+        // what the last leaves is text the whole part leaves too
+        let rest = text.get(used..).unwrap_or_default();
+        if (!last && (rest.contains(&b'<') || p.meta_name.is_some())) || (last && rest.contains(&b'>')) {
+            return None;
+        }
+        let (head, tail) = if first {
+            (None, p.current.take())
+        } else if p.joining {
+            // the whole piece lies inside the object open at its start
+            (Some((p.current.take()?.1, false)), None)
+        } else {
+            (Some((p.joined.take()?, true)), p.current.take())
+        };
+        Some(Piece {
+            model: p.model,
+            head,
+            tail,
+        })
+    }
+
+    /// the pieces joined in order as they are parsed, as one thread reading the whole part gives them; each piece is
+    /// freed once joined
+    #[derive(Default)]
+    pub(super) struct Joiner {
+        model: Option<Model>,
+        /// the object open at the end of the pieces joined so far
+        open: Option<(u32, MeshObject)>,
+        /// parsed pieces that wait for one before them
+        waiting: std::collections::BTreeMap<usize, Piece>,
+        next: usize,
+        /// a piece could not be settled on its own
+        failed: bool,
+    }
+
+    impl Joiner {
+        /// takes piece `i`, and joins it and every piece waiting after it once all before it are in
+        pub(super) fn add(&mut self, i: usize, piece: Option<Piece>) {
+            let Some(piece) = piece else {
+                self.failed = true;
+                return;
+            };
+            self.waiting.insert(i, piece);
+            while !self.failed
+                && let Some(piece) = self.waiting.remove(&self.next)
+            {
+                self.next += 1;
+                if self.join(piece).is_none() {
+                    self.failed = true;
+                }
+            }
+        }
+
+        fn join(&mut self, piece: Piece) -> Option<()> {
+            let Some(model) = self.model.as_mut() else {
+                self.model = Some(piece.model);
+                self.open = piece.tail;
+                return Some(());
+            };
+            let (more, closed) = piece.head?;
+            if let Some((_, o)) = self.open.as_mut() {
+                let offset = u32::try_from(o.triangles.len()).ok()?;
+                let MeshObject {
+                    positions,
+                    triangles,
+                    mut paint,
+                    ..
+                } = more;
+                o.positions.extend(positions);
+                o.triangles.extend(triangles);
+                for (to, from) in o.paint.layers_mut().into_iter().zip(paint.layers_mut()) {
+                    to.extend(from.drain(..).map(|(k, code)| (k + offset, code)));
+                }
+            }
+            if closed {
+                if let Some((id, o)) = self.open.take() {
+                    if bad_corner(&o).is_some() {
+                        return None;
+                    }
+                    model.objects.insert(id, o);
+                }
+                self.open = piece.tail;
+            } else if piece.tail.is_some() {
+                return None;
+            }
+            model.objects.extend(piece.model.objects);
+            model.build.extend(piece.model.build);
+            model.metadata.extend(piece.model.metadata);
+            Some(())
+        }
+
+        /// the model, once all `count` pieces are joined
+        pub(super) fn finish(self, count: usize, doctype: bool) -> Option<Model> {
+            if self.failed || self.next != count {
+                return None;
+            }
+            let mut model = self.model?;
+            if let Some((id, o)) = self.open {
+                model.objects.insert(id, o);
+            }
+            model.doctype = doctype;
+            Some(model)
+        }
+    }
+
+    /// the model part `path` read in pieces of about `piece` bytes on the rayon pool
+    pub(super) fn load(zip: &Zip<'_>, path: &str, piece: usize) -> Option<Model> {
+        let (tx, mut rx) = mpsc::channel::<(usize, Option<Piece>)>();
+        let mut doctype = None;
+        let mut count = 0usize;
+        let mut joiner = Joiner::default();
+        // the receiver is not shared between threads, so the scope takes it by unique borrow
+        let parsed = &mut rx;
+        let streamed = rayon::scope(|s| {
+            let parsed = parsed;
+            let mut pending: Vec<u8> = Vec::new();
+            let mut searched = 0;
+            let mut send = |text: Vec<u8>, last: bool| {
+                let (i, tx) = (count, tx.clone());
+                count += 1;
+                s.spawn(move |_| {
+                    let _ = tx.send((i, parse(&text, i == 0, last)));
+                });
+            };
+            let streamed = zip.stream(path, |chunk| {
+                if doctype.is_none() {
+                    // as the reader on one thread looks for it: in the first piece the part inflates to
+                    doctype = Some(chunk.windows(9).any(|w| w == b"<!DOCTYPE"));
+                }
+                pending.extend_from_slice(chunk);
+                // cut where a piece is due, as often as the text allows; a tag name may run past the end, so the
+                // search starts again a little before it
+                while pending.len() >= piece {
+                    let Some(cut) = cut_from(&pending, piece.max(searched)) else {
+                        searched = pending.len().saturating_sub(16);
+                        break;
+                    };
+                    searched = 0;
+                    let rest = pending.split_off(cut);
+                    send(std::mem::replace(&mut pending, rest), false);
+                }
+                // join what is parsed while the part inflates, so parsed pieces do not pile up
+                for (i, p) in parsed.try_iter() {
+                    joiner.add(i, p);
+                }
+                Ok(())
+            });
+            send(pending, true);
+            streamed
+        });
+        drop(tx);
+        streamed.ok()?;
+        for (i, p) in rx {
+            joiner.add(i, p);
+        }
+        joiner.finish(count, doctype.unwrap_or(false))
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::{Model, Zip, load_model_whole, split};
+    use std::fmt::Write as _;
+
+    /// a ZIP archive with each entry stored
+    fn stored(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut dir = Vec::new();
+        for (name, data) in entries {
+            let at = u32::try_from(out.len()).expect("small");
+            let len = u32::try_from(data.len()).expect("small");
+            let name_len = u16::try_from(name.len()).expect("short");
+            out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            out.extend_from_slice(&[20, 0, 0, 0, 0, 0]);
+            out.extend_from_slice(&[0; 8]);
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&name_len.to_le_bytes());
+            out.extend_from_slice(&[0, 0]);
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(data);
+            dir.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            dir.extend_from_slice(&[20, 0, 20, 0, 0, 0, 0, 0]);
+            dir.extend_from_slice(&[0; 8]);
+            dir.extend_from_slice(&len.to_le_bytes());
+            dir.extend_from_slice(&len.to_le_bytes());
+            dir.extend_from_slice(&name_len.to_le_bytes());
+            dir.extend_from_slice(&[0; 12]);
+            dir.extend_from_slice(&at.to_le_bytes());
+            dir.extend_from_slice(name.as_bytes());
+        }
+        let n = u16::try_from(entries.len()).expect("few");
+        let dir_at = u32::try_from(out.len()).expect("small");
+        let dir_len = u32::try_from(dir.len()).expect("small");
+        out.extend_from_slice(&dir);
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(&n.to_le_bytes());
+        out.extend_from_slice(&n.to_le_bytes());
+        out.extend_from_slice(&dir_len.to_le_bytes());
+        out.extend_from_slice(&dir_at.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out
+    }
+
+    /// the model part read in pieces of `piece` bytes, which is `None` or the model one thread reads
+    fn same_in_pieces(zip: &Zip<'_>, path: &str, piece: usize) -> Option<Model> {
+        let whole = load_model_whole(zip, path).ok();
+        let split = split::load(zip, path, piece);
+        if split.is_some() {
+            assert_eq!(split, whole, "{path} in pieces of {piece}");
+        }
+        split
+    }
+
+    fn file(rel: &str) -> Vec<u8> {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+        std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+    }
+
+    #[test]
+    fn projects_read_in_pieces_as_whole() {
+        let files = [
+            "tests/corpus/bambu-painted.3mf",
+            "tests/corpus/bambu-subtypes.3mf",
+            "tests/corpus/bambu-x-mark-2color.3mf",
+            "tests/corpus/orca-painted.3mf",
+            "tests/corpus/orca-subtypes.3mf",
+            "tests/corpus/orca-x-mark-2color.3mf",
+            "tests/corpus/prusa-painted.3mf",
+            "tests/corpus/prusa-subtypes.3mf",
+            "tests/corpus/prusa-two-colors.3mf",
+            "tests/corpus/prusa-x-mark-2color.3mf",
+            "tests/corpus/subtypes.3mf",
+            "../core/bench/models/x-mark-showcase-2color.3mf",
+            "../core/cli/tests/fixtures/two-boxes.3mf",
+            "../../apps/desktop/src-tauri/src/testdata/painted-cube.3mf",
+        ];
+        let mut cut = 0;
+        for f in files {
+            let bytes = file(f);
+            let zip = Zip::open(&bytes).expect("a 3mf");
+            let models: Vec<String> = zip
+                .names()
+                .filter(|n| {
+                    std::path::Path::new(n)
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("model"))
+                })
+                .map(str::to_owned)
+                .collect();
+            for path in models {
+                let size = zip.size(&path).unwrap_or(0);
+                for piece in [64, 1000, 1 << 16] {
+                    let read = same_in_pieces(&zip, &path, piece);
+                    // a part with a mesh is cut where a piece is due and reads alike
+                    if size > 4 * piece && load_model_whole(&zip, &path).is_ok_and(|m| !m.objects.is_empty())
+                    {
+                        assert!(read.is_some(), "{f} {path} in pieces of {piece}");
+                        cut += 1;
+                    }
+                }
+            }
+        }
+        assert!(cut > 10, "only {cut} parts were read in pieces");
+    }
+
+    const HEAD: &str = r#"<?xml version="1.0"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>"#;
+
+    fn object(id: u32, paint: bool) -> String {
+        let mut s = format!(r#"<object id="{id}" type="model"><mesh><vertices>"#);
+        for k in 0..40 {
+            let _ = write!(s, r#"<vertex x="{k}" y="{}.5" z="0.25"/>"#, k % 7);
+        }
+        s.push_str("</vertices><triangles>");
+        for k in 0..38 {
+            let p = if paint && k % 3 == 0 {
+                format!(r#" paint_color="{}""#, k % 4 + 4)
+            } else {
+                String::new()
+            };
+            let _ = write!(s, r#"<triangle v1="{k}" v2="{}" v3="{}"{p}/>"#, k + 1, k + 2);
+        }
+        s.push_str("</triangles></mesh></object>\n");
+        s
+    }
+
+    fn model_with(middle: &str) -> String {
+        format!(
+            r#"{HEAD}{}{middle}{}</resources><build><item objectid="1"/><item objectid="3"/></build></model>"#,
+            object(1, true),
+            object(3, true)
+        )
+    }
+
+    #[test]
+    fn pieces_join_painted_objects_and_leave_what_they_cannot_settle() {
+        let cases = [
+            // plain: objects cut anywhere join, their paint numbered on
+            model_with(""),
+            // a comment holding tags
+            model_with(r#"<!-- <vertex x="9" y="9" z="9"/> > <triangle v1="0" v2="1" v3="2"/> -->"#),
+            // a metadata element left open over a mesh
+            model_with(
+                r#"<object id="2"><metadata name="a">x<vertex x="1" y="1" z="1"/></metadata></object>"#,
+            ),
+            // an object opened inside another, which drops the first
+            format!(
+                "{HEAD}{}{}</resources></model>",
+                object(1, false).replace("</object>\n", ""),
+                object(2, true)
+            ),
+            // a corner past the vertices of an object a cut runs through
+            model_with(&object(5, false).replace(r#"v3="39""#, r#"v3="400""#)),
+            // an object never closed
+            format!("{HEAD}{}", object(4, true).replace("</object>\n", "")),
+            // a second model tag
+            model_with(&format!(r#"<model unit="inch">{}</model>"#, object(6, false))),
+            // a document type
+            format!("<!DOCTYPE x>{}", model_with("")),
+        ];
+        for (n, text) in cases.iter().enumerate() {
+            let bytes = stored(&[("3D/3dmodel.model", text.as_bytes())]);
+            let zip = Zip::open(&bytes).expect("a zip");
+            let mut whole_pieces = 0;
+            for piece in [16, 50, 200, 1000, 5000] {
+                if same_in_pieces(&zip, "3D/3dmodel.model", piece).is_some() {
+                    whole_pieces += 1;
+                }
+            }
+            // the plain project, the comment, the open object and the document type read in pieces
+            if [0, 1, 5, 7].contains(&n) {
+                assert!(whole_pieces > 0, "case {n} never read in pieces");
+            }
+        }
+    }
+
+    #[test]
+    fn cuts_fall_before_a_vertex_or_triangle_after_a_tag() {
+        assert_eq!(split::cut_from(b"<a><vertex x=\"1\"/>", 0), Some(3));
+        assert_eq!(split::cut_from(b"<a>\n  <triangle v1=\"0\"/><b>", 2), Some(6));
+        assert_eq!(split::cut_from(b"<a><vertex/><vertex/>", 4), Some(12));
+        assert_eq!(split::cut_from(b"<a><vertices><vertexx/>", 0), None);
+        assert_eq!(split::cut_from(b"<a>text<vertex/>", 0), None);
+        assert_eq!(split::cut_from(b"<vertex/>", 0), None);
+    }
 }

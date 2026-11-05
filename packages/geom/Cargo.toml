@@ -53,6 +53,10 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.21"
 
+# a big 3MF model part is parsed in pieces on several threads; the browser build reads it on one
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { version = "=1.12.0", optional = true }
+
 # The tools a build carries. Every one is on by default; an edition or an integrator leaves out what it does not
 # offer (docs/cad-engine.md, section 2). Booleans, arrays, measure, cut, split, repair, import, orient, emboss,
 # simplify, fit check and print rescue are always there.
@@ -78,7 +82,7 @@ calib = []
 # Hollow with drain holes.
 hollow = []
 # 3MF projects read whole: parts and their types, paint, plates and settings.
-formats = ["dep:flate2"]
+formats = ["dep:flate2", "dep:rayon"]
 # The exact solid ops of sx-brep as brep.* (box, extrude, boolean, subtract, cut, info, tessellate, save, load). Off by
 # default: it builds the SMLib kernel from C++ source.
 brep = ["dep:sx-brep"]
