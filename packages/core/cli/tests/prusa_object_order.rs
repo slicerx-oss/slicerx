@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The order a Prusa project prints its objects' brims and the objects in on the first layer (`objorder.rs`,
-//! `object_order_rule` `chain`, set by the project read). Each object stands at the lowest vertex of its first layer
-//! outline (the rightmost of equally low ones). The objects are put on a chain of the shortest links between those
-//! points, at most two links an object and no loop, and printed from the end whose last record of its nearest
-//! object is shorter (of two equal ones, the end with the lower number): every brim first, each object's loops together, then the objects in the same order. Two
-//! objects have rules of their own: their brims print the larger y first, then the larger x; the objects print
-//! object 1 first when their y differs, and the larger x first when it is equal.
+//! `object_order_rule` `chain`, set by the project read). The brims and the objects each follow a chain of the
+//! shortest links between one point per object, at most two links an object and no loop, printed from the end whose
+//! last record of its nearest object is shorter (of two equal ones, the end with the lower number). For the brims
+//! each object stands at the lowest vertex of its first layer outline (the rightmost of equally low ones); for the
+//! objects it stands at the middle of its first layer box. Every brim prints first, each object's loops together,
+//! then the objects. Equal boxes give both points the same distances, so their brims and objects print in the same
+//! order. Two objects have rules of their own: their brims print the larger y first, then the larger x; the objects
+//! print object 1 first when their y differs, and the larger x first when it is equal.
 //!
 //! The projects in tests/fixtures/brim-order are Prusa MK4S projects of 10 mm cubes with a 3 mm outer brim and one
 //! skirt loop (`mk4p--scatter5-sk0` has none), except `mk4p--shapes3`, two right triangles and a cube turned 45
-//! degrees (`mk4p--shapes3-own` is the same plate with a wall count of object 1's own); each test gives the
-//! objects' first layer box centers, which the reader names the paths by. `mk4s--zig4` is a Prusa MK4S MMU3 project
-//! of four 20 mm boxes, 1 mm tall, with a 3 mm brim and no skirt.
+//! degrees (`mk4p--shapes3-own` is the same plate with a wall count of object 1's own), `mk4p--ells3`, three L shapes,
+//! and `mk4p--shapes5`, five turned shapes; each test gives the objects' first layer box centers, which the reader
+//! names the paths by. `mk4s--zig4`, `mk4s--scatter5` and `mk4s--ends3` are Prusa MK4S MMU3 projects of 20 mm boxes,
+//! 1 mm tall, with no skirt (`mk4s--zig4` and `mk4s--scatter5` with a 3 mm brim).
 
 #![allow(
     clippy::disallowed_methods,
@@ -239,12 +242,63 @@ fn equal_end_records_start_at_the_end_with_the_lower_number() {
     assert_eq!(first_layer("mk4s--zig4", &zig), "B1 B3 B4 B2 W1 W3 W4 W2");
 }
 
+/// The brims of a first layer order (`order`), each object once, without the skirt, the objects and loops round
+/// several objects.
+fn brims_only(order: &str) -> String {
+    order
+        .split(' ')
+        .filter(|t| t.starts_with('B') && *t != "B*")
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[test]
-fn each_object_stands_at_the_lowest_vertex_of_its_first_layer() {
-    // From the box centers the links would be 2-3 (49 mm) then 1-2 (107 mm), the chain 1 2 3. From the lowest
-    // vertices, (73.2, 65.8), (166.9, 103.5) and (155.6, 46.5), they are 2-3 (58 mm) then 1-3 (85 mm).
+fn brims_stand_at_the_lowest_vertex_and_objects_at_the_middle_of_their_box() {
+    // From the box centers the links are 2-3 (49 mm) then 1-2 (107 mm), the chain 1 2 3. From the lowest vertices,
+    // (73.2, 65.8), (166.9, 103.5) and (155.6, 46.5), they are 2-3 (58 mm) then 1-3 (85 mm): the brims print 1 3 2.
     let shapes = [[62.617, 86.98], [166.89, 110.61], [170.6, 61.47]];
-    assert_eq!(first_layer("mk4p--shapes3", &shapes), "S B1 B3 B2 W1 W3 W2");
+    assert_eq!(first_layer("mk4p--shapes3", &shapes), "S B1 B3 B2 W1 W2 W3");
+    // Three L shapes: the brims print 1 3 2 and the objects 1 2 3.
+    let ells = [[125.0, 105.0], [185.0, 105.0], [174.742, 138.552]];
+    let o = first_layer("mk4p--ells3", &ells);
+    assert_eq!(
+        (brims_only(&o), objects_only(&o)),
+        ("B1 B3 B2".into(), "W1 W2 W3".into()),
+        "{o}"
+    );
+    // Five turned shapes, where the two chains start at different objects.
+    let five = [
+        [60.62, 122.18],
+        [128.64, 79.09],
+        [58.57, 96.1],
+        [164.944, 118.51],
+        [47.75, 35.85],
+    ];
+    let o = first_layer("mk4p--shapes5", &five);
+    assert_eq!(
+        (brims_only(&o), objects_only(&o)),
+        ("B1 B3 B5 B2 B4".into(), "W5 W3 W1 W2 W4".into()),
+        "{o}"
+    );
+}
+
+#[test]
+fn equal_boxes_print_brims_and_objects_in_one_order() {
+    // Five 20 mm boxes, scattered; the brims of objects 1 and 4 meet, and their shared loops print with object 1's.
+    let five = [
+        [125.0, 105.0],
+        [30.0, 180.0],
+        [210.0, 30.0],
+        [150.0, 120.0],
+        [60.0, 60.0],
+    ];
+    assert_eq!(
+        first_layer("mk4s--scatter5", &five),
+        "B2 B5 B* B1 B4 B3 W2 W5 W1 W4 W3"
+    );
+    // Three in a row 40 and 70 mm apart, no brim: the end of the longer end link starts.
+    let ends = [[85.0, 100.0], [125.0, 100.0], [195.0, 100.0]];
+    assert_eq!(first_layer("mk4s--ends3", &ends), "W3 W2 W1");
 }
 
 #[test]
@@ -304,12 +358,12 @@ fn objects_only(order: &str) -> String {
 #[test]
 fn objects_with_settings_of_their_own_stand_at_the_same_points() {
     // The plate of two triangles and a turned cube again, once as it is and once with a wall count of object 1's
-    // own, so each object slices as a session of its own. Both print the objects in the order the lowest vertices
-    // give, 1 3 2; the box centers would give 1 2 3.
+    // own, so each object slices as a session of its own. Both print the objects in the order the box centers give,
+    // 1 2 3; the lowest vertices would give 1 3 2.
     let shapes = [[62.617, 86.98], [166.89, 110.61], [170.6, 61.47]];
-    assert_eq!(objects_only(&first_layer("mk4p--shapes3", &shapes)), "W1 W3 W2");
+    assert_eq!(objects_only(&first_layer("mk4p--shapes3", &shapes)), "W1 W2 W3");
     assert_eq!(
         objects_only(&first_layer("mk4p--shapes3-own", &shapes)),
-        "W1 W3 W2"
+        "W1 W2 W3"
     );
 }
