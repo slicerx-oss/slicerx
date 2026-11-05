@@ -9,7 +9,7 @@
 
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
-use sx_core::api::{self, Mesh, SliceRequest, SliceRun};
+use sx_core::api::{self, Mesh, MeshPart, SliceRequest, SliceRun};
 
 fn root() -> String {
     format!("{}/../..", env!("CARGO_MANIFEST_DIR"))
@@ -87,6 +87,65 @@ fn slice(config: Map<String, Value>, center: [f64; 2], cubes: &[(u8, f64)]) -> S
         .collect();
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": objects},
+        "config": Value::Object(config),
+        "options": {"trustedGcode": true},
+    }))
+    .unwrap();
+    api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap()
+}
+
+/// A box part from `lo` to `hi`, mm.
+fn cuboid(lo: [f32; 3], hi: [f32; 3], name: &str) -> MeshPart {
+    let positions = (0..8)
+        .map(|i| {
+            [
+                if i & 1 == 0 { lo[0] } else { hi[0] },
+                if i & 2 == 0 { lo[1] } else { hi[1] },
+                if i & 4 == 0 { lo[2] } else { hi[2] },
+            ]
+        })
+        .collect();
+    MeshPart {
+        name: name.into(),
+        slot: 1,
+        positions,
+        triangles: vec![
+            [0, 2, 1],
+            [1, 2, 3],
+            [4, 5, 6],
+            [5, 7, 6],
+            [0, 1, 4],
+            [1, 5, 4],
+            [2, 6, 3],
+            [3, 6, 7],
+            [0, 4, 2],
+            [2, 4, 6],
+            [1, 3, 5],
+            [3, 7, 5],
+        ],
+        ..MeshPart::default()
+    }
+}
+
+/// A tee (a column under a wide slab) at the middle of the A1's bed, which needs support under the slab.
+fn slice_tee(config: Map<String, Value>) -> SliceRun {
+    #[allow(
+        clippy::needless_update,
+        reason = "a mesh may gain fields; the default keeps this test building"
+    )]
+    let m = Arc::new(Mesh {
+        name: "tee".into(),
+        parts: vec![
+            cuboid([10.0, 0.0, 0.0], [20.0, 10.0, 8.0], "column"),
+            cuboid([0.0, 0.0, 8.0], [30.0, 10.0, 10.0], "slab"),
+        ],
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{
+            "id": "o0", "name": "tee", "mesh": "t",
+            "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 113, 123, 0, 1],
+        }]},
         "config": Value::Object(config),
         "options": {"trustedGcode": true},
     }))
@@ -266,4 +325,55 @@ fn a1_smooth_timelapse_keeps_the_tower_up_to_the_top_with_two_filaments() {
         "{:?}",
         tl.last()
     );
+}
+
+#[test]
+fn a1_smooth_timelapse_starts_support_only_layers_on_the_tower_too() {
+    // Slim tree support keeps layers of its own height, so some print layers hold only support.
+    let mut c = smooth("bambu-a1");
+    for (k, v) in [
+        ("enable_support", json!(true)),
+        ("support_type", json!("tree(auto)")),
+        ("support_style", json!("tree_slim")),
+    ] {
+        c.insert(k.into(), v);
+    }
+    let r = slice_tee(c);
+    let ls = layers(&gcode(&r));
+    let object = |m: &String| {
+        !matches!(
+            m.as_str(),
+            "TL" | "Prime tower" | "Support" | "Support interface" | "Support transition"
+        ) && !m.starts_with('T')
+    };
+    let support_only: Vec<usize> = ls
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.iter().any(|m| m.starts_with("Support")) && !l.iter().any(object))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(!support_only.is_empty(), "no support-only layer: {ls:?}");
+    for (i, l) in ls.iter().enumerate() {
+        assert_eq!(
+            l.iter().take(2).map(String::as_str).collect::<Vec<_>>(),
+            ["TL", "Prime tower"],
+            "layer {i} (support only: {}): {l:?}",
+            support_only.contains(&i)
+        );
+    }
+}
+
+#[test]
+fn a1_smooth_timelapse_walls_the_tower_with_the_outline_settings_off() {
+    let mut c = smooth("bambu-a1");
+    c.insert("prime_tower_outline".into(), json!(false));
+    c.insert("wipe_tower_no_sparse_layers".into(), json!(true));
+    let r = slice(c, [128.0, 128.0], &[(1, 6.0)]);
+    for (i, l) in layers(&gcode(&r)).iter().enumerate() {
+        assert_eq!(
+            l.iter().take(2).map(String::as_str).collect::<Vec<_>>(),
+            ["TL", "Prime tower"],
+            "layer {i}: {l:?}"
+        );
+    }
 }
