@@ -218,6 +218,10 @@ async function addProjectShown(
     const records = await reviewImportedScripts(host.slicer, project.settings, scriptTarget)
     mine(() => set({ projectScriptReviews: { source: name, records } }))
   }
+  // The keys the file's objects, parts and modifiers bring, which stay the project's whatever the plate values do.
+  const objectBrought = new Set(brought)
+  // What the open really changes against the layer it started from, which stays pinned whatever layer it lands on.
+  const real = new Set<string>()
   if (pp) {
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
     const r = mine(() => pp.applyProjectSettings(name, project.settings, match))
@@ -226,6 +230,7 @@ async function addProjectShown(
       brought.add(k)
       pinned.add(k)
     }
+    for (const k of r.changed) real.add(k)
     note = r.note
     // What its settings did not carry over, with the engine choices and walls SlicerX used: Settings > Presets shows it.
     const { projectReport } = await import('@slicerx/settings')
@@ -246,7 +251,9 @@ async function addProjectShown(
     const { values: changed, taken: values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
     const n = Object.keys(changed).length
     const pins = Object.keys(values).length
-    if (pins) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
+    for (const k of Object.keys(changed)) real.add(k)
+    // Our own project reopened as it was keeps its goal.
+    if (pins) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, ...(n || !own ? { goal: 'custom' as const } : {}) })))
     // A PrusaSlicer project made for another printer stays on this one, and its note offers the printer it was made for.
     const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values, n) : null
     if (offer) {
@@ -268,8 +275,9 @@ async function addProjectShown(
     const { nearestGoal } = await import('../lib/goal-edits')
     mine(() => set((s) => ({ goalBase: nearestGoal(resolveConfig(s.easy, s.overrides), s.profile?.goalValues) })))
   }
-  // A pinned value equal to the layer the plate now sits on is let go, so it follows a later goal, filament or printer
-  // change as the layer's own values do; one that differs (a 0.2 mm gap on a Fine layer) stays. A person's own stays.
+  // A pinned value the project did not change that equals the layer the plate now sits on is let go, so it follows a
+  // later goal, filament or printer change as the layer's own values do; one that differs (a 0.2 mm gap on a Fine
+  // layer) stays, and so do a real change (its 0.12 mm layers, on another printer's Fine too) and a person's own.
   // With no printer there is no layer yet, so the values stay until one is built. A value let go is no longer the
   // project's, so New project leaves a later edit to it alone.
   if (pinned.size) {
@@ -280,9 +288,9 @@ async function addProjectShown(
         const layer = resolveConfig(s.easy, {}) as unknown as Record<string, SettingValue | undefined>
         const overrides = { ...s.overrides }
         for (const k of pinned) {
-          if (overridesBefore[k] !== undefined || !(k in overrides) || JSON.stringify(overrides[k]) !== JSON.stringify(layer[k])) continue
+          if (real.has(k) || overridesBefore[k] !== undefined || !(k in overrides) || JSON.stringify(overrides[k]) !== JSON.stringify(layer[k])) continue
           delete overrides[k]
-          brought.delete(k)
+          if (!objectBrought.has(k)) brought.delete(k)
         }
         return { overrides }
       }),

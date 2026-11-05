@@ -113,6 +113,14 @@ describe("a project's own values", () => {
     expect(config[k!], k).toEqual(onA1[k!])
   })
 
+  it('keep its real changes on a printer whose Fine layer differs', async () => {
+    const h = await connect()
+    // 0.12 mm layers equal the P1S Fine layer the plate starts from, but they are the project's change, so they go along.
+    const config = await opened(project(h.dir, 'listed'), 'prusa-mk4s')
+    expect(config['support_top_z_distance']).toBe(0.2)
+    expect(config['support_bottom_z_distance']).toBe(0.2)
+  })
+
   it("keep in another slicer's project", async () => {
     const h = await connect()
     const config = await opened(prusaProject(h.dir), 'bambu-a1')
