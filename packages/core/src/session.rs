@@ -2593,9 +2593,9 @@ impl SliceSession {
     }
 
     /// The point plate object `object` stands at for the order the objects print in (`objorder.rs`): the middle of
-    /// its footprint's box, or under `Chain` the lowest vertex of its first layer outline, the one with the largest x
-    /// of equally low ones. That point is the same for an object whatever its parts above the first layer and
-    /// wherever its placement origin is. An object with nothing on the first layer keeps its footprint's.
+    /// its footprint's box, or under `Chain` the middle of its first layer outline's box. That point is the same for
+    /// an object whatever its parts above the first layer and wherever its placement origin is. An object with
+    /// nothing on the first layer keeps its footprint's.
     fn order_center(&self, rule: crate::objorder::Rule, object: u16) -> [f64; 2] {
         let footprint = self
             .objects
@@ -2604,20 +2604,22 @@ impl SliceSession {
         if rule != crate::objorder::Rule::Chain {
             return footprint;
         }
-        self.object_slices_at(0)
-            .and_then(|slices| {
-                slices
-                    .iter()
-                    .find(|s| s.object == object)
-                    .and_then(|s| lowest_vertex(&s.shapes))
-            })
-            .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+        self.first_layer_point(object, box_middle).unwrap_or(footprint)
+    }
+
+    /// `at` of plate object `object`'s first layer outline, in mm; None when it has nothing on the first layer.
+    fn first_layer_point(&self, object: u16, at: fn(&Shapes) -> Option<[f64; 2]>) -> Option<[f64; 2]> {
+        self.object_slices_at(0).and_then(|slices| {
+            slices
+                .iter()
+                .find(|s| s.object == object)
+                .and_then(|s| at(&s.shapes))
+        })
     }
 
     /// The point this session's objects stand at for the order of a plate printed as sessions one after another
-    /// (`sequence.rs`, `copies.rs`): under `Chain` the lowest vertex of this session's first layer, the one with the
-    /// largest x of equally low ones, as `order_center` gives an object of a plate sliced as one session; otherwise,
-    /// or with nothing on the first layer, `footprint`.
+    /// (`sequence.rs`, `copies.rs`): under `Chain` the middle of this session's first layer box, as `order_center`
+    /// gives an object of a plate sliced as one session; otherwise, or with nothing on the first layer, `footprint`.
     pub(crate) fn plate_order_point(&self, rule: crate::objorder::Rule, footprint: [f64; 2]) -> [f64; 2] {
         if rule != crate::objorder::Rule::Chain {
             return footprint;
@@ -2625,9 +2627,9 @@ impl SliceSession {
         self.object_slices_at(0)
             .and_then(|slices| {
                 let all: Shapes = slices.iter().flat_map(|s| s.shapes.iter().cloned()).collect();
-                lowest_vertex(&all)
+                box_middle(&all)
             })
-            .map_or(footprint, |p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+            .unwrap_or(footprint)
     }
 
     /// The first layer's brim loops `loops` of a plate of several objects under `Chain` (`objorder.rs`),
@@ -2651,7 +2653,15 @@ impl SliceSession {
         if slices.len() < 2 {
             return loops;
         }
-        let centers: Vec<[f64; 2]> = slices.iter().map(|s| self.order_center(rule, s.object)).collect();
+        // The brims stand at the lowest vertex of each object's first layer outline, the one with the largest x of
+        // equally low ones, where the objects stand at the middle of its box (`order_center`).
+        let centers: Vec<[f64; 2]> = slices
+            .iter()
+            .map(|s| {
+                self.first_layer_point(s.object, lowest_point)
+                    .unwrap_or_else(|| self.order_center(rule, s.object))
+            })
+            .collect();
         let mut rank = vec![usize::MAX; slices.len()];
         for (place, i) in crate::objorder::brim_order(rule, &centers)
             .into_iter()
@@ -14602,14 +14612,27 @@ fn first_layer_rank(mut smallest: Vec<(u8, f64)>) -> Vec<u8> {
     order.into_iter().map(|e| e.0).collect()
 }
 
-/// The lowest vertex of the outer outlines of `shapes`, the one with the largest x of equally low ones.
-fn lowest_vertex(shapes: &Shapes) -> Option<IntPoint<i32>> {
+/// The lowest vertex of the outer outlines of `shapes`, the one with the largest x of equally low ones, mm.
+fn lowest_point(shapes: &Shapes) -> Option<[f64; 2]> {
     shapes
         .iter()
         .filter_map(|sh| sh.first())
         .flatten()
-        .copied()
         .min_by_key(|p| (p.y, std::cmp::Reverse(p.x)))
+        .map(|p| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE])
+}
+
+/// The middle of the box round the outer outlines of `shapes`, mm.
+fn box_middle(shapes: &Shapes) -> Option<[f64; 2]> {
+    let mut pts = shapes.iter().filter_map(|sh| sh.first()).flatten();
+    let p = pts.next()?;
+    let b = pts.fold([p.x, p.y, p.x, p.y], |b, q| {
+        [b[0].min(q.x), b[1].min(q.y), b[2].max(q.x), b[3].max(q.y)]
+    });
+    Some([
+        f64::midpoint(f64::from(b[0]), f64::from(b[2])) / SCALE,
+        f64::midpoint(f64::from(b[1]), f64::from(b[3])) / SCALE,
+    ])
 }
 
 /// The squared distance from `p` to a box `[x0, y0, x1, y1]`, internal units; 0 inside it.

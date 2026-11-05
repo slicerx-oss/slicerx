@@ -624,7 +624,7 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
 }
 
 /// The point object `k` of the sequence `subs` stands at for the plate's order by `rule`: its footprint's center, or
-/// under `Chain` the lowest vertex of its first layer (`SliceSession::plate_order_point`), the same point a plate
+/// under `Chain` the middle of its first layer box (`SliceSession::plate_order_point`), the same point a plate
 /// sliced as one session orders it by.
 fn point(session: &SliceSession, subs: &[&SliceSession], rule: crate::objorder::Rule, k: usize) -> [f64; 2] {
     let Some(sub) = subs.get(k) else {
