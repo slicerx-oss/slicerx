@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// The printer controls dialog: the firmware the printer runs, and Home on the Move tab, which homes only an idle or
+// finished printer and asks about the plate when the hub cannot tell it is clear.
+import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
+import { act, createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+
+const { HostContext } = await import('../src/host')
+const { DeviceDialog } = await import('../src/features/fleet/device-dialog')
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const printer: PrinterInfo = { id: 'bay-1', name: 'Bay 1', vendor: 'Bambu Lab', model: 'H2D', plugin: 'bambu-lan', nozzleCount: 2 }
+const idle: PrinterStatus = { printerId: 'bay-1', state: 'idle', nozzles: [], slots: [], cameraAvailable: false, firmware: '01.04.00.00', updatedAt: '2026-11-05T12:00:00.000Z' }
+const refuse = (code: string) => Object.assign(new Error(`hub says ${code}`), { code })
+
+function fakeHub(home: () => Promise<void>) {
+  const calls = { home: vi.fn(home), confirmClear: vi.fn(async () => ({})) }
+  const printers = {
+    device: { files: async () => [], history: async () => [], issues: async () => [], objects: async () => [], jog: async () => undefined, home: calls.home, skipObject: async () => undefined, startFile: async () => ({}) },
+    bed: { state: async () => ({ askOnPrint: true }), confirmClear: calls.confirmClear },
+  }
+  return { host: { kind: 'web', capabilities: {}, printers } as never, calls }
+}
+
+let root: Root | null = null
+let el: HTMLDivElement | null = null
+
+async function show(host: unknown, status: PrinterStatus): Promise<void> {
+  el = document.createElement('div')
+  document.body.appendChild(el)
+  root = createRoot(el)
+  await act(async () => root!.render(createElement(HostContext.Provider, { value: host as never }, createElement(DeviceDialog, { printer, status, onClose: () => undefined }))))
+  await act(async () => new Promise<void>((r) => setTimeout(r, 20)))
+}
+
+// A disabled button with a tooltip stays hoverable, so it is aria-disabled rather than disabled.
+const off = (b: HTMLButtonElement | undefined) => b?.disabled === true || b?.getAttribute('aria-disabled') === 'true'
+const button = (name: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent?.trim() === name) as HTMLButtonElement | undefined
+const click = async (b: HTMLButtonElement | undefined) => {
+  await act(async () => void b!.click())
+  await act(async () => new Promise<void>((r) => setTimeout(r, 20)))
+}
+
+// The test DOM has no modal dialogs: open and close by the attribute.
+beforeAll(() => {
+  const proto = HTMLDialogElement.prototype as HTMLDialogElement & { showModal: () => void }
+  proto.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute('open', '')
+  }
+  proto.close = function (this: HTMLDialogElement) {
+    this.removeAttribute('open')
+  }
+})
+
+afterEach(() => {
+  act(() => root?.unmount())
+  el?.remove()
+  root = null
+  el = null
+})
+
+describe('the printer controls dialog', () => {
+  it('names the firmware the printer runs', async () => {
+    await show(fakeHub(async () => undefined).host, idle)
+    expect(document.body.querySelector('[data-testid="device-firmware"]')?.textContent).toBe('Firmware 01.04.00.00')
+  })
+
+  it('homes an idle printer from the Move tab', async () => {
+    const { host, calls } = fakeHub(async () => undefined)
+    await show(host, idle)
+    expect(off(button('Home'))).toBe(false)
+    await click(button('Home'))
+    expect(calls.home).toHaveBeenCalledWith('bay-1')
+    expect(calls.confirmClear).not.toHaveBeenCalled()
+  })
+
+  it('rests Home while the printer prints, and says why', async () => {
+    const { host, calls } = fakeHub(async () => undefined)
+    await show(host, { ...idle, state: 'printing' })
+    // Mid-print the dialog opens on Skip objects; Move is one tab away.
+    await click([...document.body.querySelectorAll('nav button')].find((b) => b.textContent === 'Move') as HTMLButtonElement)
+    expect(off(button('Home'))).toBe(true)
+    expect(document.body.textContent).toContain('The head only moves by hand while the printer is idle.')
+    expect(calls.home).not.toHaveBeenCalled()
+  })
+
+  it('asks whether the plate is clear when the hub cannot tell, then homes', async () => {
+    let cleared = false
+    const { host, calls } = fakeHub(async () => {
+      if (!cleared) throw refuse('bed_check')
+    })
+    calls.confirmClear.mockImplementation(async () => ((cleared = true), {}))
+    await show(host, { ...idle, state: 'finished' })
+    await click(button('Home'))
+    const ask = document.body.querySelector('[role="alertdialog"][aria-label="Confirm home"]')
+    expect(ask?.textContent).toContain('Is the build plate clear?')
+    await click(button('Plate is clear, home'))
+    expect(calls.confirmClear).toHaveBeenCalledWith('bay-1')
+    expect(calls.home).toHaveBeenCalledTimes(2)
+    expect(document.body.querySelector('[aria-label="Confirm home"]')).toBeNull()
+  })
+})
