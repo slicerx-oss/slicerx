@@ -82,7 +82,7 @@ describe('phones answering mimir questions, through the pairing host feed', () =
     await Promise.all(c.runs)
     expect(c.seen[0]).toMatchObject({ ok: true, result: { picked: 'other' } })
     expect(phoneQuestion().waiting).toBeNull()
-    expect(changes.at(-1)).toEqual({ waiting: null, ended: { askId, choiceId: 'other', by: 'phone', name: 'Pocket' } })
+    expect(changes.at(-1)).toEqual({ live: true, waiting: null, ended: { askId, choiceId: 'other', by: 'phone', name: 'Pocket' } })
 
     // the session reads back that a phone answered it
     const s = (await runCall('mimir.session', { id: 's_pick' })) as { turns: { steps: Record<string, unknown>[] }[] }
@@ -137,8 +137,9 @@ describe('phones answering mimir questions, through the pairing host feed', () =
     const changes: PhoneState[] = []
     onPhoneQuestion((s) => changes.push(s))
     setPhoneCards(null)
+    await Promise.resolve()
     expect(phoneQuestion()).toEqual({ live: false, waiting: null })
-    expect(changes.at(-1)).toEqual({ waiting: null })
+    expect(changes.at(-1)).toEqual({ live: false, waiting: null })
     expect(await code(phoneQuestionFeed.answer({ sessionId: 's_bad', askId, choiceId: 'same' }, by('Pocket')))).toBe('unavailable')
     await c.pilot.answer!(askId, null)
     await Promise.all(c.runs)
@@ -192,7 +193,7 @@ describe('phones answering over the relay, through the hub and this window', () 
     expect(f.replies.at(-1)).toEqual({ callId: 8, out: { ok: true, value: { answered: true } } })
     await Promise.all(c.runs)
     expect(c.seen[0]).toMatchObject({ result: { picked: null, dismissed: true } })
-    expect(f.states.at(-1)).toEqual({ waiting: null, ended: { askId, choiceId: null, by: 'phone', name: 'Pocket' } })
+    expect(f.states.at(-1)).toEqual({ live: true, waiting: null, ended: { askId, choiceId: null, by: 'phone', name: 'Pocket' } })
 
     f.phone({ callId: 9, answer: { sessionId: 's_relay', askId, choiceId: 'same' }, phone: { deviceId: 'd', name: 'Tablet' } })
     await settle()
