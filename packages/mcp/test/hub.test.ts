@@ -174,6 +174,39 @@ describe('person-only work through a scripted hub', () => {
     expect(p.pending).toEqual([expect.objectContaining({ request_id: req.request_id, status: 'done' })])
   })
 
+  // Home is the device page's Home button for a client: a person approves G28 on the card, and only while the
+  // printer is idle or finished, as the button is enabled.
+  it('homes an idle printer through a G28 card a person approves, and refuses mid-print', async () => {
+    const hub = scriptedHub({ ok: true })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    const r = await h.call('slicerx_printer_home', { printerId: 'bay-4' })
+    expect(data<{ status: string }>(r).status).toBe('needs_person')
+    const reg = hub.sent().find((s) => s.method === 'approvals.register')
+    expect(reg?.params['work']).toEqual({ kind: 'gcode', printerId: 'bay-4', line: 'G28' })
+    const card = reg?.params['request'] as { title: string; lines: string[] }
+    expect(card.title).toBe('Home all axes of bay-4?')
+    expect(card.lines.join(' ')).toMatch(/plate is clear/)
+
+    const busy = scriptedHub({ ok: true }, true, { printer, status: { ...status, state: 'printing' } })
+    const b = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: busy.WS })
+    const refused = await b.call('slicerx_printer_home', { printerId: 'bay-4' })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toMatch(/only while the printer is idle or finished/)
+    expect(busy.sent().some((s) => s.method === 'approvals.register')).toBe(false)
+  })
+
+  it('reads the firmware and each filament unit\'s humidity and drying back from printer status', async () => {
+    const live = { units: [{ id: 'A', kind: 'ams-2-pro', climate: { humidityPct: 22, humidityLevel: 2, tempC: 26, drying: false } }, { id: 'E', kind: 'ams-ht', climate: { humidityPct: 11, tempC: 45, drying: true, dryMinutesLeft: 200 } }] }
+    const hub = scriptedHub({ ok: true }, true, { printer, status: { ...status, firmware: '01.04.00.00', live } })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    const s = data<{ output: { firmware?: string; live?: typeof live } }>(await h.call('slicerx_printer_status', { printerId: 'bay-4' })).output
+    expect(s.firmware).toBe('01.04.00.00')
+    expect(s.live?.units).toEqual(live.units)
+    const list = data<{ output: { id: string; status: { firmware?: string; live?: typeof live } }[] }>(await h.call('slicerx_printer_list', { detail: 'full' })).output
+    expect(list[0]?.status.firmware).toBe('01.04.00.00')
+    expect(list[0]?.status.live?.units?.[1]?.climate).toEqual({ humidityPct: 11, tempC: 45, drying: true, dryMinutesLeft: 200 })
+  })
+
   it('reports a run the hub could not finish', async () => {
     const hub = scriptedHub({ ok: false, message: 'Bay 4 went offline' })
     const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })

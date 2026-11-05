@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Tools the MCP server adds next to mimir's registry: the project an
 // outside client works on, and printer controls the app exposes as buttons
-// (temperatures, filament load and unload, a G-code line). They are written
+// (temperatures, filament load and unload, home, a G-code line). They are written
 // as mimir tools so the same permission gate and approval tokens apply.
 import { assistantText } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
@@ -62,8 +62,15 @@ function gcodeTool<I extends { printerId: string }>(spec: {
   lines(i: I, fw: 'klipper' | 'bambu' | 'marlin'): string[]
   title(i: I): string
   summary(i: I): string
+  /** A line the card shows under what it sends. */
+  note?: string
+  /** Throws when the printer may not take the lines now; checked before a card is made and again before they are sent. */
+  ready?(i: I, ctx: ToolContext): Promise<void>
 }): PilotTool<I> {
-  const plan = async (i: I, ctx: ToolContext): Promise<string[]> => spec.lines(i, await firmware(ctx.host.printers, i.printerId))
+  const plan = async (i: I, ctx: ToolContext): Promise<string[]> => {
+    await spec.ready?.(i, ctx)
+    return spec.lines(i, await firmware(ctx.host.printers, i.printerId))
+  }
   return defineTool<I>({
     name: spec.name,
     version: '1.0.0',
@@ -83,7 +90,7 @@ function gcodeTool<I extends { printerId: string }>(spec: {
       const lines = await plan(i, ctx)
       return {
         title: spec.title(i),
-        lines: [`Sends: ${lines.join(' ; ')}`],
+        lines: [`Sends: ${lines.join(' ; ')}`, ...(spec.note ? [spec.note] : [])],
         printerId: i.printerId,
         actions: lines.map((line) => ({ action: 'printer.gcode' as const, target: i.printerId, params: { printerId: i.printerId, line } })),
       }
@@ -303,6 +310,20 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId} filament ${i.action}`,
   })
 
+  const home = gcodeTool({
+    name: 'printer.home',
+    description: 'Home every axis of a printer (G28), as the Home button on its Move tab does. Only while the printer is idle or finished; a person approves it, since the nozzle moves down to the plate. Read the result back with slicerx_printer_status.',
+    input: z.object({ printerId }),
+    async ready(i, ctx) {
+      const st = await ctx.host.printers.status(i.printerId)
+      if (st.state !== 'idle' && st.state !== 'finished') throw new Error(`${i.printerId} is ${st.state}; it homes only while the printer is idle or finished.`)
+    },
+    lines: () => ['G28'],
+    title: (i) => `Home all axes of ${i.printerId}?`,
+    note: 'Homing lowers the nozzle to the plate; make sure the plate is clear.',
+    summary: (i) => `${i.printerId}: homing`,
+  })
+
   const gcode = gcodeTool({
     name: 'printer.gcode',
     description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission.',
@@ -312,5 +333,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, addFilament, setFilament, ...placementTools(deps, need), temperature, filament, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, addFilament, setFilament, ...placementTools(deps, need), temperature, filament, home, gcode] as PilotTool<never>[]
 }
