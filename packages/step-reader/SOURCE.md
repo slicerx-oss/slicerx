@@ -10,11 +10,16 @@ Sources, pinned:
 - Emscripten 3.1.69 through https://github.com/emscripten-core/emsdk (the version upstream builds with)
 
 `build.sh` builds `src/occt-import-js.mjs` and `src/occt-import-js.wasm` from those sources. It differs from
-the upstream build in two ways:
+the upstream build in three ways:
 
 1. `patches/0001-mesh-kind.patch` adds a `kind` field to each mesh (`solid`, `shell` or `faces`) so the reader
    can keep solids and leave out reference surfaces. Three files, twelve lines.
-2. The module is linked as an ES module for browsers, workers and Node (`-sEXPORT_ES6=1
+2. `patches/0002-sew-iges-faces.patch`, applied after it, sews an IGES file that holds loose faces and no solid or
+   shell: OpenCASCADE's BRepBuilderAPI_Sewing joins the faces with a tolerance of a ten thousandth of the model's
+   box diagonal (from 0.001 to 0.1 mm), each sewn shell that closes and agrees on its outside becomes a solid
+   whose mesh has the `kind` `sewn`, and the faces that do not close stay loose faces. STEP files are read as
+   before. Three files, 186 lines.
+3. The module is linked as an ES module for browsers, workers and Node (`-sEXPORT_ES6=1
    -sENVIRONMENT=web,worker,node`) with a 4 GB memory limit, so a worker can import it without
    evaluating script text.
 
@@ -24,7 +29,7 @@ was used only to compare candidates before this build and is not in the repo.
 Outputs (SHA-256), the files in `src/` and, once packed, in `dist/`:
 
 - `occt-import-js.mjs` (98,887 bytes): 1e9df053d943ee2917fff18a7d2bcf0a691ab249a418c92107ef10e7e20ba911
-- `occt-import-js.wasm` (7,604,102 bytes, 3,084,242 gzip): 327fac9309088f7907fdbba97b274f4b8991a51f6d22c06df62ad2ac5f83db7f
+- `occt-import-js.wasm` (7,660,374 bytes, 3,112,080 gzip): 1d94fad127ee294662339915454337a8c1fb1e3793bae2289e434c7063e69ff5
 
 `test/package.test.ts` checks both against these lines.
 
@@ -47,7 +52,7 @@ Everything that ships this reader in object code (the npm package, its tarball i
 SlicerX desktop app, whose one copy sits in the `mcp/step-reader` folder beside its bundled MCP server and also
 serves its window, and the hosted web app) offers its complete corresponding source from the same place:
 
-- `occt-import-js-source-0.0.23.tar.gz`: occt-import-js and OCCT at the commits above, the patch in
+- `occt-import-js-source-0.0.23.tar.gz`: occt-import-js and OCCT at the commits above, the patches in
   `patches/`, `build.sh`, `source-archive.sh`, this file and the license texts, without git metadata.
   `sh source-archive.sh <work-dir> <out-dir>` makes it. `build.sh` in it fetches the same pinned commits
   with git; the unpacked trees are the same source.

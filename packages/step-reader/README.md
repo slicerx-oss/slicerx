@@ -14,7 +14,7 @@ What a read gives you:
 - Positions in millimeters whatever unit the file declares, centered on the origin in double precision.
 - A body's color as `#rrggbb` when the file colors its solid (face colors are not read).
 - Open shells and loose faces left out when the file has solids, with a note saying so.
-- An IGES file of loose trimmed surfaces and no solids, as many CAD programs write IGES, read as a body per group of touching surfaces, with a note saying so. The surfaces are joined, not sewn: a mesh repair closes the seams between them. A STEP file with loose faces only is refused.
+- An IGES file of loose trimmed surfaces and no solids, as many CAD programs write IGES, sewn into closed solids before meshing, with a note saying so. The sewing tolerance scales with the model: a ten thousandth of its box diagonal, from 0.001 mm to 0.1 mm. Surfaces that do not close stay open, as a body per group of touching surfaces, with a note. A STEP file with loose faces only is refused.
 - Notes for the person ("Converted from inches to millimeters.").
 
 ## Use
@@ -69,7 +69,7 @@ The code finds the wasm with `new URL('./occt-import-js.wasm', import.meta.url)`
 
 The license texts and NOTICE ship in the package. The wasm is a separate file loaded at run time, so you can rebuild it with `build.sh` and replace it.
 
-To get the source of the wasm in your copy, download `occt-import-js-source-0.0.23.tar.gz` from the GitHub release `step-reader-v<version>` of https://github.com/slicerx-oss/slicerx (the same version as your package). It holds occt-import-js at commit c2148e54 (tag 0.0.23) and OCCT at commit d2abb6d8 (7.6.1, the submodule of that tag), without git metadata, plus a `slicerx/` folder with the patch, `build.sh`, `source-archive.sh`, SOURCE.md and the license texts. `build.sh` rebuilds the wasm from those commits with Emscripten 3.1.69; it fetches them with git rather than reading the unpacked trees. Publishing refuses to run until that archive is on the release. SOURCE.md has the full source offer.
+To get the source of the wasm in your copy, download `occt-import-js-source-0.0.23.tar.gz` from the GitHub release `step-reader-v<version>` of https://github.com/slicerx-oss/slicerx (the same version as your package). It holds occt-import-js at commit c2148e54 (tag 0.0.23) and OCCT at commit d2abb6d8 (7.6.1, the submodule of that tag), without git metadata, plus a `slicerx/` folder with the patches, `build.sh`, `source-archive.sh`, SOURCE.md and the license texts. `build.sh` rebuilds the wasm from those commits with Emscripten 3.1.69; it fetches them with git rather than reading the unpacked trees. Publishing refuses to run until that archive is on the release. SOURCE.md has the full source offer.
 
 ## Development
 

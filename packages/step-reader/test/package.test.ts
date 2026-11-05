@@ -17,7 +17,7 @@ const pkg = join(import.meta.dirname, '..')
 const work = mkdtempSync(join(tmpdir(), 'sx-step-pack-'))
 afterAll(() => rmSync(work, { recursive: true, force: true }))
 
-/** Size budget of the packed tarball (gzip) and of the files it unpacks to. The wasm alone is 3,084,242 and 7,604,102. */
+/** Size budget of the packed tarball (gzip) and of the files it unpacks to. The wasm alone is 3,112,080 and 7,660,374. */
 export const PACKED_BUDGET_BYTES = 3_400_000
 export const UNPACKED_BUDGET_BYTES = 8_200_000
 
@@ -43,7 +43,7 @@ describe('the packed package', () => {
 
   it('carries the licenses, the NOTICE and the source offer with the build and the patch', () => {
     const names = files(unpacked).map((f) => relative(unpacked, f).split('\\').join('/'))
-    for (const f of ['NOTICE', 'SOURCE.md', 'LICENSE-APACHE', 'LICENSE-occt-import-js.txt', 'LICENSE-occt.txt', 'OCCT_LGPL_EXCEPTION.txt', 'LICENSE-emscripten.txt', 'LICENSE-musl.txt', 'LICENSE-libcxx.txt', 'build.sh', 'source-archive.sh', 'patches/0001-mesh-kind.patch', 'README.md']) {
+    for (const f of ['NOTICE', 'SOURCE.md', 'LICENSE-APACHE', 'LICENSE-occt-import-js.txt', 'LICENSE-occt.txt', 'OCCT_LGPL_EXCEPTION.txt', 'LICENSE-emscripten.txt', 'LICENSE-musl.txt', 'LICENSE-libcxx.txt', 'build.sh', 'source-archive.sh', 'patches/0001-mesh-kind.patch', 'patches/0002-sew-iges-faces.patch', 'README.md']) {
       expect(names).toContain(f)
     }
     for (const f of ['dist/index.js', 'dist/index.d.ts', 'dist/node.js', 'dist/node.d.ts', 'dist/node-worker.js', 'dist/occt-import-js.mjs', 'dist/occt-import-js.wasm']) expect(names).toContain(f)
