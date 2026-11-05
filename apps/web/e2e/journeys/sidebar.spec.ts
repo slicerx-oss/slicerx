@@ -328,6 +328,41 @@ test.describe('the Objects card', () => {
     await sidebarDone(page)
   })
 
+  test("a part's menu clones it and moves it, a drag reorders the parts, and Undo takes each back", async ({ page }) => {
+    await sidebarAs(page, { mode: 'simple' })
+    try {
+      const row = rows(page).first()
+      await row.getByTestId('slice-object-expand').click()
+      const parts = row.getByTestId('object-part-row')
+      const names = () => row.getByTestId('slice-object-part').allTextContents()
+      await expect(parts).toHaveCount(2)
+      const [first, second] = await names()
+      // Clone: the copy goes last with the next number, and is picked.
+      await row.getByTestId('object-part-more').first().click()
+      await page.getByRole('menu', { name: 'Part' }).getByRole('menuitem', { name: 'Clone part' }).click()
+      await expect(parts).toHaveCount(3)
+      const copy = `${first} 2`
+      expect(await names()).toEqual([first, second, copy])
+      await expect(row.getByTestId('slice-object-part').nth(2)).toHaveAttribute('aria-pressed', 'true')
+      // Drag the copy to the top.
+      await parts.nth(2).dragTo(parts.nth(0))
+      await expect.poll(names).toEqual([copy, first, second])
+      // Move down from the menu, and with Alt and an arrow key on the part's name.
+      await row.getByTestId('object-part-more').nth(0).click()
+      await page.getByRole('menu', { name: 'Part' }).getByRole('menuitem', { name: 'Move down' }).click()
+      await expect.poll(names).toEqual([first, copy, second])
+      await row.getByTestId('slice-object-part').nth(1).press('Alt+ArrowDown')
+      await expect.poll(names).toEqual([first, second, copy])
+      // Each was one undo step.
+      for (const want of [[first, copy, second], [copy, first, second], [first, second, copy], [first, second]]) {
+        await page.getByRole('button', { name: 'Undo' }).first().click()
+        await expect.poll(names).toEqual(want)
+      }
+    } finally {
+      await sidebarDone(page)
+    }
+  })
+
   test('a volume shows in the tree with its role', async ({ page }) => {
     await sidebarAs(page, { mode: 'advanced' })
     await page.locator('[data-section="volumes"]').getByRole('button', { name: 'Add' }).click()

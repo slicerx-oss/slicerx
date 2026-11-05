@@ -4,7 +4,7 @@
 // one warning icon, lock and print toggles that show on hover (and stay while on), and a chevron that opens the tree
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
 import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, useContextMenu, type IconName } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { partBadge, slotLabel } from '../../filament/rail'
 import { effectiveSlot, type ResolvedSlot } from '../../filament/slots'
 import { useResolvedSlots, useStripSlots } from '../../filament/use-slots'
@@ -14,16 +14,25 @@ import { usePhoneLayout } from '../../lib/phone-layout'
 import { MiddleName } from '../../lib/short-name'
 import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
+import { clonePart, movePart } from '../../plate/parts'
+import { useHost } from '../../host'
 import { moveObject, objectWarnings, onRenameRequest, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { countSettings } from '../../plate/easy-groups'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
-import { get, selectedIds, set, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
+import { get, selectedIds, set, toast, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
 import { SelectionMenu } from './selection-bar'
 import { useSimpleGroups } from './simple-groups'
 
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
 
 const DRAG_TYPE = 'text/x-sx-object'
+/** A part dragged inside its object's tree: `<object id> <part index>`. */
+const PART_DRAG_TYPE = 'text/x-sx-part'
+
+/** Runs a part edit and says what went wrong, if anything. */
+function partEdit(fn: () => Promise<unknown>): void {
+  void fn().catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'))
+}
 
 /** The icon for each volume role in the tree, instead of a colored dot. */
 export const ROLE_ICON: Record<VolumeRole, IconName> = { negative: 'negative-part', support_blocker: 'support-blocker', support_enforcer: 'support-enforcer', modifier: 'modifier' }
@@ -87,6 +96,12 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   useEffect(() => (phone ? undefined : onRenameRequest(p.id, () => setRenaming(true))), [p.id, phone])
   const [drop, setDrop] = useState(false)
   const [slotMenu, setSlotMenu] = useState<{ part: string; at: { x: number; y: number } } | null>(null)
+  const [partMenu, setPartMenu] = useState<{ index: number; at: { x: number; y: number } } | null>(null)
+  const [partDrop, setPartDrop] = useState<number | null>(null)
+  // the part being dragged in this tree, so the drop line shows on the side it lands on
+  const dragging = useRef<number | null>(null)
+  const host = useHost()
+  const parts = p.handle.parts.length
   const warnings = objectWarnings(p, { bed, printerSlots })
   const groups = useSimpleGroups()
   const overrides = overrideCount(own, p.partSettings, groups)
@@ -212,19 +227,72 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
           <ul className="parts" aria-label={`Parts of ${p.name}`}>
             {p.handle.parts.map((part, i) =>
               !match.parts.includes(i) ? null : (
-                <li key={`${part.name}-${i}`} className="part">
+                <li
+                  key={`${part.name}-${i}`}
+                  className="part"
+                  data-testid="object-part-row"
+                  data-part-index={i}
+                  data-drop={partDrop === i && dragging.current !== null && dragging.current !== i ? (dragging.current > i ? 'above' : 'below') : undefined}
+                  draggable={parts > 1}
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    e.dataTransfer.setData(PART_DRAG_TYPE, `${p.id} ${i}`)
+                    e.dataTransfer.effectAllowed = 'move'
+                    dragging.current = i
+                  }}
+                  onDragEnd={() => {
+                    dragging.current = null
+                    setPartDrop(null)
+                  }}
+                  onDragOver={(e) => {
+                    if (!e.dataTransfer.types.includes(PART_DRAG_TYPE)) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setPartDrop(i)
+                  }}
+                  onDragLeave={() => setPartDrop(null)}
+                  onDrop={(e) => {
+                    const [id, from] = e.dataTransfer.getData(PART_DRAG_TYPE).split(' ')
+                    setPartDrop(null)
+                    if (id !== p.id || from === undefined) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    partEdit(() => movePart(host.slicer, p.id, Number(from), i))
+                  }}
+                >
                   <Icon name="part" size={14} className="part-role" />
                   <button
                     type="button"
                     className="n part-pick"
                     data-testid="slice-object-part"
                     aria-pressed={scopePart?.id === p.id && scopePart.part === part.name}
-                    {...tipAttrs({ title: part.name, body: 'Pick this part to give it settings of its own.' })}
+                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                    {...tipAttrs({ title: part.name, body: `Pick this part to give it settings of its own. Part ${i + 1} of ${parts}: drag it, or press Alt and an arrow key, to reorder.` })}
                     onClick={() => set({ selection: p.id, selectedIds: [p.id], scopePart: { id: p.id, part: part.name }, settingsScope: 'objects' })}
+                    onKeyDown={(e) => {
+                      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                      e.preventDefault()
+                      const to = e.key === 'ArrowUp' ? i - 1 : i + 1
+                      if (to >= 0 && to < parts) partEdit(() => movePart(host.slicer, p.id, i, to))
+                    }}
                   >
                     {part.name}
                   </button>
                   <PartSlotBadge part={part} slot={effectiveSlot(p, part)} slots={slots} strip={strip} fallback={p.colors[i]} onOpen={(at) => setSlotMenu({ part: part.name, at })} />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="more"
+                    className="part-more"
+                    data-testid="object-part-more"
+                    aria-haspopup="menu"
+                    aria-label={`More for ${part.name}`}
+                    tip={{ title: 'Part', body: 'Clone it, or move it up or down the list.' }}
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect()
+                      setPartMenu({ index: i, at: { x: r.left, y: r.bottom + 4 } })
+                    }}
+                  />
                 </li>
               ),
             )}
@@ -246,6 +314,43 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
         </div>
       ) : null}
       {phone ? null : <SelectionMenu at={ctx.at} onClose={ctx.close} label={p.name} />}
+      <Menu open={partMenu !== null} onClose={() => setPartMenu(null)} label="Part" at={partMenu?.at} testId="object-part-menu">
+        <MenuItem
+          icon="duplicate"
+          data-testid="object-part-clone"
+          onClick={() => {
+            const at = partMenu?.index
+            setPartMenu(null)
+            if (at !== undefined) partEdit(() => clonePart(host.slicer, p.id, at))
+          }}
+        >
+          Clone part
+        </MenuItem>
+        <MenuItem
+          icon="arrow-up"
+          data-testid="object-part-up"
+          disabled={!partMenu || partMenu.index === 0}
+          onClick={() => {
+            const at = partMenu?.index
+            setPartMenu(null)
+            if (at !== undefined) partEdit(() => movePart(host.slicer, p.id, at, at - 1))
+          }}
+        >
+          Move up
+        </MenuItem>
+        <MenuItem
+          icon="arrow-down"
+          data-testid="object-part-down"
+          disabled={!partMenu || partMenu.index >= parts - 1}
+          onClick={() => {
+            const at = partMenu?.index
+            setPartMenu(null)
+            if (at !== undefined) partEdit(() => movePart(host.slicer, p.id, at, at + 1))
+          }}
+        >
+          Move down
+        </MenuItem>
+      </Menu>
       <Menu open={slotMenu !== null} onClose={() => setSlotMenu(null)} label="Filament" at={slotMenu?.at}>
         {Array.from({ length: slotCount }, (_, k) => {
           const s = slots[k]

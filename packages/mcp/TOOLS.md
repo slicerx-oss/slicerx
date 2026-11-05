@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-258 tools.
+261 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_paint_apply` |  |  | slice | Apply this client's live paint preview in SlicerX. |
 | `slicerx_app_paint_clear` |  |  | slice | Clear one object's paint layer on SlicerX's shown plate, as Clear layer in the paint panel. |
 | `slicerx_app_paint_preview` |  |  | read | Preview paint on an object in SlicerX's shown plate without changing it. |
+| `slicerx_app_part_clone` |  |  | slice | Clone one part inside its object, as Clone part in the object list: the copy is named like "Body 2", keeps the filament, print settings and paint, sits beside the original on X (its width plus 2 mm), goes last in the list and is picked. |
+| `slicerx_app_parts` |  |  | read | Read the parts of an open object in list order: index, name, filament slot, triangles, paint layers, print settings of its own and bounds in the object's coordinates, plus its CAD history length. |
+| `slicerx_app_parts_order` |  |  | slice | Put the parts of an open object in a new order, by a full order of old indices or by moving one part to an index. |
 | `slicerx_app_pick_filter` |  |  | read | Read SlicerX's Model pick filter and selected bodies, faces and edges. |
 | `slicerx_app_pick_filter_set` |  |  | read | Change SlicerX's Model pick filter through the same command as its Body, Face and Edge only buttons. |
 | `slicerx_app_plate_add` |  |  | slice | Add an empty plate and show it. |

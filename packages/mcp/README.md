@@ -397,6 +397,21 @@ For example, call `slicerx_app_volume_add` with `{"object":"Bracket","role":"mod
 
 Placement uses object coordinates in mm and degrees. Modifier values use the same eligible print keys and validation as the app's panel. Other roles cannot carry these values, and changing away from modifier clears them. Overrides are returned as stored; their effective values depend on each intersected part. Invalid patches leave the project unchanged. Each edit is one toolbar Undo, including conversion from another object; an unchanged patch adds no Undo. Read-only grants cannot edit, locked targets refuse changes, and loading or history edits must finish first. These tools require the live app and never switch to a server-owned project.
 
+## Parts in the open app
+
+`slicerx_app_parts` reads the parts of an object open in the app, in list order: index, name, the filament slot it prints with (the object's own choice included), triangles, the paint layers it carries, its own print settings, its bounds in the object's coordinates, and the object's CAD history length with its last step's name.
+
+The person grants this client edit access before it can change parts:
+
+| Tool | Change |
+| --- | --- |
+| `slicerx_app_part_clone` | Clone one part, by index or name, inside its object. The copy is named like "Body 2", keeps the part's filament, print settings and paint, sits beside it on X (its width plus 2 mm) and goes last in the list. |
+| `slicerx_app_parts_order` | Put the parts in a new order: `order` lists the old indices in their new places, or `part` with `to` moves one part. |
+
+For example, call `slicerx_app_part_clone` with `{"object":"Bracket","part":"Lid"}`, then `slicerx_app_parts_order` with `{"object":"Bracket","part":2,"to":0}`. Both return the parts read back; a clone also returns `cloned` and a reorder `changed`.
+
+Part order is the order of the list only and does not change the print. Paint and colors move with their parts, and filament choices and print settings are kept by part name, so they follow too. In an object with a CAD history, a clone is a step that adds the part and a reorder is a step that changes no geometry, so the timeline stays editable; an object whose history must replay exactly can be reordered but not cloned. Each edit is one toolbar Undo. Locked objects refuse changes, and loading or history edits must finish first. These tools require the live app.
+
 ## Adding tools
 
 An edition or another host can start the server in-process and add its own tools, written as mimir tools, without the base package importing them. They go through the same permission policy and approvals:

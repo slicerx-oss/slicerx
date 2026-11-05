@@ -154,6 +154,8 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return obj(p['spec']) && isNum(p['spec']['count'])
     case 'parts.add':
       return typeof p['label'] === 'string'
+    case 'parts.order':
+      return isOrder(p['order'])
     case 'edge.fillet':
       return edgesOk(p['edges']) && isNum(p['radiusMm'])
     case 'edge.chamfer':
@@ -177,6 +179,17 @@ function paramsOk(p: Record<string, unknown>): boolean {
     default:
       return false
   }
+}
+
+/** A permutation of 0 to n - 1, as a parts.order step stores it. */
+function isOrder(v: unknown): boolean {
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_ITEMS) return false
+  const seen = new Set<number>()
+  for (const k of v) {
+    if (!Number.isInteger(k) || k < 0 || k >= v.length || seen.has(k)) return false
+    seen.add(k)
+  }
+  return true
 }
 
 const planeOk = (v: unknown) => obj(v) && vec3(v['point']) && vec3(v['normal']) && (v['normal'] as number[]).some((n) => n !== 0)
