@@ -12,7 +12,8 @@ import { grantSignatureValid, introducedDeviceKey, introducedPairingId, issueGra
 import { joinOverPipe, type JoinResult } from './handshake'
 import { NO_RIGHTS, type DeviceIdentity, type PairingRecord, type PairingStore } from './identity'
 import { introRoute, isLocalUrl, OFFER_TTL_MS, offerRoutes, pairingRoutes, parsePairingInput, type OfferInfo } from './offer'
-import { createRpcPeer, MIMIR_QUESTION_V, PairError, type ApprovalView, type MimirQuestion, type MimirState, type PlateCheck, type CameraQuality, type EventMap, type EventName, type HostInfo, type JobTarget, type JobUpdate, type LibraryEntry, type PushPrefs, type RemoteQuota, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
+import { partnerName } from './partner'
+import { createRpcPeer, MIMIR_QUESTION_V, PairError, type PartnerPushParams, type ApprovalView, type MimirQuestion, type MimirState, type PlateCheck, type CameraQuality, type EventMap, type EventName, type HostInfo, type JobTarget, type JobUpdate, type LibraryEntry, type PushPrefs, type RemoteQuota, type RpcPeer, type SliceOptions, type SliceSource, type SliceSummary } from './rpc'
 import type { DevicePlatform, Endpoints, PublicIdentity, Rights } from './schema'
 import { openSession, SessionError } from './session'
 import { openSocket, pipeFromSocket, relayPipe, type Pipe, type RelayConnection, type SocketFactory } from './transport'
@@ -35,6 +36,12 @@ export interface PairClientOptions {
   sessionTimeoutMs?: number
   /** How long a QR or code pairing waits for the host to answer. Default 20 s. */
   pairAnswerTimeoutMs?: number
+  /**
+   * Pair as a partner phone: another company's phone app, under its own app name (64 characters at most). The person
+   * picks "Pair a partner phone" in SlicerX and types this name; the pairing fails unless both sides use the same one
+   * (letter case aside). A partner client pairs by QR code or short code only, never by account approval.
+   */
+  partner?: string
 }
 
 export interface PairedHost {
@@ -51,6 +58,8 @@ export interface PairedHost {
   pendingIntroduction: boolean
   /** Unpaired on this phone, but the host has not confirmed yet: it may still answer this phone's key. */
   pendingRemoval?: boolean
+  /** The partner app name this pairing was made under, for a partner client. */
+  partner?: string
 }
 
 export type PairingOutcome = { ok: true; hosts: PairedHost[] } | { ok: false; reason: string }
@@ -154,6 +163,13 @@ export interface PairedCamera {
 export interface PairedPush {
   register(reg: { token: string; platform: 'ios' | 'android'; prefs: PushPrefs }): Promise<void>
   unregister(token: string): Promise<void>
+  /**
+   * A partner phone's own push token, delivered through the partner's own push project: an Expo token straight
+   * through Expo, or an APNs or FCM token through the partner's gateway (PartnerPushParams). Partner phones only.
+   * The alerts carry fixed text; open the app and read the details over this connection.
+   */
+  registerPartner(reg: PartnerPushParams): Promise<void>
+  unregisterPartner(): Promise<void>
 }
 
 export interface UploadFile {
@@ -185,6 +201,9 @@ export interface PairClient {
 }
 
 export function createPairClient(o: PairClientOptions): PairClient {
+  const named = o.partner === undefined ? undefined : partnerName(o.partner)
+  if (named === null) throw new PairError('bad_request', 'The partner name needs 1 to 64 characters with a letter or digit')
+  const partner: string | undefined = named
   const env = o.env ?? defaultEnv
   const me = o.identity
   let accountId = o.accountId ?? null
@@ -213,6 +232,7 @@ export function createPairClient(o: PairClientOptions): PairClient {
     accountLinked: accountId !== null && r.accountId === accountId,
     pendingIntroduction: r.pendingGrant !== undefined,
     pendingRemoval: r.pendingRevoke === true,
+    ...(r.partner !== undefined ? { partner: r.partner } : {}),
   })
 
   async function relayFor(url: string | undefined): Promise<RelayConnection> {
@@ -259,6 +279,7 @@ export function createPairClient(o: PairClientOptions): PairClient {
         createdAt: now,
         endpoints: cleanEndpoints(c.endpoints, offer.endpoints),
         ...(accountId && c.accountId === accountId ? { accountId } : {}),
+        ...(partner !== undefined ? { partner } : {}),
       })
     }
     for (const r of records) await o.store.put(r)
@@ -267,7 +288,7 @@ export function createPairClient(o: PairClientOptions): PairClient {
   }
 
   function flow(pipe: Pipe, offer: OfferInfo, account?: { timeoutMs: number }): PairingFlow {
-    const attempt = joinOverPipe(pipe, { env, offer, identity: me, ...(accountId ? { accountId } : {}), ...(account ? { timeoutMs: account.timeoutMs, announce: true } : { answerTimeoutMs: o.pairAnswerTimeoutMs ?? 20_000 }) })
+    const attempt = joinOverPipe(pipe, { env, offer, identity: me, ...(accountId ? { accountId } : {}), ...(account ? { timeoutMs: account.timeoutMs, announce: true } : { answerTimeoutMs: o.pairAnswerTimeoutMs ?? 20_000 }), ...(partner !== undefined && !account ? { partner } : {}) })
     return {
       ...(offer.hostName ? { hostName: offer.hostName } : {}),
       sas: attempt.sas,
@@ -328,7 +349,8 @@ export function createPairClient(o: PairClientOptions): PairClient {
         pipe?.close()
         // A version mismatch will not clear on another route: stop and say which side to update.
         if (e instanceof SessionError && e.code === 'outdated') throw new PairError('not_supported', e.message)
-        lastError = e
+        // Out of relay allowance: another route (the LAN) may still work, so keep trying and say why if none does.
+        lastError = e instanceof SessionError && e.code === 'quota' ? new PairError('quota', e.message) : e
       }
     }
     throw lastError instanceof PairError ? lastError : new PairError('unavailable', 'The host is not reachable')
@@ -412,6 +434,8 @@ export function createPairClient(o: PairClientOptions): PairClient {
       push: {
         register: async (reg) => void (await rpc.call('push.register', reg)),
         unregister: async (token) => void (await rpc.call('push.unregister', { token })),
+        registerPartner: async (reg) => void (await rpc.call('push.registerPartner', reg)),
+        unregisterPartner: async () => void (await rpc.call('push.unregisterPartner', {})),
       },
       library: () => rpc.call('library.list', {}),
       async slice(req, onProgress) {
@@ -546,6 +570,7 @@ export function createPairClient(o: PairClientOptions): PairClient {
       return flow(relayPipe(relay, routes.joiner, routes.offerer), offer)
     },
     async joinAccount() {
+      if (partner !== undefined) throw new PairError('forbidden', 'A partner phone pairs by QR code or short code')
       if (!accountId) throw new PairError('forbidden', 'Sign in first')
       const relay = await relayFor(o.defaultRelay)
       const offerId = env.random(16)

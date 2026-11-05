@@ -227,6 +227,8 @@ export const HostInfo = z.object({
   mimir: z.boolean().optional(),
   /** Starts approvable from afar under the remote start rule, with `plate.check`. Absent on hosts from before it. */
   remoteStart: z.boolean().optional(),
+  /** The partner app name the host paired this phone under, for a partner phone. */
+  partner: z.string().min(1).max(64).optional(),
 })
 export type HostInfo = z.infer<typeof HostInfo>
 
@@ -294,6 +296,29 @@ export type PushPrefs = z.infer<typeof PushPrefs>
 /** An Expo push token, `ExponentPushToken[...]` or `ExpoPushToken[...]`. */
 export const ExpoToken = z.string().regex(/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{10,200}\]$/)
 
+/** Who delivers a partner phone's alerts: Expo for the partner's own Expo project, or the partner's push gateway for APNs or FCM. */
+export const PUSH_PROVIDERS = ['expo', 'apns', 'fcm'] as const
+export type PushProvider = (typeof PUSH_PROVIDERS)[number]
+/** An APNs device token (hex) or an FCM registration token. */
+const ApnsToken = z.string().regex(/^[0-9a-fA-F]{64,200}$/)
+const FcmToken = z.string().regex(/^[A-Za-z0-9_:.-]{32,512}$/)
+/** The partner's push gateway: https on a public name, no user info, query or fragment. The hub checks the address again. */
+export const PushGateway = z.string().max(200).regex(/^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?(?:\/[A-Za-z0-9._~/-]*)?$/)
+/**
+ * A partner phone's push registration (`push.registerPartner`). `expo` posts to Expo with the partner's own Expo
+ * token, so Expo delivers through the partner's own project; `apns` and `fcm` post the same fixed text to the
+ * partner's gateway, which holds the partner's own APNs or FCM key. SlicerX never holds a partner's keys.
+ */
+export const PartnerPushParams = z
+  .object({ provider: z.enum(PUSH_PROVIDERS), token: z.string().min(1).max(512), platform: z.enum(['ios', 'android']), prefs: PushPrefs, gateway: PushGateway.optional() })
+  .superRefine((v, ctx) => {
+    const ok = v.provider === 'expo' ? ExpoToken.safeParse(v.token).success : v.provider === 'apns' ? ApnsToken.safeParse(v.token).success : FcmToken.safeParse(v.token).success
+    if (!ok) ctx.addIssue({ code: 'custom', message: `token is not a ${v.provider} token`, path: ['token'] })
+    if (v.provider === 'expo' && v.gateway !== undefined) ctx.addIssue({ code: 'custom', message: 'expo tokens go to Expo; leave out gateway', path: ['gateway'] })
+    if (v.provider !== 'expo' && v.gateway === undefined) ctx.addIssue({ code: 'custom', message: `${v.provider} needs the partner's gateway`, path: ['gateway'] })
+  })
+export type PartnerPushParams = z.infer<typeof PartnerPushParams>
+
 const Loose = z.looseObject({})
 const Printer = z.looseObject({ id: PrinterId, name: z.string().max(200) })
 
@@ -335,6 +360,10 @@ export const METHODS = {
   /** Registers this phone's Expo push token with the computer's hub, which sends alerts while the app is closed. */
   'push.register': { params: z.object({ token: ExpoToken, platform: z.enum(['ios', 'android']), prefs: PushPrefs }), result: z.object({}) },
   'push.unregister': { params: z.object({ token: ExpoToken }), result: z.object({}) },
+  /** A partner phone registers its own push token, delivered through its own push project (PartnerPushParams). Partner phones only. */
+  'push.registerPartner': { params: PartnerPushParams, result: z.object({}) },
+  /** Drops this partner phone's push registration. */
+  'push.unregisterPartner': { params: z.object({}), result: z.object({}) },
   'library.list': { params: z.object({}), result: z.array(LibraryEntry).max(2000) },
   'slice.start': {
     params: z.object({ source: SliceSource, where: z.enum(['host', 'cloud']), printerId: PrinterId.optional(), options: SliceOptions.optional() }),
@@ -404,6 +433,8 @@ export interface ResultMap {
   'camera.grab': { contentType: string; dataB64: string; capturedAt: number; source: 'snapshot' | 'stream' } | null
   'push.register': Record<string, never>
   'push.unregister': Record<string, never>
+  'push.registerPartner': Record<string, never>
+  'push.unregisterPartner': Record<string, never>
   'library.list': LibraryEntry[]
   'slice.start': { sliceId: string }
   'slice.cancel': Record<string, never>
@@ -461,7 +492,7 @@ export interface EventMap {
   'mimir.question': MimirState & { ended?: MimirEnded }
 }
 
-export const RPC_ERROR_CODES = ['bad_request', 'forbidden', 'not_found', 'not_supported', 'unavailable', 'busy', 'too_large', 'failed', 'timeout', 'closed'] as const
+export const RPC_ERROR_CODES = ['bad_request', 'forbidden', 'not_found', 'not_supported', 'unavailable', 'busy', 'too_large', 'failed', 'timeout', 'closed', 'quota'] as const
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number]
 
 export class PairError extends Error {
