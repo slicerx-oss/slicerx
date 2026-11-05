@@ -94,9 +94,13 @@ fn cube(lo: [f32; 3], hi: [f32; 3]) -> MeshPart {
 }
 
 fn gcode(config: &Value) -> String {
+    gcode_of(vec![cube([0.0, 0.0, 0.0], [20.0, 20.0, 6.0])], config)
+}
+
+fn gcode_of(parts: Vec<MeshPart>, config: &Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "m".into(),
-        parts: vec![cube([0.0, 0.0, 0.0], [20.0, 20.0, 6.0])],
+        parts,
         ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
@@ -186,13 +190,18 @@ fn needed(moves: &[Move], h: f64) -> f64 {
 /// How far apart parallel lines lie: the moves over 1 mm along the most common direction, their offsets across it,
 /// the median step between neighbors. `None` under three such lines.
 fn pitch(moves: &[Move]) -> Option<f64> {
+    pitch_over(moves, 1.0)
+}
+
+/// [`pitch`] of the moves over `min` mm.
+fn pitch_over(moves: &[Move], min: f64) -> Option<f64> {
     let deg = |m: &Move| {
         (m.b[1] - m.a[1])
             .atan2(m.b[0] - m.a[0])
             .to_degrees()
             .rem_euclid(180.0)
     };
-    let long: Vec<&Move> = moves.iter().filter(|m| m.len() > 1.0).collect();
+    let long: Vec<&Move> = moves.iter().filter(|m| m.len() > min).collect();
     let mut bins: BTreeMap<i64, usize> = BTreeMap::new();
     for m in &long {
         *bins.entry(deg(m).round() as i64 % 180).or_default() += 1;
@@ -393,4 +402,86 @@ fn classic_walls_on_layers_thicker_than_the_set_height_sit_at_their_spacing() {
 #[test]
 fn classic_walls_at_the_set_height_sit_at_their_spacing() {
     check_classic(0.2, 0.15, 0.2, 0.2, "A1 classic, 0.2 mm set and layers");
+}
+
+/// The extra loops `extra_perimeters_on_overhangs` adds under the overhanging part of a 24 mm slab on an 8 mm pillar
+/// (a Prusa MK4, the flat bridge strand at a flow of 1, so the loops print a 0.4 mm bead at the layer's height): on the
+/// slab's first layer, the loops' long runs along the slab sit within half a percent of the spacing their own bead
+/// needs at that layer's height. `smart`: the layer is thinner or thicker than the set height.
+fn check_overhang_loops(set: f64, min: f64, max: f64, smart: bool, what: &str) {
+    let config = printer(
+        "prusa",
+        "prusa-mk4",
+        set,
+        min,
+        max,
+        &json!({
+            "extra_perimeters_on_overhangs": true,
+            "thick_bridges": false,
+            "bridge_flow": 1.0,
+            "bridge_line_width": "100%",
+        }),
+    );
+    let parts = vec![
+        cube([0.0, 0.0, 0.0], [8.0, 10.0, 5.0]),
+        cube([0.0, 0.0, 5.0], [24.0, 10.0, 7.0]),
+    ];
+    let all = layers(&gcode_of(parts, &config));
+    let zs: Vec<i64> = all.keys().copied().collect();
+    // The first layer over the pillar that prints overhang walls (smart layers may put a thin layer at the slab's
+    // underside first).
+    let i = zs
+        .iter()
+        .position(|z| *z > 5000 && all[z].contains_key("Overhang wall"))
+        .unwrap_or_else(|| panic!("{what}: no overhang wall over the pillar"));
+    let (z, h) = (zs[i], (zs[i] - zs[i - 1]) as f64 / 1000.0);
+    assert_eq!(
+        (h - set).abs() > 0.005,
+        smart,
+        "{what}: the slab's first layer is {h} mm thick"
+    );
+    // The loops' runs along the slab; the short pieces where they meet the walls jog by a few hundredths.
+    let runs: Vec<Move> = all[&z]["Overhang wall"]
+        .iter()
+        .copied()
+        .filter(|m| m.len() > 5.0)
+        .collect();
+    let laid = pitch_over(&runs, 5.0).unwrap_or_else(|| panic!("{what}: no parallel overhang runs at z {z}"));
+    // The loops' bead, the most common among the runs (the slab's own walls hang there too, at their widths).
+    let mut each: Vec<f64> = runs.iter().map(|m| needed(std::slice::from_ref(m), h)).collect();
+    each.sort_by(f64::total_cmp);
+    let want = each[each.len() / 2];
+    assert!(
+        (laid / want - 1.0).abs() < 0.005,
+        "{what}: the extra overhang loops at z {z} ({h} mm layer) are laid {laid:.4} mm apart, their bead needs \
+         {want:.4} ({:+.2} percent)",
+        (laid / want - 1.0) * 100.0
+    );
+}
+
+#[test]
+fn overhang_loops_on_a_smart_layer_under_a_thicker_setting_sit_at_their_spacing() {
+    check_overhang_loops(
+        0.28,
+        0.18,
+        0.2,
+        true,
+        "MK4, 0.28 mm set, smart layers up to 0.2 mm",
+    );
+}
+
+#[test]
+fn overhang_loops_on_a_smart_layer_under_a_finer_setting_sit_at_their_spacing() {
+    check_overhang_loops(
+        0.12,
+        0.09,
+        0.18,
+        true,
+        "MK4, 0.12 mm set, smart layers 0.09 to 0.18 mm",
+    );
+}
+
+#[test]
+fn overhang_loops_at_the_set_height_sit_at_their_spacing() {
+    check_overhang_loops(0.2, 0.0, 0.0, false, "MK4, 0.2 mm fixed layers");
 }
