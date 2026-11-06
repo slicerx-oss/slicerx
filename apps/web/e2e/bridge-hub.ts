@@ -223,6 +223,16 @@ export async function start(sheet: Locator): Promise<void> {
   await go.click()
 }
 
+/**
+ * How a test's stand-in detector pairs: with a detector key the app makes (`clients.create` role watch), the way a person
+ * connects a detector. The app code narrowed to the watch role is not trusted with plate checks or looks.
+ */
+export async function detectorPairing(): Promise<{ url: string; clientKey: string; hubKey: string; role: 'watch' }> {
+  const made = await hub.admin.clients.create('E2E detector', 'watch')
+  if (!made.clientKey) throw new Error('the hub made no detector key')
+  return { url: hub.linkUrl, clientKey: made.clientKey, hubKey: hub.admin.hubKey, role: 'watch' }
+}
+
 /** A failure detector stand-in on the watch role: takes one frame of the printer, then reports a hand on it. */
 export async function reportHand(printerId: string): Promise<{ frame: Uint8Array; paused: boolean; looks: { hand: boolean; count: number }; close(): void }> {
   const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
@@ -240,7 +250,7 @@ export async function reportHand(printerId: string): Promise<{ frame: Uint8Array
       })
     }
   }
-  const det = await connectLink({ url: hub.linkUrl, code: hub.code, role: 'watch', WebSocket: Looking as unknown as typeof WebSocket })
+  const det = await connectLink({ ...(await detectorPairing()), WebSocket: Looking as unknown as typeof WebSocket })
   const frame = await new Promise<Uint8Array>((resolve) => {
     void det.watch.subscribe((f) => f.printerId === printerId && resolve(f.data), { everyMs: 2000, printerIds: [printerId] })
   })
