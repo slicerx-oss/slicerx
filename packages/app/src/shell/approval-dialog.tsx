@@ -9,7 +9,8 @@ import { allowsNote } from './approval-note'
 /**
  * The only place a user-initiated side effect gets approved. Its buttons are the sole path to a token. Laid out like
  * the Print sheet: what it does in a flat card, one line per check, and a statement to confirm carried by the
- * approve button's own label, so pressing it is the answer.
+ * approve button's own label, so pressing it is the answer. It opens with focus on its title, not a button, since a card
+ * can arrive while someone is typing and one Enter must not approve. Tab goes to Deny first, then Approve, in the footer's order.
  */
 export function ApprovalDialog() {
   const approval = useApp((s) => s.approval)
@@ -28,6 +29,7 @@ export function ApprovalDialog() {
       required
       onClose={() => undefined}
       className="approve-dialog"
+      focusPanel
       title={
         <>
           <Eyebrow className="approve-eyebrow">
@@ -46,7 +48,6 @@ export function ApprovalDialog() {
             icon={confirm ? 'bed-plate' : 'check'}
             disabled={busy || errors.length > 0}
             {...(errors.length ? { tip: { title: label, reason: 'Fix the problem above first.' } } : {})}
-            autoFocus={errors.length === 0}
             onClick={() => {
               setBusy(true)
               void approval?.approve()
