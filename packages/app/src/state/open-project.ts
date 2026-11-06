@@ -345,7 +345,8 @@ async function addProjectShown(
     const n = joined.reduce((sum, j) => sum + j.from.length, 0)
     note = `${note ? `${note} ` : ''}${n} of its objects touch, so they were loaded as ${joined.length === 1 ? 'one object' : `${joined.length} objects`} with parts.`
   }
-  // What the reader left out of the file (parts of a type it does not read, paint in a newer format) is said too.
+  // What the reader left out of the file or read another way (paint in a newer format, parts of a type it does not
+  // know, read as normal parts) is said too.
   if (project.readerNote) note = `${note ? `${note} ` : ''}${project.readerNote}`
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.

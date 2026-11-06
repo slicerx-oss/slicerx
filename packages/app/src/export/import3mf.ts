@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Reads a 3MF project (SlicerX .sx3mf, Bambu Studio or OrcaSlicer) into objects, parts and volumes. The
-// part subtypes of Orca's 3MF layout decide what a part is: normal parts print, negative parts cut,
-// support blockers and enforcers steer support. The archive is untrusted: entry count, sizes and names
-// are capped before anything is inflated.
+// part subtypes in the project's settings file decide what a part is: normal parts print (and so does a part of a
+// type this version does not know, as the engine reads it), negative parts cut, support blockers and enforcers steer
+// support. The archive is untrusted: entry count, sizes and names are capped before anything is inflated.
 import type { NamedValue } from '../cad/value-names'
 import { parseValues } from './values-file'
 import type { MeshPart } from '@slicerx/contracts'
@@ -197,6 +197,19 @@ export function parseDimensions(bytes: Uint8Array | undefined, objectIds: Readon
 
 const ROLE: Record<string, VolumeRole> = { negative_part: 'negative', support_blocker: 'support_blocker', support_enforcer: 'support_enforcer', modifier_part: 'modifier' }
 
+/**
+ * What a part type names, as the geometry engine reads it: the subtypes of model_settings.config and the volume types
+ * of Slic3r_PE_model.config alike, in either file. A type that is neither is not here; the engine and the command line read it as a normal part, and so
+ * does the app (partKindOf).
+ */
+const PART_KIND: Record<string, VolumeRole | 'normal'> = { '': 'normal', normal_part: 'normal', ModelPart: 'normal', ...ROLE, NegativeVolume: 'negative', ParameterModifier: 'modifier', SupportBlocker: 'support_blocker', SupportEnforcer: 'support_enforcer' }
+
+/** A part type as the engine reads it, with whether this version knows it; an unknown one is a normal part. */
+function partKindOf(type: string): { kind: VolumeRole | 'normal'; known: boolean } {
+  const kind = Object.hasOwn(PART_KIND, type) ? PART_KIND[type] : undefined
+  return kind ? { kind, known: true } : { kind: 'normal', known: false }
+}
+
 /** Object metadata keys that are not settings. */
 const OBJECT_META = new Set(['', 'name', 'extruder', 'module'])
 
@@ -238,9 +251,6 @@ function subMesh(p: MeshPart, first: number, last: number, name: string, slot: n
   }
   return { name, slot, positions: new Float32Array(pos), indices: idx }
 }
-
-/** PrusaSlicer's volume types, as the roles Orca's subtypes give. A model part is a normal part. */
-const PRUSA_ROLE: Record<string, VolumeRole> = { NegativeVolume: 'negative', ParameterModifier: 'modifier', SupportBlocker: 'support_blocker', SupportEnforcer: 'support_enforcer' }
 
 /** Volume and object metadata in Slic3r_PE_model.config that is not a setting. */
 const PRUSA_META = new Set(['name', 'volume_type', 'modifier', 'matrix', 'extruder', 'source_file', 'source_object_id', 'source_volume_id', 'source_offset_x', 'source_offset_y', 'source_offset_z', 'source_in_inches', 'source_in_meters', 'mesh_stat', 'text_configuration', 'shape_configuration', 'svg', 'cut_id', 'cut_info'])
@@ -614,7 +624,8 @@ function plateCfgOf(name: string, index: number, m: Record<string, string>, obje
 /**
  * The objects of a project the geometry engine read (geom-project.ts). The engine gives part types, slots, settings and
  * paint as the file has them, for Bambu Studio, Orca and PrusaSlicer alike; PrusaSlicer's settings are mapped to Orca's
- * keys here, as the app reads them everywhere else. A part type the app does not know is left out, as before.
+ * keys here, as the app reads them everywhere else. A part of a type the engine does not know is read as a normal
+ * part, as the engine and the command line read and slice it, and named for the open note.
  */
 async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<Assembly> {
   const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String), p.id))
@@ -628,9 +639,9 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<A
   const prusaPart = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaPartOverrides : null
   const partRaw = (list: [string, string][], object: [string, string][]): Record<string, string> => (prusaPart ? prusaPart(Object.fromEntries(list), Object.fromEntries(object), prusaText) : raw(list))
   const items: Assembled[] = []
-  const leftOut: string[] = []
-  // The engine's note for a part type it does not know says it read the part as a normal one; the app leaves it out,
-  // and says that instead.
+  const unknownType: string[] = []
+  // The engine's note for a part type it does not know names the file's type text; the open note says it in plain
+  // words instead (readerNoteOf), so the engine's line is dropped.
   const typeNotes = new Set<string>()
   for (const [itemIndex, o] of g.objects.entries()) {
     const parts: MeshPart[] = []
@@ -641,9 +652,8 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<A
     for (const p of o.parts) {
       const name = p.name || o.name || 'Part'
       if (p.kindText !== null) {
-        leftOut.push(name)
+        unknownType.push(name)
         typeNotes.add(`${p.name}: part type ${p.kindText} is not one this reader knows; read as a normal part`)
-        continue
       }
       const part: MeshPart = { name, slot: p.slot ?? o.slot ?? 1, positions: p.positions, indices: p.indices }
       const own = partRaw(p.settings, o.settings)
@@ -675,35 +685,42 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<A
       placed: o.parts.some((p) => p.transformed),
     })
   }
-  return { plateCfg, items, leftOut, notes: (g.notes ?? []).filter((n) => !typeNotes.has(n)) }
+  return { plateCfg, items, unknownType, notes: (g.notes ?? []).filter((n) => !typeNotes.has(n)) }
 }
 
-/** A project's objects as a reader put them together, with what it left out: parts by name, and the engine's notes. */
+/** A project's objects as a reader put them together, with what it read another way or left out. */
 interface Assembly {
   plateCfg: PlateCfg[]
   items: Assembled[]
-  /** Parts of a type this version does not read, by name. */
-  leftOut: string[]
+  /** Parts of a type this version does not know, read as normal parts, by name. */
+  unknownType: string[]
   /** The geometry engine's own notes on what it skipped or read another way. */
   notes: string[]
 }
 
+/** Names in a line: "A", "A and B", "A, B and C", the first five and how many more. */
+function namesLine(names: readonly string[]): string {
+  if (names.length > 5) return `${names.slice(0, 5).join(', ')} and ${names.length - 5} more`
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '')
+}
+
 /**
- * One note for what a reader left out of a file: the parts of a type this version does not read, by name, and the
- * geometry engine's notes, each said once. Undefined when it read the file whole.
+ * One note for what a reader left out of a file or read another way: the geometry engine's notes, each said once, and
+ * the parts of a type this version does not know, by name, which were read as normal parts. The file's own part type
+ * text is never shown. Undefined when it read the file whole.
  */
-export function readerNoteOf(leftOut: readonly string[], notes: readonly string[]): string | undefined {
+export function readerNoteOf(unknownType: readonly string[], notes: readonly string[]): string | undefined {
+  const sentences: string[] = []
   const lines: string[] = []
-  const names = [...new Set(leftOut)]
-  if (names.length) {
-    const shown = names.length > 5 ? `${names.slice(0, 5).join(', ')} and ${names.length - 5} more` : names.join(', ')
-    lines.push(`${leftOut.length === 1 ? 'a part' : `${leftOut.length} parts`} of a type this version does not read ${leftOut.length === 1 ? 'was' : 'were'} left out (${shown})`)
-  }
   for (const n of notes) {
     const line = n.trim().replace(/[.;\s]+$/, '')
     if (line && !lines.includes(line)) lines.push(line)
   }
-  return lines.length ? `Not everything in this file was read: ${lines.join('; ')}.` : undefined
+  if (lines.length) sentences.push(`Not everything in this file was read: ${lines.join('; ')}.`)
+  const names = [...new Set(unknownType)]
+  if (names.length === 1) sentences.push(`${names[0]} is a part of a type this version doesn't know, so it was read as a normal part.`)
+  else if (names.length) sentences.push(`${namesLine(names)} are parts of a type this version doesn't know, so they were read as normal parts.`)
+  return sentences.length ? sentences.join(' ') : undefined
 }
 
 // The maker's app's reading of the keys its project lacks, shared with the MCP server's project slices.
@@ -788,7 +805,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<Assembly> {
   }
 
   const items: Assembled[] = []
-  const leftOut: string[] = []
+  const unknownType: string[] = []
   for (const [itemIndex, item] of main.items.entries()) {
     const obj = main.objects.get(item.objectId)
     if (!obj) continue
@@ -810,9 +827,11 @@ async function assembleScanned(scanned: ScannedProject): Promise<Assembly> {
         const name = v.name ?? pz.name ?? obj.name ?? 'Part'
         const part = subMesh(obj.mesh, v.first, v.last, name, v.extruder ?? pz.extruder ?? 1)
         if (!part) throw new ProjectReadError('The 3MF names a volume outside its object\'s mesh.')
-        const role = PRUSA_ROLE[v.type]
-        if (role) volumes.push({ name, role, part, ...(role === 'modifier' && Object.keys(v.settings).length ? { rawSettings: v.settings } : {}) })
-        else if (v.type === 'ModelPart') {
+        // A volume type the engine does not know is a normal part, as it slices it.
+        const { kind, known } = partKindOf(v.type)
+        if (kind !== 'normal') volumes.push({ name, role: kind, part, ...(kind === 'modifier' && Object.keys(v.settings).length ? { rawSettings: v.settings } : {}) })
+        else {
+          if (!known) unknownType.push(name)
           // The object's settings apply to each of its parts; a part's own settings win.
           const raw = { ...pz.settings, ...v.settings }
           if (Object.keys(raw).length) rawPartSettings[name] = raw
@@ -825,13 +844,11 @@ async function assembleScanned(scanned: ScannedProject): Promise<Assembly> {
       const mesh = src.obj?.mesh
       if (!mesh) continue
       const pi = info?.parts.get(src.id)
-      const role = pi?.subtype ? ROLE[pi.subtype] : undefined
+      const { kind, known } = partKindOf(pi?.subtype ?? '')
+      const role = kind === 'normal' ? undefined : kind
       const name = pi?.name ?? src.obj?.name ?? info?.name ?? 'Part'
-      // other subtypes are not supported: the part is left out, and the open says so
-      if (pi?.subtype && !role && pi.subtype !== 'normal_part') {
-        leftOut.push(name)
-        continue
-      }
+      // A subtype the engine does not know is a normal part, as it slices it; the open note names it.
+      if (!known) unknownType.push(name)
       const baked = bakeMesh(mesh, src.matrix, name, pi?.extruder ?? info?.extruder ?? 1)
       if (role) volumes.push({ name, role, part: baked, ...(role === 'modifier' && pi?.raw ? { rawSettings: pi.raw } : {}) })
       else {
@@ -843,7 +860,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<Assembly> {
     }
     items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, rawObjectSettings: info?.raw ?? pz?.settings ?? {}, noSlot, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
   }
-  return { plateCfg, items, leftOut, notes: [] }
+  return { plateCfg, items, unknownType, notes: [] }
 }
 
 /**
@@ -858,8 +875,8 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
   const marks = vaultMarksOf(files, scanned.marks)
   const rootSource = sourceOf(marks.root)
-  const { plateCfg, items, leftOut, notes: engineNotes } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
-  const readerNote = readerNoteOf(leftOut, engineNotes)
+  const { plateCfg, items, unknownType, notes: engineNotes } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
+  const readerNote = readerNoteOf(unknownType, engineNotes)
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
   const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), ...(p.bedType ? { bedType: p.bedType } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
