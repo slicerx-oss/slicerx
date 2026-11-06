@@ -395,6 +395,9 @@ export interface HubCards {
 
 export const BED_CLEAR = 'The build plate is clear'
 
+/** The toast card's line for a hub card approved here, named so the hub's later word on it replaces it. */
+const cardLine = (id: string) => `hub-card:${id}`
+
 /**
  * Shows the hub's cards in the approval dialog, one at a time, oldest first. Approve and Deny are the only
  * ways a card is answered here. A card answered by another client (a phone, a partner app) closes with a
@@ -437,7 +440,8 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
         // The approve button of a start or a home says the plate is clear, so pressing it carries that answer.
         await cards.grantWith(card.id, { bedClear: text.startsPrint || text.asksPlate === true }).then(
           // A refusal that came before the grant answered stays on screen.
-          () => void (refusedEarly.delete(card.id) || toast('Approved. The hub is running it now.', 'ok')),
+          // The line is named for the card, so a refusal that comes later takes its place.
+          () => void (refusedEarly.delete(card.id) || toast('Approved. The hub is running it now.', 'ok', undefined, undefined, { key: cardLine(card.id) })),
           (e: unknown) => {
             approved.delete(card.id)
             toast(e instanceof Error ? e.message : String(e), 'error')
@@ -488,7 +492,8 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
     if (d.ok) return
     if (granting.has(d.requestId)) refusedEarly.add(d.requestId)
     const printer = d.printerId ? printerName(d.printerId) : null
-    toast(refusedNote(printer, outcome ?? { undone: 'it did not happen', notReady: 'is not ready for it' }, d.code), 'error', undefined, {})
+    // In place of the card's "Approved." line: no check mark stays beside a refusal.
+    toast(refusedNote(printer, outcome ?? { undone: 'it did not happen', notReady: 'is not ready for it' }, d.code), 'error', undefined, {}, { replaces: cardLine(d.requestId) })
   })
   // Cards raised before this app connected are waiting on the hub.
   void cards.pending?.().then((list) => list.filter((r) => r.origin === 'mcp' || r.origin === 'phone' || r.origin === 'queue' || r.origin === 'schedule').forEach(add), () => undefined)

@@ -281,7 +281,7 @@ export interface AppState {
   playbackSpeed: number
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle: boolean
-  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void; persist?: boolean; secondLine?: boolean } | null
+  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void; persist?: boolean; key?: string; replaces?: string; secondLine?: boolean } | null
   /**
    * What the last open or import says (the printer it opened on, the settings it applied, "Added cube.stl"): one line in
    * the left pane under the printer card, with its action, until dismissed or replaced. Never over the view. Not saved.
@@ -1053,9 +1053,11 @@ export interface ToastAction {
  * see. It gets the dismiss button a warning has. `secondLine` shows the text after the first sentence on a second line
  * instead of under Details.
  */
-export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void; persist?: boolean }, look?: { secondLine?: boolean }): void {
+export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void; persist?: boolean }, line?: { key?: string; replaces?: string; secondLine?: boolean }): void {
   const closing = !close ? {} : close.persist ? { persist: true } : { dismissible: true, ...(close.onDismiss ? { onDismiss: close.onDismiss } : {}) }
-  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing, ...(look?.secondLine ? { secondLine: true } : {}) } })
+  // `key` names the line on the toast card; `replaces` takes the line with that key off the card as this one joins.
+  const named = { ...(line?.key ? { key: line.key } : {}), ...(line?.replaces ? { replaces: line.replaces } : {}), ...(line?.secondLine ? { secondLine: true } : {}) }
+  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing, ...named } })
 }
 
 /**
