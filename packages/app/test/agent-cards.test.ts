@@ -157,6 +157,8 @@ describe('agent cards', () => {
     expect(t.title).toBe('Home all axes of Bay 4?')
     expect(t.blocked).toBeUndefined()
     expect(t.startsPrint).toBe(false)
+    // Approving it says the plate is clear, as for a start: the hub homes on that answer, not on a standing record.
+    expect(t.asksPlate).toBe(true)
     expect(t.lines.join(' ')).toMatch(/nozzle comes down to the plate/)
     expect(t.lines.join(' ')).not.toMatch(/G-code/)
     // Home work on a G-code action, or a G-code line on a home action, has nothing checked to show.
@@ -239,6 +241,13 @@ describe('agent cards', () => {
     await second.deny()
     expect(calls).toEqual(['grant req-1 true', 'deny req-2'])
     expect(get().approval).toBeNull()
+    // A home card asks about the plate like a start, and its Approve carries the answer.
+    emit(card({ id: 'req-3', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'home', printerId: 'bay-4' } }))
+    const home = get().approval!
+    expect(home.confirm).toBe(BED_CLEAR)
+    expect(home.go).toBe('Plate is clear, approve')
+    await home.approve()
+    expect(calls.at(-1)).toBe('grant req-3 true')
     stop()
   })
 
