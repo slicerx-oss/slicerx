@@ -156,7 +156,7 @@ function hasEnforcers(e: PlateEntry): boolean {
 }
 
 /** Whether the entry gets support with `own`, its object's settings: sx's rule (objectGetsSupport). */
-function supportedOf(e: PlateEntry, own: Record<string, SettingValue>): boolean {
+export function supportedOf(e: PlateEntry, own: Record<string, SettingValue>): boolean {
   const enforcers = hasEnforcers(e)
   const m = e.transform
   const key = JSON.stringify([enforcers, [0, 1, 2, 4, 5, 6, 8, 9, 10].map((i) => Math.round((m[i] ?? 0) * 1e9)), SUPPORT_KEYS.map((k) => own[k] ?? null)])

@@ -154,8 +154,26 @@ export interface PlateObject {
 export interface Plate {
   bed: Bed
   /** Where a 3MF plate given without a transform goes. `center` (the default): centered on the bed as a whole. `keep`: each build item where the file puts it, from the front left corner of the printable area, refused when a part lands off that area. A mesh file without a transform is centered under either. */
-  placement?: 'center' | 'keep'
+  placement?: 'center' | 'keep' | 'arrange'
+  /** With placement `arrange`: what the arrange keeps between objects, whether it turns them, and which objects stay where they are. */
+  arrange?: ArrangeSpec
   objects: PlateObject[]
+}
+
+/** What an arrange of the plate is asked for (`plate.arrange`). */
+export interface ArrangeSpec {
+  /** The spacing between objects and from the bed edge, mm; 6 when unset. Printing by object the extruder clearance applies whatever it says. */
+  spacingMm?: number
+  /** Whether an object may turn about Z where that packs better; on when unset. */
+  rotate?: boolean
+  /** The turn step while turning, degrees (1 to 90); 10 when unset. */
+  stepDeg?: number
+  /** How long the search runs: counted work, so the same plate gives the same layout anywhere; normal when unset. */
+  effort?: 'quick' | 'normal' | 'thorough'
+  /** The ids of objects that stay where they are; the others are packed round them. */
+  keep?: string[]
+  /** The objects with no room laid out on new, empty plates too, in the same call (PlateArrangement.plates). */
+  newPlates?: boolean
 }
 
 /** Setting overrides for a band of heights. Only wall count, temperature, flow, pressure advance, speeds, retraction and the per-feature filaments (`outer_wall_filament_id` and the other `*_filament_id` keys) may change by height; geometry keys are rejected. */
@@ -515,6 +533,93 @@ export function readPlateCheck(v: unknown): PlateCheck {
   }
 }
 
+/** An object the arrange placed: its new transform (machine coordinates, column-major) and its turn about Z. */
+export interface ArrangedObject {
+  id: string
+  name: string
+  /** The middle of its footprint's box on the bed, machine coordinates, mm. */
+  centerMm: [number, number]
+  /** How far it was turned about Z, degrees counterclockwise, 0 to 360. */
+  turnDeg: number
+  transform: number[]
+}
+
+/** Why the arrange found no room for an object: `no_room`, the bed holds it but not beside the others; `too_large`, not even an empty bed holds it with what prints round it. */
+export type NotFitReason = 'no_room' | 'too_large'
+
+/** The engine's layout of a plate (`sx arrange --request`, the desktop's arrange_plate, the MCP server's slicerx_arrange_file). */
+/** One new plate of an arrange with `newPlates`: the objects on it, laid out as an arrange of the objects still left lays it out. */
+export interface ArrangedPlate {
+  objects: ArrangedObject[]
+  /** Printing by object: the print order it takes when it is not the plate's own. */
+  order?: string[]
+  /** Printing by object, when every object of it fits: the plate check of it. */
+  check?: PlateCheck
+}
+
+export interface PlateArrangement {
+  byObject: boolean
+  spacingMm: number
+  /** Printing by object: the extruder clearance radius the objects keep apart, mm. */
+  clearanceMm?: number
+  rotate: boolean
+  /** Printing by object: the objects taller than the gantry rod went in lanes of their own across the bed. */
+  lanes: boolean
+  /** What the layout keeps clear of besides the bed edge: `exclusion-area`, `wrap-check-zone`, `prime-tower`. */
+  keepOut: string[]
+  /** The objects placed, in the plate's order (the ones that stay are not listed). */
+  objects: ArrangedObject[]
+  /** The objects with no room, in the plate's order; they keep their transforms. */
+  notFit: { id: string; name: string; reason: NotFitReason }[]
+  /** Printing by object: the print order the layout takes (object ids) when it is not the plate's own, so a part taller than the gantry rod prints after the low ones under its gantry. */
+  order?: string[]
+  /** Printing by object, when every object fits: the plate check of the layout. */
+  check?: PlateCheck
+  /** With newPlates: the objects with no room laid out on new plates, in order. Objects no plate takes stay in notFit only. */
+  plates?: ArrangedPlate[]
+}
+
+/** A layout as the engine wrote it, or an error naming what is wrong: a placed object without a full transform is refused, so no object is ever moved by half an answer. */
+export function readPlateArrangement(v: unknown): PlateArrangement {
+  const bad = (what: string): never => {
+    throw new Error(`The arrange returned an unexpected ${what}`)
+  }
+  const rec = (x: unknown): x is Record<string, unknown> => Boolean(x) && typeof x === 'object' && !Array.isArray(x)
+  const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+  if (!rec(v) || !Array.isArray(v['objects']) || !Array.isArray(v['notFit'])) return bad('result')
+  const placedOf = (list: unknown[]) =>
+    list.map((o) => {
+      if (!rec(o) || typeof o['id'] !== 'string' || !Array.isArray(o['transform']) || o['transform'].length !== 16 || !o['transform'].every(num)) return bad('placed object')
+      const c = Array.isArray(o['centerMm']) ? (o['centerMm'] as unknown[]) : []
+      return { id: o['id'], name: typeof o['name'] === 'string' ? o['name'] : o['id'], centerMm: [num(c[0]) ? c[0] : 0, num(c[1]) ? c[1] : 0] as [number, number], turnDeg: num(o['turnDeg']) ? o['turnDeg'] : 0, transform: o['transform'] as number[] }
+    })
+  const orderOf = (x: unknown) => (Array.isArray(x) && x.length ? { order: (x as unknown[]).filter((k): k is string => typeof k === 'string') } : {})
+  const objects = placedOf(v['objects'] as unknown[])
+  const plates = Array.isArray(v['plates'])
+    ? (v['plates'] as unknown[]).map((p) => {
+        if (!rec(p) || !Array.isArray(p['objects'])) return bad('new plate')
+        return { objects: placedOf(p['objects'] as unknown[]), ...orderOf(p['order']), ...(rec(p['check']) ? { check: readPlateCheck(p['check']) } : {}) }
+      })
+    : []
+  const notFit = (v['notFit'] as unknown[]).map((o) => {
+    if (!rec(o) || typeof o['id'] !== 'string' || (o['reason'] !== 'no_room' && o['reason'] !== 'too_large')) return bad('object with no room')
+    return { id: o['id'], name: typeof o['name'] === 'string' ? o['name'] : o['id'], reason: o['reason'] as NotFitReason }
+  })
+  return {
+    byObject: v['byObject'] === true,
+    spacingMm: num(v['spacingMm']) ? v['spacingMm'] : 6,
+    ...(num(v['clearanceMm']) ? { clearanceMm: v['clearanceMm'] } : {}),
+    rotate: v['rotate'] !== false,
+    lanes: v['lanes'] === true,
+    keepOut: Array.isArray(v['keepOut']) ? (v['keepOut'] as unknown[]).filter((k): k is string => typeof k === 'string') : [],
+    objects,
+    notFit,
+    ...orderOf(v['order']),
+    ...(rec(v['check']) ? { check: readPlateCheck(v['check']) } : {}),
+    ...(plates.length ? { plates } : {}),
+  }
+}
+
 /** True for an unchecked kind this build has words for. */
 export const knownUnchecked = (what: string): what is UncheckedKind => UNCHECKED.includes(what)
 
@@ -607,6 +712,13 @@ export interface SlicerHost {
    * phone) the app keeps its own footprint rule.
    */
   checkPlate?(req: SliceRequest, opts?: { signal?: AbortSignal }): Promise<PlateCheck>
+  /**
+   * The engine's layout of the plate (`plate.placement` `arrange`), off the page's thread: the same call and the same
+   * layout as `sx arrange --request` and the MCP server's slicerx_arrange_file, from the meshes the host already holds.
+   * Optional: without it (the web and the phone) the app arranges in its geometry worker. `onLayout`, when the host
+   * can, gets the plate's first layout before the plate check runs on it, to show at once.
+   */
+  arrangePlate?(req: SliceRequest, opts?: { onLayout?: (first: PlateArrangement) => void }): Promise<PlateArrangement>
   /**
    * Geometry of a loaded model (3MF, STL or parts) for drawing, in the file's build space, before the
    * plate transform. Optional: hosts that only slice may not have it.

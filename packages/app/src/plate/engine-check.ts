@@ -94,18 +94,28 @@ export function checkFixes(check: PlateCheck): CollisionFix[] {
   return [reorder, byLayer].filter((f): f is CollisionFix => f !== undefined)
 }
 
-/** Whether the plate in `s` is one the engine checks: by object with two or more printable objects, not mid-edit. */
+/**
+ * Whether the plate in `s` is one the engine checks: by object with two or more printable objects, not mid-edit and
+ * not while Arrange runs. The layout Arrange shows first is checked by the arrange itself, which hands that check over
+ * as it lands, so the page does not check the same layout again beside it.
+ */
 function wanted(s: AppState): boolean {
-  return !s.plateLoading && !s.historyEdit && activeClearance(s) !== null
+  return !s.plateLoading && !s.historyEdit && !s.arranging && activeClearance(s) !== null
 }
 
 /** The request the check sends: the slice's own plate, settings and options, with no G-code or preview to make. */
-async function checkRequest(slicer: SlicerHost, s: AppState): Promise<SliceRequest> {
+const checkRequest = (slicer: SlicerHost, s: AppState): Promise<SliceRequest> => plateRequest(slicer, s, s.plate)
+
+/**
+ * The slice's own request for `entries` of the shown plate (its printable ones), its settings and options, with no
+ * G-code or preview to make: what the check and the engine's arrange send.
+ */
+export async function plateRequest(slicer: Pick<SlicerHost, 'loadModel'>, s: AppState, entries: readonly AppState['plate'][number][]): Promise<SliceRequest> {
   const { plateObjects, plateSliceConfig } = await import('../state/slice-plate')
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const config = plateSliceConfig(s, meta)
-  const objects = await plateObjects(slicer, s, meta, s.plate)
-  const toPrint = s.plate.filter((p) => p.printable !== false)
+  const objects = await plateObjects(slicer, s, meta, entries)
+  const toPrint = entries.filter((p) => p.printable !== false)
   const { heightRangesOf } = await import('./layer-ranges')
   const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint, { layerHeights: !s.calibration[s.activePlate] })]
   const marks = s.layerMarks[s.activePlate] ?? []
@@ -120,6 +130,15 @@ async function checkRequest(slicer: SlicerHost, s: AppState): Promise<SliceReque
 const IDLE: PlateCheckState = { status: 'idle', id: 0, inputs: null, result: null, slow: false }
 
 let now: (() => Promise<PlateCheck | null>) | null = null
+let offer: ((check: PlateCheck) => Promise<void>) | null = null
+
+/**
+ * Takes `check` as the answer for the plate as it is now, when it checked these objects in this order: the engine's
+ * arrange checks the layout it lands, so the check after an arrange is not run again.
+ */
+export function offerCheck(check: PlateCheck): Promise<void> {
+  return offer ? offer(check) : Promise.resolve()
+}
 
 /**
  * Checks the plate as it is now, at once, and answers with the result: null when the host has no check, the plate is
@@ -139,6 +158,7 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
   let slowTimer: ReturnType<typeof setTimeout> | null = null
   let running: AbortController | null = null
   let seq = 0
+  let offered: Promise<void> | null = null
 
   /** A newer edit cancels the run in flight: its answer is let go, and the engine skips it if it has not started. */
   const cancel = (): void => {
@@ -150,6 +170,8 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
   const run = async (): Promise<PlateCheck | null> => {
     timer = null
     cancel()
+    // An arrange handing over the check it ran: take that answer instead of asking again.
+    if (offered) await offered
     const s = get()
     if (!wanted(s)) {
       if (s.plateCheck.status !== 'idle') set({ plateCheck: IDLE })
@@ -203,7 +225,7 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
     const released = prev.liveEdit && !s.liveEdit
-    const loaded = (prev.plateLoading && !s.plateLoading) || (prev.historyEdit !== null && s.historyEdit === null)
+    const loaded = (prev.plateLoading && !s.plateLoading) || (prev.historyEdit !== null && s.historyEdit === null) || (prev.arranging !== null && s.arranging === null)
     if (!released && !loaded && !inputsChanged(s, prev)) return
     schedule(s)
   })
@@ -211,12 +233,28 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
     if (timer) clearTimeout(timer)
     return run()
   }
+  offer = (check) => {
+    const s = get()
+    if (!wanted(s)) return Promise.resolve()
+    const taking = (async () => {
+      const req = await checkRequest(slicer, s)
+      const ids = req.plate.objects.map((o) => o.id)
+      if (ids.length !== check.order.length || ids.some((id, i) => id !== check.order[i])) return
+      kept.set(JSON.stringify(req), check)
+      if (kept.size > KEPT) kept.delete(kept.keys().next().value!)
+    })().finally(() => {
+      if (offered === taking) offered = null
+    })
+    offered = taking
+    return taking
+  }
   schedule(get())
   return () => {
     if (timer) clearTimeout(timer)
     cancel()
     unsubscribe()
     now = null
+    offer = null
     set({ plateCheck: IDLE })
   }
 }
