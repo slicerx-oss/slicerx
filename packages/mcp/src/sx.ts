@@ -12,7 +12,7 @@ import { areaOrigin } from '@slicerx/threemf/area'
 import { collisionError, refusedHits, sliceCollisions, sxCollisions } from './collide'
 import { featureFilaments } from './feature-filaments'
 import { ToolInputError } from './models'
-import type { SlicerBackend, SliceJob, SliceJobObject, SliceSummary, ToolheadRemap } from './slicer'
+import type { Arranged, SlicerBackend, SliceJob, SliceJobObject, SliceSummary, ToolheadRemap } from './slicer'
 import { formatDuration } from './slicer'
 
 /** Finds a binary by name: an explicit path, other candidates in order, then PATH. */
@@ -259,7 +259,8 @@ function writeRequest(job: SliceJob): { requestPath: string; objects: (SliceJobO
     ...(job.scriptReplacements ? { script_replacements: job.scriptReplacements } : {}),
     plate: {
       ...(bed ? { bed } : {}),
-      ...(job.placement === 'keep' ? { placement: 'keep' } : {}),
+      ...(job.placement === 'keep' || job.placement === 'arrange' ? { placement: job.placement } : {}),
+      ...(job.placement === 'arrange' && job.arrange && Object.keys(job.arrange).length ? { arrange: job.arrange } : {}),
       objects: requestObjects,
     },
     config: sxConfig(job.explicitConfig, job.widthsAsGiven),
@@ -271,6 +272,54 @@ function writeRequest(job: SliceJob): { requestPath: string; objects: (SliceJobO
   const requestPath = join(job.outDir, 'request.json')
   writeFileSync(requestPath, JSON.stringify(request))
   return { requestPath, objects }
+}
+
+/** The engine's arrange report (`sx arrange`, a slice result's `arrange`) in this server's shape; undefined when unreadable. */
+export function readArranged(v: unknown): Arranged | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const a = v as Record<string, unknown>
+  if (!Array.isArray(a['objects']) || !Array.isArray(a['notFit'])) return undefined
+  const str = (x: unknown): string => (typeof x === 'string' ? x : '')
+  const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
+  const objects = (a['objects'] as Record<string, unknown>[]).map((o) => {
+    const c = Array.isArray(o['centerMm']) ? (o['centerMm'] as unknown[]) : []
+    return { id: str(o['id']), name: str(o['name']), center_mm: [round2(num(c[0])), round2(num(c[1]))] as [number, number], turn_deg: round2(num(o['turnDeg'])), transform: Array.isArray(o['transform']) ? (o['transform'] as unknown[]).map(num) : [] }
+  })
+  const notFit = (a['notFit'] as Record<string, unknown>[]).map((o) => ({ id: str(o['id']), name: str(o['name']), reason: o['reason'] === 'too_large' ? ('too_large' as const) : ('no_room' as const) }))
+  let check: Arranged['check']
+  if (a['check']) {
+    try {
+      check = readPlateCheck(a['check'])
+    } catch {
+      check = undefined
+    }
+  }
+  return {
+    by_object: a['byObject'] === true,
+    spacing_mm: num(a['spacingMm']),
+    ...(typeof a['clearanceMm'] === 'number' ? { clearance_mm: a['clearanceMm'] } : {}),
+    rotate: a['rotate'] !== false,
+    lanes: a['lanes'] === true,
+    keep_out: Array.isArray(a['keepOut']) ? (a['keepOut'] as unknown[]).map(str) : [],
+    fits: notFit.length === 0,
+    objects,
+    not_fit: notFit,
+    ...(check ? { check } : {}),
+  }
+}
+
+/** The refusal of a slice whose plate the arrange could not fit: the parts with no room by name. */
+function noRoomError(code: number | null, why: string, stdout: string): ToolInputError | undefined {
+  let report: Arranged | undefined
+  try {
+    const v = JSON.parse(stdout.trim()) as { refused?: unknown; arrange?: unknown }
+    if (v.refused === 'arrange') report = readArranged(v.arrange)
+  } catch {
+    report = undefined
+  }
+  if (!report && !/config key plate\.arrange: /.test(why)) return undefined
+  const names = report?.not_fit.map((o) => o.name) ?? []
+  return new ToolInputError(`sx exited with code ${code}: ${why}`, 'invalid_input', { reason: 'no_room', not_fit: names })
 }
 
 /**
@@ -334,6 +383,24 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         throw new ToolInputError(`The engine returned an unreadable plate check: ${e instanceof Error ? e.message : String(e)}`, 'engine_unavailable')
       }
     },
+    async arrange(job) {
+      const { requestPath } = writeRequest({ ...job, placement: 'arrange' })
+      const limit = Math.min(timeoutMs, 120_000)
+      const ran = await runSx(bin, ['arrange', '--request', requestPath], limit)
+      const stopped = sxStopped(ran, limit)
+      if (stopped) throw stopped
+      // 0: every part has room; 3 with a report: some have none. Both print the layout.
+      const text = ran.stdout.trim()
+      if (ran.code !== 0 && !(ran.code === 3 && text.startsWith('{'))) throw sxFailure(ran.code, ran.stderr.trim().split('\n').slice(-3).join(' ') || 'no error output')
+      let out: Arranged | undefined
+      try {
+        out = readArranged(JSON.parse(text))
+      } catch {
+        out = undefined
+      }
+      if (!out) throw new ToolInputError('The engine returned an unreadable arrange; update sx to a version with sx arrange', 'engine_unavailable')
+      return out
+    },
     async slice(job) {
       const { requestPath, objects } = writeRequest(job)
       const ran = await runSx(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.scriptPrinter ? ['--script-printer', job.scriptPrinter.model, '--script-firmware', job.scriptPrinter.firmware] : []), ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
@@ -345,6 +412,9 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const origin = areaOrigin(job.config['printable_area'])
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
+        // placement arrange found no room for some parts: the refusal names them.
+        const noRoom = code === 3 ? noRoomError(code, why, stdout) : undefined
+        if (noRoom) throw noRoom
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
         const hits = code === 3 ? refusedHits(stdout) : undefined
         const list = hits ? sliceCollisions(sxCollisions(JSON.parse(stdout.trim())), named, origin) : []
@@ -363,6 +433,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
         primeTower?: { x?: number; y?: number; width?: number; depth?: number; angle?: number } | null
         projectPlates?: { plates?: number; sliced?: number }[]
+        arrange?: unknown
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
       if (job.scriptReplacements && (!Array.isArray(out.script_replacements) || out.script_replacements.length !== job.scriptReplacements.length || job.scriptReplacements.some((choice, i) => {
@@ -374,8 +445,10 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const files = out.files ?? {}
       const gcodePath = typeof files.gcode === 'string' ? files.gcode : join(job.outDir, 'slice.gcode')
       const previewPath = typeof files.preview === 'string' ? files.preview : join(job.outDir, 'slice.sxpv')
+      const arranged = job.placement === 'arrange' ? readArranged(out.arrange) : undefined
       const summary: SliceSummary = {
         ...(out.script_replacements ? { script_replacements: out.script_replacements } : {}),
+        ...(arranged ? { arranged } : {}),
         engine: 'sx',
         model: { name: job.plate ? `${objects.length} object${objects.length === 1 ? '' : 's'}` : basename(job.modelPath) },
         layer_count: out.layerCount ?? 0,
