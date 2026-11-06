@@ -605,6 +605,7 @@ Ids that tests read for their text:
 
 | Test id | Control |
 | --- | --- |
+| `device-firmware` | The firmware version a printer reports, in its Controls and files dialog |
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
