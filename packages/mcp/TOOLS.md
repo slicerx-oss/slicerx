@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-263 tools.
+264 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_check` |  |  | read | Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. |
 | `slicerx_design_edit_step` |  |  | slice | Edit one step of a design and replay the steps after it, as editing a step in SlicerX's history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. |
 | `slicerx_design_list` |  |  | read | The designs open on this server, with their parts, sizes and step counts. |
-| `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
+| `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_sweep, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
 | `slicerx_design_open` |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
 | `slicerx_design_put_plan` |  |  | read | Add your own part plan for slicerx_design_check to check a built part against, before or after building it. |
 | `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
@@ -135,6 +135,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_sketch_solve` |  |  | read | Solve a constrained 2D sketch, as the sketch tool does: points, lines, circles and arcs held by constraints (coincident, horizontal, parallel, tangent, distance, angle and the rest). |
 | `slicerx_geom_split` |  |  | slice | Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. |
 | `slicerx_geom_subtract` |  |  | slice | Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. |
+| `slicerx_geom_sweep` |  |  | slice | Sweep a closed sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step. |
 | `slicerx_get_policy` | Permission policy | core | read, ungated | Show the permission policy the user set for this server: Allow, Ask first or Off for each action class, and per-printer exceptions. |
 | `slicerx_get_profile` | Get a profile | settings | read, ungated | Return the settings a profile sets, with inherits chains resolved. |
 | `slicerx_hollow` |  |  | slice | Hollow a solid part to a wall thickness and cut drain holes through the face that rests on the bed, for light parts, resin export or filling. |
