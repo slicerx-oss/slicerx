@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A project saved for the Bambu Lab H3C (fixtures/h3c-tools.3mf: three PLA filaments and a 2.85 mm TPU, the tools
-// set by hand to 1, 3, 7 and the TPU tool) slices on the tools it sets: the hand-set tools win over the slicer's
-// pick, which fills only the filaments the project leaves unset.
+// A project saved for the Bambu Lab H3C (fixtures/h3c-tools.3mf: three PLA filaments and a 2.85 mm TPU, the
+// tools set by hand to 1, 3, 7 and the TPU tool) slices as the project says: each filament keeps its own type, and
+// the hand-set tools win over the slicer's pick, which fills only the filaments the project leaves unset.
 import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -40,6 +40,12 @@ async function opened(path: string) {
 }
 
 describe('an H3C project with its own tools', () => {
+  it('keeps each filament type the project names, the 2.85 mm TPU included', async () => {
+    const cfg = await opened(kit)
+    expect(cfg['filament_type']).toEqual(['PLA', 'PLA', 'PLA', 'TPU'])
+    expect(cfg['filament_diameter']).toEqual([1.75, 1.75, 1.75, 2.85])
+  })
+
   it("slices on the project's own tools", async () => {
     const cfg = await opened(kit)
     expect(cfg['filament_map_mode']).toBe('Manual')
@@ -60,7 +66,7 @@ describe('an H3C project with its own tools', () => {
     expect(cfg['filament_nozzle_map']).toBeUndefined()
   })
 
-  it.skipIf(noSx())('slices each filament on its hand-set tool', { timeout: sxTimeout * 2 }, async () => {
+  it.skipIf(noSx())('slices with the TPU as TPU and each filament on its hand-set tool', { timeout: sxTimeout * 2 }, async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const model = join(h.dir, 'h3c-tools.3mf')
     copyFileSync(kit, model)
@@ -71,6 +77,7 @@ describe('an H3C project with its own tools', () => {
     expect(out.hotends?.auto).toBe(false)
     expect(out.hotends?.filaments.map((f) => [f.slot, f.tool, f.tpu_tool])).toEqual([[1, 1, false], [2, 3, false], [3, 7, false], [4, 8, true]])
     const gcode = readFileSync(out.gcode_path, 'utf8')
+    expect(gcode).toMatch(/^; filament_type = PLA;PLA;PLA;TPU$/m)
     // Each filament change is a T command for that filament, and all four print.
     expect(new Set(gcode.match(/^T\d+$/gm))).toEqual(new Set(['T0', 'T1', 'T2', 'T3']))
   })
