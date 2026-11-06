@@ -21,6 +21,12 @@ export interface DialogProps {
   className?: string
   /** The dialog's data-testid (docs/test-ids.md). */
   testId?: string
+  /**
+   * Open with focus on the dialog's title, with no ring, instead of on its first control. For a dialog that can appear
+   * while someone is typing, where one Enter or Space must not press a button. Tab then starts at the first control.
+   * (The title is focusable but not tabbable and comes first, so the browser's own initial focus lands on it.)
+   */
+  focusPanel?: boolean
   children?: ReactNode
 }
 
@@ -44,7 +50,7 @@ if (typeof window !== 'undefined') {
  * A modal dialog on the native dialog element, so focus trapping, Escape, and the backdrop come
  * from the browser. The parent owns the open state.
  */
-export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md', required, className, testId, children }: DialogProps) {
+export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md', required, className, testId, focusPanel, children }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   // A close the parent asked for raises the native close event a moment later. It must not count as the person closing a dialog that has since opened again.
@@ -90,7 +96,7 @@ export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md',
       }}
     >
       <div className="sx-dialog-h">
-        <h2 id={titleId}>{title}</h2>
+        <h2 id={titleId} tabIndex={focusPanel ? -1 : undefined}>{title}</h2>
         {required ? null : <Button variant="ghost" size="sm" icon="plus" aria-label="Close" className="sx-dialog-close" data-testid="dialog-close" onClick={onClose} />}
       </div>
       <div className="sx-dialog-body">{children}</div>

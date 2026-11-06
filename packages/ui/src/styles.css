@@ -315,6 +315,7 @@ button { cursor: pointer; }
 /* dialogs */
 .sx-dialog { padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface-dialog); color: var(--fg); width: min(480px, calc(100vw - 2 * var(--gutter))); max-height: calc(100dvh - 2 * var(--gutter)); box-shadow: var(--shadow-pop); }
 .sx-dialog[data-size="lg"] { width: min(720px, calc(100vw - 2 * var(--gutter))); }
+.sx-dialog-h h2[tabindex="-1"]:focus-visible { outline-color: transparent; }
 .sx-dialog::backdrop { background: color-mix(in srgb, var(--ink-0) 70%, transparent); }
 .sx-dialog-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 0; }
 .sx-dialog-close .sx-ic { transform: rotate(45deg); }
