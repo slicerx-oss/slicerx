@@ -105,8 +105,9 @@ export function modelSlotColors(s: Pick<SlotInputs, 'plates' | 'plate' | 'active
   return out
 }
 
-export function resolveSlots(s: SlotInputs): ResolvedSlot[] {
-  const n = slotCount(s)
+/** The filaments on the rail, or the first `count` slots (a save also lists the filaments an opened file has past the rail). */
+export function resolveSlots(s: SlotInputs, count?: number): ResolvedSlot[] {
+  const n = count ?? slotCount(s)
   const used = usedSlots(s)
   const modelColors = modelSlotColors(s)
   return Array.from({ length: n }, (_, i) => {

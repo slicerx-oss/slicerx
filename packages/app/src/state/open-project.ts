@@ -119,7 +119,7 @@ async function addProjectShown(
   if (project.earsNote) toast(project.earsNote, 'warn')
   // Paint the project cannot show opens unpainted (paint-check.ts). Its filaments are the ones on the rail once it is
   // open: the printer's, those set by hand, those its parts and tool changes use, never fewer than the file lists. A
-  // save lists only the filaments parts use, so paint on another one would otherwise be lost on every reopen.
+  // file of another app may list only the filaments its parts use, so paint on another one would otherwise be lost.
   const painted = project.plates.flatMap((pl) => pl.objects.filter((o) => o.paint))
   if (painted.length) {
     const { checkOpenedPaint } = await import('../export/paint-check')
