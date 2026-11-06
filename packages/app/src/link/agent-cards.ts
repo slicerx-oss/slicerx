@@ -25,6 +25,8 @@ export interface VerifiedWork {
   file?: { name: string; sizeBytes?: number; sha256?: string }
   opts?: Record<string, unknown>
   line?: string
+  /** The hub's word that a G-code line can move the head (its motion guard), so the card asks about the plate. */
+  motion?: boolean
   change?: Record<string, unknown>
   /** A skip: the object's label on the printer, and the bed epoch of the job the hub pinned it to. */
   id?: string
@@ -253,8 +255,10 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
     else blocked = 'The G-code is not one short line, so it cannot be shown in full. Deny this request.'
   }
   // Approving says the plate is clear (the card asks, as for a start); the hub still checks the printer's state.
-  const asksPlate = w?.kind === 'home'
-  if (asksPlate) lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub homes only while the printer is idle or finished.')
+  const moves = w?.kind === 'gcode' && w.motion === true
+  const asksPlate = w?.kind === 'home' || moves
+  if (moves) lines.push('This line can move the head, and the nozzle may come down to the plate. The hub sends it only while the printer is idle or finished.')
+  if (w?.kind === 'home') lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub homes only while the printer is idle or finished.')
   if (has('plugin.call')) {
     // A connected app's change shows as exactly what the hub will run; one this app cannot word gets no Approve.
     if (plugin) lines.push(`Change: ${plugin}`)

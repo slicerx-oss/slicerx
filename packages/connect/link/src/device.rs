@@ -205,7 +205,7 @@ pub(crate) async fn settle_absolute(b: &Arc<Bridge>, printer: &str, s: &dyn Prin
 
 /// The person's answer to the plate question sent with a home or a jog: `plateClear` with the bed `epoch`
 /// it was asked in (`bed.state`, or the `bed_check` refusal's `details.epoch`).
-fn plate_answer(p: &Value) -> Rpc<Option<u64>> {
+pub(crate) fn plate_answer(p: &Value) -> Rpc<Option<u64>> {
     if p.get("plateClear").and_then(Value::as_bool) != Some(true) {
         return Ok(None);
     }
@@ -287,17 +287,40 @@ async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 /// not know is clear is asked about first, as a jog down and a print start are. `plate_clear` is the
 /// person's answer for this home only; it is not written to the bed record, so the next start still asks.
 pub(crate) fn home_problem(state: PrinterState, bed: sx_permit::BedState, plate_clear: bool) -> Rpc<()> {
+    guard_problem(
+        state,
+        bed,
+        plate_clear,
+        "the printer homes only while it is idle or finished",
+        "the plate is not known to be clear; confirm it is clear before homing",
+    )
+}
+
+/// Why a raw line that can move the head (`sx_connect::moves_axes`) may not go now: the motion guard,
+/// the home rules for any line that moves. Only an idle or finished printer moves by hand, and the
+/// nozzle comes near the plate only onto a plate the hub knows is clear or the person said is clear.
+pub(crate) fn motion_problem(state: PrinterState, bed: sx_permit::BedState, plate_clear: bool) -> Rpc<()> {
+    guard_problem(
+        state,
+        bed,
+        plate_clear,
+        "a line that can move the head goes only while the printer is idle or finished",
+        "the plate is not known to be clear; confirm it is clear before a line that can move the head",
+    )
+}
+
+fn guard_problem(
+    state: PrinterState,
+    bed: sx_permit::BedState,
+    plate_clear: bool,
+    busy: &str,
+    plate: &str,
+) -> Rpc<()> {
     if state != PrinterState::Idle && state != PrinterState::Finished {
-        return Err(RpcError::new(
-            "bad_state",
-            "the printer homes only while it is idle or finished",
-        ));
+        return Err(RpcError::new("bad_state", busy));
     }
     if !plate_clear && plate_may_hold_a_print(bed) {
-        return Err(RpcError::new(
-            "bed_check",
-            "the plate is not known to be clear; confirm it is clear before homing",
-        ));
+        return Err(RpcError::new("bed_check", plate));
     }
     Ok(())
 }
@@ -322,6 +345,39 @@ pub(crate) async fn home_checked(
     answer: Option<u64>,
     send: HomeLine<'_>,
 ) -> Rpc<()> {
+    guarded(b, printer, answer, home_problem, send).await
+}
+
+/// Sends one raw line a person approved with `token`: a home under the home rules, any other line that
+/// can move the head under the motion guard (state, the printer lock and the plate, `answer` as for a
+/// home), and a line that cannot move as it is.
+pub(crate) async fn line_checked(
+    b: &Arc<Bridge>,
+    printer: &str,
+    answer: Option<u64>,
+    line: &str,
+    token: &ApprovalToken,
+) -> Rpc<()> {
+    let send = HomeLine::Approved { line, token };
+    if sx_connect::homes_axes(line) {
+        home_checked(b, printer, answer, send).await
+    } else if sx_connect::moves_axes(line) {
+        guarded(b, printer, answer, motion_problem, send).await
+    } else {
+        Ok(session(b, printer).await?.send_gcode(line, token).await?)
+    }
+}
+
+/// The guarded send: the printer held so no start slips in, its state read fresh, `rule` checked with
+/// the plate as the hub knows it or as the person answered for this bed epoch, absolute positioning
+/// restored, then the line.
+async fn guarded(
+    b: &Arc<Bridge>,
+    printer: &str,
+    answer: Option<u64>,
+    rule: fn(PrinterState, sx_permit::BedState, bool) -> Rpc<()>,
+    send: HomeLine<'_>,
+) -> Rpc<()> {
     let s = session(b, printer).await?;
     let held = b.hub.printer_lock(printer);
     let _g = held.lock().await;
@@ -330,7 +386,7 @@ pub(crate) async fn home_checked(
         .filter(|s| s.state != PrinterState::Offline)
         .ok_or_else(|| RpcError::new("unreachable", "the printer did not answer"))?;
     let rec = b.hub.bed(printer);
-    home_problem(st.state, plate_for(&rec, answer), false).map_err(|e| naming_epoch(e, rec.epoch))?;
+    rule(st.state, plate_for(&rec, answer), false).map_err(|e| naming_epoch(e, rec.epoch))?;
     settle_absolute(b, printer, s.as_ref()).await?;
     match send {
         HomeLine::Approved { line, token } => s.send_gcode(line, token).await?,
