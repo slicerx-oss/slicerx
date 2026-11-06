@@ -573,6 +573,80 @@ test('Devices lists an open partner route with its app, phone, time and bytes, a
   }
 })
 
+// Devices rows: every control a person presses reaches 28 px on desktop and 44 px at phone width (UI spec 2 and 9),
+// whatever its drawn size. Hit-tested: the points just inside the needed reach, above and below the control's middle,
+// must land on the control, so an invisible padding counts and a drawn size alone does not.
+test('Devices rows: Revoke, End route and the switches reach 28 px on desktop and 44 px on a phone', async ({ page }) => {
+  const now = Date.now()
+  const routes = [{ routeId: 'dGFwLXJvdXRl', app: 'TapApp', pairingId: 'UVFRUVFRUVFRUVFRUVFRUQ', phone: 'Tap phone', state: 'open', openedAt: now - 60_000, lastAt: now, bytesIn: 1000, bytesOut: 2000, refused: 0 }]
+  let stub = true
+  await page.routeWebSocket(hub.route, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      let msg: { id?: unknown; method?: unknown } = {}
+      try {
+        if (typeof m === 'string') msg = JSON.parse(m) as typeof msg
+      } catch {
+        // The handshake.
+      }
+      if (stub && msg.method === 'relay.partnerRoute.list') {
+        ws.send(JSON.stringify({ id: msg.id, result: { routes, caps: { maxRoutes: 4, maxChunkBytes: 262144, relay: null } } }))
+        return
+      }
+      server.send(m)
+    })
+    ws.onClose(() => server.close())
+  })
+  const agent = await hub.admin.clients.create('TapAgent', 'agent')
+  const detector = await hub.admin.clients.create('TapDetector', 'watch')
+  expect(agent.clientKey && detector.clientKey).toBeTruthy()
+  await repair(page)
+  const home = page.viewportSize() ?? { width: 1440, height: 900 }
+  const scheme0 = (await page.locator('html').getAttribute('data-scheme')) ?? 'dark'
+  try {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+    const section = page.locator('section[aria-labelledby="bridge-h"]')
+    await expect(section.getByTestId('devices-list').locator('li', { hasText: 'TapAgent' })).toBeVisible()
+    await expect(section.getByTestId('partner-routes')).toBeVisible()
+    const controls = section.locator('.dev-list li:not(.dev-partner) .sx-btn, .dev-list li:not(.dev-partner) select, .watch-rows .sx-switch')
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      const found = await controls.evaluateAll((els) => {
+        const need = matchMedia('(pointer: coarse), (max-width: 700px)').matches ? 44 : 28
+        return els.map((el) => {
+          el.scrollIntoView({ block: 'center' })
+          const r = el.getBoundingClientRect()
+          const x = r.left + r.width / 2
+          const cy = r.top + r.height / 2
+          const half = need / 2 - 1
+          const at = (y: number) => el.contains(document.elementFromPoint(x, y))
+          const row = el.closest('li')?.getAttribute('data-testid') ?? el.closest('.sx-switchrow')?.textContent?.slice(0, 20) ?? ''
+          return { name: `${row} ${el.textContent?.trim() || el.className}`, need, height: Math.round(r.height), top: at(cy - half), bottom: at(cy + half) }
+        })
+      })
+      // Revoke on two keys and End route at least; the print watch switches when the hub runs a detector.
+      expect(found.length, `controls found at ${width} px`).toBeGreaterThanOrEqual(3)
+      expect.soft(found.filter((f) => !(f.top && f.bottom)), `controls under the ${found[0]?.need} px reach at ${width} px`).toEqual([])
+      // Kept for looking at by eye, when a folder is given: the Devices rows in both themes.
+      const shots = process.env['SX_SHOTS_DIR']
+      if (shots) {
+        for (const scheme of ['dark', 'light']) {
+          await setState(page, { scheme })
+          await expect(page.locator('html')).toHaveAttribute('data-scheme', scheme)
+          await section.getByTestId('devices-list').scrollIntoViewIfNeeded()
+          await page.screenshot({ path: join(shots, `devices-${width}-${scheme}.png`) })
+        }
+      }
+    }
+  } finally {
+    stub = false
+    await setState(page, { scheme: scheme0 })
+    await page.setViewportSize(home)
+    await page.keyboard.press('Escape')
+  }
+})
+
 // Agent first: a client reads the integrations list Settings > mimir shows, with the same states and bays.
 test('Settings > mimir and slicerx_integrations_list show the same integrations, states and bays', async ({ page }) => {
   await paired(page)
