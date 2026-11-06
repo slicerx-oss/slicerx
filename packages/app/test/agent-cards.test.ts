@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalRequest } from '@slicerx/contracts'
-import { BED_CLEAR, RECHECK_MS, describeCard, printerLabels, watchHubCards, type CardResolved, type HubCard, type HubCards } from '../src/link/agent-cards'
+import { BED_CLEAR, RECHECK_MS, describeCard, printerLabels, watchHubCards, type CardDone, type CardResolved, type HubCard, type HubCards } from '../src/link/agent-cards'
 import { get, set } from '../src/state/store'
 
 const card = (over: Partial<HubCard> = {}): HubCard => ({
@@ -366,5 +366,125 @@ describe('cards answered elsewhere', () => {
     expect(get().approval).toBeNull()
     expect(get().toast?.text).toBe('This request was answered elsewhere.')
     stop()
+  })
+})
+
+describe('cards the hub could not carry out', () => {
+  beforeEach(() => set({ approval: null, toast: null }))
+
+  const setting = { slot: 'A2', filamentId: 'GFG99', material: 'PETG', color: '#1A2B3C', nozzleTempMin: 220, nozzleTempMax: 260 }
+  const slotCard = card({ id: 's-1', partner: 'LayerMate', actions: [{ action: 'printer.adjust', target: 'bay-4', paramsHash: 'a' }], work: { kind: 'slot', printerId: 'bay-4', setting } })
+  const pauseCard = card({ id: 'p-1', actions: [{ action: 'printer.pause', target: 'bay-4', paramsHash: 'p' }], work: { kind: 'pause', printerId: 'bay-4' } })
+  const printCard = card({ id: 'q-1', work: { kind: 'print', printerId: 'bay-4', file: { name: 'cube.gcode' } } })
+  const token = { requestId: 'x', token: 't', expiresAt: new Date(Date.now() + 300_000).toISOString() }
+
+  /** A hub whose grant answers when `release` is called, or at once. */
+  function fakeHub(opts: { hold?: boolean } = {}) {
+    let emit: (r: ApprovalRequest) => void = () => undefined
+    let done: (d: CardDone) => void = () => undefined
+    let release: () => void = () => undefined
+    const hub: HubCards = {
+      onRequest: (cb) => ((emit = cb), () => undefined),
+      onDone: (cb) => ((done = cb), () => undefined),
+      grantWith: () => (opts.hold ? new Promise((r) => (release = () => r(token))) : Promise.resolve(token)),
+      deny: async () => undefined,
+    }
+    return { hub, emit: (r: ApprovalRequest) => emit(r), done: (d: CardDone) => done(d), release: () => release() }
+  }
+
+  it('says a slot was not set when the hub refuses it after the person approved', async () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.emit(slotCard)
+    await get().approval!.approve()
+    expect(get().toast?.text).toBe('Approved. The hub is running it now.')
+    h.done({ requestId: 's-1', printerId: 'bay-4', ok: false, code: 'bad_state', message: 'a slot is set while no print is running' })
+    // A problem the person has to know about stays until dismissed.
+    expect(get().toast).toMatchObject({ text: 'Bay 4 is printing, so slot A2 was not set.', tone: 'error', dismissible: true })
+    stop()
+  })
+
+  it('says a pause or a print start did not happen when the hub refuses it the same way', async () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.emit(pauseCard)
+    await get().approval!.approve()
+    h.done({ requestId: 'p-1', printerId: 'bay-4', ok: false, code: 'bad_state', message: 'not printing' })
+    expect(get().toast?.text).toBe('Bay 4 is not printing, so the print was not paused.')
+    h.emit(printCard)
+    await get().approval!.approve()
+    h.done({ requestId: 'q-1', printerId: 'bay-4', ok: false, code: 'offline', message: 'no answer' })
+    expect(get().toast).toMatchObject({ text: 'Bay 4 did not answer, so the print did not start.', tone: 'error' })
+    stop()
+  })
+
+  it('shows nothing beyond the approval when the hub carries it out', async () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.emit(slotCard)
+    await get().approval!.approve()
+    const approved = get().toast
+    h.done({ requestId: 's-1', printerId: 'bay-4', ok: true })
+    expect(get().toast).toEqual(approved)
+    stop()
+  })
+
+  it('says nothing about cards it did not approve', () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.done({ requestId: 'other', printerId: 'bay-4', ok: false, code: 'bad_state' })
+    expect(get().toast).toBeNull()
+    stop()
+  })
+
+  it('keeps the refusal when it arrives before the grant answers', async () => {
+    const h = fakeHub({ hold: true })
+    const stop = watchHubCards(h.hub, names)
+    h.emit(slotCard)
+    const approving = get().approval!.approve()
+    h.done({ requestId: 's-1', printerId: 'bay-4', ok: false, code: 'bad_state' })
+    h.release()
+    await approving
+    expect(get().toast?.text).toBe('Bay 4 is printing, so slot A2 was not set.')
+    stop()
+  })
+})
+
+describe('a client reason on its card', () => {
+  const setting = { slot: 'A2', filamentId: 'GFG99', material: 'PETG', color: '#1A2B3C', nozzleTempMin: 220, nozzleTempMax: 260 }
+  // The hub puts its own "Asked by" line first; the client's lines follow, its reason as "Why: ..." (REASON_PREFIX).
+  const slot = (lines: string[]) =>
+    card({ partner: 'LayerMate', title: 'Set slot A2 on Bay 4 to PETG?', lines: ['Asked by LayerMate, a partner app', ...lines], actions: [{ action: 'printer.adjust', target: 'bay-4', paramsHash: 'a' }], work: { kind: 'slot', printerId: 'bay-4', setting } })
+  const reasonOf = (lines: string[]) => describeCard(slot(lines), names).lines.find((l) => l.startsWith('Reason from'))
+
+  it('shows the reason a partner sent as its own words', () => {
+    const t = describeCard(slot(['Why: The spool tag says PETG', 'PETG, color #1a2b3c, preset GFG99']), names)
+    expect(t.lines).toContain('Reason from LayerMate, not checked by SlicerX: "The spool tag says PETG"')
+    // Above the note, below the hub's facts.
+    expect(t.lines.findIndex((l) => l.startsWith('Reason from'))).toBeGreaterThan(t.lines.indexOf('Nozzle 220 to 260 °C'))
+    expect(t.lines.findIndex((l) => l.startsWith('Reason from'))).toBe(t.lines.findIndex((l) => l.startsWith('Note from')) - 1)
+    expect(t.blocked).toBeUndefined()
+  })
+
+  it('cuts an over-long reason', () => {
+    const r = reasonOf([`Why: ${'spool '.repeat(80)}`])!
+    expect(r.endsWith('..."')).toBe(true)
+    expect(r.length).toBeLessThan(180)
+  })
+
+  it('shows a reason as plain text: no markup, one line', () => {
+    expect(reasonOf(['Why: <b>Tag</b> says **PETG**\n\nsee [the tag](https://example.com/x) `now` <script>x()</script>'])).toBe('Reason from LayerMate, not checked by SlicerX: "Tag says PETG see the tag now x()"')
+  })
+
+  it('shows no reason line when none was sent, or only markup', () => {
+    expect(reasonOf(['PETG, color #1a2b3c, preset GFG99'])).toBeUndefined()
+    expect(reasonOf(['Why: <br/> ** **'])).toBeUndefined()
+    // The hub's own line is never read as a reason.
+    expect(reasonOf([])).toBeUndefined()
+  })
+
+  it('names the agent when no partner asked', () => {
+    const t = describeCard(card({ lines: ['Why: The queue is empty'], work: { kind: 'print', printerId: 'bay-4', file: { name: 'cube.gcode' } } }), names)
+    expect(t.lines).toContain('Reason from the agent, not checked by SlicerX: "The queue is empty"')
   })
 })
