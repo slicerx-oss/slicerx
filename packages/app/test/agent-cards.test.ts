@@ -261,6 +261,29 @@ describe('agent cards', () => {
     expect(describeCard(skip('lid M112'), names).blocked).toMatch(/cannot show which object/)
   })
 
+  it('words a partner app asking to set an AMS slot from the hub-checked setting, and blocks one it cannot show', () => {
+    const setting = { slot: 'A2', filamentId: 'GFG99', material: 'PETG', color: '#1A2B3C', nozzleTempMin: 220, nozzleTempMax: 260 }
+    const slot = (s: Record<string, unknown>) =>
+      card({ title: 'Pause the print', partner: 'LayerMate', actions: [{ action: 'printer.adjust', target: 'bay-4', paramsHash: 'a' }], work: { kind: 'slot', printerId: 'bay-4', setting: s } })
+    const t = describeCard(slot(setting), names)
+    expect(t.title).toBe('Set slot A2 on Bay 4 to PETG?')
+    expect(t.startsPrint).toBe(false)
+    expect(t.blocked).toBeUndefined()
+    expect(t.lines[0]).toBe('Asked by LayerMate, a partner app.')
+    expect(t.lines).toContain('If you approve, the hub will set filament slot A2 on Bay 4.')
+    expect(t.lines).toContain('Slot A2: PETG, color #1a2b3c, preset GFG99')
+    expect(t.lines).toContain('Nozzle 220 to 260 °C')
+    // It is never worded as a change to a running print.
+    expect(t.lines.join('\n')).not.toMatch(/running print/)
+    for (const bad of [{ ...setting, material: 'PLA\nM104 S300' }, { ...setting, color: 'red' }, { ...setting, slot: 'A2;M112' }, { ...setting, filamentId: 'G'.repeat(17) }, { ...setting, nozzleTempMin: 280 }, { ...setting, nozzleTempMax: 400 }]) {
+      const b = describeCard(slot(bad), names)
+      expect(b.blocked, JSON.stringify(bad)).toMatch(/cannot show this slot setting/)
+    }
+    // Slot work on any action but the slot write gets no Approve.
+    const off = card({ actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'g' }], work: { kind: 'slot', printerId: 'bay-4', setting } })
+    expect(describeCard(off, names).blocked).toBeDefined()
+  })
+
   it('describes a pause or cancel a paired phone asked for from the hub-verified action', () => {
     const pause = describeCard(card({ origin: 'phone', title: 'Start a print?', actions: [{ action: 'printer.pause', target: 'bay-4', paramsHash: 'p' }] } as Partial<HubCard>), names)
     expect(pause.title).toBe('Pause the print on Bay 4?')
