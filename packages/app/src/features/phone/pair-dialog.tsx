@@ -4,10 +4,11 @@
 // Settings, Printer bridge, Devices, "Pair a partner phone": the same, for another company's phone app. The person
 // names the partner app first; the code works only for that app, and it may approve nothing until they say so.
 import { Button, Dialog, Input, Switch } from '@slicerx/ui'
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { qrMatrix, qrPath } from '../../lib/qr'
 import type { PhoneAccess, PhoneAttempt, PhoneOffer } from '../../lib/phone'
 import { appName } from '../../edition'
+import { HostContext } from '../../host'
 
 type Stage = { at: 'name' } | { at: 'offer'; offer: PhoneOffer } | { at: 'compare'; attempt: PhoneAttempt; digits: string } | { at: 'done'; name: string } | { at: 'failed'; message: string }
 
@@ -29,7 +30,7 @@ export function PairQr({ link }: { link: string }) {
   }, [link])
   if (!qr) return null
   return (
-    <svg className="pair-qr" role="img" aria-label="Pairing QR code" data-link={link} viewBox={`0 0 ${qr.size} ${qr.size}`} shapeRendering="crispEdges" width={200} height={200}>
+    <svg className="pair-qr" role="img" aria-label="Pairing QR code" viewBox={`0 0 ${qr.size} ${qr.size}`} shapeRendering="crispEdges" width={200} height={200}>
       <rect width={qr.size} height={qr.size} fill="#fff" />
       <path d={qr.d} fill="#000" />
     </svg>
@@ -70,6 +71,18 @@ export function PairDialog({ phone, onClose, partner, known = [] }: { phone: Pho
     }
   }, [phone, partner, chosen])
   const app = chosen ?? ''
+  // The pairing link carries the offer's secret, so it is only drawn as the QR code, never written into the page. A
+  // build for the end-to-end tests (SLICERX_E2E=1) hands it to the journey through a test-only global instead.
+  const e2e = useContext(HostContext)?.build?.e2e === true
+  const offerLink = stage?.at === 'offer' ? stage.offer.link : null
+  useEffect(() => {
+    if (!e2e || offerLink === null) return
+    const g = globalThis as { __sxE2ePairLink?: string }
+    g.__sxE2ePairLink = offerLink
+    return () => {
+      delete g.__sxE2ePairLink
+    }
+  }, [e2e, offerLink])
   return (
     <Dialog open onClose={onClose} title={partner ? 'Pair a partner phone' : 'Pair a phone'} className="pair-dialog" footer={<Button onClick={onClose}>{stage?.at === 'done' ? 'Done' : 'Close'}</Button>}>
       {stage?.at === 'name' ? (
