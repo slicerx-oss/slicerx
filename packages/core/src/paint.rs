@@ -4,9 +4,11 @@
 //! files, and turning painted surfaces into color regions of a layer.
 //!
 //! The text is a stream of 4-bit codes, written last code first. A code is a leaf (bits 0 and 1
-//! are 0, the painted filament follows in bits 2 and 3, or in the next code plus 3 when bits 2 and
-//! 3 are both set) or a split (bits 0 and 1 count the split sides, 1 to 3, and bits 2 and 3 name
-//! the special corner), followed by its children in order. The layout of the children below was
+//! are 0, the painted filament sits in bits 2 and 3, or, when both are set, in the codes after it)
+//! or a split (bits 0 and 1 count the split sides, 1 to 3, and bits 2 and 3 name the special
+//! corner), followed by its children in order. After a leaf code C the filament is 3 plus a run of
+//! codes, each F adding 15 until one below F: 18 is `C F 0` (text `0FC`). A whole text of `FC`,
+//! as files saved before that wrote 18, still reads as 18. The layout of the children below was
 //! worked out against what `OrcaSlicer` prints for hand-written codes (`fit_paint.py` in the
 //! benchmark folder checks it, including random nested codes).
 
@@ -28,8 +30,12 @@ fn mid(a: P, b: P) -> P {
     ]
 }
 
-/// The nibbles of a paint text in stream order (the text is written backwards).
+/// The nibbles of a paint text in stream order (the text is written backwards). A whole text of
+/// `FC` is 18 in two codes, as files saved before 18 took two codes wrote it.
 fn nibbles(text: &str) -> Option<Vec<u8>> {
+    if text == "FC" {
+        return Some(vec![12, 15, 0]);
+    }
     text.chars()
         .rev()
         .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
@@ -51,16 +57,24 @@ impl Reader {
         Some(v)
     }
 
+    /// The state of a leaf whose code is C: 3 plus the run of codes after it, each F adding 15 until one below F.
+    fn extended(&mut self) -> Option<u8> {
+        let mut state: u8 = 3;
+        loop {
+            let c = self.next()?;
+            state = state.checked_add(c)?;
+            if c < 15 {
+                return Some(state);
+            }
+        }
+    }
+
     fn node(&mut self, v: [P; 3], depth: u32, out: &mut Vec<([P; 3], u8)>) -> Option<()> {
         let code = self.next()?;
         let splits = code & 3;
         let special = usize::from(code >> 2);
         if splits == 0 {
-            let state = if special == 3 {
-                self.next()?.checked_add(3)?
-            } else {
-                code >> 2
-            };
+            let state = if special == 3 { self.extended()? } else { code >> 2 };
             out.push((v, state));
             return Some(());
         }
@@ -2192,6 +2206,17 @@ mod tests {
         assert!(decode("", TRI).is_empty());
         // A split that runs out of codes gives nothing.
         assert!(decode("1", TRI).is_empty());
+    }
+
+    #[test]
+    fn filament_18_reads_from_two_codes_after_the_leaf() {
+        let states = |t: &str| decode(t, TRI).iter().map(|f| f.state).collect::<Vec<_>>();
+        assert_eq!(states("EC"), vec![17]);
+        assert_eq!(states("0FC"), vec![18]);
+        // 17 and 18 side by side in one split, in the order the text holds them.
+        assert_eq!(states("EC0FC1"), vec![18, 17]);
+        // A whole text of FC, as files saved before this wrote 18, still reads 18.
+        assert_eq!(states("FC"), vec![18]);
     }
 
     /// The mesh tools read paint texts with their own copy of this reading (`sx_geom::paint_tree`); both must give the

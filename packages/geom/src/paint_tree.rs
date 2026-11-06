@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The per-triangle paint text of Bambu and Orca 3MF files (`paint_color`, `paint_seam`, `paint_supports`,
-//! `paint_fuzzy_skin`): a stream of 4-bit codes, written last code first. A code is a leaf (bits 0 and 1 are 0; the
-//! state follows in bits 2 and 3, or in the next code plus 3 when bits 2 and 3 are both set) or a split (bits 0 and 1
-//! count the split sides, 1 to 3; bits 2 and 3 name the special corner), followed by its children in order.
+//! The per-triangle paint text of 3MF files (`paint_color`, `paint_seam`, `paint_supports`, `paint_fuzzy_skin`): a
+//! stream of 4-bit codes, written last code first. A code is a leaf (bits 0 and 1 are 0; the state sits in bits 2 and
+//! 3, or, when both are set, in the codes after it) or a split (bits 0 and 1 count the split sides, 1 to 3; bits 2 and
+//! 3 name the special corner), followed by its children in order.
+//!
+//! After a leaf code C the state is a run: 3 plus each code, where every F adds 15 and the first code below F ends it.
+//! So 3 to 17 take one code and 18 to 32 two (18 is `C F 0`, text `0FC`). Files saved before 18 took two codes wrote it
+//! as a whole text of `FC`, which still reads as 18.
 //!
 //! The same reading as the slicer's (`sx_core::paint::decode`), here for the mesh tools: rendering painted models,
 //! and painting by target. A test in `sx-core` checks both read the same texts alike.
@@ -36,16 +40,24 @@ impl Reader {
         Some(v)
     }
 
+    /// The state of a leaf whose code is C: 3 plus the run of codes after it, each F adding 15 until one below F.
+    fn extended(&mut self) -> Option<u8> {
+        let mut state: u8 = 3;
+        loop {
+            let c = self.next()?;
+            state = state.checked_add(c)?;
+            if c < 15 {
+                return Some(state);
+            }
+        }
+    }
+
     fn node(&mut self, v: [V3; 3], depth: u32, out: &mut Vec<Leaf>) -> Option<()> {
         let code = self.next()?;
         let splits = code & 3;
         let special = usize::from(code >> 2);
         if splits == 0 {
-            let state = if special == 3 {
-                self.next()?.checked_add(3)?
-            } else {
-                code >> 2
-            };
+            let state = if special == 3 { self.extended()? } else { code >> 2 };
             out.push((v, state));
             return Some(());
         }
@@ -85,6 +97,9 @@ impl Reader {
 /// `None` for a text that does not parse.
 #[must_use]
 pub fn leaves(text: &str, tri: [V3; 3]) -> Option<Vec<Leaf>> {
+    if is_legacy(text) {
+        return Some(vec![(tri, LEGACY_STATE)]);
+    }
     let stream: Vec<u8> = text
         .trim()
         .chars()
@@ -98,6 +113,14 @@ pub fn leaves(text: &str, tri: [V3; 3]) -> Option<Vec<Leaf>> {
     let mut out = Vec::new();
     r.node(tri, 0, &mut out)?;
     Some(out)
+}
+
+/// The state a whole text of `FC` stands for: files saved before 18 took two codes wrote it so.
+const LEGACY_STATE: u8 = 18;
+
+/// A whole text of exactly `FC`, which reads as 18 for those files.
+fn is_legacy(text: &str) -> bool {
+    text.trim() == "FC"
 }
 
 /// A paint text as a tree: a leaf with its state, or a split of 1 to 3 sides about a special corner with its children
@@ -147,11 +170,7 @@ fn parse_node(r: &mut Reader, depth: u32) -> Option<Node> {
     let splits = code & 3;
     let special = code >> 2;
     if splits == 0 {
-        let state = if special == 3 {
-            r.next()?.checked_add(3)?
-        } else {
-            special
-        };
+        let state = if special == 3 { r.extended()? } else { special };
         return Some(Node::Leaf(state));
     }
     if depth >= MAX_DEPTH || special > 2 {
@@ -171,6 +190,9 @@ fn parse_node(r: &mut Reader, depth: u32) -> Option<Node> {
 /// The tree of a paint text; `None` for one that does not read.
 #[must_use]
 pub fn parse(text: &str) -> Option<Node> {
+    if is_legacy(text) {
+        return Some(Node::Leaf(LEGACY_STATE));
+    }
     let stream: Vec<u8> = text
         .trim()
         .chars()
@@ -185,7 +207,12 @@ fn encode_node(n: &Node, out: &mut Vec<u8>) {
     match n {
         Node::Leaf(s) if *s >= 3 => {
             out.push(0b1100);
-            out.push((s - 3).min(15));
+            let mut m = s - 3;
+            while m >= 15 {
+                out.push(15);
+                m -= 15;
+            }
+            out.push(m);
         }
         Node::Leaf(s) => out.push(s << 2),
         Node::Split {
@@ -370,6 +397,36 @@ mod tests {
         }
         assert!(parse("zz").is_none() && parse("1").is_none());
         assert_eq!(simplify(parse("4444443").unwrap()), Node::Leaf(1));
+    }
+
+    /// A split in the order the format lists children (child 0 first); the tree holds them in stream order.
+    fn split(splits: u8, special: u8, kids: Vec<Node>) -> Node {
+        Node::Split {
+            splits,
+            special,
+            kids: kids.into_iter().rev().collect(),
+        }
+    }
+
+    #[test]
+    fn filament_18_takes_two_codes_after_the_leaf() {
+        // 17 is one code after C; 18 starts the run, F then 0.
+        assert_eq!(encode(&Node::Leaf(16)), "DC");
+        assert_eq!(encode(&Node::Leaf(17)), "EC");
+        assert_eq!(encode(&Node::Leaf(18)), "0FC");
+        assert_eq!(parse("0FC"), Some(Node::Leaf(18)));
+        assert_eq!(leaves("0FC", TRI).unwrap(), vec![(TRI, 18)]);
+        // A tree with 17 and 18 side by side reads back whole.
+        let t5 = split(1, 0, vec![Node::Leaf(17), Node::Leaf(18)]);
+        assert_eq!(encode(&t5), "EC0FC1");
+        assert_eq!(parse("EC0FC1"), Some(t5));
+    }
+
+    #[test]
+    fn a_text_saved_with_18_as_fc_still_reads_18() {
+        assert_eq!(parse("FC"), Some(Node::Leaf(18)));
+        assert_eq!(leaves("FC", TRI).unwrap(), vec![(TRI, 18)]);
+        assert_eq!(encode(&parse("FC").unwrap()), "0FC");
     }
 
     #[test]

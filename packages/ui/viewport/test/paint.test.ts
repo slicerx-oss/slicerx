@@ -25,6 +25,22 @@ describe('paint text', () => {
     expect(decodeTree('2C')).toEqual({ state: 5 })
   })
 
+  it('writes filament 18 as two codes after the leaf, and reads it back', () => {
+    expect(encodeTree({ state: 16 })).toBe('DC')
+    expect(encodeTree({ state: 17 })).toBe('EC')
+    expect(encodeTree({ state: 18 })).toBe('0FC')
+    expect(decodeTree('0FC')).toEqual({ state: 18 })
+    // 17 and 18 side by side, the children in the order the text holds them.
+    const t5: PaintNode = { splits: 1, special: 0, kids: [{ state: 18 }, { state: 17 }] }
+    expect(encodeTree(t5)).toBe('EC0FC1')
+    expect(decodeTree('EC0FC1')).toEqual(t5)
+  })
+
+  it('reads a whole text of FC, as files saved before wrote 18, as 18', () => {
+    expect(decodeTree('FC')).toEqual({ state: 18 })
+    expect(encodeTree(decodeTree('FC') as PaintNode)).toBe('0FC')
+  })
+
   it('refuses text that is not a tree, and writes nothing for an unpainted triangle', () => {
     expect(decodeTree('zz')).toBeNull()
     expect(decodeTree('')).toBeNull()
