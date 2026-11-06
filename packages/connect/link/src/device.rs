@@ -203,12 +203,47 @@ pub(crate) async fn settle_absolute(b: &Arc<Bridge>, printer: &str, s: &dyn Prin
     Ok(())
 }
 
-/// `jog {printerId, axis, distanceMm, feedMmMin?}`.
+/// The person's answer to the plate question sent with a home or a jog: `plateClear` with the bed `epoch`
+/// it was asked in (`bed.state`, or the `bed_check` refusal's `details.epoch`).
+fn plate_answer(p: &Value) -> Rpc<Option<u64>> {
+    if p.get("plateClear").and_then(Value::as_bool) != Some(true) {
+        return Ok(None);
+    }
+    p.get("epoch").and_then(Value::as_u64).map(Some).ok_or_else(|| {
+        RpcError::new(
+            "bad_request",
+            "epoch (from bed.state or the bed_check refusal) goes with plateClear",
+        )
+    })
+}
+
+/// The bed state a move toward the plate goes by: the record, or clear when the person said so for the
+/// epoch the record is in now.
+fn plate_for(rec: &sx_permit::BedRecord, answer: Option<u64>) -> sx_permit::BedState {
+    if answer == Some(rec.epoch) {
+        sx_permit::BedState::Clear
+    } else {
+        rec.state
+    }
+}
+
+/// A `bed_check` refusal names the bed epoch the question is about, so the answer can go back with it.
+fn naming_epoch(e: RpcError, epoch: u64) -> RpcError {
+    if e.code == "bed_check" {
+        e.with_details(json!({ "epoch": epoch }))
+    } else {
+        e
+    }
+}
+
+/// `jog {printerId, axis, distanceMm, feedMmMin?, plateClear?, epoch?}`. `plateClear` with `epoch` is the
+/// person's answer to the plate question for a step down, for that bed epoch only.
 async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = str_arg(p, "printerId")?;
     let axis: JogAxis = arg(p, "axis")?;
     let distance: f64 = arg(p, "distanceMm")?;
     let feed: Option<f64> = p.get("feedMmMin").and_then(Value::as_f64);
+    let answer = plate_answer(p)?;
     let lines = jog_lines(axis, distance, feed)?;
     let s = session(b, &printer).await?;
     // Held before the state is read, so no queued start can begin between the check and the move.
@@ -225,7 +260,8 @@ async fn jog(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         ));
     }
     let motion = s.motion().await.unwrap_or_default();
-    jog_problem(axis, distance, &motion, b.hub.bed(&printer).state)?;
+    let rec = b.hub.bed(&printer);
+    jog_problem(axis, distance, &motion, plate_for(&rec, answer)).map_err(|e| naming_epoch(e, rec.epoch))?;
     let title = "Move the head";
     settle_absolute(b, &printer, s.as_ref()).await?;
     let [rel, mv, abs] = lines;
@@ -293,14 +329,8 @@ pub(crate) async fn home_checked(
         .await
         .filter(|s| s.state != PrinterState::Offline)
         .ok_or_else(|| RpcError::new("unreachable", "the printer did not answer"))?;
-    let bed = b.hub.bed(printer);
-    home_problem(st.state, bed.state, answer == Some(bed.epoch)).map_err(|e| {
-        if e.code == "bed_check" {
-            e.with_details(json!({ "epoch": bed.epoch }))
-        } else {
-            e
-        }
-    })?;
+    let rec = b.hub.bed(printer);
+    home_problem(st.state, plate_for(&rec, answer), false).map_err(|e| naming_epoch(e, rec.epoch))?;
     settle_absolute(b, printer, s.as_ref()).await?;
     match send {
         HomeLine::Approved { line, token } => s.send_gcode(line, token).await?,
@@ -317,16 +347,7 @@ pub(crate) async fn home_checked(
 /// `bed_check` refusal's `details.epoch`).
 async fn home(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = str_arg(p, "printerId")?;
-    let answer = if p.get("plateClear").and_then(Value::as_bool) == Some(true) {
-        Some(p.get("epoch").and_then(Value::as_u64).ok_or_else(|| {
-            RpcError::new(
-                "bad_request",
-                "epoch (from bed.state or the bed_check refusal) goes with plateClear",
-            )
-        })?)
-    } else {
-        None
-    };
+    let answer = plate_answer(p)?;
     home_checked(b, &printer, answer, HomeLine::Mint).await?;
     Ok(json!({ "ok": true }))
 }

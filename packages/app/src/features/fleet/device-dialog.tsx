@@ -9,7 +9,7 @@ import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import {
-  bedKnownClear, deviceError, deviceHub, filamentText, homeBlockedReason, homePrinter, JOG_STEPS_MM, jogBlockedReason, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
+  bedKnownClear, deviceError, deviceHub, filamentText, homeBlockedReason, homePrinter, JOG_STEPS_MM, jogBlockedReason, jogHead, pauseNoteOf, recordDuration, limitRange, REMOTE_BED_RANGE, REMOTE_NOZZLE_RANGE, REMOTE_UNKNOWN_CAP, remoteLimit, SEVERITY_LABEL, splitIssues, startBlockedReason, startStored,
   type DeviceHub, type PrintObject, type PrintRecord, type PrinterIssue, type RemoteStartRow, type StoredFile,
 } from './device'
 import { appName } from '../../edition'
@@ -90,8 +90,16 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
   const homeBlocked = homeBlockedReason(status.state)
   // One line for the tab: the shared cause (offline, an error), or both rules when the printer is busy.
   const moveNote = blocked && homeBlocked && blocked !== homeBlocked ? 'The head moves and homes only while the printer is idle or finished.' : (blocked ?? homeBlocked)
+  // A step down asks about the plate the same way: the epoch asked about while the question is open, and the epoch the
+  // person said the plate is clear in, which later steps down send until the printer moves on.
+  const [askMove, setAskMove] = useState<number | null>(null)
+  const [moveClear, setMoveClear] = useState<number | null>(null)
   // A confirm asked for one state never applies once the printer has moved on.
-  useEffect(() => setAskPlate(null), [status.state])
+  useEffect(() => {
+    setAskPlate(null)
+    setAskMove(null)
+    setMoveClear(null)
+  }, [status.state])
   const home = async (answer?: { epoch: number }) => {
     setBusy(true)
     const a = await homePrinter(hub, printer.id, answer)
@@ -100,18 +108,23 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
     if (a.kind === 'homed') toast(`Homing ${printer.name}`, 'ok')
     else if (a.kind === 'error') toast(a.message, 'error')
   }
-  const go = async (axis: 'x' | 'y' | 'z', sign: 1 | -1) => {
+  const go = async (axis: 'x' | 'y' | 'z', sign: 1 | -1, clearIn: number | null = moveClear) => {
+    const down = axis === 'z' && sign < 0
     setBusy(true)
-    try {
-      await hub.device.jog(printer.id, axis, sign * step)
-    } catch (e) {
-      toast(deviceError(e), 'error')
-    } finally {
-      setBusy(false)
-    }
+    const a = await jogHead(hub, printer.id, axis, sign * step, down && clearIn !== null ? { epoch: clearIn } : undefined)
+    setBusy(false)
+    if (a.kind === 'ask-bed') {
+      setMoveClear(null)
+      setAskMove(a.epoch)
+    } else if (a.kind === 'error') toast(a.message, 'error')
+  }
+  const moveDown = (epoch: number) => {
+    setMoveClear(epoch)
+    setAskMove(null)
+    void go('z', -1, epoch)
   }
   const btn = (axis: 'x' | 'y' | 'z', sign: 1 | -1, label: string) => (
-    <Button size="sm" disabled={busy || blocked !== null} onClick={() => void go(axis, sign)} aria-label={`Move ${axis.toUpperCase()} ${sign > 0 ? 'plus' : 'minus'} ${step} mm`}>
+    <Button size="sm" disabled={busy || blocked !== null || (axis === 'z' && sign < 0 && askMove !== null)} onClick={() => void go(axis, sign)} aria-label={`Move ${axis.toUpperCase()} ${sign > 0 ? 'plus' : 'minus'} ${step} mm`}>
       {label}
     </Button>
   )
@@ -145,6 +158,13 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
         {btn('z', -1, 'Z -')}
         {btn('z', 1, 'Z +')}
       </div>
+      {askMove !== null ? (
+        <div role="alertdialog" aria-label="Confirm move" className="calib-act">
+          <p className="sx-small">Is the build plate clear? Z down moves the nozzle toward the plate.</p>
+          <Button variant="primary" disabled={busy} onClick={() => moveDown(askMove)}>Plate is clear, move</Button>
+          <Button variant="ghost" onClick={() => setAskMove(null)}>Cancel</Button>
+        </div>
+      ) : null}
       {moveNote ? <p className="sx-small warn">{moveNote}</p> : null}
     </section>
   )

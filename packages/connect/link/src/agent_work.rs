@@ -486,12 +486,16 @@ async fn execute(
         Work::Gcode { printer, line } => Ok(session(b, &printer).await?.send_gcode(&line, token).await?),
         // A card can wait: the printer may have started a job, or finished one, since it was made. The
         // person's token is for `printer.home`; checked and used up here, it lets the hub send G28 under
-        // its own token.
+        // its own token. "The plate is clear" on the card answers the plate question for this home, about
+        // the plate as it is now (the hub runs the work as the person approves).
         Work::Home { printer } => {
             let broker = b
                 .broker
                 .as_ref()
                 .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
+            let plate_said = broker
+                .grant_info(&token.request_id)
+                .is_some_and(|g| g.bed_confirmed);
             broker
                 .verify(
                     &crate::hub_rpc::to_permit(token),
@@ -500,7 +504,8 @@ async fn execute(
                     &sx_permit::hash_params(&json!({ "printerId": printer })),
                 )
                 .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
-            crate::device::home_checked(b, &printer, None, HomeLine::Mint).await
+            let answer = plate_said.then(|| b.hub.bed(&printer).epoch);
+            crate::device::home_checked(b, &printer, answer, HomeLine::Mint).await
         }
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
