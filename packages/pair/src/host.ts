@@ -279,6 +279,8 @@ type JobWork =
 interface Job {
   jobId: string
   pairingId: string
+  /** Who raised it: `partner` when a partner phone sent it, whatever its name. A partner phone never approves those. */
+  raisedBy: 'phone' | 'partner'
   request: ApprovalRequest
   work: JobWork
   state: 'pending' | 'running' | 'done'
@@ -982,6 +984,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const job: Job = {
       jobId,
       pairingId: s.pairingId,
+      raisedBy: rec.partner !== undefined ? 'partner' : 'phone',
       request,
       work: a.work,
       state: 'pending',
@@ -1096,10 +1099,12 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const request = job?.state === 'pending' ? job.request : svc.approvalFeed?.pending().find((r) => r.id === p.requestId)
     if (!request) throw new PairError('not_found', 'This request was already decided or has expired')
     if (!verifyDecision(rec.peer.signPub, request, p)) throw new PairError('forbidden', 'The decision does not match the request')
-    // A partner phone approves only pausing or stopping a print, as any phone does away from home: a print it
-    // sends, or anything else, waits for a person on this computer. It may still deny any card.
-    if (rec.partner !== undefined && p.decision === 'approve' && !request.actions.every((a) => a.action === 'printer.pause' || a.action === 'printer.cancel')) {
-      throw new PairError('forbidden', 'A partner phone approves only pausing or stopping a print; approve this on the computer')
+    // A partner phone has our phone's rights, with two limits. It never approves a card that names no action, since it
+    // cannot tell what that would grant, and never anything a partner app asked for: a job any partner phone sent, its
+    // own pause or stop included, decided by who raised it and never by a name. It may still deny any card.
+    if (rec.partner !== undefined && p.decision === 'approve') {
+      if (request.actions.length === 0) throw new PairError('forbidden', 'A partner phone cannot approve a card that names no action; approve it on the computer')
+      if (job?.raisedBy === 'partner') throw new PairError('forbidden', 'A partner phone cannot approve what a partner app asked for; approve it on the computer or on another phone')
     }
     const audit = () => auditLog.push({ requestId: p.requestId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, decision: p.decision, at: env.now(), requestHash: p.requestHash, sig: p.sig })
     if (job) {
