@@ -188,7 +188,7 @@ async function addProjectShown(
     const made = await entries(plate.objects, loads[i] ?? [])
     markOpenStage('engine')
     if (i > 0) {
-      const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
+      const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}), ...(plate.bedType ? { bedType: plate.bedType } : {}) }))
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) })))
       madePlates.push({ id, ...(plate.plateNo ? { plateNo: plate.plateNo } : {}) })
     } else {
@@ -210,6 +210,9 @@ async function addProjectShown(
     if (i === 0 && sequence) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, sequence } } : p)) })))
     const nozzleMap = plate.nozzleMap
     if (i === 0 && nozzleMap) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, nozzleMap } } : p)) })))
+    // The plate's own plate type wins over the project's (curr_bed_type in its settings) and the printer's default.
+    const bedType = plate.bedType
+    if (i === 0 && bedType) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, bedType } } : p)) })))
   }
   if (project.timeline) {
     const { joinTimelines, withBodyIds } = await import('@slicerx/cad-history')

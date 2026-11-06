@@ -4,7 +4,7 @@
 // reads it as `curr_bed_type` to pick the bed temperatures. The app's plates and the MCP server's slices use it.
 
 /** The plate types, as the app's plate settings name them. */
-export type BedType = 'cool' | 'engineering' | 'high-temp' | 'textured-pei' | 'smooth-pei'
+export type BedType = 'cool' | 'engineering' | 'high-temp' | 'textured-pei' | 'smooth-pei' | 'textured-cool' | 'supertack'
 
 /** Orca's `curr_bed_type` names. Bambu's smooth PEI plate is Orca's High Temp Plate. */
 export const BED_TYPE_ENGINE: Readonly<Record<BedType, string>> = {
@@ -13,6 +13,8 @@ export const BED_TYPE_ENGINE: Readonly<Record<BedType, string>> = {
   'high-temp': 'High Temp Plate',
   'textured-pei': 'Textured PEI Plate',
   'smooth-pei': 'High Temp Plate',
+  'textured-cool': 'Textured Cool Plate',
+  supertack: 'Supertack Plate',
 }
 
 // Orca's BedType enum: 1 Cool Plate, 2 Engineering Plate, 3 High Temp Plate, 4 Textured PEI Plate.
@@ -23,6 +25,8 @@ const BY_NAME: Readonly<Record<string, BedType>> = {
   'engineering plate': 'engineering',
   'high temp plate': 'smooth-pei',
   'textured pei plate': 'textured-pei',
+  'textured cool plate': 'textured-cool',
+  'supertack plate': 'supertack',
 }
 
 /**
@@ -69,8 +73,18 @@ export function settingsBedType(cfg: Readonly<Record<string, unknown>>): BedType
 }
 
 /**
+ * The plate type a plate of a project file names for itself, from its metadata in Metadata/model_settings.config:
+ * `bed_type`, as project files write it, else `curr_bed_type`, as SlicerX saves it. Undefined for "Default
+ * Plate" (the project's plate type, else the printer's default, then counts) and for a name no plate has.
+ */
+export function filePlateBedType(meta: Readonly<Record<string, string | undefined>>): BedType | undefined {
+  const v = meta['bed_type'] ?? meta['curr_bed_type']
+  return v === undefined ? undefined : BY_NAME[v.trim().toLowerCase()]
+}
+
+/**
  * The `curr_bed_type` a slice prints with when its plate sets no plate type, to spread over the print settings: a
- * `curr_bed_type` already in the settings stays as it is, even one the app's picker does not list (a Supertack plate);
+ * `curr_bed_type` already in the settings stays as it is, even one no plate type here names;
  * else the print settings' plate, the printer's default, or smooth PEI (Orca's High Temp Plate).
  */
 export function sliceBedType(cfg: Readonly<Record<string, unknown>>): { curr_bed_type?: string } {

@@ -41,6 +41,8 @@
 .mc-list button:hover { background: var(--ink-3); }
 .mc-list button:focus-visible { background: var(--ink-3); outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 .mc-list button:disabled { opacity: 0.5; cursor: default; }
+/* Phone taps: every option at least 44 px tall. */
+:root[data-phone] .mc-list button { min-height: var(--h-lg); }
 /* The open list shows a long printer name whole, on two lines if it needs them. */
 .mc-list .mc-opt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .mc-list .mc-check { flex: none; visibility: hidden; color: var(--accent); }

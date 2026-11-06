@@ -648,8 +648,8 @@ export interface CalibrationPart {
 }
 
 export interface PlateSettings {
-  /** Bed surface; absent means the printer's default. */
-  bedType?: 'cool' | 'engineering' | 'high-temp' | 'textured-pei' | 'smooth-pei'
+  /** Bed surface; absent means the project's plate type, else the printer's default. */
+  bedType?: 'cool' | 'engineering' | 'high-temp' | 'textured-pei' | 'smooth-pei' | 'textured-cool' | 'supertack'
   /** Print all objects layer by layer, or one object after another; absent follows the Print sequence setting (Orca's "same as global"). */
   sequence?: 'by-layer' | 'by-object'
   /** Filament slots in printing order; absent means slot order. */
