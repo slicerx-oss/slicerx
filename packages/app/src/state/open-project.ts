@@ -79,8 +79,17 @@ async function addProjectShown(
     : null
   // A plain 3MF's objects that touch or overlap are one model's parts: they open as one object with those parts.
   const joins = !own && !hasSettings ? await joinTouching(project.plates, name) : []
-  // Every object goes to the engine now, side by side, while the printer is switched: a mesh does not depend on it.
-  const loads = project.plates.map((pl) => pl.objects.map((o) => host.slicer.loadParts(o.name, o.parts)))
+  // The objects go to the engine now, while the printer is switched: a mesh does not depend on it. One plate at a time,
+  // in the file's order: each load encodes its object whole before it goes (about 18 bytes a triangle), and a big
+  // project's plates sent side by side held every one of those copies at once. A plate's own objects go together.
+  let before: Promise<unknown> = Promise.resolve()
+  const loads = project.plates.map((pl) => {
+    const gate = before
+    const handles = pl.objects.map((o) => gate.then(() => host.slicer.loadParts(o.name, o.parts)))
+    // an empty plate waits for the one before it too
+    before = Promise.allSettled([gate, ...handles])
+    return handles
+  })
   for (const l of loads.flat()) l.catch(() => undefined)
   // Another slicer's project opens as its own printer, first, so its objects land on that printer's bed.
   const asProject = wasEmpty && !own && project.settingsFrom === 'orca' && hasSettings

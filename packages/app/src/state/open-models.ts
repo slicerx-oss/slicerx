@@ -9,7 +9,7 @@ import { withAutoSpools } from '../filament/pick'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { clearProject } from '../project/new'
-import { keepBeforeOpen, sayKept } from '../project/autosave'
+import { keepBeforeOpen, MAX_SNAPSHOT_BYTES, sayKept } from '../project/autosave'
 import { beginOpen, markClean, markDirty, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import { identity, uid } from './actions'
@@ -211,6 +211,16 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
 }
 
 /** `fresh`: the files start a new project (Open); otherwise they go onto the plate as it is (Add model, a drop). */
+/**
+ * The copy of an opened file kept as a recent project, taken before the open: a worker may take the original. Only a
+ * project recents can store gets one (recordRecent keeps nothing over MAX_SNAPSHOT_BYTES), so a bigger one is not
+ * copied, and a locked project, open here unlocked, is never kept in the clear.
+ */
+export function recentCopy(name: string, data: ArrayBuffer, unlocked: boolean): ArrayBuffer | null {
+  if (unlocked || !/\.(sx3mf|3mf)$/i.test(name) || data.byteLength > MAX_SNAPSHOT_BYTES) return null
+  return data.slice(0)
+}
+
 export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: boolean } = {}): Promise<void> {
   // A G-code file opens in Preview to view, not on the plate.
   const gcode = refs.filter((r) => isGcodeName(r.name))
@@ -237,8 +247,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       const name = open?.name ?? ref.name
       const data = open?.data ?? (await host.files.read(ref))
       markOpenStage('read')
-      // A copy is taken first: a worker may take the original. A locked project is never kept unlocked in recents.
-      const keep = !open && /\.(sx3mf|3mf)$/i.test(name) ? data.slice(0) : null
+      const keep = recentCopy(name, data, !!open)
       told = (await addBytes(host, name, data, scope)) || told
       if (keep) void import('../project/autosave').then((m) => m.recordRecent(name, keep))
     }
