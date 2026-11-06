@@ -141,3 +141,105 @@ test('Printer settings: Basic information has labels too long to sit beside thei
   }
   await sidebarDone(page)
 })
+
+type Snap = { layout: string | null; rows: { name: string; label: number[]; ctl: number[] }[] }
+
+/**
+ * Arms a recorder for the next change of the Printer settings list: once the first frame that shows the list has
+ * painted, after the fonts are ready and after a short settle, the list's layout and each row's label and
+ * control box, measured from the list's own corner so a sideways scroll of the dialog does not count.
+ */
+async function arm(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const SEL = '.printer-settings ul.expert'
+    const snap = (): Snap | null => {
+      const g = document.querySelector(SEL)
+      if (!g) return null
+      const o = g.getBoundingClientRect()
+      const box = (e: Element) => {
+        const r = e.getBoundingClientRect()
+        return [r.left - o.left, r.top - o.top, r.width, r.height]
+      }
+      const rows = [...g.children]
+        .filter((r) => r.classList.contains('sx-setrow'))
+        .map((r) => {
+          const kids = [...r.children]
+          return { name: (kids[1]?.textContent ?? '').trim(), label: box(kids[1]!), ctl: box(kids[2]!) }
+        })
+      return { layout: g.getAttribute('data-setrows'), rows }
+    }
+    // a task posted from a frame runs once that frame is painted, after its resize observers
+    const painted = () => new Promise<void>((done) => requestAnimationFrame(() => setTimeout(done, 0)))
+    const shown = () => (document.querySelector(SEL)?.getBoundingClientRect().width ?? 0) > 0
+    ;(window as unknown as { rowSnaps?: Promise<(Snap | null)[]> }).rowSnaps = new Promise((done) => {
+      const mo = new MutationObserver((records) => {
+        const list = document.querySelector(SEL)
+        if (!list || !list.querySelector(':scope > .sx-setrow')) return
+        if (!records.some((m) => m.target === list || [...m.addedNodes].some((n) => n === list || (n instanceof Element && n.contains(list))))) return
+        mo.disconnect()
+        void (async () => {
+          // the first frame that shows the list
+          await painted()
+          for (let i = 0; i < 60 && !shown(); i++) await painted()
+          const first = snap()
+          await document.fonts.ready
+          await painted()
+          const fonts = snap()
+          await new Promise((r) => setTimeout(r, 600))
+          await painted()
+          done([first, fonts, snap()])
+        })()
+      })
+      mo.observe(document.body, { childList: true, subtree: true })
+    })
+  })
+}
+
+/** The recorded snapshots agree: the layout is set at the first paint and nothing moves after it. */
+async function steady(page: Page, where: string): Promise<string> {
+  const [first, fonts, settled] = await page.evaluate(() => (window as unknown as { rowSnaps: Promise<(Snap | null)[]> }).rowSnaps)
+  expect(first, `${where}: the list at the first paint`).not.toBeNull()
+  expect(first!.layout, `${where}: laid out at the first paint`).toMatch(/^(stack|inline)$/)
+  expect(first!.rows.length, where).toBeGreaterThan(0)
+  for (const [when, s] of [['after the fonts', fonts], ['after a settle', settled]] as const) {
+    expect(s!.layout, `${where}, ${when}: the group's layout`).toBe(first!.layout)
+    expect(s!.rows.length, `${where}, ${when}: rows`).toBe(first!.rows.length)
+    s!.rows.forEach((r, i) => {
+      const a = first!.rows[i]!
+      for (const k of ['label', 'ctl'] as const) {
+        const d = Math.max(...r[k].map((v, j) => Math.abs(v - a[k][j]!)))
+        expect(d, `${where}, ${when}: ${r.name} ${k} moved`).toBeLessThanOrEqual(0.5)
+      }
+    })
+  }
+  return first!.layout!
+}
+
+test('Printer settings: each tab\'s group is laid out at its first paint and nothing moves after it', async ({ page }) => {
+  await sidebarAs(page, { mode: 'simple' })
+  await closeSheet(page)
+  await page.getByTestId('phone-search').click()
+  await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
+  await page.keyboard.type('Printer settings')
+  await arm(page)
+  await page.locator('.sx-palette-item', { hasText: /^Printer settings/ }).first().click()
+  const dialog = page.getByRole('dialog', { name: /Printer settings/ })
+  await expect(dialog).toBeVisible()
+  try {
+    const seen = [`Basic information ${await steady(page, 'Basic information, on open')}`]
+    const tabs = dialog.getByRole('radiogroup', { name: 'Printer settings tab' }).getByRole('radio')
+    const names = await tabs.allTextContents()
+    expect(names.length).toBeGreaterThan(1)
+    // every other tab, then back to the first
+    for (const name of [...names.slice(1), names[0]!]) {
+      await arm(page)
+      await tabs.filter({ hasText: name }).first().click()
+      seen.push(`${name} ${await steady(page, name)}`)
+    }
+    test.info().annotations.push({ type: 'groups', description: seen.join('; ') })
+  } finally {
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+  }
+  await sidebarDone(page)
+})
