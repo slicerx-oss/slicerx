@@ -1621,3 +1621,101 @@ test('Partner phone: pairs under its app name, listed in Devices, approve and se
   await sw.click()
   await page.keyboard.press('Escape')
 })
+
+test('Partner phone: approve turned off while the hub cannot take it says so under the switch, and Retry sends it', async ({ page }) => {
+  // Every remote.pairings.put the app sends is answered with an error while `refuse` is set, as a hub that could not
+  // save it would; the approve right each put that reached the hub carried is kept in `heard`.
+  let refuse = false
+  const heard: boolean[] = []
+  await page.routeWebSocket(hub.route, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      if (typeof m === 'string') {
+        try {
+          const c = JSON.parse(m) as { id?: unknown; method?: unknown; params?: { rights?: { approve?: unknown } } }
+          if (c.method === 'remote.pairings.put') {
+            if (refuse) {
+              ws.send(JSON.stringify({ id: c.id, error: { code: 'failed', message: 'the hub could not save it' } }))
+              return
+            }
+            heard.push(c.params?.rights?.approve === true)
+          }
+        } catch {
+          // Not a call: the handshake.
+        }
+      }
+      server.send(m)
+    })
+  })
+  await repair(page)
+  const pair = await import('../../../../packages/pair/src/index.ts')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const nav = page.getByRole('navigation', { name: 'Settings sections' })
+  await nav.getByRole('button', { name: 'Phone access' }).click()
+  const sw = page.getByRole('switch', { name: /Phone access on this network/ })
+  if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click()
+  await expect(page.getByText(/^Listening on/)).toBeVisible({ timeout: 15_000 })
+  await nav.getByRole('button', { name: 'Printer bridge' }).click()
+  await page.getByTestId('partner-phone-pair').click()
+  const dialog = page.getByRole('dialog', { name: 'Pair a partner phone' })
+  await dialog.getByTestId('partner-phone-name').fill('Example Phone')
+  await dialog.getByTestId('partner-phone-make').click()
+  const link = await page.evaluate(() => (globalThis as { __sxE2ePairLink?: string }).__sxE2ePairLink ?? '')
+  expect(link).toMatch(/^slicerx:\/\/pair#v=1&/)
+  const env = pair.defaultEnv
+  const client = pair.createPairClient({ env, identity: pair.createIdentity(env, 'Pixel 8', 'android'), store: pair.memoryPairingStore(), relays: [], socket: (u: string) => new WebSocket(u) as never, partner: 'Example Phone' })
+  const port = /[#&]l=ws%3A%2F%2F[^&]*%3A(\d+)%2Fpair/.exec(link)?.[1]
+  expect(port, link).toBeTruthy()
+  const flow = await client.pair(`${link.replace(/&l=[^&]*/g, '')}&l=${encodeURIComponent(`ws://127.0.0.1:${port}/pair`)}`)
+  await expect(dialog.getByLabel('Digits to compare')).toHaveText(await flow.sas)
+  flow.confirm()
+  await dialog.getByTestId('pair-match').click()
+  expect((await flow.result).ok).toBe(true)
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  const row = page.getByTestId('partner-phones').locator('li', { hasText: 'Example Phone' })
+  const approve = row.getByTestId('partner-phone-approve-row')
+  // The person lets it approve; the hub hears that as usual.
+  await approve.click()
+  await expect(approve).toHaveAttribute('aria-checked', 'true')
+  const pending = row.getByTestId('partner-phone-rights-pending')
+  await expect(pending).toHaveCount(0)
+
+  // The hub can't take the change: approve is off here all the same, and the row says the hub hasn't heard.
+  refuse = true
+  await approve.click()
+  await expect(approve).toHaveAttribute('aria-checked', 'false')
+  await expect(pending).toContainText("Approve is off here, but remote access hasn't heard yet")
+  await expect(pending).toContainText('this phone can still approve away from home')
+  const [host] = await client.hosts()
+  const conn = await client.connect(host?.pairingId ?? '', { via: 'lan' })
+  expect(conn.info.rights.approve).toBe(false)
+  conn.close()
+  // Retry reaches the 28 px hit area on a desktop and 44 px at phone width, from its center to each side.
+  const retry = pending.getByRole('button', { name: 'Retry' })
+  const reach = (need: number) =>
+    retry.evaluate((el, n) => {
+      el.scrollIntoView({ block: 'center' })
+      const r = el.getBoundingClientRect()
+      const [x, y, d] = [r.left + r.width / 2, r.top + r.height / 2, n / 2 - 1]
+      return [[x, y - d], [x, y + d], [x - d, y], [x + d, y]].every(([px, py]) => el.contains(document.elementFromPoint(px ?? 0, py ?? 0)))
+    }, need)
+  expect(await reach(28)).toBe(true)
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await reach(44)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await retry.click()
+  await expect(pending).toContainText("Remote access isn't reachable right now. It's retried every few minutes.")
+
+  // The hub takes it now: Retry sends the lowered right and the line goes.
+  refuse = false
+  await retry.click()
+  await expect(pending).toHaveCount(0)
+  expect(heard.at(-1)).toBe(false)
+  await expect(approve).toHaveAttribute('aria-checked', 'false')
+
+  await row.getByTestId('partner-phone-revoke').click()
+  await expect(row).toHaveCount(0)
+  await nav.getByRole('button', { name: 'Phone access' }).click()
+  await sw.click()
+  await page.keyboard.press('Escape')
+})

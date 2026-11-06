@@ -75,6 +75,8 @@ export interface RemoteState {
   error?: string
   /** Phones removed here that the hub has not heard about yet. Retried at every sync. */
   pendingRemovals?: string[]
+  /** Phones whose approve right was turned off here that the hub has not heard about yet. Retried first at every sync. */
+  pendingRights?: string[]
 }
 
 export interface RemoteAccess {
@@ -88,6 +90,12 @@ export interface RemoteAccess {
   setEnabled(on: boolean): Promise<void>
   /** Hands the hub every local pairing and drops the phone pairings it holds that are gone here. */
   sync(): Promise<void>
+  /**
+   * Hands the hub a phone's lowered rights before the pair store changes, also while remote access is off, so a
+   * phone away from home loses the approve right as soon as it does here. False when the hub did not hear; the
+   * change is then retried first at every sync.
+   */
+  lowerRights(pairingId: string, rights: { request?: boolean; approve: false }): Promise<boolean>
   paired(p: RemotePairing): Promise<void>
   unpaired(pairingId: string): Promise<void>
 }
@@ -97,15 +105,22 @@ const text = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** How often the app checks the hub's pairing list against its own while the bridge is connected. */
 const SYNC_EVERY_MS = 5 * 60_000
 
+/**
+ * Lowered rights the hub has not heard, by pairing id. Kept here rather than in one RemoteAccess, since each bridge
+ * connection makes a new one and the first sync after a reconnect must still send them.
+ */
+const pendingRights = new Set<string>()
+
 export function createRemoteAccess(opts: { remote: BridgeRemote; source: PairSource | null; relayUrl?: string | null; forget?: (pairingId: string) => Promise<void> }): RemoteAccess {
   const pending = new Set<string>()
-  let state: RemoteState = { status: null, busy: false }
+  let state: RemoteState = { status: null, busy: false, ...(pendingRights.size ? { pendingRights: [...pendingRights] } : {}) }
   const listeners = new Set<() => void>()
   const set = (next: RemoteState) => {
     state = next
     for (const l of listeners) l()
   }
   const on = () => state.status?.enabled === true
+  const showRights = () => set({ ...state, pendingRights: [...pendingRights] })
   const api: RemoteAccess = {
     getState: () => state,
     subscribe(cb) {
@@ -154,6 +169,21 @@ export function createRemoteAccess(opts: { remote: BridgeRemote; source: PairSou
     async sync() {
       if (!opts.source) return
       const local = await opts.source.pairings()
+      // Rights taken away while the hub could not hear go first, whether or not remote access is on.
+      if (pendingRights.size) {
+        try {
+          for (const id of [...pendingRights]) {
+            const p = local.find((x) => x.pairingId === id)
+            // A phone that is gone here is dropped below instead.
+            if (p) await opts.remote.pairings.put({ ...p, kind: 'phone' })
+            pendingRights.delete(id)
+          }
+        } finally {
+          showRights()
+        }
+      }
+      // A new connection has not read the hub's status yet; without it nothing would be handed over.
+      if (state.status === null) await api.refresh()
       const keep = new Set(local.map((p) => p.pairingId))
       if (on()) for (const p of local) await opts.remote.pairings.put({ ...p, kind: 'phone' })
       // Also while off: a phone removed here, even while the hub could not be reached, must not stay on the
@@ -165,6 +195,20 @@ export function createRemoteAccess(opts: { remote: BridgeRemote; source: PairSou
       else for (const h of await opts.remote.pairings.list()) if (h.kind !== 'agent' && !keep.has(h.pairingId)) await opts.remote.pairings.remove(h.pairingId)
       pending.clear()
       set({ ...state, pendingRemovals: [] })
+    },
+    async lowerRights(pairingId, rights) {
+      const p = (await opts.source?.pairings())?.find((x) => x.pairingId === pairingId)
+      if (!p) return true
+      try {
+        await opts.remote.pairings.put({ ...p, rights: { ...p.rights, ...rights }, kind: 'phone' })
+        pendingRights.delete(pairingId)
+        showRights()
+        return true
+      } catch {
+        pendingRights.add(pairingId)
+        showRights()
+        return false
+      }
     },
     async paired(p) {
       if (on()) await opts.remote.pairings.put({ ...p, kind: 'phone' })

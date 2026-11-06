@@ -18,7 +18,7 @@ export interface PhoneAccessOptions {
    * Remote access, when the bridge has it. While it is on, the hub answers the pairing routes on the relay, so
    * this controller only tells it which phones are paired; it never attaches the pairing host to the relay.
    */
-  remote?: () => Pick<RemoteAccess, 'sync' | 'unpaired'> | null
+  remote?: () => (Pick<RemoteAccess, 'sync' | 'unpaired'> & Partial<Pick<RemoteAccess, 'lowerRights'>>) | null
 }
 
 export function createPhoneAccess(opts: PhoneAccessOptions): PhoneAccess {
@@ -95,10 +95,20 @@ export function createPhoneAccess(opts: PhoneAccessOptions): PhoneAccess {
       if (!host) return
       const d = (await host.devices()).find((x) => x.pairingId === deviceId)
       if (!d || d.partner === undefined) return
-      await host.setRights(deviceId, { ...d.rights, ...change })
-      // The hub answers this phone away from home with the rights it was handed: hand them over again.
-      await opts.remote?.()?.sync()
-      await refreshDevices()
+      const next = { ...d.rights, ...change }
+      const remote = opts.remote?.()
+      // The hub answers this phone away from home with the rights it was handed. Taking approve away reaches the hub
+      // first; when it can't be reached the change still holds here and is sent at the next sync.
+      const heard = d.rights.approve && !next.approve ? await remote?.lowerRights?.(deviceId, { request: next.request, approve: false }) : true
+      await host.setRights(deviceId, next)
+      try {
+        await remote?.sync()
+      } catch (e) {
+        // Remote access already shows that the hub has not heard; the change itself went through here.
+        if (heard !== false) throw e
+      } finally {
+        await refreshDevices()
+      }
     },
     async revoke(deviceId) {
       await host?.revoke(deviceId)
