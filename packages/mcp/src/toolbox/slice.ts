@@ -18,7 +18,7 @@ import { openProject, projectPrinterUse } from '../project-open'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
 import { replacementConfig } from '../script-replacement'
-import type { SliceSummary } from '../slicer'
+import type { Arranged, SliceJob, SliceSummary } from '../slicer'
 import type { ServerToolDeps } from './deps'
 
 const CHAMBER_KEY = 'chamber_cooling_mode'
@@ -34,9 +34,9 @@ export const sliceInput = {
   model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (an X mark)'),
   plate: z.number().int().min(1).max(999).optional().describe('For a 3MF or .sx3mf project, the plate to slice (1-based, see slicerx_inspect_project). Default: the first plate.'),
   placement: z
-    .enum(['center', 'keep'])
+    .enum(['center', 'keep', 'arrange'])
     .default('center')
-    .describe("Where a 3MF's parts go on the bed. center (the default): the plate centered on the bed as a whole, each part keeping its place to the others; a Bambu Studio, OrcaSlicer or PrusaSlicer project keeps its own positions. keep: each part where the file's build transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area is refused with invalid_input (details.reason off_bed), the message naming the part and how far it hangs over each edge in mm. An STL or OBJ has no placement of its own and is centered either way. sx engine only."),
+    .describe("Where a 3MF's parts go on the bed. center (the default): the plate centered on the bed as a whole, each part keeping its place to the others; a Bambu Studio, OrcaSlicer or PrusaSlicer project keeps its own positions. keep: each part where the file's build transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area is refused with invalid_input (details.reason off_bed), the message naming the part and how far it hangs over each edge in mm. arrange: the engine packs every part of the plate on the printer's bed first, as slicerx_arrange_file does (clear of the printer's keep-out zones such as the A1's nozzle wrap check corner, the extruder clearance apart when the plate prints by object, 6 mm apart by layer); the result's arranged gives the layout, and a plate whose parts do not all fit is refused with invalid_input (details.reason no_room, details.not_fit the part names). An STL or OBJ has no placement of its own and is centered under center and keep. sx engine only."),
   project_settings: z
     .boolean()
     .default(false)
@@ -86,6 +86,14 @@ export const sliceInput = {
   overrides: overridesSchema.optional(),
 }
 
+/** What slicerx_arrange_file takes: the slice inputs without placement, plus the arrange's own. */
+const { placement: _placement, ...arrangeBase } = sliceInput
+export const arrangeInput = {
+  ...arrangeBase,
+  spacing_mm: z.number().min(0).max(50).optional().describe('Space between parts and from the bed edge, mm (default 6). Printing by object the parts keep the extruder clearance apart whatever this says.'),
+  rotate: z.boolean().default(true).describe('Let a part turn about Z where that packs better (default true). Each part keeps its own rotation and scale either way.'),
+}
+
 export const sliceFileInput = {
   ...sliceInput,
   output: z.enum(['gcode', 'gcode.3mf']).default('gcode').describe('gcode: a plain G-code file. gcode.3mf: also a .gcode.3mf holding the plate, the format Bambu Lab printers print. For a Vault design it holds no mesh: the G-code, the objects the printer can skip and the listing'),
@@ -94,6 +102,26 @@ export const sliceFileInput = {
 }
 
 const v3 = z.tuple([z.number(), z.number(), z.number()])
+
+/** A plate's layout as the engine's arrange gives it (slicerx_arrange_file, and a slice with placement arrange). */
+export const arrangedShape = {
+  by_object: z.boolean().describe('The plate prints by object, so its parts keep the extruder clearance apart'),
+  spacing_mm: z.number().describe('Space between parts and from the bed edge, mm'),
+  clearance_mm: z.number().optional().describe('Printing by object: the extruder clearance radius the parts keep apart, mm'),
+  rotate: z.boolean(),
+  lanes: z.boolean().describe('Printing by object: the parts taller than the gantry rod went in lanes of their own across the bed'),
+  keep_out: z.array(z.string()).describe('What the layout keeps clear of besides the bed edge: exclusion-area, wrap-check-zone, prime-tower'),
+  fits: z.boolean().describe('Every part found room'),
+  objects: z.array(z.object({
+    id: z.string().describe('The engine object id'),
+    name: z.string(),
+    center_mm: z.tuple([z.number(), z.number()]).describe('The middle of its footprint, bed mm'),
+    turn_deg: z.number().describe('How far the arrange turned it about Z, after its own rotation, degrees'),
+    transform: z.array(z.number()).describe('Its new 4x4 transform, column-major, bed mm'),
+  })),
+  not_fit: z.array(z.object({ id: z.string(), name: z.string(), reason: z.enum(['no_room', 'too_large']) })).describe('Parts with no room: no_room beside the others, too_large even on an empty bed. They are never overlapped.'),
+  check: z.unknown().optional().describe("Printing by object: heimdall's plate check of the layout (as sx check gives it), when every part fits"),
+}
 
 /** A collision as the slice tools answer it (collide.ts SliceCollision): plate mm, layers from 1. */
 export const collisionShape = z.object({
@@ -117,6 +145,7 @@ export const collisionShape = z.object({
 })
 
 export const summaryShape = {
+  arranged: z.object(arrangedShape).optional().describe('With placement arrange: the layout the slice used'),
   collisions: z.array(collisionShape).optional().describe('sx engine: every collision of the plate, sliced with allow_collisions or as close calls that pass'),
   script_replacements: z.array(z.object({
     schemaVersion: z.literal(1), decision: z.literal('applied'), reason: z.string(),
@@ -228,7 +257,7 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep'; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
+export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep' | 'arrange'; spacing_mm?: number | undefined; rotate?: boolean | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -260,11 +289,12 @@ async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLaye
  * Slices (or only estimates, without `emitGcode`) and answers with the summary and its lines of text. Coarse stages go
  * to `progress`, which the server sends as MCP progress notifications when the client asked for them.
  */
-export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: boolean, report: (message: string, fraction: number) => void, known: readonly string[] = Object.keys(emitGcode ? sliceFileInput : sliceInput)): Promise<ToolOutput> {
+export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: boolean, report: (message: string, fraction: number) => void, known: readonly string[] = Object.keys(emitGcode ? sliceFileInput : sliceInput), arrangeOnly = false): Promise<ToolOutput> {
   const { store, profiles } = d
   const progress = async (p: number, message: string): Promise<void> => report(message, p)
   if (!d.slicer) throw new ToolInputError(d.slicerUnavailable ?? 'No slicing engine is available.', 'engine_unavailable')
   const slicer = d.slicer
+  if ((arrangeOnly || args.placement === 'arrange') && (slicer.kind !== 'sx' || (arrangeOnly && !slicer.arrange))) throw new ToolInputError('Arranging a plate takes the sx engine. Install the sx CLI (docs/install.md).', 'engine_unavailable')
   const asked3mf = emitGcode && args.output === 'gcode.3mf'
   if (asked3mf && slicer.kind === 'stub') throw new ToolInputError('The stub engine writes no printable G-code, so it cannot make a .gcode.3mf. Install the sx CLI (docs/install.md).', 'engine_unavailable')
   await progress(0, 'Reading the model')
@@ -333,12 +363,14 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   }
   // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
   if (asked3mf && explicit['thumbnails'] === undefined) explicit['thumbnails'] = config['thumbnails'] = PLATE_THUMBNAILS
-  await progress(0.2, 'Slicing')
+  await progress(0.2, arrangeOnly ? 'Arranging' : 'Slicing')
   const outDir = join(d.policy.outDir, 'jobs', `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
-  const result: SliceSummary = await slicer.slice({
+  const arrangeSpec = { ...(args.spacing_mm !== undefined ? { spacingMm: args.spacing_mm } : {}), ...(args.rotate === false ? { rotate: false } : {}) }
+  const job: SliceJob = {
     modelPath,
     ...(args.plate !== undefined ? { modelPlate: args.plate } : {}),
-    ...(args.placement === 'keep' ? { placement: 'keep' as const } : {}),
+    ...(args.placement === 'keep' || args.placement === 'arrange' ? { placement: args.placement } : {}),
+    ...(arrangeOnly || args.placement === 'arrange' ? { arrange: arrangeSpec } : {}),
     config,
     explicitConfig: args.script_replacements ? replacementConfig(explicit, args.script_replacements, 'original') : explicit,
     ...(args.script_replacements ? { scriptReplacements: args.script_replacements, scriptPrinter: args.script_printer } : {}),
@@ -352,7 +384,9 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(args.preview_format === 'v2' ? { previewFormat: 'v2' as const } : {}),
     ...(args.allow_collisions ? { allowCollisions: true } : {}),
     ...(args.paint ? { paint: args.paint } : {}),
-  })
+  }
+  if (arrangeOnly) return arrangeOutput(await slicer.arrange!(job), modelPath, args, known, applied, noPrinter ? noPrinterMessage(config) : undefined)
+  const result: SliceSummary = await slicer.slice(job)
   if (asked3mf && result.gcode_path) {
     await progress(0.9, 'Writing the .gcode.3mf')
     const path = join(outDir, `${basename(modelPath, extname(modelPath))}${args.plate ? `-plate${args.plate}` : ''}.gcode.3mf`)
@@ -394,3 +428,21 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), ...(madeFor ? { project_printer: madeFor.report } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
 }
 
+
+/** slicerx_arrange_file's answer: the layout, a line per part, and the parts with no room named. */
+function arrangeOutput(a: Arranged, modelPath: string, args: SliceArgs, known: readonly string[], applied: string[], noPrinter: string | undefined): ToolOutput {
+  const ignored = ignoredArgumentsMessage(args, known)
+  const warnings = [...(ignored ? [ignored] : []), ...(noPrinter ? [noPrinter] : [])]
+  const how = a.by_object ? `by object, ${a.clearance_mm ?? 0} mm extruder clearance apart${a.lanes ? ', tall parts in lanes' : ''}` : `by layer, ${a.spacing_mm} mm apart`
+  const head = a.fits
+    ? `Arranged ${a.objects.length} part${a.objects.length === 1 ? '' : 's'} of ${basename(modelPath)}${args.plate ? `, plate ${args.plate}` : ''} (${how})`
+    : `No room on the bed for ${a.not_fit.map((o) => o.name).join(', ')}; ${a.objects.length} of ${a.objects.length + a.not_fit.length} parts fit (${how})`
+  const lines = [
+    head,
+    ...a.objects.map((o) => `${o.name}: center (${o.center_mm[0]}, ${o.center_mm[1]}) mm${o.turn_deg ? `, turned ${o.turn_deg} degrees` : ''}`),
+    ...(a.keep_out.length ? [`Kept clear of: ${a.keep_out.join(', ')}`] : []),
+    ...(a.fits ? ['Slice it with slicerx_slice_file and placement "arrange" for this layout.'] : ['Take some parts off the plate, scale them down, or slice them on another plate.']),
+    ...warnings.map((w) => `Warning: ${w}`),
+  ]
+  return { summary: head, structured: { engine: 'sx', model: { name: basename(modelPath) }, ...(args.plate !== undefined ? { plate: args.plate } : {}), ...a, applied, warnings }, text: lines.join('\n') }
+}

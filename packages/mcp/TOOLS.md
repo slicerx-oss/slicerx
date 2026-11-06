@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-263 tools.
+264 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -72,6 +72,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_volumes` |  |  | read | Read an open object's negative volumes, support blockers, support enforcers and modifiers. |
 | `slicerx_approve` | Approve or decline a pending action | core | read, ungated | Resolve an approval request returned by another SlicerX tool (status "approval_required"). |
 | `slicerx_arrange` |  |  | slice | Pack copies of an object onto plates, around the other objects, which keep their places. |
+| `slicerx_arrange_file` | Arrange the parts of a plate | core | read, ungated | Pack the distinct parts of one plate of a project or model file on the printer's bed, without slicing. |
 | `slicerx_calibrate` |  |  | read | Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. |
 | `slicerx_check_print` |  |  | read | Check on a running print: takes a fresh camera frame, shows it to the user and to you with the printer's status and the limits for changes. |
 | `slicerx_cloud_jobs` |  |  | read | Cloud slicing jobs: with job_id, that job's status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. |

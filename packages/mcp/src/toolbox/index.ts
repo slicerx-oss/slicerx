@@ -5,6 +5,7 @@ import type { ServerToolFactory } from './deps'
 import actionLog from './action-log'
 import addToFleet from './add-to-fleet'
 import approve from './approve'
+import arrangeFile from './arrange-file'
 import createFleet from './create-fleet'
 import deleteFleet from './delete-fleet'
 import estimateFile from './estimate-file'
@@ -44,4 +45,4 @@ import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, arrangeFile, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printWatchStatus, printerList, printerQueueStart, printerSnapshot, printerStatus, printerTunnel, projectLayerMarkAdd, projectLayerMarkRemove, projectLayerMarks, remapToolheads, remoteStartPolicy, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
