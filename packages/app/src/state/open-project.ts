@@ -249,6 +249,16 @@ async function addProjectShown(
     const { reviewImportedScripts } = await import('../project/script-review')
     const records = await reviewImportedScripts(host.slicer, project.settings, scriptTarget)
     mine(() => set({ projectScriptReviews: { source: name, records } }))
+    // Its values for keys no setting models, for a printer G-code of its that names one (the variants that slice, as the
+    // MCP server reads them).
+    const { ProjectVariantError, selectVariants, unmodeledValues } = await import('@slicerx/settings')
+    let picked = project.settings
+    try {
+      picked = selectVariants(project.settings)
+    } catch (e) {
+      if (!(e instanceof ProjectVariantError)) throw e
+    }
+    mine(() => set({ projectScriptKeys: unmodeledValues(picked) }))
   }
   // The keys the file's objects, parts and modifiers bring, which stay the project's whatever the plate values do.
   const objectBrought = new Set(brought)
