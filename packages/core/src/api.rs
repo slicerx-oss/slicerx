@@ -2596,6 +2596,9 @@ fn run_prepared_timed(
     progress: &dyn Progress,
     timer: &Timer,
 ) -> Result<SliceRun> {
+    if let Held::Owned(p) = &mut held {
+        p.session.set_one_shot();
+    }
     let (config, config_issues, mut config_report) = request_config_report(req)?;
     // Objects that slice with their own settings: a value the engine cannot use is named with its object.
     let strict = req.options.strict.unwrap_or(false);

@@ -35,6 +35,7 @@ pub(crate) fn slice_range(
     let mut merged: Option<SliceOutput> = None;
     let mut offset = 0u32;
     let mut below_top = 0.0f64;
+    let count = session.sequence().count();
     for (k, sub) in session.sequence().enumerate() {
         let n = sub.plan_count();
         let lo = layers.start.max(offset);
@@ -42,6 +43,16 @@ pub(crate) fn slice_range(
         if lo < hi {
             if progress.cancelled() {
                 return Err(crate::Error::Cancelled);
+            }
+            // The walk of an object reads every obstacle but its own, so in a one-shot run's last range, once the
+            // objects before the last are walked, nothing reads the last object's mesh again.
+            if k > 0
+                && k + 1 == count
+                && layers.end == total
+                && session.is_one_shot()
+                && let Some(model) = session.collide()
+            {
+                model.free_mesh(k);
             }
             let cfg = session.object_config(k, config)?;
             let mut out = sub.slice_object_range(&cfg, lo - offset..hi - offset, progress)?;

@@ -344,7 +344,7 @@ fn bands_of(model: &Model, k: usize, o: &Object<'_>) -> Vec<Band> {
         // A raft lifts the part's layers off its mesh: every band holds the whole footprint.
         vec![footprint.clone(); spans.len()]
     } else {
-        band_hulls(&ob.object, &ranges)
+        band_hulls(&ob.object(), &ranges)
     };
     // Support under what is above: the hull of everything from the band up, grown by the support's reach.
     let mut walks = hulls.clone();
@@ -360,7 +360,7 @@ fn bands_of(model: &Model, k: usize, o: &Object<'_>) -> Vec<Band> {
             *w = convex_hull(all);
         }
     }
-    let extra = outward(&o.cfg, &ob.object);
+    let extra = outward(&o.cfg, &ob.object());
     let first = super::rules::object_room_around(&o.cfg, o.brim, footprint);
     let skirt = super::rules::object_room_around(&o.cfg, 0.0, footprint);
     let raft_room = if raft {
@@ -760,7 +760,7 @@ fn unchecked(model: &Model, objects: &[Object<'_>]) -> Vec<Unchecked> {
             .collect();
         for w in what {
             out.push(Unchecked {
-                object_id: ob.object.id.clone(),
+                object_id: ob.object().id.clone(),
                 what: w,
                 near: near.clone(),
             });
