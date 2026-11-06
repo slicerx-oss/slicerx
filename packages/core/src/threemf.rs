@@ -1458,26 +1458,26 @@ fn parse_model(xml: &[u8]) -> Parsed<Model> {
                             .map_err(|_| Refused("triangle", *id, k, v.to_owned()))
                     };
                     let (a, b, c) = (f("v1")?, f("v2")?, f("v3")?);
-                    if let Some(code) = t
-                        .attr("paint_color")
-                        .or_else(|| t.attr("slic3rpe:mmu_segmentation"))
-                        .filter(|c| !c.is_empty())
-                    {
-                        o.paint.push((o.triangles.len(), code.to_owned()));
+                    // A paint_* text as written, else the slic3rpe:* one, which writes filaments 17 and up
+                    // its own way, rewritten.
+                    let paint = |own: &str, other: &str| {
+                        t.attr(own)
+                            .filter(|c| !c.is_empty())
+                            .map(str::to_owned)
+                            .or_else(|| {
+                                t.attr(other)
+                                    .filter(|c| !c.is_empty())
+                                    .and_then(crate::paint::escape_to_run)
+                            })
+                    };
+                    if let Some(code) = paint("paint_color", "slic3rpe:mmu_segmentation") {
+                        o.paint.push((o.triangles.len(), code));
                     }
-                    if let Some(code) = t
-                        .attr("paint_supports")
-                        .or_else(|| t.attr("slic3rpe:custom_supports"))
-                        .filter(|c| !c.is_empty())
-                    {
-                        o.support_paint.push((o.triangles.len(), code.to_owned()));
+                    if let Some(code) = paint("paint_supports", "slic3rpe:custom_supports") {
+                        o.support_paint.push((o.triangles.len(), code));
                     }
-                    if let Some(code) = t
-                        .attr("paint_seam")
-                        .or_else(|| t.attr("slic3rpe:custom_seam"))
-                        .filter(|c| !c.is_empty())
-                    {
-                        o.seam_paint.push((o.triangles.len(), code.to_owned()));
+                    if let Some(code) = paint("paint_seam", "slic3rpe:custom_seam") {
+                        o.seam_paint.push((o.triangles.len(), code));
                     }
                     if let Some(code) = t.attr("paint_fuzzy_skin").filter(|c| !c.is_empty()) {
                         o.fuzzy_paint.push((o.triangles.len(), code.to_owned()));

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Paint names filaments 1 to 18, the most a paint text can hold. A client asking to paint filament 19 or up is refused
-// in plain words, on a design and in the running app, before anything is painted.
+// Paint names filaments 1 to 32, as many as a project holds. A client asking to paint filament 33 or up is refused in
+// plain words, on a design and in the running app, before anything is painted.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,23 +17,24 @@ import type { Designs } from '../src/design'
 import { paintTools } from '../src/paint'
 import { text } from './helpers'
 
-const REFUSAL = /Paint uses filaments 1 to 18\. Filaments 19 to 32 can only print whole parts\./
+const REFUSAL = /Paint uses filaments 1 to 32, as many as a project holds\./
 
-describe('paint states above 18', () => {
-  it('a design paint preview refuses filament 19, and a replace from 19', () => {
+describe('paint states above 32', () => {
+  it('a design paint preview takes filament 32 and refuses 33, and a replace from 33', () => {
     const preview = paintTools({ deps: {} } as unknown as Designs).find((t) => t.name === 'paint.preview')!
     const parse = (args: Record<string, unknown>) => preview.input.safeParse({ design: 'd1', ...args })
-    expect(parse({ state: 18, target: { kind: 'part' } }).success).toBe(true)
-    for (const args of [{ state: 19, target: { kind: 'part' } }, { state: 1, target: { kind: 'replace', from: 19 } }]) {
+    expect(parse({ state: 32, target: { kind: 'part' } }).success).toBe(true)
+    expect(parse({ state: 19, target: { kind: 'replace', from: 32 } }).success).toBe(true)
+    for (const args of [{ state: 33, target: { kind: 'part' } }, { state: 1, target: { kind: 'replace', from: 33 } }]) {
       const r = parse(args)
       expect(r.success).toBe(false)
       expect(r.error?.issues[0]?.message).toMatch(REFUSAL)
     }
   })
 
-  it('the live app paint preview refuses filament 19 without calling the app', async () => {
-    expect(appPaintPreviewInput.safeParse({ object: 'body', layer: 'color', state: 18, target: { kind: 'part' } }).success).toBe(true)
-    const bad = appPaintPreviewInput.safeParse({ object: 'body', layer: 'color', state: 19, target: { kind: 'part' } })
+  it('the live app paint preview takes filament 32 and refuses 33 without calling the app', async () => {
+    expect(appPaintPreviewInput.safeParse({ object: 'body', layer: 'color', state: 32, target: { kind: 'part' } }).success).toBe(true)
+    const bad = appPaintPreviewInput.safeParse({ object: 'body', layer: 'color', state: 33, target: { kind: 'part' } })
     expect(bad.success).toBe(false)
     expect(bad.error?.issues[0]?.message).toMatch(REFUSAL)
 
@@ -46,7 +47,7 @@ describe('paint states above 18', () => {
     const [a, b] = InMemoryTransport.createLinkedPair()
     try {
       await Promise.all([server.connect(a), client.connect(b)])
-      const r = (await client.callTool({ name: 'slicerx_app_paint_preview', arguments: { object: 'body', layer: 'color', state: 25, target: { kind: 'part' } } })) as CallToolResult
+      const r = (await client.callTool({ name: 'slicerx_app_paint_preview', arguments: { object: 'body', layer: 'color', state: 40, target: { kind: 'part' } } })) as CallToolResult
       expect(r.isError).toBe(true)
       expect(text(r)).toMatch(REFUSAL)
       expect(call).not.toHaveBeenCalled()

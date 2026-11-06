@@ -8,8 +8,14 @@
 // name the special corner) followed by its children. After a leaf code C the
 // state is 3 plus a run of codes, each F adding 15 until one below F, so 18 is
 // `C F 0` (text `0FC`); a whole text of `FC`, as files saved before that wrote
-// 18, still reads as 18. The child layout matches sx-core's reader
-// (packages/core/src/paint.rs). Pure math, no three.js.
+// 18, still reads as 18. The `slic3rpe:*` attributes and the facets JSON write
+// states after C another way, the escape scheme: one code for 3 to 16, or E and
+// then an 8-bit value, low code first (17 is `C E 0 0`). Each text reads on its
+// own: one that runs out, or holds anything but `0` to `9` and `A` to `F`, is
+// refused; codes past a whole tree are ignored (paintTextLeftOver counts them);
+// a state above 32 reads as unpainted. The
+// child layout matches sx-core's reader (packages/core/src/paint.rs). Pure
+// math, no three.js.
 
 export type V3 = [number, number, number]
 export type Tri = [V3, V3, V3]
@@ -21,6 +27,12 @@ export const isLeaf = (n: PaintNode): n is { state: number } => 'state' in n
 
 /** Deepest nesting written or read. */
 export const MAX_PAINT_DEPTH = 12
+
+/** The highest state a paint text names (for color, filament 32). A higher one reads as unpainted. */
+export const MAX_PAINT_STATE = 32
+
+/** How a text writes the states after a leaf code C: `run` for the `paint_*` attributes, `escape` for the others. */
+export type PaintScheme = 'run' | 'escape'
 
 const mid = (a: V3, b: V3): V3 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]
 
@@ -38,23 +50,32 @@ export function childCorners(v: Tri, splits: 1 | 2 | 3, special: 0 | 1 | 2): Tri
 
 // ---- text <-> tree ----
 
+/** A code from an upper-case hex digit's character code; -1 for anything else. */
+const codeOf = (c: number): number => (c >= 48 && c <= 57 ? c - 48 : c >= 65 && c <= 70 ? c - 55 : -1)
+
 function nibbles(text: string): number[] | null {
   const out: number[] = []
   const s = text.trim()
   for (let i = s.length - 1; i >= 0; i--) {
-    const d = Number.parseInt(s[i] as string, 16)
-    if (Number.isNaN(d)) return null
+    const d = codeOf(s.charCodeAt(i))
+    if (d < 0) return null
     out.push(d)
   }
   return out
 }
 
+/** A state as read, or 0 past MAX_PAINT_STATE. */
+const named = (state: number): number => (state > MAX_PAINT_STATE ? 0 : state)
+
 /** A whole text of `FC`: 18 as files saved before 18 took two codes wrote it. */
 const LEGACY_18 = 'FC'
 
-/** Parses a paint text. Null when it is malformed or nests too deep. Trailing codes are ignored, as sx-core does. */
-export function decodeTree(text: string): PaintNode | null {
-  if (text.trim() === LEGACY_18) return { state: 18 }
+/**
+ * Parses a paint text written in `scheme` (the `paint_*` run by default), ignoring codes past its whole tree. Null
+ * when it runs out, is not upper-case hex or nests too deep.
+ */
+export function decodeTree(text: string, scheme: PaintScheme = 'run'): PaintNode | null {
+  if (scheme === 'run' && text.trim() === LEGACY_18) return { state: 18 }
   const stream = nibbles(text)
   if (!stream || stream.length === 0) return null
   let at = 0
@@ -65,14 +86,24 @@ export function decodeTree(text: string): PaintNode | null {
     const special = code >> 2
     if (splits === 0) {
       if (special === 3) {
+        const ext = stream[at++]
+        if (ext === undefined) return null
+        if (scheme === 'escape') {
+          if (ext !== 14) return { state: ext + 3 }
+          const lo = stream[at++]
+          const hi = stream[at++]
+          return lo === undefined || hi === undefined ? null : { state: named(17 + lo + 16 * hi) }
+        }
         // 3 plus the run after it: each F adds 15, the first code below F ends it.
         let state = 3
-        for (;;) {
-          const ext = stream[at++]
-          if (ext === undefined) return null
-          state += ext
-          if (ext < 15) return { state }
+        for (let c = ext; ; ) {
+          state += c
+          if (c < 15) break
+          const next = stream[at++]
+          if (next === undefined) return null
+          c = next
         }
+        return { state: named(state) }
       }
       return { state: special }
     }
@@ -89,14 +120,18 @@ export function decodeTree(text: string): PaintNode | null {
   return node(0)
 }
 
-/** Writes a tree as paint text. A single unpainted leaf gives null: write no attribute. */
-export function encodeTree(root: PaintNode): string | null {
+/** Writes a tree as paint text in `scheme` (the `paint_*` run by default). A single unpainted leaf gives null: write no attribute. */
+export function encodeTree(root: PaintNode, scheme: PaintScheme = 'run'): string | null {
   if (isLeaf(root) && root.state === 0) return null
   const out: number[] = []
   const walk = (n: PaintNode): void => {
     if (isLeaf(n)) {
       if (n.state < 3) out.push(n.state << 2)
-      else {
+      else if (scheme === 'escape') {
+        out.push(0b1100)
+        if (n.state < 17) out.push(n.state - 3)
+        else out.push(14, (n.state - 17) & 15, (n.state - 17) >> 4)
+      } else {
         out.push(0b1100)
         let m = n.state - 3
         for (; m >= 15; m -= 15) out.push(15)
@@ -385,11 +420,7 @@ export type PaintMap = Map<number, PaintNode>
 
 /** The 4-bit code at stream position k of a text read last character first (from index hi down to lo), or -1. */
 function codeAt(text: string, hi: number, k: number): number {
-  const c = text.charCodeAt(hi - k)
-  if (c >= 48 && c <= 57) return c - 48
-  if (c >= 65 && c <= 70) return c - 55
-  if (c >= 97 && c <= 102) return c - 87
-  return -1
+  return codeOf(text.charCodeAt(hi - k))
 }
 
 /** Whitespace as String.prototype.trim sees it, for the codes a paint text may carry. */
@@ -421,6 +452,7 @@ function walkNode(depth: number, fn: ((corners: Float64Array, offset: number, st
         state += ext
         if (ext < 15) break
       }
+      state = named(state)
     }
     if (state === 0) return 0
     if (fn) fn(CORNERS, 9 * depth, state)
@@ -502,6 +534,12 @@ function startWalk(text: string): boolean {
 /** The painted leaf pieces of a paint text, without decoding it; -1 when decodeTree would refuse it. */
 export function paintTextLeafCount(text: string): number {
   return startWalk(text) ? walkNode(0, null) : -1
+}
+
+/** How many codes a paint text has past its whole tree, which reading ignores; -1 when decodeTree would refuse it. */
+export function paintTextLeftOver(text: string): number {
+  if (!startWalk(text)) return -1
+  return walkNode(0, null) < 0 ? -1 : walkLen - walkAt
 }
 
 /**
@@ -599,11 +637,13 @@ export function lazyPaintTexts(texts: Record<number, string>): { map: LazyPaintM
   return { map, bad }
 }
 
-/** Whether a valid text is a single unpainted leaf (the only valid text with no painted piece that readPaintTexts drops). */
+/**
+ * Whether a valid text with no painted piece is a single leaf, so unpainted (a state of 0, or past 32): the only such
+ * text readPaintTexts drops.
+ */
 function isRootUnpainted(text: string): boolean {
   startWalk(text)
-  const code = codeAt(walkText, walkHi, 0)
-  return (code & 3) === 0 && code >> 2 === 0
+  return (codeAt(walkText, walkHi, 0) & 3) === 0
 }
 
 export function trianglePoints(positions: ArrayLike<number>, indices: ArrayLike<number>, t: number): Tri {

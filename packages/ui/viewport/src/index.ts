@@ -7,7 +7,7 @@ export { BASELINE_LOOK, DARK_PRECISION_LOOK, LIGHT_STUDIO_LOOK, LOOK_PRESETS, ST
 export { readPreview, type PreviewBuffers } from '@slicerx/contracts'
 // The app's name in the viewport's text (the default controls preset's label): a white-label app sets its own.
 export { productName, setProductName } from '@slicerx/contracts/brand'
-export { decodeTree, encodeTree, paintTexts, readPaintTexts, leavesOf, type PaintNode, type PaintMap } from './paint'
+export { decodeTree, encodeTree, paintTextLeftOver, paintTexts, readPaintTexts, leavesOf, MAX_PAINT_STATE, type PaintNode, type PaintMap, type PaintScheme } from './paint'
 export { layerCoordAt, layerHeightStats, layerThicknesses, layerTopsProblems } from './layerheights'
 export { facePatch, layOnFaceTransform, rotationBetween } from './faces'
 export { summarizePreview, type PreviewSummary } from './summary'

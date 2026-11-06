@@ -17,6 +17,7 @@ import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
 import { appName } from '../edition'
 import { exportingUserId } from './identity'
+import { savedPaintNote } from './paint-check'
 import type { ProjectInput } from './threemf'
 import { fromVault } from './vault'
 
@@ -142,7 +143,10 @@ export async function saveProject(host: Host, opts: { as?: boolean } = {}): Prom
   const file = get().projectFile
   const ref = !opts.as && file && host.files.saveTo ? await host.files.saveTo(file, blob) : await host.files.save(`${fileBase()}.sx3mf`, blob, { accept: ['.sx3mf'] })
   if (!ref) return false
-  toast(`Saved ${ref.name}`, 'ok')
+  // Paint above filament 16 saves for every reader that takes it; one slicer can't show it, and the toast says so.
+  const paintNote = savedPaintNote(plates.flatMap((p) => p.objects))
+  if (paintNote) toast(`Saved ${ref.name}. ${paintNote}`, 'warn')
+  else toast(`Saved ${ref.name}`, 'ok')
   if (ref.path) set({ projectFile: ref })
   markClean()
   void import('../project/autosave').then((m) => m.projectSaved(ref.name, bytes))

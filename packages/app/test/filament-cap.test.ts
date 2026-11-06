@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A project holds up to 32 filaments: the rail adds the 17th through the 32nd, parts and spools move onto them, a body
-// color plan fills them, and the 33rd is refused in plain words. Paint names filaments 1 to 18 only.
+// color plan fills them, and the 33rd is refused in plain words. Paint names every one of them.
 import { COLOR_SLOT_MAX, PAINT_FILAMENT_MAX, planColorSlots, type MeshHandle } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bodyColorLimit } from '../src/filament/body-colors'
 import { moveToSpool } from '../src/filament/pick'
 import { addFilamentTip, addSlot } from '../src/filament/slot-rail'
-import { MAX_SLOTS, paintLimitNote, paintSlots, resolved, setSlot, slotCount } from '../src/filament/slots'
+import { MAX_SLOTS, resolved, setSlot, slotCount } from '../src/filament/slots'
 import { setPartSlot } from '../src/plate/object-list'
 import { get, set, type PlateEntry } from '../src/state/store'
 
@@ -58,13 +58,9 @@ describe('a project of up to 32 filaments', () => {
   })
 })
 
-describe('paint names filaments 1 to 18', () => {
-  it('lists only the paintable filaments, and one line says why when some are left out', () => {
-    expect(PAINT_FILAMENT_MAX).toBe(18)
-    const slots = Array.from({ length: 24 }, (_, i) => ({ index: i + 1 }))
-    expect(paintSlots(slots).map((s) => s.index)).toEqual(Array.from({ length: 18 }, (_, i) => i + 1))
-    expect(paintLimitNote(24)).toBe('Paint uses filaments 1 to 18. Filaments 19 to 24 print whole parts only.')
-    expect(paintLimitNote(19)).toBe('Paint uses filaments 1 to 18. Filament 19 prints whole parts only.')
-    expect(paintLimitNote(18)).toBeNull()
+describe('paint names every filament of a project', () => {
+  it('reaches filament 32, as many as a project holds', () => {
+    expect(PAINT_FILAMENT_MAX).toBe(32)
+    expect(PAINT_FILAMENT_MAX).toBe(COLOR_SLOT_MAX)
   })
 })

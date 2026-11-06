@@ -12,6 +12,7 @@ import { areaOrigin } from './area'
 import { plateObjectsFromGcode } from './gcode-objects'
 import { layerMarksXml, MARKS_PART, type WriteMark } from './layer-marks'
 import { md5Hex } from './md5'
+import { escapeText, paintTextMaxState } from './paint-text'
 import { TextChunks, zip, zipCompressed, type ZipInput } from './zip'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -37,6 +38,38 @@ export interface MeshInput {
 /** The triangle attributes Bambu Studio and OrcaSlicer projects use for painted surfaces. */
 const PAINT_ATTR = { color: 'paint_color', seam: 'paint_seam', support: 'paint_supports', fuzzy: 'paint_fuzzy_skin' } as const
 export type PaintOfPart = Partial<Record<keyof typeof PAINT_ATTR, Readonly<Record<number, string>>>>
+
+/** The facets JSON: a project's paint apart from its triangles, for readers that take paint above filament 16 from there. */
+export const FACETS_PART = 'Metadata/Slic3r_facets_annotation.json'
+
+/** The facets JSON's key of each paint layer; next to each list is its version under the key plus `Version`. */
+const FACET_KEYS = { color: 'mmSegmentationFacets', seam: 'seamFacets', support: 'supportedFacets', fuzzy: 'fuzzySkinFacets' } as const
+
+/**
+ * The facets JSON of the painted mesh objects (their ids in the model), or null when no color paint is on filament 17
+ * or higher: up to 16 the triangles' own paint is read alike everywhere. Each layer's texts are written in the escape
+ * scheme (paint-text.ts), color at version 2 and the other layers, which only use states 1 and 2, at version 1.
+ */
+export function facetsJson(parts: readonly { id: number; paint: PaintOfPart }[]): string | null {
+  if (!parts.some((p) => Object.values(p.paint.color ?? {}).some((t) => paintTextMaxState(t) > 16))) return null
+  const entries: Record<string, unknown>[] = []
+  for (const { id, paint } of parts) {
+    const entry: Record<string, unknown> = { id }
+    for (const [layer, key] of Object.entries(FACET_KEYS) as [keyof typeof FACET_KEYS, string][]) {
+      const facets: { triangle: number; dividing: string }[] = []
+      for (const [tri, text] of Object.entries(paint[layer] ?? {})) {
+        const dividing = escapeText(text)
+        if (dividing && dividing !== '0') facets.push({ triangle: Number(tri), dividing })
+      }
+      if (!facets.length) continue
+      facets.sort((a, b) => a.triangle - b.triangle)
+      entry[key] = facets
+      entry[`${key}Version`] = layer === 'color' ? 2 : 1
+    }
+    if (Object.keys(entry).length > 1) entries.push(entry)
+  }
+  return JSON.stringify(entries)
+}
 
 /** Vertex and triangle lines are joined into pieces of about this many lines, so a big mesh never becomes one string. */
 const LINES_PER_PIECE = 4096
@@ -634,6 +667,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   const platesCfg: string[] = []
   const brimLines: string[] = []
   const rangesCfg: string[] = []
+  const painted: { id: number; paint: PaintOfPart }[] = []
   const fileIds = new Map<string, number>()
   let nextId = 1
   const thumbs = new Map<number, ReturnType<typeof gcodeThumbnails>>()
@@ -654,6 +688,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
         const id = nextId++
         partIds.push(id)
         const paint = obj.paint?.[pi]
+        if (paint) painted.push({ id, paint })
         meshObjects.push(`<object id="${id}" type="model">`, () => meshXml(part, paint), '</object>')
       }
       // Negative volumes and support blockers or enforcers are parts of the object with their own subtype, as Orca writes them.
@@ -756,6 +791,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   if (brimLines.length) files.push({ name: 'Metadata/brim_ear_points.txt', data: `brim_points_format_version=0\n${brimLines.join('\n')}\n` })
   const dims = dimensionsJson(input.plates.flatMap((p) => p.objects), fileIds)
   if (dims) files.push({ name: 'Metadata/slicerx_dimensions.json', data: dims })
+  const facets = facetsJson(painted)
+  if (facets) files.push({ name: FACETS_PART, data: facets })
   // the timeline as the objects have it now, so the file always matches what is saved
   files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
   const values = valuesJson(input.namedValues ?? [])
