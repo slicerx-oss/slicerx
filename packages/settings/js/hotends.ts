@@ -125,3 +125,33 @@ export function hotendMapProblem(cfg: Cfg, tools: readonly number[]): string | n
   }
   return null
 }
+
+/**
+ * The hotends (0-based, index slot - 1) a project set by hand on a printer whose hotends are its tools (the H3C):
+ * `filament_map_mode` Manual with `filament_nozzle_map`. A filament the map leaves unset gets the slicer's pick, the
+ * next hotend of its kind that no filament has (a TPU285 one for 2.85 mm TPU); one the plate does not print with is on
+ * hotend 0. Undefined when the project lets the slicer pick or the printer has no tools to pick. The app's project open
+ * and the MCP server's both read the map with it.
+ */
+export function projectHotends(settings: Cfg, cfg: Cfg, slots: number, used: readonly number[]): number[] | undefined {
+  const n = hotendCount(cfg)
+  const own = Array.isArray(settings['filament_nozzle_map']) ? settings['filament_nozzle_map'] : []
+  if (!n || String(settings['filament_map_mode'] ?? '') !== 'Manual' || !own.length) return undefined
+  const set = (i: number): number | undefined => {
+    const v = own[i]
+    const h = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+    return Number.isInteger(h) && h >= 0 && h < n ? h : undefined
+  }
+  const types = hotendTypes(cfg, n)
+  const taken = new Set(Array.from({ length: slots }, (_, i) => set(i)).filter((h): h is number => h !== undefined))
+  return Array.from({ length: slots }, (_, i) => {
+    const mine = set(i)
+    if (mine !== undefined) return mine
+    if (!used.includes(i + 1)) return 0
+    const tpu = tpu285Slot(cfg, i + 1)
+    const free = types.findIndex((t, h) => (t === TPU285) === tpu && !taken.has(h))
+    const h = free >= 0 ? free : Math.max(0, types.findIndex((t) => (t === TPU285) === tpu))
+    taken.add(h)
+    return h
+  })
+}
