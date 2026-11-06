@@ -363,6 +363,9 @@ pub struct SliceSession {
     collide_meta: Option<std::sync::Arc<crate::collide::Meta>>,
     /// Set by `shed`: what only slicing reads is gone, the collision model with it.
     shed_done: bool,
+    /// A one-shot run slices this session once (`api::run_request`), so what a later run would read again can go as
+    /// soon as this one is done with it. A session a host keeps for later runs never sets it.
+    one_shot: bool,
     /// The tower's rows before the saves of a type 2 tower (`tower::plan_rows_unsaved`), which the saves are
     /// measured on.
     tower_rows0: f64,
@@ -2150,6 +2153,7 @@ impl SliceSession {
             collide: None,
             collide_meta: None,
             shed_done: false,
+            one_shot: false,
             tower_rows0: 1.0,
             tower_plan: std::sync::OnceLock::new(),
         };
@@ -2933,6 +2937,16 @@ impl SliceSession {
             "the collision model is dropped once slicing is done"
         );
         self.collide.as_deref()
+    }
+
+    /// Marks the session as sliced once, by a one-shot run (see [`Self::is_one_shot`]).
+    pub(crate) fn set_one_shot(&mut self) {
+        self.one_shot = true;
+    }
+
+    /// The session is sliced once: what no later step of this run reads can go early.
+    pub(crate) fn is_one_shot(&self) -> bool {
+        self.one_shot
     }
 
     /// Drops what only slicing reads (meshes, caches, support and paint data), for a one-shot run whose last layer

@@ -1478,3 +1478,33 @@ fn a_report_with_collisions_carries_the_plate_they_are_on_and_a_clean_one_none()
             .is_none()
     );
 }
+
+/// A one-shot run lets go of the last object's mesh in the collision model once no walk reads it; a session a host
+/// keeps for later runs never does. The kept session's runs and a one-shot run report the same hits, G-code and
+/// preview.
+#[test]
+fn a_kept_session_keeps_the_last_mesh_and_one_shot_runs_report_the_same_hits() {
+    let rod = json!({"extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40});
+    let low = block(20.0, 20.0, 6.0);
+    let objects = [
+        ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+        ("low", low.clone(), 140.0, 100.0),
+    ];
+    let (mut req, load) = request(&objects, rod, json!({}));
+    req.config = common::with_base(&req.config);
+    let before = Arc::strong_count(&low);
+    let prepared = api::prepare(&req, &load).unwrap();
+    let held = Arc::strong_count(&low);
+    assert!(held > before, "the collision model holds the mesh");
+    let first = api::run_prepared(&req, &prepared, &sx_core::NoProgress).unwrap();
+    assert_eq!(Arc::strong_count(&low), held, "a kept session keeps the mesh");
+    let again = api::run_prepared(&req, &prepared, &sx_core::NoProgress).unwrap();
+    assert_eq!(Arc::strong_count(&low), held, "a kept session keeps the mesh");
+    let once = api::run_request(&req, &load).unwrap();
+    assert!(!first.report.collisions.is_empty());
+    let (first, again, once) = (output(&first), output(&again), output(&once));
+    assert!(first.0 == again.0 && first.0 == once.0, "other G-code");
+    assert!(first.1 == again.1 && first.1 == once.1, "other preview");
+    assert_eq!(first.2, again.2);
+    assert_eq!(first.2, once.2);
+}
