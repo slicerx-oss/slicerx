@@ -43,6 +43,10 @@ pub(crate) fn object_layers_with(
         lift_over_print,
         hits: Hits::default(),
         near: Vec::new(),
+        inside: Memo::default(),
+        gaps: Memo::default(),
+        walked: Memo::default(),
+        tally: None,
     };
     for l in layers {
         w.layer(l);
@@ -91,6 +95,67 @@ struct Walker<'a> {
     lift_over_print: bool,
     hits: Hits,
     near: Vec<Near>,
+    /// Per layer, what [`super::grid::material_in`] answered and how far the probe stood from an object's rim, by
+    /// object, head, piece and probe: a layer can walk the same move more than once (one row inside its loop for each
+    /// object that reaches into it), and each answer is the same every time.
+    inside: Memo<(usize, usize, usize, [u64; 3]), bool>,
+    gaps: Memo<(usize, [u64; 2]), f64>,
+    /// Per layer, each print move walked so far (its tool and corners) with how many contacts it noted, by hit.
+    walked: Memo<Vec<u64>, Vec<(HitKey, u32)>>,
+    /// While a move is walked, the contacts it notes, by hit.
+    tally: Option<Vec<(HitKey, u32)>>,
+}
+
+/// What tells hits apart: [`Hit::key`].
+type HitKey = (Kind, Severity, Part, u32, u32);
+
+/// A map for the walk's own keys (indices and the bits of coordinates), looked up for every probe, with a multiply
+/// and rotate hash in place of the standard keyed one. Only lookups read it, so its order is never seen.
+type Memo<K, V> = std::collections::HashMap<K, V, KeyHash>;
+
+#[derive(Default, Clone, Copy)]
+struct KeyHash;
+
+#[derive(Default)]
+struct KeyHasher(u64);
+
+impl std::hash::BuildHasher for KeyHash {
+    type Hasher = KeyHasher;
+    fn build_hasher(&self) -> KeyHasher {
+        KeyHasher(0)
+    }
+}
+
+impl std::hash::Hasher for KeyHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        let (words, rest) = bytes.as_chunks::<8>();
+        for w in words {
+            self.write_u64(u64::from_le_bytes(*w));
+        }
+        for &b in rest {
+            self.write_u64(u64::from(b));
+        }
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(u64::try_from(v).unwrap_or(u64::MAX));
+    }
+}
+
+/// A print move's tool and corners, `z_of(i)` the height of corner `i`, bit for bit.
+fn walk_key(tool: u8, pts: &[Point], z_of: &dyn Fn(usize) -> f64) -> Vec<u64> {
+    let mut k = Vec::with_capacity(pts.len() * 3 + 1);
+    k.push(u64::from(tool));
+    for (i, p) in pts.iter().enumerate() {
+        let q = mm(*p);
+        k.extend([q[0].to_bits(), q[1].to_bits(), z_of(i).to_bits()]);
+    }
+    k
 }
 
 fn mm(p: Point) -> [f64; 2] {
@@ -125,6 +190,9 @@ impl Walker<'_> {
                 })
                 .any(|c| c);
         self.near = self.nearby([lo[0], lo[1], hi[0], hi[1]], z0);
+        self.inside.clear();
+        self.gaps.clear();
+        self.walked.clear();
         if self.near.is_empty() && !changes {
             return;
         }
@@ -187,9 +255,28 @@ impl Walker<'_> {
                 self.segment(a, first, base);
                 t += dist([a[0], a[1]], [first[0], first[1]]) / self.travel_speed;
             }
+            let key = if self.near.is_empty() {
+                Vec::new()
+            } else {
+                walk_key(p.tool, pts, &|i| z_of(p, i))
+            };
             if self.near.is_empty() {
                 t += path_length(pts) / speed_of(p);
+            } else if let Some(tally) = self.walked.get(&key) {
+                // The same move again (a row walked once for each object that reaches into the loop). A hit only gets
+                // deeper and nearer, so every contact on it is one already noted no deeper and no nearer: each only
+                // counts one more move.
+                for (hit, n) in tally {
+                    if let Some(h) = self.hits.0.iter_mut().find(|h| h.key() == *hit) {
+                        h.moves += n;
+                        h.last_layer = h.last_layer.max(l.index);
+                    }
+                }
+                for (a, b) in pairs(pts) {
+                    t += dist(mm(*a), mm(*b)) / speed_of(p);
+                }
             } else {
+                self.tally = Some(Vec::new());
                 for (i, (a, b)) in pairs(pts).enumerate() {
                     let (a, b) = (mm(*a), mm(*b));
                     let pa = [a[0], a[1], z_of(p, i)];
@@ -203,6 +290,8 @@ impl Walker<'_> {
                     self.segment(pa, pb, probe);
                     t += dist(a, b) / speed_of(p);
                 }
+                let tally = self.tally.take().unwrap_or_default();
+                self.walked.insert(key, tally);
             }
             seg += u32::try_from(pts.len().saturating_sub(1)).unwrap_or(0);
             last = pts.last().map(|q| {
@@ -281,7 +370,9 @@ impl Walker<'_> {
             let Some(o) = m.objects.get(n.j) else {
                 continue;
             };
+            let at = [x.to_bits(), y.to_bits()];
             let mut gap = Gap::new(&o.rim, [x, y]);
+            gap.d = self.gaps.get(&(n.j, at)).copied();
             let top = f64::from(o.top);
             if n.head {
                 let fields = m.fields(n.j, head);
@@ -307,13 +398,18 @@ impl Walker<'_> {
                 if let Some((ci, d, above)) = best
                     && let Some(c) = m.heads.get(head).and_then(|h| h.get(ci))
                     && (!above
-                        || super::grid::material_in(
-                            o.surface(),
-                            [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]],
-                            z + c.z0,
-                            z + c.z1,
-                            [x, y],
-                        ))
+                        || *self
+                            .inside
+                            .entry((n.j, head, ci, [x.to_bits(), y.to_bits(), z.to_bits()]))
+                            .or_insert_with(|| {
+                                super::grid::material_in(
+                                    o.surface(),
+                                    [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]],
+                                    z + c.z0,
+                                    z + c.z1,
+                                    [x, y],
+                                )
+                            }))
                 {
                     let tip = c.z0 < super::TIP_Z;
                     let kind = pr.leg.unwrap_or(if pr.travel && tip {
@@ -408,6 +504,9 @@ impl Walker<'_> {
                     );
                 }
             }
+            if let Some(d) = gap.d {
+                self.gaps.entry((n.j, at)).or_insert(d);
+            }
         }
     }
 
@@ -431,6 +530,12 @@ impl Walker<'_> {
         let Some(o) = self.m.objects.get(j) else {
             return;
         };
+        if let Some(t) = &mut self.tally {
+            match t.iter_mut().find(|e| e.0 == key) {
+                Some(e) => e.1 += 1,
+                None => t.push((key, 1)),
+            }
+        }
         // The toolhead goes furthest in sideways where the nozzle is nearest the part.
         #[allow(clippy::cast_possible_truncation, reason = "mm")]
         let near = if part == Part::Toolhead {

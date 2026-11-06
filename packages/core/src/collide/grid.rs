@@ -425,18 +425,9 @@ pub(crate) fn meet(obj: &Surface, rect: [f64; 4], over: f64, p: [f64; 2]) -> Opt
 /// True when `obj` has material inside the box between `lo` and `hi`: a piece of its surface there, or `p` (inside the
 /// box) at `lo` lying within the solid.
 pub(crate) fn material_in(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f64; 2]) -> bool {
-    // Any triangle with a piece inside the box answers it; only when none has does the ray up from p decide (the
-    // triangles over p, each once: the count of crossings is odd inside the solid).
-    if obj.each(rect, &mut |i| {
-        obj.box_of(i).is_some_and(|b| !misses(b, rect, lo, hi))
-            && obj.tri(i).is_some_and(|t| {
-                // A corner inside the box survives every cut of the clip, so it answers without one.
-                t.iter().any(|q| inside(q, rect, lo, hi))
-                    || clipped(&t, rect, lo, hi).is_some_and(|poly| !poly.is_empty())
-            })
-    }) {
-        return true;
-    }
+    // A piece of surface inside the box answers it, and so does p at lo lying within the solid (the ray up from p
+    // crosses the triangles over it an odd number of times). Either is enough, so the ray goes first: it reads the
+    // triangles of one cell, where the surface search may read every triangle under the box.
     let mut crossings = 0u32;
     for i in obj.near([p[0], p[0], p[1], p[1]]) {
         if obj.tri(i).is_some_and(|t| crosses(&t, lo, p)) {
@@ -444,6 +435,14 @@ pub(crate) fn material_in(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f
         }
     }
     crossings % 2 == 1
+        || obj.each(rect, &mut |i| {
+            obj.box_of(i).is_some_and(|b| !misses(b, rect, lo, hi))
+                && obj.tri(i).is_some_and(|t| {
+                    // A corner inside the box survives every cut of the clip, so it answers without one.
+                    t.iter().any(|q| inside(q, rect, lo, hi))
+                        || clipped(&t, rect, lo, hi).is_some_and(|poly| !poly.is_empty())
+                })
+        })
 }
 
 /// The ray up from `p` at `lo` crosses `t`, half-open on the edges so one through a shared edge counts once.
