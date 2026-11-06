@@ -1,6 +1,6 @@
 # Partner phone app
 
-Your phone app can pair with a person's SlicerX the way the SlicerX phone app does. It then reads their printers, opens the live camera, asks to pause or stop a print and, if the person allows it, approves pause and stop cards. It works on the same Wi-Fi and away from home, through the SlicerX relay, with SlicerX itself closed. Every message is end-to-end encrypted between your phone and the person's computer. The relay only ever sees sealed frames.
+Your phone app can pair with a person's SlicerX the way the SlicerX phone app does. It then reads their printers, opens the live camera, asks to pause or stop a print and, if the person allows it, approves cards the way the SlicerX phone app does, except ones a partner app asked for. It works on the same Wi-Fi and away from home, through the SlicerX relay, with SlicerX itself closed. Every message is end-to-end encrypted between your phone and the person's computer. The relay only ever sees sealed frames.
 
 You build this with the [`@slicerx/pair`](../../packages/pair/README.md) package. If your app also runs on the person's computer, the [partner app key](partner-app-key.md) covers that side.
 
@@ -14,7 +14,7 @@ By default a partner phone sees and asks, nothing more:
 
 The person can allow two more things for that one phone, while pairing or later in Devices. Both start off:
 
-- Approve: it approves or denies pause and cancel cards, and answers the questions mimir asks in the app. Each decision is signed with the phone's own key. A partner phone never approves anything else, on the same Wi-Fi or away: a print always waits for a person at the computer. It may deny any card it sees.
+- Approve: it approves or denies cards the way the SlicerX phone app does: pausing, stopping, skipping one object and, on a printer with remote start on, a start after a fresh plate check (`host.info` says `remoteStart` while your phone may approve). It also answers the questions mimir asks in the app. Each decision is signed with the phone's own key. It never approves a card that any partner app asked for, yours or another's: one from a partner app key, under any name, or from a partner phone, a pause or a stop included. SlicerX goes by who raised the card, never by the name an app gives. On the same Wi-Fi it also never approves a card that names no action. Those answer `forbidden`. It may deny any card it sees.
 - Send prints and see the library: on the same Wi-Fi it uploads and slices files, sends prints (each one waits for the person's approval on the computer) and resumes a paused print. Away from home no phone sends prints.
 
 It can't send G-code, change a running print, or touch the person's settings, keys, printers or other devices. Without the approve right, `mimir.questions`, `mimir.answer` and `approvals.decide` answer `forbidden`; without the send right, `library.list`, `upload.*`, `slice.start`, `jobs.send`, `jobs.start` and a resume answer `forbidden`. `conn.info.rights` says which the person allowed (`approve`, and `send` for a partner phone).
@@ -31,7 +31,7 @@ The person starts it in SlicerX:
 2. Open Settings, Printer bridge, Devices and press Pair a partner phone.
 3. Type your app's name as your app shows it, and press Make a code.
 4. In your app, scan the QR code or type the short code.
-5. Both screens show six digits. The person checks they match, decides whether your app may approve pausing and stopping and whether it may send prints, and confirms on both.
+5. Both screens show six digits. The person checks they match, decides whether your app may approve cards and whether it may send prints, and confirms on both.
 
 Your app pairs under its name. Give `createPairClient` the same name:
 

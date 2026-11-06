@@ -3,7 +3,7 @@
 // Settings, Printer bridge, Devices: the keys the hub remembers for partner apps, AI agents and
 // detectors, with Revoke, which also cuts the connection that key has open. Never the keys themselves.
 // Partner phones (another company's phone app, paired under its name) are listed here too, with whether each
-// may approve pausing and stopping a print, and Revoke.
+// may approve prints, pauses and skips (never what a partner app asked for), and Revoke.
 // Below them, the partner routes open now (a partner app's sealed byte stream to its own phone), with
 // End route. Sizes and times only.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -255,8 +255,8 @@ export function PartnerPhoneRows({ keys = [] }: { keys?: PartnerKey[] }) {
                 <SwitchRow
                   id={`partner-approve-${d.id}`}
                   testId="partner-phone-approve-row"
-                  label="Approve pausing and stopping a print"
-                  detail="And answer mimir's questions."
+                  label="Approve prints, pauses and skips"
+                  detail="Never what a partner app asks for itself. It also answers mimir's questions."
                   checked={d.approve === true}
                   disabled={busy === d.id || !phone.setPartnerRights}
                   onChange={(v) => void run(d, () => phone.setPartnerRights?.(d.id, { approve: v }) ?? Promise.resolve())}

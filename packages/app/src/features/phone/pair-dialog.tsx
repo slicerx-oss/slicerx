@@ -101,7 +101,7 @@ export function PairDialog({ phone, onClose, partner, known = [] }: { phone: Pho
       ) : null}
       {stage?.at === 'offer' ? (
         <>
-          <p>{partner ? `Open ${app} on the phone, choose to pair with ${appName()}, and scan this code. Or type the code below.` : `Open the ${appName()} phone app, choose Pair a computer, and scan this code. Or type the code below.`}</p>
+          <p>{partner ? `Open the partner app on the phone and choose to pair with ${appName()}. Then scan this code, or type the code below.` : `Open the ${appName()} phone app, choose Pair a computer, and scan this code. Or type the code below.`}</p>
           <PairQr link={stage.offer.link} />
           <p className="sx-mono pair-code" aria-label="Pairing code">{stage.offer.code}</p>
           <p className="sx-small sx-muted">The code works once and expires in a few minutes.</p>
@@ -109,15 +109,15 @@ export function PairDialog({ phone, onClose, partner, known = [] }: { phone: Pho
       ) : null}
       {stage?.at === 'compare' ? (
         <>
-          <p>{partner ? `${app} on a phone wants to pair as a partner phone. Do both screens show these digits?` : `${stage.attempt.deviceName} wants to pair. Do both screens show these digits?`}</p>
+          <p>{partner ? 'A partner app on a phone wants to pair. Do both screens show these digits?' : `${stage.attempt.deviceName} wants to pair. Do both screens show these digits?`}</p>
           <p className="sx-mono pair-code" aria-label="Digits to compare">{stage.digits}</p>
           {partner ? (
             <>
-              <p className="sx-small sx-muted">It will see your printers and their cameras, and can ask to pause or stop a print. Allow more only if you trust {app}. You can change both later in Devices.</p>
+              <p className="sx-small sx-muted">It will see your printers and their cameras, and can ask to pause or stop a print. Allow more only if you trust this app. You can change both later in Devices.</p>
               <div className="sx-switchrow">
                 <label htmlFor="partner-phone-approve">
-                  Let it approve pausing and stopping a print
-                  <small>It can then also answer mimir&apos;s questions. Starting a print always needs you here.</small>
+                  Let it approve prints, pauses and skips
+                  <small>As your phone does: a start away from home needs a fresh plate check. Never what a partner app asks for itself. It also answers mimir&apos;s questions.</small>
                 </label>
                 <Switch id="partner-phone-approve" testId="partner-phone-approve" checked={approve} onChange={setApprove} />
               </div>
