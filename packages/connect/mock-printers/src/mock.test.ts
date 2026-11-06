@@ -585,7 +585,8 @@ test('Snapmaker U1: Moonraker with the U1 identity, a webcam showing the chosen 
     await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'clear' })
     assert.equal((await q()).print_stats.state, 'paused')
     assert.equal((await fetch(u('/printer/print/cancel'), { method: 'POST' })).status, 200)
-    assert.equal((await q()).print_stats.state, 'standby')
+    // Klipper keeps a canceled job's state until the next print or a reset, and Moonraker passes it on.
+    assert.equal((await q()).print_stats.state, 'cancelled')
     const log = (await mockState(mocks, 'snapmaker-u1')).log as string[]
     for (const line of ['fault runout', 'fault door', 'fault offline', 'fault clear', 'camera hand', 'cancel']) assert.ok(log.includes(line), line)
   } finally {
