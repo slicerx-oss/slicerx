@@ -25,6 +25,13 @@ export function paintWarningText(names: readonly string[]): string {
   return `${list} ${names.length === 1 ? 'is' : 'are'} painted with this filament and another, so ${names.length === 1 ? 'its' : 'their'} paint would print on the other nozzle.`
 }
 
+/** A nozzle row's second column: the filaments that nozzle prints ("filament 1", "filaments 1 and 3"), or none. */
+function filamentsText(slots: readonly number[]): string | undefined {
+  if (slots.length === 0) return undefined
+  if (slots.length === 1) return `filament ${slots[0]}`
+  return `filaments ${slots.slice(0, -1).join(', ')} and ${slots[slots.length - 1]}`
+}
+
 /** The chip's text for the object's nozzle. */
 function chipText(cfg: Record<string, unknown>, extruder: number, mm: number): string {
   return nozzleChipText(cfg, extruder, mm)
@@ -41,10 +48,10 @@ function NozzleItems({ entry, choice, close }: { entry: PlateEntry; choice: Nozz
     close()
     run(entry.id, choice.extruder, pick)
   }
-  const second = `filament ${choice.filament}`
+  const second = filamentsText(choice.onNozzle)
   if (choice.current || choice.sharedWith.length === 0) {
     return (
-      <MenuItem checked={choice.current} aside={second} data-testid="object-nozzle-item" data-extruder={choice.extruder} onClick={() => go()}>
+      <MenuItem checked={choice.current} {...(second ? { aside: second } : {})} data-testid="object-nozzle-item" data-extruder={choice.extruder} onClick={() => go()}>
         {choice.label}
       </MenuItem>
     )

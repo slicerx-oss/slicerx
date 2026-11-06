@@ -54,6 +54,8 @@ describe('which nozzle prints an object', () => {
     expect(setObjectNozzle('b', 2)).toEqual({ ok: true, filament: 2, extruder: 2 })
     expect(get().plate[1]!.slotOverrides).toEqual({ p0: 2 })
     expect(objectNozzle(get(), get().plate[1]!)).toEqual({ extruder: 2, mm: 0.6 })
+    // Each tool's menu row names the filament that tool holds.
+    expect(nozzleChoices(get(), get().plate[1]!).map((c) => c.onNozzle)).toEqual([[1], [2], [3], [4]])
     // The other object stays on tool 1.
     expect(objectNozzle(get(), get().plate[0]!)).toEqual({ extruder: 1, mm: 0.4 })
     expect(nozzleLabel(U1, 2)).toBe('Tool 2, 0.6 mm')
@@ -186,7 +188,7 @@ describe('the nozzle chip', () => {
     flushSync(() => chip.click())
     const menu = document.querySelector('[data-testid="object-nozzle-pick"]')!
     const items = [...menu.querySelectorAll('[data-testid="object-nozzle-item"]')]
-    expect(items.map((i) => i.textContent)).toEqual(['Left nozzle, 0.4 mmfilament 1', 'Right nozzle, 0.6 mmfilament 1'])
+    expect(items.map((i) => i.textContent)).toEqual(['Left nozzle, 0.4 mm', 'Right nozzle, 0.6 mmfilament 1'])
     flushSync(() => (items[0] as HTMLButtonElement).click())
     expect(activeMeta(get())!.settings.nozzleMap).toEqual([1])
     flushSync(() => root.render(createElement(ObjectNozzleChip, { entry: get().plate[0]! })))
