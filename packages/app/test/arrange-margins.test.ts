@@ -292,6 +292,40 @@ describe('the plate in the store', () => {
     expect(get().plate[0]!.transform[12]).toBe(55)
   })
 
+  it('with support on, flags the support pad only for a part that gets support', () => {
+    // Boxes wound with their normals out: a cube prints no support; a table (a post under a slab) does.
+    const boxAt = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, base: number) => {
+      const p = [x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1]
+      const i = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5, 3, 0, 4, 3, 4, 7].map((v) => v + base)
+      return { p, i }
+    }
+    const solid = (id: string, boxes: number[][], x: number): PlateEntry => {
+      const pos: number[] = []
+      const idx: number[] = []
+      for (const b of boxes) {
+        const { p, i } = boxAt(b[0]!, b[1]!, b[2]!, b[3]!, b[4]!, b[5]!, pos.length / 3)
+        pos.push(...p)
+        idx.push(...i)
+      }
+      const handle = { id, hash: id, name: id, triangles: idx.length / 3, bboxMm: [30, 30, 20], openEdges: 0, parts: [] } as MeshHandle
+      return { id, name: id, handle, parts: [{ name: 'p', slot: 1, positions: new Float32Array(pos), indices: new Uint32Array(idx) }], colors: ['#bd93f9'], transform: at(x, 40) }
+    }
+    set({ overrides: { brim_type: 'no_brim', skirt_loops: 0, enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25 } })
+    const cube = solid('cube', [[0, 0, 0, 30, 30, 20]], 3)
+    const table = solid('table', [[10, 10, 0, 20, 20, 12], [0, 0, 12, 30, 30, 16]], 3)
+    expect(objectWarnings(cube, get())).toEqual([])
+    expect(objectWarnings(table, get())[0]?.text).toBe('Brim or skirt reaches past the bed edge')
+  })
+
+  it('counts the automatic brim and the skirt as the first layer prints them against the bed edge', () => {
+    // A 30 mm block 3 mm from the edge gets no automatic brim, so its skirt is 2 mm out plus a line, not past a 5 mm
+    // brim_width; an outer brim of 5 mm is printed, so the same place is past the edge with it.
+    set({ overrides: { brim_type: 'auto_brim', brim_width: 5, skirt_loops: 1, skirt_distance: 2, enable_support: false } })
+    expect(objectWarnings(entry('low', 30, 30, 18, 55), get())).toEqual([])
+    set({ overrides: { brim_type: 'outer_only', brim_width: 5, skirt_loops: 1, skirt_distance: 2, enable_support: false } })
+    expect(objectWarnings(entry('low', 30, 30, 18, 55), get())[0]?.text).toBe('Brim or skirt reaches past the bed edge')
+  })
+
   it('the object list flags a brim that reaches past the bed edge, and none that sits clear', () => {
     const tight = entry('t', 30, 30, 17, 55)
     expect(objectWarnings(tight, get())[0]?.text).toBe('Brim or skirt reaches past the bed edge')
