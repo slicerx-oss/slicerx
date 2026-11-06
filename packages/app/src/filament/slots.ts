@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Filament slots. A slot is what the plate calls "filament 1, 2, 3": a material, a brand and a color.
 // Where a slot's values come from, first match wins: what the person set, what the connected printer
-// reports for its AMS or MMU, the color the model file carries, a default.
+// reports for its AMS or MMU, the color and type the model file carries, a default (PLA).
 import { COLOR_SLOT_MAX, PAINT_FILAMENT_MAX, type FilamentSlot, type PlateObject } from '@slicerx/contracts'
 import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
@@ -103,7 +103,7 @@ export function mapSlot(plate: Pick<PlateMeta, 'settings'> | undefined, slot: nu
   return plate?.settings.slotMap?.[slot] ?? slot
 }
 
-type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'layerMarks'>>
+type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'fileSlotTypes' | 'layerMarks'>>
 
 /**
  * The model's color for each slot: the project file's filament colors, then for slots the file does not name, the color
@@ -134,8 +134,10 @@ export function resolveSlots(s: SlotInputs): ResolvedSlot[] {
       return { ...base, type: materialType(printer.material), brand: match?.brand ?? '', ...(match?.family ? { family: match.family } : {}), ...(match?.vendor ? { vendor: match.vendor } : {}), color: normalizeColor(printer.color, fallback), label: printer.id, source: 'printer' as const }
     }
     const model = modelColors[i]
-    if (isHex(model)) return { ...base, type: 'PLA', brand: '', color: normalizeColor(model, fallback), label: printer?.id ?? String(index), source: 'model' as const }
-    return { ...base, type: 'PLA', brand: '', color: fallback, label: printer?.id ?? String(index), source: 'default' as const }
+    // the filament type the project file names for the slot, else PLA
+    const type = s.fileSlotTypes?.[i] || 'PLA'
+    if (isHex(model)) return { ...base, type, brand: '', color: normalizeColor(model, fallback), label: printer?.id ?? String(index), source: 'model' as const }
+    return { ...base, type, brand: '', color: fallback, label: printer?.id ?? String(index), source: 'default' as const }
   })
 }
 

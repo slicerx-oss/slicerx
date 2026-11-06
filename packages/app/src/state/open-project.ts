@@ -6,7 +6,7 @@ import type { Host, MeshHandle, SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { objectPalette } from '../edition'
 import { withAutoSpools } from '../filament/pick'
-import { projectSlotVendors } from '@slicerx/settings/slot-settings'
+import { projectSlotTypes, projectSlotVendors } from '@slicerx/settings/slot-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
 import type { ImportedObject } from '../export/import3mf'
@@ -127,6 +127,9 @@ async function addProjectShown(
   // So do its filament makers, which the slice sends while a slot holds the file's filament.
   const vendors = projectSlotVendors(project.settings)
   if (vendors.length) mine(() => set((s) => ({ fileSlotVendors: wasEmpty ? vendors : vendors.map((v, i) => s.fileSlotVendors[i] || v) })))
+  // And its filament types, which a slot the person has not set takes in place of PLA.
+  const types = projectSlotTypes(project.settings)
+  if (types.length) mine(() => set((s) => ({ fileSlotTypes: wasEmpty ? types : types.map((t, i) => s.fileSlotTypes[i] || t) })))
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()

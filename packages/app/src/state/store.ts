@@ -519,6 +519,8 @@ export interface AppState {
   fileSlotColors: string[]
   /** The open project file's filament makers (filament_vendor), by slot as fileSlotColors, '' where it names none. */
   fileSlotVendors: string[]
+  /** The open project file's filament types (filament_type), by slot as fileSlotColors, '' where it names none. */
+  fileSlotTypes: string[]
   flush: FlushSettings
   /** Preset matches for what the printer reports, by slot; the AMS panel fills it from the filament presets. */
   slotMatch: Record<number, Pick<SlotSetup, 'brand' | 'family' | 'vendor'>>
@@ -872,6 +874,7 @@ export const appStore = createStore<AppState>()(() => ({
   slotSetup: {},
   fileSlotColors: [],
   fileSlotVendors: [],
+  fileSlotTypes: [],
   flush: FLUSH_DEFAULTS,
   slotMatch: {},
   slotDialog: null,

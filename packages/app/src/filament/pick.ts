@@ -166,7 +166,7 @@ export function moveToSpool(target: SpoolTarget, slot: number): number {
   return moved
 }
 
-type PickInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup' | 'profile' | 'printerId'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors'>>
+type PickInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup' | 'profile' | 'printerId'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'fileSlotTypes'>>
 
 /**
  * New plate entries with their parts on the auto-picked spool, for parts that have no filament of their own (`own`
