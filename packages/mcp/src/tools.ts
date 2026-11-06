@@ -322,7 +322,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const filament = gcodeTool({
     name: 'printer.filament',
-    description: 'Load or unload filament: M701 or M702 on Marlin and Prusa firmware, the LOAD_FILAMENT or UNLOAD_FILAMENT macros on Klipper. Bambu Lab printers with an AMS change filament through the printer instead.',
+    description: 'Load or unload filament: M701 or M702 on Marlin and Prusa firmware, the LOAD_FILAMENT or UNLOAD_FILAMENT macros on Klipper. Bambu Lab printers with an AMS change filament through the printer instead. These lines move the head, so the hub sends them only while the printer is idle or finished and the person approving says the plate is clear.',
     input: z.object({ printerId, action: z.enum(['load', 'unload']) }),
     lines: (i, fw) => {
       if (fw === 'bambu') throw new Error('Bambu Lab printers load and unload filament from the printer screen or the AMS; there is no G-code for it here.')
@@ -352,7 +352,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const gcode = gcodeTool({
     name: 'printer.gcode',
-    description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission.',
+    description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission. A line that can move the head (a move, home, probe or leveling command, a start, filament or tool change, or any code or macro the hub does not know as safe) goes only while the printer is idle or finished, and only when the person approving says the plate is clear or the hub knows it is; otherwise the hub fails it with bad_state or bed_check. Heater, fan, message and report lines go at any time.',
     input: z.object({ printerId, line: z.string().min(1).max(200).regex(/^[^\r\n]+$/, 'One line only') }),
     lines: (i) => [i.line.trim()],
     title: (i) => `Send "${i.line.trim()}" to ${i.printerId}?`,

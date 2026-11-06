@@ -157,12 +157,10 @@ pub fn gcode_line_problem(line: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether one G-code line homes the printer: a `G28`, however it is written (any case, spaces, a line
-/// number, leading zeros, a decimal such as `G28.1`, axis words with or without a space, or a comment
-/// after it). Homing Z brings the nozzle down to the plate, so a host sends such a line only under its
-/// home rules. Errs toward yes: a line that reads as G28 to any firmware counts.
-pub fn homes_axes(line: &str) -> bool {
-    // Comments: `;` to the end of the line, and `( ... )`.
+/// One G-code line as firmware reads it: comments (`;` to the end, `( ... )`) and a checksum (`*71`)
+/// dropped, a line number skipped with any spacing (`N10`, `N 10`, or a bare `N` before a command),
+/// upper case, trimmed.
+fn command_text(line: &str) -> String {
     let mut text = String::with_capacity(line.len());
     let mut depth = 0_u32;
     for c in line.chars() {
@@ -174,20 +172,98 @@ pub fn homes_axes(line: &str) -> bool {
             _ => {}
         }
     }
-    let mut rest = text.trim_start();
-    // A line number (`N10 G28`, `N 10 G28`), with any spacing around its digits.
-    if let Some(after) = rest.strip_prefix('N') {
-        rest = after
-            .trim_start()
-            .trim_start_matches(|c: char| c.is_ascii_digit())
-            .trim_start();
+    let mut rest = text.trim();
+    if let Some(star) = rest.find('*') {
+        rest = rest[..star].trim_end();
     }
-    let Some(after) = rest.strip_prefix('G') else {
+    if let Some(after) = rest.strip_prefix('N') {
+        let after = after.trim_start();
+        let digits = after.trim_start_matches(|c: char| c.is_ascii_digit());
+        if digits.len() < after.len() || digits.starts_with(['G', 'M', 'T']) {
+            rest = digits.trim_start();
+        }
+    }
+    rest.to_owned()
+}
+
+/// The command of a line read by [`command_text`] and the rest of it: a letter code with its number as
+/// firmware reads it (`G28`, `G29.1`, `M104`, `T1`; a space after the letter and leading zeros dropped),
+/// or an extended command or macro name (`BED_MESH_CALIBRATE`). `None` for a line with no command.
+fn command_word(text: &str) -> Option<(String, &str)> {
+    let first = text.chars().next()?;
+    if matches!(first, 'G' | 'M' | 'T') {
+        let after = text[1..].trim_start();
+        let len = after
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(after.len());
+        let digits = &after[..len];
+        if digits.starts_with(|c: char| c.is_ascii_digit()) {
+            let (whole, frac) = digits.split_once('.').unwrap_or((digits, ""));
+            let whole = whole.trim_start_matches('0');
+            let whole = if whole.is_empty() { "0" } else { whole };
+            let code = if frac.is_empty() {
+                format!("{first}{whole}")
+            } else {
+                format!("{first}{whole}.{frac}")
+            };
+            return Some((code, after[len..].trim_start()));
+        }
+    }
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    Some((text[..end].to_owned(), text[end..].trim_start()))
+}
+
+/// Whether one G-code line homes the printer: a `G28`, however it is written (any case, spaces, a line
+/// number, leading zeros, a decimal such as `G28.1`, axis words with or without a space, or a comment
+/// after it). Homing Z brings the nozzle down to the plate, so a host sends such a line only under its
+/// home rules. Errs toward yes: a line that reads as G28 to any firmware counts.
+pub fn homes_axes(line: &str) -> bool {
+    command_word(&command_text(line)).is_some_and(|(code, _)| code == "G28" || code.starts_with("G28."))
+}
+
+/// G-codes that cannot move the head: a dwell, millimeter units and absolute positioning. `G92` is
+/// read on its own: it is safe only when it sets the extruder alone.
+const STILL_G: &[&str] = &["G4", "G21", "G90"];
+
+/// M-codes that cannot move the head: heater and fan targets and waits, messages, reports, extruder
+/// modes, progress, speed and flow factors, a beep and waiting for moves to finish.
+const STILL_M: &[&str] = &[
+    "M73", "M82", "M83", "M104", "M105", "M106", "M107", "M109", "M110", "M114", "M115", "M117", "M118",
+    "M119", "M140", "M141", "M155", "M190", "M191", "M220", "M221", "M300", "M400", "M503",
+];
+
+/// Klipper commands that cannot move the head: heaters, fans, messages and reports.
+const STILL_MACROS: &[&str] = &[
+    "SET_HEATER_TEMPERATURE",
+    "TURN_OFF_HEATERS",
+    "SET_FAN_SPEED",
+    "TEMPERATURE_WAIT",
+    "RESPOND",
+    "STATUS",
+    "QUERY_ENDSTOPS",
+    "GET_POSITION",
+];
+
+/// Whether one G-code line can move the head, the motion guard's test. It fails closed: a line moves
+/// unless its command is on the short lists of lines that cannot (heaters, fans, messages, reports,
+/// waits, `G92` of the extruder alone). So moves and homes, probing and leveling in every firmware's
+/// form (`G29` and its Bambu Lab decimals, `G30`, `G32`, `G34`, Prusa's `G80` and `G81`, `M48`, Klipper's
+/// `PROBE`, `BED_MESH_CALIBRATE`, `QUAD_GANTRY_LEVEL`, `Z_TILT_ADJUST`, `SCREWS_TILT_CALCULATE`), start
+/// macros, position and mode changes, filament and tool changes, and every code or macro this list does
+/// not know all count. The line is read as [`homes_axes`] reads it.
+pub fn moves_axes(line: &str) -> bool {
+    let text = command_text(line);
+    let Some((code, rest)) = command_word(&text) else {
         return false;
     };
-    let after = after.trim_start();
-    let whole: String = after.chars().take_while(char::is_ascii_digit).collect();
-    !whole.is_empty() && whole.trim_start_matches('0') == "28"
+    if code == "G92" {
+        // Only the extruder: `G92 E0`. Any axis, or none (which zeroes every axis), moves the frame.
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        return words.is_empty() || !words.iter().all(|w| w.starts_with('E'));
+    }
+    !(STILL_G.contains(&code.as_str())
+        || STILL_M.contains(&code.as_str())
+        || STILL_MACROS.contains(&code.as_str()))
 }
 
 /// [`gcode_line_problem`] as a driver error. Every driver calls it before the token check, so one
