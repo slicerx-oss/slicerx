@@ -19,15 +19,21 @@ export function baseConfig(): PrintConfig {
 }
 
 /** What a printer's shipped presets contribute under the Easy choices, and which Easy controls the person has moved. */
-type ProfileLayer = { values: Record<string, SettingValue>; touched: ReadonlySet<string> }
+type ProfileLayer = { values: Record<string, SettingValue>; touched: ReadonlySet<string>; nozzleValues?: Readonly<Record<string, readonly SettingValue[]>> }
 let profile: ProfileLayer | null = null
 
 /**
  * Sets the printer, filament and process layer (null for none). With a layer, Easy mode changes only the controls the
- * person moved, plus sleipnir, so the maker's own values stand until they ask for something else.
+ * person moved, plus sleipnir, so the maker's own values stand until they ask for something else. `nozzleValues` are
+ * the layer's line widths and layer height per extruder on a printer whose nozzles differ in size.
  */
-export function setProfileLayer(values: Record<string, SettingValue> | null, touched: readonly string[]): void {
-  profile = values ? { values, touched: new Set([...touched, 'smartLayer', 'varyLayerHeight']) } : null
+export function setProfileLayer(values: Record<string, SettingValue> | null, touched: readonly string[], nozzleValues?: Readonly<Record<string, readonly SettingValue[]>>): void {
+  profile = values ? { values, touched: new Set([...touched, 'smartLayer', 'varyLayerHeight']), ...(nozzleValues ? { nozzleValues } : {}) } : null
+}
+
+/** The profile layer's line widths and layer height per extruder, on a printer whose nozzles differ in size; else none. */
+export function profileNozzleValues(): Readonly<Record<string, readonly SettingValue[]>> | undefined {
+  return profile?.nozzleValues
 }
 
 export function hasProfileLayer(): boolean {

@@ -21,6 +21,7 @@ import { countSettings } from '../../plate/easy-groups'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { get, selectedIds, set, toast, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
 import { SelectionMenu } from './selection-bar'
+import { ObjectNozzleChip } from './object-nozzle'
 import { useSimpleGroups } from './simple-groups'
 
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
@@ -202,6 +203,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
             </span>
           </button>
         )}
+        <ObjectNozzleChip entry={p} />
         {overrides > 0 ? (
           <span className="obj-badge" data-testid="slice-object-override-badge" tabIndex={0} {...tipAttrs({ title: overrideText(overrides) })} aria-label={overrideText(overrides)}>
             <i aria-hidden="true" />

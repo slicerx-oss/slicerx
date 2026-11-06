@@ -21,6 +21,7 @@ import { resetSlots, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
 import { tpu285Slot, tpuHotend } from '@slicerx/settings/hotends'
 import { currentHotends, currentMap, deviceTpuTool, hasRack, mapExtruders, mapHotends, masterExtruder, nozzleName, pickedMap, setHotendAuto, setNozzleAuto, setSlotHotend, setSlotNozzle, toolName } from './nozzle-map'
+import { nozzleLabel, sizesDiffer } from './object-nozzle'
 import { spoolLeft } from './left'
 
 const Dialogs = lazy(() => import('./dialogs').then((m) => ({ default: () => (
@@ -216,15 +217,19 @@ export function NozzleRows({ slots }: { slots: ResolvedSlot[] }) {
   if (shown.length === 0) return null
   const rack = hasRack(cfg)
   const current = currentMap(meta, picked, slots.length, masterExtruder(cfg))
-  const auto = !meta.settings.nozzleMap
+  // Nozzles of different sizes: each object prints with its own nozzle's widths, so the map is always set here.
+  const sized = sizesDiffer(cfg)
+  const auto = !meta.settings.nozzleMap && !sized
+  const option = (e: number) => (sized ? nozzleLabel(cfg, e) : nozzleName(e, rack))
   return (
     <div className="nozzle-map" role="group" aria-label="Nozzle for each filament">
       <SwitchRow
         id="nozzle-auto"
         icon="nozzle"
         label="Pick nozzles automatically"
-        detail={auto ? 'Each filament goes where it flushes least, so a nozzle switch needs only a short prime.' : 'Set by hand for this plate.'}
+        detail={sized ? <span data-testid="nozzle-map-sizes-note">The nozzles are different sizes, so each filament keeps the nozzle set here.</span> : auto ? 'Each filament goes where it flushes least, so a nozzle switch needs only a short prime.' : 'Set by hand for this plate.'}
         checked={auto}
+        disabled={sized}
         onChange={(on) => (on ? setNozzleAuto(meta.id) : setSlotNozzle(meta.id, 1, current[0] ?? 1, current))}
       />
       {shown.map((s) => (
@@ -238,8 +243,8 @@ export function NozzleRows({ slots }: { slots: ResolvedSlot[] }) {
             value={current[s.index - 1] ?? 1}
             onChange={(e) => setSlotNozzle(meta.id, s.index, Number(e.target.value), current)}
           >
-            <option value={1}>{nozzleName(1, rack)}</option>
-            <option value={2}>{nozzleName(2, rack)}</option>
+            <option value={1}>{option(1)}</option>
+            <option value={2}>{option(2)}</option>
           </Select>
         </div>
       ))}

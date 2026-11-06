@@ -3,6 +3,7 @@
 // The machine card at the top of the Slice sidebar: one row of three boxes, the printer (its picture, name, model and
 // status), its nozzle (size and type) and the active plate's plate type (its icon). Each box opens a popover to change
 // it in place. Without a printer the card says what the slice is for and offers to add one.
+import { mmText, nozzleKind, nozzleSizes, sizesDiffer } from '../../filament/object-nozzle'
 import { Block, Button, Icon, LinkButton, MenuAnchor, Pill, Popover, tipAttrs, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useMemo, useState, type KeyboardEvent } from 'react'
 import { resolveConfig } from '../../adapters/config'
@@ -38,6 +39,17 @@ const NOZZLE_TYPE: Record<string, string> = { brass: 'Brass', 'hardened-steel': 
 const NOZZLE_SHORT: Record<string, string> = { brass: 'Brass', 'hardened-steel': 'Hardened', 'stainless-steel': 'Stainless', 'tungsten-carbide': 'Carbide' }
 
 /** The one-line summary of a folded card: name, nozzle, plate type and status, such as "Desk A1, 0.4 mm, Cool plate, Ready". */
+/**
+ * What the model line says about the nozzles: ", 0.4 mm" for one size; every size when they differ, by side on a
+ * two-extruder printer (", left 0.4 mm, right 0.6 mm") and by tool on a tool changer (", tools 0.4, 0.6 mm").
+ */
+export function nozzleSuffix(nozzle: number, cfg: Record<string, unknown>): string {
+  if (!sizesDiffer(cfg)) return `, ${nozzle} mm`
+  const sizes = nozzleSizes(cfg)
+  if (nozzleKind(cfg) === 'map') return `, left ${mmText(sizes[0]!)}, right ${mmText(sizes[1]!)}`
+  return `, tools ${sizes.join(', ')} mm`
+}
+
 export function machineSummary(name: string, nozzle: number | null, plate: string, status: string): string {
   return [name, nozzle !== null ? `${nozzle} mm` : null, plate, status].filter(Boolean).join(', ')
 }
@@ -108,7 +120,7 @@ export function MachineCard() {
   const fixedNozzle = profile?.nozzleFrom === 'printer'
   // The model beside the name, muted: a bay name alone says little with several printers of different models.
   const modelName = [printer.vendor, printer.model].filter(Boolean).join(' ')
-  const modelLine = modelName + (nozzle !== null ? `, ${nozzle} mm` : '')
+  const modelLine = modelName + (nozzle !== null ? nozzleSuffix(nozzle, cfg as Record<string, unknown>) : '')
   const summary = machineSummary(printer.name, nozzle, plate.label, pill.label)
   const setPlate = (v: BedType | '') => {
     if (!meta) return
