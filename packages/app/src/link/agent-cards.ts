@@ -15,7 +15,7 @@ const PRINT_OPTIONS = new Set<string>(SEND_OPTION_IDS)
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
-  kind: 'print' | 'resume' | 'gcode' | 'home' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'plugin'
+  kind: 'print' | 'resume' | 'gcode' | 'home' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'slot' | 'plugin'
   /** Empty for a connected app's tool, which targets no printer. */
   printerId: string
   /** A connected app's tool: the app, the tool's bare name and its input, as the hub will run them. */
@@ -29,6 +29,8 @@ export interface VerifiedWork {
   /** A skip: the object's label on the printer, and the bed epoch of the job the hub pinned it to. */
   id?: string
   epoch?: number
+  /** A slot to set while no print runs: the AMS slot's filament type, color, preset and nozzle range, as the hub checked them. */
+  setting?: Record<string, unknown>
 }
 
 export type HubCard = ApprovalRequest & {
@@ -102,6 +104,17 @@ export function describeChange(change: Record<string, unknown> | undefined): str
   }
 }
 
+/** A slot setting in plain words, from the hub's checked work. `null` for one this card cannot show whole and plainly. */
+export function describeSlot(setting: Record<string, unknown> | undefined): { slot: string; material: string; lines: string[] } | null {
+  if (!setting) return null
+  const { slot, filamentId, material, color, nozzleTempMin: lo, nozzleTempMax: hi } = setting
+  const text = (v: unknown, re: RegExp): v is string => typeof v === 'string' && re.test(v)
+  const temp = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 150 && v <= 350
+  // The hub's own rules (`SlotSetting::problem` in sx-connect and the slot card's filament types).
+  if (!text(slot, /^[A-Za-z0-9_+. -]{1,4}$/) || !text(filamentId, /^[A-Za-z0-9_+. -]{1,16}$/) || !text(material, /^[A-Z0-9-]{2,12}$/) || !text(color, /^#[0-9a-fA-F]{6}$/) || !temp(lo) || !temp(hi) || lo > hi) return null
+  return { slot, material, lines: [`Slot ${slot}: ${material}, color ${color.toLowerCase()}, preset ${filamentId}`, `Nozzle ${lo} to ${hi} °C`, 'Only while no print runs. The printer keeps this for the slot until another spool goes in.'] }
+}
+
 /**
  * The filament slot map in plain words. Keys are 0 based, as the contract has them (`StartOptions.slotMap`).
  * Every pair, never cut: the hub keeps slot ids to 32 printable characters, and a cut list could hide a slot.
@@ -118,6 +131,7 @@ const WORK_ACTIONS: Record<VerifiedWork['kind'], string[]> = {
   pause: ['printer.pause'],
   cancel: ['printer.cancel'],
   skip: ['printer.skip'],
+  slot: ['printer.adjust'],
   plugin: ['plugin.call'],
 }
 
@@ -173,6 +187,9 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   const on = printer ? ` on ${printer}` : ''
   const startsPrint = has('printer.start')
   const plugin = has('plugin.call') && card.work && workMatches(card, card.work) ? describePlugin(card.work) : null
+  // Setting an AMS slot rides on printer.adjust; the hub's work says it is a slot, not a change to a running print.
+  const slotWork = card.work?.kind === 'slot'
+  const slot = slotWork && card.work && workMatches(card, card.work) ? describeSlot(card.work.setting) : null
   // A partner app's card names the partner, by the name only the hub sets, and says nothing about AI.
   const partner = card.origin === 'mcp' && card.partner ? oneLine(card.partner).slice(0, 60) : ''
   const asker = card.origin === 'phone' ? 'a paired phone' : partner || 'an AI agent'
@@ -191,13 +208,17 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
         ? `Send a G-code line${printer ? ` to ${printer}` : ''}?`
       : has('printer.home')
         ? `Home all axes${printer ? ` of ${printer}` : ''}?`
+        : slotWork
+          ? slot
+            ? `Set slot ${slot.slot}${on} to ${slot.material}?`
+            : `Set a filament slot${on}?`
         : has('printer.config') || has('printer.adjust')
           ? `Change the running print${on}?`
           : has('printer.skip')
             ? `Skip an object${on}?`
           : `Let ${asker} ${ACTION_WORDS[card.actions[0]?.action ?? ''] ?? 'act'}${on}?`
   const lines: string[] = [card.origin === 'phone' ? 'Asked by a paired phone. Only you can approve it here.' : partner ? `Asked by ${partner}, a partner app.` : 'Asked by an AI agent over MCP. It cannot approve this itself.']
-  const did = [...new Set(card.actions.map((a) => ACTION_WORDS[a.action] ?? a.action))]
+  const did = slotWork ? [`set filament slot ${slot?.slot ?? ''}`.trim()] : [...new Set(card.actions.map((a) => ACTION_WORDS[a.action] ?? a.action))]
   lines.push(`If you approve, the hub will ${did.join(', then ')}${on}.`)
   // Every card from an agent or a phone carries the hub's work. Without it, or with work that is not exactly what the
   // actions say, the card has nothing checked to show, so it gets no Approve.
@@ -222,7 +243,11 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
     if (plugin) lines.push(`Change: ${plugin}`)
     else blocked ??= `${appName()} cannot show this request in plain words. Deny this request.`
   }
-  if (has('printer.adjust')) {
+  if (slotWork) {
+    // The slot setting is what the hub writes; one this card cannot show whole gets no Approve.
+    if (slot) lines.push(...slot.lines)
+    else blocked ??= `${appName()} cannot show this slot setting in plain words. Deny this request.`
+  } else if (has('printer.adjust')) {
     // The change is what the hub runs; a card that cannot word it gets no Approve.
     const said = describeChange(w?.change)
     if (said) lines.push(`Change: ${said}${on}`)
