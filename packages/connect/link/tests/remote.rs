@@ -2955,3 +2955,39 @@ async fn t1_the_app_code_narrowed_to_watch_is_not_the_cameras_detector() {
     .await;
     assert_eq!(r["result"]["recorded"], true, "{r}");
 }
+
+#[tokio::test]
+async fn h1_a_numbered_line_heating_past_the_limit_refuses_a_start_from_afar() {
+    let mut s = setup().await;
+    let _mocks = idle_bay4_with_plate(&mut s).await;
+    call(
+        &mut s.app,
+        20,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    let (mut phone, signer) = approver(&mut s, 93).await;
+    // Line numbers with a space after N, as some hosts send them: the 300 °C line still counts.
+    let (f, sha) = gcode_file("cube.gcode", "M140 S60\nM104 S215\nN 10 M104 S300\nG28\n");
+    let r = call(
+        &mut s.agent,
+        21,
+        "approvals.register",
+        print_card("h1-1", &f, &sha),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "h1-1")
+        .await;
+    assert_eq!(view["remoteStart"]["enabled"], false, "{view}");
+    assert_eq!(view["remoteStart"]["reason"], "too_hot", "{view}");
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "not_supported", "{r}");
+}
