@@ -1099,12 +1099,14 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const request = job?.state === 'pending' ? job.request : svc.approvalFeed?.pending().find((r) => r.id === p.requestId)
     if (!request) throw new PairError('not_found', 'This request was already decided or has expired')
     if (!verifyDecision(rec.peer.signPub, request, p)) throw new PairError('forbidden', 'The decision does not match the request')
-    // A partner phone has our phone's rights, with two limits. It never approves a card that names no action, since it
-    // cannot tell what that would grant, and never anything a partner app asked for: a job any partner phone sent, its
-    // own pause or stop included, decided by who raised it and never by a name. It may still deny any card.
+    // A partner phone has our phone's rights, with three limits. It never approves a card that names no action, since it
+    // cannot tell what that would grant; never anything a partner app asked for: a job any partner phone sent, its own
+    // pause or stop included, decided by who raised it and never by a name; and never a card with no record of who
+    // raised it, such as one from the computer's own feed. It may still deny any card.
     if (rec.partner !== undefined && p.decision === 'approve') {
       if (request.actions.length === 0) throw new PairError('forbidden', 'A partner phone cannot approve a card that names no action; approve it on the computer')
       if (job?.raisedBy === 'partner') throw new PairError('forbidden', 'A partner phone cannot approve what a partner app asked for; approve it on the computer or on another phone')
+      if (job?.raisedBy !== 'phone') throw new PairError('forbidden', "A partner phone cannot approve a card when it isn't known who asked for it; approve it on the computer or on another phone")
     }
     const audit = () => auditLog.push({ requestId: p.requestId, deviceId: rec.peer.deviceId, deviceName: rec.peer.name, decision: p.decision, at: env.now(), requestHash: p.requestHash, sig: p.sig })
     if (job) {
