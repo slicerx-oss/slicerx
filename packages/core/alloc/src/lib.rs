@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The memory allocator of the sx command line tool and the cloud service: jemalloc wherever it builds (not MSVC, not
-//! wasm32), with its page decay set per operating system. A binary links it with `use sx_alloc as _;`. Elsewhere the
-//! crate is empty and the system allocator stays.
+//! The memory allocator of the sx command line tool, the desktop app and the cloud service: jemalloc wherever it builds
+//! (not MSVC, not wasm32), with its page decay set per operating system. A binary links it with `use sx_alloc as _;`.
+//! Elsewhere the crate is empty and the system allocator stays.
 #![cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))]
 
 use std::ffi::{CStr, c_char};
