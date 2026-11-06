@@ -48,6 +48,16 @@ export interface CardText {
   asksPlate?: boolean
   /** Why Approve stays off: the hub sent work this app will not word for a person. */
   blocked?: string
+  /** What the person is told when the hub runs the approved card and the printer refuses it (refusedNote). */
+  outcome?: CardOutcome
+}
+
+/** How a refused run of a card is worded: what did not happen, and the printer's state when it was not ready. */
+export interface CardOutcome {
+  /** "slot A2 was not set", "the print did not start". */
+  undone: string
+  /** For bad_state: "is printing", "is not paused". */
+  notReady: string
 }
 
 const NOTE_MAX = 160
@@ -179,7 +189,10 @@ const ACTION_WORDS: Record<string, string> = {
 /** The card as the person sees it. Everything above the note comes from the hub: its actions, their targets and its work summary. */
 export function describeCard(card: HubCard, printerName: (id: string) => string = (id) => id): CardText {
   // Cards an AI agent raised (MCP) and cards a paired phone raised away from home are both described from what the hub verified.
-  if (card.origin !== 'mcp' && card.origin !== 'phone') return { title: card.title, lines: card.lines, startsPrint: card.actions.some((a) => a.action === 'printer.start') }
+  if (card.origin !== 'mcp' && card.origin !== 'phone') {
+    const starts = card.actions.some((a) => a.action === 'printer.start')
+    return { title: card.title, lines: card.lines, startsPrint: starts, ...(starts ? { outcome: { undone: 'the print did not start', notReady: 'is busy' } } : {}) }
+  }
   const has = (action: string) => card.actions.some((a) => a.action === action)
   const targetOf = (action: string) => card.actions.find((a) => a.action === action)?.target
   const printerId = targetOf('printer.start') ?? targetOf('printer.resume') ?? targetOf('printer.gcode') ?? targetOf('printer.home') ?? targetOf('printer.config') ?? card.actions.find((a) => a.action.startsWith('printer.'))?.target
@@ -269,7 +282,50 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (slots) lines.push(slots)
   const said = oneLine(card.title)
   if (said) lines.push(`Note from ${who}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
-  return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}) }
+  return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}), outcome: outcomeOf(has, slotWork ? (slot?.slot ?? '') : null, startsPrint) }
+}
+
+/** What did not happen, by the card's action, and how a printer that was not ready for it is described. */
+function outcomeOf(has: (action: string) => boolean, slot: string | null, startsPrint: boolean): CardOutcome {
+  if (slot !== null) return { undone: slot ? `slot ${slot} was not set` : 'the slot was not set', notReady: 'is printing' }
+  if (startsPrint) return { undone: 'the print did not start', notReady: 'is busy' }
+  if (has('printer.pause')) return { undone: 'the print was not paused', notReady: 'is not printing' }
+  if (has('printer.cancel')) return { undone: 'the print was not canceled', notReady: 'is not printing' }
+  if (has('printer.resume')) return { undone: 'the print did not resume', notReady: 'is not paused' }
+  if (has('printer.gcode')) return { undone: 'the G-code line was not sent', notReady: 'is busy' }
+  if (has('printer.home')) return { undone: 'the axes were not homed', notReady: 'is not idle' }
+  if (has('printer.config') || has('printer.adjust')) return { undone: 'the change was not made', notReady: 'is not printing' }
+  if (has('printer.skip')) return { undone: 'the object was not skipped', notReady: 'is not printing' }
+  if (has('plugin.call')) return { undone: 'the connected app did not run it', notReady: 'is not ready for it' }
+  return { undone: 'it did not happen', notReady: 'is not ready for it' }
+}
+
+/** How the hub said an approved card's work ended (`approval.done`). */
+export interface CardDone {
+  requestId: string
+  printerId: string
+  ok: boolean
+  code?: string
+  message?: string
+}
+
+/**
+ * One plain sentence for a card the person approved whose work the hub could not carry out: the printer, why in
+ * plain words, and what did not happen ("Bay 1 is printing, so slot A2 was not set."). The hub's own message is
+ * for developers and is not shown.
+ */
+export function refusedNote(printer: string | null, o: CardOutcome, code: string | undefined): string {
+  const why =
+    code === 'bad_state'
+      ? o.notReady
+      : code === 'offline' || code === 'unreachable' || code === 'timeout' || code === 'not_connected'
+        ? 'did not answer'
+        : code === 'not_supported'
+          ? 'cannot do this'
+          : code === 'plate_check'
+            ? 'has something on the plate'
+            : 'refused it'
+  return printer ? `${printer} ${why}, so ${o.undone}.` : `It did not go through, so ${o.undone}.`
 }
 
 /** The hub's word that a card was answered, by whichever client answered it (`approval.resolved`). */
@@ -307,6 +363,8 @@ export interface HubCards {
   onRequest(cb: (r: ApprovalRequest) => void): () => void
   /** A card was answered, here or by another client. */
   onResolved?(cb: (r: CardResolved) => void): () => void
+  /** How the work of an approved card ended, for every card the hub ran. */
+  onDone?(cb: (d: CardDone) => void): () => void
   pending?(): Promise<ApprovalRequest[]>
   grantWith(requestId: string, opts: { bedClear: boolean }): Promise<ApprovalToken | { queued: true }>
   deny(requestId: string, reason?: string): Promise<unknown>
@@ -327,6 +385,11 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
   const seen = new Set<string>()
   /** Cards answered elsewhere: never shown, even when their event beats the card to the queue. */
   const gone = new Set<string>()
+  /** Cards approved here, by id, until the hub says how their work ended. */
+  const approved = new Map<string, CardOutcome | undefined>()
+  /** Approved cards whose grant has not answered yet, and those of them the hub already refused. */
+  const granting = new Set<string>()
+  const refusedEarly = new Set<string>()
   const next = () => {
     if (showing || get().approval) return
     const card = queue.shift()
@@ -345,11 +408,18 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
       ...(text.startsPrint ? { confirm: BED_CLEAR, go: 'Bed is clear, approve' } : text.asksPlate ? { confirm: BED_CLEAR, go: 'Plate is clear, approve' } : {}),
       approve: async () => {
         done()
+        approved.set(card.id, text.outcome)
+        granting.add(card.id)
         // The approve button of a start or a home says the plate is clear, so pressing it carries that answer.
         await cards.grantWith(card.id, { bedClear: text.startsPrint || text.asksPlate === true }).then(
-          () => toast('Approved. The hub is running it now.', 'ok'),
-          (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'),
+          // A refusal that came before the grant answered stays on screen.
+          () => void (refusedEarly.delete(card.id) || toast('Approved. The hub is running it now.', 'ok')),
+          (e: unknown) => {
+            approved.delete(card.id)
+            toast(e instanceof Error ? e.message : String(e), 'error')
+          },
         )
+        granting.delete(card.id)
       },
       deny: async () => {
         done()
@@ -385,6 +455,17 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
   }
   const offRequest = cards.onRequest(add)
   const offResolved = cards.onResolved?.((r) => answered(r.requestId, answeredNote(r)))
+  // A card approved here whose work the hub could not carry out says so, until dismissed; one that went through
+  // needs nothing more than the approval's own note.
+  const offDone = cards.onDone?.((d) => {
+    if (!approved.has(d.requestId)) return
+    const outcome = approved.get(d.requestId)
+    approved.delete(d.requestId)
+    if (d.ok) return
+    if (granting.has(d.requestId)) refusedEarly.add(d.requestId)
+    const printer = d.printerId ? printerName(d.printerId) : null
+    toast(refusedNote(printer, outcome ?? { undone: 'it did not happen', notReady: 'is not ready for it' }, d.code), 'error', undefined, {})
+  })
   // Cards raised before this app connected are waiting on the hub.
   void cards.pending?.().then((list) => list.filter((r) => r.origin === 'mcp' || r.origin === 'phone' || r.origin === 'queue' || r.origin === 'schedule').forEach(add), () => undefined)
   // While a card is open, the hub's list is read again now and then: a card it no longer lists was answered
@@ -410,6 +491,7 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
   return () => {
     offRequest()
     offResolved?.()
+    offDone?.()
     clearInterval(recheck)
     offStore()
     queue = []

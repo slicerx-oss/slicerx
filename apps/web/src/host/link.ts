@@ -20,6 +20,8 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
   return {
     printers: link,
     approvals: link.approvals,
+    // How approved hub cards ended, so the app can say when the hub could not carry one out.
+    ...(typeof (link as { onApprovalDone?: unknown }).onApprovalDone === 'function' ? { onApprovalDone: (cb: Parameters<LinkHost['onApprovalDone']>[0]) => link.onApprovalDone(cb) } : {}),
     streams: linkCameraStreams(link),
     setup: {
       discover: (opts) => setup.discover(opts),
