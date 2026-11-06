@@ -53,6 +53,11 @@ export interface StockLayer {
   materialType: string
   /** The layer height and walls each goal's process gives on this printer and nozzle, for the Goal tiles. */
   goalValues: Record<EasyGoal, Record<string, SettingValue>>
+  /**
+   * On a printer whose nozzles are not all one size: the line widths and layer height that differ by nozzle, one entry
+   * per extruder ([`nozzleLists`]). `values` keeps the first nozzle's, as every reader of one value expects.
+   */
+  nozzleValues?: Record<string, SettingValue[]>
 }
 
 const ORCA_NOZZLE_TYPE: Record<string, string> = { brass: 'brass', 'hardened-steel': 'hardened_steel', 'stainless-steel': 'stainless_steel', 'tungsten-carbide': 'tungsten_carbide' }
@@ -72,6 +77,58 @@ export function applyExtruders(machine: Record<string, SettingValue>, extruders:
     const joined = extruders.map((e, i) => (e.type && ORCA_NOZZLE_TYPE[e.type]) || prev[i]).join(',')
     machine['nozzle_type'] = Array.isArray(t) ? [joined] : joined
   }
+}
+
+/** Whether a process key gives a line width or the layer height: the keys that follow the nozzle's size. */
+export function isNozzleKey(key: string): boolean {
+  return key === 'layer_height' || key === 'line_width' || key.endsWith('_line_width') || key === 'min_bead_width' || key === 'initial_layer_min_bead_width'
+}
+
+/** Entry `i` of a value given once or once per extruder (`n`). */
+function entryOf(v: SettingValue, i: number, n: number): SettingValue {
+  if (!Array.isArray(v)) return v
+  return (v.length === n ? v[i] : v[0]) as SettingValue
+}
+
+/**
+ * On a printer whose nozzles are not all one size: each line width and the layer height that differ between the
+ * nozzles' processes (`processes`, in extruder order), one entry per extruder from the process for that extruder's
+ * nozzle. A key every nozzle gives the same is left out, and one a process leaves out counts at its default. The host
+ * sends these as per-extruder lists, so each object prints with its own nozzle's widths and layer height.
+ */
+export function nozzleLists(processes: readonly Record<string, SettingValue>[]): Record<string, SettingValue[]> {
+  const n = processes.length
+  const out: Record<string, SettingValue[]> = {}
+  for (const key of new Set(processes.flatMap((p) => Object.keys(p)))) {
+    if (!isNozzleKey(key)) continue
+    const fallback = settingDefault(key) ?? processes.find((p) => key in p)![key]!
+    const each = processes.map((p, i) => entryOf(p[key] ?? fallback, i, n))
+    if (each.every((v) => JSON.stringify(v) === JSON.stringify(each[0]))) continue
+    out[key] = each
+  }
+  return out
+}
+
+/**
+ * Each nozzle's own line widths and layer height ([`nozzleLists`]), and its layer height limits written into `machine`,
+ * when the extruders' nozzles (`sizes`, in extruder order) are not all one size. One size: none, and nothing changes.
+ */
+async function nozzleSizeValues(printerId: string, tier: EasyGoal, sizes: readonly number[] | undefined, process: Record<string, SettingValue>, machine: Record<string, SettingValue>): Promise<Record<string, SettingValue[]> | undefined> {
+  if (!sizes || sizes.length < 2 || sizes.every((d) => d === sizes[0])) return undefined
+  const bySize = new Map<number, Record<string, SettingValue>>([[sizes[0]!, process]])
+  const machines = new Map<number, Record<string, SettingValue>>([[sizes[0]!, machine]])
+  for (const d of sizes) {
+    if (bySize.has(d)) continue
+    const m = await layerMachine(printerId, tier, d)
+    bySize.set(d, await tierProcess(printerId, tier, d, m.exact))
+    machines.set(d, m.machine)
+  }
+  for (const k of ['min_layer_height', 'max_layer_height'] as const) {
+    const v = machine[k]
+    if (!Array.isArray(v) || v.length !== sizes.length) continue
+    machine[k] = sizes.map((d, i) => entryOf(machines.get(d)![k] ?? v, i, sizes.length)) as SettingValue
+  }
+  return nozzleLists(sizes.map((d) => bySize.get(d)!))
 }
 
 /** Keys whose value is G-code text. */
@@ -203,6 +260,7 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   const { exact, resolved, base, machine } = await layerMachine(printerId, input.tier, nozzle)
   const process = await tierProcess(printerId, input.tier, nozzle, exact)
   applyExtruders(machine, input.extruders)
+  const nozzleValues = await nozzleSizeValues(printerId, input.tier, input.extruders?.map((e) => layerNozzle(profile, e.mm)), process, machine)
   // Filament: the maker's default for the printer where the slot's material matches it, else the slot's own product or the generic one of its type.
   // The filament type is stored only when it is not the schema default (PLA).
   const defaultType = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
@@ -230,6 +288,7 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
     filamentIds,
     materialType: defaultType,
     goalValues,
+    ...(nozzleValues ? { nozzleValues } : {}),
   }
 }
 
