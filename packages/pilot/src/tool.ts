@@ -153,6 +153,12 @@ export interface PilotTool<I = unknown> {
   name: string
   version: string
   description: string
+  /**
+   * The description a local model gets, whose whole context is MIMIR_CONTEXT tokens (context.ts): what the tool does,
+   * its required arguments and every rule `description` states, in fewer words. Unset sends `description`. A cloud
+   * model, MCP clients and the read-backs always get `description`.
+   */
+  localDescription?: string
   source: ToolSource
   permission: PermissionClass
   input: z.ZodType<I>
@@ -226,6 +232,58 @@ export function toolSpec(t: PilotTool<never> | PilotTool<unknown>): ToolSpec {
     permission: t.permission,
     source: t.source,
   }
+}
+
+/** Keywords whose value is one schema. */
+const ONE_SCHEMA = new Set(['items', 'additionalProperties', 'propertyNames', 'not', 'contains', 'if', 'then', 'else', 'unevaluatedItems', 'unevaluatedProperties'])
+/** Keywords whose value is a list of schemas. */
+const SCHEMA_LIST = new Set(['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+/** Keywords whose value maps names to schemas. */
+const SCHEMA_MAP = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'])
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * `out` (the schema toolSpec publishes) without the keywords that tell a model nothing about what the tool takes, read
+ * against `inp`, the same schema as zod writes it for the tool's input. Dropped: the safe integer range zod gives an
+ * integer with no bounds of its own; `additionalProperties: {}` (any value, as with no keyword); `propertyNames` of
+ * plain strings (every JSON key is one); and `additionalProperties: false` on an object whose input form leaves it
+ * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. Everything
+ * else, every type, bound, enum, default, required list and description, stays as it is.
+ */
+function leanSchema(out: unknown, inp: unknown): unknown {
+  if (!isRecord(out)) return out
+  const i = isRecord(inp) ? inp : undefined
+  const lean: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(out)) {
+    if ((k === 'maximum' && v === Number.MAX_SAFE_INTEGER) || (k === 'minimum' && v === Number.MIN_SAFE_INTEGER)) continue
+    if (k === 'additionalProperties' && isRecord(v) && Object.keys(v).length === 0) continue
+    if (k === 'propertyNames' && isRecord(v) && Object.keys(v).length === 1 && v.type === 'string') continue
+    if (k === 'additionalProperties' && v === false && i?.type === 'object' && !('additionalProperties' in i)) continue
+    const iv = i?.[k]
+    if (ONE_SCHEMA.has(k)) lean[k] = leanSchema(v, iv)
+    else if (SCHEMA_LIST.has(k) && Array.isArray(v)) lean[k] = v.map((s, n) => leanSchema(s, Array.isArray(iv) ? iv[n] : undefined))
+    else if (SCHEMA_MAP.has(k) && isRecord(v)) lean[k] = Object.fromEntries(Object.entries(v).map(([p, s]) => [p, leanSchema(s, isRecord(iv) ? iv[p] : undefined)]))
+    else lean[k] = v
+  }
+  return lean
+}
+
+/**
+ * The tool as a local model gets it (runtime.ts): its localDescription when it has one, and its input schema without
+ * the keywords that say nothing (leanSchema). The tool takes and checks exactly the same input either way; a cloud
+ * model and MCP clients get toolSpec.
+ */
+export function localToolDef(t: PilotTool<never> | PilotTool<unknown>): { name: string; description: string; parameters: ToolSpec['inputSchema'] } {
+  const spec = toolSpec(t)
+  let input: unknown
+  try {
+    input = z.toJSONSchema(t.input as z.ZodType, { target: 'draft-2020-12', unrepresentable: 'any', io: 'input' })
+  } catch {
+    // no input form: every object keeps additionalProperties as published
+    input = undefined
+  }
+  return { name: t.name, description: t.localDescription ?? t.description, parameters: leanSchema(spec.inputSchema, input) as ToolSpec['inputSchema'] }
 }
 
 /** Default display form of arguments: `--key value` pairs, quoted when they contain spaces. */
