@@ -221,7 +221,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     await h.call('slicerx_approve', { request_id: pause.request_id, approve: false })
     const g = await h.call('slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' })
     expect(g.isError).toBe(true)
-    expect(text(g)).toMatch(/partner app may ask only to print, pause, cancel or skip an object/)
+    expect(text(g)).toMatch(/partner app may ask only to print, pause, cancel, skip an object or set an AMS slot/)
     await app.clients.revoke(clientId)
     app.close()
   })
