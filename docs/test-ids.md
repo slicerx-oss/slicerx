@@ -487,6 +487,23 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `pc-test` | Test and connect: one call to the provider's model list; the connection is saved when it passes |
 | `pc-result` | The line under Test and connect; `data-state` is `ok` or `failed` |
 
+## Settings: Account > Partner apps
+
+Cloud tokens a signed-in person makes for another app, such as a phone app, to slice on their account.
+
+| Test id | Control |
+| --- | --- |
+| `partner-tokens` | The Partner apps section |
+| `partner-token-name` | The app's name |
+| `partner-token-days` | How long the token lasts |
+| `partner-token-create` | Create token |
+| `partner-token-made` | The result once a token is made |
+| `partner-token-secret` | The token, shown once |
+| `partner-token-copy` | Copy token |
+| `partner-token-hide` | Hide token |
+| `partner-token-list` | The tokens made so far |
+| `partner-token-row` | One token's row; `data-state` is `active`, `revoked` or `expired` |
+
 ## Settings: Account > Usage
 
 Shown only while mimir runs on mimir cloud and the proxy sends the v2 usage report. While the report loads, each element
