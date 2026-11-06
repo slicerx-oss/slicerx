@@ -748,18 +748,20 @@ async fn raise_card_asked(
     if broker.register(card.clone()).is_err() {
         return None;
     }
+    // Who raised it: the asker, or else the person, who queued the plate in the app (`queue.add` is
+    // the person's alone) or asked for its card there.
+    lock(&b.card_raisers).insert(
+        card.id.clone(),
+        crate::rpc::CardRaiser {
+            role: asked.map_or(crate::rpc::RaiserRole::App, |a| a.role),
+            id: asked.and_then(|a| a.client).map(str::to_owned),
+        },
+    );
     if let Some(a) = asked {
         lock(&b.remote_start.asked).insert(card.id.clone(), a.words.clone());
         if let Some(partner) = a.partner {
             lock(&b.card_partners).insert(card.id.clone(), partner.to_owned());
         }
-        lock(&b.card_raisers).insert(
-            card.id.clone(),
-            crate::rpc::CardRaiser {
-                role: a.role,
-                id: a.client.map(str::to_owned),
-            },
-        );
     }
     if let Some(u) = b.hub.update_item(&item.id, |i| {
         i.request_id = Some(card.id.clone());
