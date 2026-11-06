@@ -20,7 +20,8 @@ export interface DeviceHub {
     history(printerId: string): Promise<PrintRecord[]>
     issues(printerId: string): Promise<PrinterIssue[]>
     objects(printerId: string): Promise<PrintObject[]>
-    jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
+    /** `plateClear` answers the plate question for a step down, about the plate of bed `epoch`. */
+    jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number, o?: { plateClear: true; epoch: number }): Promise<void>
     /** `plateClear` answers the plate question for this home, about the plate of bed `epoch`. */
     home(printerId: string, o?: { plateClear: true; epoch: number }): Promise<void>
     /** `epoch` is the bed epoch read with the list, so a click never skips in a later print. */
@@ -187,17 +188,39 @@ export async function homePrinter(hub: DeviceHub, printerId: string, answer?: { 
     await (answer ? hub.device.home(printerId, { plateClear: true, epoch: answer.epoch }) : hub.device.home(printerId))
     return { kind: 'homed' }
   } catch (e) {
-    if ((e as { code?: string } | null)?.code !== 'bed_check') return { kind: 'error', message: deviceError(e) }
-    const named = (e as { details?: { epoch?: unknown } }).details?.epoch
-    if (typeof named === 'number') return { kind: 'ask-bed', epoch: named }
-    // A hub whose refusal does not name the epoch: the one it reports now.
-    try {
-      const epoch = (await hub.bed.state(printerId)).epoch
-      if (typeof epoch === 'number') return { kind: 'ask-bed', epoch }
-    } catch {
-      // fall through
-    }
-    return { kind: 'error', message: deviceError(e) }
+    const asked = await plateQuestion(hub, printerId, e)
+    return asked ?? { kind: 'error', message: deviceError(e) }
+  }
+}
+
+/** A `bed_check` refusal as the plate question, with the bed epoch it is about; null for any other error. */
+async function plateQuestion(hub: DeviceHub, printerId: string, e: unknown): Promise<{ kind: 'ask-bed'; epoch: number } | null> {
+  if ((e as { code?: string } | null)?.code !== 'bed_check') return null
+  const named = (e as { details?: { epoch?: unknown } }).details?.epoch
+  if (typeof named === 'number') return { kind: 'ask-bed', epoch: named }
+  // A hub whose refusal does not name the epoch: the one it reports now.
+  try {
+    const epoch = (await hub.bed.state(printerId)).epoch
+    if (typeof epoch === 'number') return { kind: 'ask-bed', epoch }
+  } catch {
+    // no epoch to answer for: the refusal stands
+  }
+  return null
+}
+
+export type JogAnswer = { kind: 'moved' } | { kind: 'ask-bed'; epoch: number } | { kind: 'error'; message: string }
+
+/**
+ * Moves the head one step. A step down onto a plate the hub does not know is clear is refused with `bed_check`, as a
+ * home is; the caller asks, and steps again with `answer` (the bed epoch of the refusal) once the person said so.
+ */
+export async function jogHead(hub: DeviceHub, printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, answer?: { epoch: number }): Promise<JogAnswer> {
+  try {
+    await (answer ? hub.device.jog(printerId, axis, distanceMm, undefined, { plateClear: true, epoch: answer.epoch }) : hub.device.jog(printerId, axis, distanceMm))
+    return { kind: 'moved' }
+  } catch (e) {
+    const asked = await plateQuestion(hub, printerId, e)
+    return asked ?? { kind: 'error', message: deviceError(e) }
   }
 }
 

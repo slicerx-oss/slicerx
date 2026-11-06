@@ -42,6 +42,8 @@ export interface CardText {
   lines: string[]
   /** The card starts a print, so the person confirms the bed is clear. */
   startsPrint: boolean
+  /** The card homes the printer, so the person confirms the plate is clear; the hub homes on that answer. */
+  asksPlate?: boolean
   /** Why Approve stays off: the hub sent work this app will not word for a person. */
   blocked?: string
 }
@@ -212,8 +214,9 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
     if (plainGcodeLine(w.line)) lines.push(`G-code: ${w.line}`)
     else blocked = 'The G-code is not one short line, so it cannot be shown in full. Deny this request.'
   }
-  // The hub homes only while the printer is idle or finished, and asks about a plate it does not know is clear.
-  if (w?.kind === 'home') lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub refuses it unless the printer is idle or finished and the plate is known clear.')
+  // Approving says the plate is clear (the card asks, as for a start); the hub still checks the printer's state.
+  const asksPlate = w?.kind === 'home'
+  if (asksPlate) lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub homes only while the printer is idle or finished.')
   if (has('plugin.call')) {
     // A connected app's change shows as exactly what the hub will run; one this app cannot word gets no Approve.
     if (plugin) lines.push(`Change: ${plugin}`)
@@ -241,7 +244,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (slots) lines.push(slots)
   const said = oneLine(card.title)
   if (said) lines.push(`Note from ${who}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
-  return { title, lines, startsPrint, ...(blocked ? { blocked } : {}) }
+  return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}) }
 }
 
 /** The hub's word that a card was answered, by whichever client answered it (`approval.resolved`). */
@@ -314,11 +317,11 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
     const pending: PendingApproval = {
       requests: [{ ...card, title: text.title, lines: text.lines }],
       ...(text.blocked ? { checks: { errors: [text.blocked], warnings: [] } } : {}),
-      ...(text.startsPrint ? { confirm: BED_CLEAR, go: 'Bed is clear, approve' } : {}),
+      ...(text.startsPrint ? { confirm: BED_CLEAR, go: 'Bed is clear, approve' } : text.asksPlate ? { confirm: BED_CLEAR, go: 'Plate is clear, approve' } : {}),
       approve: async () => {
         done()
-        // The approve button of a start says the bed is clear, so pressing it carries that answer.
-        await cards.grantWith(card.id, { bedClear: text.startsPrint }).then(
+        // The approve button of a start or a home says the plate is clear, so pressing it carries that answer.
+        await cards.grantWith(card.id, { bedClear: text.startsPrint || text.asksPlate === true }).then(
           () => toast('Approved. The hub is running it now.', 'ok'),
           (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'),
         )
