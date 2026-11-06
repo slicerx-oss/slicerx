@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { HYBRID, hotendTypes } from './hotends'
 import { settingDef } from './schema'
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : [])
@@ -23,7 +24,17 @@ export function selectVariants(raw: Record<string, unknown>): Record<string, unk
   const filaments = Math.max(list(raw['filament_settings_id']).length, list(raw['filament_colour']).length)
   const extruders = [...new Set(ids)].sort((a, b) => Number(a) - Number(b))
   const physical = Math.max(types.length, volumes.length, list(raw['nozzle_diameter']).length, 1)
-  const active = (e: number): string => `${types[e] ?? types[0] ?? 'Direct Drive'} ${volumes[e] ?? volumes[0] ?? 'Standard'}`
+  // On a printer whose hotends are its tools (one nozzle size, several hotends: the H3C), each hotend's volume type and
+  // the hotend of each filament (`filament_nozzle_map`, from 0). Empty on any other printer.
+  const hotends = Number(list(raw['extruder_max_nozzle_count'])[0]?.trim() || 1)
+  const rack = list(raw['nozzle_diameter']).length <= 1 && hotends > 1
+  const hotendKinds = rack ? hotendTypes(raw, Math.round(hotends)) : []
+  const nozzleMap = rack ? list(raw['filament_nozzle_map']) : []
+  const active = (e: number): string => {
+    const volume = volumes[e] ?? volumes[0] ?? 'Standard'
+    // A Hybrid extruder holds hotends of several types; its process values are its first hotend's.
+    return `${types[e] ?? types[0] ?? 'Direct Drive'} ${volume === HYBRID && hotendKinds.length ? hotendKinds[0] : volume}`
+  }
   const map = list(raw['filament_map'])
   const match = (names: string[], owners: string[], owner: string, variant: string): number => {
     const found = names.flatMap((name, i) => owners[i] === owner && name === variant ? [i] : [])
@@ -57,6 +68,16 @@ export function selectVariants(raw: Record<string, unknown>): Record<string, unk
     }
     return fv.map((_, i) => String(Math.floor(i / per) + 1))
   }
+  // The variant filament `f` (0-based) prints with on such a printer: its hotend's, else its only variant when it lists
+  // one (the 2.85 mm TPU's TPU285), else the extruder's.
+  const hotendVariant = (f: number, owners: string[]): string => {
+    const h = /^\d+$/.test((nozzleMap[f] ?? '').trim()) ? Number(nozzleMap[f]!.trim()) : -1
+    const kind = hotendKinds[h]
+    if (kind !== undefined) return `${types[0] ?? 'Direct Drive'} ${kind}`
+    const mine = fv.filter((_, i) => owners[i] === String(f + 1))
+    return mine.length === 1 ? mine[0]! : active(0)
+  }
+  const filamentVariant = (f: number, owners: string[]): string => (hotendKinds.length ? hotendVariant(f, owners) : active(filamentExtruder(f)))
   const out: Record<string, unknown> = { ...raw }
   let processSelection: number[] | undefined
   let filamentSelection: number[] | undefined
@@ -71,7 +92,7 @@ export function selectVariants(raw: Record<string, unknown>): Record<string, unk
       out[key] = processSelection.map((i) => values[i])
     } else if (section === 'filament' && filaments > 0 && fv.length > filaments && values.length === fv.length) {
       owners ??= filamentOwners()
-      filamentSelection ??= Array.from({ length: filaments }, (_, f) => match(fv, owners!, String(f + 1), active(filamentExtruder(f))))
+      filamentSelection ??= Array.from({ length: filaments }, (_, f) => match(fv, owners!, String(f + 1), filamentVariant(f, owners!)))
       out[key] = filamentSelection.map((i) => values[i])
     }
   }
