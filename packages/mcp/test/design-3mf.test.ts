@@ -73,6 +73,23 @@ describe.skipIf(noSx() || noSxGeom())('opening 3MF projects with the engine', ()
   )
 
   it(
+    'reads back the engine notes on what it read another way',
+    async () => {
+      const h = await connect({ engine: 'sx', sxBin })
+      const model = `<?xml version="1.0"?><model unit="millimeter" ${NS}><resources><object id="1" type="model">${box(10)}</object><object id="2" type="model">${box(5)}</object><object id="3" type="model"><components><component objectid="1"/><component objectid="2" transform="1 0 0 0 1 0 0 0 1 20 0 0"/></components></object></resources><build><item objectid="3"/></build></model>`
+      const settings = `<?xml version="1.0"?><config><object id="3"><metadata key="name" value="Bracket"/><part id="1" subtype="normal_part"><metadata key="name" value="Body"/></part><part id="2" subtype="lattice_part"><metadata key="name" value="Gear"/></part></object></config>`
+      const file = join(h.dir, 'bracket.3mf')
+      writeFileSync(file, writeZip([{ name: '3D/3dmodel.model', data: model }, { name: 'Metadata/model_settings.config', data: settings }]))
+      const r = await h.call('slicerx_design_open', { path: file })
+      expect(r.isError, text(r)).toBeFalsy()
+      const out = data<{ output: { designs: Opened[]; notes?: string[] } }>(r).output
+      expect(out.designs[0]?.parts.map((p) => p.name)).toEqual(['Body', 'Gear'])
+      expect(out.notes).toEqual(['Gear: part type lattice_part is not one this reader knows; read as a normal part'])
+    },
+    sxTimeout,
+  )
+
+  it(
     'opens a saved design with its steps, and refuses a broken file with its reason',
     async () => {
       const h = await connect({ engine: 'sx', sxBin })
