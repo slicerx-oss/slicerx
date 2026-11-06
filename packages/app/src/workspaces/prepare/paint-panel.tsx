@@ -7,6 +7,7 @@ import type { PaintSettings } from '@slicerx/viewport'
 import { Block, Button, Field, Range, Seg, tipAttrs } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useResolvedSlots } from '../../filament/use-slots'
+import { paintLimitNote, paintSlots } from '../../filament/slots'
 import { clearPaint, hasPaint } from '../../plate/paint'
 import { getPaintBus, subscribePaintBus } from '../../plate/tools'
 import { Swatch } from '../../parts'
@@ -52,18 +53,22 @@ export function PaintPanel() {
   if (!bus || !brush) return null
   const set = (p: Partial<PaintSettings>) => bus.set(p)
   const color = brush.layer === 'color'
+  const limit = paintLimitNote(slots.length)
   return (
     <Block title="Paint" data-section="paint" aside={<span className="fil-aside">{selected ? selected.name : 'Select an object'}<MoreButton id="paint" /></span>}>
       <Seg label="Paint layer" size="sm" value={brush.layer} options={LAYERS} onChange={(v) => set({ layer: v, state: 1 })} />
       {color ? (
+        <>
         <div className="paint-slots" role="radiogroup" aria-label="Filament to paint with">
-          {slots.map((s) => (
+          {paintSlots(slots).map((s) => (
             <button key={s.index} type="button" role="radio" aria-label={`Filament ${s.index}`} aria-checked={brush.state === s.index && !brush.erase} className="paint-slot" {...tipAttrs({ title: `Filament ${s.index}`, body: s.type })} onClick={() => set({ state: s.index, erase: false })}>
               <Swatch color={s.color} />
               <span className="sx-mono">{s.index}</span>
             </button>
           ))}
         </div>
+        {limit ? <p className="sx-small sx-muted" data-testid="paint-slot-limit">{limit}</p> : null}
+        </>
       ) : (
         <p className="sx-small sx-muted">{brush.layer === 'seam' ? 'Left button marks where the seam should go, right button where it must not.' : brush.layer === 'fuzzy' ? 'Left button adds fuzzy skin to the walls there, right button takes it off.' : 'Left button forces support, right button blocks it.'}</p>
       )}

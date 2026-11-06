@@ -5,6 +5,8 @@ import type { Host, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/con
 import { connectionMethod } from '@slicerx/printer-catalog'
 import {
   addressOf,
+  AMS_UNIT_CHOICES,
+  SLOT_CHOICES,
   bedOf,
   BRAND_TILES,
   checkConnection,
@@ -193,5 +195,15 @@ describe('setup host over the printers API', () => {
   it('searches profiles from the catalog', async () => {
     const hits = await setup.searchProfiles('mk4s')
     expect(hits[0]).toMatchObject({ vendor: 'Prusa Research', model: expect.stringContaining('MK4S') })
+  })
+})
+
+describe('filament system choices', () => {
+  // A project holds 32 filaments: up to eight 4-slot AMS units, or 32 slots on another system.
+  it('offers up to 8 AMS units and 32 slots', () => {
+    expect(AMS_UNIT_CHOICES).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(SLOT_CHOICES.at(-1)).toBe(32)
+    expect(SLOT_CHOICES).toContain(24)
+    expect(SLOT_CHOICES.every((n, i) => i === 0 || n > SLOT_CHOICES[i - 1]!)).toBe(true)
   })
 })

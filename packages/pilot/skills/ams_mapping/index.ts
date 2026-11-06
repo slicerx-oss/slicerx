@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // ams_mapping: map the filaments a job needs to the slots loaded on a printer,
 // plan swaps for what is missing, and flag materials an AMS cannot feed.
-import type { Cell, FilamentSlot } from '@slicerx/contracts'
+import { COLOR_SLOT_MAX, type Cell, type FilamentSlot } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineSkill } from '../../src/tool'
 import { amsFit, colorDistance, filamentDoc, oneLine, printerDoc } from '../d_common/index'
@@ -35,7 +35,7 @@ export function createAmsMapping() {
       'Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. Reports the slot map for printer.queue, the swaps to make for missing colors, low spools, and materials the AMS cannot feed (such as standard TPU). The project has no per-part filament data yet, so pass needs; without it the project material is used as a single need. Reads the printer, changes nothing.',
     input: z.object({
       printerId: z.string().min(1).describe('Printer id, such as "bay-1"'),
-      needs: z.array(need).min(1).max(16).optional().describe('One entry per filament the job uses, in the slicer order'),
+      needs: z.array(need).min(1).max(COLOR_SLOT_MAX).optional().describe('One entry per filament the job uses, in the slicer order'),
     }),
     args: (i) => `${i.printerId}${i.needs ? ` --needs ${i.needs.map((n) => `${n.material}${n.color ? `@${n.color}` : ''}`).join(',')}` : ''}`,
     async run(i, ctx) {

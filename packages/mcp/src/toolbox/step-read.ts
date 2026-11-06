@@ -123,7 +123,7 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'step_read',
     title: 'Read a STEP or IGES file',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',

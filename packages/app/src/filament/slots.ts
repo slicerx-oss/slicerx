@@ -3,7 +3,7 @@
 // Filament slots. A slot is what the plate calls "filament 1, 2, 3": a material, a brand and a color.
 // Where a slot's values come from, first match wins: what the person set, what the connected printer
 // reports for its AMS or MMU, the color the model file carries, a default.
-import type { FilamentSlot, PlateObject } from '@slicerx/contracts'
+import { COLOR_SLOT_MAX, PAINT_FILAMENT_MAX, type FilamentSlot, type PlateObject } from '@slicerx/contracts'
 import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
 import { get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
@@ -13,7 +13,20 @@ import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot
 // How a slot color reads, shared with the MCP server's project slices.
 export { normalizeColor }
 
-export const MAX_SLOTS = 16
+export const MAX_SLOTS = COLOR_SLOT_MAX
+
+/** The slots paint can use: filaments 1 to 18, the most a paint text names. */
+export function paintSlots<T extends { index: number }>(slots: readonly T[]): T[] {
+  return slots.filter((s) => s.index <= PAINT_FILAMENT_MAX)
+}
+
+/** Why the paint panel lists fewer filaments than the project has, or null when it lists them all. */
+export function paintLimitNote(count: number): string | null {
+  if (count <= PAINT_FILAMENT_MAX) return null
+  const first = PAINT_FILAMENT_MAX + 1
+  const rest = count === first ? `Filament ${first} prints` : `Filaments ${first} to ${count} print`
+  return `Paint uses filaments 1 to ${PAINT_FILAMENT_MAX}. ${rest} whole parts only.`
+}
 
 export interface SlotSetup {
   /** Material type: PLA, PETG, TPU. */

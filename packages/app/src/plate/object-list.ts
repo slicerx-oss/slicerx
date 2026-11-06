@@ -4,7 +4,7 @@
 // Orca's object list (GUI_ObjectList.cpp) has the same three: rename, the printable toggle (key V) and the
 // extruder column per object and part. Each is one store update, so one undo step.
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry } from '../state/store'
-import { effectiveSlot } from '../filament/slots'
+import { effectiveSlot, MAX_SLOTS } from '../filament/slots'
 import { currentMargins, printPastBed, type PrintMargins } from './arrange'
 import { bounds, fitsBed, reachFrom } from './transform'
 
@@ -89,7 +89,7 @@ export function togglePrintable(ids: readonly string[] = selectedIds()): boolean
 /** Sends one part of an object to another filament slot. Choosing the file's own slot drops the override. */
 export function setPartSlot(objectId: string, partName: string, slot: number): void {
   const e = get().plate.find((p) => p.id === objectId)
-  if (!e || !Number.isInteger(slot) || slot < 1 || slot > 16) return
+  if (!e || !Number.isInteger(slot) || slot < 1 || slot > MAX_SLOTS) return
   const base = e.handle.parts.find((p) => p.name === partName)?.slot
   const next = { ...(e.slotOverrides ?? {}) }
   if (base === slot) delete next[partName]
