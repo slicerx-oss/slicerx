@@ -16,8 +16,14 @@ export interface SliceJob {
   modelPath: string
   /** For a 3MF or .sx3mf project: the plate to slice, 1-based. Unset slices the first plate. */
   modelPlate?: number
-  /** keep: a 3MF's build items where the file puts them, refused when a part lands off the printable area (sx engine). Unset centers the plate. */
-  placement?: 'center' | 'keep'
+  /**
+   * keep: a 3MF's build items where the file puts them, refused when a part lands off the printable area (sx engine).
+   * arrange: every part of the plate packed on the printer's bed before the slice, refused when some have no room (sx
+   * engine). Unset centers the plate.
+   */
+  placement?: 'center' | 'keep' | 'arrange'
+  /** With placement arrange: the spacing between parts and from the bed edge, mm, and whether parts may turn about Z. */
+  arrange?: { spacingMm?: number; rotate?: boolean }
   /** Resolved settings: schema defaults, then profiles, then overrides, in schema shapes. */
   config: Record<string, SettingValue>
   /** Only the keys the profiles and overrides set, for engines with their own defaults. */
@@ -57,8 +63,31 @@ export interface SliceJobObject {
   volumes?: { path: string; role: VolumeRole; name?: string; transform?: number[]; settings?: Record<string, SettingValue> }[]
 }
 
+/** A plate's parts as the engine's arrange laid them out (`sx arrange`, placement arrange). Machine coordinates, mm. */
+export interface Arranged {
+  /** The plate prints by object, so its parts keep the extruder clearance apart. */
+  by_object: boolean
+  /** The spacing between parts and from the bed edge, mm. */
+  spacing_mm: number
+  /** Printing by object: the extruder clearance radius the parts keep apart, mm. */
+  clearance_mm?: number
+  rotate: boolean
+  /** Printing by object: the parts taller than the gantry rod went in lanes of their own across the bed. */
+  lanes: boolean
+  /** What the layout keeps clear of besides the bed edge: exclusion-area, wrap-check-zone, prime-tower. */
+  keep_out: string[]
+  /** Every part found room. */
+  fits: boolean
+  objects: { id: string; name: string; center_mm: [number, number]; turn_deg: number; transform: number[] }[]
+  not_fit: { id: string; name: string; reason: 'no_room' | 'too_large' }[]
+  /** Printing by object: heimdall's plate check of the layout, when every part fits. */
+  check?: PlateCheck
+}
+
 export interface SliceSummary {
   script_replacements?: AppliedScriptReplacement[]
+  /** With placement arrange: the layout the slice used. */
+  arranged?: Arranged
   /**
    * Every collision of the plate (sx engine), with the part struck, where and the region: a slice with
    * allow_collisions lists what a refusal would have, and close calls that pass. Plate mm.
@@ -116,6 +145,8 @@ export interface SlicerBackend {
    * request names them. The sx engine only; the stub has none.
    */
   check?(job: SliceJob): Promise<PlateCheck>
+  /** The engine's arrange of the plate (`sx arrange`), without slicing it. The sx engine only. */
+  arrange?(job: SliceJob): Promise<Arranged>
   reviewScript?(input: ScriptReviewInput): Promise<ScriptReview>
   reviewScripts?(inputs: ScriptReviewInput[]): Promise<ScriptReview[]>
   prepareScriptReplacement?(input: ScriptReplacementInput): Promise<ScriptReplacement>
