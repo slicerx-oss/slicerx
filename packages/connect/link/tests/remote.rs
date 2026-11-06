@@ -4271,3 +4271,101 @@ async fn a_start_approved_from_afar_is_refused_when_the_phone_is_revoked_during_
     let log = mock_log(&mocks).await;
     assert!(!log.iter().any(|l| l.starts_with("start ")), "{log:?}");
 }
+
+/// Saves an "Example Phone" partner phone with the approve right on or off, as the app's sync
+/// hands it to the hub.
+async fn put_partner_rights(s: &mut Setup, key: &[u8; 32], peer: &Value, seed: u8, approve: bool) {
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[seed; 16]), "deviceKey": ps::b64(key), "kind": "phone", "peer": peer, "partner": "Example Phone", "rights": { "request": true, "approve": approve } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+}
+
+/// The person turns a partner phone's approve right off in Devices while the app's connection to the
+/// hub is down. The app's only way to tell the hub is its sync (`remote.pairings.put`), which needs
+/// that connection, so the hub keeps the old rights and keeps answering the phone on the relay.
+/// An approval from that phone over the relay should be refused from the moment the right is off.
+#[tokio::test]
+async fn approve_turned_off_while_the_app_cannot_reach_the_hub_is_refused_over_the_relay() {
+    let mut s = setup().await;
+    let mocks = printing_bay4(&mut s).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    // The partner phone, with the approve right on.
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(97);
+    let pairing_id = ps::b64(&[97; 16]);
+    put_partner_rights(&mut s, &key, &peer, 97, true).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    // Our own phone, which asks without the approve right.
+    let our_key: [u8; 32] = rand_bytes();
+    let (_, our_peer) = signing_phone(98);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[98; 16]), "deviceKey": ps::b64(&our_key), "kind": "phone", "peer": our_peer, "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut ours = Device::open(&s.relay, &our_key).await.expect("a session");
+
+    // The app's connection to the hub goes away. The hub keeps serving the relay.
+    s.app.close(None).await.ok();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    // In the app the person now turns the approve right off. Its sync has no hub to reach, so
+    // nothing arrives here: no remote.pairings.put.
+
+    // Two cards our phone asks for, which a partner phone with the approve right may approve.
+    let mut views = Vec::new();
+    for action in ["pause", "cancel"] {
+        let r = ours
+            .call("jobs.control", json!({ "printerId": "bay-4", "action": action }))
+            .await;
+        assert_eq!(r["ok"], true, "{action}: {r}");
+        let id = r["r"]["requestId"].as_str().unwrap().to_owned();
+        let view = phone
+            .event("approval.request", |d| d["request"]["id"] == id.as_str())
+            .await;
+        views.push(view["request"].clone());
+    }
+    let stale = phone
+        .call("approvals.decide", signed_decision(&signer, &views[0], "approve"))
+        .await;
+    eprintln!("REPRO approve over the relay after the right went off, sync not delivered: {stale}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let paused = mock_log(&mocks).await.iter().any(|l| l.contains("pause"));
+    eprintln!("REPRO printer paused by that approval: {paused}");
+
+    // The app reconnects. Before its sync runs, the hub still holds the old right.
+    s.app = paired(&s.link, CODE).await;
+    let list = call(&mut s.app, 70, "remote.pairings.list", json!({})).await;
+    let held = list["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["pairingId"] == pairing_id.as_str())
+        .map(|p| p["rights"].clone());
+    eprintln!("REPRO rights the hub holds at reconnect, before the sync: {held:?}");
+    // Its sync hands the hub the pairing with the right off.
+    put_partner_rights(&mut s, &key, &peer, 97, false).await;
+    let healed = phone
+        .call("approvals.decide", signed_decision(&signer, &views[1], "approve"))
+        .await;
+    eprintln!("REPRO approve over the relay after the sync arrived: {healed}");
+    assert_eq!(
+        healed["e"]["code"], "forbidden",
+        "the sync took the approve right away: {healed}"
+    );
+    // The stale window: this is what should hold, and does not today.
+    assert_eq!(
+        stale["e"]["code"], "forbidden",
+        "a phone whose approve right was turned off approved over the relay: {stale}"
+    );
+    assert!(!paused, "the stale approval paused the printer");
+}
