@@ -4,7 +4,7 @@
 // write does. The hub checks the setting against the printer, raises a card only a person answers in the app on the
 // computer (never from a phone away from home), and writes the slot itself once they approve it. The client never
 // gets a token and cannot answer the card. Without a setting it reads the slots back.
-import { pluginHas, productName, type FilamentSlot, type PrinterInfo, type SlotSetting } from '@slicerx/contracts'
+import { pluginHas, productName, REASON_PREFIX, type FilamentSlot, type PrinterInfo, type SlotSetting } from '@slicerx/contracts'
 import { z } from 'zod'
 import { ToolInputError } from '../models'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -76,7 +76,7 @@ export default (d: ServerToolDeps) => {
       const info = await printer(i.printerId)
       return {
         title: `Set slot ${s.slot} on ${info.name} to ${s.material}?`,
-        lines: [...(i.reason ? [`Why: ${i.reason}`] : []), `${s.material}, color ${s.color}, preset ${s.filamentId}`, `Nozzle ${s.nozzleTempMin} to ${s.nozzleTempMax} °C`],
+        lines: [...(i.reason ? [`${REASON_PREFIX}${i.reason}`] : []), `${s.material}, color ${s.color}, preset ${s.filamentId}`, `Nozzle ${s.nozzleTempMin} to ${s.nozzleTempMax} °C`],
         printerId: info.id,
         actions: [{ action: 'printer.adjust' as const, target: info.id, params: { printerId: info.id, slot: s } }],
       }

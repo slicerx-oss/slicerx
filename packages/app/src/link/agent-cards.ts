@@ -6,7 +6,7 @@
 // lines are never the headline: they show as one labeled note, cut short, because a misled agent could
 // title a start "Pause the print?". The G-code line is shown whole: the hub refuses any line a card
 // cannot show in full, and a card that still carries one gets no Approve.
-import { slotMapLine, type ApprovalRequest, type ApprovalToken } from '@slicerx/contracts'
+import { REASON_PREFIX, slotMapLine, type ApprovalRequest, type ApprovalToken } from '@slicerx/contracts'
 import { appStore, get, set, toast, type PendingApproval } from '../state/store'
 import { appName } from '../edition'
 import { optionLabel, SEND_OPTION_IDS, type SendOptionId } from '../send/options'
@@ -63,6 +63,8 @@ export interface CardOutcome {
 }
 
 const NOTE_MAX = 160
+/** A client's reason is shorter than its note: it sits among the facts. */
+const REASON_MAX = 120
 /** The hub refuses longer G-code lines (`MAX_GCODE_LINE` in sx-connect), so a card always shows the line whole. */
 export const GCODE_LINE_MAX = 96
 /** One G-code command a card can show whole: printable ASCII, no line breaks, at most 96 characters. */
@@ -282,9 +284,28 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   // Every start option the hub holds is on the card: slot ids decide which filament goes where.
   const slots = slotWords(w?.opts?.['slotMap'])
   if (slots) lines.push(slots)
+  // The client's reason, as its own words like the note, in plain text.
+  const reason = clientReason(card.lines)
+  if (reason) lines.push(`Reason from ${who}, not checked by ${appName()}: "${reason.length > REASON_MAX ? `${reason.slice(0, REASON_MAX)}...` : reason}"`)
   const said = oneLine(card.title)
   if (said) lines.push(`Note from ${who}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
   return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}), ...(slotWork ? { allows: 'change one filament slot' } : {}), outcome: outcomeOf(has, slotWork ? (slot?.slot ?? '') : null, startsPrint) }
+}
+
+/**
+ * The reason a client gave for its card (its request line that starts with REASON_PREFIX) as plain text on one line:
+ * HTML tags dropped, a Markdown link as its text, emphasis and code marks removed. Null when there is none, or
+ * nothing is left.
+ */
+function clientReason(lines: readonly string[]): string | null {
+  const line = lines.find((l) => l.startsWith(REASON_PREFIX))
+  if (!line) return null
+  const plain = line
+    .slice(REASON_PREFIX.length)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*`~]+|(^|\s)_+|_+(\s|$)/g, '$1$2')
+  return oneLine(plain) || null
 }
 
 /** What did not happen, by the card's action, and how a printer that was not ready for it is described. */
