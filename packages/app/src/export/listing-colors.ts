@@ -37,7 +37,7 @@ export function normalizeHex(c: string | undefined, slot = 1): string {
  * Same code walk as the viewport's decodeTree; a malformed text gives what was read before it broke.
  */
 export function paintStates(text: string): number[] {
-  const s = text.trim()
+  const s = text.trim() === 'FC' ? '0FC' : text.trim()
   const out = new Set<number>()
   let at = s.length - 1
   const next = (): number | undefined => {
@@ -52,9 +52,15 @@ export function paintStates(text: string): number[] {
     const special = code >> 2
     if (splits === 0) {
       if (special === 3) {
-        const ext = next()
-        if (ext === undefined) return false
-        out.add(ext + 3)
+        // 3 plus the run after it: each F adds 15, the first code below F ends it.
+        let state = 3
+        for (;;) {
+          const ext = next()
+          if (ext === undefined) return false
+          state += ext
+          if (ext < 15) break
+        }
+        out.add(state)
       } else if (special > 0) out.add(special)
       return true
     }
