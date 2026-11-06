@@ -63,6 +63,7 @@ export function clearProject(): void {
     namedValues: [],
     fileSlotColors: [],
     fileSlotVendors: [],
+    fileSlotTypes: [],
     // A resume plan belongs to the failed job: the next project slices from its first layer.
     resume: null,
   })
