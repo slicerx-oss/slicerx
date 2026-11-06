@@ -11,6 +11,7 @@ export const appPlateSettings = z.object({
   filamentOrder: z.array(slot).max(256).refine((v) => new Set(v).size === v.length, 'Filament slots must be unique').optional(),
   slotMap: z.record(z.string().regex(/^[1-9]\d*$/), slot).optional(),
   nozzleMap: z.array(z.union([z.literal(1), z.literal(2)])).max(256).optional(),
+  hotendMap: z.array(z.number().int().min(1).max(64)).max(256).optional().describe('On a printer whose hotends are its tools (the H3C): the tool of each filament, from 1 (index slot - 1), as the app numbers them. The app refuses a tool the printer lacks, 2.85 mm TPU off the TPU tool and any other filament on it.'),
 }).strict()
 
 export const appPlateInputs = {

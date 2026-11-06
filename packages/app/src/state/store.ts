@@ -183,7 +183,7 @@ export interface ProfileInfo {
   /** The custom G-code in the layer is the text shipped for the model. */
   shippedGcode: boolean
   gcodeKeys: string[]
-  limits: { nozzleMaxC?: number; bedMaxC?: number }
+  limits: { nozzleMaxC?: number; bedMaxC?: number; chamberMaxC?: number }
   /** Each slot's filament preset id (`GFA00`), empty for a slot without a shipped preset; Bambu printers read it per tray. */
   filamentIds?: string[]
   /** The print profile's material (the maker's default filament type), which auto-picked spools match first. */
@@ -659,6 +659,11 @@ export interface PlateSettings {
    * 2 the right) set by hand. Absent means the slicer picks it.
    */
   nozzleMap?: number[]
+  /**
+   * On a printer whose hotends are its tools (the H3C): the tool of each slot (index slot - 1, from 1) set by hand.
+   * Absent means the slicer picks them.
+   */
+  hotendMap?: number[]
 }
 
 /**

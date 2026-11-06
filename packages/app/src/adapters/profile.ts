@@ -35,7 +35,7 @@ export interface ProfileLayer {
   source: 'orca' | 'slicerx'
   values: Record<string, SettingValue>
   bed: Bed
-  limits: { nozzleMaxC?: number; bedMaxC?: number }
+  limits: { nozzleMaxC?: number; bedMaxC?: number; chamberMaxC?: number }
   /** The custom G-code in this layer is the shipped text for the model, so the engine may trust it. */
   shippedGcode: boolean
   /** Keys that carry G-code text, so a user override of one can withdraw the trust. */

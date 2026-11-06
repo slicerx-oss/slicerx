@@ -8,6 +8,8 @@ import { addPlate, allPlates, duplicatePlate, removePlate, renamePlate, setPlate
 import { toolStore } from '../plate/tools'
 import { platesState } from './plate-state'
 import { get, toast, type PlateSettings } from '../state/store'
+import { resolveConfig } from '../adapters/config'
+import { hotendMapProblem } from '../filament/nozzle-map'
 import { LinkError } from './methods-error'
 
 const settings = (value: ReturnType<typeof appPlateInputs.settings.parse>['settings']): PlateSettings =>
@@ -36,6 +38,11 @@ export async function editPlate<K extends keyof typeof appPlateInputs>(action: K
     if (s.plates.length <= 1) throw new LinkError('refused', 'the last plate cannot be removed')
     if (target!.objects.length && !('deleteObjects' in input && input.deleteObjects)) throw new LinkError('refused', 'the plate contains objects; give deleteObjects: true to remove them too')
     if (target!.objects.some((e) => e.locked)) throw new LinkError('refused', 'the plate contains locked objects')
+  }
+  const tools = 'settings' in input ? input.settings?.hotendMap : undefined
+  if (tools) {
+    const problem = hotendMapProblem(resolveConfig(s.easy, s.overrides) as Record<string, unknown>, tools)
+    if (problem) throw new LinkError('invalid_input', `hotendMap: ${problem}`)
   }
   if ('objects' in input) {
     if (id === s.activePlate) throw new LinkError('invalid_input', 'the destination is already the shown plate')

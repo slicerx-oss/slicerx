@@ -7,7 +7,8 @@ import type { Host, SettingValue } from '@slicerx/contracts'
 import { loadSettings, type SettingsApi } from '../adapters/load'
 import { exportPlateGcode } from '../calibration/gcode'
 import { slotConfig } from '../filament/slot-config'
-import { currentMap, mapExtruders, masterExtruder, pickedMap } from '../filament/nozzle-map'
+import { currentHotends, currentMap, mapExtruders, mapHotends, masterExtruder, pickedMap } from '../filament/nozzle-map'
+import { usedSlots } from '../filament/slots'
 import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
 import { heldBodies } from '../plate/timeline'
@@ -42,6 +43,16 @@ function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}): Re
     const slots = Array.isArray(colours) ? colours.length : 1
     out['filament_map'] = currentMap(meta, pickedMap(s), slots, masterExtruder(config)).map(String)
     out['filament_map_mode'] = meta?.settings.nozzleMap ? 'Manual' : 'Auto For Flush'
+  }
+  // A printer whose hotends are its tools (the H3C): every filament on its one extruder, and the tool of each
+  // (`filament_nozzle_map`, hotends from 0), the slicer's pick unless the plate set its own.
+  if (mapHotends(config) > 0) {
+    const meta = activeMeta(s)
+    const colours = out['filament_colour']
+    const slots = Array.isArray(colours) ? colours.length : 1
+    out['filament_map'] = Array.from({ length: slots }, () => '1')
+    out['filament_nozzle_map'] = currentHotends(meta, pickedMap(s), config, slots, [...usedSlots(s)]).map((t) => String(t - 1))
+    out['filament_map_mode'] = meta?.settings.hotendMap ? 'Manual' : 'Auto For Flush'
   }
   return { ...out, ...extra }
 }

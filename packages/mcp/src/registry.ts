@@ -107,6 +107,16 @@ function withHeightRanges(slicer: NodeSlicerHost, project: McpProject): NodeSlic
   }
 }
 
+/** The slicer the tools use, holding each slice of a plate to the printer's limits (the H3C's 65 C chamber). */
+function withMachineLimits(slicer: NodeSlicerHost, project: McpProject): NodeSlicerHost {
+  const limits = project.machineLimits()
+  if (limits.chamberMaxC === undefined) return slicer
+  return {
+    ...slicer,
+    slice: (req, opts) => slicer.slice({ ...req, options: { ...req.options, machineLimits: { ...limits, ...(req.options?.machineLimits ?? {}) } } }, opts),
+  }
+}
+
 /**
  * The slicer the tools use for a project, naming the pairs in a by-object refusal: sx names objects, and copies share
  * a name, so the plate's own plan gives their ids, with slicerx_arrange as the fix.
@@ -141,7 +151,7 @@ export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined,
     ...(machine ? { machine } : {}),
   }
   return {
-    host: { printers: deps.printers ?? NO_PRINTERS, slicer: project ? withClearancePairs(withHeightRanges(deps.slicer, project), project) : deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
+    host: { printers: deps.printers ?? NO_PRINTERS, slicer: project ? withClearancePairs(withMachineLimits(withHeightRanges(deps.slicer, project), project), project) : deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
     sessionId: 'mcp',
     callId: `call-${Math.random().toString(36).slice(2, 10)}`,
     signal,
