@@ -113,6 +113,7 @@ function modifierMeta(settings: Readonly<Record<string, unknown>> | undefined): 
   return Object.entries(settings).map(([k, v]) => `<metadata key="${esc(k)}" value="${esc(text(v))}"/>`).join('')
 }
 
+/** The name a plate entry of model_settings.config gives each plate type, as other apps read it there. */
 const BED_TYPE_NAMES: Record<string, string> = {
   cool: 'Cool Plate',
   engineering: 'Engineering Plate',
@@ -701,13 +702,16 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
       instances.push(`<model_instance><metadata key="object_id" value="${objId}"/><metadata key="instance_id" value="0"/>${identify ? `<metadata key="identify_id" value="${identify}"/>` : ''}</model_instance>`)
     }
     const s = plate.settings
+    // The plate's own plate type: `bed_type` is the key other apps read in a plate entry, and `curr_bed_type` with the
+    // same name keeps older SlicerX readers working. A plate on the default plate type writes neither.
+    const bed = s.bedType ? BED_TYPE_NAMES[s.bedType] : undefined
     const gcode = input.gcode?.[pi]
     const plateMap = plateFilamentMap(machine, plate, gcode)
     const shots = gcode !== undefined ? gcodeThumbnails(gcode) : []
     if (shots.length) thumbs.set(pi, shots)
     platesCfg.push(
       `<plate><metadata key="plater_id" value="${pi + 1}"/><metadata key="plater_name" value="${esc(plate.name)}"/><metadata key="locked" value="false"/>` +
-        (s.bedType ? `<metadata key="curr_bed_type" value="${BED_TYPE_NAMES[s.bedType] ?? ''}"/>` : '') +
+        (bed ? `<metadata key="bed_type" value="${bed}"/><metadata key="curr_bed_type" value="${bed}"/>` : '') +
         (s.sequence ? `<metadata key="print_sequence" value="${s.sequence === 'by-object' ? 'by object' : 'by layer'}"/>` : '') +
         (s.filamentOrder ? `<metadata key="first_layer_print_sequence" value="${s.filamentOrder.join(',')}"/>` : '') +
         (plateMap ? `<metadata key="filament_map_mode" value="${plateMap.mode}"/><metadata key="filament_maps" value="${plateMap.maps.join(' ')}"/>` : '') +
