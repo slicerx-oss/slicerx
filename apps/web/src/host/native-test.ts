@@ -5,8 +5,8 @@
 // as in the CAD-only build (meshes.ts). Slices run in the native engine behind e2e/native-host/server.mjs, the same
 // sx-core the desktop app links, with the request and result shapes of the desktop's slicer
 // (apps/desktop/src/host/slicer.ts), so the browser suite tests what the desktop slices.
-import type { GcodeExport, MeshPart, PlateCheck, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import { readPlateCheck } from '@slicerx/contracts'
+import type { GcodeExport, MeshPart, PlateArrangement, PlateCheck, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import { readPlateArrangement, readPlateCheck } from '@slicerx/contracts'
 import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { createMeshHost } from './meshes'
 
@@ -91,6 +91,7 @@ export function createNativeTestSlicer(url: string): SlicerHost {
   const gcode = new Map<string, Promise<Uint8Array>>()
   let nextJob = 1
   let nextCheck = 1
+  let nextArrange = 1
   // Every page of a run shares the server, so each keeps its meshes and slices under its own session.
   const base = `${url}/s/${crypto.randomUUID()}`
   const call = async (path: string, init?: RequestInit): Promise<Response> => {
@@ -170,6 +171,13 @@ export function createNativeTestSlicer(url: string): SlicerHost {
       }
       if (opts?.signal?.aborted) throw canceled()
       return readPlateCheck(found)
+    },
+    // the plate's layout, as the desktop's arrange_plate gives it
+    async arrangePlate(req: SliceRequest): Promise<PlateArrangement> {
+      const ids = new Set(req.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
+      await Promise.all([...ids].map(upload))
+      const r = await call(`/arranges/${nextArrange++}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plate: req.plate, config: req.config, options: req.options ?? {} }) })
+      return readPlateArrangement(await r.json())
     },
     async getPreview(id) {
       return (await call(`/slices/${id}/preview`)).arrayBuffer()

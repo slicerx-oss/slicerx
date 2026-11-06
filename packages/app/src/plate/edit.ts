@@ -2,14 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate edits on the app store. Each one replaces `plate` once, so undo sees one step, and marks a
 // finished slice stale. The math lives in ./transform.
-import type { MeshHandle, MeshPart } from '@slicerx/contracts'
+import type { MeshHandle, MeshPart, PlateCheck } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
 import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
 import { arrange, ARRANGE_DEFAULTS, fillCount, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
+import { arrangesInEngine, engineArrange } from './engine-arrange'
 import { byObjectConfig } from './sequence-check'
-import { checkNow, checkRows } from './engine-check'
+import { checkNow, checkRows, offerCheck } from './engine-check'
 import { wordsOf } from '@slicerx/ui/heimdall-words'
 import { inStep, quietly } from './history'
 import { moveToNewPlates, switchPlate, type NewPlateLayout } from './plates'
@@ -146,10 +147,11 @@ export function setArrangeOptions(o: Partial<ArrangeOptions>): void {
 }
 
 /**
- * Arrange every object, or only the selected ones around the rest, on their true outlines (nest.ts), or
- * on their bounds when the geometry engine cannot run. The objects it finds no room for move to new plates
- * (moveToNewPlates), laid out there the same way, turns included, and set in the middle of the bed when it has room,
- * in the same undo step. Returns how many did not fit on the shown plate.
+ * Arrange every object, or only the selected ones around the rest. Where the host has the engine's arrange (the
+ * desktop), the engine lays the plate out (engine-arrange.ts), the same call and layout as sx and the MCP server;
+ * elsewhere the geometry worker nests the true outlines (nest.ts), or the bounds when it cannot run. The objects it
+ * finds no room for move to new plates (moveToNewPlates), laid out there the same way, turns included, and set in the
+ * middle of the bed when it has room, in the same undo step. Returns how many did not fit on the shown plate.
  */
 export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: ArrangeOptions = arrangeOptions): Promise<number> {
   const { plate, bed } = get()
@@ -171,19 +173,57 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   // By object, tall objects print last, each in a gantry lane of its own when there are more of them.
   const cfg = byObjectConfig(get())
   const objectSettings = get().objectSettings
+  // The engine keeps the by-object clearance and lanes itself; the geometry worker's nest needs arrangeByObject for them.
+  const engine = arrangesInEngine()
+  // The engine's first layout shows at once, before its plate check: the moved objects take it quietly (no undo step),
+  // and go back just before the arrange lands its layout as one step, in the same moment.
+  const original = new Map(moving.map((p) => [p.id, p.transform]))
+  const previewed = new Map<string, Mat4>()
+  const preview = (first: ArrangeResult) => {
+    if (hooks.stop()) return
+    quietly(() =>
+      set({
+        plate: get().plate.map((p) => {
+          const t = first.transforms[p.id]
+          if (!t || p.transform !== (previewed.get(p.id) ?? original.get(p.id))) return p
+          previewed.set(p.id, t)
+          return { ...p, transform: t }
+        }),
+      }),
+    )
+  }
+  const unpreview = () => {
+    if (previewed.size === 0) return
+    quietly(() => set({ plate: get().plate.map((p) => (previewed.get(p.id) === p.transform && original.has(p.id) ? { ...p, transform: original.get(p.id)! } : p)) }))
+    previewed.clear()
+  }
   const layOut = (plateNow: readonly PlateEntry[], mv: readonly PlateEntry[], fx: readonly PlateEntry[], o: ArrangeOptions = opts) =>
-    cfg ? arrangeByObject(plateNow, mv, fx, bed, o, cfg, place, hooks.stop, objectSettings) : place(mv, fx, o)
-  let r: ArrangeResult & { order?: string[] }
+    engine ? engineArrange(get(), plateNow, fx, o, preview) : cfg ? arrangeByObject(plateNow, mv, fx, bed, o, cfg, place, hooks.stop, objectSettings) : place(mv, fx, o)
+  let r: ArrangeResult & { order?: string[]; plates?: NewPlateLayout[] }
   let overflow: Overflow = { layouts: [], left: [] }
   try {
-    r = await layOut(plate, moving, fixed)
+    try {
+      r = await layOut(plate, moving, fixed)
+    } catch (e) {
+      // The engine refused the plate: nothing moves, and the page says so in plain words (the engine's own words, which
+      // name setting keys, go to the console).
+      if (!engine) throw e
+      console.warn('arrange:', e)
+      if (!hooks.stop()) toast('Arrange could not lay out this plate, so nothing moved.', 'warn')
+      return 0
+    }
     // The objects with no room go to new plates, so none is left on or beside a placed one, laid out there as here.
     const large = new Set(r.tooLarge.map((t) => t.id))
     const rest = moving.filter((p) => r.leftOver.includes(p.id) && !large.has(p.id))
-    // Each new plate's layout goes to the middle of the bed, on the boxes too, as Move to plate sets a group there.
-    if (rest.length > 0 && !hooks.stop()) overflow = await newPlateLayouts(rest, (mv) => layOut(mv, mv, [], { ...opts, center: true }), hooks.stop)
+    // The engine laid them out on new plates in the same call; the geometry worker lays out each plate in turn, its
+    // layout in the middle of the bed, on the boxes too, as Move to plate sets a group there.
+    if (rest.length > 0 && r.plates) {
+      const onPlates = new Set(r.plates.flatMap((l) => Object.keys(l.transforms)))
+      overflow = { layouts: r.plates, left: rest.filter((p) => !onPlates.has(p.id)).map((p) => p.id) }
+    } else if (rest.length > 0 && !hooks.stop()) overflow = await newPlateLayouts(rest, (mv) => layOut(mv, mv, [], { ...opts, center: true }), hooks.stop)
   } finally {
     endRun(hooks.token)
+    unpreview()
   }
   if (hooks.stop()) return r.leftOver.length
   // Objects moved by hand while the arrange ran keep the new place.
@@ -198,16 +238,19 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
     commitTransforms(transforms, r.order)
     if (layouts.length > 0) movedPlates = moveToNewPlates(layouts)
   })
+  // The engine checked the layout it landed: when every object took it, that answer stands for the plate now.
+  const checked = 'report' in r ? (r as { report: { check?: PlateCheck } }).report.check : undefined
+  if (checked && layouts.length === 0 && Object.keys(transforms).length === Object.keys(r.transforms).length) await offerCheck(checked)
   const tooLarge = tooLargeNotice(r, plate)
-  const rest = overflow.left.filter(still).length
-  if (tooLarge) toast(tooLarge, 'warn')
-  // The moved objects are out of sight on other plates, so the notice stays until dismissed, and Show opens the first.
+  const rest = overflow.left.filter(still)
+  // One notice for everything that did not fit, so no part of it hides another. The moved objects are out of sight on
+  // other plates, so then it stays until dismissed, and Show opens the first.
   const first = movedPlates[0]
-  if (first) toast(movedToPlatesNotice(movedPlates), 'info', { label: 'Show', run: () => switchPlate(first.id) }, { persist: true })
-  if (rest > 0) toast(`${rest} ${rest === 1 ? 'object does' : 'objects do'} not fit on the bed and stayed where ${rest === 1 ? 'it was' : 'they were'}.`, 'warn')
+  const notice = [tooLarge, first ? movedToPlatesNotice(movedPlates) : null, rest.length ? stayedNotice(rest, plate) : null].filter((t): t is string => t !== null).join(' ')
+  if (notice) toast(notice, tooLarge || rest.length ? 'warn' : 'info', first ? { label: 'Show', run: () => switchPlate(first.id) } : undefined, first ? { persist: true } : undefined)
   // By object, where the host has heimdall's plate check, the layout is checked at once. Arrange stops there: a strike
   // the slice is sure to refuse is said, and the warning keeps the pair with its fixes.
-  if (cfg && !tooLarge && !first && rest === 0) await sayStillClashing()
+  if (cfg && !tooLarge && !first && rest.length === 0) await sayStillClashing()
   return r.leftOver.length
 }
 
@@ -254,17 +297,28 @@ export function movedToPlatesNotice(plates: readonly { name: string; count: numb
   return n === 1 ? `1 object did not fit, so it moved to ${where}.` : `${n} objects did not fit, so they moved to ${where}.`
 }
 
-/** Plain words for objects that cannot sit on the bed alone, or null when there are none. */
+/** Objects by name for a notice: all of up to three, else the first two and how many more. */
+export function namesOf(ids: readonly string[], plate: readonly { id: string; name: string }[]): string {
+  const names = ids.map((id) => plate.find((p) => p.id === id)?.name || 'An object')
+  if (names.length <= 3) return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '')
+  return `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
+}
+
+/** Plain words for objects that cannot sit on the bed alone, by name, or null when there are none. */
 export function tooLargeNotice(r: Pick<ArrangeResult, 'tooLarge'>, plate: readonly { id: string; name: string }[]): string | null {
   if (r.tooLarge.length === 0) return null
-  const name = (id: string) => plate.find((p) => p.id === id)?.name ?? 'An object'
-  const margin = r.tooLarge.filter((t) => t.withoutMargin)
-  if (margin.length === r.tooLarge.length) {
-    const who = margin.length === 1 ? `${name(margin[0]!.id)} is` : `${margin.length} objects are`
-    return `${who} too large for this bed once the brim and skirt around ${margin.length === 1 ? 'it are' : 'them are'} counted, so ${margin.length === 1 ? 'it' : 'they'} stayed where ${margin.length === 1 ? 'it was' : 'they were'}. Make ${margin.length === 1 ? 'it' : 'them'} smaller, turn the brim and skirt off, or choose a bigger printer.`
+  const one = r.tooLarge.length === 1
+  const who = `${namesOf(r.tooLarge.map((t) => t.id), plate)} ${one ? 'is' : 'are'}`
+  if (r.tooLarge.every((t) => t.withoutMargin)) {
+    return `${who} too large for this bed once the brim and skirt around ${one ? 'it are' : 'them are'} counted, so ${one ? 'it' : 'they'} stayed where ${one ? 'it was' : 'they were'}. Make ${one ? 'it' : 'them'} smaller, turn the brim and skirt off, or choose a bigger printer.`
   }
-  const who = r.tooLarge.length === 1 ? `${name(r.tooLarge[0]!.id)} is` : `${r.tooLarge.length} objects are`
-  return `${who} larger than this bed and stayed where ${r.tooLarge.length === 1 ? 'it was' : 'they were'}. Make ${r.tooLarge.length === 1 ? 'it' : 'them'} smaller or choose a bigger printer.`
+  return `${who} larger than this bed and stayed where ${one ? 'it was' : 'they were'}. Make ${one ? 'it' : 'them'} smaller or choose a bigger printer.`
+}
+
+/** Plain words for objects no new plate found room for either, by name. */
+export function stayedNotice(ids: readonly string[], plate: readonly { id: string; name: string }[]): string {
+  const one = ids.length === 1
+  return `${namesOf(ids, plate)} ${one ? 'does' : 'do'} not fit on the bed and stayed where ${one ? 'it was' : 'they were'}.`
 }
 
 /** The object an instance copies, or the object itself. */

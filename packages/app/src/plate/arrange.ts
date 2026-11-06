@@ -8,6 +8,7 @@
 // footprint.ts), not the bare outline, and it keeps clear of the printer's excluded areas and the prime
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
+import type { PlateEntry } from '../state/store'
 import type { FirstLayerShape } from '@slicerx/settings/print-margins'
 import { MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 import { edgeOf, findSpot, middleShift, sepOf, type Placed, type Want } from '@slicerx/settings/box-pack'
@@ -63,6 +64,8 @@ export interface PrintMargins {
    * smaller outline.
    */
   reach(size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly (readonly [number, number])[]): number
+  /** `reach` as the first layer prints it (an automatic brim at its own width, the skirt round that), for the bed edge. */
+  printedReach?(size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly (readonly [number, number])[]): number
   /** True when a skirt or draft shield runs around the whole print, which can cross an excluded area between objects. */
   skirt: boolean
   /** Where the engine cuts the first layer an automatic brim is sized from, mm above the bed; unset without one. */
@@ -92,6 +95,21 @@ export function setMarginSource(read: () => PrintMargins): void {
 
 export function currentMargins(): PrintMargins {
   return marginSource()
+}
+
+let entryMarginSource: ((e: PlateEntry) => PrintMargins) | null = null
+
+/** Where the bed checks read one object's margins from: the plate's, less what that object does not print. */
+export function setEntryMarginSource(read: ((e: PlateEntry) => PrintMargins) | null): void {
+  entryMarginSource = read
+}
+
+/**
+ * The margins of one object: the plate's, but with support on, without the support pad for an object that gets no
+ * support (sx's rule, as the engine's arrange counts it).
+ */
+export function marginsOf(e: PlateEntry): PrintMargins {
+  return entryMarginSource ? entryMarginSource(e) : marginSource()
 }
 
 export { excludeBoxes, keepOutBoxes, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
@@ -266,8 +284,9 @@ export function placedOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed:
 }
 
 /** True when what prints around the object (brim, raft, support pad, skirt) goes past the bed edge or onto an excluded area. */
-export function printPastBed(b: Box, bed: Bed, margins: PrintMargins, outlineReach?: number): boolean {
-  const reach = margins.reach(printSizeOf(b))
+export function printPastBed(b: Box, bed: Bed, margins: PrintMargins, outlineReach?: number, printed = false): boolean {
+  const size = printSizeOf(b)
+  const reach = printed && margins.printedReach ? margins.printedReach(size) : margins.reach(size)
   const grown: Box = { min: [b.min[0] - reach, b.min[1] - reach, b.min[2]], max: [b.max[0] + reach, b.max[1] + reach, b.max[2]] }
   // On a round bed what prints around the outline is a band of `reach` mm, so the outline plus the reach must stay inside the circle.
   if (!fitsBed(grown, bed, 0.01, outlineReach === undefined ? undefined : outlineReach + reach)) return true
