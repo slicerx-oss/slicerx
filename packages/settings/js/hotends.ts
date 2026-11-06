@@ -23,13 +23,23 @@ export function hotendCount(cfg: Cfg): number {
   return Number.isFinite(n) && n > 1 ? n : 0
 }
 
-/** Each hotend's volume type: `nozzle_volume_type` when it lists every hotend, else the printer's defaults, else one for all. */
+/** The volume type a project gives an extruder whose hotends are of more than one type. No variant is named for it. */
+export const HYBRID = 'Hybrid'
+
+/**
+ * Each hotend's volume type: the types the printer reports for its hotends (`extruder_nozzle_volume_type`, in a project
+ * synced with the printer) or `nozzle_volume_type` when either lists every hotend, else the printer's defaults, else
+ * one for all, never Hybrid.
+ */
 export function hotendTypes(cfg: Cfg, n = hotendCount(cfg)): string[] {
+  const reported = strings(cfg['extruder_nozzle_volume_type'])
+  if (reported.length === n) return reported
   const given = strings(cfg['nozzle_volume_type'])
   if (given.length === n) return given
   const defaults = strings(cfg['default_nozzle_volume_type'])
   if (defaults.length === n) return defaults
-  return Array.from({ length: n }, () => given[0] ?? defaults[0] ?? 'Standard')
+  const one = [...given, ...defaults].find((t) => t !== HYBRID) ?? 'Standard'
+  return Array.from({ length: n }, () => one)
 }
 
 /** The first TPU285 hotend (0-based), if the printer has one. */

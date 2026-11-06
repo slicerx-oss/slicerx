@@ -116,10 +116,19 @@ fn strings(raw: &serde_json::Map<String, serde_json::Value>, key: &str) -> Vec<S
     }
 }
 
-/// The volume type of each of the extruder's `n` hotends: `nozzle_volume_type` when it lists one per hotend, else
-/// the printer's `default_nozzle_volume_type` (the H3C's gives hotend 8 the TPU285 type), else the one given for the
-/// extruder (`Standard` when none).
+/// The volume type a project gives an extruder whose hotends are of more than one type (`nozzle_volume_type`). No
+/// variant is named for it.
+pub(crate) const HYBRID: &str = "Hybrid";
+
+/// The volume type of each of the extruder's `n` hotends: the types the printer reports for its hotends
+/// (`extruder_nozzle_volume_type`, in a project synced with the printer) or `nozzle_volume_type` when either lists one
+/// per hotend, else the printer's `default_nozzle_volume_type` (the H3C's gives hotend 8 the TPU285 type), else the one
+/// given for the extruder, never [`HYBRID`] (`Standard` when none).
 pub(crate) fn hotend_types_raw(raw: &serde_json::Map<String, serde_json::Value>, n: usize) -> Vec<String> {
+    let reported = strings(raw, "extruder_nozzle_volume_type");
+    if reported.len() == n {
+        return reported;
+    }
     let given = strings(raw, "nozzle_volume_type");
     if given.len() == n {
         return given;
@@ -129,8 +138,9 @@ pub(crate) fn hotend_types_raw(raw: &serde_json::Map<String, serde_json::Value>,
         return default;
     }
     let one = given
-        .first()
-        .or_else(|| default.first())
+        .iter()
+        .chain(&default)
+        .find(|t| *t != HYBRID)
         .cloned()
         .unwrap_or_else(|| "Standard".to_owned());
     vec![one; n]
@@ -1111,9 +1121,12 @@ fn hotend_of_object(cfg: &PrintConfig, slots: &[u8]) -> Option<Nozzle> {
     if on.iter().any(|h| types.get(*h) != Some(kind)) {
         return None;
     }
+    // A Hybrid extruder's process values are its first hotend's, as the variant tables pick them.
     let plate = strings(&cfg.raw, "nozzle_volume_type")
         .into_iter()
         .next()
+        .filter(|t| t != HYBRID)
+        .or_else(|| types.first().cloned())
         .unwrap_or_else(|| "Standard".to_owned());
     (*kind != plate).then_some(Nozzle {
         extruder: first,

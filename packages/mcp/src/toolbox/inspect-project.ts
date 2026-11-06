@@ -10,7 +10,7 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'inspect_project',
     title: 'Inspect a 3MF project',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
