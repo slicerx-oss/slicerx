@@ -28,8 +28,11 @@ export const designArg = z.string().min(1).describe('A design id from slicerx_de
 export interface DesignFiles {
   /** The parts of a model (an STL path, URL or sample: name) to start a design from. */
   model(from: string, name: string): Promise<HistoryMesh[]>
-  /** The objects of a 3MF to open as designs, with their history when they have one. */
-  open(path: string): Promise<{ name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]>
+  /**
+   * The objects of a 3MF to open as designs, with their history when they have one, and the reader's notes on what it
+   * skipped or read another way.
+   */
+  open(path: string): Promise<{ designs: { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]; notes: string[] }>
   /** Writes the design as a 3MF project; `fileName` without folders, the design's name when absent. */
   save(d: Design, fileName: string | undefined): Promise<{ path: string; bytes: number }>
 }
@@ -264,18 +267,18 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
-      `Open the objects of any 3MF project (${productName()}, Bambu Studio, Orca) as designs, one per object. An object with a ${productName()} CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named.`,
+      `Open the objects of any 3MF project (${productName()}, Bambu Studio, Orca) as designs, one per object. An object with a ${productName()} CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named. \`notes\` says what the file reader skipped or read another way, such as paint in a newer format, as the app's open note does.`,
     input: z.object({ path: z.string().min(1).describe('Path of the .3mf file') }),
     async run(i) {
-      const found = await files.open(i.path)
+      const { designs: found, notes } = await files.open(i.path)
       if (!found.length) throw new ToolInputError(`${i.path} has no printed parts to open`)
       const opened = []
       for (const f of found) opened.push({ ...designSummary(await designs.create(f.name, f.history?.base ?? f.base, f.history, f.transform)), fromHistory: f.history !== undefined, ...(f.skipped.length ? { leftOut: f.skipped } : {}) })
-      return { summary: `Opened ${plural(opened.length, 'design')}`, output: { designs: opened } }
+      return { summary: `Opened ${plural(opened.length, 'design')}${notes.length ? `. Not everything in the file was read: ${notes.join('; ')}` : ''}`, output: { designs: opened, ...(notes.length ? { notes } : {}) } }
     },
   })
 
