@@ -24,29 +24,29 @@
 
 ### `input_shaping_damp_x`
 
-**Input shaping damp x**
+**Input shaping damping X**
 
 - Type: number
 - Default: 0.1
 - Recommended range: 0 to 1
-- Used only when: Input shaping emit (`input_shaping_emit`) is on
+- Used only when: Write input shaping to G-code (`input_shaping_emit`) is on
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `input_shaping_damp_y`
 
-**Input shaping damp y**
+**Input shaping damping Y**
 
 - Type: number
 - Default: 0.1
 - Recommended range: 0 to 1
-- Used only when: Input shaping emit (`input_shaping_emit`) is on
+- Used only when: Write input shaping to G-code (`input_shaping_emit`) is on
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `input_shaping_emit`
 
-**Input shaping emit**
+**Write input shaping to G-code**
 
 - Type: boolean
 - Default: off
@@ -55,25 +55,25 @@
 
 ### `input_shaping_freq_x`
 
-**Input shaping freq x**
+**Input shaping frequency X**
 
 - Type: number
 - Unit: Hz
 - Default: 0
 - Recommended range: 0 to 1000
-- Used only when: Input shaping emit (`input_shaping_emit`) is on
+- Used only when: Write input shaping to G-code (`input_shaping_emit`) is on
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `input_shaping_freq_y`
 
-**Input shaping freq y**
+**Input shaping frequency Y**
 
 - Type: number
 - Unit: Hz
 - Default: 0
 - Recommended range: 0 to 1000
-- Used only when: Input shaping emit (`input_shaping_emit`) is on
+- Used only when: Write input shaping to G-code (`input_shaping_emit`) is on
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -84,13 +84,13 @@
 - Type: enum
 - Default: "Default"
 - Values: `Default`, `MZV`, `ZV`, `ZVD`, `ZVDD`, `ZVDDD`, `EI`, `EI2` (2-hump EI), `2HUMP_EI` (2-hump EI), `EI3` (3-hump EI), `3HUMP_EI` (3-hump EI), `DAA`, `Disable` (Off)
-- Used only when: Input shaping emit (`input_shaping_emit`) is on
+- Used only when: Write input shaping to G-code (`input_shaping_emit`) is on
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `machine_bed_mass_Y`
 
-**Machine bed mass Y** (develop mode)
+**Bed mass on the Y axis** (develop mode)
 
 - Type: number
 - Default: 0
@@ -100,9 +100,10 @@
 
 ### `machine_hotend_change_time`
 
-**Machine hotend change time**
+**Hotend change time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only
@@ -123,7 +124,7 @@ Maximum acceleration E. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_acceleration_extruding`
 
-**Machine max acceleration**
+**Maximum acceleration when extruding**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s2
@@ -134,7 +135,7 @@ Maximum acceleration E. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_acceleration_retracting`
 
-**Machine max acceleration retracting**
+**Maximum acceleration when retracting**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s2
@@ -145,7 +146,7 @@ Maximum acceleration E. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_acceleration_travel`
 
-**Machine max acceleration travel**
+**Maximum travel acceleration**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s2
@@ -195,7 +196,7 @@ Maximum acceleration Z. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_force_Y`
 
-**Machine max force Y** (develop mode)
+**Maximum force on the Y axis** (develop mode)
 
 - Type: number
 - Default: 0
@@ -257,7 +258,7 @@ Maximum jerk Z. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_junction_deviation`
 
-**Machine max junction deviation**
+**Maximum junction deviation**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -268,7 +269,7 @@ Maximum jerk Z. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_printed_mass`
 
-**Machine max printed mass** (develop mode)
+**Maximum printed mass** (develop mode)
 
 - Type: number
 - Default: 0
@@ -291,7 +292,7 @@ Maximum speed E. Written to the G-code when machine limits are emitted.
 
 ### `machine_max_speed_x`
 
-**Highest X speed the machine allows**
+**Maximum speed X**
 
 Maximum speed X. Written to the G-code when machine limits are emitted.
 
@@ -330,7 +331,7 @@ Maximum speed Z. Written to the G-code when machine limits are emitted.
 
 ### `machine_min_extruding_rate`
 
-**Machine min extruding rate** (develop mode)
+**Minimum extruding speed** (develop mode)
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -341,7 +342,7 @@ Maximum speed Z. Written to the G-code when machine limits are emitted.
 
 ### `machine_min_travel_rate`
 
-**Machine min travel rate** (develop mode)
+**Minimum travel speed** (develop mode)
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -355,13 +356,14 @@ Maximum speed Z. Written to the G-code when machine limits are emitted.
 **Extra time allowed for preparation** (develop mode)
 
 - Type: number
+- Unit: s
 - Default: 260
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `max_resonance_avoidance_speed`
 
-**Max resonance avoidance speed**
+**Maximum resonance avoidance speed**
 
 - Type: number
 - Unit: mm/s
@@ -373,7 +375,7 @@ Maximum speed Z. Written to the G-code when machine limits are emitted.
 
 ### `min_resonance_avoidance_speed`
 
-**Min resonance avoidance speed**
+**Minimum resonance avoidance speed**
 
 - Type: number
 - Unit: mm/s
