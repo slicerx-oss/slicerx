@@ -177,6 +177,7 @@ export const summaryShape = {
     engine_object: z.string().optional().describe('Unique engine object id within this slice, including objects expanded from one file; not a persistent project id'),
     name: z.string(),
     features: z.record(z.string(), z.array(z.number())),
+    nozzle_mm: z.number().optional().describe('The size of the nozzle the object printed with, mm, when the nozzles differ in size'),
   })).optional(),
   /** sx engine: the chamber cooling mode the printer's G-code reads (chamber_cooling_mode), when it reads one. */
   chamber_cooling: z.object({

@@ -193,6 +193,20 @@ describe('changes ask first', () => {
     expect((out.output as { printerId: string }).printerId).toBe('printer-1')
   })
 
+  it('adding a two-nozzle printer keeps each nozzle size, and refuses a list that does not fit the model', async () => {
+    const { tool, ctxFor, approve, fake } = setup()
+    const H2D = { profileId: 'bambu-h2d', nozzleMm: 0.4, nozzles: [0.4, 0.6] }
+    const plan = await tool('printer_add').approval!(H2D, ctxFor('h-card'))
+    expect(plan.lines[0]).toBe('Bambu Lab H2D, nozzles 0.4, 0.6 mm')
+    const token = await approve('printer_add', H2D)
+    const out = await tool('printer_add').run(H2D, ctxFor('h1', token))
+    expect(fake.setup.added.at(-1)).toMatchObject({ profileId: 'bambu-h2d', nozzleMm: 0.4, nozzles: [0.4, 0.6] })
+    expect(out.output).toMatchObject({ nozzleMm: 0.4, nozzles: [0.4, 0.6] })
+    await expect(tool('printer_add').approval!({ ...H2D, nozzles: [0.4, 0.6, 0.4] }, ctxFor('h2'))).rejects.toThrow(/has 2 nozzles/)
+    await expect(tool('printer_add').approval!({ ...H2D, nozzles: [0.4, 0.5] }, ctxFor('h3'))).rejects.toThrow(/0\.5 mm/)
+    await expect(tool('printer_add').approval!({ ...H2D, nozzles: [0.6, 0.4] }, ctxFor('h4'))).rejects.toThrow(/nozzleMm/)
+  })
+
   it('the approval card names vendor, model, nozzle and address', async () => {
     const { tool, ctxFor } = setup()
     const plan = await tool('printer_add').approval!(ADD, ctxFor('card'))

@@ -98,6 +98,8 @@ export interface SetupAddInput {
   /** A `@slicerx/printer-catalog` model id. */
   profileId: string
   nozzleMm: number
+  /** Each nozzle's size in mm, in nozzle order, on a printer with two or more; the first is nozzleMm. */
+  nozzles?: number[]
   connection?: SetupConnection
   name?: string
 }

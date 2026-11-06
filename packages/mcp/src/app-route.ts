@@ -50,7 +50,7 @@ export const APP_DESIGN_TOOLS = new Set([
 ])
 
 /** Object placement and project print settings, routed to the app when the server does not own the target. */
-export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.set_overrides'])
+export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.object_nozzle', 'project.set_overrides'])
 
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {

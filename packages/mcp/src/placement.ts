@@ -10,6 +10,7 @@ import type { SettingValue, VolumeRole } from '@slicerx/contracts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { isGcodeKey } from './config'
+import { extruderOf, filamentMap, nozzleKind, nozzleName, nozzleSizes } from './object-nozzle'
 import { boxPositions, cylinderPositions, meshStats, readStlPositions, transformPositions } from './mesh'
 import { resolveModel, ToolInputError } from './models'
 import type { McpProject } from './project'
@@ -155,6 +156,91 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
       checkSettings(deps, i.set)
       const settings = project.setOwnSettings(i.object, i.set as Record<string, SettingValue>, i.clear)
       return done(`${i.object}: ${Object.keys(settings).length} settings of its own`, project, { settings })
+    },
+  })
+
+  const objectNozzle = tool({
+    name: 'project.object_nozzle',
+    description:
+      "Print one object with another nozzle, on a printer whose nozzles are not all one size (a two-extruder printer with a filament map, a tool changer, IDEX). nozzle is 1-based: 1 is the left nozzle or tool 1. On a tool changer the object moves to the filament on that tool (filament n prints on tool n). On a two-extruder printer the plate's filament map sends the object's filament to that nozzle; when that filament also prints other objects the call is refused unless it says what to do: new_filament gives the object a copy of its filament on that nozzle; move_filament moves the filament, and every object printed with it, to that nozzle; filament names an existing filament to print with. A move that would put a filament a painted object uses on another nozzle than its other filaments is refused unless confirm_painted is true, naming the painted objects. Answers with the project; slicerx_project_show gives each object's nozzle and nozzleMm, the printer's nozzles and the filament map. With --app it edits the project open in the app.",
+    input: z.object({
+      object: objectArg,
+      nozzle: z.number().int().min(1).max(16).describe('The nozzle, 1-based: the extruder (1 left, 2 right) or the tool'),
+      filament: z.number().int().min(1).max(16).optional().describe('An existing filament (1-based) to print the object with; it must print on that nozzle, or not print other objects'),
+      new_filament: z.boolean().optional().describe('Give the object a new filament, a copy of its own, on that nozzle (two-extruder printers)'),
+      move_filament: z.boolean().optional().describe("Move the object's filament, and every object printed with it, to that nozzle (two-extruder printers)"),
+      confirm_painted: z.boolean().optional().describe('With move_filament: go ahead when a painted object also uses the filament, so its paint prints on another nozzle than its other filaments'),
+    }),
+    title: (i) => `Print ${i.object} with nozzle ${i.nozzle}?`,
+    run(i, project) {
+      const obj = project.objects().find((o) => o.id === i.object || o.name === i.object)
+      if (!obj) throw new ToolInputError(`No object ${i.object}. slicerx_project_show lists them.`, 'not_found')
+      const cfg = project.config(project.plates()[0]?.index ?? 1) as unknown as Record<string, unknown>
+      const kind = nozzleKind(cfg)
+      const sizes = nozzleSizes(cfg)
+      if (!kind) throw new ToolInputError("This printer's nozzles are one size, so every object prints with it. Set nozzle_diameter with one size per nozzle to give them different sizes.", 'not_supported')
+      if (i.nozzle > sizes.length) throw new ToolInputError(`Nozzle ${i.nozzle} does not exist: the printer has nozzles 1 to ${sizes.length}.`)
+      const picks = [i.filament !== undefined, i.new_filament === true, i.move_filament === true].filter(Boolean).length
+      if (picks > 1) throw new ToolInputError('Send one of filament, new_filament or move_filament, not several.')
+      const count = project.filaments().length
+      const { map } = filamentMap(cfg, count)
+      const own = project.objectFilaments(obj.id)
+      const others = (f: number) => project.objects().filter((o) => o.id !== obj.id && project.objectFilaments(o.id).includes(f)).map((o) => o.name)
+      const setMap = (next: number[]) => project.setOverrides({ filament_map_mode: 'Manual', filament_map: next })
+      const label = `${nozzleName(cfg, i.nozzle)}, ${sizes[i.nozzle - 1]} mm`
+      const answer = (summary: string, filament: number, extra: Record<string, unknown> = {}) => done(summary, project, { object: obj.id, nozzle: i.nozzle, nozzleMm: sizes[i.nozzle - 1], filament, ...extra })
+      if (kind === 'tools') {
+        if (i.new_filament || i.move_filament) throw new ToolInputError(`On this printer filament n prints on tool n, so new_filament and move_filament do not apply: send the nozzle alone, and the object moves to filament ${i.nozzle}.`)
+        const f = i.filament ?? i.nozzle
+        if (extruderOf(cfg, map, f) !== i.nozzle) throw new ToolInputError(`Filament ${f} prints on tool ${extruderOf(cfg, map, f)}, not tool ${i.nozzle}. Send filament ${i.nozzle}, or leave filament out.`)
+        if (f > count) throw new ToolInputError(`Tool ${i.nozzle} prints filament ${f}, and the project has ${count} filaments. Add filaments with slicerx_project_add_filament first.`)
+        project.setObjectFilament(obj.id, f)
+        return answer(`${obj.name} prints with ${label} (filament ${f})`, f)
+      }
+      if (i.filament !== undefined) {
+        const f = i.filament
+        if (f > count) throw new ToolInputError(`No filament ${f}: the project has ${count}. Add one with slicerx_project_add_filament.`)
+        if (extruderOf(cfg, map, f) !== i.nozzle) {
+          const shared = others(f)
+          if (shared.length) throw new ToolInputError(`Filament ${f} prints ${shared.join(', ')} on the other nozzle, and one filament prints on one nozzle. Send new_filament: true to give ${obj.name} a filament of its own, or a filament that prints on nozzle ${i.nozzle}.`, 'invalid_input', { sharedWith: shared })
+          const next = [...map]
+          next[f - 1] = i.nozzle
+          setMap(next)
+        }
+        project.setObjectFilament(obj.id, f)
+        return answer(`${obj.name} prints with ${label} (filament ${f})`, f)
+      }
+      const moving = own.filter((f) => extruderOf(cfg, map, f) !== i.nozzle)
+      const shared = [...new Set(moving.flatMap(others))]
+      if (moving.length && shared.length && !i.new_filament && !i.move_filament) {
+        throw new ToolInputError(`Filament ${moving.join(', ')} also prints ${shared.join(', ')}, and one filament prints on one nozzle. Send new_filament: true to give ${obj.name} a filament of its own on nozzle ${i.nozzle}, move_filament: true to move the filament with ${shared.join(', ')}, or filament with a filament that prints on nozzle ${i.nozzle}.`, 'invalid_input', { sharedWith: shared })
+      }
+      if (moving.length && shared.length && i.new_filament) {
+        if (own.length !== 1) throw new ToolInputError(`${obj.name} prints with filaments ${own.join(', ')}; new_filament gives one filament to an object that prints with one. Send filament instead.`)
+        const src = project.filaments()[own[0]! - 1]
+        const added = project.addFilament({ type: src?.type, color: src?.color })
+        const next = [...map]
+        while (next.length < added.slot) next.push(map[map.length - 1] ?? 1)
+        next[added.slot - 1] = i.nozzle
+        setMap(next)
+        project.setObjectFilament(obj.id, added.slot)
+        return answer(`${obj.name} prints with ${label} on a new filament ${added.slot}`, added.slot, { added: added.slot })
+      }
+      if (moving.length) {
+        const next = [...map]
+        for (const f of moving) next[f - 1] = i.nozzle
+        // A painted object whose filaments would end up on two nozzles: the client says so first.
+        const split = project.objects().filter((o) => project.isPainted(o.id)).filter((o) => {
+          const used = project.objectFilaments(o.id)
+          return used.some((f) => moving.includes(f)) && new Set(used.map((f) => extruderOf(cfg, next, f))).size > 1
+        }).map((o) => o.name)
+        if (split.length && !i.confirm_painted) {
+          throw new ToolInputError(`Moving filament ${moving.join(', ')} to nozzle ${i.nozzle} puts the paint of ${split.join(', ')} on another nozzle than ${split.length === 1 ? 'its' : 'their'} other filaments. Send confirm_painted: true with move_filament to move it anyway, or new_filament: true to give ${obj.name} a filament of its own.`, 'invalid_input', { painted: split })
+        }
+        setMap(next)
+        if (split.length) return answer(`${obj.name} prints with ${label}; the paint of ${split.join(', ')} now prints on another nozzle than its other filaments`, own[0] ?? 1, { paintSplit: split })
+      }
+      return answer(`${obj.name} prints with ${label}`, own[0] ?? 1)
     },
   })
 
@@ -419,5 +505,5 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
     },
   })
 
-  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, fillBed, mirror, rename, layOnFace, lock, printable, center, splitObjects, splitParts] as PilotTool<never>[]
+  return [move, rotate, scale, objectSettings, objectNozzle, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, fillBed, mirror, rename, layOnFace, lock, printable, center, splitObjects, splitParts] as PilotTool<never>[]
 }
