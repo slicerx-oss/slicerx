@@ -45,6 +45,8 @@ export interface ConnectedBridge {
   partnerRoutes?: BridgePartnerRoutes
   /** The app link's app side (app-link/host.ts): the desktop app only, never the browser build. */
   appLink?: BridgeAppLink
+  /** How the work of an approved hub card ended (sx-link `approval.done`). Absent on an older client. */
+  onApprovalDone?(cb: (d: import('./agent-cards').CardDone) => void): () => void
   /** Runs once when the connection ends: `requested` after close(), false when it dropped. Absent on an older client. */
   onDisconnect?(cb: (info: { requested: boolean }) => void): () => void
   close(): void
@@ -174,8 +176,11 @@ let stopLink: (() => void) | null = null
 
 /** Cards the hub raises (an AI agent's start, a queued plate whose turn came) show in the approval dialog. Loaded with the first connection. */
 function watchCards(bridge: ConnectedBridge): void {
-  const cards = bridge.approvals as Partial<import('./agent-cards').HubCards>
-  if (typeof cards.onRequest !== 'function' || typeof cards.grantWith !== 'function' || typeof cards.deny !== 'function') return
+  const broker = bridge.approvals as Partial<import('./agent-cards').HubCards>
+  if (typeof broker.onRequest !== 'function' || typeof broker.grantWith !== 'function' || typeof broker.deny !== 'function') return
+  // The outcome of approved work comes on the connection, not the broker; the card screen reads both.
+  const onDone = bridge.onApprovalDone?.bind(bridge)
+  const cards: Partial<import('./agent-cards').HubCards> = onDone ? Object.assign(Object.create(broker) as object, { onDone }) : broker
   void import('./agent-cards').then(({ watchHubCards, printerLabels }) => {
     if (live?.bridge !== bridge) return
     let names = new Map<string, string>()
