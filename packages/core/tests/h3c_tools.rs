@@ -355,3 +355,78 @@ fn an_object_on_the_tpu_hotend_prints_with_the_tpu_variant() {
     assert_eq!(left, std::collections::BTreeSet::from([3600]), "PLA cube");
     assert_eq!(right, std::collections::BTreeSet::from([1500]), "TPU cube");
 }
+
+/// [`slice`] with the request options given, over `trustedGcode`.
+fn slice_with(config: Map<String, Value>, slots: &[u8], options: &Value) -> sx_core::Result<api::SliceRun> {
+    let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+    let m = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+    let (lo, hi) = m.bounds().unwrap();
+    let objects: Vec<Value> = slots
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            let x = 140.0 + 50.0 * i as f64 - f64::from(lo[0] + hi[0]) / 2.0;
+            let y = 160.0 - f64::from(lo[1] + hi[1]) / 2.0;
+            json!({
+                "id": format!("o{i}"),
+                "name": format!("cube{i}"),
+                "mesh": "c",
+                "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, -f64::from(lo[2]), 1],
+                "slotOverrides": {"cube.stl": slot},
+            })
+        })
+        .collect();
+    let mut opts = json!({"trustedGcode": true});
+    for (k, v) in options.as_object().unwrap() {
+        opts[k] = v.clone();
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": objects},
+        "config": Value::Object(config),
+        "options": opts,
+    }))
+    .unwrap();
+    api::run_request(&req, &move |_: &str| Ok(m.clone()))
+}
+
+/// The chamber target the start G-code gets (`overall_chamber_temperature`) and the slice's warnings, for a plate of
+/// two filaments that ask for `chambers` C, on a printer with `limit`.
+fn chamber(chambers: [i64; 2], limit: Option<f64>) -> (i64, Vec<String>) {
+    let mut c = h3c(2);
+    c.insert("chamber_temperature".into(), json!(chambers));
+    c.insert(
+        "machine_start_gcode".into(),
+        json!("; H3C chamber {overall_chamber_temperature}\n"),
+    );
+    let options = limit.map_or_else(|| json!({}), |l| json!({"machineLimits": {"chamberMaxC": l}}));
+    let run = slice_with(c, &[1, 2], &options).unwrap();
+    let g = gcode(&run);
+    let t = g
+        .lines()
+        .find_map(|l| l.strip_prefix("; H3C chamber "))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    (t, run.report.warnings.iter().map(|w| w.message.clone()).collect())
+}
+
+#[test]
+fn a_chamber_target_above_the_printer_limit_is_held_to_it() {
+    // The H3C heats its chamber to 65 C. A filament asking for 70 C prints at 65 C, and the slice says so.
+    let (t, warnings) = chamber([70, 40], Some(65.0));
+    assert_eq!(t, 65);
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("chamber") && w.contains("70") && w.contains("65 C")),
+        "{warnings:?}"
+    );
+    // Within the limit: as asked, and nothing to say.
+    let (t, warnings) = chamber([60, 40], Some(65.0));
+    assert_eq!(t, 60);
+    assert!(!warnings.iter().any(|w| w.contains("chamber")), "{warnings:?}");
+    // No limit given: the target is the filaments' own, as before.
+    let (t, _) = chamber([70, 40], None);
+    assert_eq!(t, 70);
+}
