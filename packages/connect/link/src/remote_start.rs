@@ -812,4 +812,11 @@ mod tests {
             Ok(())
         );
     }
+
+    #[test]
+    fn a_numbered_hot_line_is_read_whatever_its_spacing() {
+        assert!(verdict(b"M140 S60\nM104 S215\nN 10 M104 S300\n").is_err());
+        assert!(verdict(b"M140 S60\nM104 S215\nn 11 m109 s300*7\n").is_err());
+        assert_eq!(verdict(b"N 1 M140 S60\nN 2 M104 S215\n"), Ok(()));
+    }
 }

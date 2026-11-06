@@ -5,12 +5,12 @@
 //! fails closed: anything that could heat and that it cannot read for certain sets `unknown`.
 //!
 //! Lines are read the way firmware reads them: comments (`;` and parentheses), a leading line number
-//! (`N123`) and a checksum (`*71`) are dropped, and a word is a letter and a number with or without
+//! (`N123`, `N 123`, `n 123`, a bare `N`) and a checksum (`*71`) are dropped, and a word is a letter and a number with or without
 //! spaces (`M104S300`, `M104 S 300`). Heater commands: `M104`, `M109`, `M140` and `M190` with any
 //! subcode (`M104.1`), Marlin's autotemp ceiling (`M104 B`), RepRapFirmware's `G10` with `S` or `R`
 //! and `M568`, with values in RepRapFirmware's colon lists (`S200:210`). An `M141` or `M191` with a
 //! target above 0 sets the chamber; `S0` turns it off and heats nothing. An autotune (`M303`), a heater
-//! value that is not a plain number (an unrendered template), a Klipper `SET_HEATER_TEMPERATURE` for a
+//! value that is not a plain number (an unrendered template), a second heater command on one line, a Klipper `SET_HEATER_TEMPERATURE` for a
 //! heater other than an extruder or the bed, a macro argument naming a temperature or heater this
 //! reader does not know, and a known start macro (`PRINT_START`) given no nozzle temperature, which
 //! then heats from its own defaults, set `unknown`. Macro arguments match by exact name, never by part
@@ -190,9 +190,15 @@ fn clean(raw: &str) -> String {
     if let Some(star) = s.find('*') {
         s = s[..star].trim_end();
     }
+    // A line number, as firmware reads it: N, then any spaces or tabs, then its digits (or none), then
+    // the command. `NOZZLE_WIPE` is a macro: no space or digit follows its N.
     let b = s.as_bytes();
-    if b.first().is_some_and(|c| c.eq_ignore_ascii_case(&b'N')) && b.get(1).is_some_and(u8::is_ascii_digit) {
+    if b.first().is_some_and(|c| c.eq_ignore_ascii_case(&b'N'))
+        && b.get(1)
+            .is_some_and(|c| c.is_ascii_digit() || c.is_ascii_whitespace())
+    {
         return s[1..]
+            .trim_start()
             .trim_start_matches(|c: char| c.is_ascii_digit())
             .trim_start()
             .to_owned();
@@ -264,6 +270,17 @@ fn command_heat(line: &str, heat: &mut JobHeat) {
         }
         out
     };
+    // Firmware runs one command a line; a heater command after the first one is not read, so it refuses.
+    let heater = |l: char, code: &str| {
+        let n: Option<u32> = code.split('.').next().and_then(|n| n.parse().ok());
+        matches!(
+            (l, n),
+            ('M', Some(104 | 109 | 140 | 190 | 141 | 191 | 568 | 303)) | ('G', Some(10))
+        )
+    };
+    if let Some((l, c)) = w.iter().skip(1).find(|(l, c)| heater(*l, c)) {
+        heat.unknown(|| format!("`{line}` holds a second command, {l}{c}"));
+    }
     match (letter, number) {
         // `B` is Marlin's autotemp ceiling: the nozzle may climb to it.
         ('M', Some(104 | 109)) => {
@@ -516,5 +533,30 @@ mod tests {
                 .unknown
                 .is_some()
         );
+    }
+
+    #[test]
+    fn strips_line_numbers_with_any_spacing() {
+        for (line, nozzle, bed, chamber) in [
+            ("N 10 M104 S300", Some(300.0), None, None),
+            ("n 10 m104 s300", Some(300.0), None, None),
+            ("N\t10\tM109 S301", Some(301.0), None, None),
+            ("N  10  M140 S110", None, Some(110.0), None),
+            ("N M190 S111", None, Some(111.0), None),
+            ("N 7 G10 P0 S302", Some(302.0), None, None),
+            ("N 8 M141 S50*12", None, None, Some(50.0)),
+            ("n10 m104 s303", Some(303.0), None, None),
+        ] {
+            let h = gcode_heat(&format!("{line}\n"));
+            assert_eq!((h.nozzle, h.bed, h.chamber), (nozzle, bed, chamber), "{line}");
+        }
+        // A macro whose name starts with N is not a line number.
+        assert_eq!(gcode_heat("NOZZLE_WIPE\n"), JobHeat::default());
+    }
+
+    #[test]
+    fn a_second_heater_command_on_one_line_fails_closed() {
+        assert!(gcode_heat("G1 X10 M104 S300\n").unknown.is_some());
+        assert!(gcode_heat("G28 M140 S110\n").unknown.is_some());
     }
 }
