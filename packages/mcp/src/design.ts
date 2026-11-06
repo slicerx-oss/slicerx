@@ -230,11 +230,22 @@ function paintOf(p: EnginePart['paint']): PaintTexts | undefined {
  * it, the others start from their printed parts (in their object's space, slots and paint kept) with no steps yet.
  * Modifiers and other volumes are left out and named.
  */
-export async function readDesigns(engine: EngineCall, buf: Buffer, label: string): Promise<{ name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]> {
+export async function readDesigns(engine: EngineCall, buf: Buffer, label: string): Promise<OpenedDesign[]> {
+  return (await readDesignFile(engine, buf, label)).designs
+}
+
+/** An object of a 3MF to open as a design (readDesigns). */
+export type OpenedDesign = { name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }
+
+/**
+ * The objects of a 3MF as designs to open (readDesigns), with the engine reader's notes on what it skipped or read
+ * another way (a painting in a newer facets JSON version, a part type it does not know), each once.
+ */
+export async function readDesignFile(engine: EngineCall, buf: Buffer, label: string): Promise<{ designs: OpenedDesign[]; notes: string[] }> {
   const zip = readZip(buf, label)
   // Only whether it is there: a main model can be larger than a text read takes, and the engine reads it below.
   if (!zip.names().includes('3D/3dmodel.model')) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
-  let read: { unitScale?: number; objects?: EngineObject[] }
+  let read: { unitScale?: number; objects?: EngineObject[]; notes?: unknown }
   try {
     read = (await engine('format.read3mf', { data: { base64: buf.toString('base64') } })) as typeof read
   } catch (e) {
@@ -259,10 +270,12 @@ export async function readDesigns(engine: EngineCall, buf: Buffer, label: string
   const files = new Map<string, Uint8Array>()
   for (const n of zip.names()) if (n.startsWith('Metadata/slicerx_history')) files.set(n, zip.read(n) ?? new Uint8Array())
   const histories = parseHistories(files, new Set(objects.map((o) => o.id)))
-  return objects.map((o) => {
+  const designs = objects.map((o) => {
     const h = histories.get(o.id)
     return { name: o.name, transform: o.transform, ...(h ? { history: h } : {}), base: o.parts, skipped: o.skipped }
   })
+  const notes = [...new Set((Array.isArray(read.notes) ? read.notes : []).filter((n): n is string => typeof n === 'string' && n.trim() !== '').map((n) => n.trim()))]
+  return { designs, notes }
 }
 
 /** The server's files for the design tools: models from paths, URLs and samples, 3MF files in the output folder. */
@@ -272,7 +285,7 @@ export function designFiles(policy: PathPolicy, engine: EngineCall): DesignFiles
       return [stlMesh(readFileSync(await resolveModel(policy, from)), name)]
     },
     async open(path) {
-      return readDesigns(engine, readFileSync(await resolveModel(policy, path)), path)
+      return readDesignFile(engine, readFileSync(await resolveModel(policy, path)), path)
     },
     async save(d, fileName) {
       const dir = join(policy.outDir, 'designs')
