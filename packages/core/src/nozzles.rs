@@ -16,6 +16,10 @@
 //! - On the H2C each filament of the right extruder gets a hotend of its own from the rack while there are
 //!   hotends (`extruder_max_nozzle_count`), so changes between them are hotend swaps and flush nothing.
 //!
+//! - The H3C is one extruder that holds nine hotends, each with its own filament path ([`hotend_tools`]): every
+//!   filament is on that extruder, and each filament the plate prints with takes a hotend of its own, so a change
+//!   between them is a hotend swap that flushes nothing.
+//!
 //! Printers with one tool per filament (the Snapmaker U1, the Prusa XL, `UltiMaker`) need no map: filament
 //! `n` is tool `n`. Printers with one nozzle have nothing to map.
 
@@ -47,7 +51,7 @@ pub struct Map {
 /// A Bambu Lab printer with two extruders, each with its own filament feed: filaments share an extruder
 /// through the AMS and the map decides which.
 pub(crate) fn shared(cfg: &PrintConfig) -> bool {
-    extruders(cfg) > 1
+    (extruders(cfg) > 1 || hotend_tools(cfg))
         && crate::tower::type1(cfg)
         && crate::tower::flag_or(cfg, "single_extruder_multi_material", true)
 }
@@ -65,6 +69,202 @@ pub(crate) fn extruders(cfg: &PrintConfig) -> usize {
         Some(serde_json::Value::Array(a)) => a.len().max(1),
         _ => 1,
     }
+}
+
+/// One extruder whose hotends are its tools: one `nozzle_diameter` entry and an `extruder_max_nozzle_count` above 1
+/// (the Bambu Lab H3C, nine hotends, `handle_hotend_as_extruder` in its presets). Each hotend has its own filament path
+/// and keeps its filament loaded, so the map gives each filament a hotend ([`Map::resolve`]) and a change between
+/// hotends is a swap: [`hotend_change_time`], no unload, no flush.
+#[must_use]
+pub fn hotend_tools(cfg: &PrintConfig) -> bool {
+    extruders(cfg) == 1 && hotends(cfg) > 1
+}
+
+/// The hotends of the first extruder (`extruder_max_nozzle_count`, 1 when not listed).
+pub(crate) fn hotends(cfg: &PrintConfig) -> usize {
+    nozzle_counts(cfg, 1).first().copied().unwrap_or(1).max(1)
+}
+
+/// The seconds a hotend swap takes: the first of `machine_hotend_change_time`, the tool change time
+/// (`machine_tool_change_time`) and Bambu's extruder switch time (`machine_switch_extruder_time`) that is above 0. The
+/// H3C's presets give the hotend change time as 0 and the switch time as 4 s, and the settings' default tool change
+/// time is 0, so its swaps take 4 s.
+pub(crate) fn hotend_change_time(cfg: &PrintConfig) -> f64 {
+    [
+        "machine_hotend_change_time",
+        "machine_tool_change_time",
+        "machine_switch_extruder_time",
+    ]
+    .iter()
+    .map(|k| cfg.raw_number(k, 0.0))
+    .find(|t| *t > 0.0)
+    .unwrap_or(0.0)
+}
+
+/// The volume type of a hotend for 2.85 mm TPU (the H3C's TPU tool).
+pub(crate) const TPU285: &str = "TPU285";
+
+/// A list of strings from the raw settings (numbers written as text).
+fn strings(raw: &serde_json::Map<String, serde_json::Value>, key: &str) -> Vec<String> {
+    match raw.get(key) {
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
+            .collect(),
+        Some(serde_json::Value::String(t)) => vec![t.clone()],
+        _ => Vec::new(),
+    }
+}
+
+/// The volume type of each of the extruder's `n` hotends: `nozzle_volume_type` when it lists one per hotend, else
+/// the printer's `default_nozzle_volume_type` (the H3C's gives hotend 8 the TPU285 type), else the one given for the
+/// extruder (`Standard` when none).
+pub(crate) fn hotend_types_raw(raw: &serde_json::Map<String, serde_json::Value>, n: usize) -> Vec<String> {
+    let given = strings(raw, "nozzle_volume_type");
+    if given.len() == n {
+        return given;
+    }
+    let default = strings(raw, "default_nozzle_volume_type");
+    if default.len() == n {
+        return default;
+    }
+    let one = given
+        .first()
+        .or_else(|| default.first())
+        .cloned()
+        .unwrap_or_else(|| "Standard".to_owned());
+    vec![one; n]
+}
+
+/// [`hotend_types_raw`] of the printer's hotends.
+pub(crate) fn hotend_types(cfg: &PrintConfig) -> Vec<String> {
+    hotend_types_raw(&cfg.raw, hotends(cfg))
+}
+
+/// Filament `slot` (1-based) is 2.85 mm TPU, which feeds only a TPU285 hotend: a filament over 2.5 mm, or one whose
+/// only extruder variant is the TPU285 one (`filament_extruder_variant`, per `filament_self_index` when listed).
+pub(crate) fn tpu285_filament(cfg: &PrintConfig, slot: u8) -> bool {
+    if cfg.filament_diameter_for(slot) > 2.5 {
+        return true;
+    }
+    let variants = strings(&cfg.raw, "filament_extruder_variant");
+    let owners = strings(&cfg.raw, "filament_self_index");
+    let mine: Vec<&String> = if !owners.is_empty() && owners.len() == variants.len() {
+        variants
+            .iter()
+            .zip(&owners)
+            .filter(|(_, o)| o.trim() == slot.to_string())
+            .map(|(v, _)| v)
+            .collect()
+    } else if variants.len() == usize::from(project_filaments(cfg)) {
+        variants.get(usize::from(slot.max(1) - 1)).into_iter().collect()
+    } else {
+        Vec::new()
+    };
+    !mine.is_empty() && mine.iter().all(|v| v.ends_with(TPU285))
+}
+
+/// The hotend (0-based) filament `slot` (1-based) prints on, on a printer whose hotends are its tools: its
+/// `filament_nozzle_map` entry (the map writes it, [`Map::apply`]), else the first TPU285 hotend for 2.85 mm TPU and
+/// the first hotend for any other filament.
+pub(crate) fn hotend_of_slot(cfg: &PrintConfig, slot: u8) -> usize {
+    let n = hotends(cfg);
+    let given = int_list(cfg, "filament_nozzle_map");
+    if let Some(&h) = given.get(usize::from(slot.max(1) - 1)) {
+        return usize::try_from(h.max(0)).unwrap_or(0).min(n - 1);
+    }
+    if tpu285_filament(cfg, slot) {
+        return hotend_types(cfg).iter().position(|t| t == TPU285).unwrap_or(0);
+    }
+    0
+}
+
+/// The hotend each filament prints on, on a printer whose hotends are its tools ([`hotend_tools`]). By hand
+/// (`filament_map_mode` manual with a `filament_nozzle_map`), as given. Else each filament the plate prints with takes
+/// the next free hotend in slot order: 2.85 mm TPU a TPU285 one, any other filament one of the others. Filaments past
+/// the free hotends share the hotend the external AMS feeds (`ams_nozzle_idx`, hotend 0), and flush there. A filament
+/// the plate never prints with is on hotend 0. [`check_hotends`] refuses a map that does not fit the hotends.
+fn hotend_ids(cfg: &PrintConfig, tools: u8, used: &[u8], manual: bool) -> (Vec<u8>, bool) {
+    let n = hotends(cfg);
+    let clamp = |h: i64| u8::try_from(h.clamp(0, i64::try_from(n - 1).unwrap_or(0))).unwrap_or(0);
+    let given = int_list(cfg, "filament_nozzle_map");
+    if manual && !given.is_empty() {
+        let ids = (0..usize::from(tools))
+            .map(|i| given.get(i).copied().map_or(0, clamp))
+            .collect();
+        return (ids, true);
+    }
+    let types = hotend_types(cfg);
+    let (tpu, standard): (Vec<usize>, Vec<usize>) =
+        (0..n).partition(|&h| types.get(h).is_some_and(|t| t == TPU285));
+    let shared_hotend = int_list(cfg, "ams_nozzle_idx").first().copied().map_or(0, clamp);
+    let (mut next_tpu, mut next_standard) = (tpu.iter(), standard.iter());
+    let ids = (1..=tools)
+        .map(|slot| {
+            if !used.contains(&slot) {
+                return 0;
+            }
+            let free = if tpu285_filament(cfg, slot) {
+                next_tpu.next().or_else(|| tpu.last())
+            } else {
+                next_standard.next()
+            };
+            free.map_or(shared_hotend, |&h| u8::try_from(h).unwrap_or(0))
+        })
+        .collect();
+    (ids, false)
+}
+
+/// Refuses a map that puts a filament on a hotend it cannot print on, on a printer whose hotends are its tools: 2.85
+/// mm TPU off the TPU285 hotend, two 2.85 mm TPU filaments on one, or any other filament on it.
+pub(crate) fn check_hotends(cfg: &PrintConfig, map: &Map, usage: &Usage) -> crate::Result<()> {
+    if !hotend_tools(cfg) {
+        return Ok(());
+    }
+    let types = hotend_types(cfg);
+    let mut used: Vec<u8> = usage
+        .layers
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|&s| s >= 1)
+        .collect();
+    used.sort_unstable();
+    used.dedup();
+    let mut tpu_on: Vec<Option<u8>> = vec![None; types.len()];
+    let refuse = |reason: String| {
+        Err(crate::Error::Config {
+            key: "filament_map",
+            reason,
+        })
+    };
+    for s in used {
+        let h = map.nozzle_of(s);
+        let on_tpu = types.get(h).is_some_and(|t| t == TPU285);
+        let tool = h + 1;
+        if tpu285_filament(cfg, s) {
+            if !on_tpu {
+                return refuse(format!(
+                    "filament {s} is 2.85 mm TPU, which prints only on a TPU hotend, and the filament map puts it on \
+                     tool {tool}; put it on the TPU tool"
+                ));
+            }
+            if let Some(other) = tpu_on.get(h).copied().flatten() {
+                return refuse(format!(
+                    "filaments {other} and {s} are both 2.85 mm TPU and the printer has one TPU tool for them \
+                     (tool {tool}); print one of them in another filament"
+                ));
+            }
+            if let Some(t) = tpu_on.get_mut(h) {
+                *t = Some(s);
+            }
+        } else if on_tpu {
+            return refuse(format!(
+                "filament {s} is on tool {tool}, the TPU hotend for 2.85 mm TPU; put it on another tool"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Nozzles each extruder can hold (`extruder_max_nozzle_count`; the H2C's right extruder takes six).
@@ -479,6 +679,14 @@ impl Map {
             .collect();
         used.sort_unstable();
         used.dedup();
+        if hotend_tools(cfg) {
+            let (nozzle, by_hand) = hotend_ids(cfg, tools, &used, manual);
+            return Some(Self {
+                extruder: vec![0; n],
+                nozzle,
+                auto: !by_hand,
+            });
+        }
         let extruder: Vec<u8> = if manual {
             let given = int_list(cfg, "filament_map");
             (0..n)
@@ -876,7 +1084,41 @@ fn auto_map_on_sizes(cfg: &PrintConfig) -> bool {
 /// Objects print with their own nozzle's size: the nozzles differ in size, and each filament's nozzle is known before
 /// the objects are sliced (one tool per filament, or a filament map set by hand).
 pub(crate) fn per_nozzle(cfg: &PrintConfig) -> bool {
-    sizes_differ(cfg) && !auto_map_on_sizes(cfg)
+    (sizes_differ(cfg) && !auto_map_on_sizes(cfg)) || per_hotend(cfg)
+}
+
+/// Objects print with their own hotend's process values: the printer's hotends are its tools ([`hotend_tools`]) and
+/// the settings list process values per extruder variant (`print_extruder_variant`, as a project carries them), so an
+/// object on the TPU285 hotend takes that variant's speeds.
+fn per_hotend(cfg: &PrintConfig) -> bool {
+    hotend_tools(cfg)
+        && cfg
+            .variant_sources
+            .keys()
+            .any(|k| crate::variants::process_keys().contains(&k.as_str()))
+}
+
+/// On a printer whose hotends are its tools, the hotend an object prints with when all its filaments are on hotends of
+/// one volume type and that type is not the plate's (`nozzle_volume_type`, first entry): the object then takes that
+/// hotend's process values ([`PrintConfig::for_nozzle`]). An object on hotends of two types prints with the plate's.
+fn hotend_of_object(cfg: &PrintConfig, slots: &[u8]) -> Option<Nozzle> {
+    let types = hotend_types(cfg);
+    let mut on: Vec<usize> = slots.iter().map(|&s| hotend_of_slot(cfg, s)).collect();
+    on.sort_unstable();
+    on.dedup();
+    let first = *on.first()?;
+    let kind = types.get(first)?;
+    if on.iter().any(|h| types.get(*h) != Some(kind)) {
+        return None;
+    }
+    let plate = strings(&cfg.raw, "nozzle_volume_type")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| "Standard".to_owned());
+    (*kind != plate).then_some(Nozzle {
+        extruder: first,
+        mm: size_of(cfg, 0),
+    })
 }
 
 /// What the slice says about an automatic filament map on nozzles of different sizes (key `filament_map`); none
@@ -898,6 +1140,7 @@ pub fn auto_map_warning(cfg: &PrintConfig) -> Option<String> {
 /// The nozzle a filament prints with: its extruder (0-based) and that nozzle's size, mm.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Nozzle {
+    /// The extruder, 0-based; on a printer whose hotends are its tools ([`hotend_tools`]), the hotend.
     pub extruder: usize,
     pub mm: f64,
 }
@@ -920,6 +1163,9 @@ pub(crate) fn nozzle_of_slot(cfg: &PrintConfig, slot: u8) -> Nozzle {
 pub(crate) fn nozzle_of_object(cfg: &PrintConfig, name: &str, slots: &[u8]) -> crate::Result<Option<Nozzle>> {
     if !per_nozzle(cfg) {
         return Ok(None);
+    }
+    if hotend_tools(cfg) {
+        return Ok(hotend_of_object(cfg, slots));
     }
     let mut used: Vec<Nozzle> = slots.iter().map(|&t| nozzle_of_slot(cfg, t)).collect();
     used.sort_by_key(|n| n.extruder);

@@ -1137,25 +1137,32 @@ fn replace_mark(line: &[u8], mark: &str, text: &str) -> Option<Vec<u8>> {
 }
 
 /// `cfg` with the `filament_map` of the file's configuration block (`; filament_map = 2,1`), on a printer
-/// with a filament map whose settings do not already carry that map.
+/// with a filament map whose settings do not already carry that map. On a printer whose hotends are its tools (the
+/// H3C) the map that tells the filaments apart is the hotend of each, `filament_nozzle_map`.
 pub fn map_from_gcode(gcode: &[u8], cfg: &crate::config::PrintConfig) -> Option<crate::config::PrintConfig> {
     if !crate::nozzles::shared(cfg) {
         return None;
     }
+    let key = if crate::nozzles::hotend_tools(cfg) {
+        "filament_nozzle_map"
+    } else {
+        "filament_map"
+    };
+    let prefix = format!("; {key} = ");
     let line = gcode
         .split(|&b| b == b'\n')
         .take_while(|l| !l.starts_with(b";LAYER_CHANGE"))
-        .find_map(|l| l.strip_prefix(b"; filament_map = "))?;
+        .find_map(|l| l.strip_prefix(prefix.as_bytes()))?;
     let map: Vec<serde_json::Value> = String::from_utf8_lossy(line)
         .split(',')
         .filter_map(|t| t.trim().parse::<u32>().ok())
         .map(|v| serde_json::json!(v))
         .collect();
-    if map.is_empty() || cfg.raw.get("filament_map") == Some(&serde_json::Value::Array(map.clone())) {
+    if map.is_empty() || cfg.raw.get(key) == Some(&serde_json::Value::Array(map.clone())) {
         return None;
     }
     let mut c = cfg.clone();
-    c.raw.insert("filament_map".into(), serde_json::Value::Array(map));
+    c.raw.insert(key.into(), serde_json::Value::Array(map));
     let _ = c.refresh_variants().ok()?;
     Some(c)
 }

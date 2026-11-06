@@ -2143,6 +2143,9 @@ impl PrintConfig {
     /// number applies to every nozzle as given. The printer's per-extruder lists (sizes, speeds, retraction) stay
     /// whole: the paths still read their filament's extruder from them.
     pub fn for_nozzle(&self, e: usize) -> Result<Self> {
+        if crate::nozzles::hotend_tools(self) {
+            return self.for_hotend(e);
+        }
         let n = crate::nozzles::extruders(self);
         let mut c = self.clone();
         c.nozzle_diameter = crate::nozzles::size_of(self, e);
@@ -2156,6 +2159,24 @@ impl PrintConfig {
             .collect();
         c.apply_flat_value(&Value::Object(own))?;
         c.check_layer_height()?;
+        Ok(c)
+    }
+
+    /// This config for an object printed with hotend `h` (0-based) on a printer whose hotends are its tools
+    /// ([`crate::nozzles::hotend_tools`]): the hotend's volume type stands for the extruder's (`nozzle_volume_type`), so
+    /// each process setting the extruder variants list takes that variant's value (the TPU285 hotend's speeds), now
+    /// and wherever the object's own settings select them again.
+    fn for_hotend(&self, h: usize) -> Result<Self> {
+        let types = crate::nozzles::hotend_types(self);
+        let mut c = self.clone();
+        let Some(kind) = types.get(h) else {
+            return Ok(c);
+        };
+        c.raw.insert(
+            "nozzle_volume_type".into(),
+            Value::Array(vec![Value::String(kind.clone())]),
+        );
+        c.refresh_variants()?;
         Ok(c)
     }
 
