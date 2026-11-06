@@ -309,7 +309,7 @@ export function PartnerPhoneRows({ keys = [] }: { keys?: PartnerKey[] }) {
         title="Link to a key with another name?"
         footer={
           <>
-            <Button variant="ghost" data-testid="partner-link-cancel" onClick={() => setAsk(null)}>
+            <Button variant="ghost" data-testid="partner-link-dont" onClick={() => setAsk(null)}>
               Don&apos;t link
             </Button>
             <Button

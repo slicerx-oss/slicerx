@@ -459,6 +459,21 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `partner-routes` | The list of open partner routes under Devices: a partner app's connection to its own phone |
 | `partner-route-<id>` | One open route's row; `<id>` is the route's id |
 | `partner-route-close-<id>` | End route on that row |
+| `partner-phones` | The list of paired partner phones under Devices |
+| `partner-phones-empty` | The line shown when no partner phone is paired |
+| `partner-phone-<id>` | A partner phone's row; `<id>` is the pairing's id |
+| `partner-phone-revoke` | Revoke on a partner phone's row; it removes the pairing and disconnects the phone |
+| `partner-phone-approve-row` | The row's switch that lets the phone approve prints, pauses and skips |
+| `partner-phone-send-row` | The row's switch that lets the phone send prints and see the library |
+| `partner-phone-key` | The row's pick of the partner app key on this computer it is linked to |
+| `partner-phone-pair` | Pair a partner phone, which opens the pairing dialog for a partner |
+| `partner-phone-name` | The partner app's name in the pairing dialog |
+| `partner-phone-make` | Make a code in the pairing dialog |
+| `partner-phone-approve` | The pairing dialog's switch for approving prints, pauses and skips |
+| `partner-phone-send` | The pairing dialog's switch for sending prints |
+| `pair-match` | They match, in the pairing dialog, once both screens show the same code |
+| `partner-link-dont` | Don't link, in Link to a key with another name?: closes it and links nothing |
+| `partner-link-anyway` | Link anyway, in Link to a key with another name? |
 
 ## mimir's notes: the chip and Settings > Memory
 
