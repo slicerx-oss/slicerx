@@ -536,15 +536,21 @@ mod tests {
     }
 
     #[test]
-    fn a_home_card_approves_the_g28_it_sends() {
+    fn a_home_card_is_its_own_action_and_never_reads_as_a_raw_line() {
         let w = Work::parse(&json!({ "kind": "home", "printerId": "bay-1" })).unwrap();
         assert_eq!(w.kind(), "home");
+        assert_eq!(w.summary(), json!({ "kind": "home", "printerId": "bay-1" }));
         assert_eq!(
-            w.summary(),
-            json!({ "kind": "gcode", "printerId": "bay-1", "line": "G28" })
+            w.actions(),
+            vec![(
+                "printer.home".to_owned(),
+                "bay-1".to_owned(),
+                sx_permit::hash_params(&json!({ "printerId": "bay-1" }))
+            )]
         );
         let g = Work::parse(&json!({ "kind": "gcode", "printerId": "bay-1", "line": "G28" })).unwrap();
-        assert_eq!(w.actions(), g.actions());
+        assert_ne!(w.actions(), g.actions());
+        assert_ne!(w.summary(), g.summary());
     }
 
     #[test]
