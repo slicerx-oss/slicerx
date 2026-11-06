@@ -18,6 +18,7 @@ import type {
   SettingValue,
   SideEffectAction,
   SlicerHost,
+  SlotSetting,
   StartOptions,
   ToolDisplay,
   ToolSource,
@@ -154,6 +155,8 @@ export type AgentWork =
   | { kind: 'skip'; printerId: string; id: string; epoch: number }
   /** Home every axis under the hub's home rules (printer state and plate), checked when the person approves. */
   | { kind: 'home'; printerId: string }
+  /** Set one filament slot while no print runs, hashed as `printer.adjust` `{printerId, slot: setting}`. Approved in the app only. */
+  | { kind: 'slot'; printerId: string; setting: SlotSetting }
   /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
