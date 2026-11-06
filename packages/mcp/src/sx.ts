@@ -245,7 +245,9 @@ function writeRequest(job: SliceJob): { requestPath: string; objects: (SliceJobO
       return { role: v.role, mesh: `m${i}v${j}`, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: local(v.settings) } : {}) }
     })
     const settings = 'settings' in o ? o.settings : undefined
-    return { id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}), ...(settings ? { settings: local(settings) } : {}), ...(volumes.length ? { volumes } : {}) }
+    // The engine names a mesh file's one part after the file.
+    const slot = 'slot' in o && o.slot ? { slotOverrides: { [basename(o.path)]: o.slot } } : {}
+    return { id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}), ...(settings ? { settings: local(settings) } : {}), ...slot, ...(volumes.length ? { volumes } : {}) }
   })
   // Height ranges name plate objects by their own ids; the request names them o0, o1 and so on.
   const requestId = new Map(objects.flatMap((o, i) => ('id' in o && o.id ? [[o.id, `o${i}`] as const] : [])))
@@ -430,7 +432,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         stats?: { timeS?: number; filamentMm?: number[]; filamentG?: number[]; toolChanges?: number }
         warnings?: { code?: string; message?: string; layer?: number; objectId?: string }[]
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
-        featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
+        featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]>; nozzleMm?: number }[]
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
         primeTower?: { x?: number; y?: number; width?: number; depth?: number; angle?: number } | null
         filamentMap?: { extruders?: number[]; nozzles?: number[]; auto?: boolean } | null

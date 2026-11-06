@@ -62,6 +62,8 @@ export interface SliceJobObject {
   transform?: number[]
   /** The object's own settings (sx engine). */
   settings?: Record<string, SettingValue>
+  /** The filament (1-based) the whole object prints with, when it is not filament 1 (sx engine). */
+  slot?: number
   /** Cuts, support regions and settings modifiers in the object's own coordinates (sx engine). */
   volumes?: { path: string; role: VolumeRole; name?: string; transform?: number[]; settings?: Record<string, SettingValue> }[]
 }
@@ -119,7 +121,7 @@ export interface SliceSummary {
    * object's id when it has one, its name, and each feature's filament slots. The engine id distinguishes objects
    * expanded from one file, including objects with the same name; it is local to this slice.
    */
-  feature_filaments?: { object?: string; engine_object?: string; name: string; features: Record<string, number[]> }[]
+  feature_filaments?: { object?: string; engine_object?: string; name: string; features: Record<string, number[]>; nozzle_mm?: number }[]
   /**
    * The chamber cooling mode the printer's G-code reads (`chamber_cooling_mode`, sx engine), when it reads one: 0 keep
    * warm, 1 weak cooling, 2 strong cooling. `source` is where it came from: the call's overrides, the project's

@@ -115,6 +115,11 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
     return handle
   }
 
+  /** The filament a whole object prints with, when every part's override names the same one. */
+  const oneSlot = (over: Record<string, number> | undefined): { slot?: number } => {
+    const slots = [...new Set(Object.values(over ?? {}))]
+    return slots.length === 1 && slots[0]! > 1 ? { slot: slots[0]! } : {}
+  }
   /** The plate's objects as an engine job takes them: one file per mesh in `dir`, so each keeps its own transform. */
   const jobObjects = (req: SliceRequest, dir: string): SliceJobObject[] => {
     const file = (meshId: string): string => {
@@ -130,6 +135,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
       id: obj.id,
       transform: obj.transform,
       ...(obj.settings && Object.keys(obj.settings).length ? { settings: obj.settings as Record<string, SettingValue> } : {}),
+      ...oneSlot(obj.slotOverrides),
       ...(obj.volumes?.length
         ? { volumes: obj.volumes.map((v) => ({ path: file(v.mesh), role: v.role, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: v.settings } : {}) })) }
         : {}),
@@ -232,7 +238,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         warnings: [...(summary.warning_details ?? summary.warnings.map((message): NonNullable<SliceSummary['warning_details']>[number] => ({ code: 'unsupported_setting', message }))).map((w): SliceWarning => ({ code: w.code as SliceWarning['code'], message: w.message, ...(w.layer !== undefined ? { layer: w.layer } : {}), ...(w.object_id ? { objectId: w.object_id } : {}) })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
         ...(summary.chamber_cooling ? { chamberCooling: summary.chamber_cooling } : {}),
         ...(summary.filament_map ? { filamentMap: summary.filament_map } : {}),
-        ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, ...(f.engine_object ? { engineObject: f.engine_object } : {}), name: f.name, features: f.features })) } : {}),
+        ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, ...(f.engine_object ? { engineObject: f.engine_object } : {}), name: f.name, features: f.features, ...(f.nozzle_mm !== undefined ? { nozzleMm: f.nozzle_mm } : {}) })) } : {}),
       }
       slices.set(id, { result, summary, config: req.config as unknown as Record<string, SettingValue>, ...(summary.gcode_path ? { gcodePath: summary.gcode_path } : {}), ...(summary.preview_path ? { previewPath: summary.preview_path } : {}) })
       opts?.onProgress?.({ stage: 'gcode', fraction: 1 })

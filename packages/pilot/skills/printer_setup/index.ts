@@ -373,19 +373,21 @@ export function createSetupTools() {
     input: z.object({
       profileId: z.string().min(1).describe('Model id from printer_setup (resolved.model.id)'),
       nozzleMm: z.number().min(0.1).max(2).describe('Nozzle diameter in mm, one of the model nozzles'),
+      nozzles: z.array(z.number().min(0.1).max(2)).min(2).max(8).optional().describe('On a printer with two or more nozzles: each nozzle\'s size in mm, in nozzle order (left first, or tool 1 first), each one of the model nozzles; the first must be nozzleMm. Sizes that differ print each object with its own nozzle\'s widths and layer height'),
       connection: connection.optional().describe('How to reach the printer; omit for slicing only'),
       name: z.string().min(1).max(60).optional().describe('Label the user wants, such as "Bay 1"'),
     }),
     mustAsk: async () => ['Adding a printer always asks first'],
-    args: (i) => `${i.profileId} --nozzle ${i.nozzleMm}`,
+    args: (i) => `${i.profileId} --nozzle ${i.nozzles ? i.nozzles.join(',') : i.nozzleMm}`,
     async approval(i, ctx) {
+      checkNozzles(i)
       if (!ctx.host.setup?.addPrinter) throw new Error(`Adding a printer is done in the ${productName()} app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.`)
       const id = `new:${i.profileId}`
       const m = modelLabel(i.profileId)
       return {
         title: `Add ${oneLine(i.name ?? m, 40)}?`,
         lines: [
-          `${m}, ${i.nozzleMm} mm nozzle`,
+          i.nozzles ? `${m}, nozzles ${i.nozzles.join(', ')} mm` : `${m}, ${i.nozzleMm} mm nozzle`,
           i.connection ? `Connects over ${i.connection.family} at ${i.connection.address}` : 'For slicing only, no connection',
           ...(i.connection ? ['The access code or key is stored in your system keychain, entered in a secure field'] : []),
         ],
@@ -394,10 +396,11 @@ export function createSetupTools() {
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
+      checkNozzles(i)
       const h = ctx.host.setup?.addPrinter
       if (!h) return { ok: false, summary: `Adding a printer is done in the ${productName()} app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.` }
       const r = await h(addInput(i), ctx.token)
-      return { summary: `Added ${oneLine(i.name ?? modelLabel(i.profileId), 40)}`, output: { printerId: r.printerId, next: 'Call printer_setup with the same answers and added true to get the first calibration suggestion, then offer it to the user.' } }
+      return { summary: `Added ${oneLine(i.name ?? modelLabel(i.profileId), 40)}`, output: { printerId: r.printerId, nozzleMm: i.nozzleMm, ...(i.nozzles ? { nozzles: i.nozzles } : {}), next: 'Call printer_setup with the same answers and added true to get the first calibration suggestion, then offer it to the user.' } }
     },
   })
 
@@ -414,8 +417,18 @@ function connOf(c: { family: string; address: string; serial?: string | undefine
   return { family: c.family, address: c.address, ...(c.serial ? { serial: c.serial } : {}), ...(c.username ? { username: c.username } : {}) }
 }
 
-function addInput(i: { profileId: string; nozzleMm: number; connection?: { family: string; address: string; serial?: string | undefined; username?: string | undefined } | undefined; name?: string | undefined }): SetupAddInput {
-  return { profileId: i.profileId, nozzleMm: i.nozzleMm, ...(i.connection ? { connection: connOf(i.connection) } : {}), ...(i.name ? { name: i.name } : {}) }
+function addInput(i: { profileId: string; nozzleMm: number; nozzles?: number[] | undefined; connection?: { family: string; address: string; serial?: string | undefined; username?: string | undefined } | undefined; name?: string | undefined }): SetupAddInput {
+  return { profileId: i.profileId, nozzleMm: i.nozzleMm, ...(i.nozzles ? { nozzles: [...i.nozzles] } : {}), ...(i.connection ? { connection: connOf(i.connection) } : {}), ...(i.name ? { name: i.name } : {}) }
+}
+
+/** Refuses a per-nozzle size list that does not fit the model: one size per nozzle, each offered, the first nozzleMm. */
+function checkNozzles(i: { profileId: string; nozzleMm: number; nozzles?: number[] | undefined }): void {
+  if (!i.nozzles) return
+  const m = modelById(i.profileId)
+  if (m && i.nozzles.length !== m.nozzleCount) throw new Error(`The ${modelLabel(i.profileId)} has ${m.nozzleCount} ${m.nozzleCount === 1 ? 'nozzle' : 'nozzles'}; send one size for each in nozzles, or leave nozzles out.`)
+  const off = m ? i.nozzles.filter((d) => !m.nozzles.includes(d)) : []
+  if (off.length) throw new Error(`The ${modelLabel(i.profileId)} takes ${m!.nozzles.join(', ')} mm nozzles, not ${off.join(', ')} mm.`)
+  if (i.nozzles[0] !== i.nozzleMm) throw new Error(`nozzles starts with the first nozzle's size, which is nozzleMm: send nozzleMm ${i.nozzles[0]} or nozzles starting with ${i.nozzleMm}.`)
 }
 
 function hintFor(cause: string | undefined, family: string): string {

@@ -3,6 +3,7 @@
 // The project an MCP client works on: models, plates and settings, held in
 // memory by the server. mimir's skills (orient, arrange, cut, slice,
 // estimate) read and change it through the PilotProject interface.
+import { extruderOf, filamentMap, nozzleKind, nozzleName, nozzleSizes, paintedFilaments, seededMapConfig } from './object-nozzle'
 import type { HeightRange, MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue, VolumeRole } from '@slicerx/contracts'
 import { rotationMatrix, type ArrangedObject, type MovedCopies, type ObjectPlan, type PilotProject, type PlatesLeftOff, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
 import type { EngineCall } from '@slicerx/cad-history'
@@ -59,6 +60,8 @@ interface Entry {
   /** The object's own settings, over the project's and the plate's. */
   settings?: Record<string, SettingValue>
   volumes?: ProjectVolume[]
+  /** The filament every part prints with, when a client picked one (slicerx_project_object_nozzle); else each part's own. */
+  filament?: number
   /** Locked, as Lock does in the app: it is not moved, turned, scaled, cut or taken to another plate until unlocked. */
   locked?: true
   /** Left out of the print, as in the app: it keeps its place on the plate, and the slice leaves it out. */
@@ -342,7 +345,56 @@ export class McpProject implements PilotProject {
   config(plateIndex: number): PrintConfig {
     const plate = this.layout.find((p) => p.index === plateIndex)
     const tools = this.toolMap ? { filament_map_mode: 'Manual', filament_nozzle_map: this.toolMap.map((t) => t - 1) } : {}
-    return { ...this.baseConfig(), ...this.filamentConfig(), ...tools, ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
+    const cfg = { ...this.baseConfig(), ...this.filamentConfig(), ...tools, ...this.projectOverrides, ...(plate?.overrides ?? {}) }
+    // Nozzles of different sizes on a two-extruder printer: the map goes by hand, so each object's nozzle is known.
+    return { ...cfg, ...seededMapConfig(cfg, this.filaments().length) } as PrintConfig
+  }
+
+  /** The filaments an object prints with: the one a client picked, else its parts' own. */
+  objectFilaments(objectId: string): number[] {
+    const e = this.entries.get(objectId)
+    if (!e) throw new Error(`No object ${objectId}`)
+    if (!e.meshId) return [e.filament ?? 1]
+    const parts = this.host.parts(e.meshId)
+    const own = e.filament !== undefined ? [e.filament] : parts.map((p) => p.slot || 1)
+    return [...new Set([...own, ...parts.flatMap((p) => paintedFilaments(p.paint?.color))])].sort((a, b) => a - b)
+  }
+
+  /** Whether the object has color paint on any part. */
+  isPainted(objectId: string): boolean {
+    const e = this.entries.get(objectId)
+    return Boolean(e?.meshId && this.host.parts(e.meshId).some((p) => Object.keys(p.paint?.color ?? {}).length > 0))
+  }
+
+  /** Prints every part of an object with filament `slot` (1-based). */
+  setObjectFilament(objectId: string, slot: number): void {
+    const e = this.entries.get(objectId)
+    if (!e) throw new Error(`No object ${objectId}`)
+    if (!Number.isInteger(slot) || slot < 1 || slot > this.filaments().length) throw new Error(`No filament ${slot}: the project has ${this.filaments().length}. Add one with slicerx_project_add_filament.`)
+    e.filament = slot
+  }
+
+  /** The object's nozzle on a printer whose nozzles differ in size, or a refusal for one on two sizes; null on one size. */
+  objectNozzle(objectId: string, cfg: Record<string, unknown> = this.config(this.layout[0]?.index ?? 1)): { nozzle: number; nozzleMm: number } | { conflict: string } | null {
+    if (!nozzleKind(cfg)) return null
+    const sizes = nozzleSizes(cfg)
+    const { map } = filamentMap(cfg, this.filaments().length)
+    const used = this.objectFilaments(objectId).map((f) => extruderOf(cfg, map, f))
+    const first = used[0] ?? 1
+    const other = used.find((x) => Math.abs((sizes[x - 1] ?? 0) - (sizes[first - 1] ?? 0)) >= 1e-3)
+    const name = this.entries.get(objectId)?.obj.name ?? objectId
+    if (other !== undefined) return { conflict: `${name} prints on nozzles of two sizes (${sizes[first - 1]} mm and ${sizes[other - 1]} mm); an object prints with one nozzle size, so give its parts filaments on nozzles of one size` }
+    return { nozzle: first, nozzleMm: sizes[first - 1] ?? 0 }
+  }
+
+  /** The printer's nozzles and filament map as a client reads them back, when the nozzles differ in size. */
+  private nozzleReadback(): Record<string, unknown> {
+    const cfg = this.config(this.layout[0]?.index ?? 1)
+    const kind = nozzleKind(cfg)
+    if (!kind) return {}
+    const sizes = nozzleSizes(cfg)
+    const own = filamentMap({ ...this.baseConfig(), ...this.projectOverrides }, this.filaments().length)
+    return { nozzles: sizes.map((mm, i) => ({ nozzle: i + 1, name: nozzleName(cfg, i + 1), mm })), ...(kind === 'map' ? { filament_map: { mode: own.mode, map: own.map } } : {}) }
   }
 
   /**
@@ -961,6 +1013,10 @@ export class McpProject implements PilotProject {
         // Rotation and scale first (the upper 3x3), then the move that sets the part down at its place.
         const o: PlateObject = { id, name: e.obj.name, mesh: e.meshId, transform: [...m.slice(0, 12), at[0] - mx, at[1] - my, -mz, 1] }
         if (e.settings && Object.keys(e.settings).length) o.settings = { ...e.settings }
+        if (e.filament !== undefined) {
+          const over = Object.fromEntries(this.host.parts(e.meshId).filter((part) => part.slot !== e.filament).map((part) => [part.name, e.filament!]))
+          if (Object.keys(over).length) o.slotOverrides = over
+        }
         if (e.volumes?.length) o.volumes = e.volumes.map((v) => ({ name: v.name, role: v.role, mesh: v.meshId, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
         objects.push(o)
         placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position), turnDeg: 0, ...(e.printable === false ? { printable: false as const } : {}) })
@@ -1351,14 +1407,27 @@ export class McpProject implements PilotProject {
           printable: e?.printable !== false,
           settings: e?.settings ?? {},
           volumes: (e?.volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, shape: v.shape, ...(v.settings ? { settings: v.settings } : {}) })),
+          ...(e?.filament !== undefined ? { filament: e.filament } : {}),
+          ...this.nozzleOf(o.id),
         }
       }),
+      ...this.nozzleReadback(),
       bed: describeBed(this.bed(this.layout[0]?.index ?? 1)),
       plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index), ...this.safeByObject(p.index) })),
       filaments: this.filaments(),
       ...(this.hotends() ? { hotends: this.hotends() } : {}),
       overrides: this.projectOverrides,
       height_ranges: this.heightRanges(),
+    }
+  }
+
+  private nozzleOf(objectId: string): Record<string, unknown> {
+    try {
+      const n = this.objectNozzle(objectId)
+      if (!n) return {}
+      return 'conflict' in n ? { nozzle: null, nozzleConflict: n.conflict } : n
+    } catch {
+      return {}
     }
   }
 

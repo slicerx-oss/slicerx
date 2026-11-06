@@ -45,6 +45,8 @@ export interface SetupAddInput {
   /** A catalog model id (`bambu-a1`), which is also the printer profile id in @slicerx/settings. Unknown text adds a printer with no model. */
   profileId: string
   nozzleMm: number
+  /** Each nozzle's size in mm, in nozzle order, on a printer with two or more; the first is nozzleMm. */
+  nozzles?: number[]
   connection?: SetupConnection
   /** Label for the printer. Defaults to the model name. */
   name?: string
