@@ -75,6 +75,11 @@ export function tileForModel(model: PrinterModel): BrandTile | undefined {
 // ---------------------------------------------------------------------------
 // Form
 
+/** AMS units the form offers, 4 slots each: up to 8, the 32 filaments a project holds. */
+export const AMS_UNIT_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8] as const
+/** Slot counts the form offers for an MMU or another filament system, up to the 32 a project holds. */
+export const SLOT_CHOICES = [2, 3, 4, 5, 6, 8, 12, 16, 24, 32] as const
+
 export const NOZZLE_SIZES = [0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0] as const
 export const NOZZLE_TYPES = ['brass', 'hardened-steel', 'stainless-steel', 'tungsten-carbide', 'ruby', 'high-flow', 'copper-alloy'] as const
 export type NozzleType = (typeof NOZZLE_TYPES)[number]

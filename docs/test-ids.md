@@ -607,6 +607,7 @@ Ids that tests read for their text:
 | --- | --- |
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
+| `paint-slot-limit` | The Paint panel's line under the filaments when the project has more than paint can use (filaments 1 to 18) |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
 | `model-box-select` | The box while a Shift and left drag selects in Model; `data-dir` is `inside` (left to right) or `touch` (right to left) |
 | `model-shelf` | Model's tools: the ribbon on a desktop (`data-tab` the open tab, `data-setting` the Toolbar size, `data-size` the size drawn, `data-fit` `labels`, or `icons` when the row ran out of room), the shelf on a phone |

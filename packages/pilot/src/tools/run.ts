@@ -4,7 +4,7 @@
 // from their notes, else the only printer online. Only when none of that settles it does the person get a card with
 // each online printer's loaded spools. Changes nothing outside the project: the plate's printer and which spool each
 // filament prints on.
-import { baseMaterial, colorDistance, matchSlots, type FilamentSlot, type MapFilament, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
+import { baseMaterial, COLOR_SLOT_MAX, colorDistance, matchSlots, type FilamentSlot, type MapFilament, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { MemoryFact, MemoryStore } from '../memory/facts'
 import { colorWord, colorWordHex } from '../run/colors'
@@ -208,7 +208,7 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
       filaments: z
         .array(
           z.object({
-            index: z.number().int().min(1).max(16).optional().describe('The filament number on the plate, from 1; the order given when left out'),
+            index: z.number().int().min(1).max(COLOR_SLOT_MAX).optional().describe('The filament number on the plate, from 1; the order given when left out'),
             material: z.string().min(1).max(40).optional().describe('Such as PLA or PETG'),
             color: z.string().min(1).max(40).optional().describe('A color word such as black, or #RRGGBB'),
           }),

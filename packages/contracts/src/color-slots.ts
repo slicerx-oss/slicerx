@@ -17,7 +17,7 @@ export interface ColorSlot {
 }
 
 export interface ColorSlotOptions {
-  /** The most slots the project may end up with: the printer's slot count, else the project's limit (16). */
+  /** The most slots the project may end up with: the printer's slot count, else the project's limit (COLOR_SLOT_MAX). */
   limit: number
   /** CIEDE2000 distance at or under which two colors count as the same filament. Default COLOR_MATCH_DELTA_E. */
   threshold?: number
@@ -51,7 +51,13 @@ export interface ColorSlotPlan {
 export const COLOR_MATCH_DELTA_E = 12
 
 /** The most slots a project holds. */
-export const COLOR_SLOT_MAX = 16
+export const COLOR_SLOT_MAX = 32
+
+/**
+ * The highest filament a paint text can name. The text writes filaments 3 and up as one 4-bit code plus 3, so paint
+ * reaches filament 18; filaments above it print whole parts only.
+ */
+export const PAINT_FILAMENT_MAX = 18
 
 /** A CIELAB color: L, a, b. */
 export type Lab = readonly [number, number, number]

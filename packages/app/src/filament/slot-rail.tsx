@@ -356,6 +356,12 @@ export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
   )
 }
 
+/** Add filament's tip: the filament it adds, and once the project is full, why it is off. */
+export function addFilamentTip(count: number): { title: string; body: string; reason?: string } {
+  const tip = { title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.` }
+  return count >= MAX_SLOTS ? { ...tip, reason: `A project holds ${MAX_SLOTS} filaments at most.` } : tip
+}
+
 /** Add filament, at the top of the spools so the new one lands below it and nothing above it moves. */
 export function AddFilament({ count }: { count: number }) {
   const full = count >= MAX_SLOTS
@@ -366,7 +372,7 @@ export function AddFilament({ count }: { count: number }) {
       icon="plus"
       data-testid="slice-filament-add"
       disabled={full}
-      tip={{ title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.`, ...(full ? { reason: `A project holds ${MAX_SLOTS} filaments at most.` } : {}) }}
+      tip={addFilamentTip(count)}
       onClick={() => addSlot(count + 1)}
     >
       Add filament

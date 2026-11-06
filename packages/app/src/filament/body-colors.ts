@@ -10,7 +10,7 @@ import type { AppState } from '../state/store'
 
 type SlotInputs = Parameters<typeof resolveSlots>[0]
 
-/** The most slots a plan may fill: the printer's slot count when it reports its slots, else the project's 16. */
+/** The most slots a plan may fill: the printer's slot count when it reports its slots, else the project's 32. */
 export function bodyColorLimit(s: Pick<AppState, 'printerSlots'>): number {
   return s.printerSlots.length > 0 ? Math.min(COLOR_SLOT_MAX, s.printerSlots.length) : COLOR_SLOT_MAX
 }
