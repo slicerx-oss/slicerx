@@ -4159,3 +4159,115 @@ async fn a_partner_phone_never_approves_a_pause_a_partner_key_asked_for_over_the
     let log = mock_log(&mocks).await;
     assert!(!log.iter().any(|l| l.contains("pause")), "{log:?}");
 }
+
+/// The camera guard's detector that answers the first plate check at once and holds each later one until the
+/// test lets it go: `asked` hears when a held check arrives, `go` answers it (clear).
+async fn held_plate_detector(
+    link: &Link,
+) -> (
+    tokio::sync::mpsc::UnboundedReceiver<()>,
+    tokio::sync::mpsc::UnboundedSender<()>,
+) {
+    let mut det = connect_async(format!("ws://127.0.0.1:{}/", link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let pp = pairing::proof_params(&mut det, WATCH_CODE, json!({ "role": "watch" })).await;
+    let r = call(&mut det, 1, "pair", pp).await;
+    assert_eq!(r["result"]["role"], "watch", "{r}");
+    let r = call(&mut det, 2, "watch.subscribe", json!({ "everyMs": 120_000 })).await;
+    assert!(r["result"]["subscription"].is_number(), "{r}");
+    let (asked_tx, asked_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (go_tx, mut go_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    tokio::spawn(async move {
+        let (mut id, mut n) = (100, 0);
+        while let Some(Ok(m)) = det.next().await {
+            let Message::Text(t) = m else { continue };
+            let v: Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["event"] != "watch.plate" {
+                continue;
+            }
+            n += 1;
+            if n > 1 {
+                let _ = asked_tx.send(());
+                if go_rx.recv().await.is_none() {
+                    return;
+                }
+            }
+            let d = &v["data"];
+            let res = json!({ "clear": true, "compared": true, "checkId": d["checkId"], "printerId": d["printerId"], "note": "test" });
+            id += 1;
+            det.send(Message::text(
+                json!({ "id": id, "method": "watch.plateResult", "params": res }).to_string(),
+            ))
+            .await
+            .unwrap();
+        }
+    });
+    (asked_rx, go_tx)
+}
+
+#[tokio::test]
+async fn a_start_approved_from_afar_is_refused_when_the_phone_is_revoked_during_its_plate_check() {
+    let mut s = setup().await;
+    let mocks = idle_bay4_with_plate(&mut s).await;
+    let (mut asked, go) = held_plate_detector(&s.link).await;
+    let r = call(
+        &mut s.app,
+        23,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["enabled"], true, "{r}");
+    let (mut phone, signer, pairing_id) = partner_approver(&mut s, 96, "Example Phone").await;
+    let (f, sha) = gcode_file("cube.gcode", "M140 S60\nM104 S210\nG28\nG1 X10 Y10\n");
+    let r = call(
+        &mut s.agent,
+        20,
+        "approvals.register",
+        print_card("held-1", &f, &sha),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "held-1")
+        .await;
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    // The approval waits on its own plate check; the person revokes the phone meanwhile.
+    phone
+        .fire(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    tokio::time::timeout(Duration::from_secs(10), asked.recv())
+        .await
+        .expect("the approval's plate check in time")
+        .expect("the approval's plate check");
+    let r = call(
+        &mut s.app,
+        30,
+        "remote.pairings.remove",
+        json!({ "pairingId": pairing_id }),
+    )
+    .await;
+    assert_eq!(r["result"]["removed"], true, "{r}");
+    // Let this check and any later one answer.
+    for _ in 0..4 {
+        let _ = go.send(());
+    }
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let pending = call(&mut s.app, 31, "approvals.pending", json!({})).await;
+    assert!(
+        pending["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == "held-1"),
+        "a revoked phone's approval went through: {pending}"
+    );
+    let log = mock_log(&mocks).await;
+    assert!(!log.iter().any(|l| l.starts_with("start ")), "{log:?}");
+}
