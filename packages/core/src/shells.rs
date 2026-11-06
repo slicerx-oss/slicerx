@@ -957,3 +957,49 @@ fn walk(i: &HInput<'_>, src: i64, toward: i64, layers: i64) -> Vec<Option<Shapes
     }
     result
 }
+
+#[cfg(test)]
+mod legacy_mode {
+    use super::{Mode, mode_of};
+    use crate::config::PrintConfig;
+    use serde_json::{Value, json};
+
+    /// The value the app's project import hands the engine for `raw`: the legacy table's row for the key when one
+    /// matches the text, and a number or a switch as its text otherwise (an enum setting keeps any text).
+    fn imported(raw: &Value) -> Value {
+        let file: Value =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/legacy.json"))).unwrap();
+        let text = match raw {
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        let row = file["value_map"].as_array().unwrap().iter().find(|r| {
+            r["key"] == "ensure_vertical_shell_thickness" && raw.as_str().is_some_and(|s| r["from"] == s)
+        });
+        row.map_or(Value::String(text), |r| r["to"].clone())
+    }
+
+    fn mode(v: &Value) -> Option<Mode> {
+        mode_of(&PrintConfig::from_value(&json!({ "ensure_vertical_shell_thickness": v })).unwrap())
+    }
+
+    /// The older switch spellings read as the same shell mode raw as after the app's import.
+    #[test]
+    fn an_older_switch_value_reads_as_the_app_imports_it() {
+        for v in [
+            json!("0"),
+            json!("1"),
+            json!("true"),
+            json!("false"),
+            json!(0),
+            json!(1),
+            json!(true),
+            json!(false),
+        ] {
+            let app = imported(&v);
+            assert_eq!(mode(&v), mode(&app), "{v} (imported as {app})");
+        }
+        assert_eq!(mode(&json!("0")), Some(Mode::Moderate));
+        assert_eq!(mode(&json!("1")), None);
+    }
+}
