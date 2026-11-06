@@ -43,16 +43,24 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(dir, name) })
 }
 
-/** At 390 px the left pane is a slice sheet on a phone, or folds behind its edge tab: opens whichever is there. */
-async function leftPane(page: Page): Promise<void> {
-  await openSheet(page)
-  const tab = page.getByTestId('edge-tab-left')
-  if ((await tab.count()) && (await tab.getAttribute('aria-expanded')) !== 'true') await tab.click()
+/**
+ * Resizes the window and waits for the panes to follow. The app turns its side panes into sheets at 900 px and less on
+ * a media query change, which the browser reports on a later frame, so right after the resize the old panes are still
+ * there. A shut sheet is inert, and a slot in one takes no focus, so a step taken too early finds the wrong panes:
+ * openSheet sees no sheet tab yet and opens nothing.
+ */
+async function resize(page: Page, size: { width: number; height: number }): Promise<void> {
+  await page.setViewportSize(size)
+  if (size.width <= 900) await expect(page.locator('.sheet-tab[data-panel="slice-sidebar"]')).toBeAttached()
+  else await expect(page.locator('aside.pane.sheet, aside.pane[inert]')).toHaveCount(0)
 }
 
 /** Opens the Filament dialog of slot `n` from the rail, as a person does with the keyboard. */
 async function filamentDialog(page: Page, n: number) {
-  await page.locator(`[data-testid="slice-filament-slot"][data-slot="${n}"]`).focus()
+  const slot = page.locator(`[data-testid="slice-filament-slot"][data-slot="${n}"]`)
+  await slot.focus()
+  // A slot in an inert pane (a shut sheet) does not take focus, and the key below would open no menu.
+  await expect(slot).toBeFocused()
   await page.keyboard.press('Shift+F10')
   await page.getByTestId('slice-filament-edit').click()
   const dialog = page.getByRole('dialog', { name: new RegExp(`Filament ${n}`) })
@@ -63,11 +71,7 @@ async function filamentDialog(page: Page, n: number) {
 /** Adds filament 2 through the rail and picks Bambu TPU 75A (2.85 mm) for it in the Filament dialog. */
 async function addTpu285(page: Page): Promise<void> {
   if ((await page.locator('[data-testid="slice-filament-slot"][data-slot="2"]').count()) === 0) await page.getByTestId('slice-filament-add').first().click()
-  await page.locator('[data-testid="slice-filament-slot"][data-slot="2"]').focus()
-  await page.keyboard.press('Shift+F10')
-  await page.getByTestId('slice-filament-edit').click()
-  const dialog = page.getByRole('dialog', { name: /Filament 2/ })
-  await expect(dialog).toBeVisible()
+  const dialog = await filamentDialog(page, 2)
   await dialog.getByLabel('Brand').selectOption('Bambu Lab')
   await dialog.getByLabel('Material').selectOption('TPU')
   await dialog.getByLabel('Product').selectOption({ label: 'Bambu TPU 75A(2.85mm)' })
@@ -90,7 +94,7 @@ async function twoBoxes(page: Page): Promise<void> {
 
 test('the H3C puts each filament on its tool and keeps 2.85 mm TPU on the TPU tool', async ({ page }) => {
   test.slow()
-  await page.setViewportSize(DESKTOP)
+  await resize(page, DESKTOP)
   await calm(page, 'advanced', { keepPrinter: true })
   await expect.poll(async () => (await sx(page)).profile?.printerId, { timeout: 60_000 }).toBe('bambu-h3c')
   await twoBoxes(page)
@@ -122,20 +126,20 @@ test('the H3C puts each filament on its tool and keeps 2.85 mm TPU on the TPU to
   expect(done.slice.result?.filamentMap).toMatchObject({ nozzles: [2, 7], auto: false })
 
   // The phone width: the same rows in the slice sheet.
-  await page.setViewportSize(PHONE)
-  await leftPane(page)
+  await resize(page, PHONE)
+  await openSheet(page)
   const phoneRows = page.locator('.hotend-map')
   await phoneRows.scrollIntoViewIfNeeded()
   await expect(phoneRows.getByLabel('Tool for filament 2')).toBeVisible()
   await expect(phoneRows.getByLabel('Tool for filament 2')).toHaveValue('8')
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
   await shot(page, 'h3c-tools-390.png')
-  await page.setViewportSize(DESKTOP)
+  await resize(page, DESKTOP)
 })
 
 test('the H3C holds a chamber temperature over 65 C to 65 C, in the field and in the slice', async ({ page }) => {
   test.slow()
-  await page.setViewportSize(DESKTOP)
+  await resize(page, DESKTOP)
   await calm(page, 'advanced', { keepPrinter: true })
   await expect.poll(async () => (await sx(page)).profile?.printerId, { timeout: 60_000 }).toBe('bambu-h3c')
   if ((await state(page)).plate.length === 0) await boxOnPlate(page)
@@ -166,8 +170,8 @@ test('the H3C holds a chamber temperature over 65 C to 65 C, in the field and in
   expect(hot.slice.result?.warnings?.some((w) => w.code === 'safety_limit' && /chamber/.test(w.message) && /65 C/.test(w.message)), JSON.stringify(hot.slice.result?.warnings)).toBe(true)
 
   // The phone width: the same field and line in the dialog.
-  await page.setViewportSize(PHONE)
-  await leftPane(page)
+  await resize(page, PHONE)
+  await openSheet(page)
   dialog = await filamentDialog(page, 1)
   await dialog.locator('#slot-chamber-hint').scrollIntoViewIfNeeded()
   await expect(dialog.getByTestId('slot-chamber')).toBeVisible()
@@ -175,5 +179,5 @@ test('the H3C holds a chamber temperature over 65 C to 65 C, in the field and in
   await shot(page, 'h3c-chamber-390.png')
   await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await patch(page, { overrides: {} })
-  await page.setViewportSize(DESKTOP)
+  await resize(page, DESKTOP)
 })
