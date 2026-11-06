@@ -133,16 +133,6 @@ export function toolName(tool: number, tpu: boolean): string {
   return tpu ? `Tool ${tool}, TPU 2.85 mm` : `Tool ${tool}`
 }
 
-/**
- * The TPU tool (1-based) the printer's own device data names, where it differs from the print profiles' TPU hotend.
- * The maker's device file for the H3C (from its 2.9.1 slicer release) gives index 6 (tool 7) for the TPU tool, while its print profiles put
- * the TPU285 hotend on index 7 (tool 8). Until a real printer settles which, the tool rows say so plainly.
- */
-export function deviceTpuTool(cfg: Record<string, unknown>): number | undefined {
-  const model = String(list(cfg['printer_model'])[0] ?? '')
-  return model === 'Bambu Lab H3C' ? 7 : undefined
-}
-
 /** Why a hand-set map of tools does not fit the printer (the rule the engine refuses by); null when it fits. */
 export { hotendMapProblem }
 

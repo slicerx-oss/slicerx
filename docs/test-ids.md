@@ -197,7 +197,6 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-note` | Why the target prints with its spool, or that it is another material than the profile's (`data-other`) |
 | `slice-filament-foot` | The section's last line: how to change a filament and Add filament, or, with `data-from="printer"`, where the printer's slots come from and how to change or add one |
 | `slice-filament-add` | Add filament: adds the next filament and opens it (no printer reports the slots) |
-| `hotend-tpu-note` | Under the tool rows of a printer whose hotends are its tools (the H3C): the TPU tool's number is not settled yet (print profiles against the device data) |
 | `slice-filament-foot-reset` | Reset to printer, in the line under the rail (the printer's slots, one changed here) |
 | `nozzle-map-sizes-note` | Under Pick nozzles automatically on a two-extruder printer whose nozzles differ in size: why the switch is off and the map is set by hand |
 | `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |
