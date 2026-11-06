@@ -14,6 +14,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle } from '@slicerx/contracts'
 import { createContext, serverTools } from '@slicerx/mcp'
+import { h3cVariantProject, type H3cLayout } from '../../mcp/test/h3c-variant-projects'
 import { binBuilt, SX_BUILD } from './binaries'
 
 const { openModelBytes } = await import('../src/state/actions')
@@ -36,6 +37,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const PRINTERS = {
   'prusa-mk4': { id: 'my-mk4', vendor: 'Prusa Research', model: 'MK4' },
   'bambu-a1': { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' },
+  'bambu-h3c': { id: 'my-h3c', vendor: 'Bambu Lab', model: 'H3C' },
 } as const
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
@@ -158,10 +160,17 @@ function prusaProject(n: number): string {
   return path
 }
 
+/** An H3C project in the layout Bambu Studio 2.9.1 saves, as saved or after the printer's hotends are synced in. */
+function h3cProject(layout: H3cLayout): string {
+  const path = join(dir, `h3c-${layout}.3mf`)
+  writeFileSync(path, h3cVariantProject(layout))
+  return path
+}
+
 /** The repo PrusaSlicer fixture's own settings, which the generated projects reuse. */
 let prusaConfig = ''
 
-const CASES: { name: string; file: () => Promise<string> | string; printer: keyof typeof PRINTERS; profiles: string[]; slots?: number; types?: string[] }[] = [
+const CASES: { name: string; file: () => Promise<string> | string; printer: keyof typeof PRINTERS; profiles: string[]; slots?: number; types?: string[]; hotends?: number[] }[] = [
   { name: 'a PrusaSlicer project on the MK4', file: () => join(repo, 'packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf'), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], types: ['PETG'] },
   { name: 'an Orca project on the A1', file: () => join(repo, 'packages/geom/tests/corpus/orca-subtypes.3mf'), printer: 'bambu-a1', profiles: ['machine:bambu-a1'] },
   { name: 'a Bambu Studio project on the A1', file: () => join(repo, 'packages/geom/tests/corpus/bambu-subtypes.3mf'), printer: 'bambu-a1', profiles: ['machine:bambu-a1'] },
@@ -176,6 +185,10 @@ const CASES: { name: string; file: () => Promise<string> | string; printer: keyo
   { name: 'a 2-filament PLA and TPU Bambu Studio project saved for the A1', file: () => bambuProject(2, true, 2, ['PLA', 'TPU']), printer: 'bambu-a1', profiles: ['machine:bambu-a1'], slots: 2, types: ['PLA', 'TPU'] },
   { name: 'a 2-filament PrusaSlicer project on the MK4 with a multi-material unit', file: () => prusaProject(2), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], slots: 2 },
   { name: 'a 4-filament PrusaSlicer project on the MK4 with a multi-material unit', file: () => prusaProject(4), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], slots: 4 },
+  // An H3C project whose 2.85 mm TPU lists only its TPU285 variant, each filament on a hotend by hand: as saved, and
+  // after the printer's hotends are synced in (each hotend's type given, the extruder called Hybrid).
+  { name: 'an H3C project with a TPU285-only filament on its hand-set hotends', file: () => h3cProject('saved'), printer: 'bambu-h3c', profiles: ['machine:bambu-h3c'], slots: 4, types: ['PLA', 'PLA', 'PLA', 'TPU'], hotends: [0, 2, 6, 7] },
+  { name: 'a synced H3C project with a TPU285-only filament on its hand-set hotends', file: () => h3cProject('synced'), printer: 'bambu-h3c', profiles: ['machine:bambu-h3c'], slots: 4, types: ['PLA', 'PLA', 'PLA', 'TPU'], hotends: [0, 2, 6, 7] },
 ]
 
 describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same G-code from the app, the MCP server and the command line', () => {
@@ -188,6 +201,12 @@ describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same 
       const file = await c.file()
       const out = mkdtempSync(join(dir, 'case-'))
       const app = await appConfig(file, c.printer)
+      if (c.hotends) {
+        // the app opens it with each filament's type and on the hotend the project sets, as the MCP server does below
+        expect(get().toast, JSON.stringify(get().toast)).toBeNull()
+        expect(app['filament_type']).toEqual(c.types)
+        expect(app['filament_nozzle_map']).toEqual(c.hotends)
+      }
       const mcp = await mcpSlice(file, c.profiles, join(out, 'mcp'))
       if (c.slots) {
         // the plate prints every filament, each slot with its own color and flush row
@@ -200,6 +219,7 @@ describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same 
         expect(app['filament_type']).toEqual(c.types)
         expect(mcp.request['config']).toMatchObject({ filament_type: c.types })
       }
+      if (c.hotends) expect(mcp.request['config']).toMatchObject({ filament_nozzle_map: c.hotends })
       expect(firstDifference(appSlice(mcp.request, app, join(out, 'app')), mcp.gcode)).toBeNull()
       expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
     }, 120_000)
