@@ -101,8 +101,8 @@ settings:
   - {key: travel_acceleration, label: Travel acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 0, max: 50000}}
   - {key: default_jerk, label: Default jerk, group: motion, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 0, max: 50}}
   - {key: accel_to_decel_enable, label: Limit accel to decel, group: motion, scope: process, type: bool, pilot: edit, note: "Klipper only"}
-  - {key: machine_max_acceleration_extruding, label: Machine max acceleration, group: motion, scope: machine, type: float, unit: mm/s2, pilot: read}
-  - {key: machine_max_speed_x, label: Machine max X speed, group: motion, scope: machine, type: float, unit: mm/s, pilot: read}
+  - {key: machine_max_acceleration_extruding, label: Maximum acceleration when extruding, group: motion, scope: machine, type: float, unit: mm/s2, pilot: read}
+  - {key: machine_max_speed_x, label: Maximum speed X, group: motion, scope: machine, type: float, unit: mm/s, pilot: read}
 
   # Cooling
   - {key: fan_min_speed, label: Part fan minimum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
@@ -141,8 +141,8 @@ settings:
   - {key: retraction_length, label: Retraction length, group: retraction, scope: machine_or_filament, type: float, unit: mm, pilot: guarded, bounds: {min: 0, max: 10}, note: "Filament profiles override with filament_retraction_length"}
   - {key: retraction_speed, label: Retraction speed, group: retraction, scope: machine_or_filament, type: float, unit: mm/s, pilot: guarded, bounds: {min: 5, max: 120}}
   - {key: deretraction_speed, label: Deretraction speed, group: retraction, scope: machine_or_filament, type: float, unit: mm/s, pilot: guarded, bounds: {min: 0, max: 120}}
-  - {key: retraction_minimum_travel, label: Minimum travel after retraction, group: retraction, scope: machine_or_filament, type: float, unit: mm, pilot: edit}
-  - {key: retract_when_changing_layer, label: Retract on layer change, group: retraction, scope: machine_or_filament, type: bool, pilot: edit}
+  - {key: retraction_minimum_travel, label: Shortest travel that triggers a retraction, group: retraction, scope: machine_or_filament, type: float, unit: mm, pilot: edit}
+  - {key: retract_when_changing_layer, label: Retract at each layer change, group: retraction, scope: machine_or_filament, type: bool, pilot: edit}
   - {key: wipe, label: Wipe while retracting, group: retraction, scope: machine_or_filament, type: bool, pilot: edit}
   - {key: wipe_distance, label: Wipe distance, group: retraction, scope: machine_or_filament, type: float, unit: mm, pilot: edit}
   - {key: z_hop, label: Z hop height, group: retraction, scope: machine_or_filament, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 2}}

@@ -5,6 +5,7 @@
 // edition index. Lookups are exact on ids and aliases; search is a small
 // BM25 over names, aliases and flattened text.
 import type { Citation } from '@slicerx/contracts'
+import { settingDef } from '@slicerx/settings'
 
 export type KbKind = 'filament' | 'printer' | 'accessory' | 'troubleshoot' | 'workflow' | 'intent' | 'other'
 
@@ -164,6 +165,12 @@ export function keptEditionDocs(bundled: Pick<KbIndex, 'docs'>, edition: KbEditi
   return edition.index.docs.filter((d) => d.edition === edition.id && !taken.has(`${d.kind}:${norm(d.id)}`) && !taken.has(`${d.kind}:${norm(d.name)}`))
 }
 
+/** A printer setting goes by its settings schema label, the words the Printer settings dialog shows. */
+function schemaLabel(s: KbSetting): KbSetting {
+  const def = settingDef(s.key)
+  return def?.section === 'printer' && def.label !== s.label ? { ...s, label: def.label } : s
+}
+
 /**
  * A knowledge base over the bundled index and, with `edition`, that edition's docs and sources from its index. Anything tagged
  * with another edition is left out of both, so one edition never finds or cites another's knowledge. An edition doc
@@ -180,6 +187,7 @@ export function createKnowledgeBase(bundled: KbIndex, edition?: KbEdition): Know
     docs: [...bundled.docs, ...(own?.docs ?? [])].filter((d) => mine(d) && fresh(d)),
     sources: [...bundled.sources, ...(own?.sources ?? [])].filter(mine),
     prefixes: [...bundled.prefixes, ...(own?.prefixes ?? [])].filter(mine),
+    settings: bundled.settings.map(schemaLabel),
   }
   const byKey = new Map<string, KbDoc>()
   for (const d of index.docs) {
