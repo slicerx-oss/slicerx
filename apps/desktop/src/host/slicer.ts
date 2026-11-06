@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // SlicerHost over the native `slice` commands. Geometry and results cross as
 // raw bytes; only the small request and info objects are JSON.
-import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, PlateCheck, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import { readPlateCheck } from '@slicerx/contracts'
+import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, PlateArrangement, PlateCheck, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import { readPlateArrangement, readPlateCheck } from '@slicerx/contracts'
 import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
@@ -125,6 +125,20 @@ async function checkPlate(req: SliceRequest, opts?: { signal?: AbortSignal }): P
   return readPlateCheck(raw)
 }
 
+/** The engine's layout of the plate on the blocking pool (the arrange_plate command), from the meshes it holds by id. */
+async function arrangePlate(req: SliceRequest, opts?: { onLayout?: (first: PlateArrangement) => void }): Promise<PlateArrangement> {
+  // The plate's first layout, before the plate check runs on it, so the page shows it at once.
+  const onLayout = new Channel<unknown>()
+  onLayout.onmessage = (v) => {
+    try {
+      opts?.onLayout?.(readPlateArrangement(v))
+    } catch {
+      // a first layout the page cannot read waits for the whole answer
+    }
+  }
+  return readPlateArrangement(await invoke('arrange_plate', { request: nativeRequest(req), onLayout }))
+}
+
 /**
  * Where each engine stage sits in the whole slice, from and to, roughly as the time goes on a big model: cutting the
  * layers and the whole-object plans worked out before the first contour (often over half the time), working out each
@@ -158,6 +172,7 @@ export function createTauriSlicer(): SlicerHost {
     reviewScripts: (inputs) => invoke('review_scripts', { inputs }),
     loadParts: (name, parts) => load(encodeParts(parts), `${name}.sxmp`),
     checkPlate,
+    arrangePlate,
     async slice(req: SliceRequest, opts): Promise<SliceResult> {
       const started = performance.now()
       const request = nativeRequest(req, sliceClock())

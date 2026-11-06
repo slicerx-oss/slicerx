@@ -182,6 +182,7 @@ fn main() {
             slicing::slice,
             slicing::cancel_slice,
             slicing::check_plate,
+            slicing::arrange_plate,
             slicing::get_preview,
             slicing::get_gcode,
             slicing::get_gcode_line_starts,

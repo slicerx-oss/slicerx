@@ -407,6 +407,55 @@ fn run_check(
     serde_json::to_value(&check).map_err(|e| e.to_string())
 }
 
+/// Lays the plate out on the bed ([`sx_core::api::arrange_request`], `plate.placement` `arrange`), on the blocking pool,
+/// so the window never waits on it: the layout sx and the MCP server give the same plate, from the meshes the page
+/// loaded (by id, nothing sent again). The answer is the engine's report: each placed object's new transform, the
+/// objects with no room, and with `newPlates` their layouts on new plates. `on_layout` gets the plate's first layout
+/// before the plate check runs on it, so the page shows it at once. It slices nothing and keeps or touches no session.
+#[tauri::command]
+pub async fn arrange_plate(
+    request: String,
+    on_layout: Channel<serde_json::Value>,
+    state: State<'_, Slicer>,
+) -> Result<serde_json::Value, String> {
+    let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
+    let meshes = lock(&state.meshes).clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        run_arrange(req, &meshes, &mut |v| {
+            // A page that went away is not an error: the layout still comes back.
+            let _ = on_layout.send(v.clone());
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The arrange of `req` with the meshes the shell holds, `first` getting the plate's first layout before the plate
+/// check ([`sx_core::api::arrange_request_with`]).
+fn run_arrange(
+    mut req: SliceRequest,
+    meshes: &HashMap<u32, Arc<Mesh>>,
+    first: &mut dyn FnMut(&serde_json::Value),
+) -> Result<serde_json::Value, String> {
+    let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
+        r.parse::<u32>()
+            .ok()
+            .and_then(|k| meshes.get(&k).cloned())
+            .ok_or_else(|| Error::Config {
+                key: "plate.objects.mesh",
+                reason: format!("unknown mesh {r}"),
+            })
+    };
+    req.plate.placement = sx_core::api::PlatePlacement::Arrange;
+    let layout = sx_core::api::arrange_request_with(&mut req, &lookup, &mut |a| {
+        if let Ok(v) = serde_json::to_value(a) {
+            first(&v);
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(&layout).map_err(|e| e.to_string())
+}
+
 /// Hands the page a slice's preview, once: the bytes move to the response instead of being copied, and the slice keeps
 /// none. The page reads each slice's preview once and keeps it; a second ask is an error.
 #[tauri::command]
@@ -707,6 +756,65 @@ mod tests {
         let mut lost = request.clone();
         lost["plate"]["objects"][0]["mesh"] = serde_json::json!(999);
         assert!(check(&state, &lost, 6).is_err());
+    }
+
+    fn arrange(state: &Slicer, request: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let req: SliceRequest =
+            serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
+        let meshes = lock(&state.meshes).clone();
+        let mut first = Vec::new();
+        let layout = run_arrange(req, &meshes, &mut |v| first.push(v.clone()))?;
+        // The page gets the first layout once, before the plate check, to show at once.
+        assert_eq!(first.len(), 1, "one first layout");
+        assert!(
+            first[0].get("check").is_none(),
+            "the first layout comes before the check"
+        );
+        assert!(
+            first[0]["objects"].as_array().is_some_and(|o| !o.is_empty()),
+            "{}",
+            first[0]
+        );
+        Ok(layout)
+    }
+
+    #[test]
+    fn an_arrange_spaces_a_by_object_pair_by_the_clearance_and_keeps_no_session() {
+        let state = Slicer::default();
+        let request = by_object_pair(&state, 3.0);
+        let layout = arrange(&state, &request).expect("the pair arranges");
+        assert_eq!(layout["byObject"], true, "{layout}");
+        assert_eq!(layout["clearanceMm"], 68.0, "{layout}");
+        let objects = layout["objects"].as_array().expect("objects");
+        assert_eq!(objects.len(), 2, "{layout}");
+        assert!(layout["notFit"].as_array().is_some_and(Vec::is_empty), "{layout}");
+        let center = |o: &serde_json::Value| {
+            [
+                o["centerMm"][0].as_f64().unwrap_or(0.0),
+                o["centerMm"][1].as_f64().unwrap_or(0.0),
+            ]
+        };
+        let (a, b) = (center(&objects[0]), center(&objects[1]));
+        assert!(
+            (a[0] - b[0]).hypot(a[1] - b[1]) >= 68.0 + 20.0,
+            "the cubes keep the clearance apart: {layout}"
+        );
+        // The same plate gives the same layout (the check's own timing aside), and the request keeps the meshes it
+        // named.
+        let again = arrange(&state, &request).expect("again");
+        assert_eq!(again["objects"], layout["objects"]);
+        assert_eq!(again["check"]["collisions"], layout["check"]["collisions"]);
+        // A kept object stays where it is; an unknown mesh is an error, not an empty plate.
+        let mut keep = request.clone();
+        keep["plate"]["arrange"] = serde_json::json!({ "keep": ["a"] });
+        let kept = arrange(&state, &keep).expect("arranges round a");
+        let moved = kept["objects"].as_array().expect("objects");
+        assert_eq!(moved.len(), 1, "{kept}");
+        assert_eq!(moved[0]["id"], "b", "{kept}");
+        let mut lost = request.clone();
+        lost["plate"]["objects"][0]["mesh"] = serde_json::json!(999);
+        assert!(arrange(&state, &lost).is_err());
+        assert_eq!(kept_count(&state), 0);
     }
 
     #[test]
