@@ -84,7 +84,7 @@ describe('Partner phone key link', () => {
     expect(hub.links).toHaveLength(1)
     const dialog = await screen.findByRole('dialog', { name: 'Link to a key with another name?' })
     expect(dialog.textContent).toContain("This phone says it's Example Phone. Link it to the key OtherApp anyway?")
-    await act(async () => void fireEvent.click(screen.getByTestId('partner-link-cancel')))
+    await act(async () => void fireEvent.click(screen.getByTestId('partner-link-dont')))
     expect(hub.links).toHaveLength(1)
 
     await act(async () => void fireEvent.change(select, { target: { value: 'key-other' } }))
