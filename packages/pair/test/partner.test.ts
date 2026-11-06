@@ -265,6 +265,43 @@ describe('partner phones', () => {
     conn.close()
   })
 
+  it('never approves a card when it is not known who asked for it; our phone still may', async () => {
+    const w = await world()
+    const phone = w.phone('Pixel 8', { partner: 'Example Phone' })
+    await pairByLink(w, phone, w.host.createOffer({ partner: 'Example Phone' }))
+    const pairingId = (await phone.client.hosts())[0]?.pairingId ?? ''
+    await w.host.setRights(pairingId, { request: true, approve: true, introduce: false, send: false })
+    const ours = w.phone('Pixel 9')
+    await pairByLink(w, ours, w.host.createOffer())
+    const ourId = (await ours.client.hosts())[0]?.pairingId ?? ''
+    await w.host.setRights(ourId, { request: true, approve: true, introduce: false, send: false })
+    // A card from the computer's own feed names its action but carries no record of who raised it.
+    const card = (id: string) => ({
+      id,
+      sessionId: 's1',
+      tool: 'pause_print',
+      permission: 'start' as const,
+      title: 'Pause the print on Bay 2',
+      lines: [],
+      paramsHash: '0'.repeat(64),
+      actions: [{ action: 'printer.pause' as const, target: 'bay-2', paramsHash: '1'.repeat(64) }],
+      expiresAt: new Date(w.env.now() + 60_000).toISOString(),
+    })
+    w.feed.push(card('feed-1'))
+    const conn = await phone.client.connect(pairingId)
+    const view = (await conn.approvals()).find((v) => v.request.id === 'feed-1')
+    if (!view) throw new Error('no card')
+    await expect(conn.approve(view)).rejects.toMatchObject({ code: 'forbidden' })
+    expect(w.feed.decisions).toEqual([])
+    const mine = await ours.client.connect(ourId)
+    const ourView = (await mine.approvals()).find((v) => v.request.id === 'feed-1')
+    if (!ourView) throw new Error('no card for our phone')
+    await mine.approve(ourView)
+    expect(w.feed.decisions).toMatchObject([{ requestId: 'feed-1', decision: { kind: 'approve' } }])
+    conn.close()
+    mine.close()
+  })
+
   it('keeps at most 8 partner phones on one host', async () => {
     const w = await world()
     for (let i = 0; i < 8; i++) {
