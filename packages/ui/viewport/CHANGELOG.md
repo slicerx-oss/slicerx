@@ -6,6 +6,7 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ### Fixed
 
+- `encodeTree` writes filament 18 as `0FC`: the leaf code C, then F and 0. It wrote `FC`, and in the `paint_color` format an F after C starts a longer state, so a reader of filaments above 17 took the next code of the text as part of it. `decodeTree` and the paint overlay read a run of F codes, each adding 15, and still read a whole text of `FC` as filament 18.
 - On a phone, a one-finger drag on the selected model moves it on its plate only. The edge drag to another plate stays on the X and Y move arrows, and mouse, pen and tablet drags keep it.
 - A model added beside the others fades all the way in. The frame loop stopped after the fade's first frame when nothing else asked for a frame, so the new model could stay invisible until something redrew the view.
 

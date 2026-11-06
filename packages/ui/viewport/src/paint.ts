@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Painted triangles. One text per triangle in the format Bambu Studio and
-// OrcaSlicer write to 3MF (`paint_color`, `paint_seam`, `paint_supports`):
-// a stream of 4-bit codes, written last code first. A code is a leaf (bits 0
-// and 1 are 0; the state sits in bits 2 and 3, or both set and the next code
-// plus 3) or a split (bits 0 and 1 count the split sides, bits 2 and 3 name
-// the special corner) followed by its children. The child layout matches
-// sx-core's reader (packages/core/src/paint.rs), which was fitted to
-// OrcaSlicer. Pure math, no three.js.
+// Painted triangles. One text per triangle in the format 3MF projects carry
+// (`paint_color`, `paint_seam`, `paint_supports`, `paint_fuzzy_skin`): a
+// stream of 4-bit codes, written last code first. A code is a leaf (bits 0
+// and 1 are 0; the state sits in bits 2 and 3, or, when both are set, in the
+// codes after it) or a split (bits 0 and 1 count the split sides, bits 2 and 3
+// name the special corner) followed by its children. After a leaf code C the
+// state is 3 plus a run of codes, each F adding 15 until one below F, so 18 is
+// `C F 0` (text `0FC`); a whole text of `FC`, as files saved before that wrote
+// 18, still reads as 18. The child layout matches sx-core's reader
+// (packages/core/src/paint.rs). Pure math, no three.js.
 
 export type V3 = [number, number, number]
 export type Tri = [V3, V3, V3]
@@ -47,8 +49,12 @@ function nibbles(text: string): number[] | null {
   return out
 }
 
+/** A whole text of `FC`: 18 as files saved before 18 took two codes wrote it. */
+const LEGACY_18 = 'FC'
+
 /** Parses a paint text. Null when it is malformed or nests too deep. Trailing codes are ignored, as sx-core does. */
 export function decodeTree(text: string): PaintNode | null {
+  if (text.trim() === LEGACY_18) return { state: 18 }
   const stream = nibbles(text)
   if (!stream || stream.length === 0) return null
   let at = 0
@@ -59,8 +65,14 @@ export function decodeTree(text: string): PaintNode | null {
     const special = code >> 2
     if (splits === 0) {
       if (special === 3) {
-        const ext = stream[at++]
-        return ext === undefined ? null : { state: ext + 3 }
+        // 3 plus the run after it: each F adds 15, the first code below F ends it.
+        let state = 3
+        for (;;) {
+          const ext = stream[at++]
+          if (ext === undefined) return null
+          state += ext
+          if (ext < 15) return { state }
+        }
       }
       return { state: special }
     }
@@ -86,7 +98,9 @@ export function encodeTree(root: PaintNode): string | null {
       if (n.state < 3) out.push(n.state << 2)
       else {
         out.push(0b1100)
-        out.push(n.state - 3)
+        let m = n.state - 3
+        for (; m >= 15; m -= 15) out.push(15)
+        out.push(m)
       }
       return
     }
@@ -399,10 +413,14 @@ function walkNode(depth: number, fn: ((corners: Float64Array, offset: number, st
   if (splits === 0) {
     let state = special
     if (special === 3) {
-      if (walkAt >= walkLen) return -1
-      const ext = codeAt(walkText, walkHi, walkAt++)
-      if (ext < 0) return -1
-      state = ext + 3
+      state = 3
+      for (;;) {
+        if (walkAt >= walkLen) return -1
+        const ext = codeAt(walkText, walkHi, walkAt++)
+        if (ext < 0) return -1
+        state += ext
+        if (ext < 15) break
+      }
     }
     if (state === 0) return 0
     if (fn) fn(CORNERS, 9 * depth, state)
@@ -472,6 +490,12 @@ function startWalk(text: string): boolean {
   if (walkLen <= 0) return false
   // decodeTree refuses a text with any character that is not a hex digit, read or not.
   for (let k = 0; k < walkLen; k++) if (codeAt(text, hi, k) < 0) return false
+  // A whole text of FC is 18, walked as the two codes it takes now.
+  if (walkLen === 2 && text.charCodeAt(lo) === 70 && text.charCodeAt(hi) === 67) {
+    walkText = '0FC'
+    walkHi = 2
+    walkLen = 3
+  }
   return true
 }
 
