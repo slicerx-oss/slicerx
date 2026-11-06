@@ -64,6 +64,17 @@ export function projectSlotVendors(settings: Record<string, unknown>): string[] 
 }
 
 /**
+ * The filament type of each of a project file's filaments (`filament_type`, a list or one `;` separated text), by slot:
+ * '' for a slot it names none for. The app's project open and the MCP server's give a slot the person has not set the
+ * file's type, and PLA where the file names none.
+ */
+export function projectSlotTypes(settings: Record<string, unknown>): string[] {
+  const raw = settings['filament_type']
+  const all: unknown[] = Array.isArray(raw) ? raw : typeof raw === 'string' && raw.trim() ? raw.split(';') : []
+  return all.map((t) => (typeof t === 'string' ? t.trim() : ''))
+}
+
+/**
  * A tower coordinate in mm as the file and the engine give it: only the floating point noise of moving it between the
  * plate's and the printer's corner is taken off (a millionth of a millimeter), so 211.626 stays 211.626.
  */
