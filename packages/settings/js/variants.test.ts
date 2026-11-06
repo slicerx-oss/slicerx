@@ -69,3 +69,58 @@ describe('variant identity validation', () => {
     expect(() => selectVariants({ ...raw, filament_extruder_variant: [standard, high, high, 'Different'] })).toThrow(/variant/i)
   })
 })
+
+// The Bambu Lab H3C: one extruder holding nine hotends, each a tool of its own. Bambu Studio 2.9.1 lists the three
+// PLA filaments with a Standard and a High Flow variant and the 2.85 mm TPU with its TPU285 variant only, and puts each
+// filament on a hotend (`filament_nozzle_map`, from 0); hotend 7 is the TPU285 one.
+describe('a printer whose hotends are its tools', () => {
+  const h3c = {
+    filament_settings_id: ['pla', 'pla', 'pla', 'tpu'],
+    filament_diameter: ['1.75', '1.75', '1.75', '2.85'],
+    nozzle_diameter: ['0.4'],
+    extruder_type: ['Direct Drive'],
+    nozzle_volume_type: ['Standard'],
+    default_nozzle_volume_type: ['Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'TPU285', 'Standard'],
+    extruder_max_nozzle_count: ['9'],
+    filament_map: ['1', '1', '1', '1'],
+    filament_nozzle_map: ['0', '2', '6', '7'],
+    filament_self_index: ['1', '1', '2', '2', '3', '3', '4'],
+    filament_extruder_variant: [standard, high, standard, high, standard, high, 'Direct Drive TPU285'],
+    filament_max_volumetric_speed: ['21', '41', '22', '42', '23', '43', '9'],
+    print_extruder_id: ['1', '1', '1'],
+    print_extruder_variant: [standard, high, 'Direct Drive TPU285'],
+    outer_wall_speed: ['200', '500', '150'],
+  }
+  // The same project after the printer's hotends are read in: each hotend's type, and the extruder called Hybrid.
+  const synced = {
+    ...Object.fromEntries(Object.entries(h3c).filter(([k]) => k !== 'default_nozzle_volume_type')),
+    nozzle_volume_type: ['Hybrid'],
+    extruder_nozzle_volume_type: ['Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'Standard', 'TPU285', 'Standard'],
+    extruder_nozzle_stats_new: ['Standard#8|TPU285#1'],
+  }
+
+  it("picks each filament's variant from the hotend it is on", () => {
+    const r = selectVariants(h3c)
+    expect(r['filament_max_volumetric_speed']).toEqual(['21', '22', '23', '9'])
+    expect(r['outer_wall_speed']).toEqual(['200'])
+  })
+
+  it("takes a filament's only variant when the map leaves it unset", () => {
+    expect(selectVariants({ ...h3c, filament_nozzle_map: ['0', '2'] })['filament_max_volumetric_speed']).toEqual(['21', '22', '23', '9'])
+    expect(selectVariants({ ...h3c, filament_nozzle_map: undefined })['filament_max_volumetric_speed']).toEqual(['21', '22', '23', '9'])
+  })
+
+  it('reads the hotend types a synced project gives, Hybrid extruder and all', () => {
+    const r = selectVariants(synced)
+    expect(r['filament_max_volumetric_speed']).toEqual(['21', '22', '23', '9'])
+    expect(r['outer_wall_speed']).toEqual(['200'])
+    // with the printer's defaults beside them too, as the printer's own file has
+    expect(selectVariants({ ...synced, default_nozzle_volume_type: h3c.default_nozzle_volume_type })['filament_max_volumetric_speed']).toEqual(['21', '22', '23', '9'])
+  })
+
+  it('still refuses a filament put on a hotend its variants do not list', () => {
+    // the 2.85 mm TPU on a Standard hotend, a PLA on the TPU285 one
+    expect(() => selectVariants({ ...h3c, filament_nozzle_map: ['0', '2', '6', '1'] })).toThrow(/identity 4 needs exactly one Direct Drive Standard/)
+    expect(() => selectVariants({ ...h3c, filament_nozzle_map: ['7', '2', '6', '8'] })).toThrow(/identity 1 needs exactly one Direct Drive TPU285/)
+  })
+})

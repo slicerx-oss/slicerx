@@ -124,3 +124,60 @@ fn missing_process_identity_is_rejected() {
     raw["print_extruder_id"] = json!([3, 1, 3, 1]);
     assert!(PrintConfig::from_value(&raw).is_err());
 }
+
+/// A Bambu Lab H3C project as Bambu Studio 2.9.1 saves it: one extruder holding nine hotends, the PLA filaments listed
+/// with a Standard and a High Flow variant, the 2.85 mm TPU with its TPU285 variant only, each filament on a hotend by
+/// hand (`filament_nozzle_map`, from 0; hotend 7 is the TPU285 one).
+fn h3c() -> Value {
+    json!({
+        "filament_settings_id": ["pla", "pla", "pla", "tpu"],
+        "filament_diameter": [1.75, 1.75, 1.75, 2.85],
+        "nozzle_diameter": [0.4],
+        "extruder_type": ["Direct Drive"],
+        "nozzle_volume_type": ["Standard"],
+        "default_nozzle_volume_type": ["Standard", "Standard", "Standard", "Standard", "Standard", "Standard", "Standard", "TPU285", "Standard"],
+        "extruder_max_nozzle_count": [9],
+        "filament_map": [1, 1, 1, 1],
+        "filament_nozzle_map": [0, 2, 6, 7],
+        "filament_self_index": ["1", "1", "2", "2", "3", "3", "4"],
+        "filament_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow", "Direct Drive Standard", "Direct Drive High Flow", "Direct Drive Standard", "Direct Drive High Flow", "Direct Drive TPU285"],
+        "filament_max_volumetric_speed": [21, 41, 22, 42, 23, 43, 9],
+        "print_extruder_id": ["1", "1", "1"],
+        "print_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow", "Direct Drive TPU285"],
+        "outer_wall_speed": [200, 500, 150]
+    })
+}
+
+#[test]
+fn hotend_tools_pick_each_filament_variant_from_its_hotend() {
+    let c = PrintConfig::from_value(&h3c()).unwrap();
+    assert_eq!(
+        c.raw.get("filament_max_volumetric_speed"),
+        Some(&json!([21, 22, 23, 9]))
+    );
+    assert_eq!(c.raw.get("outer_wall_speed"), Some(&json!([200])));
+}
+
+/// The same project after the printer's hotends are read in: the printer names each hotend's type
+/// (`extruder_nozzle_volume_type`) and calls the extruder Hybrid, a type no variant lists.
+#[test]
+fn hotend_tools_read_the_types_a_synced_project_gives() {
+    let mut raw = h3c();
+    let o = raw.as_object_mut().unwrap();
+    o.remove("default_nozzle_volume_type");
+    o.insert("nozzle_volume_type".into(), json!(["Hybrid"]));
+    o.insert(
+        "extruder_nozzle_volume_type".into(),
+        json!([
+            "Standard", "Standard", "Standard", "Standard", "Standard", "Standard", "Standard", "TPU285",
+            "Standard"
+        ]),
+    );
+    o.insert("extruder_nozzle_stats_new".into(), json!(["Standard#8|TPU285#1"]));
+    let c = PrintConfig::from_value(&raw).unwrap();
+    assert_eq!(
+        c.raw.get("filament_max_volumetric_speed"),
+        Some(&json!([21, 22, 23, 9]))
+    );
+    assert_eq!(c.raw.get("outer_wall_speed"), Some(&json!([200])));
+}
