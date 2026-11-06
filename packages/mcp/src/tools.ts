@@ -350,6 +350,23 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: homing`,
   })
 
+  const filamentChange = gcodeTool({
+    name: 'printer.filament_change',
+    description: `Change the filament on a printer (M600): the printer parks the head and waits for the person to swap the filament. A person approves it in ${productName()}. While a print runs or is paused it goes as it is; on an idle or finished printer the person also says the plate is clear, since the head moves. Printers differ in where they park; Bambu Lab printers with an AMS change filament through the printer instead.`,
+    input: z.object({ printerId }),
+    async ready(i, ctx) {
+      const st = await ctx.host.printers.status(i.printerId)
+      if (!['printing', 'paused', 'idle', 'finished'].includes(st.state)) throw new Error(`${i.printerId} is ${st.state}; a filament change goes while a print runs or is paused, or while the printer is idle or finished.`)
+    },
+    lines: () => ['M600'],
+    // The hub checks the printer state (and the plate on an idle printer) again when the person approves. The card
+    // approves a filament change (`printer.filament_change`), never the raw line.
+    work: { work: (i) => ({ kind: 'filament_change', printerId: i.printerId }), action: 'printer.filament_change', params: (i) => ({ printerId: i.printerId }) },
+    title: (i) => `Change the filament on ${i.printerId}?`,
+    note: `The printer parks the head and waits for the new filament; on an idle or finished printer the person approving says the plate is clear.`,
+    summary: (i) => `${i.printerId}: filament change`,
+  })
+
   const gcode = gcodeTool({
     name: 'printer.gcode',
     description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission. A line that can move the head (a move, home, probe or leveling command, a start, filament or tool change, or any code or macro the hub does not know as safe) goes only while the printer is idle or finished, and only when the person approving says the plate is clear or the hub knows it is; otherwise the hub fails it with bad_state or bed_check. Heater, fan, message and report lines go at any time.',
@@ -359,5 +376,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, addFilament, setFilament, setTool, ...placementTools(deps, need), temperature, filament, home, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, addFilament, setFilament, setTool, ...placementTools(deps, need), temperature, filament, filamentChange, home, gcode] as PilotTool<never>[]
 }

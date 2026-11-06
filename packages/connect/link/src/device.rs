@@ -309,6 +309,26 @@ pub(crate) fn motion_problem(state: PrinterState, bed: sx_permit::BedState, plat
     )
 }
 
+/// Why a filament change (`M600`) may not go now. The firmware parks the head for the swap, so it goes
+/// while a print runs or is paused; on an idle or finished printer it moves the head like any other line
+/// that moves, under the plate rule. Any other state (preparing, an error, offline) refuses.
+pub(crate) fn filament_change_problem(
+    state: PrinterState,
+    bed: sx_permit::BedState,
+    plate_clear: bool,
+) -> Rpc<()> {
+    if matches!(state, PrinterState::Printing | PrinterState::Paused) {
+        return Ok(());
+    }
+    guard_problem(
+        state,
+        bed,
+        plate_clear,
+        "a filament change goes only while a print runs or is paused, or while the printer is idle or finished",
+        "the plate is not known to be clear; confirm it is clear before a filament change",
+    )
+}
+
 fn guard_problem(
     state: PrinterState,
     bed: sx_permit::BedState,
@@ -332,6 +352,9 @@ pub(crate) enum HomeLine<'a> {
     Mint,
     /// A raw homing line exactly as a person approved it, sent with that approval's token.
     Approved { line: &'a str, token: &'a ApprovalToken },
+    /// Another fixed line under a token the hub mints, once the person's own token for that action was
+    /// checked: `M600` for a filament change card.
+    Minted { line: &'static str, title: &'static str },
 }
 
 /// Homes `printer` under the home rules, read with the printer held so no start slips in between the
@@ -361,16 +384,51 @@ pub(crate) async fn line_checked(
     let send = HomeLine::Approved { line, token };
     if sx_connect::homes_axes(line) {
         home_checked(b, printer, answer, send).await
+    } else if sx_connect::changes_filament(line) {
+        filament_change_checked(b, printer, answer, send).await
     } else if sx_connect::moves_axes(line) {
-        guarded(b, printer, answer, motion_problem, send).await
+        guarded(b, printer, answer, motion_problem, send)
+            .await
+            .map_err(|e| pointing_to_action(e, line))
     } else {
         Ok(session(b, printer).await?.send_gcode(line, token).await?)
     }
 }
 
+/// A filament change (`M600`) under [`filament_change_problem`], with the printer held and its state
+/// read fresh. `answer` is the person's plate answer for an idle or finished printer, as for a home.
+pub(crate) async fn filament_change_checked(
+    b: &Arc<Bridge>,
+    printer: &str,
+    answer: Option<u64>,
+    send: HomeLine<'_>,
+) -> Rpc<()> {
+    guarded(b, printer, answer, filament_change_problem, send).await
+}
+
+/// A raw `RESUME` or `EXCLUDE_OBJECT` refused for the printer's state names the action that does it: the
+/// resume action resumes a paused print and the skip action skips one object of the running print, both
+/// with their own checks.
+fn pointing_to_action(e: RpcError, line: &str) -> RpcError {
+    if e.code != "bad_state" {
+        return e;
+    }
+    match sx_connect::command_name(line).as_deref() {
+        Some("RESUME") => RpcError::new(
+            "bad_state",
+            "a raw RESUME goes only while the printer is idle or finished; to resume a paused print, use the resume action (printer.resume)",
+        ),
+        Some("EXCLUDE_OBJECT") => RpcError::new(
+            "bad_state",
+            "a raw EXCLUDE_OBJECT goes only while the printer is idle or finished; to skip one object of the running print, use the skip action (printer.skip)",
+        ),
+        _ => e,
+    }
+}
+
 /// The guarded send: the printer held so no start slips in, its state read fresh, `rule` checked with
 /// the plate as the hub knows it or as the person answered for this bed epoch, absolute positioning
-/// restored, then the line.
+/// restored on an idle or finished printer (never inside a running print), then the line.
 async fn guarded(
     b: &Arc<Bridge>,
     printer: &str,
@@ -387,12 +445,18 @@ async fn guarded(
         .ok_or_else(|| RpcError::new("unreachable", "the printer did not answer"))?;
     let rec = b.hub.bed(printer);
     rule(st.state, plate_for(&rec, answer), false).map_err(|e| naming_epoch(e, rec.epoch))?;
-    settle_absolute(b, printer, s.as_ref()).await?;
+    if matches!(st.state, PrinterState::Idle | PrinterState::Finished) {
+        settle_absolute(b, printer, s.as_ref()).await?;
+    }
     match send {
         HomeLine::Approved { line, token } => s.send_gcode(line, token).await?,
         HomeLine::Mint => {
             let t = mint_gcode(b, printer, "G28", "Home the printer")?;
             s.send_gcode("G28", &t).await?;
+        }
+        HomeLine::Minted { line, title } => {
+            let t = mint_gcode(b, printer, line, title)?;
+            s.send_gcode(line, &t).await?;
         }
     }
     Ok(())

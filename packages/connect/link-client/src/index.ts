@@ -469,6 +469,8 @@ export type AgentWork =
   | { kind: 'gcode'; printerId: string; line: string }
   /** Home every axis under the hub's home rules (printer state and plate), checked when the person approves. */
   | { kind: 'home'; printerId: string }
+  /** A filament change (M600): mid-print as it is, on an idle or finished printer under the plate rule. */
+  | { kind: 'filament_change'; printerId: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
   /** Skip one object of the running print (`objects.list` ids). `epoch` is the running print's (`bed.state`), and is hashed. */
   | { kind: 'skip'; printerId: string; id: string; epoch: number }

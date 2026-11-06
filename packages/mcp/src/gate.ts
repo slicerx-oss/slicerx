@@ -56,7 +56,7 @@ export interface PersonHandOff {
  * cancel stop a printer, so they stay approvable here. The same list as the hub's
  * (sx-link roles.rs PERSON_ONLY).
  */
-const PERSON_ONLY_ACTIONS = new Set<string>(['printer.start', 'printer.resume', 'printer.gcode', 'printer.home', 'printer.adjust', 'printer.skip'])
+const PERSON_ONLY_ACTIONS = new Set<string>(['printer.start', 'printer.resume', 'printer.gcode', 'printer.home', 'printer.filament_change', 'printer.adjust', 'printer.skip'])
 
 // Home Assistant service calls switch power, so they wait for a person too, as on the hub.
 export function needsPerson(req: Pick<ApprovalRequest, 'actions'>): boolean {
