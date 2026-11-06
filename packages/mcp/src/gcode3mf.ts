@@ -12,6 +12,7 @@ import { orcaReadable, settingDef, toOrca } from '@slicerx/settings'
 import { entryData, gcodeLabelIds, projectFiles } from '@slicerx/threemf'
 import type { SliceSummary } from './slicer'
 import { writeZip } from './zip'
+import { evenFilamentLists } from '@slicerx/settings/slot-settings'
 
 /** Thumbnail sizes asked of the engine for a .gcode.3mf when the settings name none: the plate picture and its small copy. */
 export const PLATE_THUMBNAILS = ['512x512/PNG', '128x128/PNG']
@@ -28,6 +29,17 @@ function orcaSettings(config: Readonly<Record<string, SettingValue>>): Record<st
 }
 
 /**
+ * Every per-filament list of the settings with one entry per filament the slice names (the longest of its color and
+ * type lists), since readers take the lists together by index; a list the settings give shorter takes its last entry
+ * for the rest, as the engine sliced those filaments. A slice of one filament is written as before.
+ */
+function everyFilament(settings: Record<string, unknown>): Record<string, unknown> {
+  const n = (v: unknown): number => (Array.isArray(v) ? v.length : v === undefined ? 0 : 1)
+  const filaments = Math.max(n(settings['filament_colour']), n(settings['filament_type']))
+  return filaments > 1 ? evenFilamentLists(settings, filaments) : settings
+}
+
+/**
  * `vault` is the listing and creator of a Vault design the plate was sliced from (vault.ts, vaultMark). The file then
  * carries them on its root model with the design's name as its title, as the app writes a Vault design's print file:
  * still no mesh, and it reads as a Vault design again. Without it the file is as before.
@@ -38,7 +50,7 @@ export function gcode3mf(sliced: string, summary: SliceSummary, config: Record<s
   const files = projectFiles({
     plates: [{ name: '', objects: [], settings: {}, printNames }],
     bed: { widthMm: 0, depthMm: 0 },
-    settings: orcaSettings(config),
+    settings: everyFilament(orcaSettings(config)),
     application: productName(),
     gcode: { 0: sliced },
     ...(vault ? { title: summary.model.name, sx: { ...(vault.listing ? { modelId: vault.listing } : {}), ...(vault.creator ? { creatorId: vault.creator } : {}), exportedBy: '' } } : {}),
