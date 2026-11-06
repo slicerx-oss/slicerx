@@ -527,10 +527,20 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
             ));
         }
     }
-    b.secrets()
-        .set(&format!("{KEY_PREFIX}{pairing_id}"), &ps::b64(&key))
-        .map_err(|e| RpcError::new("failed", e.to_string()))?;
-    lock(&b.remote.keys).insert(pairing_id.clone(), key);
+    // The same key is already in the secret store, so a put that only changes rights never writes it:
+    // a keychain that refuses writes cannot keep a right the app took away.
+    let stored = lock(&b.remote.keys).get(&pairing_id) == Some(&key);
+    if !stored {
+        if let Err(e) = b
+            .secrets()
+            .set(&format!("{KEY_PREFIX}{pairing_id}"), &ps::b64(&key))
+        {
+            // The pairing keeps its old key, but never more rights than this put gives it.
+            narrow_rights(b, &pairing_id, rights);
+            return Err(RpcError::new("failed", e.to_string()));
+        }
+        lock(&b.remote.keys).insert(pairing_id.clone(), key);
+    }
     {
         let mut s = lock(&b.remote.saved);
         // A re-put of the same phone keeps the key the person linked it to, while it is the same partner.
@@ -559,6 +569,28 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
     Remote::persist(b);
     b.remote.send(Cmd::Pairings);
     Ok(json!({ "saved": true }))
+}
+
+/// Takes away any right a saved pairing has that `rights` does not give it. Adds none.
+fn narrow_rights(b: &Bridge, pairing_id: &str, rights: Rights) {
+    let changed = {
+        let mut s = lock(&b.remote.saved);
+        s.pairings
+            .iter_mut()
+            .find(|x| x.pairing_id == pairing_id)
+            .is_some_and(|x| {
+                let next = Rights {
+                    request: x.rights.request && rights.request,
+                    approve: x.rights.approve && rights.approve,
+                };
+                let changed = next != x.rights;
+                x.rights = next;
+                changed
+            })
+    };
+    if changed {
+        Remote::persist(b);
+    }
 }
 
 pub(crate) fn call(
