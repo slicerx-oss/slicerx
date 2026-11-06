@@ -35,7 +35,7 @@ pub use crate::config::{GcodeFlavor, InfillPattern, PrintConfig};
 pub use crate::error::{Error, Result};
 pub use crate::gcode::{EmitOptions, GcodeStats, emit_gcode, emit_gcode_with};
 pub use crate::mesh::{Mesh, MeshPart, Placement};
-pub use crate::nozzles::{auto_map_warning, tower_one_height};
+pub use crate::nozzles::{auto_map_refusal, tower_one_height};
 pub use crate::output::{
     Feature, LayerPaths, PathInfo, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode,
 };
@@ -2828,13 +2828,6 @@ fn run_prepared_timed(
         if !report.warnings.contains(w) {
             report.warnings.push(w.clone());
         }
-    }
-    if let Some(message) = crate::nozzles::auto_map_warning(&config) {
-        report.warnings.push(SliceWarning {
-            code: WarningCode::UnsupportedSetting,
-            message,
-            layer: None,
-        });
     }
     if !config_report.is_empty() || config_report.walls.is_some() || !config_report.warnings.is_empty() {
         report.config_report = Some(config_report);
