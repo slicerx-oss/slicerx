@@ -19,6 +19,10 @@ export interface ToastOptions {
   /** A close button at the end, for a notice someone may want gone before its time; `onDismiss` hears it. */
   dismissible?: boolean
   onDismiss?: () => void
+  /** Names this line, so a later toast can take its place (`replaces`). */
+  key?: string
+  /** The line with this key leaves the card as this one joins it: a later word on the same thing, not a second line. */
+  replaces?: string
 }
 
 interface ToastRecord {
@@ -30,6 +34,7 @@ interface ToastRecord {
   action?: { label: string; run: () => void }
   dismissible?: boolean
   onDismiss?: () => void
+  key?: string
 }
 
 /** Whether a toast with this tone and option stays until dismissed: a warning or an error does, and so does one that asks to. */
@@ -176,7 +181,15 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       const persist = staysUntilDismissed(tone, options?.persist)
-      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}), ...(options?.dismissible ? { dismissible: true } : {}), ...(options?.onDismiss ? { onDismiss: options.onDismiss } : {}) }], max))
+      setToasts((list) => {
+        const kept = options?.replaces ? list.filter((t) => t.key !== options.replaces) : list
+        // The line it replaced may have been the last one with time to run; a card of lines that stay has none.
+        if (persist && kept.length !== list.length && !kept.some((t) => !t.persist)) {
+          card.current?.stop()
+          card.current = null
+        }
+        return fitCard([...kept, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}), ...(options?.dismissible ? { dismissible: true } : {}), ...(options?.onDismiss ? { onDismiss: options.onDismiss } : {}), ...(options?.key ? { key: options.key } : {}) }], max)
+      })
       // A line that stays has no time to run out, so it neither starts the card's time nor lengthens it.
       if (persist) return
       const ms = readingTime(message, tone, options?.duration)
