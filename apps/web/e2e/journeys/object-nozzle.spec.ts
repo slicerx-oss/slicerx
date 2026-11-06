@@ -11,7 +11,7 @@ import { command, startSlice } from './lib/slice'
 
 test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, cadTools: true, handPrinters: HAND_PRINTERS } })
 
-type Sx = { getState(): { plate: { id: string }[]; slotSetup: Record<string, unknown>; plates: { settings: { nozzleMap?: number[] } }[]; slice: { status: string; result?: { featureFilaments?: { name: string; nozzleMm?: number }[] } } } }
+type Sx = { getState(): { plate: { id: string }[]; slotSetup: Record<string, unknown>; plates: { settings: { nozzleMap?: number[] } }[]; slice: { status: string } } }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
 
 /** Two boxes on filament 1 of the H2D, its nozzles 0.4 and 0.6 mm as printer setup saves them. */
@@ -41,6 +41,7 @@ test('a box prints with the other nozzle from its chip, and the slice reads back
     await shot(page, 'object-nozzle-rows')
 
     // The chip stays where it is while its menu opens.
+    await chips.nth(1).scrollIntoViewIfNeeded()
     const before = await chips.nth(1).boundingBox()
     await chips.nth(1).click()
     const menu = page.getByTestId('object-nozzle-pick')
@@ -62,8 +63,11 @@ test('a box prints with the other nozzle from its chip, and the slice reads back
     await shot(page, 'object-nozzle-map')
 
     await closeSheet(page)
+    // The test host's slice result leaves out featureFilaments, so read the engine's report as the host returns it.
+    const report = page.waitForResponse((r) => r.request().method() === 'POST' && /\/slices\/[^/]+$/.test(new URL(r.url()).pathname))
     await startSlice(page)
-    await expect.poll(async () => ((await state(page)).slice.result?.featureFilaments ?? []).map((f) => f.nozzleMm)).toEqual([0.6, 0.4])
+    const sized = ((await (await report).json()) as { featureFilaments?: { nozzleMm?: number }[] }).featureFilaments ?? []
+    expect(sized.map((f) => f.nozzleMm)).toEqual([0.6, 0.4])
     await openSheet(page)
     await shot(page, 'object-nozzle-sliced')
   } finally {
