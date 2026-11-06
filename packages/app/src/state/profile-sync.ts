@@ -67,11 +67,19 @@ function printerKeyOf(s: AppState): string {
 }
 
 /** The layer inputs for the plate's printer at `tier`, as the plate's own build reads them. */
-function inputOf(s: AppState, model: NonNullable<AppState['printerModel']>, tier: EasyGoal) {
+export function inputOf(s: AppState, model: NonNullable<AppState['printerModel']>, tier: EasyGoal) {
   const reported = model.id ? s.nozzleReported[model.id] : undefined
   const chosen = model.id ? s.printerNozzles[model.id] : undefined
   const extruders = model.id ? s.printerExtruders[model.id] : undefined
-  return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders && !reported ? { extruders } : {}) }
+  return { printer: model, tier, slots: slotsOf(s), ...(reported ? { nozzle: reported, nozzleFrom: 'printer' as const } : chosen ? { nozzle: chosen, nozzleFrom: 'choice' as const } : {}), ...(extruders ? { extruders: reportedFirst(extruders, reported) } : {}) }
+}
+
+/**
+ * Each extruder's nozzle as setup saved it, with the size the printer reports for its first nozzle in place of the
+ * first: the printer's own report wins, and the other nozzles keep their sizes.
+ */
+function reportedFirst<T extends { mm: number }>(extruders: readonly T[], reported: number | undefined): T[] {
+  return extruders.map((e, i) => (i === 0 && reported ? { ...e, mm: reported } : e))
 }
 
 async function rebuild(): Promise<void> {
@@ -94,7 +102,7 @@ async function rebuild(): Promise<void> {
     dropLayer()
     return
   }
-  setProfileLayer(layer.values, get().easyTouched)
+  setProfileLayer(layer.values, get().easyTouched, layer.nozzleValues)
   // The no-print areas are machine coordinates; arranging works on the plate.
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
   // The excluded areas and the nozzle wrap check corner (keepOutBoxes): the slice holds a print to both.

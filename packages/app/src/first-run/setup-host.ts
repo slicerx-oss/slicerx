@@ -55,14 +55,27 @@ export function setupHostFor(host: Host): AppSetupHost {
       // Save G-code needs no host: the printer joins the app's printers for export.
       if (!input.connection || input.connection.family === 'export') {
         const taken = ((await host.printers?.list().catch(() => [])) ?? []).map((p) => p.id)
-        return { printerId: addHandPrinter(handRecord(input), input.nozzleMm, taken) }
+        const printerId = addHandPrinter(handRecord(input), input.nozzleMm, taken)
+        keepNozzles(printerId, input)
+        return { printerId }
       }
       const added = await (await ready()).addPrinter(input)
       // The host's list changed: the picker and Printers read it again.
       set((s) => ({ linkEpoch: s.linkEpoch + 1 }))
+      keepNozzles(added.printerId, input)
       return added
     },
   }
+}
+
+/**
+ * The sizes of a printer's nozzles, one per nozzle, when the add named them (a client's printer_add with nozzles), as
+ * printer setup keeps them: the first as the printer's nozzle, every one as its extruders, so each slices with its own.
+ */
+export function keepNozzles(printerId: string, input: { nozzleMm: number; nozzles?: readonly number[] }): void {
+  const list = input.nozzles
+  if (!list || list.length < 2) return
+  set((s) => ({ printerNozzles: { ...s.printerNozzles, [printerId]: input.nozzleMm }, printerExtruders: { ...s.printerExtruders, [printerId]: list.map((mm) => ({ mm })) } }))
 }
 
 /** A hand-added printer as the store keeps it: the model and brand from the catalog, and the address without its code. */
@@ -256,7 +269,9 @@ export function createHostSetup(host: Host, opts: { stepMs?: number } = {}): App
       if (known) return { printerId: known.id }
       // Nothing here can keep an access code, so the printer is saved for export with its address for a bridge later.
       const taken = ((await printers?.list().catch(() => [])) ?? []).map((p) => p.id)
-      return { printerId: addHandPrinter(handRecord(input), input.nozzleMm, taken) }
+      const printerId = addHandPrinter(handRecord(input), input.nozzleMm, taken)
+      keepNozzles(printerId, input)
+      return { printerId }
     },
   }
 }

@@ -45,7 +45,8 @@ export interface ProfileLayer {
   /** The material of the maker's default filament for the printer (PLA, PETG), empty without a resolved preset. */
   materialType: string
   /** The layer height and walls each goal's process gives on this printer and nozzle, for the Goal tiles. */
-  goalValues: Record<EasyGoal, Record<string, SettingValue>>
+  goalValues: Record<EasyGoal, Record<string, SettingValue>>  /** On a printer whose nozzles differ in size: the line widths and layer height per extruder, from each nozzle's preset. */
+  nozzleValues?: Record<string, SettingValue[]>
 }
 
 const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)

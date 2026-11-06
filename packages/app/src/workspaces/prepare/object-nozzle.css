@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The object row's nozzle chip: one width for every size and side, so rows line up and nothing moves when it changes. */
+.obj-nozzle { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: none; min-width: 48px; height: 20px; padding: 0 4px; border: 1px solid var(--field-line); border-radius: var(--r-xs); background: var(--field-bg); color: var(--fg); font: var(--fw-medium) var(--fs-xs) var(--f-body); font-variant-numeric: tabular-nums; cursor: pointer; }
+.obj-nozzle:hover { border-color: var(--control-selected-line); }
+.obj-nozzle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.obj-nozzle[data-conflict] { color: var(--orange); }
+.obj-nozzle[data-conflict] .sx-ic { color: var(--orange); }
+/* Under Move filament: a plain line, not a control, so it takes no focus and nothing above it moves. */
+.obj-nozzle-warn { display: flex; gap: 4px; align-items: flex-start; max-width: 280px; margin: 0; padding: 0 12px 8px 32px; font: var(--fw-medium) var(--fs-sm)/1.4 var(--f-body); color: var(--muted); }
+.obj-nozzle-warn .sx-ic { flex: none; margin-top: 2px; color: var(--orange); }
+@media (pointer: coarse) { .obj-nozzle { position: relative; } .obj-nozzle::after { content: ''; position: absolute; inset: -12px -2px; } }

@@ -240,3 +240,19 @@ describe('SlicerX default wall generator on a maker preset', () => {
     expect(presetOwnValue('wall_generator')).toBeNull()
   })
 })
+
+describe('per-nozzle sizes into the layer', () => {
+  it('keep every nozzle the setup saved, with the size the printer reports for its first in place of it', async () => {
+    const { inputOf } = await import('../src/state/profile-sync')
+    const { get, set } = await import('../src/state/store')
+    const model = { id: 'bambu-h2d', vendor: 'Bambu Lab', model: 'H2D' }
+    set({ printerExtruders: { 'bambu-h2d': [{ mm: 0.4 }, { mm: 0.6 }] }, nozzleReported: {}, printerNozzles: {} })
+    expect(inputOf(get(), model as never, 'standard').extruders).toEqual([{ mm: 0.4 }, { mm: 0.6 }])
+    // The printer reports its first nozzle: the list stays, the first size is the reported one.
+    set({ nozzleReported: { 'bambu-h2d': 0.2 } })
+    const input = inputOf(get(), model as never, 'standard')
+    expect(input.extruders).toEqual([{ mm: 0.2 }, { mm: 0.6 }])
+    expect('nozzle' in input && input.nozzle).toBe(0.2)
+    set({ printerExtruders: {}, nozzleReported: {} })
+  })
+})

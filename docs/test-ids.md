@@ -199,6 +199,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-add` | Add filament: adds the next filament and opens it (no printer reports the slots) |
 | `hotend-tpu-note` | Under the tool rows of a printer whose hotends are its tools (the H3C): the TPU tool's number is not settled yet (print profiles against the device data) |
 | `slice-filament-foot-reset` | Reset to printer, in the line under the rail (the printer's slots, one changed here) |
+| `nozzle-map-sizes-note` | Under Pick nozzles automatically on a two-extruder printer whose nozzles differ in size: why the switch is off and the map is set by hand |
 | `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |
 | `slice-filament-menu` | The Filament options menu |
 | `slice-filament-calibrate` | Calibrate, in that menu |
@@ -252,6 +253,12 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `object-lock`, `object-printable` | Lock, and leave out of the print |
 | `object-rename` | The name field that replaces the row's name while renaming |
 | `object-part-slot` | The filament ring of a part in the row's tree, one per part; opens the slot menu |
+| `object-nozzle` | The row's nozzle chip ("0.6 R"), on printers whose nozzles differ in size only; `data-extruder` is its nozzle, `data-conflict` marks an object on two sizes; opens `object-nozzle-pick` |
+| `object-nozzle-pick` | The object's nozzle menu (`data-target` is the object id) |
+| `object-nozzle-item` | One nozzle in that menu, `data-extruder` 1-based, checked for the object's own |
+| `object-nozzle-move` | In that menu, for a filament other objects share: move the filament to that nozzle with them |
+| `object-nozzle-new` | In that menu, for a filament other objects share: give the object a new filament on that nozzle |
+| `object-nozzle-paint-warning` | Under Move filament, when the move would print a painted object on two nozzles: names the painted objects |
 | `object-part-row` | A part in the row's tree, one per part; `data-part-index` is its place. It drags to reorder the parts |
 | `object-part-more` | The part's More button: opens its Part menu |
 | `object-part-menu` | The Part menu |
@@ -287,6 +294,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `danger-slice-ctx-delete` | Delete in the selection's menus; it is one undo step and the toast offers Undo |
 | `slice-scope-plate`, `slice-scope-object` | The scope pill over Print settings: the plate, or the selection (or the part picked in the tree) |
 | `slice-scope-label` | The selection's name in the pill, with how many settings it has of its own |
+| `tower-layer-conflict` | In the selection's settings: a prime tower makes every object print at one shared layer height, and some objects have their own |
+| `tower-one-layer-height` | Its Use one layer height button: clears every object's own layer height |
 | `slice-setting-row` | A setting's row, with `data-key` and `data-source` (`plate`, `own` or `mixed` in the selection's scope) |
 | `slice-setting-pin` | A row's pin, with `data-key` and `aria-pressed` |
 | `slice-setting-object-chip` | On a plate row, an object that prints the setting with its own value, with `data-object`; a click selects it |

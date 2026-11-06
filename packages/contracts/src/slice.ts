@@ -343,6 +343,8 @@ export interface FeatureFilaments {
    * filament slots its paths printed with, 1-based and ascending. A feature a height range or modifier moves lists both.
    */
   features: Partial<Record<string, number[]>>
+  /** The size of the nozzle the object printed with, mm, on a printer whose nozzles differ in size; absent otherwise. */
+  nozzleMm?: number
 }
 
 /** What variable layer heights (sleipnir) cost on a multi-color plate against fixed layers. */

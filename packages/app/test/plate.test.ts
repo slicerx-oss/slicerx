@@ -222,7 +222,7 @@ describe('object settings', () => {
     expect(layerHeightConflict(get(), 'by-layer', 0.2)).toBeNull()
     setObjectSetting('b', 'layer_height', 0.12)
     expect(layerHeightConflict(get(), 'by-layer', 0.2)).toBeNull()
-    expect(layerHeightConflict(get(), 'by-layer', 0.2, true)).toMatch(/different layer heights.*0\.12 mm for b.*prime tower/)
+    expect(layerHeightConflict(get(), 'by-layer', 0.2, true)).toMatch(/^A prime tower makes every object print at one shared layer height, and objects on this plate have their own \(.*0\.12 mm for b.*\)\. Use one layer height/)
     expect(layerHeightConflict(get(), 'by-object', 0.2, true)).toBeNull()
     h.undo()
     expect(get().objectSettings).toEqual({ a: { wall_loops: 4 } })
@@ -238,7 +238,7 @@ describe('object settings', () => {
     const tower = { layer_height: 0.2, enable_prime_tower: true, print_sequence: 'by layer' }
     expect(plateLayerHeightConflict(get(), undefined, tower)).toBeNull()
     set({ plate: get().plate.map((p) => (p.id === 'b' ? { ...p, slotOverrides: { p: 2 } } : p)) })
-    expect(plateLayerHeightConflict(get(), undefined, tower)).toMatch(/different layer heights.*prime tower/)
+    expect(plateLayerHeightConflict(get(), undefined, tower)).toMatch(/prime tower makes every object print at one shared layer height/)
     expect(plateLayerHeightConflict(get(), undefined, { ...tower, enable_prime_tower: false })).toBeNull()
     expect(plateLayerHeightConflict(get(), undefined, { ...tower, print_sequence: 'by object' })).toBeNull()
   })
@@ -248,7 +248,7 @@ describe('object settings', () => {
     set({ plate: [entry('a'), entry('b')], objectSettings: {} })
     setObjectSetting('b', 'layer_height', 0.12)
     const smooth = { layer_height: 0.2, enable_prime_tower: true, print_sequence: 'by layer', printer_model: 'Bambu Lab A1', timelapse_type: '1' }
-    expect(plateLayerHeightConflict(get(), undefined, smooth)).toMatch(/different layer heights.*prime tower/)
+    expect(plateLayerHeightConflict(get(), undefined, smooth)).toMatch(/prime tower makes every object print at one shared layer height/)
     expect(plateLayerHeightConflict(get(), undefined, { ...smooth, timelapse_type: '0' })).toBeNull()
     expect(plateLayerHeightConflict(get(), undefined, { ...smooth, enable_prime_tower: false })).toBeNull()
     expect(plateLayerHeightConflict(get(), undefined, { ...smooth, printer_model: 'Prusa MK4S' })).toBeNull()
