@@ -10,6 +10,7 @@ import type { EasyGoal, SettingValue } from '@slicerx/contracts'
 import { EASY_DEFAULTS } from '@slicerx/contracts'
 import { subban } from '@slicerx/ui/theme'
 import { areaOrigin } from '@slicerx/threemf/area'
+import { hotendCount, hotendTypes, tpu285Slot, TPU285 } from '@slicerx/settings/hotends'
 import { loadFlushData } from '@slicerx/settings/flush'
 import { FLUSH_DEFAULTS } from '@slicerx/settings/flush-defaults'
 import { defaultSlotColors, normalizeColor, objectPaletteColors, plateTowerIndexes, projectFlushFrom, projectTowerFrom, slotSettings } from '@slicerx/settings/slot-settings'
@@ -82,6 +83,36 @@ function plateSlots(read: ProjectRead): { type: string }[] {
 }
 
 /**
+ * On a printer whose hotends are its tools (the H3C), the tools a project set by hand: `filament_map_mode` Manual with
+ * `filament_nozzle_map` (hotends from 0, index slot - 1). A filament the map leaves unset gets the slicer's pick, the
+ * next hotend of its kind that no filament has (a TPU285 one for 2.85 mm TPU). Empty when the project lets the slicer
+ * pick or the printer has no tools to pick.
+ */
+function projectHotendMap(settings: Record<string, unknown>, cfg: Record<string, SettingValue>, slots: number, used: readonly number[]): Record<string, SettingValue> {
+  const n = hotendCount(cfg)
+  const own = Array.isArray(settings['filament_nozzle_map']) ? settings['filament_nozzle_map'] : []
+  if (!n || String(settings['filament_map_mode'] ?? '') !== 'Manual' || !own.length) return {}
+  const set = (i: number): number | undefined => {
+    const v = own[i]
+    const h = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+    return Number.isInteger(h) && h >= 0 && h < n ? h : undefined
+  }
+  const types = hotendTypes(cfg, n)
+  const taken = new Set(Array.from({ length: slots }, (_, i) => set(i)).filter((h): h is number => h !== undefined))
+  const map = Array.from({ length: slots }, (_, i) => {
+    const mine = set(i)
+    if (mine !== undefined) return mine
+    if (!used.includes(i + 1)) return 0
+    const tpu = tpu285Slot(cfg, i + 1)
+    const free = types.findIndex((t, h) => (t === TPU285) === tpu && !taken.has(h))
+    const h = free >= 0 ? free : Math.max(0, types.findIndex((t) => (t === TPU285) === tpu))
+    taken.add(h)
+    return h
+  })
+  return { filament_map_mode: 'Manual', filament_nozzle_map: map }
+}
+
+/**
  * The settings `read`'s project slices with on the printer the slice names, as the app opens it; undefined when the
  * slice names no printer, or the project is SlicerX's own.
  */
@@ -121,7 +152,9 @@ export async function openProject(read: ProjectRead, profiles: ProfileCatalog, n
   if (!layer) return undefined
   const config = { ...layerConfig(layer.values, OPENED_EASY, LAYER_TOUCHED), ...values }
   const slotKeys = slots.length >= 2 ? await plateSlotKeys(read, config, layerConfig(at.values, OPENED_EASY, LAYER_TOUCHED), plate) : {}
-  return { printer: layer.printerId, nozzle: layer.nozzle, config: { ...config, ...slotKeys, ...sliceBedType(config) }, ownGcode: r.mode === 'project' }
+  const sliced = { ...config, ...slotKeys }
+  const tools = projectHotendMap(settings, sliced, read.opened.slots, read.opened.used)
+  return { printer: layer.printerId, nozzle: layer.nozzle, config: { ...sliced, ...tools, ...sliceBedType(config) }, ownGcode: r.mode === 'project' }
 }
 
 /**
