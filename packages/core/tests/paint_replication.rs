@@ -206,7 +206,7 @@ fn a_late_worker_prints_its_ranges_as_the_first_worker_does() {
         api::build_session(&req, &plate, &config).unwrap()
     };
     // The sessions of the first worker, of the late worker and of a late copy without paint.
-    let workers = [session(&first), session(&late), session(&bare)];
+    let workers = vec![session(&first), session(&late), session(&bare)];
     let layers = workers[0].layer_count();
     // `shards` ranges, `pick` naming the worker that slices each.
     let print = |shards: u32, pick: &dyn Fn(u32) -> usize| {
