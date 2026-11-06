@@ -19,7 +19,7 @@ import type { PrinterHost } from '@slicerx/contracts'
 import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
 import { ONBOARDING_VERSION } from '../../../../packages/app/src/first-run/onboarding.ts'
 import type { ApprovalDone } from '../../../../packages/connect/link-client/src/index.ts'
-import { bridgeOn, connectApp, ctl, hub, logOf, mockLog, reportHand, resumeFromCard, sawToast, seed, start, useBridge } from '../bridge-hub'
+import { bridgeOn, connectApp, ctl, detectorPairing, hub, logOf, mockLog, reportHand, resumeFromCard, sawToast, seed, start, useBridge } from '../bridge-hub'
 import { plateReady } from '../fixtures'
 import { expect, journey as test } from '../journey'
 import { boxOnPlate, calm, command, debugHooks, layeredX, patch, printerHud, sliceLayered, startSlice, toSlice } from './lib/slice'
@@ -903,7 +903,7 @@ test.describe(BAMBU, () => {
         })
       }
     }
-    const det = await connectLink({ url: hub.linkUrl, code: hub.code, role: 'watch', WebSocket: Answering as unknown as typeof WebSocket })
+    const det = await connectLink({ ...(await detectorPairing()), WebSocket: Answering as unknown as typeof WebSocket })
     await det.watch.subscribe(() => undefined, { everyMs: 120_000, printerIds: ['a1'] })
     out.close = () => det.close()
     return out

@@ -108,7 +108,8 @@ export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
   const plan = racePlan(timings)
   s.info('the hub\'s watch timings for this run', { ...timings, hold: plan })
   const read = (name) => readFileSync(join(hub, name), 'utf8').trim()
-  // The detector code is never on disk; the gate stands in for the detector with the app code narrowed to the watch role.
+  // The detector code is never on disk, and the app code narrowed to the watch role is not a detector: the gate stands in
+  // for the detector with a detector key it makes through the app connection, as a person does, and revokes it after.
   const files = await waitUntil(async () => (['pairing-code', 'hub-key.pub'].every((f) => existsSync(join(hub, f))) ? true : null), { timeoutMs: 30_000, everyMs: 500 })
   if (files.timedOut) return s.stop('the app\'s printer hub is running', `no codes in ${hub}`)
   const fake = await startFake()
@@ -116,11 +117,14 @@ export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
   const { connectLink } = await linkClient()
   let app = null
   let watch = null
+  let detectorId = null
   try {
     const hubKey = read('hub-key.pub')
     const at = url ? { url } : {}
     app = await connectLink({ ...at, code: read('pairing-code'), hubKey })
-    watch = await connectLink({ ...at, code: read('pairing-code'), hubKey, role: 'watch' })
+    const made = await app.clients.create('Release gate detector', 'watch')
+    detectorId = made.clientId
+    watch = await connectLink({ ...at, clientKey: made.clientKey, hubKey, role: 'watch' })
     s.check('paired with the app\'s hub as an app and as a failure detector', app && watch)
     await app.removePrinter(PRINTER).catch(() => undefined)
     await app.addPrinter({ id: PRINTER, name: 'Gate watch (fake)', plugin: 'moonraker', host: '127.0.0.1', port: fake.port })
@@ -161,6 +165,7 @@ export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
     s.info('the hub\'s status of the printer after the steps', { state: st.state, pauseNote: st.pauseNote ?? null })
   } finally {
     if (app) {
+      if (detectorId) await app.clients.revoke(detectorId).catch(() => undefined)
       await app.watch.setAutoPause(PRINTER, false).catch(() => undefined)
       await app.removePrinter(PRINTER).catch(() => undefined)
       app.close()

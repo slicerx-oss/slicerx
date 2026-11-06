@@ -520,9 +520,9 @@ pub(crate) async fn grab_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 
 /// `watch.plateResult` and `watch.lookResult {checkId, ...}` (detectors): the answer to a
 /// `watch.plate` or a `watch.look`.
-/// Only the guard's own detector answers: a connection that paired as a detector with the
-/// detector code or the app's (`detector` true), never an agent or partner key narrowed to the watch
-/// role. The answer must name the printer the check was about.
+/// Only the guard's own detector answers: a connection that paired with the detector code or a
+/// detector key the person made in the app (`detector` true), never the app, agent or partner code
+/// or key narrowed to the watch role. The answer must name the printer the check was about.
 pub(crate) fn plate_result_call(b: &Bridge, detector: bool, p: &Value) -> Rpc<Value> {
     if !detector {
         return Err(RpcError::new(
