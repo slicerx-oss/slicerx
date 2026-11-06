@@ -8,6 +8,7 @@
 #![allow(clippy::disallowed_methods, reason = "test geometry, not engine output")]
 
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -367,4 +368,238 @@ fn turned_parts_land_on_a_round_bed_centered_on_its_origin() {
             o["id"]
         );
     }
+}
+
+/// An ASCII STL of `boxes` (x0, y0, z0, x1, y1, z1, mm, each wound with its normals out), at `path`.
+fn boxes_stl(path: &std::path::Path, boxes: &[[f64; 6]]) {
+    let mut s = String::from("solid boxes\n");
+    for b in boxes {
+        let c = |i: usize| {
+            [
+                b[if i & 1 == 0 { 0 } else { 3 }],
+                b[if i & 2 == 0 { 1 } else { 4 }],
+                b[if i & 4 == 0 { 2 } else { 5 }],
+            ]
+        };
+        // Each face as two triangles, corners counter-clockwise seen from outside.
+        for q in [
+            [0, 2, 3, 1],
+            [4, 5, 7, 6],
+            [0, 1, 5, 4],
+            [2, 6, 7, 3],
+            [0, 4, 6, 2],
+            [1, 3, 7, 5],
+        ] {
+            for t in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
+                s.push_str("  facet normal 0 0 0\n    outer loop\n");
+                for i in t {
+                    let p = c(i);
+                    writeln!(s, "      vertex {} {} {}", p[0], p[1], p[2]).unwrap();
+                }
+                s.push_str("    endloop\n  endfacet\n");
+            }
+        }
+    }
+    s.push_str("endsolid boxes\n");
+    std::fs::write(path, s).unwrap();
+}
+
+/// With support on, printing by layer, a part that gets none (no underside to hold up) keeps no room for a support
+/// pad, so a plate of them packs as tight as with support off and slices with no support; a part with an overhang
+/// keeps its pad.
+#[test]
+fn support_room_is_kept_only_for_parts_that_get_support() {
+    let config = a1(&json!({
+        "skirt_loops": 0,
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "support_type": "tree(auto)",
+        "support_threshold_angle": 25,
+    }));
+    // 20 cubes of 40 mm: 6 mm apart they fit the A1's bed round its wrap check corner, but not with a tree support
+    // pad (about 8 mm) round each.
+    let cubes: Vec<Value> = (0..20)
+        .map(|k| part(&format!("c{k}"), [40.0, 40.0, 4.0], [100.0, 100.0]))
+        .collect();
+    let req = request(&config, &cubes, Some("arrange"));
+    let (out, _) = run("support-cubes", "arrange", &req);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let report = stdout_json(&out);
+    let boxes = placed(&report);
+    assert_eq!(boxes.len(), 20, "{report}");
+    for (i, (ia, a)) in boxes.iter().enumerate() {
+        for (ib, b) in &boxes[i + 1..] {
+            assert!(
+                box_gap(*a, *b) >= 5.99,
+                "{ia} and {ib} closer than the spacing: {report}"
+            );
+        }
+    }
+    let (sliced, gcode) = run("support-cubes-slice", "slice", &req);
+    assert!(sliced.status.success(), "{}", stderr(&sliced));
+    assert!(!gcode.contains(";TYPE:Support"), "the cubes printed support");
+
+    // Two tables (a 10 mm post under a 20 mm slab), and two boxes on a plinth hanging 8 mm past its edge, do get
+    // support, so each keeps the pad round it.
+    let dir =
+        TempDir(std::env::temp_dir().join(format!("sx-plate-arrange-support-meshes-{}", std::process::id())));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    for (name, boxes) in [
+        (
+            "table",
+            [
+                [5.0, 5.0, 0.0, 15.0, 15.0, 10.0],
+                [0.0, 0.0, 10.0, 20.0, 20.0, 13.0],
+            ],
+        ),
+        (
+            "hanging",
+            [
+                [0.0, 0.0, 0.0, 12.0, 20.0, 4.0],
+                [6.0, 5.0, 4.0, 20.0, 15.0, 16.0],
+            ],
+        ),
+    ] {
+        let stl = dir.0.join(format!("{name}.stl"));
+        boxes_stl(&stl, &boxes);
+        let objects: Vec<Value> = (0..2)
+            .map(|k| {
+                let mut o = part(&format!("{name}{k}"), [20.0, 20.0, 20.0], [100.0, 100.0]);
+                o["mesh"] = json!("t");
+                o
+            })
+            .collect();
+        let mut req = request(&config, &objects, Some("arrange"));
+        req["meshes"]["t"] = json!(stl.to_str().unwrap());
+        let (out, _) = run(&format!("support-{name}"), "arrange", &req);
+        assert!(out.status.success(), "{}", stderr(&out));
+        let report = stdout_json(&out);
+        let boxes = placed(&report);
+        assert_eq!(boxes.len(), 2, "{report}");
+        // The tree pad: 2 mm of first layer expansion, a 3 mm tree brim, half a 5 mm branch and a line, each side.
+        assert!(
+            box_gap(boxes[0].1, boxes[1].1) >= 15.8,
+            "the {name} parts lost their support pad: {report}"
+        );
+    }
+}
+
+/// A part standing on a plinth (a tower whose underside rests wholly on the plinth's top) gets no support, so with
+/// support on a round bed of them packs as with support off, and the plate slices with no support and no collision.
+#[test]
+fn parts_resting_on_a_plinth_keep_no_support_room() {
+    let area: Vec<[f64; 2]> = (0..64)
+        .map(|k| {
+            let a = f64::from(k) * std::f64::consts::TAU / 64.0;
+            [150.0 * a.cos(), 150.0 * a.sin()]
+        })
+        .collect();
+    let config = a1(&json!({
+        "printable_area": area,
+        "printer_model": "FLSun V400",
+        "head_wrap_detect_zone": [],
+        "bed_exclude_area": [],
+        "brim_type": "auto_brim",
+        "brim_width": 5,
+        "enable_support": true,
+        "support_type": "tree(auto)",
+        "support_threshold_angle": 25,
+    }));
+    let dir =
+        TempDir(std::env::temp_dir().join(format!("sx-plate-arrange-plinth-mesh-{}", std::process::id())));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let stl = dir.0.join("plinth.stl");
+    boxes_stl(
+        &stl,
+        &[
+            [0.0, 0.0, 0.0, 64.0, 22.0, 4.0],
+            [22.0, 6.0, 4.0, 42.0, 16.0, 30.0],
+        ],
+    );
+    let objects: Vec<Value> = (0..20)
+        .map(|k| {
+            let mut o = part(&format!("x{k}"), [20.0, 20.0, 20.0], [-32.0, -11.0]);
+            o["mesh"] = json!("p");
+            o
+        })
+        .collect();
+    let mut req = request(&config, &objects, Some("arrange"));
+    req["meshes"]["p"] = json!(stl.to_str().unwrap());
+    req["plate"]["bed"] = json!({"widthMm": 300, "depthMm": 300, "heightMm": 410, "round": true});
+    let (out, _) = run("plinth", "arrange", &req);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let report = stdout_json(&out);
+    assert_eq!(report["objects"].as_array().unwrap().len(), 20, "{report}");
+    let (sliced, gcode) = run("plinth-slice", "slice", &req);
+    assert!(sliced.status.success(), "{}", stderr(&sliced));
+    assert!(
+        !gcode.contains(";TYPE:Support"),
+        "the plinth parts printed support"
+    );
+}
+
+/// With `plate.arrange.newPlates`, one `sx arrange` lays out the parts with no room on as many empty beds as they take,
+/// each as an arrange of just those parts lays it out, and `notFit` keeps naming what is not on this plate.
+#[test]
+fn new_plates_take_the_parts_with_no_room_in_one_call() {
+    let config = a1(&json!({"skirt_loops": 0, "brim_type": "no_brim", "enable_support": false}));
+    let objects: Vec<Value> = (0..40)
+        .map(|k| part(&format!("block{k}"), [40.0, 40.0, 4.0], [100.0, 100.0]))
+        .collect();
+    let mut req = request(&config, &objects, Some("arrange"));
+    req["plate"]["arrange"] = json!({"newPlates": true});
+    let (out, _) = run("plates", "arrange", &req);
+    assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+    let report = stdout_json(&out);
+    let here = placed(&report);
+    let left: Vec<String> = report["notFit"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(here.len() + left.len(), 40, "{report}");
+    let plates = report["plates"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no plates in {report}"));
+    assert!(!plates.is_empty(), "{report}");
+    // Every part with no room lands on exactly one new plate, none overlapping there.
+    let mut on_plates: Vec<String> = Vec::new();
+    let mut rest = left.clone();
+    for (k, p) in plates.iter().enumerate() {
+        let boxes = placed(p);
+        assert!(!boxes.is_empty(), "plate {k} is empty: {report}");
+        for (i, (ia, a)) in boxes.iter().enumerate() {
+            for (ib, b) in &boxes[i + 1..] {
+                assert!(
+                    box_gap(*a, *b) >= 5.99,
+                    "{ia} and {ib} closer than the spacing on plate {k}"
+                );
+            }
+        }
+        // As an arrange of the parts still left would lay that plate out.
+        let mut alone = request(
+            &config,
+            &objects
+                .iter()
+                .filter(|o| rest.iter().any(|id| id == o["id"].as_str().unwrap()))
+                .cloned()
+                .collect::<Vec<_>>(),
+            Some("arrange"),
+        );
+        alone["plate"]["arrange"] = json!({});
+        let (one, _) = run(&format!("plates-{k}"), "arrange", &alone);
+        let one = stdout_json(&one);
+        assert_eq!(
+            one["objects"], p["objects"],
+            "plate {k} differs from an arrange of the parts left"
+        );
+        let ids: Vec<String> = boxes.iter().map(|(id, _)| id.clone()).collect();
+        rest.retain(|id| !ids.contains(id));
+        on_plates.extend(ids);
+    }
+    on_plates.sort();
+    let mut want = left.clone();
+    want.sort();
+    assert_eq!(on_plates, want, "{report}");
 }
