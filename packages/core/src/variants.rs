@@ -171,6 +171,11 @@ impl Tables {
             .get(e)
             .or_else(|| self.volumes.first())
             .map_or("Standard", String::as_str);
+        // A Hybrid extruder holds hotends of several types; its process values are its first hotend's.
+        let volume = match self.hotend_types.first() {
+            Some(first) if volume == crate::nozzles::HYBRID => first.as_str(),
+            _ => volume,
+        };
         format!("{kind} {volume}")
     }
 
