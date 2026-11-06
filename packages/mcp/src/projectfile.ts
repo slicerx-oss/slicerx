@@ -153,6 +153,9 @@ export interface ProjectRead {
   objectSettings?: string
 }
 
+/** Part types that print no filament of their own, by either slicer's name, as the engine reads them. */
+const NOT_PRINTED = new Set(['negative_part', 'NegativeVolume', 'modifier_part', 'ParameterModifier', 'support_blocker', 'SupportBlocker', 'support_enforcer', 'SupportEnforcer'])
+
 /**
  * The filament slots a project's objects and model parts print with (their `extruder`, a part's own else its
  * object's), in Metadata/model_settings.config or Metadata/Slic3r_PE_model.config, in order; [1] when they name none.
@@ -170,9 +173,10 @@ function partSlots(text: string | undefined): number[] {
     const own = ext(o) ?? 1
     used.add(own)
     for (const part of o.children) {
-      // Model parts only: modifiers, negative parts and the like print no filament of their own.
+      // Model parts only: modifiers, negative parts and the like print no filament of their own. A part of a type the
+      // engine does not know prints as a normal part, so its filament counts.
       const kind = part.attrs['subtype'] ?? part.children.find((c) => c.name === 'metadata' && c.attrs['key'] === 'volume_type')?.attrs['value']
-      if ((part.name === 'part' || part.name === 'volume') && (kind === undefined || kind === 'normal_part' || kind === 'ModelPart')) used.add(ext(part) ?? own)
+      if ((part.name === 'part' || part.name === 'volume') && !(kind !== undefined && NOT_PRINTED.has(kind))) used.add(ext(part) ?? own)
     }
   }
   return used.size ? [...used].sort((a, b) => a - b) : [1]
