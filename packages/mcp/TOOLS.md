@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-261 tools.
+262 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -74,6 +74,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_arrange` |  |  | slice | Pack copies of an object onto plates, around the other objects, which keep their places. |
 | `slicerx_calibrate` |  |  | read | Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. |
 | `slicerx_check_print` |  |  | read | Check on a running print: takes a fresh camera frame, shows it to the user and to you with the printer's status and the limits for changes. |
+| `slicerx_cloud_access` |  |  | read | Read back what the cloud token this server holds may do, before slicing: whether the account is invited to cloud slicing, its cloud slices per rolling 24 hours, how many it used and has left, the largest upload, and, for a partner app token, the app's name the person issued it to. |
 | `slicerx_cloud_jobs` |  |  | read | Cloud slicing jobs: with job_id, that job's status, progress, stage, result (time, filament) and, once it succeeded, the G-code and preview links (they need the same API token and expire 7 days after the job finishes); without it, the recent jobs, newest first. |
 | `slicerx_cloud_slice` |  |  | slice | Slice a model or a whole 3MF project in the integrator's cloud instead of on this machine: checks the account is invited and within its daily slices and upload limit, uploads the file gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues one job with the settings (schema defaults, then each profile, then overrides) and returns the job id. |
 | `slicerx_compare_setups` |  |  | slice | Slice the same plate two ways and compare side by side: print time, filament grams, cost, a strength proxy and risk notes, with a one line verdict. |
