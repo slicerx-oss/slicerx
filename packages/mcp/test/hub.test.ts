@@ -176,7 +176,7 @@ describe('person-only work through a scripted hub', () => {
 
   // Home is the device page's Home button for a client: a person approves G28 on the card, and only while the
   // printer is idle or finished, as the button is enabled.
-  it('homes an idle printer through a G28 card a person approves, and refuses mid-print', async () => {
+  it('homes an idle printer through a home card a person approves, and refuses mid-print', async () => {
     const hub = scriptedHub({ ok: true })
     const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
     const r = await h.call('slicerx_printer_home', { printerId: 'bay-4' })
@@ -187,7 +187,8 @@ describe('person-only work through a scripted hub', () => {
     const card = reg?.params['request'] as { title: string; lines: string[]; actions: { action: string; paramsHash: string }[] }
     expect(card.title).toBe('Home all axes of bay-4?')
     expect(card.lines.join(' ')).toMatch(/plate is clear/)
-    expect(card.actions).toEqual([{ action: 'printer.gcode', target: 'bay-4', paramsHash: await hashParams({ printerId: 'bay-4', line: 'G28' }) }])
+    // Its own action, so the card never reads as the raw line: the hub homes under its rules when it is approved.
+    expect(card.actions).toEqual([{ action: 'printer.home', target: 'bay-4', paramsHash: await hashParams({ printerId: 'bay-4' }) }])
   })
 
   it.each([
@@ -705,5 +706,32 @@ describe('Vault designs through a scripted hub', () => {
     const demo = await connect({ printers: 'demo' })
     const off = await demo.call('slicerx_vault_list', {})
     expect(text(off)).toMatch(/^Error: not_configured: .*--printers link/)
+  })
+})
+
+// The printer line tools are person only, so a person approves them in the app and the hub sends the line
+// under its own rules (home under the home rules). Their in-process run sends nothing, whatever token it gets.
+describe('printer line tools never send in process', () => {
+  it.each([
+    ['printer.home', { printerId: 'bay-4' }],
+    ['printer.gcode', { printerId: 'bay-4', line: 'G28' }],
+    ['printer.set_temperature', { printerId: 'bay-4', heater: 'bed', celsius: 60 }],
+    ['printer.filament', { printerId: 'bay-4', action: 'load' }],
+  ] as const)('%s', async (name, input) => {
+    const { localTools } = await import('../src/tools')
+    const tool = localTools({} as never).find((t) => t.name === name)
+    if (!tool) throw new Error(`no ${name}`)
+    const calls: string[] = []
+    const printers = {
+      list: async () => [{ id: 'bay-4', plugin: 'moonraker' }],
+      status: async () => ({ state: 'idle' }),
+      sendGcode: async (_id: string, line: string) => void calls.push(line),
+      callTool: async (_p: string, _t: string, a: { line: string }) => void calls.push(a.line),
+    }
+    const token = { requestId: 'r-1', token: 't', expiresAt: '2099-01-01T00:00:00.000Z' }
+    const out = await (tool as { run(i: unknown, c: unknown): Promise<{ ok?: boolean; summary: string }> }).run(input, { token, host: { printers } })
+    expect(out.ok).toBe(false)
+    expect(out.summary).toMatch(/approve/i)
+    expect(calls).toEqual([])
   })
 })
