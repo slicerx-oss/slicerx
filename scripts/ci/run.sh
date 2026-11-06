@@ -48,6 +48,14 @@ export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" CI=true
 # without it they ran the one an earlier run's devkit step left, from older code.
 # A machine with a shared cargo target (heavy.sh's <lock>.target-dir) builds there, so the binaries are looked up there too:
 # the checkout's own target holds whatever an earlier run left.
+# Nightly: its own cargo target, wiped before the build and again when the run ends, so the full rebuild (about 25 GB)
+# never stays on the disk and never fills the machine's shared target.
+# SX_CI_NIGHTLY_TARGET=keep turns the wipe at the end off.
+if [ "$tier" = nightly ]; then
+  export CARGO_TARGET_DIR=$CI_HOME/target-nightly
+  rm -rf "$CARGO_TARGET_DIR"
+  [ "${SX_CI_NIGHTLY_TARGET:-}" = keep ] || trap 'rm -rf "$CI_HOME/target-nightly"' EXIT
+fi
 target=${CARGO_TARGET_DIR:-$WORK/target}
 export SLICERX_TEST_SX_BIN="$target/release/sx" SLICERX_SX_BIN="$target/release/sx" SX_CLI_BIN="$target/release/sx"
 
@@ -87,8 +95,10 @@ if [ -d "$WORK/target" ]; then
   tgt_gb=$(du -sk "$WORK/target" 2>/dev/null | awk '{ print int($1 / 1048576) }')
   if [ "${tgt_gb:-0}" -gt "${SX_CI_MAX_TARGET_GB:-10}" ]; then log "trimming $WORK/target (${tgt_gb} GB)"; rm -rf "$WORK/target"; fi
 fi
-if [ "$(free_gb)" -lt "${SX_CI_MIN_FREE_GB:-15}" ]; then
-  msg="SlicerX CI SKIPPED: $platform $tier ${sha:0:8}: only $(free_gb) GB free on $(hostname -s), under ${SX_CI_MIN_FREE_GB:-15} GB. Free space and push again."
+# The nightly rebuilds everything into its own target, so it needs more room: 30 GB unless SX_CI_MIN_FREE_GB says.
+[ "$tier" = nightly ] && min_free=${SX_CI_MIN_FREE_GB:-30} || min_free=${SX_CI_MIN_FREE_GB:-15}
+if [ "$(free_gb)" -lt "$min_free" ]; then
+  msg="SlicerX CI SKIPPED: $platform $tier ${sha:0:8}: only $(free_gb) GB free on $(hostname -s), under $min_free GB. Free space and push again."
   echo "$msg" | tee "$out/summary.txt"
   # shellcheck disable=SC2086
   [ -n "${SX_CI_NOTIFY:-}" ] && $SX_CI_NOTIFY "$msg" >> "$out/run.log" 2>&1
