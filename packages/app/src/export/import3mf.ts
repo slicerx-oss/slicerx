@@ -20,6 +20,7 @@ import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
 import { geomMatrix, geomPaint, readWithGeom, type GeomProject } from './geom-project'
 import { withBambuMissingKeys } from '@slicerx/settings/app-defaults'
+import { filePlateBedType, type BedType } from '@slicerx/settings/bed-type'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -70,6 +71,8 @@ export interface ImportedPlate {
   marks?: FileMark[]
   /** The plate's number in the file (Bambu Studio and Orca's plater_id), when it has one. */
   plateNo?: number
+  /** The plate's own plate type in the file (`bed_type`), when it names one; it wins over the project's `curr_bed_type`. */
+  bedType?: BedType
 }
 
 export interface ImportedProject {
@@ -590,6 +593,7 @@ interface Assembled {
 interface PlateCfg {
   name: string
   plateNo?: number
+  bedType?: BedType
   sequence?: 'by-layer' | 'by-object'
   nozzleMap?: number[]
   objectIds: string[]
@@ -601,7 +605,8 @@ function plateCfgOf(name: string, index: number, m: Record<string, string>, obje
   const maps = (m['filament_maps'] ?? '').split(/[\s,]+/).map(Number).filter((n) => n === 1 || n === 2)
   const manual = (m['filament_map_mode'] === 'Manual' || m['filament_map_mode'] === 'Nozzle Manual') && maps.length > 0
   const plateNo = no ?? Number(m['plater_id'])
-  return { name: name || `Plate ${index + 1}`, ...(Number.isInteger(plateNo) && plateNo > 0 ? { plateNo } : {}), ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds }
+  const bedType = filePlateBedType(m)
+  return { name: name || `Plate ${index + 1}`, ...(Number.isInteger(plateNo) && plateNo > 0 ? { plateNo } : {}), ...(bedType ? { bedType } : {}), ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds }
 }
 
 /**
@@ -812,7 +817,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const rootSource = sourceOf(marks.root)
   const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
-  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), objects: [] }))
+  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), ...(p.bedType ? { bedType: p.bedType } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
   const earsNote = brimEarsNote(files.get('Metadata/brim_ear_points.txt'))
   // Orca places objects on the machine; the plate counts from the printable area's front left corner.

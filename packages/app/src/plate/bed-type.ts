@@ -17,6 +17,8 @@ export const BED_TYPE_OPTIONS: readonly { value: BedType; label: string }[] = [
   { value: 'cool', label: 'Cool plate' },
   { value: 'engineering', label: 'Engineering plate' },
   { value: 'high-temp', label: 'High temp plate' },
+  { value: 'textured-cool', label: 'Textured cool plate' },
+  { value: 'supertack', label: 'Supertack plate' },
 ]
 
 const label = (v: BedType): string => BED_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? v
@@ -38,7 +40,7 @@ export function plateBedType(meta: Pick<PlateMeta, 'settings'> | undefined, cfg:
 
 /**
  * The `curr_bed_type` a plate slices with, to spread over the print settings. A plate type set on the plate wins; a
- * `curr_bed_type` already in the settings stays as it is, even one this picker does not list (a Supertack plate).
+ * `curr_bed_type` already in the settings stays as it is, even one this picker does not list.
  */
 export function bedTypeConfig(meta: Pick<PlateMeta, 'settings'> | undefined, cfg: Readonly<Record<string, unknown>>): { curr_bed_type?: string } {
   const own = meta?.settings.bedType

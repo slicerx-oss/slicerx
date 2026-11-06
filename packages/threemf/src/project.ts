@@ -119,6 +119,8 @@ const BED_TYPE_NAMES: Record<string, string> = {
   'high-temp': 'High Temp Plate',
   'textured-pei': 'Textured PEI Plate',
   'smooth-pei': 'High Temp Plate',
+  'textured-cool': 'Textured Cool Plate',
+  supertack: 'Supertack Plate',
 }
 
 /** The bed type names plate_N.json uses, as Bambu Studio's and Orca's files carry them. */
@@ -128,6 +130,8 @@ const BED_TYPE_KEYS: Record<string, string> = {
   'high-temp': 'hot_plate',
   'textured-pei': 'textured_plate',
   'smooth-pei': 'hot_plate',
+  'textured-cool': 'textured_cool_plate',
+  supertack: 'supertack_plate',
 }
 
 /** Seconds of a time such as "1d 2h 3m 4s" after `prefix`, or undefined. */
