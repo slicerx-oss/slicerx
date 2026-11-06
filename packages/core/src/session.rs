@@ -14841,7 +14841,7 @@ fn brim_outline(cfg: &PrintConfig, here: &LayerRegions) -> Shapes {
 
 /// The distance between brim loops, mm: as in Orca, the first layer line width less the rounded corners of the
 /// bead.
-fn brim_spacing(cfg: &PrintConfig) -> f64 {
+pub(crate) fn brim_spacing(cfg: &PrintConfig) -> f64 {
     (cfg.line_width - cfg.initial_layer_print_height * (1.0 - std::f64::consts::FRAC_PI_4))
         .max(cfg.line_width * 0.5)
 }
@@ -14853,7 +14853,7 @@ fn brim_spacing(cfg: &PrintConfig) -> f64 {
     clippy::cast_sign_loss,
     reason = "brim loop count is small"
 )]
-fn brim_loops(cfg: &PrintConfig, width: f64, spacing: f64) -> i32 {
+pub(crate) fn brim_loops(cfg: &PrintConfig, width: f64, spacing: f64) -> i32 {
     let fits = (width / spacing).max(0.0);
     let loops = if crate::brim::whole_loops(cfg) {
         fits.floor()

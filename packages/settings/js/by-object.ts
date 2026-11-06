@@ -128,12 +128,112 @@ export function overhangLimitDeg(cfg: Record<string, SettingValue>): number {
   return Math.min(found + OVERHANG_MARGIN_DEG, 90)
 }
 
+/** How far from level a face may be and still count as one, as the cosine of its normal against Z. */
+const LEVEL = 1 - 1e-9
+/** Area left uncovered, mm², below which an underside counts as resting wholly on what is under it. */
+const RESTING_AREA_MM2 = 1e-6
+/** More pieces than this while cutting an underside by the tops under it, and it counts as not resting. */
+const MAX_PIECES = 4096
+
+type Xy = [number, number]
+
+function crossXy(a: Xy, b: Xy, p: Xy): number {
+  return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+}
+
+function areaXy(poly: readonly Xy[]): number {
+  let s = 0
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]!
+    const q = poly[(i + 1) % poly.length]!
+    s += p[0] * q[1] - q[0] * p[1]
+  }
+  return Math.abs(s) / 2
+}
+
+/** The part of the convex `poly` left of the line `a`-`b` (`left`), or right of it. */
+function halfXy(poly: readonly Xy[], a: Xy, b: Xy, left: boolean): Xy[] {
+  const side = (p: Xy) => (left ? crossXy(a, b, p) : -crossXy(a, b, p))
+  const out: Xy[] = []
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]!
+    const q = poly[(i + 1) % poly.length]!
+    const sp = side(p)
+    const sq = side(q)
+    if (sp >= 0) out.push(p)
+    if (sp >= 0 !== sq >= 0) {
+      const t = sp / (sp - sq)
+      out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])])
+    }
+  }
+  return out
+}
+
+function boundXy(poly: readonly Xy[]): [number, number, number, number] {
+  let b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const q of poly) b = [Math.min(b[0], q[0]), Math.min(b[1], q[1]), Math.max(b[2], q[0]), Math.max(b[3], q[1])]
+  return b
+}
+
+/**
+ * Whether an underside face (x, y) at height key `zk` lies wholly on the tops there (faces looking straight up): cut
+ * every top at that height out of it, and no area is left. Any area left, however the tops lie, and it hangs.
+ */
+function restsOnTops(face: Xy[], zk: number, tops: Map<number, Xy[][]>): boolean {
+  const under = tops.get(zk)
+  if (!under) return false
+  let pieces: Xy[][] = [face]
+  for (const t of under) {
+    const tb = boundXy(t)
+    const next: Xy[][] = []
+    for (const piece of pieces) {
+      const pb = boundXy(piece)
+      if (pb[0] >= tb[2] || pb[2] <= tb[0] || pb[1] >= tb[3] || pb[3] <= tb[1]) {
+        next.push(piece)
+        continue
+      }
+      // What is outside each edge of the top in turn, inside the edges before it.
+      let inside: Xy[] = piece
+      for (let k = 0; k < 3; k++) {
+        const a = t[k]!
+        const b = t[(k + 1) % 3]!
+        const out = halfXy(inside, a, b, false)
+        if (out.length >= 3 && areaXy(out) > 1e-12) next.push(out)
+        inside = halfXy(inside, a, b, true)
+        if (inside.length < 3) break
+      }
+    }
+    if (next.length > MAX_PIECES) return false
+    pieces = next
+    if (pieces.length === 0) return true
+  }
+  let left = 0
+  for (const p of pieces) left += areaXy(p)
+  return left < RESTING_AREA_MM2
+}
+
+/** Whether the point (x, y) at height key `zk` stands on a top there (on it or on its edge). */
+function standsOnTops(x: number, y: number, zk: number, tops: Map<number, Xy[][]>): boolean {
+  const under = tops.get(zk)
+  if (!under) return false
+  return under.some((t) =>
+    [0, 1, 2].every((k) => {
+      const a = t[k]!
+      const b = t[(k + 1) % 3]!
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+      return len < 1e-12 || crossXy(a, b, [x, y]) / len >= -1e-6
+    }),
+  )
+}
+
 /**
  * Whether an object, its parts placed by `m` (column-major 4x4, bed mm), has an underside any support planner of sx
  * could hold up with `cfg`: the engine's rule (packages/core/src/collide/rules.rs `has_overhang`), never no where the
  * slice finds an overhang. Yes for a face looking down flatter than overhangLimitDeg off the bed, any face looking
  * down within the first `enforce_support_layers` layers, a keel of two such faces flatter than the limit, or a corner
- * off the bed with nothing lower round it (a part hanging from a point).
+ * off the bed with nothing lower round it (a part hanging from a point). An underside resting wholly on a top (a face
+ * looking straight up, such as another part's) is held up by it, and a corner standing on one has something under it;
+ * an underside only partly on one hangs.
  */
 export function hasOverhang(parts: readonly ByObjectMesh[], m: readonly number[], cfg: Record<string, SettingValue>): boolean {
   const EPS = 1e-3
@@ -159,6 +259,28 @@ export function hasOverhang(parts: readonly ByObjectMesh[], m: readonly number[]
   const enforceTop = enforce > 0 ? base + num(cfg['initial_layer_print_height'], 0.2) + enforce * num(cfg['layer_height'], 0.2) : -Infinity
   const q = (v: number) => Math.round(v * 1000)
   const key = (P: Float64Array, i: number) => `${q(P[i]!)},${q(P[i + 1]!)},${q(P[i + 2]!)}`
+  // The faces looking straight up, by height: what an underside can rest on.
+  const tops = new Map<number, Xy[][]>()
+  for (let k = 0; k < placed.length; k++) {
+    const P = placed[k]!
+    const I = parts[k]!.indices
+    for (let t = 0; t + 2 < I.length; t += 3) {
+      const a = I[t]! * 3
+      const b = I[t + 1]! * 3
+      const c = I[t + 2]! * 3
+      if (a + 2 >= P.length || b + 2 >= P.length || c + 2 >= P.length) continue
+      const ux = P[b]! - P[a]!, uy = P[b + 1]! - P[a + 1]!, uz = P[b + 2]! - P[a + 2]!
+      const vx = P[c]! - P[a]!, vy = P[c + 1]! - P[a + 1]!, vz = P[c + 2]! - P[a + 2]!
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+      if (len < 1e-12 || nz / len < LEVEL) continue
+      const tri: Xy[] = [[P[a]!, P[a + 1]!], [P[b]!, P[b + 1]!], [P[c]!, P[c + 1]!]]
+      const zk = q(P[a + 2]!)
+      const list = tops.get(zk)
+      if (list) list.push(tri)
+      else tops.set(zk, [tri])
+    }
+  }
   // Lowest corners of downward faces (true once something lower is found round them), and each edge of a downward
   // face with the far corners of the faces on it.
   const lows = new Map<string, boolean>()
@@ -179,9 +301,14 @@ export function hasOverhang(parts: readonly ByObjectMesh[], m: readonly number[]
       if (len < 1e-12 || nz / len > -1e-9) continue
       const za = P[a + 2]!, zb = P[b + 2]!, zc = P[c + 2]!
       if (Math.max(za, zb, zc) <= base + EPS) continue
+      if (-nz / len >= LEVEL && tops.size > 0) {
+        const tri: Xy[] = [[P[a]!, P[a + 1]!], [P[b]!, P[b + 1]!], [P[c]!, P[c + 1]!]]
+        if (crossXy(tri[0]!, tri[1]!, tri[2]!) < 0) tri.reverse()
+        if (restsOnTops(tri, q(za), tops)) continue
+      }
       if (-nz / len > flat || Math.min(za, zb, zc) < enforceTop) return true
       const low = zb < za ? (zc < zb ? c : b) : zc < za ? c : a
-      if (P[low + 2]! > base + EPS) {
+      if (P[low + 2]! > base + EPS && !standsOnTops(P[low]!, P[low + 1]!, q(P[low + 2]!), tops)) {
         const kl = key(P, low)
         if (!lows.has(kl)) {
           lows.set(kl, false)

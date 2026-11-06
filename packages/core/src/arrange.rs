@@ -22,6 +22,8 @@
     reason = "indices of the plate's objects, built here"
 )]
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 use sx_geom::mesh::TriMesh;
 use sx_geom::nest::{
@@ -30,6 +32,7 @@ use sx_geom::nest::{
 use sx_geom::poly2d::Polygon;
 
 use crate::api::ArrangeSpec;
+use crate::collide::rules::support;
 use crate::config::PrintConfig;
 use crate::error::{Error, Result};
 use crate::fm::Fm as _;
@@ -39,7 +42,7 @@ use crate::plate::{Plate, PlateObject};
 pub const MARGIN_SAFETY_MM: f64 = 1.0;
 /// The spacing between objects and from the bed edge when the request names none, mm: the app's arrange default.
 pub const DEFAULT_SPACING_MM: f64 = 6.0;
-/// Turn step, degrees.
+/// Turn step when the request names none, degrees: the app's arrange default.
 const STEP_DEG: f64 = 10.0;
 /// How much further a gantry lane reaches than the rod's reach, mm: the plate check counts the bed in 1 mm cells, so a
 /// footprint can reach a cell further either way.
@@ -91,7 +94,31 @@ pub struct Arrangement {
     pub objects: Vec<ArrangedObject>,
     /// The objects with no room, in the plate's order; they keep their transforms and are not sliced.
     pub not_fit: Vec<NotFit>,
+    /// Printing by object: the print order the layout takes, as object ids, when it is not the plate's own: the plate
+    /// check's one-click new order, taken when the layout in the plate's order still has a strike it is sure of (an
+    /// object taller than the gantry rod printed before a low one under its gantry). The request's objects are put in
+    /// this order. Empty otherwise.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
     /// Printing by object: heimdall's plate check of the layout (`sx check`), when every object fits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check: Option<crate::collide::check::PlateCheck>,
+    /// With [`crate::api::ArrangeSpec::new_plates`]: the objects with no room laid out on new, empty plates, in order,
+    /// each as an arrange of the objects still left lays it out. Objects no plate takes stay in `not_fit` only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub plates: Vec<PlateLayout>,
+}
+
+/// One new plate of an arrange ([`Arrangement::plates`]).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlateLayout {
+    /// The objects placed on it, in the plate's order.
+    pub objects: Vec<ArrangedObject>,
+    /// Printing by object: the print order it takes when it is not the plate's own ([`Arrangement::order`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
+    /// Printing by object, when every object of it fits: the plate check of it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check: Option<crate::collide::check::PlateCheck>,
 }
@@ -122,6 +149,10 @@ struct Room {
     apart: Option<f64>,
     skirt: bool,
     rotate: bool,
+    /// Turn step, degrees.
+    step: f64,
+    /// The nest's work after its first layout.
+    budget: f64,
 }
 
 /// Lays out every object of `plate` that has something to print with `cfg`: the new transform of each object, in the
@@ -131,7 +162,7 @@ struct Room {
 pub(crate) fn arrange(
     plate: &Plate,
     cfg: &PrintConfig,
-    spec: ArrangeSpec,
+    spec: &ArrangeSpec,
     lanes: bool,
     more: f64,
 ) -> Result<(Vec<[f32; 16]>, Arrangement)> {
@@ -140,11 +171,21 @@ pub(crate) fn arrange(
     let origin = [area[0], area[1]];
     let gap = spec.spacing_mm.unwrap_or(DEFAULT_SPACING_MM).max(0.0);
     let rotate = spec.rotate.unwrap_or(true);
+    // Printing by layer, whether each object gets support, by its mesh and how it is turned and scaled (copies share
+    // one answer). By object the support pad stays in each object's reach, as the slice's clearance check counts it.
+    let mut turns = HashMap::new();
     let shapes: Vec<Shape> = plate
         .objects
         .iter()
         .enumerate()
-        .filter_map(|(k, o)| shape(k, o, cfg, origin, by_object))
+        .filter_map(|(k, o)| {
+            let bare = if by_object {
+                None
+            } else {
+                unsupported(cfg, o, &mut turns)
+            };
+            shape(k, o, bare.as_ref().unwrap_or(cfg), origin, by_object)
+        })
         .collect();
     let (zones, keep_out, kinds) = zones(plate, cfg, origin, &area, by_object);
     let radius = crate::collide::clearance_radius(cfg);
@@ -162,22 +203,29 @@ pub(crate) fn arrange(
         apart: by_object.then_some(radius.max(0.0) + MARGIN_SAFETY_MM + more.max(0.0)),
         skirt: skirt_whole,
         rotate,
+        step: spec
+            .step_deg
+            .filter(|d| d.is_finite())
+            .map_or(STEP_DEG, |d| d.clamp(1.0, 90.0)),
+        budget: spec.effort.unwrap_or_default().budget(),
     };
+    // The objects asked to stay, where they stand, and the ones to pack round them.
+    let kept = |s: &Shape| spec.keep.contains(&plate.objects[s.k].id);
+    let (stay, shapes): (Vec<Shape>, Vec<Shape>) = shapes.into_iter().partition(|s| kept(s));
     let rod = gantry(cfg);
-    let tall: Vec<usize> = match rod {
-        Some((rod, _)) if by_object && lanes => {
-            (0..shapes.len()).filter(|&i| shapes[i].height > rod).collect()
-        }
-        _ => Vec::new(),
-    };
-    let placed = if tall.len() >= 2 {
-        in_lanes(&shapes, &tall, &room, rod.map_or(0.0, |r| r.1))?
+    let over = |s: &Shape| rod.is_some_and(|(rod, _)| by_object && lanes && s.height > rod);
+    let tall: Vec<usize> = (0..shapes.len()).filter(|&i| over(&shapes[i])).collect();
+    let stay_tall = stay.iter().filter(|s| over(s)).count();
+    let placed = if tall.len() + stay_tall >= 2 && !tall.is_empty() {
+        in_lanes(&shapes, &tall, &stay, &room, rod.unwrap_or((f64::MAX, 0.0)))?
     } else {
-        nest_all(&shapes, &room)?
+        nest_all(&shapes, &stay, &room)?
     };
     let mut transforms: Vec<[f32; 16]> = plate.objects.iter().map(|o| o.transform).collect();
     let mut objects = Vec::new();
     let mut not_fit = Vec::new();
+    // Whether an empty bed holds a part, by its outline: copies are tried once.
+    let mut alone = HashMap::new();
     for s in &shapes {
         let o = &plate.objects[s.k];
         match placed.iter().find(|p| p.0 == s.k) {
@@ -200,7 +248,7 @@ pub(crate) fn arrange(
             None => not_fit.push(NotFit {
                 id: o.id.clone(),
                 name: name_of(o),
-                reason: if fits_alone(s, &room)? {
+                reason: if fits_alone(s, &room, &mut alone)? {
                     "no_room"
                 } else {
                     "too_large"
@@ -215,11 +263,13 @@ pub(crate) fn arrange(
             spacing_mm: gap,
             clearance_mm: by_object.then_some(radius),
             rotate,
-            lanes: tall.len() >= 2,
+            lanes: tall.len() + stay_tall >= 2 && !tall.is_empty(),
             keep_out: kinds,
             objects,
             not_fit,
+            order: Vec::new(),
             check: None,
+            plates: Vec::new(),
         },
     ))
 }
@@ -235,6 +285,23 @@ pub(crate) fn has_tall(plate: &Plate, cfg: &PrintConfig) -> bool {
         .filter(|o| z_span(o).is_some_and(|(lo, hi)| hi - lo > rod))
         .count()
         >= 2
+}
+
+/// The plate's object ids in a print order where every object taller than the gantry rod prints after the low ones, each
+/// set in the plate's order: the gantry over a tall one then never passes over a low one still to print. `None` when
+/// that is the plate's own order, or the printer has no gantry rod (a delta).
+pub(crate) fn tall_last(plate: &Plate, cfg: &PrintConfig) -> Option<Vec<String>> {
+    let (rod, _) = gantry(cfg)?;
+    let tall = |o: &PlateObject| z_span(o).is_some_and(|(lo, hi)| hi - lo > rod);
+    let order: Vec<String> = plate
+        .objects
+        .iter()
+        .filter(|o| !tall(o))
+        .chain(plate.objects.iter().filter(|o| tall(o)))
+        .map(|o| o.id.clone())
+        .collect();
+    let same = order.iter().zip(&plate.objects).all(|(id, o)| id == &o.id);
+    (!same).then_some(order)
 }
 
 /// The printable area `[min x, min y, max x, max y]` on the machine: the config's, else the plate's bed from 0, 0.
@@ -298,6 +365,49 @@ fn z_span(o: &PlateObject) -> Option<(f64, f64)> {
     span
 }
 
+/// The plate's settings for object `o`, printing by layer, when it gets no support though support is on ([`support::gets_support`]): no
+/// enforcer asks for it and, with automatic support, no underside needs it, so its first layer prints no support pad
+/// to keep room for. `None` when it may get support, or support is off. `seen` holds the answers by mesh and by how the
+/// object is turned and scaled, so copies are read once.
+fn unsupported(
+    cfg: &PrintConfig,
+    o: &PlateObject,
+    seen: &mut HashMap<(usize, [u32; 12]), bool>,
+) -> Option<PrintConfig> {
+    if !cfg.enable_support {
+        return None;
+    }
+    let enforcers = o
+        .volumes
+        .iter()
+        .any(|v| v.role == crate::plate::VolumeRole::SupportEnforcer)
+        || o.mesh
+            .parts
+            .iter()
+            .any(|p| p.support_paint.iter().any(|f| f.state == 1));
+    let mut key = [0_u32; 12];
+    for (k, v) in key.iter_mut().zip(o.transform) {
+        *k = v.to_bits();
+    }
+    let overhang = *seen
+        .entry((std::sync::Arc::as_ptr(&o.mesh) as usize, key))
+        .or_insert_with(|| {
+            let mut positions = Vec::new();
+            let mut triangles = Vec::new();
+            for part in o.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
+                let base = u32::try_from(positions.len()).unwrap_or(u32::MAX);
+                positions.extend(part.positions.iter().map(|&p| o.apply(p)));
+                triangles.extend(part.triangles.iter().map(|t| t.map(|i| i.saturating_add(base))));
+            }
+            support::has_overhang(&positions, &triangles, cfg)
+        });
+    (!support::gets_support(cfg, enforcers, overhang)).then(|| {
+        let mut bare = cfg.clone();
+        bare.enable_support = false;
+        bare
+    })
+}
+
 /// Object `k` as the nest takes it, its outline in plate coordinates; `None` when it has nothing to print.
 fn shape(k: usize, o: &PlateObject, cfg: &PrintConfig, origin: [f64; 2], by_object: bool) -> Option<Shape> {
     let (lo, hi) = z_span(o)?;
@@ -332,7 +442,10 @@ fn shape(k: usize, o: &PlateObject, cfg: &PrintConfig, origin: [f64; 2], by_obje
         return None;
     }
     let height = hi - lo;
-    let brim = brim_room(cfg, &s.hull, height);
+    // The first layer, cut where the engine sizes an automatic brim from (half the first layer above the lowest point).
+    let cut = cfg.initial_layer_print_height.max(0.02) / 2.0;
+    let first = nest::base(&meshes, Some(&m), cut, &SilhouetteOptions::default());
+    let brim = brim_room(cfg, &s.hull, &first, height);
     // What the first layer lays down past the outline, without a skirt of its own.
     let mut first = cfg.clone();
     first.raw.insert(
@@ -359,23 +472,50 @@ fn shape(k: usize, o: &PlateObject, cfg: &PrintConfig, origin: [f64; 2], by_obje
 }
 
 /// How far an object's brim reaches past its outline `hull` (plate coordinates) for an object `height` mm tall, mm:
-/// none for no brim or one inside only, the width the automatic brim takes for this footprint and height (with the
-/// gap and a line), else `brim_width` and the gap.
-fn brim_room(cfg: &PrintConfig, hull: &[[f64; 2]], height: f64) -> f64 {
+/// none for no brim or one inside only; for the automatic brim, the room the engine's first layer gives it: the width
+/// it sizes from the object's first layer (`first`, its islands), each island's own loops of it (an island much
+/// smaller than the object gets fewer), the gap, and the most of those over the islands, as the slice keeps the
+/// prime tower off it; without a first layer, the width for the hull with a line; else `brim_width` and the gap.
+fn brim_room(cfg: &PrintConfig, hull: &[[f64; 2]], first: &[Vec<Vec<[f64; 2]>>], height: f64) -> f64 {
     let gap = cfg.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0);
+    let ring = |r: &[[f64; 2]]| -> Vec<i_overlay::i_float::int::point::IntPoint<i32>> {
+        r.iter()
+            .map(|p| {
+                i_overlay::i_float::int::point::IntPoint::new(crate::geom::mm(p[0]), crate::geom::mm(p[1]))
+            })
+            .collect()
+    };
     match crate::brim::Kind::of(cfg) {
         crate::brim::Kind::Off | crate::brim::Kind::Inner => 0.0,
-        crate::brim::Kind::Auto => {
-            let ring = hull
+        crate::brim::Kind::Auto if !first.is_empty() && cfg.raw_number("raft_layers", 0.0) <= 0.0 => {
+            let islands: crate::perimeters::Shapes = first
                 .iter()
-                .map(|p| {
-                    i_overlay::i_float::int::point::IntPoint::new(
-                        crate::geom::mm(p[0]),
-                        crate::geom::mm(p[1]),
-                    )
-                })
+                .map(|shape| shape.iter().map(|r| ring(r)).collect())
                 .collect();
-            let footprint: crate::perimeters::Shapes = vec![vec![ring]];
+            let width = crate::brim::width(cfg, &islands, height);
+            if width <= 0.0 {
+                return 0.0;
+            }
+            let spacing = crate::session::brim_spacing(cfg);
+            islands
+                .iter()
+                .map(|island| {
+                    let one: crate::perimeters::Shapes = vec![island.clone()];
+                    let loops = crate::session::brim_loops(
+                        cfg,
+                        crate::brim::island_width(width, &one, height, spacing),
+                        spacing,
+                    );
+                    if loops > 0 {
+                        gap + f64::from(loops) * spacing
+                    } else {
+                        0.0
+                    }
+                })
+                .fold(0.0, f64::max)
+        }
+        crate::brim::Kind::Auto => {
+            let footprint: crate::perimeters::Shapes = vec![vec![ring(hull)]];
             let width = crate::brim::width(cfg, &footprint, height);
             if width > 0.0 {
                 width + gap + cfg.line_width.max(0.0)
@@ -593,7 +733,8 @@ fn problem(
             apart_mm,
             safety_mm: MARGIN_SAFETY_MM,
             rotate: room.rotate,
-            rotation_step_deg: STEP_DEG,
+            rotation_step_deg: room.step,
+            budget: room.budget,
             skirt: room.skirt,
             tower_zones: room.tower_zones,
             keep_out_zones: if room.apart.is_some() {
@@ -670,13 +811,15 @@ fn nest_result(
     })
 }
 
-/// Every shape nested at once, the layout moved to the middle of the bed.
-fn nest_all(shapes: &[Shape], room: &Room) -> Result<Vec<Put>> {
+/// Every shape nested at once round the ones that stay (`stay`, where they stand); with none staying, the layout moved
+/// to the middle of the bed.
+fn nest_all(shapes: &[Shape], stay: &[Shape], room: &Room) -> Result<Vec<Put>> {
     if shapes.is_empty() {
         return Ok(Vec::new());
     }
     let items: Vec<&Shape> = shapes.iter().collect();
-    let r = nest_result(&items, &[], room, &[])?;
+    let fixed: Vec<(&Shape, f64, [f64; 2])> = stay.iter().map(|s| (s, 0.0, [0.0, 0.0])).collect();
+    let r = nest_result(&items, &fixed, room, &[])?;
     Ok(puts(&r))
 }
 
@@ -690,15 +833,34 @@ fn puts(r: &NestResult) -> Vec<Put> {
 /// Printing by object with two or more objects taller than the gantry rod: those go first, one at a time, each out of
 /// the lanes across the bed of the ones before it (their footprint's y span grown by the rod's reach and
 /// [`LANE_SAFETY_MM`]), so the gantry over a later one never passes over an earlier one; then the rest around them.
-fn in_lanes(shapes: &[Shape], tall: &[usize], room: &Room, to_rod: f64) -> Result<Vec<Put>> {
-    let reach = to_rod + LANE_SAFETY_MM;
-    let mut fixed: Vec<(&Shape, f64, [f64; 2])> = Vec::new();
+/// `rod` is the gantry rod's height and its reach either way of the nozzle, mm. The objects that stay (`stay`) stand where they are, and the tall ones among them hold their lanes from the start.
+fn in_lanes(
+    shapes: &[Shape],
+    tall: &[usize],
+    stay: &[Shape],
+    room: &Room,
+    rod: (f64, f64),
+) -> Result<Vec<Put>> {
+    let reach = rod.1 + LANE_SAFETY_MM;
+    let mut fixed: Vec<(&Shape, f64, [f64; 2])> = stay.iter().map(|s| (s, 0.0, [0.0, 0.0])).collect();
     let mut out: Vec<Put> = Vec::new();
-    let mut lanes: Vec<NestZone> = Vec::new();
+    let w = room.bed.width_mm;
+    let lane = |b: [f64; 4]| NestZone {
+        polygons: vec![Polygon::simple(vec![
+            [0.0, b[1] - reach],
+            [w, b[1] - reach],
+            [w, b[3] + reach],
+            [0.0, b[3] + reach],
+        ])],
+    };
+    let mut lanes: Vec<NestZone> = stay
+        .iter()
+        .filter(|s| s.height > rod.0)
+        .map(|s| lane(bbox(&s.hull)))
+        .collect();
     // The tallest first: it decides most.
     let mut order: Vec<usize> = tall.to_vec();
     order.sort_by(|&a, &b| shapes[b].height.total_cmp(&shapes[a].height).then(a.cmp(&b)));
-    let w = room.bed.width_mm;
     for i in order {
         let s = &shapes[i];
         let r = nest_result(&[s], &fixed, room, &lanes)?;
@@ -707,15 +869,7 @@ fn in_lanes(shapes: &[Shape], tall: &[usize], room: &Room, to_rod: f64) -> Resul
         };
         out.push((s.k, deg, offset));
         fixed.push((s, deg, offset));
-        let b = bbox(&moved(&s.hull, deg, offset));
-        lanes.push(NestZone {
-            polygons: vec![Polygon::simple(vec![
-                [0.0, b[1] - reach],
-                [w, b[1] - reach],
-                [w, b[3] + reach],
-                [0.0, b[3] + reach],
-            ])],
-        });
+        lanes.push(lane(bbox(&moved(&s.hull, deg, offset))));
     }
     let rest: Vec<&Shape> = shapes
         .iter()
@@ -730,8 +884,32 @@ fn in_lanes(shapes: &[Shape], tall: &[usize], room: &Room, to_rod: f64) -> Resul
     Ok(out)
 }
 
-/// Whether an empty bed holds `s` with its margins.
-fn fits_alone(s: &Shape, room: &Room) -> Result<bool> {
+/// Whether an empty bed holds `s` with its margins. `seen` keeps the answers by outline (moved to its own corner) and
+/// margins, so copies of one part are tried once.
+fn fits_alone(s: &Shape, room: &Room, seen: &mut HashMap<String, bool>) -> Result<bool> {
+    let b = bbox(&s.hull);
+    let key = serde_json::json!([
+        s.polygons
+            .iter()
+            .map(|p| {
+                let at = |r: &[[f64; 2]]| {
+                    r.iter()
+                        .map(|q| [round3(q[0] - b[0]), round3(q[1] - b[1])])
+                        .collect::<Vec<_>>()
+                };
+                (at(&p.outer), p.holes.iter().map(|h| at(h)).collect::<Vec<_>>())
+            })
+            .collect::<Vec<_>>(),
+        round3(s.grow),
+        round3(s.reach),
+        round3(s.height),
+    ])
+    .to_string();
+    if let Some(&fits) = seen.get(&key) {
+        return Ok(fits);
+    }
     let r = run(problem(&[s], &[], room, &[], false))?;
-    Ok(!r.placements.is_empty())
+    let fits = !r.placements.is_empty();
+    seen.insert(key, fits);
+    Ok(fits)
 }

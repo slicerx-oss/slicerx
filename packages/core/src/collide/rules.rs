@@ -91,10 +91,9 @@ pub(crate) fn object_room_around(cfg: &PrintConfig, brim: f64, hull: &[[f64; 2]]
 }
 
 /// Whether an object gets support at all, read from its triangles where there are no layers yet: the rule the app's
-/// by-object check (`packages/settings/js/by-object.ts`) and the MCP server count an object's support pad by. The slice
-/// decides support from its layers; the tests below write this rule's answers to the golden file and check it is never
-/// looser than the slice.
-#[cfg(test)]
+/// by-object check (`packages/settings/js/by-object.ts`), the MCP server and the engine's arrange count an object's
+/// support pad by. The slice decides support from its layers; the tests below write this rule's answers to the golden
+/// file and check it is never looser than the slice.
 pub(crate) mod support {
     use super::support_runs;
     use crate::config::PrintConfig;
@@ -142,6 +141,130 @@ pub(crate) mod support {
         )
     }
 
+    /// The faces looking straight up, the tops other parts can stand on: by height on the 1 micron lattice, each a
+    /// triangle in x, y, counter-clockwise.
+    type Tops = std::collections::HashMap<i64, Vec<[[f64; 2]; 3]>>;
+
+    /// How far from level a face may be and still count as one, as the cosine of its normal against Z.
+    const LEVEL: f64 = 1.0 - 1e-9;
+
+    /// Area left uncovered, mm^2, below which an underside counts as resting wholly on what is under it.
+    const RESTING_AREA_MM2: f64 = 1e-6;
+
+    /// More pieces than this while cutting an underside by the tops under it, and it counts as not resting.
+    const MAX_PIECES: usize = 4096;
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "mm heights of a bed a few metres tall at most"
+    )]
+    fn height_key(z: f64) -> i64 {
+        (z * 1000.0).round() as i64
+    }
+
+    /// A face's corners in x, y, counter-clockwise.
+    fn ccw(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> [[f64; 2]; 3] {
+        let (p, q, r) = ([a[0], a[1]], [b[0], b[1]], [c[0], c[1]]);
+        if cross(p, q, r) >= 0.0 {
+            [p, q, r]
+        } else {
+            [p, r, q]
+        }
+    }
+
+    fn cross(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> f64 {
+        (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+    }
+
+    fn area(poly: &[[f64; 2]]) -> f64 {
+        poly.iter()
+            .zip(poly.iter().cycle().skip(1))
+            .map(|(p, q)| p[0] * q[1] - q[0] * p[1])
+            .sum::<f64>()
+            .abs()
+            / 2.0
+    }
+
+    /// The part of the convex `poly` left of the line `a`-`b` (`left`), or right of it.
+    fn half(poly: &[[f64; 2]], a: [f64; 2], b: [f64; 2], left: bool) -> Vec<[f64; 2]> {
+        let side = |p: [f64; 2]| if left { cross(a, b, p) } else { -cross(a, b, p) };
+        let mut out = Vec::with_capacity(poly.len() + 1);
+        for (&p, &q) in poly.iter().zip(poly.iter().cycle().skip(1)) {
+            let (sp, sq) = (side(p), side(q));
+            if sp >= 0.0 {
+                out.push(p);
+            }
+            if (sp >= 0.0) != (sq >= 0.0) {
+                let t = sp / (sp - sq);
+                out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+            }
+        }
+        out
+    }
+
+    /// A triangle's edges, in order.
+    fn sides(t: &[[f64; 2]; 3]) -> [([f64; 2], [f64; 2]); 3] {
+        [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])]
+    }
+
+    /// Whether an underside face (`face`, x, y) at height `z` lies wholly on the tops at that height: cut every top
+    /// there out of it, and no area is left. Any area left, however the tops lie, and it hangs.
+    fn rests(face: [[f64; 2]; 3], z: f64, tops: &Tops) -> bool {
+        let Some(under) = tops.get(&height_key(z)) else {
+            return false;
+        };
+        let mut pieces = vec![face.to_vec()];
+        for t in under {
+            let bound = |p: &[[f64; 2]]| {
+                p.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, q| {
+                    [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]
+                })
+            };
+            let tb = bound(t);
+            let mut next = Vec::with_capacity(pieces.len());
+            for piece in pieces {
+                let pb = bound(&piece);
+                if pb[0] >= tb[2] || pb[2] <= tb[0] || pb[1] >= tb[3] || pb[3] <= tb[1] {
+                    next.push(piece);
+                    continue;
+                }
+                // What is outside each edge of the top in turn, inside the edges before it.
+                let mut inside = piece;
+                for (a, b) in sides(t) {
+                    let out = half(&inside, a, b, false);
+                    if out.len() >= 3 && area(&out) > 1e-12 {
+                        next.push(out);
+                    }
+                    inside = half(&inside, a, b, true);
+                    if inside.len() < 3 {
+                        break;
+                    }
+                }
+            }
+            if next.len() > MAX_PIECES {
+                return false;
+            }
+            pieces = next;
+            if pieces.is_empty() {
+                return true;
+            }
+        }
+        pieces.iter().map(|p| area(p)).sum::<f64>() < RESTING_AREA_MM2
+    }
+
+    /// Whether the point `p` stands on a top at its height (on it or on its edge).
+    fn stands(p: [f64; 3], tops: &Tops) -> bool {
+        let q = [p[0], p[1]];
+        tops.get(&height_key(p[2])).is_some_and(|under| {
+            under.iter().any(|t| {
+                sides(t).into_iter().all(|(a, b)| {
+                    let len = (b[0] - a[0]).m_hypot(b[1] - a[1]);
+                    len < 1e-12 || cross(a, b, q) / len >= -1e-6
+                })
+            })
+        })
+    }
+
     /// Whether an object, as it stands on the bed (`positions` in bed mm, `triangles` wound with their normals out,
     /// every part of the object together), has an underside any support planner of sx could hold up with `cfg`. It
     /// never says no where the slice finds an overhang; it may say yes where the slice finds none (a small overhang
@@ -152,6 +275,9 @@ pub(crate) mod support {
     /// - two faces looking down meet in a ridge that points down at less than the limit (the corner of two steep faces
     ///   can be flatter than either);
     /// - a corner off the bed has nothing lower round it and a face looking down from it (a part hanging from a point).
+    ///
+    /// An underside resting wholly on a top (a face looking straight up, such as another part's) is held up by it, and
+    /// a corner standing on one has something under it; an underside only partly on one hangs.
     pub(crate) fn has_overhang(positions: &[[f64; 3]], triangles: &[[u32; 3]], cfg: &PrintConfig) -> bool {
         use std::collections::HashMap;
         const EPS: f64 = 1e-3;
@@ -168,6 +294,23 @@ pub(crate) mod support {
         let at = |i: u32| positions.get(i as usize).copied();
         let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        // The faces looking straight up, by height: what an underside can rest on.
+        let mut tops: Tops = HashMap::new();
+        for t in triangles {
+            let (Some(a), Some(b), Some(c)) = (at(t[0]), at(t[1]), at(t[2])) else {
+                continue;
+            };
+            let (u, v) = (sub(b, a), sub(c, a));
+            let n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let len = dot(n, n).sqrt();
+            if len >= 1e-12 && n[2] / len >= LEVEL {
+                tops.entry(height_key(a[2])).or_default().push(ccw(a, b, c));
+            }
+        }
         // Lowest corners of downward faces, and the edges of downward faces with each face's far corner.
         let mut lows: HashMap<Key, (f64, bool)> = HashMap::new();
         let mut edges: HashMap<(Key, Key), Vec<[f64; 3]>> = HashMap::new();
@@ -189,6 +332,9 @@ pub(crate) mod support {
             if top <= base + EPS {
                 continue;
             }
+            if -n[2] / len >= LEVEL && !tops.is_empty() && rests(ccw(a, b, c), a[2], &tops) {
+                continue;
+            }
             if -n[2] / len > flat || a[2].min(b[2]).min(c[2]) < enforce_top {
                 return true;
             }
@@ -196,7 +342,7 @@ pub(crate) mod support {
                 .into_iter()
                 .min_by(|p, q| p[2].total_cmp(&q[2]))
                 .unwrap_or(a);
-            if low[2] > base + EPS {
+            if low[2] > base + EPS && !stands(low, &tops) {
                 lows.entry(lattice(low)).or_insert((low[2], false));
             }
             for (p, q, far) in [(a, b, c), (b, c, a), (c, a, b)] {
@@ -255,10 +401,12 @@ pub(crate) mod support {
             && (enforcers || (!cfg.support.manual && overhang))
     }
 
+    #[cfg(test)]
     pub(crate) use super::{object_room, object_room_around};
 
     /// How far an object's own first layer prints past its footprint by object, mm ([`object_room`]), with its
     /// support's pad counted only when it gets support ([`gets_support`]).
+    #[cfg(test)]
     pub(crate) fn part_reach(cfg: &PrintConfig, brim: f64, supported: bool) -> f64 {
         if supported || !cfg.enable_support {
             return object_room(cfg, brim);
@@ -713,6 +861,28 @@ mod tests {
                 false,
             ),
             (
+                "a box resting on a plinth, its underside on the plinth's top",
+                joined(&[
+                    cuboid([0.0, 0.0, 0.0], [30.0, 20.0, 4.0]),
+                    cuboid([5.0, 5.0, 4.0], [25.0, 15.0, 30.0]),
+                ]),
+                None,
+                tree.clone(),
+                none.clone(),
+                false,
+            ),
+            (
+                "a box on a plinth hanging past its edge",
+                joined(&[
+                    cuboid([0.0, 0.0, 0.0], [20.0, 20.0, 4.0]),
+                    cuboid([10.0, 5.0, 4.0], [30.0, 15.0, 20.0]),
+                ]),
+                None,
+                tree.clone(),
+                none.clone(),
+                false,
+            ),
+            (
                 "normal support, a table",
                 table(),
                 None,
@@ -956,6 +1126,26 @@ mod tests {
             first_layer >= 4,
             "only {first_layer} cases print support on the first layer"
         );
+    }
+
+    /// An underside that rests wholly on another part's top is held up by it, so it is no overhang; one that hangs
+    /// past the edge of what it stands on is, for the part that hangs off.
+    #[test]
+    fn an_underside_resting_on_a_top_is_held_and_one_hanging_past_it_is_not() {
+        let cases = support_cases();
+        let answer = |name: &str| {
+            let c = cases
+                .iter()
+                .find(|c| c.0 == name)
+                .unwrap_or_else(|| panic!("no case {name}"));
+            let cfg = PrintConfig::from_value(&merged(&c.3, &c.4)).unwrap_or_default();
+            has_overhang(&placed_mesh(c), &c.1.1, &cfg)
+        };
+        assert!(!answer(
+            "a box resting on a plinth, its underside on the plinth's top"
+        ));
+        assert!(answer("a box on a plinth hanging past its edge"));
+        assert!(answer("tree support, a table"));
     }
 
     fn round(v: f64) -> f64 {
