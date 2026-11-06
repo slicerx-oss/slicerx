@@ -356,6 +356,84 @@ describe('arrange on a by-object plate with the plate check', () => {
   })
 })
 
+describe('arrange in the engine on a by-object plate', () => {
+  it('takes the check the engine ran on its layout, so the plate is not checked again', async () => {
+    vi.useRealTimers()
+    const { setArrangeEngine } = await import('../src/plate/engine-arrange')
+    const checkPlate = vi.fn(async () => CLEAR)
+    const at = (x: number) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 118, 0, 1]
+    const arrangePlateCall = vi.fn(async () => ({
+      byObject: true,
+      clearanceMm: 40,
+      spacingMm: 6,
+      rotate: true,
+      lanes: false,
+      keepOut: [],
+      objects: [
+        { id: 'a', name: 'Cube A', centerMm: [50, 128], turnDeg: 0, transform: at(40) },
+        { id: 'b', name: 'Cube B', centerMm: [170, 128], turnDeg: 0, transform: at(160) },
+      ],
+      notFit: [],
+      check: SURE,
+    }))
+    const slicer = { loadModel: async () => ({}), loadParts: async () => ({}), checkPlate, arrangePlate: arrangePlateCall }
+    stop = startEngineCheck({ kind: 'desktop', capabilities: { threads: 1 }, slicer } as unknown as Host)
+    const undo = setArrangeEngine(slicer as never)
+    try {
+      await arrangePlate('all')
+    } finally {
+      undo()
+    }
+    expect(arrangePlateCall).toHaveBeenCalledTimes(1)
+    expect(checkPlate).not.toHaveBeenCalled()
+    expect(engineVerdict(get())).toBe(SURE)
+    expect(get().toast).toMatchObject({ tone: 'warn', text: 'Arranged, but Cube A and Cube B still clash by object. The warning shows the fixes.' })
+  })
+
+  it('does not check the first layout it shows while the engine still checks it, so each layout is checked once', async () => {
+    vi.useRealTimers()
+    const { setArrangeEngine } = await import('../src/plate/engine-arrange')
+    const checkPlate = vi.fn(async () => CLEAR)
+    const at = (x: number) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 118, 0, 1]
+    const layout = {
+      byObject: true,
+      clearanceMm: 40,
+      spacingMm: 6,
+      rotate: true,
+      lanes: false,
+      keepOut: [],
+      objects: [
+        { id: 'a', name: 'Cube A', centerMm: [50, 128], turnDeg: 0, transform: at(40) },
+        { id: 'b', name: 'Cube B', centerMm: [170, 128], turnDeg: 0, transform: at(160) },
+      ],
+      notFit: [],
+    }
+    let shown = 0
+    const arrangePlateCall = vi.fn(async (_req: unknown, opts?: { onLayout?: (first: unknown) => void }) => {
+      opts?.onLayout?.(layout)
+      shown = get().plate.find((p) => p.id === 'b')!.transform[12]!
+      // The engine's own check of the layout takes a while: far longer than the page waits before it checks an edit.
+      await new Promise((r) => setTimeout(r, CHECK_DELAY_MS * 4))
+      return { ...layout, check: CLEAR }
+    })
+    const slicer = { loadModel: async () => ({}), loadParts: async () => ({}), checkPlate, arrangePlate: arrangePlateCall }
+    stop = startEngineCheck({ kind: 'desktop', capabilities: { threads: 1 }, slicer } as unknown as Host)
+    await new Promise((r) => setTimeout(r, CHECK_DELAY_MS + 50))
+    checkPlate.mockClear()
+    const undo = setArrangeEngine(slicer as never)
+    try {
+      await arrangePlate('all')
+      await new Promise((r) => setTimeout(r, CHECK_DELAY_MS * 2))
+    } finally {
+      undo()
+    }
+    expect(shown).toBe(160)
+    expect(arrangePlateCall).toHaveBeenCalledTimes(1)
+    expect(checkPlate).not.toHaveBeenCalled()
+    expect(engineVerdict(get())).toBe(CLEAR)
+  })
+})
+
 describe('the plate check contract', () => {
   it('reads what the engine writes and refuses a certainty list that does not match', () => {
     const raw = JSON.parse(JSON.stringify(SURE))

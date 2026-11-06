@@ -39,17 +39,17 @@ const A1 = ['machine:bambu-a1', 'process:standard']
 const BY_OBJECT = { print_sequence: 'by object' }
 
 describe('slicerx_arrange_file', () => {
-  it('is a read tool that takes the slice inputs and the arrange spacing and turn switch', async () => {
+  it('is a read tool that takes the slice inputs and the arrange options the app has', async () => {
     const h = await connect()
     try {
       const tool = serverTools(h.ctx).find((t) => t.name === 'arrange_file')
       expect(tool, 'arrange_file is registered').toBeDefined()
       expect(tool?.permission).toBe('read')
       const shape = (tool?.input as unknown as { shape: Record<string, unknown> }).shape
-      for (const k of ['model', 'plate', 'project_settings', 'profiles', 'overrides', 'spacing_mm', 'rotate']) expect(shape, k).toHaveProperty(k)
+      for (const k of ['model', 'plate', 'project_settings', 'profiles', 'overrides', 'spacing_mm', 'rotate', 'step_deg', 'effort', 'keep', 'new_plates']) expect(shape, k).toHaveProperty(k)
       expect(shape).not.toHaveProperty('output')
       expect(shape).not.toHaveProperty('placement')
-      for (const k of ['by_object', 'fits', 'objects', 'not_fit', 'spacing_mm', 'clearance_mm']) expect(tool?.outputShape, k).toHaveProperty(k)
+      for (const k of ['by_object', 'fits', 'objects', 'not_fit', 'spacing_mm', 'clearance_mm', 'plates']) expect(tool?.outputShape, k).toHaveProperty(k)
       const listed = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_arrange_file')
       expect(listed?.annotations?.readOnlyHint).toBe(true)
     } finally {
@@ -108,6 +108,29 @@ describe.skipIf(noSx())('arranging a plate of distinct parts on the A1', { timeo
     }
   })
 
+  it('keeps the parts asked to stay where they are and packs the others round them, with the app\'s turn step and search', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const model = project(join(h.dir, 'three-parts.3mf'), [[100, 100], [110, 105], [120, 110]], 30, 8)
+      const all = data<Arranged>(await h.call('slicerx_arrange_file', { model, profiles: A1 }))
+      expect(all.objects).toHaveLength(3)
+      const stay = all.objects[0]!.id
+      const r = await h.call('slicerx_arrange_file', { model, profiles: A1, keep: [stay], step_deg: 45, effort: 'quick' })
+      expect(r.isError, text(r)).toBeFalsy()
+      const a = data<Arranged>(r)
+      expect(a.fits).toBe(true)
+      // The kept part is not moved, so it is not listed; the other two clear it by the spacing.
+      expect(a.objects.map((o) => o.id).sort()).toEqual(all.objects.slice(1).map((o) => o.id).sort())
+      for (const o of a.objects) expect(o.turn_deg % 45, `${o.name} turns in 45 degree steps`).toBeCloseTo(0, 6)
+      // An id the plate does not have is refused, naming it.
+      const bad = await h.call('slicerx_arrange_file', { model, profiles: A1, keep: ['no-such-part'] })
+      expect(bad.isError).toBe(true)
+      expect(text(bad)).toContain('no-such-part')
+    } finally {
+      await h.client.close()
+    }
+  })
+
   it('names the parts with no room, and a slice with placement arrange refuses them', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     try {
@@ -122,6 +145,13 @@ describe.skipIf(noSx())('arranging a plate of distinct parts on the A1', { timeo
       expect(a.objects.length + a.not_fit.length).toBe(40)
       expect(a.not_fit.every((o) => o.reason === 'no_room' && /^Part_\d+$/.test(o.name))).toBe(true)
       expect(text(r)).toContain(a.not_fit[0]!.name)
+
+      // With new_plates the same call lays the parts with no room out on new plates, each part on one plate.
+      const more = data<Arranged & { plates?: { objects: { id: string }[] }[] }>(await h.call('slicerx_arrange_file', { model, profiles: A1, new_plates: true }))
+      expect(more.objects).toEqual(a.objects)
+      expect(more.plates?.length).toBeGreaterThan(0)
+      const moved = (more.plates ?? []).flatMap((p) => p.objects.map((o) => o.id)).sort()
+      expect(moved).toEqual(a.not_fit.map((o) => o.id).sort())
 
       const s = await h.call('slicerx_slice_file', { model, profiles: A1, placement: 'arrange' })
       expect(s.isError).toBe(true)

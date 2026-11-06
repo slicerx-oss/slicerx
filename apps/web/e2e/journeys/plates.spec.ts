@@ -619,7 +619,9 @@ test.describe('a round bed', () => {
       await closeSheet(page)
       await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' }).click()
       await expect(page.locator('html')).not.toHaveAttribute('data-sx-busy')
-      await expect(objs).toHaveCount(filled)
+      // Arrange is the engine's: every copy it places stays inside the circle, and any it finds no room for moves to a
+      // new plate, none lost.
+      await expect.poll(async () => { const s = await store(page); return s.plates.reduce((n, p) => n + (p.id === s.activePlate ? s.plate.length : p.objects.length), 0) }).toBe(filled)
       await expectInsideCircle(page)
     } finally {
       await restore()
