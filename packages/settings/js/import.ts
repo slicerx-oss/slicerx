@@ -287,6 +287,31 @@ export function orcaReadable(settings: Readonly<Record<string, unknown>>): Recor
   return out
 }
 
+const unsetEntry = (x: unknown): boolean => x === null || x === undefined || (typeof x === 'string' ? x.trim() === '' || x.trim() === NIL || Number(x.trim()) === 0 : x === 0)
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : typeof v === 'string' && v.includes(',') ? v.split(',') : [v])
+
+/**
+ * Settings as `toOrca` writes them, without the values other slicers refuse when they open a project:
+ * a filament ironing speed on automatic (an empty list, or 0) reads as 0 mm/s there, below the 1 mm/s they take, and a
+ * post-processing list of empty scripts is refused outright. A key with nothing set is left out, which a project open
+ * reads as the value in use; a filament ironing speed set for some filaments only gives the others the process
+ * ironing speed, which is what automatic means. Everything else is kept as it is.
+ */
+export function withoutRefusedValues(settings: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...settings }
+  if ('post_process' in out && listOf(out['post_process']).every((x) => typeof x !== 'string' || x.trim() === '')) delete out['post_process']
+  if ('filament_ironing_speed' in out) {
+    const list = listOf(out['filament_ironing_speed'])
+    if (list.every(unsetEntry)) delete out['filament_ironing_speed']
+    else if (list.some(unsetEntry)) {
+      const process = Number(listOf(out['ironing_speed'])[0])
+      const fill = String(Number.isFinite(process) && process >= 1 ? process : 20)
+      out['filament_ironing_speed'] = list.map((x) => (unsetEntry(x) ? fill : String(x)))
+    }
+  }
+  return out
+}
+
 export function exportOrcaProfile(config: PrintConfig, meta: { name: string; section: SettingSection; inherits?: string }): Record<string, unknown> {
   const out: Record<string, unknown> = {
     type: meta.section === 'printer' ? 'machine' : meta.section,
