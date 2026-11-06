@@ -1552,7 +1552,7 @@ test('Partner phone: pairs under its app name, listed in Devices, approve and se
   const flow = await client.pair(local)
   const digits = await flow.sas
   await expect(dialog.getByLabel('Digits to compare')).toHaveText(digits)
-  await expect(dialog).toContainText('Example Phone on a phone wants to pair as a partner phone')
+  await expect(dialog).toContainText('A partner app on a phone wants to pair')
   await expect(dialog.getByTestId('partner-phone-approve')).toHaveAttribute('aria-checked', 'false')
   await expect(dialog.getByTestId('partner-phone-send')).toHaveAttribute('aria-checked', 'false')
   flow.confirm()
