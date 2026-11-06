@@ -8,12 +8,13 @@ import type { EditionHost, SliceWarning } from '@slicerx/contracts'
 import { isEnabled, listCommands, runCommand } from '../commands/registry'
 import { resolveSlots } from '../filament/slots'
 import { spoolParts } from '../filament/pick'
-import { activeMeta } from '../plate/plates'
+import { activeMeta, allPlates } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
 import { openTiming, viewTiming } from '../lib/open-timing'
 import { geomCalls } from '../geom/client'
+import { geomWorkers } from '../geom/worker-memory'
 import { sliceTiming } from '../lib/slice-timing'
 import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
@@ -145,9 +146,34 @@ export function appState(s: AppState): Record<string, unknown> {
     lastOpen: openTiming(),
     // How long the 3D view took to its first frame, or null before it.
     view: viewTiming(),
-    geometry: geomCalls(),
+    // What the geometry engine answered, and its workers alive now with the engine memory each holds (geom/worker-memory.ts).
+    geometry: { ...geomCalls(), workers: geomWorkers() },
+    // The big buffers the page keeps: every plate's meshes (each buffer once) and the slice preview.
+    memory: pageMemory(s),
     lastSlice: sliceTiming(),
   }
+}
+
+/** The bytes of every plate's meshes (parts and volumes, each buffer once) and of the slice preview on hand. */
+export function pageMemory(s: AppState): { meshBytes: number; meshBuffers: number; previewBytes: number } {
+  const seen = new Set<ArrayBufferLike>()
+  const add = (a: ArrayBufferView | undefined) => {
+    if (a) seen.add(a.buffer)
+  }
+  for (const p of allPlates(s))
+    for (const o of p.objects) {
+      for (const part of o.parts) {
+        add(part.positions)
+        add(part.indices)
+      }
+      for (const v of o.volumes ?? []) {
+        add(v.part.positions)
+        add(v.part.indices)
+      }
+    }
+  let meshBytes = 0
+  for (const b of seen) meshBytes += b.byteLength
+  return { meshBytes, meshBuffers: seen.size, previewBytes: s.preview?.raw.byteLength ?? 0 }
 }
 
 /**

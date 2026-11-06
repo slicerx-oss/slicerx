@@ -5,6 +5,7 @@
 // the desktop app) with setGeomProvider.
 import type { FaceSurface, MeshPart } from '@slicerx/contracts'
 import type { LoadError } from './modules'
+import { workerAnswered, workerEnded, workerStarted } from './worker-memory'
 
 export interface GeomProvider {
   call<T = unknown>(op: string, request: unknown, signal?: AbortSignal): Promise<T>
@@ -91,6 +92,7 @@ function workerProvider(): GeomProvider {
     const ended = worker
     worker = null
     ended?.terminate()
+    workerEnded(ended)
   }
   const stop = () => {
     if (pending.size === 0) release()
@@ -111,12 +113,14 @@ function workerProvider(): GeomProvider {
     if (worker) return worker
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
+    workerStarted(current, 'shared')
     current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
         return
       }
+      workerAnswered(current, e.data.memoryBytes)
       const p = pending.get(e.data.id)
       if (pending.size <= 1) {
         if (idle) clearTimeout(idle)
@@ -203,7 +207,15 @@ export function startSpareGeomWorker(): void {
     if (e.data.loadError) noteLoadError(e.data.loadError)
   }
   worker.postMessage({ id: 0, op: 'engine.core', request: null })
-  spare = { worker, unused: setTimeout(() => takeSpare()?.terminate(), IDLE_MS) }
+  workerStarted(worker, 'spare')
+  spare = {
+    worker,
+    unused: setTimeout(() => {
+      const unused = takeSpare()
+      unused?.terminate()
+      workerEnded(unused)
+    }, IDLE_MS),
+  }
 }
 
 /**
@@ -226,9 +238,11 @@ export function startGeomFor(fileName: string): void {
 export function soloCall<T>(op: string, request: unknown, transfer: Transferable[] = []): { answer: Promise<T>; end: () => void } {
   let worker: Worker | null = takeSpare() ?? newWorker()
   const w = worker
+  workerStarted(w, 'solo')
   let fail: (e: Error) => void = () => undefined
   const stop = () => {
     worker?.terminate()
+    workerEnded(worker)
     worker = null
   }
   const answer = new Promise<T>((resolve, reject) => {

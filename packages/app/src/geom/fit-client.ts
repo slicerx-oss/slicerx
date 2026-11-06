@@ -6,6 +6,7 @@
 // handed back. It ends when idle as the shared worker does (client.ts), and the module stays for the next one. A mesh
 // goes over once and is named by its key after that, until keepFitMeshes says the plate dropped it.
 import { BIG_BYTES, BIG_IDLE_MS, IDLE_MS, noteCall } from './client'
+import { workerAnswered, workerEnded, workerStarted } from './worker-memory'
 
 let worker: Worker | null = null
 let idle: ReturnType<typeof setTimeout> | null = null
@@ -39,6 +40,7 @@ function end(): void {
   if (idle) clearTimeout(idle)
   idle = null
   worker?.terminate()
+  workerEnded(worker)
   worker = null
   held = new Set()
 }
@@ -49,12 +51,14 @@ function start(): Worker {
   if (worker) return worker
   const current = new Worker(new URL('./fit-worker.ts', import.meta.url), { type: 'module' })
   worker = current
+  workerStarted(current, 'fit')
   current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { module: WebAssembly.Module }>) => {
     if (worker !== current) return
     if ('module' in e.data) {
       module = e.data.module
       return
     }
+    workerAnswered(current, e.data.memoryBytes)
     const p = pending.get(e.data.id)
     pending.delete(e.data.id)
     if (idle) clearTimeout(idle)
