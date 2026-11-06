@@ -51,7 +51,7 @@ describe('project filaments over MCP', () => {
     expect(before['filament_colour']).toBeUndefined()
   })
 
-  it('refuses a filament that is not there, a color or type it cannot read, and a seventeenth', async () => {
+  it('refuses a filament that is not there, a color or type it cannot read, and a 33rd', async () => {
     const h = await connect()
     await h.call('slicerx_project_open', { printer: 'bambu_p1s', filament: 'pla' })
     const missing = await h.call('slicerx_project_set_filament', { slot: 3, color: '#ffffff' })
@@ -62,10 +62,41 @@ describe('project filaments over MCP', () => {
     expect((await h.call('slicerx_project_set_filament', { slot: 1 })).isError).toBe(true)
     // Nothing refused changed the project.
     expect(data<Out>(await h.call('slicerx_project_show')).output.filaments).toHaveLength(1)
-    for (let i = 2; i <= 16; i++) expect((await h.call('slicerx_project_add_filament', {})).isError).toBeFalsy()
+    for (let i = 2; i <= 32; i++) expect((await h.call('slicerx_project_add_filament', {})).isError).toBeFalsy()
     const full = await h.call('slicerx_project_add_filament', {})
     expect(full.isError).toBe(true)
-    expect(text(full)).toMatch(/already has 16 filaments/)
+    expect(text(full)).toMatch(/The project already has 32 filaments, the most it holds\./)
+    expect((await h.call('slicerx_project_set_filament', { slot: 33, color: '#ffffff' })).isError).toBe(true)
+    expect(data<Out>(await h.call('slicerx_project_show')).output.filaments).toHaveLength(32)
+  })
+
+  it('sets 32 filaments and reads every one back', async () => {
+    const h = await connect()
+    await h.call('slicerx_project_open', { name: 'Thirty-two', printer: 'bambu_p1s', filament: 'pla' })
+    const color = (i: number) => `#${(i * 7).toString(16).padStart(2, '0')}80${(255 - i * 7).toString(16).padStart(2, '0')}`
+    for (let i = 2; i <= 32; i++) {
+      const r = await h.call('slicerx_project_add_filament', { type: i % 2 ? 'petg' : 'pla', color: color(i) })
+      expect(r.isError, text(r)).toBeFalsy()
+      expect(data<Out>(r).output.filament?.slot).toBe(i)
+    }
+    const last = await h.call('slicerx_project_set_filament', { slot: 32, type: 'tpu', color: '#123456' })
+    expect(last.isError, text(last)).toBeFalsy()
+    const shown = data<Out>(await h.call('slicerx_project_show')).output.filaments!
+    expect(shown).toHaveLength(32)
+    expect(shown[16]).toEqual({ slot: 17, type: 'PETG', color: color(17), source: 'set' })
+    expect(shown[31]).toEqual({ slot: 32, type: 'TPU', color: '#123456', source: 'set' })
+  })
+
+  it('takes filament 32 and no 33rd in the slice and STEP tools', async () => {
+    const h = await connect()
+    const tools = (await h.client.listTools()).tools
+    const props = (name: string) => (tools.find((t) => t.name === name)!.inputSchema.properties ?? {}) as Record<string, { maximum?: number; maxItems?: number; items?: { maxItems?: number; properties?: Record<string, { maximum?: number }> } }>
+    const slice = props('slicerx_slice_file')['filaments']!
+    expect(slice.maxItems).toBe(32)
+    expect(slice.items?.properties?.['slot']?.maximum).toBe(32)
+    expect(props('slicerx_project_set_filament')['slot']!.maximum).toBe(32)
+    expect(props('slicerx_step_read')['max_filaments']!.maximum).toBe(32)
+    expect(props('slicerx_step_read')['filaments']!.maxItems).toBe(32)
   })
 
   it('needs an open project', async () => {

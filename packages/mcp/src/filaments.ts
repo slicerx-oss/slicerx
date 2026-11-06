@@ -3,10 +3,10 @@
 // The project's filaments: what the plate calls filament 1, 2, 3, each a material type and a color, as the app's
 // filament rail shows them. A client adds one after the last and changes one's type or color; the slice config
 // carries them as filament_type and filament_colour.
-import { productName } from '@slicerx/contracts'
+import { COLOR_SLOT_MAX, productName } from '@slicerx/contracts'
 
 /** The most filaments a project holds, as in the app. */
-export const MAX_FILAMENTS = 16
+export const MAX_FILAMENTS = COLOR_SLOT_MAX
 
 /** Material types a filament can be, the ones the app's filament dialog offers. */
 export const FILAMENT_TYPES = ['PLA', 'PETG', 'PET', 'ABS', 'ASA', 'PC', 'PA', 'TPU', 'PVA', 'HIPS', 'PP', 'PPS', 'PEEK', 'BVOH', 'EVA'] as const

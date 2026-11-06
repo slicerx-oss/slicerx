@@ -85,9 +85,9 @@ describe('planColorSlots', () => {
     const one = planColorSlots(['#0040ff', '#00ff00'], [red, black], { limit: 3 })
     expect(one.add).toEqual([{ slot: 3, color: '#0040ff' }])
     expect(one.picks[1]!.match).toBe('nearest')
-    // the limit never goes past 16 slots
-    const many = planColorSlots(Array.from({ length: 20 }, (_, i) => `#${(i * 12).toString(16).padStart(2, '0')}00ff`), [], { limit: 99, threshold: 0 })
-    expect(Math.max(...many.add.map((a) => a.slot))).toBe(16)
+    // the limit never goes past 32 slots
+    const many = planColorSlots(Array.from({ length: 40 }, (_, i) => `#${(i * 6).toString(16).padStart(2, '0')}00ff`), [], { limit: 99, threshold: 0 })
+    expect(Math.max(...many.add.map((a) => a.slot))).toBe(32)
   })
 
   it('leaves uncolored entries and a file without colors alone', () => {
@@ -123,7 +123,7 @@ describe('nearestSlots', () => {
 
 describe('body colors in the app', () => {
   it('limits the plan to the printer slots when the printer reports them', () => {
-    expect(bodyColorLimit({ printerSlots: [] })).toBe(16)
+    expect(bodyColorLimit({ printerSlots: [] })).toBe(32)
     expect(bodyColorLimit({ printerSlots: [{ id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }] })).toBe(4)
   })
 

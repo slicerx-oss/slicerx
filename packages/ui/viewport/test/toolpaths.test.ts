@@ -153,4 +153,21 @@ describe('Toolpaths tool colors and finishes', () => {
     expect(t.setToolFinishes(['silk', 'matte'])).toBe(false)
     expect(t.setToolFinishes(['silk'])).toBe(true)
   })
+
+  // A project holds 32 filaments: tools 17 to 32 draw in their own color and finish, not filament 16's.
+  it('keeps a color and a finish for each of 32 tools', () => {
+    const t = new Toolpaths()
+    const colors = Array.from({ length: 32 }, (_, i) => (i === 31 ? '#ff0000' : '#0000ff'))
+    t.setToolColors(colors)
+    t.setToolFinishes(Array.from({ length: 32 }, (_, i) => (i === 31 ? 'silk' : 'matte')))
+    const u = (t as unknown as { uniforms: Record<'uToolLut' | 'uFinishLut', { value: { image: { width: number; data: Float32Array } } }> }).uniforms
+    const tool = u.uToolLut.value.image
+    expect(tool.width).toBe(32)
+    // red at tool 32, blue at tool 16
+    expect(tool.data[31 * 4]!).toBeGreaterThan(tool.data[31 * 4 + 2]!)
+    expect(tool.data[15 * 4 + 2]!).toBeGreaterThan(tool.data[15 * 4]!)
+    const fin = u.uFinishLut.value.image
+    expect(fin.width).toBe(32)
+    expect([...fin.data.slice(31 * 4, 32 * 4)]).not.toEqual([...fin.data.slice(15 * 4, 16 * 4)])
+  })
 })

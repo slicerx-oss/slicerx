@@ -8,7 +8,7 @@ import { colorDistance } from '@slicerx/contracts'
 import { createStore } from 'zustand'
 import { activeMeta } from '../plate/plates'
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
-import { effectiveSlot, mapSlot, materialType, resolveSlots, type ResolvedSlot } from './slots'
+import { effectiveSlot, mapSlot, materialType, MAX_SLOTS, resolveSlots, type ResolvedSlot } from './slots'
 
 /** What a click on a spool moves. */
 export type SpoolTarget =
@@ -133,7 +133,7 @@ export function targetSlot(s: Pick<AppState, 'plate' | 'plates' | 'activePlate'>
  * moved. Notes the spool as the one used last on this printer and the objects as picked by hand.
  */
 export function moveToSpool(target: SpoolTarget, slot: number): number {
-  if (!Number.isInteger(slot) || slot < 1 || slot > 16) return 0
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_SLOTS) return 0
   const s = get()
   const meta = activeMeta(s)
   const to = fileSlotFor(meta, slot)

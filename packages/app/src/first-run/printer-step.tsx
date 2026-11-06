@@ -30,6 +30,7 @@ import { OrbitPanel, useLongWait } from './raven-orbit'
 import type { SetupPrinter } from './model'
 import {
   addressOf,
+  AMS_UNIT_CHOICES,
   BRAND_TILES,
   brandTile,
   buildVolumeText,
@@ -65,6 +66,7 @@ import {
   searchSetup,
   setFirmware,
   skipForm,
+  SLOT_CHOICES,
   testBlockers,
   tileForModel,
   typeIcon,
@@ -600,7 +602,7 @@ function NozzleSection({ ctl }: { ctl: PrinterController }) {
           {fil.kind === 'ams' ? (
             <Field htmlFor="fr-ams" label="AMS units">
               <Select id="fr-ams" value={String(fil.units)} onChange={(e) => setForm((f) => ({ ...f, filament: { ...f.filament, units: Number(e.target.value), slots: Number(e.target.value) * 4 } }))}>
-                {[1, 2, 3, 4].map((u) => (
+                {AMS_UNIT_CHOICES.map((u) => (
                   <option key={u} value={u}>
                     {u} ({u * 4} slots)
                   </option>
@@ -610,7 +612,7 @@ function NozzleSection({ ctl }: { ctl: PrinterController }) {
           ) : fil.kind === 'mmu' || fil.kind === 'other' ? (
             <Field htmlFor="fr-slots" label="Slots">
               <Select id="fr-slots" value={String(fil.slots)} onChange={(e) => setForm((f) => ({ ...f, filament: { ...f.filament, slots: Number(e.target.value) } }))}>
-                {[2, 3, 4, 5, 6, 8, 12, 16].map((u) => (
+                {SLOT_CHOICES.map((u) => (
                   <option key={u} value={u}>
                     {u}
                   </option>

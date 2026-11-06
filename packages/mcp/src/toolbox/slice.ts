@@ -7,7 +7,7 @@ import { basename, extname, join } from 'node:path'
 import { gcodeLabel, printerForProfile } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
-import { productName, type ScriptReplacementChoice } from '@slicerx/contracts'
+import { COLOR_SLOT_MAX, productName, type ScriptReplacementChoice } from '@slicerx/contracts'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, slicePrinter, type ExtraLayers, type SlotLayer } from '../config'
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
@@ -74,13 +74,13 @@ export const sliceInput = {
   filaments: z
     .array(
       z.object({
-        slot: z.number().int().min(1).max(16).describe('Filament slot, 1-based: the extruder or AMS slot the project assigns objects to'),
+        slot: z.number().int().min(1).max(COLOR_SLOT_MAX).describe('Filament slot, 1-based: the extruder or AMS slot the project assigns objects to'),
         profile: z.string().optional().describe('A filament profile id from slicerx_list_profiles, such as "stock-filament:BBL/Bambu PETG HF @BBL A1"'),
         file: z.string().optional().describe("Absolute path of the user's own filament preset (.json, .bbsflmt or .orca_filament)"),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe('The spool color as #RRGGBB, shown by the printer and written to the .gcode.3mf'),
       }),
     )
-    .max(16)
+    .max(COLOR_SLOT_MAX)
     .optional()
     .describe('A filament per slot, for multi-material plates: each entry sets only its own slot. Applied after profile_files and before overrides. Each entry names a profile or a file, or only a color.'),
   overrides: overridesSchema.optional(),

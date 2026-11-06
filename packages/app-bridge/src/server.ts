@@ -15,6 +15,8 @@ import { NotRunning } from './connection.ts'
 export const SERVER_NAME = 'slicerx-app-bridge'
 export const SERVER_VERSION = '0.1.0'
 const CHARACTER_LIMIT = 25_000
+/** The most filaments a project holds, as the app counts them. */
+const MAX_FILAMENTS = 32
 
 function ok(data: unknown): CallToolResult {
   let text = JSON.stringify(data, null, 2) ?? 'null'
@@ -250,10 +252,10 @@ export function createAppBridgeServer(client: AppClient): McpServer {
       description:
         'Moves an object (or one of its parts), the parts on one filament, or the whole plate to a loaded spool, as a click on that spool in the Filament section does. Give object (id or name, with part to move one part), from (the filament whose parts move) or plate: true; with none of them it moves what a click would, and refuses on a plate that prints with two or more filaments. Another material than the profile\'s is allowed: the slice uses that spool\'s settings. Returns how many parts moved and the spools as app_spools reads them.',
       inputSchema: {
-        spool: z.union([z.string().min(1).max(16), z.number().int().min(1).max(16)]).describe('The spool to print with: its label (A3) or slot number'),
+        spool: z.union([z.string().min(1).max(16), z.number().int().min(1).max(MAX_FILAMENTS)]).describe('The spool to print with: its label (A3) or slot number'),
         object: z.string().min(1).max(200).optional().describe('Object id or name on the shown plate'),
         part: z.string().min(1).max(200).optional().describe('One part of that object, by name'),
-        from: z.union([z.string().min(1).max(16), z.number().int().min(1).max(16)]).optional().describe('Move every part that prints with this filament (label or slot number)'),
+        from: z.union([z.string().min(1).max(16), z.number().int().min(1).max(MAX_FILAMENTS)]).optional().describe('Move every part that prints with this filament (label or slot number)'),
         plate: z.boolean().optional().describe('Move every part on the shown plate'),
       },
       annotations: { ...act, idempotentHint: true },

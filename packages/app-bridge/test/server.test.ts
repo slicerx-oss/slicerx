@@ -104,7 +104,7 @@ describe('running-app MCP server', () => {
     const { file, seen } = await fakeApp({
       spools,
       move_to_spool: (a) => {
-        if (a['spool'] !== 'A2' && a['spool'] !== 2) throw new Error('no spool')
+        if (a['spool'] !== 'A2' && a['spool'] !== 2 && a['spool'] !== 32) throw new Error('no spool')
         on = 2
         return { moved: 1, spool: 2, ...spools() }
       },
@@ -119,7 +119,11 @@ describe('running-app MCP server', () => {
     // a spool number works too, and arguments out of range never reach the app
     expect((await call('app_move_to_spool', { spool: 2, plate: true })).isError).toBeFalsy()
     expect((await call('app_move_to_spool', { spool: 99 })).isError).toBe(true)
-    expect(seen).toHaveLength(3)
+    // a project holds 32 filaments: 32 reaches the app, 33 does not
+    expect((await call('app_move_to_spool', { spool: 32, from: 17 })).isError).toBeFalsy()
+    expect((await call('app_move_to_spool', { spool: 33 })).isError).toBe(true)
+    expect((await call('app_move_to_spool', { spool: 2, from: 33 })).isError).toBe(true)
+    expect(seen).toHaveLength(4)
   })
 
   it('arranges the print settings panel and reads it back', async () => {
