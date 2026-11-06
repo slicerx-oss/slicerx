@@ -40,6 +40,19 @@ test('a box prints with the other nozzle from its chip, and the slice reads back
     await expect(page.getByTestId('slice-machine-card')).toBeVisible()
     await shot(page, 'object-nozzle-rows')
 
+    // The chip is 20 px high, so invisible padding gives it the hit area UI spec 2 asks for: 28 px on desktop, 44 on the phone.
+    const hit = await chips.nth(0).evaluate((chip) => {
+      // Centered, so nothing at the list's edge covers the padding.
+      chip.scrollIntoView({ block: 'center' })
+      const need = matchMedia('(pointer: coarse)').matches ? 44 : 28
+      const r = chip.getBoundingClientRect()
+      const reach = (need - r.height) / 2 - 1
+      const x = r.left + r.width / 2
+      const at = (y: number) => chip.contains(document.elementFromPoint(x, y))
+      return { height: r.height, above: at(r.top - reach), below: at(r.bottom + reach) }
+    })
+    expect(hit).toEqual({ height: 20, above: true, below: true })
+
     // The chip stays where it is while its menu opens.
     await chips.nth(1).scrollIntoViewIfNeeded()
     const before = await chips.nth(1).boundingBox()

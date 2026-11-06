@@ -9,4 +9,8 @@
 /* Under Move filament: a plain line, not a control, so it takes no focus and nothing above it moves. */
 .obj-nozzle-warn { display: flex; gap: 4px; align-items: flex-start; max-width: 280px; margin: 0; padding: 0 12px 8px 32px; font: var(--fw-medium) var(--fs-sm)/1.4 var(--f-body); color: var(--muted); }
 .obj-nozzle-warn .sx-ic { flex: none; margin-top: 2px; color: var(--orange); }
-@media (pointer: coarse) { .obj-nozzle { position: relative; } .obj-nozzle::after { content: ''; position: absolute; inset: -12px -2px; } }
+/* Invisible padding past the 20 px chip: a 28 px hit area on desktop and 44 px on the phone (UI spec 2), with no change to its box. */
+/* The inset counts from inside the 1 px border, so each side adds one more pixel. */
+.obj-nozzle { position: relative; }
+.obj-nozzle::after { content: ''; position: absolute; inset: -5px -3px; }
+@media (pointer: coarse) { .obj-nozzle::after { inset: -13px -3px; } }
