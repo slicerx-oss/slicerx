@@ -167,6 +167,18 @@ describe('what the engine left out of a project, as it opens', () => {
     expect(get().openNote?.text).toContain(`Not everything in this file was read: ${SKIPPED_PAINT}.`)
   })
 
+  it('lets the note take two lines before it is cut, so what was left out is not hidden behind Details', async () => {
+    engineAnswers(geomBox([SKIPPED_PAINT]))
+    await openModelBytes(host, 'painted.3mf', buf(plainBox()), undefined, { fresh: true })
+    expect(get().openNote?.text).toContain('Not everything in this file was read')
+    expect(get().openNote?.wrap).toBe(true)
+    // a part of an unknown type is said the same way
+    engineAnswers(geomBox([], [part('Body'), part('Gear', 'lattice_part')]))
+    await openModelBytes(host, 'bracket.3mf', buf(plainBox()), undefined, { fresh: true })
+    expect(get().openNote?.text).toContain(GEAR_NORMAL)
+    expect(get().openNote?.wrap).toBe(true)
+  })
+
   it('shows nothing extra for a file read whole', async () => {
     engineAnswers(geomBox([]))
     await openModelBytes(host, 'plain.3mf', buf(plainBox()), undefined, { fresh: true })
