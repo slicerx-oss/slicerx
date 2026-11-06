@@ -643,7 +643,13 @@ async fn post_gateway(url: &str, msg: &Value, local_ok: bool) -> bool {
 }
 
 /// Sends a push for one hub alert, if the alert kind calls for one.
+///
+/// A card waiting for an answer is pushed only when a phone can show it (`remote_rpc::phone_can_show`):
+/// a card answered in the app alone, such as a connected app's call, would open to nothing.
 pub(crate) fn alert(b: &Bridge, alert: &str, printer_id: Option<&str>, request_id: Option<&str>) {
+    if alert == "approval_waiting" && request_id.is_some_and(|id| !crate::remote_rpc::phone_can_show(b, id)) {
+        return;
+    }
     if let Some(kind) = PushKind::for_alert(alert) {
         let token = sx_connect::Secrets::get(b.secrets_ref(), ACCESS_TOKEN_SECRET);
         // Partner phones the hub knows from remote access follow their pairing's approve right as it is now.

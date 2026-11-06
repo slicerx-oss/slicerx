@@ -1082,6 +1082,71 @@ async fn a_finished_print_sends_a_content_free_push_and_drops_a_dead_token() {
     panic!("the dead token was kept");
 }
 
+// A phone gets "approval waiting" only for a card it can show. A connected app's call (switching a
+// Home Assistant device) is answered in the app, so its card sends no push; a card the phone lists
+// still does.
+#[tokio::test]
+async fn an_approval_push_goes_out_only_for_cards_a_phone_can_show() {
+    let token = "ExponentPushToken[abcdefghijklmnop0123]";
+    let (url, got) = push_service(json!({ "data": [{ "status": "ok", "id": "t-1" }] })).await;
+    let link = hub_with_push(None, &url).await;
+    let mut app = paired(&link).await;
+    let prefs = json!({ "printDone": false, "printFailed": false, "attention": false, "approvals": true });
+    let r = call(
+        &mut app,
+        2,
+        "push.register",
+        json!({ "token": token, "platform": "ios", "prefs": prefs }),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let mut ag = agent(&link).await;
+
+    // A Home Assistant switch: the app shows the card, the phone never lists it, so no push.
+    let input = json!({ "domain": "switch", "service": "turn_off", "entityId": "switch.printer" });
+    let ha = json!({
+        "id": "ha-1", "sessionId": "s", "tool": "home-assistant.call_service", "permission": "printer_config", "title": "Switch off", "lines": [],
+        "paramsHash": hash_of(&json!({})),
+        "actions": [{ "action": "plugin.call", "target": "home-assistant", "paramsHash": hash_of(&json!({ "pluginId": "home-assistant", "tool": "call_service", "input": input })) }],
+        "expiresAt": "2099-01-01T00:00:00.000Z",
+    });
+    let r = call(
+        &mut ag,
+        3,
+        "approvals.register",
+        json!({ "request": ha, "work": { "kind": "plugin", "pluginId": "home-assistant", "tool": "call_service", "input": input } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    wait_event(&mut app, "alert", |a| {
+        a["kind"] == "approval_waiting" && a["requestId"] == "ha-1"
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // A resume card is one the phone lists: it sends the push, and it is the first the service gets.
+    let resume = card(
+        "r-1",
+        "printer.resume",
+        "printer.resume",
+        &json!({ "printerId": "bay-4" }),
+    );
+    let r = call(
+        &mut ag,
+        4,
+        "approvals.register",
+        json!({ "request": resume, "work": { "kind": "resume", "printerId": "bay-4" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let sent = tokio::time::timeout(Duration::from_secs(10), got)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(sent[0]["data"]["kind"], "approval", "{sent}");
+    assert_eq!(sent[0]["data"]["requestId"], "r-1", "{sent}");
+}
+
 #[tokio::test]
 async fn push_registrations_are_removed_by_tag() {
     let link = hub(None).await;
