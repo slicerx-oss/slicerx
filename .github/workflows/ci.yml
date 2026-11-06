@@ -222,6 +222,14 @@ jobs:
         with:
           key: geom
       - run: sh packages/geom/wasm/scripts/build.sh
+      # Chromium for the unit tests that lay out in a real browser (packages/ui setting-row-browser.test.tsx).
+      - id: pw
+        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
       - run: pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
