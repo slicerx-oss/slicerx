@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn limits_distinguish_absent_from_null() {
         let lh = setting_def("layer_height");
-        assert!(lh.is_some_and(|d| d.orca_max == Bound::Unlimited && d.orca_min == Bound::At(0.0)));
+        assert!(lh.is_some_and(|d| d.orca_max == Bound::Unlimited && d.orca_min == Bound::At(0.01)));
         let loops = setting_def("wall_loops");
         assert!(loops.is_some_and(|d| d.orca_min == Bound::At(0.0)));
         let density = setting_def("sparse_infill_density");

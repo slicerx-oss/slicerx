@@ -59,7 +59,7 @@
 - Type: list of numbers, one per extruder
 - Unit: mm
 - Default: [1.75]
-- Recommended range: 0 to no maximum
+- Recommended range: 0.01 to no maximum
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

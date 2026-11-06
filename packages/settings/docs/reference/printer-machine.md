@@ -196,7 +196,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: number
 - Unit: mm
 - Default: 120
-- Recommended range: 0 to no maximum
+- Recommended range: 0.01 to no maximum
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -207,7 +207,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: number
 - Unit: mm
 - Default: 40
-- Recommended range: 0 to no maximum
+- Recommended range: 0.01 to no maximum
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -229,7 +229,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: number
 - Unit: mm
 - Default: 40
-- Recommended range: 0 to no maximum
+- Recommended range: 0.01 to no maximum
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -418,7 +418,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: list of numbers, one per extruder
 - Unit: mm
 - Default: [0.4]
-- Recommended range: no minimum to 100
+- Recommended range: 0.01 to 100
 - Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
@@ -429,7 +429,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: number
 - Unit: mm
 - Default: 2.5
-- Recommended range: 0 to no maximum
+- Recommended range: 0.01 to no maximum
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

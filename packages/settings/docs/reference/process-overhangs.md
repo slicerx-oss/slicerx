@@ -33,7 +33,7 @@
 - Type: number
 - Default: 1
 - Recommended range: 0.5 to 1.5
-- Orca limits: 0 to 2
+- Orca limits: 0.01 to 2
 - Tier: Expert, quality
 - Changing it redoes: surfaces
 - mimir class: edit (may change in a plate override)

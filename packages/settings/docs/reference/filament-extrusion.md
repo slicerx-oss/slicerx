@@ -69,7 +69,7 @@
 - Type: list of numbers, one per extruder
 - Default: [1]
 - Recommended range: 0.8 to 1.2
-- Orca limits: 0 to 2
+- Orca limits: 0.01 to 2
 - Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
 - Changing it redoes: G-code only
 - mimir class: guarded (always shown in the diff; approval needed outside the filament range; refused past printer limits)
