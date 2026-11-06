@@ -129,6 +129,7 @@ export function compileKnowledge(files: readonly string[], base: string, edition
         if (s['bounds'] && typeof s['bounds'] === 'object') out.bounds = s['bounds'] as KbSetting['bounds'] & object
         if (Array.isArray(s['values'])) out.values = (s['values'] as unknown[]).map(String)
         if (typeof s['note'] === 'string') out.note = s['note']
+        if (s['origin'] === 'slicerx') out.origin = 'slicerx'
         return out
       })
       continue
