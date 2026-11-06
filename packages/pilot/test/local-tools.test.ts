@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The form of each tool a local model gets (tool.ts, localToolDef), for every tool this package defines: the schema
-// loses only keywords that say nothing, so the tool takes and checks the same input as before.
+// The form of each tool a local model gets (tool.ts, localToolDef), for every tool this package defines. Its
+// description stays within a per-tool cap, so a new or longer tool cannot quietly eat the room context.test.ts keeps for
+// the conversation; a shorter local description still names the tool's required arguments; and the schema loses only
+// keywords that say nothing, so the tool takes and checks the same input as before.
 import type { PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
+import { estimateTokens } from '../src/context'
 import type { MemoryStore } from '../src/memory/facts'
 import { createScriptedClient } from '../src/provider/scripted'
 import { surfaceTools } from '../src/surfaces'
@@ -15,6 +18,14 @@ import { memoryTools } from '../src/tools/memory'
 import { turnSetTool } from '../src/turnsets'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
+
+/**
+ * The most a tool's local description may cost, in tokens at the rate toolsTokens (context.ts) counts tool schemas.
+ * 160 is about 720 characters: room for what the tool does, its required arguments and its rules, with the longest
+ * today (printer_setup, which has to carry the rule about access codes) just inside. Every local turn pays for every
+ * description it sends, so a tool over this gets a localDescription instead of raising the cap.
+ */
+const LOCAL_DESCRIPTION_CAP = 160
 
 /**
  * Every tool this package defines that a local model can be sent: the builtins and skills, the printer plugins' tools,
@@ -31,6 +42,8 @@ async function everyTool(): Promise<PilotTool<never>[]> {
   return surfaceTools('tab', true, [...byName.values()])
 }
 
+const tokens = (text: string): number => estimateTokens(text, 4.5)
+
 /** The keyword paths of a schema, such as properties.plate.minimum. */
 function paths(v: unknown, at = ''): string[] {
   if (Array.isArray(v)) return v.flatMap((x, i) => paths(x, `${at}[${i}]`))
@@ -39,6 +52,22 @@ function paths(v: unknown, at = ''): string[] {
 }
 
 describe('the local form of every tool', () => {
+  it(`keeps each description within ${LOCAL_DESCRIPTION_CAP} tokens`, async () => {
+    const tools = await everyTool()
+    expect(tools.length).toBeGreaterThan(60)
+    const over = tools.map((t) => ({ name: t.name, tokens: tokens(localToolDef(t).description) })).filter((t) => t.tokens > LOCAL_DESCRIPTION_CAP)
+    expect(over, `over the ${LOCAL_DESCRIPTION_CAP} token cap (give each a shorter localDescription): ${over.map((t) => `${t.name} ${t.tokens}`).join(', ')}`).toEqual([])
+  })
+
+  it('names every required argument in a shorter local description, and is shorter than the full one', async () => {
+    const short = (await everyTool()).filter((t) => t.localDescription !== undefined)
+    expect(short.map((t) => t.name).sort()).toEqual(['arrange', 'pilot.ask', 'pilot.sheet', 'pilot.tools', 'printer.status', 'printer_add', 'printer_setup', 'schedule', 'text_to_part'])
+    for (const t of short) {
+      expect(t.localDescription!.length, t.name).toBeLessThan(t.description.length)
+      for (const arg of toolSpec(t).inputSchema.required ?? []) expect(t.localDescription, `${t.name} names ${arg}`).toContain(arg)
+    }
+  })
+
   it('drops only keywords that say nothing from the schema, and keeps a strict object closed', async () => {
     for (const t of await everyTool()) {
       const full = new Set(paths(toolSpec(t).inputSchema))

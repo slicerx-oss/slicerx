@@ -15,6 +15,8 @@ export function askTool(): PilotTool<never> {
     permission: 'read',
     description:
       'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question. If they wrote something, treat it as their answer.',
+    localDescription:
+      'Ask the person a short question (title, question) with two to four fixed choices and wait for the pick, to confirm something before building on it (such as which model a photo shows). Returns the picked choice id, or dismissed when the person turned it down; then every choice on it is turned down: never ask it again, list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows; if you truly need something, ask a different, narrower question. Anything they wrote is their answer.',
     input: z.object({
       title: z.string().min(2).max(40),
       question: z.string().min(3).max(160),
@@ -91,6 +93,8 @@ export function sheetTool(): PilotTool<never> {
     permission: 'read',
     description:
       'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change). A sheet with one row asks for one number. Give the part as extruded outlines and where each row sits on it (at), so the sheet draws it with numbered callouts.',
+    localDescription:
+      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit; use it whenever a size matters and you are not sure of it. Give each its best value, unit and source. Returns the values to build with and which the person changed, or that they canceled (then build nothing and ask what to change). One row asks for one number. Give the part as extruded outlines and where each row sits on it (at), so the sheet draws numbered callouts.',
     input: z
       .object({
         title: z.string().min(2).max(60),
