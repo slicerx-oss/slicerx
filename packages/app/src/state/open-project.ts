@@ -11,6 +11,7 @@ import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
 import type { ImportedObject } from '../export/import3mf'
 import { clearanceFor } from '../plate/clearance'
+import { slotCount } from '../filament/slots'
 import { bounds, compose } from '../plate/transform'
 import { clearProject } from '../project/new'
 import { keepBeforeOpen } from '../project/autosave'
@@ -116,7 +117,18 @@ async function addProjectShown(
       .map((d) => ({ ...d, a: { ...d.a, object: idOf.get(d.a.object)! }, ...(d.b ? { b: { ...d.b, object: idOf.get(d.b.object)! } } : {}) }))
   if (project.historyNote) toast(project.historyNote, 'warn')
   if (project.earsNote) toast(project.earsNote, 'warn')
-  if (project.paintNote) toast(project.paintNote, 'warn')
+  // Paint the project cannot show opens unpainted (paint-check.ts). Its filaments are the ones on the rail once it is
+  // open: the printer's, those set by hand, those its parts and tool changes use, never fewer than the file lists. A
+  // save lists only the filaments parts use, so paint on another one would otherwise be lost on every reopen.
+  const painted = project.plates.flatMap((pl) => pl.objects.filter((o) => o.paint))
+  if (painted.length) {
+    const { checkOpenedPaint } = await import('../export/paint-check')
+    const fileSlots = project.plates.flatMap((pl) => [...pl.objects.flatMap((o) => o.parts.map((p) => p.slot)), ...(pl.marks ?? []).flatMap((m) => (m.kind === 'tool_change' && !m.skip && m.slot ? [m.slot] : []))])
+    const filaments = Math.max(slotCount(get()), project.colors.length, ...fileSlots)
+    const paintNote = checkOpenedPaint(painted.map((o) => o.paint!), filaments)
+    for (const o of painted) if (!Object.keys(o.paint!).length) delete o.paint
+    if (paintNote) toast(paintNote, 'warn')
+  }
   // The design timeline as it was before the open: the file's goes in at its marker once every object is placed.
   const designBefore = get().timeline
   // Named values come with the project; a name the open project already has keeps its own value.

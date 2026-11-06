@@ -279,7 +279,7 @@ export interface AppState {
   playbackSpeed: number
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle: boolean
-  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void; persist?: boolean } | null
+  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void; persist?: boolean; secondLine?: boolean } | null
   /**
    * What the last open or import says (the printer it opened on, the settings it applied, "Added cube.stl"): one line in
    * the left pane under the printer card, with its action, until dismissed or replaced. Never over the view. Not saved.
@@ -1045,11 +1045,12 @@ export interface ToastAction {
 /**
  * Posts a toast. `close` adds a close button that `onDismiss` hears. With `persist` instead, the toast stays until it
  * is dismissed or its action runs, as a warning does: for a notice about a change out of sight that the person has to
- * see. It gets the dismiss button a warning has.
+ * see. It gets the dismiss button a warning has. `secondLine` shows the text after the first sentence on a second line
+ * instead of under Details.
  */
-export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void; persist?: boolean }): void {
+export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void; persist?: boolean }, look?: { secondLine?: boolean }): void {
   const closing = !close ? {} : close.persist ? { persist: true } : { dismissible: true, ...(close.onDismiss ? { onDismiss: close.onDismiss } : {}) }
-  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing } })
+  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing, ...(look?.secondLine ? { secondLine: true } : {}) } })
 }
 
 /**
