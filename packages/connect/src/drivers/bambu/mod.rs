@@ -4359,9 +4359,16 @@ mod tests {
         let ams =
             one(json!({ "id": "0", "info": "1001", "temp": "25", "dry_time": 30, "tray": [] })).unwrap();
         assert_eq!((ams.drying, ams.dry_minutes_left), (None, None));
-        // A dry time past a day is not a reading: drying, with no time left shown.
-        let ht = one(json!({ "id": "128", "info": "1004", "dry_time": 90000, "tray": [] })).unwrap();
-        assert_eq!((ht.drying, ht.dry_minutes_left), (Some(true), None));
+        // A dry time past a day is not a reading: neither drying nor a time left is shown.
+        let ht = one(json!({ "id": "128", "info": "1004", "dry_time": 90000, "tray": [] }));
+        assert!(
+            ht.as_ref()
+                .is_none_or(|c| c.drying.is_none() && c.dry_minutes_left.is_none()),
+            "{ht:?}"
+        );
+        let ht =
+            one(json!({ "id": "128", "info": "1004", "temp": "40", "dry_time": 1441, "tray": [] })).unwrap();
+        assert_eq!((ht.drying, ht.dry_minutes_left), (None, None));
         let ht = one(json!({ "id": "128", "info": "1004", "dry_time": 1440, "tray": [] })).unwrap();
         assert_eq!(ht.dry_minutes_left, Some(1440));
     }

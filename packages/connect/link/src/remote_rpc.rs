@@ -1119,5 +1119,10 @@ mod tests {
         for kind in ["print", "resume", "gcode", "adjust", "pause", "cancel"] {
             assert_eq!(work_key(&json!({ "kind": kind })), "work", "{kind}");
         }
+        // A home card's work is a kind older phones do not know either; a phone only denies it.
+        assert_eq!(
+            work_key(&json!({ "kind": "home", "printerId": "bay-1" })),
+            "homeWork"
+        );
     }
 }

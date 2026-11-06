@@ -90,14 +90,15 @@ describe('the printer controls dialog', () => {
   // The answer goes with that home only: the hub does not record the plate as clear for a later start.
   it('asks whether the plate is clear when the hub cannot tell, then homes with that answer', async () => {
     const { host, calls } = fakeHub(async (...a: unknown[]) => {
-      if (!(a[1] as { plateClear?: boolean } | undefined)?.plateClear) throw refuse('bed_check')
+      if (!(a[1] as { plateClear?: boolean } | undefined)?.plateClear) throw Object.assign(refuse('bed_check'), { details: { epoch: 9 } })
     })
     await show(host, { ...idle, state: 'finished' })
     await click(button('Home'))
     const ask = document.body.querySelector('[role="alertdialog"][aria-label="Confirm home"]')
     expect(ask?.textContent).toContain('Is the build plate clear?')
     await click(button('Plate is clear, home'))
-    expect(calls.home.mock.calls).toEqual([['bay-1'], ['bay-1', { plateClear: true }]])
+    // The answer is about the plate the hub asked about: the bed epoch of its refusal.
+    expect(calls.home.mock.calls).toEqual([['bay-1'], ['bay-1', { plateClear: true, epoch: 9 }]])
     expect(calls.confirmClear).not.toHaveBeenCalled()
     expect(document.body.querySelector('[aria-label="Confirm home"]')).toBeNull()
   })

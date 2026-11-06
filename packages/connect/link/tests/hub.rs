@@ -3122,11 +3122,22 @@ async fn home_sends_g28_only_while_idle_and_asks_about_a_finished_plate() {
     let home = json!({ "printerId": "bay-4" });
     let g28 = |log: Vec<String>| log.into_iter().filter(|l| l == "gcode G28").count();
 
-    // An unhomed printer homes, and then reads as homed.
+    // An unhomed printer homes, and then reads as homed. The hub has never seen this plate, so the first
+    // home asks about it, as a start would; the answer goes with the bed epoch the refusal names.
     mocks
         .set_motion("moonraker", json!({ "homed": "", "position": [0, 0, 0] }))
         .await;
-    let r = call(&mut ws, 60, "home", home.clone()).await;
+    let r = call(&mut ws, 59, "home", home.clone()).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let epoch = r["error"]["details"]["epoch"].clone();
+    assert_eq!(epoch, bed(&mut ws).await["epoch"], "{r}");
+    let r = call(
+        &mut ws,
+        60,
+        "home",
+        json!({ "printerId": "bay-4", "plateClear": true, "epoch": epoch }),
+    )
+    .await;
     assert_eq!(r["result"]["ok"], true, "{r}");
     assert_eq!(g28(mock_log(&mocks).await), 1);
     assert_eq!(mocks.state().await["moonraker"]["homed"], "xyz");
@@ -3200,11 +3211,12 @@ async fn after_a_canceled_print_home_and_a_jog_down_ask_about_the_plate() {
 
     // The answer given for one home covers that home only: the plate is not recorded as clear for the
     // next start.
+    let epoch = bed(&mut ws).await["epoch"].clone();
     let r = call(
         &mut ws,
         72,
         "home",
-        json!({ "printerId": "bay-4", "plateClear": true }),
+        json!({ "printerId": "bay-4", "plateClear": true, "epoch": epoch }),
     )
     .await;
     assert_eq!(r["result"]["ok"], true, "{r}");
@@ -3233,15 +3245,35 @@ async fn an_agent_home_card_approved_after_a_print_starts_sends_nothing() {
     add_bay4(&mut app, &mocks).await;
     let mut ag = agent(&link).await;
     let g28 = json!({ "printerId": "bay-4", "line": "G28" });
+    let bay = json!({ "printerId": "bay-4" });
     let work = json!({ "kind": "home", "printerId": "bay-4" });
+    // A home card is its own action, never the raw line: a card approving G28 does not carry home work.
     let r = call(
         &mut ag,
         2,
         "approvals.register",
-        json!({ "request": card("h-1", "printer.home", "printer.gcode", &g28), "work": work }),
+        json!({ "request": card("h-0", "printer.home", "printer.gcode", &g28), "work": work }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    let r = call(
+        &mut ag,
+        2,
+        "approvals.register",
+        json!({ "request": card("h-1", "printer.home", "printer.home", &bay), "work": work }),
     )
     .await;
     assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let shown = wait_event(&mut app, "approval", |d| d["id"] == "h-1").await;
+    assert_eq!(
+        shown["work"], work,
+        "the app sees a home, not a G-code line: {shown}"
+    );
+    let r = call(&mut ag, 4, "approvals.grant", json!({ "requestId": "h-1" })).await;
+    assert_eq!(
+        r["error"]["code"], "forbidden",
+        "only a person approves a home: {r}"
+    );
     started_print(&mut app, "plate.gcode").await;
     until_bay4(&mut app, "printing").await;
     let r = call(&mut app, 20, "approvals.grant", json!({ "requestId": "h-1" })).await;
@@ -3263,7 +3295,7 @@ async fn an_agent_home_card_approved_after_a_print_starts_sends_nothing() {
         &mut ag,
         3,
         "approvals.register",
-        json!({ "request": card("h-2", "printer.home", "printer.gcode", &g28), "work": work }),
+        json!({ "request": card("h-2", "printer.home", "printer.home", &bay), "work": work }),
     )
     .await;
     assert_eq!(r["result"]["answeredIn"], "app", "{r}");
@@ -3274,6 +3306,175 @@ async fn an_agent_home_card_approved_after_a_print_starts_sends_nothing() {
     assert!(mock_log(&mocks).await.contains(&"gcode G28".to_owned()));
 }
 
+// A plate the hub has not seen confirmed clear (never watched, or unwatched long enough that a print
+// could have run there) is asked about before the nozzle comes down, as a print start asks.
+#[tokio::test]
+async fn an_unknown_plate_is_asked_about_before_a_home_or_a_jog_down() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut ws = paired(&link).await;
+    add_bay4(&mut ws, &mocks).await;
+    until_bay4(&mut ws, "idle").await;
+    assert_eq!(bed(&mut ws).await["state"], "unknown");
+    mocks
+        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20] }))
+        .await;
+    let home = json!({ "printerId": "bay-4" });
+    let jog = |d: f64| json!({ "printerId": "bay-4", "axis": "z", "distanceMm": d });
+    let moved = |log: Vec<String>| log.into_iter().filter(|l| l.starts_with("gcode ")).count();
+    let r = call(&mut ws, 80, "home", home.clone()).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let r = call(&mut ws, 81, "jog", jog(-1.0)).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    assert_eq!(moved(mock_log(&mocks).await), 0, "refusals sent nothing");
+    // Away from the plate is fine.
+    let r = call(&mut ws, 82, "jog", jog(1.0)).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+
+    let r = call(&mut ws, 83, "bed.confirmClear", home.clone()).await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(&mut ws, 84, "jog", jog(-1.0)).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let r = call(&mut ws, 85, "home", home).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+}
+
+// "The plate is clear" answers the question for the plate the person looked at: the bed epoch it was
+// asked in. A print that ran since moves the epoch, and the old answer homes nothing.
+#[tokio::test]
+async fn a_plate_answer_for_home_holds_only_for_the_bed_epoch_it_was_asked_in() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut ws = paired(&link).await;
+    add_bay4(&mut ws, &mocks).await;
+    until_bay4(&mut ws, "idle").await;
+    let g28 = |log: Vec<String>| log.into_iter().filter(|l| l == "gcode G28").count();
+    let r = call(&mut ws, 90, "home", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let asked = r["error"]["details"]["epoch"]
+        .as_u64()
+        .expect("the refusal names the bed epoch");
+
+    // A print runs and is canceled before the person answers.
+    started_print(&mut ws, "plate.gcode").await;
+    until_bay4(&mut ws, "printing").await;
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut ws, "idle").await;
+    let now = bed(&mut ws).await["epoch"].as_u64().unwrap();
+    assert!(now > asked, "a start moves the bed epoch");
+
+    let answer = |epoch: Option<u64>| {
+        let mut p = json!({ "printerId": "bay-4", "plateClear": true });
+        if let Some(e) = epoch {
+            p["epoch"] = json!(e);
+        }
+        p
+    };
+    let r = call(&mut ws, 91, "home", answer(None)).await;
+    assert_eq!(
+        r["error"]["code"], "bad_request",
+        "an answer names its epoch: {r}"
+    );
+    let r = call(&mut ws, 92, "home", answer(Some(asked))).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    assert_eq!(r["error"]["details"]["epoch"], now, "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 0, "a stale answer sent nothing");
+    let r = call(&mut ws, 93, "home", answer(Some(now))).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert_eq!(g28(mock_log(&mocks).await), 1);
+    assert_eq!(
+        bed(&mut ws).await["state"],
+        "not_cleared",
+        "the answer is not a standing clear plate"
+    );
+}
+
+/// Registers an agent's raw G-code card for `line` on bay-4 and has the app approve it; the hub's
+/// `approval.done` for it.
+async fn approved_line(ag: &mut Ws, app: &mut Ws, id: &str, line: &str) -> Value {
+    let p = json!({ "printerId": "bay-4", "line": line });
+    let r = call(
+        ag,
+        30,
+        "approvals.register",
+        json!({ "request": card(id, "printer.gcode", "printer.gcode", &p), "work": { "kind": "gcode", "printerId": "bay-4", "line": line } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{line}: {r}");
+    let r = call(app, 31, "approvals.grant", json!({ "requestId": id })).await;
+    assert_eq!(r["result"]["runBy"], "hub", "{line}: {r}");
+    wait_event(ag, "approval.done", |d| d["requestId"] == id).await
+}
+
+// A raw G28, however it is written, homes under the home rules: never mid-print and never onto a plate
+// that may hold a print. An agent's line and a token holder's `gcode` call both.
+#[tokio::test]
+async fn a_raw_g28_line_runs_under_the_home_rules() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    let sent = |log: Vec<String>| log.into_iter().filter(|l| l.starts_with("gcode ")).count();
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    let before = sent(mock_log(&mocks).await);
+    let lines = [
+        "G28",
+        "g28",
+        "G28 Z",
+        "  g28 x y ",
+        "G28 ; home all",
+        "G28X",
+        "N5 G28",
+        "G0028 Z",
+    ];
+    for (n, line) in lines.iter().enumerate() {
+        let done = approved_line(&mut ag, &mut app, &format!("r-{n}"), line).await;
+        assert_eq!(
+            (done["ok"].clone(), done["code"].clone()),
+            (json!(false), json!("bad_state")),
+            "{line}: {done}"
+        );
+    }
+    // The same through `gcode` with a person's token.
+    let p = json!({ "printerId": "bay-4", "line": "G28" });
+    let _ = call(
+        &mut app,
+        40,
+        "approvals.register",
+        json!({ "request": card("t-1", "printer.gcode", "printer.gcode", &p) }),
+    )
+    .await;
+    let t = call(&mut app, 41, "approvals.grant", json!({ "requestId": "t-1" })).await["result"].clone();
+    let r = call(
+        &mut app,
+        42,
+        "gcode",
+        json!({ "printerId": "bay-4", "line": "G28", "token": t }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bad_state", "{r}");
+    assert_eq!(sent(mock_log(&mocks).await), before, "nothing homed mid-print");
+
+    // Canceled back to idle: the part may still be on the plate.
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let done = approved_line(&mut ag, &mut app, "r-idle", "G28 Z").await;
+    assert_eq!(done["code"], "bed_check", "{done}");
+    assert_eq!(sent(mock_log(&mocks).await), before);
+
+    // Confirmed clear, the agent's own line goes out as approved.
+    let r = call(&mut app, 43, "bed.confirmClear", json!({ "printerId": "bay-4" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    let done = approved_line(&mut ag, &mut app, "r-ok", "g28 z").await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(mock_log(&mocks).await.contains(&"gcode g28 z".to_owned()));
+    // Other lines are not homes and keep their own rules.
+    let done = approved_line(&mut ag, &mut app, "r-fan", "M106 S128").await;
+    assert_eq!(done["ok"], true, "{done}");
+}
+
 #[tokio::test]
 async fn a_jog_knows_where_the_head_is_and_restores_absolute_mode() {
     let link = hub(None).await;
@@ -3282,6 +3483,9 @@ async fn a_jog_knows_where_the_head_is_and_restores_absolute_mode() {
     add_bay4(&mut ws, &mocks).await;
     let jog = |axis: &str, d: f64| json!({ "printerId": "bay-4", "axis": axis, "distanceMm": d });
     let gcodes = |log: Vec<String>| log.into_iter().filter(|l| l.starts_with("gcode ")).count();
+    // The nozzle comes down only onto a plate the hub knows is clear.
+    let r = call(&mut ws, 39, "bed.confirmClear", json!({ "printerId": "bay-4" })).await;
+    assert!(r["error"].is_null(), "{r}");
 
     // An unhomed axis does not move; the others do.
     mocks

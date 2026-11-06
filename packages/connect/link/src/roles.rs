@@ -686,6 +686,10 @@ mod tests {
         let p = |a: &[&'static str]| a.iter().map(|x| (*x, "bay-1")).collect::<Vec<_>>();
         assert!(person_only(p(&["printer.upload", "printer.start"]).into_iter()));
         assert!(person_only(p(&["printer.gcode"]).into_iter()));
+        assert!(
+            person_only(p(&["printer.home"]).into_iter()),
+            "a home lowers the nozzle"
+        );
         assert!(!person_only(
             p(&["printer.pause", "printer.cancel", "printer.upload"]).into_iter()
         ));
@@ -814,6 +818,7 @@ mod tests {
         for a in [
             "printer.resume",
             "printer.gcode",
+            "printer.home",
             "printer.adjust",
             "plugin.call",
             "printer.config",
