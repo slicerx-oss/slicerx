@@ -1640,10 +1640,13 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         broker.cap_expiry(&mut req, crate::agent_work::AGENT_CARD_TTL);
     }
     if let Some(name) = &conn.partner {
-        if !roles::partner_may_ask(req.actions.iter().map(|a| a.action.as_str())) {
+        // A slot write is one printer.adjust carrying slot work; `hold` checks its hash is that slot's.
+        let slot = p.get("work").and_then(|w| w.get("kind")).and_then(Value::as_str) == Some("slot")
+            && roles::partner_may_ask_slot(req.actions.iter().map(|a| a.action.as_str()));
+        if !(slot || roles::partner_may_ask(req.actions.iter().map(|a| a.action.as_str()))) {
             return Err(RpcError::new(
                 "forbidden",
-                "a partner app may ask only to print, pause, cancel or skip an object",
+                "a partner app may ask only to print, pause, cancel, skip an object or set an AMS slot",
             ));
         }
         // The card says who asked, in the hub's words, above the partner's own lines.
@@ -1736,7 +1739,10 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
         "app"
     };
     match method {
-        "approvals.register" => register_card(b, broker, conn, p),
+        "approvals.register" => {
+            crate::agent_work::check_slot(b, p).await?;
+            register_card(b, broker, conn, p)
+        }
         "approvals.grant" => {
             let id = str_arg(p, "requestId")?;
             let own = owner(&id) == Some(conn.id);

@@ -472,6 +472,11 @@ export type AgentWork =
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
   /** Skip one object of the running print (`objects.list` ids). `epoch` is the running print's (`bed.state`), and is hashed. */
   | { kind: 'skip'; printerId: string; id: string; epoch: number }
+  /**
+   * Set one filament slot while no print runs, hashed as the app's own slot write (`printer.adjust`
+   * `{printerId, slot: setting}`). A person approves it in the app; phones away from home never list it.
+   */
+  | { kind: 'slot'; printerId: string; setting: SlotSetting }
   /** A connected app's tool a person has to approve, by its bare name (`call_service`). */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
