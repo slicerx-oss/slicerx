@@ -694,6 +694,40 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
     for (k, v) in vars {
         c.vars.insert(k.to_owned(), v);
     }
+    // One extruder whose hotends are its tools (the H3C): the hotend ids are the hotends the filaments print on (the
+    // nozzle id is the hotend too), and the per-hotend lists have one entry per hotend.
+    if crate::nozzles::hotend_tools(cfg) {
+        let hotend = |id: u8| {
+            #[allow(clippy::cast_precision_loss, reason = "a hotend index")]
+            let h = crate::nozzles::hotend_of_slot(cfg, id.saturating_add(1)) as f64;
+            n(h)
+        };
+        let count = crate::nozzles::hotends(cfg);
+        for (k, v) in [
+            ("current_hotend", hotend(first_id)),
+            ("next_hotend", hotend(first_id)),
+            ("initial_no_support_hotend", hotend(solid_id)),
+            ("current_nozzle_id", hotend(first_id)),
+            ("next_nozzle_id", hotend(first_id)),
+            ("initial_nozzle_id", hotend(first_id)),
+            ("initial_no_support_nozzle_id", hotend(solid_id)),
+            (
+                "nozzle_diameter_at_nozzle_id",
+                list(std::iter::repeat_n(crate::nozzles::size_of(cfg, 0), count)),
+            ),
+            (
+                "nozzle_volume_types",
+                Value::List(
+                    crate::nozzles::hotend_types(cfg)
+                        .into_iter()
+                        .map(Value::Str)
+                        .collect(),
+                ),
+            ),
+        ] {
+            c.vars.insert(k.to_owned(), v);
+        }
+    }
     // Every extruder a print might use, with the ones on this plate marked.
     c.vars.insert(
         "is_extruder_used".to_owned(),

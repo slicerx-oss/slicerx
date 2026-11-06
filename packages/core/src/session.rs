@@ -1284,7 +1284,11 @@ impl SliceSession {
                 .max()
                 .unwrap_or(1)
                 .max(crate::nozzles::project_filaments(config));
-            crate::nozzles::Map::resolve(config, tools, &usage)
+            let map = crate::nozzles::Map::resolve(config, tools, &usage);
+            if let Some(m) = &map {
+                crate::nozzles::check_hotends(config, m, &usage)?;
+            }
+            map
         } else {
             None
         };

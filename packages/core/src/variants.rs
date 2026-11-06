@@ -104,6 +104,10 @@ struct Tables {
     extruders: Vec<String>,
     physical: usize,
     filaments: usize,
+    /// On a printer whose hotends are its tools: each hotend's volume type, and the hotend of each filament
+    /// (`filament_nozzle_map`). Empty on any other printer.
+    hotend_types: Vec<String>,
+    nozzle_map: Vec<String>,
 }
 
 impl Tables {
@@ -115,6 +119,11 @@ impl Tables {
         extruders.sort_by_key(|s| s.parse::<usize>().unwrap_or(usize::MAX));
         let types = list(raw, "extruder_type");
         let volumes = list(raw, "nozzle_volume_type");
+        let hotends = list(raw, "extruder_max_nozzle_count")
+            .first()
+            .and_then(|n| n.trim().parse::<f64>().ok())
+            .unwrap_or(1.0);
+        let hotend_tools = list(raw, "nozzle_diameter").len() <= 1 && hotends > 1.0;
         let physical = types
             .len()
             .max(volumes.len())
@@ -130,6 +139,21 @@ impl Tables {
             filament: list(raw, "filament_extruder_variant"),
             owners: list(raw, "filament_self_index"),
             map: list(raw, "filament_map"),
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a hotend count"
+            )]
+            hotend_types: if hotend_tools {
+                crate::nozzles::hotend_types_raw(raw, hotends.round() as usize)
+            } else {
+                Vec::new()
+            },
+            nozzle_map: if hotend_tools {
+                list(raw, "filament_nozzle_map")
+            } else {
+                Vec::new()
+            },
             filaments: list(raw, "filament_settings_id")
                 .len()
                 .max(list(raw, "filament_colour").len()),
@@ -250,10 +274,41 @@ impl Tables {
             .collect())
     }
 
+    /// On a printer whose hotends are its tools, the variant filament `f` (0-based) prints with: its hotend's
+    /// (`filament_nozzle_map`), else its only variant when it lists one (the 2.85 mm TPU's TPU285), else the
+    /// extruder's.
+    fn hotend_variant(&self, f: usize, owners: &[String]) -> String {
+        let kind = self.types.first().map_or("Direct Drive", String::as_str);
+        let hotend = self
+            .nozzle_map
+            .get(f)
+            .and_then(|h| h.trim().parse::<usize>().ok())
+            .and_then(|h| self.hotend_types.get(h));
+        if let Some(t) = hotend {
+            return format!("{kind} {t}");
+        }
+        let own = (f + 1).to_string();
+        let mine: Vec<&String> = self
+            .filament
+            .iter()
+            .zip(owners)
+            .filter(|(_, o)| **o == own)
+            .map(|(v, _)| v)
+            .collect();
+        match mine.as_slice() {
+            [only] => (*only).clone(),
+            _ => self.active(0),
+        }
+    }
+
     fn filament_indices(&self) -> Result<Vec<usize>> {
         let owners = self.filament_owners()?;
         (0..self.filaments)
             .map(|f| {
+                if !self.hotend_types.is_empty() {
+                    let variant = self.hotend_variant(f, &owners);
+                    return Self::matching(&self.filament, &owners, &(f + 1).to_string(), &variant);
+                }
                 let e = if self.map.is_empty() {
                     if (0..self.physical).any(|e| self.active(e) != self.active(0)) {
                         return Err(invalid(

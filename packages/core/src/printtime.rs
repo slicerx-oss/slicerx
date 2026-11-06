@@ -951,15 +951,25 @@ impl Reader {
         .max()
         .unwrap_or(1)
         .max(1);
+        // On a printer whose hotends are its tools (the H3C), each hotend keeps its filament as an extruder does, and
+        // a swap takes the hotend change time.
+        let by_hotend = crate::nozzles::hotend_tools(cfg);
         #[allow(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
-            reason = "extruder numbers are small"
+            reason = "extruder and hotend numbers are small"
         )]
-        let filament_map = raw_list(cfg, "filament_map")
-            .iter()
-            .map(|v| (v.round().max(1.0) as usize) - 1)
-            .collect();
+        let filament_map = if by_hotend {
+            raw_list(cfg, "filament_nozzle_map")
+                .iter()
+                .map(|v| v.round().max(0.0) as usize)
+                .collect()
+        } else {
+            raw_list(cfg, "filament_map")
+                .iter()
+                .map(|v| (v.round().max(1.0) as usize) - 1)
+                .collect()
+        };
         Self {
             m,
             start: [0.0; 4],
@@ -989,9 +999,13 @@ impl Reader {
             load_time: cfg.raw_number("machine_load_filament_time", 0.0),
             unload_time: cfg.raw_number("machine_unload_filament_time", 0.0),
             // Bambu Studio names the switch time `machine_switch_extruder_time` (its `extruder_change_times`).
-            change_time: match cfg.raw.get("machine_tool_change_time") {
-                Some(_) => cfg.raw_number("machine_tool_change_time", 0.0),
-                None => cfg.raw_number("machine_switch_extruder_time", 0.0),
+            change_time: if by_hotend {
+                crate::nozzles::hotend_change_time(cfg)
+            } else {
+                match cfg.raw.get("machine_tool_change_time") {
+                    Some(_) => cfg.raw_number("machine_tool_change_time", 0.0),
+                    None => cfg.raw_number("machine_switch_extruder_time", 0.0),
+                }
             },
             retract_length: retract_list(cfg, "retraction_length", filaments),
             retract_speed: retract_list(cfg, "retraction_speed", filaments),
