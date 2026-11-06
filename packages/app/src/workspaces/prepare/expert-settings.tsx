@@ -36,6 +36,9 @@ export { EDITABLE, LIST_ENUM_KEYS, PROCESS_EDITABLE, INTENTS, visibleLevels } fr
 /** Units as a person reads them; a temperature difference is still in degrees Celsius. */
 const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm3/s2': 'mm³/s²', 'mm/s2': 'mm/s²' }
 
+/** Cost units: what one amount of the person's currency buys, written after the currency symbol ("$/h"). */
+const MONEY_PER: Readonly<Record<string, string>> = { 'money/h': 'h', 'money/kg': 'kg' }
+
 /** A switch setting's value as on or off: engine values come as booleans, numbers or strings. */
 function on(v: SettingValue | undefined): boolean {
   const x = Array.isArray(v) ? v[0] : v
@@ -145,7 +148,9 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   // A persistent line under the row, tied to the control as its description.
   let helper: ReactNode = null
   // A number's unit, as a person reads it.
-  const unitText = def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''
+  // A cost reads in the person's currency, the symbol set for the print estimate.
+  const currency = useApp((s) => s.electricity.symbol)
+  const unitText = def.unit && def.unit !== '%' ? (MONEY_PER[def.unit] ? `${currency}/${MONEY_PER[def.unit]}` : (UNIT_TEXT[def.unit] ?? def.unit)) : def.type === 'percent' ? '%' : ''
   if (def.type === 'bool') {
     control = <Switch id={id} checked={value === true} disabled={Boolean(locked)} onChange={(v) => setOverride(def.key, v)} />
   } else if (def.type === 'bools') {
