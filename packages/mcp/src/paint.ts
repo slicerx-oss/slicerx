@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { designArg, designSummary, type Design, type Designs } from './design'
 import { faceAt } from './design-tools'
 import { ToolInputError } from './models'
-import { layerArg, targetArg, storedTarget } from './paint-target'
+import { layerArg, paintState, targetArg, storedTarget } from './paint-target'
 
 type V3 = [number, number, number]
 
@@ -86,7 +86,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.0.0',
+    version: '1.0.1',
     source: 'command',
     permission: 'read',
     description:
@@ -94,7 +94,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
     input: z.object({
       design: designArg,
       layer: layerArg,
-      state: z.number().int().min(0).max(255).describe('For color the filament slot (1 is the first); 0 clears paint'),
+      state: paintState().describe('For color the filament slot, 1 to 18 (1 is the first); 0 clears paint'),
       target: targetArg,
       part: z.number().int().min(0).optional().describe('Paint one part, from 0; absent: every part (a seed paints the part under its point)'),
       max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges; 6 when left out'),

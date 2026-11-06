@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { PaintTarget } from '@slicerx/cad-history'
+import { COLOR_SLOT_MAX, PAINT_FILAMENT_MAX } from '@slicerx/contracts'
 import { z } from 'zod'
 import { ToolInputError } from './errors'
 
 type V3 = [number, number, number]
 const vec3 = z.tuple([z.number(), z.number(), z.number()])
+
+/** Why a paint state above 18 is refused: a paint text names filaments 1 to 18 only. */
+export const PAINT_STATE_REFUSAL = `Paint uses filaments 1 to ${PAINT_FILAMENT_MAX}. Filaments ${PAINT_FILAMENT_MAX + 1} to ${COLOR_SLOT_MAX} can only print whole parts.`
+
+/** A paint state: for color the filament (1 to 18), seam and support 1 or 2, fuzzy 1; 0 clears. */
+export const paintState = () => z.number().int().min(0).max(PAINT_FILAMENT_MAX, PAINT_STATE_REFUSAL)
 
 export const layerArg = z.enum(['color', 'seam', 'support', 'fuzzy']).default('color').describe('Paint layer: color (state = filament slot), seam (1 seam here, 2 keep it away), support (1 enforcer, 2 blocker) or fuzzy (1 fuzzy skin)')
 
@@ -25,7 +32,7 @@ export const targetArg = z
       angle_deg: z.number().min(0).max(180).optional().describe('Smart fill crosses edges that bend less than this; 30 when left out'),
       mode: z.enum(['smart', 'bucket']).optional().describe('smart (default): across gentle edges; bucket: over the triangles of the seed state'),
     }),
-    z.object({ kind: z.literal('replace'), from: z.number().int().min(0).max(255).describe('The state replaced by state') }),
+    z.object({ kind: z.literal('replace'), from: paintState().describe('The state replaced by state') }),
   ])
   .describe('What to paint: { kind: "part" } | { kind: "direction", direction: "bottom" | ... | [x,y,z], angle_deg?, pick? } | { kind: "height", below | above | from and to (mm) } | { kind: "seed", point, angle_deg?, mode? } | { kind: "replace", from }')
 
