@@ -60,8 +60,8 @@ pub fn app_name() -> &'static str {
 
 pub use error::{Error, ErrorCode, LoginNeed, Result, TunnelProblem};
 pub use gate::{
-    Action, ApprovalGate, ApprovalToken, MAX_GCODE_LINE, MemoryGate, gcode_line_problem, homes_axes,
-    moves_axes, params,
+    Action, ApprovalGate, ApprovalToken, MAX_GCODE_LINE, MemoryGate, changes_filament, command_name,
+    gcode_line_problem, homes_axes, moves_axes, params,
 };
 pub use heat::{JobHeat, gcode_heat, job_heat, job_heat_capped};
 pub use manifest::{PermissionClass, PluginKind, PluginManifest, ToolSpec, all_manifests, manifest};

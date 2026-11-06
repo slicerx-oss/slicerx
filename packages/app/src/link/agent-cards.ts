@@ -15,7 +15,7 @@ const PRINT_OPTIONS = new Set<string>(SEND_OPTION_IDS)
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
-  kind: 'print' | 'resume' | 'gcode' | 'home' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'slot' | 'plugin'
+  kind: 'print' | 'resume' | 'gcode' | 'home' | 'filament_change' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'slot' | 'plugin'
   /** Empty for a connected app's tool, which targets no printer. */
   printerId: string
   /** A connected app's tool: the app, the tool's bare name and its input, as the hub will run them. */
@@ -27,6 +27,10 @@ export interface VerifiedWork {
   line?: string
   /** The hub's word that a G-code line can move the head (its motion guard), so the card asks about the plate. */
   motion?: boolean
+  /** A raw M600 line: the hub sends it as a filament change. */
+  filamentChange?: boolean
+  /** The hub's word, for a filament change, that a print runs or is paused now, so the plate is not asked about. */
+  printing?: boolean
   change?: Record<string, unknown>
   /** A skip: the object's label on the printer, and the bed epoch of the job the hub pinned it to. */
   id?: string
@@ -143,6 +147,7 @@ const WORK_ACTIONS: Record<VerifiedWork['kind'], string[]> = {
   resume: ['printer.resume'],
   gcode: ['printer.gcode'],
   home: ['printer.home'],
+  filament_change: ['printer.filament_change'],
   adjust: ['printer.adjust'],
   pause: ['printer.pause'],
   cancel: ['printer.cancel'],
@@ -182,6 +187,7 @@ const ACTION_WORDS: Record<string, string> = {
   'printer.cancel': 'cancel the print',
   'printer.gcode': 'send a G-code line',
   'printer.home': 'home every axis',
+  'printer.filament_change': 'change the filament',
   'printer.config': 'change the running print',
   'printer.adjust': 'change the running print',
   'printer.skip': 'skip one object of the running print',
@@ -231,6 +237,8 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
           ? slot
             ? `Set slot ${slot.slot}${on} to ${slot.material}?`
             : `Set a filament slot${on}?`
+        : has('printer.filament_change')
+          ? `Change the filament${on}?`
         : has('printer.config') || has('printer.adjust')
           ? `Change the running print${on}?`
           : has('printer.skip')
@@ -256,7 +264,10 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   }
   // Approving says the plate is clear (the card asks, as for a start); the hub still checks the printer's state.
   const moves = w?.kind === 'gcode' && w.motion === true
-  const asksPlate = w?.kind === 'home' || moves
+  // A filament change parks the head itself mid-print; on an idle or finished printer it moves the head like any other line.
+  const swap = w?.kind === 'filament_change' || (w?.kind === 'gcode' && w.filamentChange === true)
+  const asksPlate = w?.kind === 'home' || moves || (swap && w?.printing !== true)
+  if (swap) lines.push('The printer parks the head and waits for the new filament. While a print runs or is paused the hub sends it as it is; on an idle or finished printer it asks whether the plate is clear first.')
   if (moves) lines.push('This line can move the head, and the nozzle may come down to the plate. The hub sends it only while the printer is idle or finished.')
   if (w?.kind === 'home') lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub homes only while the printer is idle or finished.')
   if (has('plugin.call')) {

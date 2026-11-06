@@ -1717,7 +1717,10 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         w.check_epoch(b)?;
     }
     if let (Some(w), Some(o)) = (&work, card.as_object_mut()) {
-        o.insert("work".into(), w.summary());
+        o.insert(
+            "work".into(),
+            crate::agent_work::with_printer_facts(b, w.summary()),
+        );
     }
     if let (Some(name), Some(o)) = (&conn.partner, card.as_object_mut()) {
         o.insert("partner".into(), json!(name));
@@ -1865,7 +1868,7 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
                 .map(|r| {
                     let mut v = serde_json::to_value(&r).unwrap_or(Value::Null);
                     if let (Some(w), Some(o)) = (b.agent_work.summary(&r.id), v.as_object_mut()) {
-                        o.insert("work".into(), w);
+                        o.insert("work".into(), crate::agent_work::with_printer_facts(b, w));
                     }
                     if let (Some(name), Some(o)) = (
                         crate::hub::lock(&b.card_partners).get(&r.id).cloned(),
