@@ -12,7 +12,7 @@ export interface PhoneDevice {
   lastSeenAt?: number
   /** A partner phone: another company's app, paired under this app name. Listed in Printer bridge, Devices. */
   partner?: string
-  /** It may approve pausing and stopping a print (and answer mimir's questions). */
+  /** It may approve cards as our phone does, never what a partner app asked for (and answer mimir's questions). */
   approve?: boolean
   /** A partner phone may send prints and read the library. */
   send?: boolean
