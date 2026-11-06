@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! Work an agent (the MCP server) asks for that only a person may approve: start a print, resume,
-//! send raw G-code, home, skip one object of the running print. The agent registers the card together with the work. The hub checks that the
+//! send raw G-code, home, skip one object of the running print, set an AMS slot. The agent registers the card together with the work. The hub checks that the
 //! card's actions are exactly the work's (same printer, file hash, options, line), shows the card to
 //! the app and phones, and when a person approves it there, runs the work itself with the token.
 //! The agent never sees the token and cannot run the work on its own.
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use sx_connect::{Adjustment, ApprovalToken, JobFile, RemoteFile, StartOptions};
+use sx_connect::{Adjustment, ApprovalToken, JobFile, RemoteFile, SlotSetting, StartOptions};
 
 use crate::device::HomeLine;
 use crate::hub::{lock, start_params, upload_params};
@@ -68,6 +68,13 @@ pub(crate) enum Work {
         printer: String,
         id: String,
         epoch: u64,
+    },
+    /// Set one filament slot (the AMS slot's type, color, preset and nozzle range), as the app's
+    /// own slot write does (`adjust.slot`). Only while no print runs, and only approved on the
+    /// computer: a phone away from home never lists it.
+    Slot {
+        printer: String,
+        setting: SlotSetting,
     },
     /// A connected app's tool a person has to approve, such as switching a Home Assistant device.
     Plugin {
@@ -164,6 +171,7 @@ impl Work {
                 })?;
                 Ok(Work::Skip { printer, id, epoch })
             }
+            Some("slot") => slot_work(printer, p),
             Some("adjust") => Ok(Work::Adjust {
                 printer,
                 change: serde_json::from_value(p.get("change").cloned().unwrap_or(Value::Null))
@@ -171,7 +179,7 @@ impl Work {
             }),
             _ => Err(RpcError::new(
                 "bad_request",
-                "work.kind is print, resume, gcode, home, adjust, skip or plugin",
+                "work.kind is print, resume, gcode, home, adjust, skip, slot or plugin",
             )),
         }
     }
@@ -198,7 +206,8 @@ impl Work {
             | Work::Adjust { printer, .. }
             | Work::Pause { printer }
             | Work::Cancel { printer }
-            | Work::Skip { printer, .. } => printer,
+            | Work::Skip { printer, .. }
+            | Work::Slot { printer, .. } => printer,
             // a connected app's tool targets no printer
             Work::Plugin { .. } => "",
         }
@@ -224,6 +233,9 @@ impl Work {
             Work::Cancel { printer } => json!({ "kind": "cancel", "printerId": printer }),
             Work::Skip { printer, id, epoch } => {
                 json!({ "kind": "skip", "printerId": printer, "id": id, "epoch": epoch })
+            }
+            Work::Slot { printer, setting } => {
+                json!({ "kind": "slot", "printerId": printer, "setting": setting })
             }
             Work::Plugin { plugin, tool, input } => {
                 json!({ "kind": "plugin", "printerId": "", "pluginId": plugin, "tool": tool, "input": input })
@@ -297,6 +309,12 @@ impl Work {
                 printer.clone(),
                 hash(&json!({ "printerId": printer, "id": id, "epoch": epoch })),
             )],
+            // The app's own slot write (`params::slot`), so the driver checks the token the same way.
+            Work::Slot { printer, setting } => {
+                let canon: Value =
+                    serde_json::from_str(&sx_connect::params::slot(printer, setting)).unwrap_or(Value::Null);
+                vec![("printer.adjust".into(), printer.clone(), hash(&canon))]
+            }
             // the same parameters the plugin checks its token against (`params::plugin`)
             Work::Plugin { plugin, tool, input } => vec![(
                 "plugin.call".into(),
@@ -305,6 +323,53 @@ impl Work {
             )],
         }
     }
+}
+
+/// Filament types a slot card may set: what the app's filament list offers, and the fiber-filled
+/// kinds printers report, in capitals as the printer stores them. Anything else is refused.
+pub(crate) const SLOT_MATERIALS: &[&str] = &[
+    "PLA", "PETG", "PET", "ABS", "ASA", "PC", "PA", "TPU", "PVA", "HIPS", "PP", "PPS", "PEEK", "BVOH", "EVA",
+    "PLA-CF", "PETG-CF", "PET-CF", "PA-CF", "PA6-CF", "PAHT-CF", "PPA-CF", "PPS-CF", "ABS-GF", "PA-GF",
+    "PPA-GF",
+];
+
+/// `{kind: "slot", printerId, setting}`: one filament slot to set, checked as [`slot_problem`] says.
+fn slot_work(printer: String, p: &Value) -> Rpc<Work> {
+    let setting: SlotSetting = p
+        .get("setting")
+        .filter(|s| s.is_object())
+        .and_then(|s| serde_json::from_value(s.clone()).ok())
+        .ok_or_else(|| {
+            RpcError::new(
+                "bad_request",
+                "work.setting is {slot, filamentId, material, color, nozzleTempMin, nozzleTempMax}",
+            )
+        })?;
+    if let Some(why) = slot_problem(&setting) {
+        return Err(RpcError::new("bad_request", format!("work.setting: {why}")));
+    }
+    Ok(Work::Slot { printer, setting })
+}
+
+/// Checks a slot card's work against the printer as it is now, before a person sees the card
+/// (`approvals.register`). Other work is parsed after the role checks, in `register_card`.
+pub(crate) async fn check_slot(b: &Arc<Bridge>, p: &Value) -> Rpc<()> {
+    let slot = p
+        .get("work")
+        .filter(|w| w.get("kind").and_then(Value::as_str) == Some("slot"));
+    if let Some(Work::Slot { printer, setting }) = slot.map(Work::parse).transpose()? {
+        crate::adjust::slot_ready(b, &printer, &setting).await?;
+    }
+    Ok(())
+}
+
+/// Why a slot card's setting is refused, or `None`: the printer's own rules (`SlotSetting::problem`)
+/// and a known filament type.
+fn slot_problem(s: &SlotSetting) -> Option<&'static str> {
+    s.problem().or_else(|| {
+        (!SLOT_MATERIALS.contains(&s.material.as_str()))
+            .then_some("the material is not a filament type the hub knows, such as PLA or PETG")
+    })
 }
 
 struct Held {
@@ -330,6 +395,7 @@ impl Work {
             Work::Pause { .. } => "pause",
             Work::Cancel { .. } => "cancel",
             Work::Skip { .. } => "skip",
+            Work::Slot { .. } => "slot",
             Work::Plugin { .. } => "plugin",
         }
     }
@@ -526,6 +592,10 @@ async fn execute(
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),
         // The card's token approved this skip; the hub mints the line's own, as for the app's click.
         Work::Skip { printer, id, epoch } => crate::device::skip_object(b, &printer, &id, epoch).await,
+        // Checked again against the printer as it is now: the card may have waited a while.
+        Work::Slot { printer, setting } => crate::adjust::set_slot(b, &printer, &setting, token)
+            .await
+            .map(|_| ()),
         Work::Plugin { plugin, tool, input } => {
             crate::rpc::service_call(b, &plugin, &tool, input, Some(token))
                 .await
@@ -759,6 +829,49 @@ mod tests {
         }
         assert!(print("cube.gcode", json!({ "slotMap": { "1": "A1" } })).is_ok());
         assert!(print("cube.gcode", json!({ "slotMap": { "1": "A1\nM104 S290" } })).is_err());
+    }
+
+    #[test]
+    fn a_slot_card_hashes_the_write_as_the_app_does_and_refuses_bad_input() {
+        let setting = json!({ "slot": "A2", "filamentId": "GFG99", "material": "PETG", "color": "#1a2b3c", "nozzleTempMin": 220, "nozzleTempMax": 260 });
+        let w = Work::parse(&json!({ "kind": "slot", "printerId": "bay-1", "setting": setting })).unwrap();
+        assert_eq!(w.kind(), "slot");
+        assert_eq!(w.printer(), "bay-1");
+        // The same action and parameters as the app's own slot write, so the driver checks the token alike.
+        assert_eq!(
+            w.actions(),
+            vec![(
+                "printer.adjust".to_owned(),
+                "bay-1".to_owned(),
+                sx_permit::hash_params(&json!({ "printerId": "bay-1", "slot": setting }))
+            )]
+        );
+        assert_eq!(
+            w.summary(),
+            json!({ "kind": "slot", "printerId": "bay-1", "setting": setting })
+        );
+        let with = |k: &str, v: Value| {
+            let mut s = setting.clone();
+            s[k] = v;
+            json!({ "kind": "slot", "printerId": "bay-1", "setting": s })
+        };
+        for bad in [
+            with("material", json!("UNOBTAINIUM")),
+            with("material", json!("petg")),
+            with("material", json!("PLA\nM104 S300")),
+            with("color", json!("red")),
+            with("color", json!("#1a2b3cff")),
+            with("slot", json!("A2;M1")),
+            with("filamentId", json!("G".repeat(17))),
+            with("nozzleTempMin", json!(270)),
+            with("nozzleTempMax", json!(400)),
+            with("nozzleTempMin", json!(-1)),
+            json!({ "kind": "slot", "printerId": "bay-1" }),
+            json!({ "kind": "slot", "printerId": "bay-1", "setting": "A2 PETG" }),
+        ] {
+            let e = Work::parse(&bad).err().map(|e| e.code);
+            assert_eq!(e.as_deref(), Some("bad_request"), "{bad}");
+        }
     }
 
     #[test]

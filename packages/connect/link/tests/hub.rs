@@ -3886,6 +3886,239 @@ async fn an_h2d_slot_set_from_the_app_reads_back_in_the_ams_and_the_ams_ht() {
     );
 }
 
+fn slot_setting() -> Value {
+    json!({ "slot": "A2", "filamentId": "GFG99", "material": "PETG", "color": "#1a2b3c", "nozzleTempMin": 220, "nozzleTempMax": 260 })
+}
+
+/// A slot card with its work, as a partner app or agent registers it.
+fn slot_ask(id: &str, setting: &Value) -> Value {
+    json!({ "request": slot_card(id, setting), "work": { "kind": "slot", "printerId": "bay-1", "setting": setting } })
+}
+
+fn pending_ids(r: &Value) -> Vec<String> {
+    r["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+async fn slot_writes(mocks: &common::Mocks) -> Vec<String> {
+    bambu_log(mocks)
+        .await
+        .into_iter()
+        .filter(|l| l.starts_with("ams_filament_setting"))
+        .collect()
+}
+
+// B8: a partner app asks to set one AMS slot (filament type, color, preset); the card waits for a
+// person, the partner can never answer it, and the app's approval writes it through the printer.
+#[tokio::test]
+async fn b8_a_partner_asks_to_set_an_ams_slot_and_only_a_person_in_the_app_sets_it() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    let mut app = paired(&link).await;
+    add_bambu(&mut app, &mocks).await;
+    until(&mut app, "status", |r| {
+        r["result"]["slots"].as_array().is_some_and(|s| s.len() >= 2)
+    })
+    .await;
+    let (mut p, _, _) = partner(&link, &mut app, "LayerMate").await;
+    let setting = slot_setting();
+
+    // It still cannot write a slot itself.
+    let r = call(
+        &mut p,
+        2,
+        "adjust.slot",
+        json!({ "printerId": "bay-1", "setting": setting, "token": {} }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+
+    let r = call(&mut p, 3, "approvals.register", slot_ask("ps-1", &setting)).await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    // The partner never answers its own slot card, whatever it sends with the answer.
+    for (i, params) in [
+        json!({ "requestId": "ps-1" }),
+        json!({ "requestId": "ps-1", "bedClear": true }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let g = call(&mut p, 4 + i as u64, "approvals.grant", params).await;
+        assert_eq!(g["error"]["code"], "forbidden", "{g}");
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(slot_writes(&mocks).await.is_empty());
+
+    // The app lists it with who asked, in the hub's words, and the slot the hub checked.
+    let pending = call(&mut app, 20, "approvals.pending", json!({})).await;
+    let shown = pending["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "ps-1")
+        .unwrap()
+        .clone();
+    assert_eq!(shown["origin"], "mcp", "{shown}");
+    assert_eq!(shown["partner"], "LayerMate", "{shown}");
+    assert_eq!(shown["lines"][0], "Asked by LayerMate, a partner app", "{shown}");
+    assert_eq!(shown["work"]["kind"], "slot", "{shown}");
+    assert_eq!(shown["work"]["printerId"], "bay-1", "{shown}");
+    assert_eq!(shown["work"]["setting"], setting, "{shown}");
+
+    // A person approves it in the app; the hub writes the slot with the card's token, as the app's own write.
+    let r = call(&mut app, 21, "approvals.grant", json!({ "requestId": "ps-1" })).await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    assert!(r["result"]["token"].is_null(), "no token leaves the hub: {r}");
+    let done = wait_event(&mut p, "approval.done", |d| d["requestId"] == "ps-1").await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(
+        slot_writes(&mocks).await,
+        [
+            r#"ams_filament_setting {"ams_id":0,"slot_id":1,"tray_id":1,"tray_info_idx":"GFG99","setting_id":"","tray_color":"1A2B3CFF","nozzle_temp_min":220,"nozzle_temp_max":260,"tray_type":"PETG"}"#
+        ]
+    );
+    // The partner reads the slot back as the printer reports it.
+    let st = until(&mut p, "status", |r| {
+        r["result"]["slots"]
+            .as_array()
+            .is_some_and(|s| s.iter().any(|x| x["id"] == "A2" && x["color"] == "#1a2b3c"))
+    })
+    .await;
+    assert!(st["result"]["slots"].is_array(), "{st}");
+
+    // A plain agent asks the same way and never answers either.
+    let mut ag = agent(&link).await;
+    let r = call(&mut ag, 2, "approvals.register", slot_ask("as-1", &setting)).await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let g = call(&mut ag, 3, "approvals.grant", json!({ "requestId": "as-1" })).await;
+    assert_eq!(g["error"]["code"], "forbidden", "{g}");
+}
+
+// B8: a slot card is checked before any person sees it: a known filament type, a #rrggbb color, a
+// preset id of at most 16 characters, a nozzle range, a slot the printer reports, a printer whose
+// driver writes slots, no print running and no RFID spool. Its action must be exactly the slot write.
+#[tokio::test]
+async fn b8_a_slot_card_with_bad_input_or_on_a_printer_that_cannot_take_it_is_refused() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    let moon = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bambu(&mut app, &mocks).await;
+    add_bay4(&mut app, &moon).await;
+    until(&mut app, "status", |r| {
+        r["result"]["slots"].as_array().is_some_and(|s| s.len() >= 2)
+    })
+    .await;
+    let (mut p, _, _) = partner(&link, &mut app, "LayerMate").await;
+    let base = slot_setting();
+    let with = |k: &str, v: Value| {
+        let mut s = base.clone();
+        s[k] = v;
+        s
+    };
+    let cases = [
+        (
+            "unknown type",
+            with("material", json!("UNOBTAINIUM")),
+            "bad_request",
+        ),
+        (
+            "type with a line",
+            with("material", json!("PLA\nM104 S300")),
+            "bad_request",
+        ),
+        ("lower case type", with("material", json!("petg")), "bad_request"),
+        ("named color", with("color", json!("red")), "bad_request"),
+        ("short color", with("color", json!("#12345")), "bad_request"),
+        (
+            "color with alpha",
+            with("color", json!("#1a2b3cff")),
+            "bad_request",
+        ),
+        ("slot with a command", with("slot", json!("A2;M1")), "bad_request"),
+        ("slot not reported", with("slot", json!("D4")), "not_found"),
+        (
+            "long preset",
+            with("filamentId", json!("G".repeat(17))),
+            "bad_request",
+        ),
+        ("no preset", with("filamentId", json!("")), "bad_request"),
+        (
+            "range upside down",
+            with("nozzleTempMin", json!(270)),
+            "bad_request",
+        ),
+        ("range too hot", with("nozzleTempMax", json!(400)), "bad_request"),
+    ];
+    for (i, (what, s, code)) in cases.iter().enumerate() {
+        let id = format!("bad-{i}");
+        let r = call(&mut p, 10 + i as u64, "approvals.register", slot_ask(&id, s)).await;
+        assert_eq!(r["error"]["code"], *code, "{what}: {r}");
+    }
+    // The card's action must be the write of exactly this setting.
+    let mut ask = slot_ask("other", &base);
+    ask["request"] = slot_card("other", &with("color", json!("#ffffff")));
+    let r = call(&mut p, 30, "approvals.register", ask).await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    // A slot write rides on one action only, never next to another.
+    let mut two = slot_ask("two", &base);
+    let pause = json!({ "action": "printer.pause", "target": "bay-1", "paramsHash": hash_of(&json!({ "printerId": "bay-1" })) });
+    two["request"]["actions"].as_array_mut().unwrap().push(pause);
+    let r = call(&mut p, 31, "approvals.register", two).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // A change to a running print is still not a partner's to ask for.
+    let r = call(
+        &mut p,
+        32,
+        "approvals.register",
+        json!({ "request": card("a-1", "printer.adjust", "printer.adjust", &json!({ "printerId": "bay-4" })), "work": { "kind": "adjust", "printerId": "bay-4", "change": {} } }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // A printer whose driver writes no slots is refused with a plain reason.
+    let s4 = json!({ "slot": "T0", "filamentId": "GFG99", "material": "PETG", "color": "#1a2b3c", "nozzleTempMin": 220, "nozzleTempMax": 260 });
+    let mut c4 = card(
+        "m-1",
+        "printer.adjust",
+        "printer.adjust",
+        &json!({ "printerId": "bay-4", "slot": s4 }),
+    );
+    c4["printerId"] = json!("bay-4");
+    let r = call(
+        &mut p,
+        33,
+        "approvals.register",
+        json!({ "request": c4, "work": { "kind": "slot", "printerId": "bay-4", "setting": s4 } }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "not_supported", "{r}");
+    assert!(r["error"]["message"].as_str().unwrap().contains("slot"), "{r}");
+    // A spool with an RFID tag sets itself.
+    mocks.control("/bambu", json!({ "tagged": [1] })).await;
+    until(&mut app, "status", |r| {
+        r["result"]["slots"][1]["spoolUid"].is_string()
+    })
+    .await;
+    let r = call(&mut p, 34, "approvals.register", slot_ask("tag", &base)).await;
+    assert_eq!(r["error"]["code"], "refused", "{r}");
+    assert!(r["error"]["message"].as_str().unwrap().contains("RFID"), "{r}");
+    mocks.control("/bambu", json!({ "tagged": [] })).await;
+    // Not while a print runs: the slot may be feeding it.
+    mocks.set_state("bambu", "printing").await;
+    until(&mut app, "status", |r| r["result"]["state"] == "printing").await;
+    let r = call(&mut p, 35, "approvals.register", slot_ask("busy", &base)).await;
+    assert_eq!(r["error"]["code"], "bad_state", "{r}");
+
+    // None of them reached a person, and nothing was written.
+    let pending = call(&mut app, 40, "approvals.pending", json!({})).await;
+    assert!(pending_ids(&pending).is_empty(), "{pending}");
+    assert!(slot_writes(&mocks).await.is_empty());
+}
+
 #[tokio::test]
 async fn the_chamber_light_switches_from_the_app_only() {
     let link = hub(None).await;
