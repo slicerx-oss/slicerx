@@ -75,7 +75,7 @@ export { assistantBrand, assistantName, setAssistantBrand, setAssistantName } fr
 export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlock'
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
-export { design3mf, readDesigns, type Design } from './design'
+export { design3mf, readDesignFile, readDesigns, type Design, type OpenedDesign } from './design'
 export { gcode3mf } from './gcode3mf'
 export type { SliceSummary } from './slicer'
 

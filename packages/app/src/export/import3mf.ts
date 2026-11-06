@@ -97,6 +97,8 @@ export interface ImportedProject {
   settingsNote?: string
   /** Why the project's painted brim ears were left out, when they are in a format this version does not read. */
   earsNote?: string
+  /** What the reader left out of the file or read another way (readerNoteOf), in one note; none when it read it whole. */
+  readerNote?: string
 }
 
 /** Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them. */
@@ -614,7 +616,7 @@ function plateCfgOf(name: string, index: number, m: Record<string, string>, obje
  * paint as the file has them, for Bambu Studio, Orca and PrusaSlicer alike; PrusaSlicer's settings are mapped to Orca's
  * keys here, as the app reads them everywhere else. A part type the app does not know is left out, as before.
  */
-async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
+async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<Assembly> {
   const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String), p.id))
   const prusaOverrides = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaOverrides : null
   const raw = (list: [string, string][]): Record<string, string> => (prusaOverrides ? prusaOverrides(Object.fromEntries(list)) : Object.fromEntries(list))
@@ -626,6 +628,10 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
   const prusaPart = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaPartOverrides : null
   const partRaw = (list: [string, string][], object: [string, string][]): Record<string, string> => (prusaPart ? prusaPart(Object.fromEntries(list), Object.fromEntries(object), prusaText) : raw(list))
   const items: Assembled[] = []
+  const leftOut: string[] = []
+  // The engine's note for a part type it does not know says it read the part as a normal one; the app leaves it out,
+  // and says that instead.
+  const typeNotes = new Set<string>()
   for (const [itemIndex, o] of g.objects.entries()) {
     const parts: MeshPart[] = []
     const paint: Record<number, PaintOfPart> = {}
@@ -633,8 +639,12 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
     const rawPartSettings: Record<string, Record<string, string>> = {}
     const noSlot: string[] = []
     for (const p of o.parts) {
-      if (p.kindText !== null) continue
       const name = p.name || o.name || 'Part'
+      if (p.kindText !== null) {
+        leftOut.push(name)
+        typeNotes.add(`${p.name}: part type ${p.kindText} is not one this reader knows; read as a normal part`)
+        continue
+      }
       const part: MeshPart = { name, slot: p.slot ?? o.slot ?? 1, positions: p.positions, indices: p.indices }
       const own = partRaw(p.settings, o.settings)
       if (p.kind !== 'normal') {
@@ -665,14 +675,42 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
       placed: o.parts.some((p) => p.transformed),
     })
   }
-  return { plateCfg, items }
+  return { plateCfg, items, leftOut, notes: (g.notes ?? []).filter((n) => !typeNotes.has(n)) }
+}
+
+/** A project's objects as a reader put them together, with what it left out: parts by name, and the engine's notes. */
+interface Assembly {
+  plateCfg: PlateCfg[]
+  items: Assembled[]
+  /** Parts of a type this version does not read, by name. */
+  leftOut: string[]
+  /** The geometry engine's own notes on what it skipped or read another way. */
+  notes: string[]
+}
+
+/**
+ * One note for what a reader left out of a file: the parts of a type this version does not read, by name, and the
+ * geometry engine's notes, each said once. Undefined when it read the file whole.
+ */
+export function readerNoteOf(leftOut: readonly string[], notes: readonly string[]): string | undefined {
+  const lines: string[] = []
+  const names = [...new Set(leftOut)]
+  if (names.length) {
+    const shown = names.length > 5 ? `${names.slice(0, 5).join(', ')} and ${names.length - 5} more` : names.join(', ')
+    lines.push(`${leftOut.length === 1 ? 'a part' : `${leftOut.length} parts`} of a type this version does not read ${leftOut.length === 1 ? 'was' : 'were'} left out (${shown})`)
+  }
+  for (const n of notes) {
+    const line = n.trim().replace(/[.;\s]+$/, '')
+    if (line && !lines.includes(line)) lines.push(line)
+  }
+  return lines.length ? `Not everything in this file was read: ${lines.join('; ')}.` : undefined
 }
 
 // The maker's app's reading of the keys its project lacks, shared with the MCP server's project slices.
 export { withBambuMissingKeys }
 
 /** The objects of a project scanned in TypeScript (project-scan.ts), for hosts without the geometry engine. */
-async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
+async function assembleScanned(scanned: ScannedProject): Promise<Assembly> {
   const { files } = scanned
   const modelOf = (key: string): ScannedModel => {
     const m = scanned.models.get(key)
@@ -750,6 +788,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
   }
 
   const items: Assembled[] = []
+  const leftOut: string[] = []
   for (const [itemIndex, item] of main.items.entries()) {
     const obj = main.objects.get(item.objectId)
     if (!obj) continue
@@ -788,7 +827,11 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
       const pi = info?.parts.get(src.id)
       const role = pi?.subtype ? ROLE[pi.subtype] : undefined
       const name = pi?.name ?? src.obj?.name ?? info?.name ?? 'Part'
-      if (pi?.subtype && !role && pi.subtype !== 'normal_part') continue // other subtypes are not supported
+      // other subtypes are not supported: the part is left out, and the open says so
+      if (pi?.subtype && !role && pi.subtype !== 'normal_part') {
+        leftOut.push(name)
+        continue
+      }
       const baked = bakeMesh(mesh, src.matrix, name, pi?.extruder ?? info?.extruder ?? 1)
       if (role) volumes.push({ name, role, part: baked, ...(role === 'modifier' && pi?.raw ? { rawSettings: pi.raw } : {}) })
       else {
@@ -800,7 +843,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
     }
     items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, rawObjectSettings: info?.raw ?? pz?.settings ?? {}, noSlot, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
   }
-  return { plateCfg, items }
+  return { plateCfg, items, leftOut, notes: [] }
 }
 
 /**
@@ -815,7 +858,8 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
   const marks = vaultMarksOf(files, scanned.marks)
   const rootSource = sourceOf(marks.root)
-  const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
+  const { plateCfg, items, leftOut, notes: engineNotes } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
+  const readerNote = readerNoteOf(leftOut, engineNotes)
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
   const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), ...(p.bedType ? { bedType: p.bedType } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
@@ -904,5 +948,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
   // Paint is checked by the open (open-project.ts), against the filaments the project has once it is open.
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
 }
