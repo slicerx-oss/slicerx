@@ -79,7 +79,7 @@ pub(crate) struct Bridge {
     /// partner's own lines.
     pub(crate) card_partners: StdMutex<HashMap<String, String>>,
     /// Request id to who raised it: the role and the key (client id) or pairing that asked. A partner
-    /// phone never approves a card a partner app raised (`remote_rpc::raised_by_partner`).
+    /// phone never approves a card a partner app raised (`remote_rpc::phone_may_approve`).
     pub(crate) card_raisers: StdMutex<HashMap<String, CardRaiser>>,
     /// Agent work waiting for a person's answer.
     pub(crate) agent_work: crate::agent_work::Waiting,

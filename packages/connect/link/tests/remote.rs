@@ -3903,3 +3903,81 @@ async fn a_partner_phone_approves_our_phones_pause_but_never_one_a_partner_app_a
         .await;
     assert_eq!(r["ok"], true, "{r}");
 }
+
+/// A plate the person queued in the app, on bay 4: `scheduled` raises its card at once for a start an hour
+/// from now; otherwise the app asks for its card with `queue.start`. Returns the card.
+async fn person_queued_card(s: &mut Setup, title: &str, scheduled: bool) -> Value {
+    let (f, _) = gcode_file("plate.gcode", "M140 S55\nM104 S215\nG28\n");
+    let mut add = json!({ "printerId": "bay-4", "file": f, "title": title });
+    if scheduled {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        add["startAfterMs"] = json!(now + 3_600_000);
+    }
+    let q = call(&mut s.app, 60, "queue.add", add).await;
+    if scheduled {
+        assert!(q["result"]["request"]["id"].is_string(), "{q}");
+        return q["result"]["request"].clone();
+    }
+    let item = q["result"]["item"]["id"].as_str().unwrap().to_owned();
+    let r = call(&mut s.app, 61, "queue.start", json!({ "itemId": item })).await;
+    assert_eq!(
+        r["result"]["request"]["actions"][0]["action"], "printer.start",
+        "{r}"
+    );
+    r["result"]["request"].clone()
+}
+
+#[tokio::test]
+async fn a_plate_the_person_queued_gets_the_same_answer_from_afar_on_our_phone_and_a_partner_phone() {
+    let mut s = setup().await;
+    let _mocks = idle_bay4_with_plate(&mut s).await;
+    let clear = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    plate_detector(&s.link, clear.clone()).await;
+    let r = call(
+        &mut s.app,
+        23,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["enabled"], true, "{r}");
+    let (mut partner, partner_signer, _) = partner_approver(&mut s, 93, "Example Phone").await;
+    let (mut ours, our_signer) = approver(&mut s, 94).await;
+
+    // Scheduled plates: the hub raises each card itself, for the person. Away from home a scheduled
+    // start is the person's at the computer, and both phones hear the same answer.
+    let first = person_queued_card(&mut s, "Plate 1", true).await;
+    let second = person_queued_card(&mut s, "Plate 2", true).await;
+    for (who, phone, signer, card) in [
+        ("partner phone", &mut partner, &partner_signer, &first),
+        ("our phone", &mut ours, &our_signer, &second),
+    ] {
+        let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+        assert_eq!(r["r"]["passes"], true, "{who}: {r}");
+        let r = phone
+            .call(
+                "approvals.decide",
+                signed_decision_bed(signer, card, "approve", true),
+            )
+            .await;
+        assert_eq!(
+            r["e"]["code"], "not_supported",
+            "{who}: a scheduled plate the person queued: {r}"
+        );
+    }
+
+    // A plate the person asks to start now, from the app.
+    let now = person_queued_card(&mut s, "Plate 3", false).await;
+    let r = partner.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    let r = partner
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&partner_signer, &now, "approve", true),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "a plate the person asked to start: {r}");
+}
