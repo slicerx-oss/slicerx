@@ -105,7 +105,7 @@ describe('the printer controls dialog', () => {
 
   it('drops the plate question on Cancel, and when the printer starts a job', async () => {
     const { host, calls } = fakeHub(async () => {
-      throw refuse('bed_check')
+      throw Object.assign(refuse('bed_check'), { details: { epoch: 2 } })
     })
     await show(host, { ...idle, state: 'finished' })
     await click(button('Home'))
