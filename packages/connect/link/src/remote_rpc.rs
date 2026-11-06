@@ -855,12 +855,11 @@ fn approvals_list(b: &Bridge, p: &RemotePairing) -> Value {
     )
 }
 
-/// Whether a partner app raised this card, through any partner key or any partner phone. Decided by the
-/// raiser's role the hub recorded, never by a name, since a partner names itself.
-fn raised_by_partner(b: &Bridge, id: &str) -> bool {
-    lock(&b.card_raisers)
-        .get(id)
-        .is_some_and(|r| r.role == crate::rpc::RaiserRole::Partner)
+/// Whether a phone may approve a card with this recorded raiser. Our phone may approve any card it is
+/// shown. A partner phone never approves what a partner app raised, through any partner key or any
+/// partner phone, decided by the raiser's role the hub recorded and never by a name.
+fn phone_may_approve(partner_phone: bool, raiser: Option<&crate::rpc::CardRaiser>) -> bool {
+    !partner_phone || !raiser.is_some_and(|r| r.role == crate::rpc::RaiserRole::Partner)
 }
 
 /// The bytes a phone signs for a decision (`decisionBytes` in approval.ts).
@@ -941,7 +940,8 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
     let decision = p.get("decision").and_then(Value::as_str).unwrap_or_default();
     // A partner phone has our phone's rights, but never approves anything a partner app asked for,
     // through any partner key or partner phone, its own included. It may still deny it.
-    if decision == "approve" && pairing.partner.is_some() && raised_by_partner(b, &id) {
+    if decision == "approve" && !phone_may_approve(pairing.partner.is_some(), lock(&b.card_raisers).get(&id))
+    {
         return Err(err(
             "forbidden",
             format!(
@@ -1167,6 +1167,24 @@ mod tests {
         // Setting an AMS slot is answered on the computer only: phones never list it or approve it.
         assert!(!shown_to_phones(Some("slot")));
         assert!(!stops_only(Some("slot")));
+    }
+
+    #[test]
+    fn a_partner_phone_never_approves_a_card_when_who_raised_it_is_unknown() {
+        use crate::rpc::{CardRaiser, RaiserRole};
+        let raiser = |role| CardRaiser { role, id: None };
+        // No raiser on record: our phone may approve it, a partner phone may not.
+        assert!(phone_may_approve(false, None));
+        assert!(
+            !phone_may_approve(true, None),
+            "a partner phone approved a card with no recorded raiser"
+        );
+        for role in [RaiserRole::App, RaiserRole::Agent, RaiserRole::Phone] {
+            assert!(phone_may_approve(true, Some(&raiser(role))), "{role:?}");
+            assert!(phone_may_approve(false, Some(&raiser(role))), "{role:?}");
+        }
+        assert!(!phone_may_approve(true, Some(&raiser(RaiserRole::Partner))));
+        assert!(phone_may_approve(false, Some(&raiser(RaiserRole::Partner))));
     }
 
     #[test]
