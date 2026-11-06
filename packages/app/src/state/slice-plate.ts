@@ -5,6 +5,7 @@
 import { engineErrorText } from '../lib/engine-errors'
 import type { Host, LayerGcode, PlateObject, PrintConfig, SlicerHost } from '@slicerx/contracts'
 import { readPreview } from '@slicerx/contracts'
+import { scriptKeyValues } from '@slicerx/settings/script-keys'
 import { resolveConfig } from '../adapters/config'
 import { noteSliceTiming, plateTriangles } from './slice-estimate'
 import { defaultColorMode } from '../lib/preview-stats'
@@ -35,7 +36,10 @@ export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): Prin
   // The plate type picks the bed temperatures (the engine's curr_bed_type), so it goes with the plate's other settings.
   const config = { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as Record<string, unknown>
   // Nozzles of different sizes: the map goes by hand, and a prime tower keeps one layer height.
-  return { ...config, ...mixedNozzleConfig(s, meta, config, towerPrints(s, meta, config)) } as PrintConfig
+  const sliced = { ...config, ...mixedNozzleConfig(s, meta, config, towerPrints(s, meta, config)) }
+  // A key no setting models that the plate's printer G-code names: the opened project's value, as the engine renders
+  // the script from the file in sx slice <project.3mf>.
+  return (s.projectScriptKeys ? { ...sliced, ...scriptKeyValues(sliced, s.projectScriptKeys) } : sliced) as PrintConfig
 }
 
 /**
