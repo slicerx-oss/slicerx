@@ -6,7 +6,7 @@ version.workspace = true
 edition.workspace = true
 license = "Apache-2.0"
 publish.workspace = true
-description = "The memory allocator of the sx command line tool and the cloud service: jemalloc, with its page decay per operating system"
+description = "The memory allocator of the sx command line tool, the desktop app and the cloud service: jemalloc, with its page decay per operating system"
 
 # Its own lints because of one `unsafe` attribute: the exported symbol jemalloc reads its options from. It carries a
 # SAFETY comment; nothing else here is unsafe.

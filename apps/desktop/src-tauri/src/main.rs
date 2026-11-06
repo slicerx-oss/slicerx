@@ -48,6 +48,10 @@ mod vault;
 #[cfg(feature = "connect")]
 mod watch;
 
+// jemalloc on every target it builds for, with its page decay per operating system: it gives the pages a slice frees
+// back to the system.
+use sx_alloc as _;
+
 fn main() {
     probe::mark_start();
     // First, so a panic anywhere after this leaves a report for the next launch.
