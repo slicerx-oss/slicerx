@@ -130,10 +130,21 @@ describe('the runtime and the context', () => {
   /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
   const CONVERSATION_ROOM = 1500
 
+  /**
+   * What a local request leaves in the context: the tokens it uses with the reply and the conversation's room, the limit,
+   * and what is spare. The failure message says it, so a change that goes over shows by how much.
+   */
+  function headroom(req: { messages: readonly LlmMessage[]; tools: readonly LlmToolDef[] }): { used: number; limit: number; spare: number; line: string } {
+    const used = requestCost(req) + REPLY_RESERVE + CONVERSATION_ROOM
+    const spare = MIMIR_CONTEXT - used
+    return { used, limit: MIMIR_CONTEXT, spare, line: `used ${used} of ${MIMIR_CONTEXT} tokens (the request ${requestCost(req)}, ${req.tools.length} tools, the reply ${REPLY_RESERVE}, the conversation ${CONVERSATION_ROOM}), spare ${spare}` }
+  }
+
   // Every surface a local model runs on; the conversation trims to fit, but the prompt and tool schemas cannot.
   it.each(['full', 'cad'] as const)('leaves a local model in the tab (%s) at least 1,500 tokens for the conversation', async (scope) => {
     const [first] = await requests('openai-compatible', scope)
-    expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
+    const room = headroom(first!)
+    expect(room.used, room.line).toBeLessThanOrEqual(room.limit)
   })
 
   // room for an edition to rename the app and the assistant (40 characters each, the longest an assistant name may be)
@@ -144,7 +155,8 @@ describe('the runtime and the context', () => {
     setAssistantBrand({ name: 'A'.repeat(40) })
     try {
       const [first] = await requests('openai-compatible', 'full')
-      expect(MIMIR_CONTEXT - (requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM)).toBeGreaterThanOrEqual(250)
+      const room = headroom(first!)
+      expect(room.spare, `${room.line}; 250 must be spare`).toBeGreaterThanOrEqual(250)
     } finally {
       setProductName(DEFAULT_PRODUCT_NAME)
       setAssistantBrand()
@@ -159,7 +171,8 @@ describe('the runtime and the context', () => {
     // every tool a cloud model gets but make_model and the unlisted test tool goes, so this measures the whole local tab
     const [cloud] = await requests('anthropic', 'full', all)
     expect(first!.tools.map((t) => t.name)).toEqual(cloud!.tools.map((t) => t.name).filter((n) => n !== 'make_model' && n !== 'test.big_read'))
-    expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
+    const room = headroom(first!)
+    expect(room.used, room.line).toBeLessThanOrEqual(room.limit)
   })
 
   it('trims what it sends to a local model, and sends a cloud model everything', async () => {

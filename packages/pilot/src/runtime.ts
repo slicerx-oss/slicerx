@@ -44,7 +44,7 @@ import { fitContext, MIMIR_CONTEXT } from './context'
 import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
-import { argLine, ASK_DISMISSED, ASK_SAID_MAX, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
+import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { capLine, capTools, localTurnTools, turnNeeds, type ToolCapReport } from './toolsets'
 import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
@@ -743,8 +743,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
       const capped = capTools(turn.filter((t) => (set ? inTurnSet(t, set) : true)), { cap: client.maxTools, needs, called })
       const visible = capped.tools
-      const specs = visible.map((t) => toolSpec(t))
-      const toolDefs = specs.map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
+      // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords
+      const toolDefs = local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
       const sent = local ? fitContext(messages, toolDefs, MIMIR_CONTEXT).messages : messages
       let text = ''

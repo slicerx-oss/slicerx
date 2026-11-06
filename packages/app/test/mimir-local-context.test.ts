@@ -113,7 +113,9 @@ describe('the mimir tab on a local model', () => {
     const local = await turn(LOCAL, message, before)
     expect(local.url).toContain('127.0.0.1:11434')
     const c = cost(local)
-    expect(c.total + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
+    // the headroom in the failure message: what the turn uses, the limit and what is spare
+    const used = c.total + REPLY_RESERVE + CONVERSATION_ROOM
+    expect(used, `used ${used} of ${MIMIR_CONTEXT} tokens (system ${c.system}, messages ${c.messages}, ${c.count} tools ${c.tools}, the reply ${REPLY_RESERVE}, the conversation ${CONVERSATION_ROOM}), spare ${MIMIR_CONTEXT - used}`).toBeLessThanOrEqual(MIMIR_CONTEXT)
     // the system prompt goes whole and first: the one a cloud model gets, plus the line naming the registered tabs
     const cloud = read(await turn(CLOUD, message, before))
     const sent = read(local)
