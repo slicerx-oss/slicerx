@@ -88,6 +88,19 @@ describe('nozzle rows in the Filament block', () => {
     expect(appStore.getState().plates[0]!.settings.nozzleMap).toEqual([1, 1])
   })
 
+  it('with nozzles of two sizes names each size and keeps the map by hand, the switch off and disabled', () => {
+    setProfileLayer({ ...H2D, nozzle_diameter: [0.4, 0.6] }, [])
+    const el = render()
+    expect([...el.querySelector('select')!.options].map((o) => o.textContent)).toEqual(['Left nozzle, 0.4 mm', 'Right nozzle, 0.6 mm'])
+    const auto = el.querySelector<HTMLButtonElement>('#nozzle-auto')!
+    expect(auto.getAttribute('aria-checked') ?? String((auto as unknown as HTMLInputElement).checked)).toBe('false')
+    expect(auto.disabled).toBe(true)
+    expect(el.querySelector('[data-testid="nozzle-map-sizes-note"]')?.textContent).toBe('The nozzles are different sizes, so each filament keeps the nozzle set here.')
+    // The same row, in the same place: nothing above the filament rows moves.
+    expect(el.querySelectorAll('.nozzle-row').length).toBe(2)
+    expect(el.textContent).not.toContain('Slice the plate to see where each filament goes.')
+  })
+
   it('names the H2C rack and asks for a slice before the pick is known', () => {
     setProfileLayer(H2C, [])
     const el = render()

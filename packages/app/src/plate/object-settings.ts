@@ -57,12 +57,25 @@ export function setPartSetting(objectId: string, part: string, key: string, valu
  * when it is on and the plate's objects print more than one filament, or with a smooth timelapse on a Bambu Lab printer.
  */
 export function plateLayerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'>, meta: PlateMeta | undefined, config: Readonly<Record<string, unknown>>): string | null {
-  const layer = config['layer_height']
+  const layer = Array.isArray(config['layer_height']) ? config['layer_height'][0] : config['layer_height']
+  const sizes = (Array.isArray(config['nozzle_diameter']) ? config['nozzle_diameter'] : [config['nozzle_diameter']]).map(Number).filter((d) => d > 0)
+  const mixed = sizes.some((d) => Math.abs(d - sizes[0]!) >= 1e-3)
+  return layerHeightConflict(s, plateSequence(meta, config), typeof layer === 'number' ? layer : 0.2, towerPrints(s, meta, config), mixed)
+}
+
+/**
+ * Whether plate `meta` prints a prime tower with `config`: the tower is on and the plate's objects print more than one
+ * filament, or a smooth timelapse on a Bambu Lab printer prints it with one.
+ */
+export function towerPrints(s: Pick<AppState, 'plate'>, meta: PlateMeta | undefined, config: Readonly<Record<string, unknown>>): boolean {
   const slots = new Set<number>()
   for (const p of s.plate) if (p.printable !== false) for (const part of p.parts) slots.add(mapSlot(meta, effectiveSlot(p, part)))
-  // A smooth timelapse on a Bambu Lab printer prints the tower with one filament too.
-  const tower = switchOn(config['enable_prime_tower']) && (slots.size > 1 || smoothTimelapseTower(config))
-  return layerHeightConflict(s, plateSequence(meta, config), typeof layer === 'number' ? layer : 0.2, tower)
+  return switchOn(config['enable_prime_tower']) && (slots.size > 1 || smoothTimelapseTower(config))
+}
+
+/** Clears every object's own layer height, so the plate prints at one layer height (the fix a prime tower asks for). */
+export function useOneLayerHeight(): void {
+  for (const p of get().plate) if (objectOverrides(get(), p)['layer_height'] !== undefined) setObjectSetting(p.id, 'layer_height', undefined)
 }
 
 /** A switch setting's value as on or off: engine values come as booleans, numbers or strings. */
@@ -74,9 +87,10 @@ function switchOn(v: unknown): boolean {
 /**
  * The engine prints objects of different layer heights on one plate, each at its own height, but a prime tower
  * (`tower`: it prints) needs one layer height for every object when the plate prints layer by layer. Returns the
- * sentence to show when it does not have one, or null.
+ * sentence to show when it does not have one, or null. With nozzles of different sizes (`mixedSizes`) it says that
+ * only the layer height is shared.
  */
-export function layerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'>, sequence: 'by-layer' | 'by-object', plateLayerHeight: number, tower = false): string | null {
+export function layerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'>, sequence: 'by-layer' | 'by-object', plateLayerHeight: number, tower = false, mixedSizes = false): string | null {
   if (sequence === 'by-object' || !tower) return null
   const heights = new Map<number, string[]>()
   for (const p of s.plate) {
@@ -86,7 +100,7 @@ export function layerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'
   }
   if (heights.size < 2) return null
   const list = [...heights].map(([h, names]) => `${h} mm for ${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''}`).join('; ')
-  return `Objects on this plate have different layer heights (${list}), and the prime tower needs one layer height for every object. Give the objects the same layer height, turn the prime tower off, or set the print sequence to By object.`
+  return `A prime tower makes every object print at one shared layer height, and objects on this plate have their own (${list}).${mixedSizes ? ' Each nozzle keeps its own line widths.' : ''} Use one layer height, turn the prime tower off, or set the print sequence to By object.`
 }
 
 /** A layer height a setting holds: a number, or the text of one. */

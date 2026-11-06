@@ -46,6 +46,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'project.move': 'edit',
   'project.rotate': 'edit',
   'project.scale': 'edit',
+  // Which nozzle prints an object, on a printer whose nozzles differ in size.
+  'project.object_nozzle': 'edit',
   'volumes.list': 'read',
   'dimensions.list': 'read',
   'dimensions.keep': 'edit',
@@ -402,6 +404,7 @@ const HANDLERS: Record<string, Handler> = {
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
+  'project.object_nozzle': async (args, client) => (await import('./object-nozzle')).objectNozzle(args, client.name),
   'units.get': async (args) => (await import('./units')).read(args),
   'units.set': async (args) => (await import('./units')).change(args),
   'volumes.list': async (args) => (await import('./volumes')).readVolumes(args),

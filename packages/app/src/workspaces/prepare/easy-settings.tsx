@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Easy mode: five controls that write Orca keys through @slicerx/settings.
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue, SpeedPreset, SupportMode } from '@slicerx/contracts'
-import { Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
@@ -12,7 +12,7 @@ import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { useMore } from '../../shell/more'
 import { beginLiveEdit } from '../../state/live-edit'
 import { get, markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
-import { plateLayerHeightConflict } from '../../plate/object-settings'
+import { plateLayerHeightConflict, useOneLayerHeight } from '../../plate/object-settings'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
 import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
@@ -225,10 +225,15 @@ export function EasySettingsPanel() {
         </MenuAnchor>
       </div>
       {conflict ? (
-        <p className="support-line" role="status">
+        <div className="support-line" role="status" data-testid="tower-layer-conflict">
           <Icon name="alert" />
-          {conflict}
-        </p>
+          <span className="support-body">
+            <span>{conflict}</span>
+            <Button size="sm" data-testid="tower-one-layer-height" onClick={() => useOneLayerHeight()}>
+              Use one layer height
+            </Button>
+          </span>
+        </div>
       ) : null}
       {costNote ? (
         <p className="support-line" role="status">

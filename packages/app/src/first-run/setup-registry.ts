@@ -97,7 +97,7 @@ export interface AppSetupHost extends PrinterSetupHost {
   probe?(host: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<FoundPrinter[]>
   testConnection(connection: PrinterConnection, onStep?: (steps: TestStep[]) => void, opts?: { signal?: AbortSignal; trustFingerprint?: string }): Promise<TestOutcome>
   /** `credentialKept: 'session'`: the system keychain refused the code, so it lasts until the app closes. */
-  addPrinter(input: { profileId: string; nozzleMm: number; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string; credentialKept?: 'session' }>
+  addPrinter(input: { profileId: string; nozzleMm: number; nozzles?: number[]; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string; credentialKept?: 'session' }>
   /**
    * A new Obico address for a printer already reached through Obico: the tunnel host and its `user:password`. Only the
    * host and the stored access change. Absent when the bridge cannot take one.

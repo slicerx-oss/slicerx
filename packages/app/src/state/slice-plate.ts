@@ -16,7 +16,8 @@ import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
 import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
-import { objectOverrides, partOverridesOf, plateLayerHeightConflict, smartLayerWarning } from '../plate/object-settings'
+import { objectOverrides, partOverridesOf, plateLayerHeightConflict, smartLayerWarning, towerPrints } from '../plate/object-settings'
+import { mixedNozzleConfig } from '../filament/object-nozzle'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
@@ -32,7 +33,9 @@ function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverride
 export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): PrintConfig {
   const base = resolveConfig(s.easy, s.overrides)
   // The plate type picks the bed temperatures (the engine's curr_bed_type), so it goes with the plate's other settings.
-  return { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as PrintConfig
+  const config = { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as Record<string, unknown>
+  // Nozzles of different sizes: the map goes by hand, and a prime tower keeps one layer height.
+  return { ...config, ...mixedNozzleConfig(s, meta, config, towerPrints(s, meta, config)) } as PrintConfig
 }
 
 /**

@@ -124,6 +124,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
+    // Which nozzle prints an object, on a printer whose nozzles differ in size.
+    ("project.object_nozzle", LinkClass::Edit),
     ("volumes.list", LinkClass::Read),
     ("dimensions.list", LinkClass::Read),
     ("dimensions.keep", LinkClass::Edit),
@@ -471,6 +473,7 @@ mod tests {
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
+        ("project.object_nozzle", LinkClass::Edit),
         ("volumes.list", LinkClass::Read),
         ("dimensions.list", LinkClass::Read),
         ("dimensions.keep", LinkClass::Edit),

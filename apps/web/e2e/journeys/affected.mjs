@@ -36,6 +36,7 @@ export const journeys = [
   // plates, objects and files
   { paths: ['packages/app/src/plate/'], journeys: ['plates', 'sidebar', 'phone-model'] },
   { paths: ['packages/app/src/plate/tower.ts'], journeys: ['tower', 'tower-plates'] },
+  { paths: ['packages/app/src/filament/object-nozzle.ts', 'packages/app/src/workspaces/prepare/object-nozzle', 'packages/app/src/filament/nozzle-map.ts'], journeys: ['object-nozzle'] },
   { paths: ['packages/app/src/plate/plates.ts'], journeys: ['plates', 'sidebar', 'phone-model', 'tower-plates'] },
   { paths: ['packages/app/src/project/', 'packages/app/src/export/', 'packages/sx3mf/', 'packages/threemf/'], journeys: ['project', 'file-open', 'tower-plates'] },
   { paths: ['packages/app/src/state/open-', 'packages/app/src/state/import-', 'packages/app/src/state/multi-body.ts'], journeys: ['file-open', 'tower-plates'] },

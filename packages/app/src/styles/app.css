@@ -68,6 +68,7 @@ a { color: var(--purple); }
 .support-line { margin: 10px 0 0; font: var(--fw-medium) var(--fs-sm)/1.5 var(--f-body); color: var(--muted); display: flex; gap: 8px; align-items: flex-start; }
 .support-line .sx-ic { width: 15px; height: 15px; margin-top: 2px; color: var(--orange); }
 .support-line.ok .sx-ic { color: var(--green); }
+.support-line .support-body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 
 /* expert settings */
 .expert { margin-top: 12px; }
