@@ -84,6 +84,13 @@
 :root[data-phone] .settings-body .sx-switchrow, :root[data-phone] .settings-body .set-rows > .sx-setrow { min-height: var(--h-lg); }
 :root[data-phone] .settings-body .sx-btn { min-height: 44px; }
 :root[data-phone] .settings-body .sx-input, :root[data-phone] .settings-body select { min-height: 44px; font-size: 16px; }
+/* Print setting rows (Field, on the kit's SettingRow): each control a 44 px tap. In a stacked group the value sits
+   under its label: a number keeps its width, a select takes the width its longest choice needs, a text field the
+   whole line. */
+:root[data-phone] .field > input.num, :root[data-phone] .field > .mm-or-pct > input.num, :root[data-phone] .field > input.text { height: var(--h-lg); font-size: 16px; }
+:root[data-phone] .field > .sx-selectwrap > .sx-select { min-height: var(--h-lg); }
+:root[data-phone] [data-setrows="stack"] > .field > input.text { justify-self: stretch; width: auto; }
+:root[data-phone] [data-setrows="stack"] > .field > .sx-selectwrap { width: auto; min-width: var(--w-sel); }
 
 /* First run and the agreement: the footer action fills its row, every button is a full touch target. */
 :root[data-phone] .fr { grid-template-rows: var(--h-bar) 2px minmax(0, 1fr); height: 100dvh; }
