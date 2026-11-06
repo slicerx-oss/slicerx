@@ -116,6 +116,7 @@ async function addProjectShown(
       .map((d) => ({ ...d, a: { ...d.a, object: idOf.get(d.a.object)! }, ...(d.b ? { b: { ...d.b, object: idOf.get(d.b.object)! } } : {}) }))
   if (project.historyNote) toast(project.historyNote, 'warn')
   if (project.earsNote) toast(project.earsNote, 'warn')
+  if (project.paintNote) toast(project.paintNote, 'warn')
   // The design timeline as it was before the open: the file's goes in at its marker once every object is placed.
   const designBefore = get().timeline
   // Named values come with the project; a name the open project already has keeps its own value.

@@ -6,6 +6,8 @@
 use super::xml::{self, Tag};
 use super::zip::Zip;
 use crate::error::{Error, Result};
+use crate::paint_tree;
+use serde_json::Value;
 use std::collections::HashMap;
 
 const MAX_DEPTH: u32 = 16;
@@ -35,7 +37,8 @@ pub enum PartKind {
     SupportEnforcer,
 }
 
-/// painted triangles as the file writes them: (triangle, code)
+/// painted triangles as `paint_*` texts: (triangle, code). paint the file keeps in the `slic3rpe:*` attributes or the
+/// facets JSON, which write filaments 17 and up another way, is read into the same texts
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Paint {
     pub color: Vec<(u32, String)>,
@@ -272,6 +275,9 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
         placed.push(leaves);
     }
     let mut notes = Vec::new();
+    if let Some(json) = text(FACETS_JSON) {
+        facets_paint(&json, &root, &mut models, &mut notes);
+    }
     let doctype = models.values().any(|m| m.doctype);
     let objects = objects_of(&build, placed, &mut models, &root, &meta, &mut notes);
     Ok(Project {
@@ -285,6 +291,140 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
         entries: zip.names().map(str::to_owned).collect(),
         notes,
     })
+}
+
+/// a project's paint kept apart from its triangles: per volume, each layer's painted triangles in the escape scheme
+/// (`paint_tree::Scheme::Escape`), numbered within that volume's own mesh from 0, with a version per layer
+const FACETS_JSON: &str = "Metadata/Slic3r_facets_annotation.json";
+
+/// the facets JSON's key of each paint layer, in the order of `Paint::layers_mut`
+const FACET_KEYS: [&str; 4] = [
+    "mmSegmentationFacets",
+    "seamFacets",
+    "supportedFacets",
+    "fuzzySkinFacets",
+];
+
+/// a number the JSON writes as a number or as its text
+fn json_u32(v: Option<&Value>) -> Option<u32> {
+    match v? {
+        Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// the meshes of the root model that object `id` is built from: itself when it holds a mesh, else every mesh its
+/// components reach in the same file
+fn meshes_under(m: &Model, root: &str, id: u32, depth: u32, out: &mut Vec<u32>) {
+    let Some(o) = m.objects.get(&id) else {
+        return;
+    };
+    if o.components.is_empty() {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+        return;
+    }
+    if depth >= MAX_DEPTH {
+        return;
+    }
+    for (c, path, _, _) in &o.components {
+        if path.is_empty() || path == root {
+            meshes_under(m, root, *c, depth + 1, out);
+        }
+    }
+}
+
+/// paint from the facets JSON onto the volumes it names, for each layer a volume's triangles leave unpainted. an `id`
+/// names a resource of the root model: a mesh paints every volume made from it, a volume's own object (or any object
+/// between a mesh and the top) paints the meshes under it, each with the same triangle numbers counted in that mesh.
+/// an id of a top object that holds parts, one the model lacks, or one listed more than once is left out with a note,
+/// and so is a layer of a version past 2
+fn facets_paint(json: &str, root: &str, models: &mut HashMap<String, Model>, notes: &mut Vec<String>) {
+    let Ok(Value::Array(entries)) = serde_json::from_str::<Value>(json) else {
+        return;
+    };
+    let Some(main) = models.get_mut(root) else {
+        return;
+    };
+    let mut seen: HashMap<u32, usize> = HashMap::new();
+    for e in &entries {
+        if let Some(id) = json_u32(e.get("id")) {
+            *seen.entry(id).or_default() += 1;
+        }
+    }
+    let mut newer = false;
+    let mut told: Vec<u32> = Vec::new();
+    for e in &entries {
+        let Some(id) = json_u32(e.get("id")) else {
+            continue;
+        };
+        let mut note = |why: &str| {
+            if !told.contains(&id) {
+                told.push(id);
+                notes.push(format!("the facets paint for id {id} is left out: {why}"));
+            }
+        };
+        if seen.get(&id).is_some_and(|n| *n > 1) {
+            note("the file lists it more than once");
+            continue;
+        }
+        let top = main.build.iter().any(|i| i.object == id)
+            && main.objects.get(&id).is_some_and(|o| !o.components.is_empty());
+        if top {
+            note("that id is a whole object, not one of its parts");
+            continue;
+        }
+        let mut meshes = Vec::new();
+        meshes_under(main, root, id, 0, &mut meshes);
+        if meshes.is_empty() {
+            note("the model has no part by that id");
+            continue;
+        }
+        for mesh in meshes {
+            let Some(o) = main.objects.get_mut(&mesh) else {
+                continue;
+            };
+            newer |= fill_facets(e, o);
+        }
+    }
+    if newer {
+        notes.push("some paint in this project was saved in a newer format and is left out".to_owned());
+    }
+}
+
+/// one facets JSON entry's layers onto a mesh, where its triangles carry none of that layer; true when a layer of a
+/// version past 2 was left out
+fn fill_facets(e: &Value, o: &mut MeshObject) -> bool {
+    let mut newer = false;
+    let count = o.triangles.len();
+    {
+        for (layer, key) in o.paint.layers_mut().into_iter().zip(FACET_KEYS) {
+            let Some(list) = e.get(key).and_then(Value::as_array) else {
+                continue;
+            };
+            if json_u32(e.get(format!("{key}Version").as_str())).unwrap_or(1) > 2 {
+                newer = true;
+                continue;
+            }
+            if !layer.is_empty() {
+                continue;
+            }
+            let mut got: Vec<(u32, String)> = list
+                .iter()
+                .filter_map(|f| {
+                    let t = json_u32(f.get("triangle")).filter(|t| (*t as usize) < count)?;
+                    let text = paint_tree::escape_to_run(f.get("dividing")?.as_str()?)?;
+                    Some((t, text))
+                })
+                .collect();
+            got.sort_by_key(|(t, _)| *t);
+            got.dedup_by_key(|(t, _)| *t);
+            *layer = got;
+        }
+    }
+    newer
 }
 
 /// each build item with its parts; a mesh placed once moves into its part, one placed more often is copied
@@ -686,8 +826,12 @@ impl ModelParser {
             let tri = [corner(v[0])?, corner(v[1])?, corner(v[2])?];
             let at = u32::try_from(k).unwrap_or(u32::MAX);
             for (layer, (rank, code)) in o.paint.layers_mut().into_iter().zip(paint) {
-                if rank > 0 {
+                if rank == 2 {
                     layer.push((at, code.to_owned()));
+                } else if rank == 1
+                    && let Some(text) = paint_tree::escape_to_run(code)
+                {
+                    layer.push((at, text));
                 }
             }
             o.triangles.push(tri);

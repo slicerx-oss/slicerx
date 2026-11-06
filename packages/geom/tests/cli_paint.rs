@@ -70,6 +70,28 @@ fn paint_the_bottom_read_it_back_and_draw_it() {
 }
 
 #[test]
+fn filament_32_paints_and_reads_back_and_33_is_refused() {
+    let (ok, sel) = geom(
+        "paint.select",
+        &json!({ "mesh": cube(), "state": 32, "target": { "kind": "direction", "direction": "bottom" } }),
+    );
+    assert!(ok, "{sel}");
+    assert_eq!(sel["changed"], json!({ "0": "EFC", "1": "EFC" }));
+    let (ok, back) = geom(
+        "paint.regions",
+        &json!({ "mesh": cube(), "paint": sel["changed"] }),
+    );
+    assert!(ok, "{back}");
+    assert!((area_of(&back, 32) - 400.0).abs() < 1e-9);
+    assert_eq!(back["badPaint"], 0);
+    let (ok, refused) = geom(
+        "paint.select",
+        &json!({ "mesh": cube(), "state": 33, "target": { "kind": "part" } }),
+    );
+    assert!(!ok, "{refused}");
+}
+
+#[test]
 fn a_band_a_seed_and_a_swap_build_on_each_other() {
     // Below 5 mm in slot 2.
     let (ok, band) = geom(

@@ -1134,6 +1134,12 @@ fn paint_select_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
             .ok_or_else(|| Error::invalid("target", "missing"))?,
     )?;
     let state: u8 = field(req, "state")?;
+    if state > crate::paint_tree::MAX_STATE {
+        return Err(Error::invalid(
+            "state",
+            format!("paint names states 0 to {}", crate::paint_tree::MAX_STATE),
+        ));
+    }
     let depth: u32 = field_or(req, "maxDepth", paint_ops::DEFAULT_DEPTH)?;
     let sel = paint_ops::select(&m, &paint, &target, state, depth.min(10))?;
     Ok(json!({

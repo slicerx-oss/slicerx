@@ -8,7 +8,10 @@
 //! or a split (bits 0 and 1 count the split sides, 1 to 3, and bits 2 and 3 name the special
 //! corner), followed by its children in order. After a leaf code C the filament is 3 plus a run of
 //! codes, each F adding 15 until one below F: 18 is `C F 0` (text `0FC`). A whole text of `FC`,
-//! as files saved before that wrote 18, still reads as 18. The layout of the children below was
+//! as files saved before that wrote 18, still reads as 18. A filament above 32 reads as unpainted.
+//! Each text reads on its own: one that runs out, or holds anything but `0` to `9` and `A` to `F`,
+//! gives nothing. Codes past a whole tree are ignored. The `slic3rpe:*` attributes write filaments 17 and up
+//! another way (E, then an 8-bit value, low code first); [`escape_to_run`] rewrites them. The layout of the children below was
 //! worked out against what `OrcaSlicer` prints for hand-written codes (`fit_paint.py` in the
 //! benchmark folder checks it, including random nested codes).
 
@@ -36,14 +39,31 @@ fn nibbles(text: &str) -> Option<Vec<u8>> {
     if text == "FC" {
         return Some(vec![12, 15, 0]);
     }
-    text.chars()
+    codes(text)
+}
+
+/// The codes of a text in stream order; `None` for anything but upper-case hex.
+fn codes(text: &str) -> Option<Vec<u8>> {
+    text.bytes()
         .rev()
-        .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
+        .map(|c| match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            _ => None,
+        })
         .collect()
 }
 
 /// Deepest nesting read, so a broken text cannot run away.
 const MAX_DEPTH: u32 = 12;
+
+/// The highest filament a paint text names; a higher one reads as unpainted.
+pub const MAX_STATE: u8 = 32;
+
+/// A state as read, or 0 past [`MAX_STATE`].
+fn named(state: u32) -> u8 {
+    u8::try_from(state).ok().filter(|s| *s <= MAX_STATE).unwrap_or(0)
+}
 
 struct Reader {
     stream: Vec<u8>,
@@ -59,12 +79,12 @@ impl Reader {
 
     /// The state of a leaf whose code is C: 3 plus the run of codes after it, each F adding 15 until one below F.
     fn extended(&mut self) -> Option<u8> {
-        let mut state: u8 = 3;
+        let mut state: u32 = 3;
         loop {
             let c = self.next()?;
-            state = state.checked_add(c)?;
+            state += u32::from(c);
             if c < 15 {
-                return Some(state);
+                return Some(named(state));
             }
         }
     }
@@ -148,6 +168,70 @@ pub fn decode(text: &str, tri: [[f32; 3]; 3]) -> Vec<PaintFacet> {
             state,
         })
         .collect()
+}
+
+/// A `slic3rpe:*` paint text, which writes filaments 17 and up as E and an 8-bit value (low code
+/// first) after the leaf code C, rewritten as the text [`decode`] reads; `None` when it does not
+/// read through or is all unpainted.
+#[must_use]
+pub fn escape_to_run(text: &str) -> Option<String> {
+    fn node(s: &[u8], at: &mut usize, depth: u32, out: &mut Vec<u8>) -> Option<()> {
+        let mut next = || {
+            let v = *s.get(*at)?;
+            *at += 1;
+            Some(v)
+        };
+        let code = next()?;
+        let splits = code & 3;
+        if splits == 0 {
+            if code >> 2 != 3 {
+                out.push(code);
+                return Some(());
+            }
+            let c = next()?;
+            let state = if c == 14 {
+                let lo = next()?;
+                let hi = next()?;
+                named(17 + u32::from(lo) + 16 * u32::from(hi))
+            } else {
+                named(3 + u32::from(c))
+            };
+            if state < 3 {
+                out.push(state << 2);
+            } else {
+                out.push(12);
+                let mut m = state - 3;
+                while m >= 15 {
+                    out.push(15);
+                    m -= 15;
+                }
+                out.push(m);
+            }
+            return Some(());
+        }
+        if depth >= MAX_DEPTH || code >> 2 > 2 {
+            return None;
+        }
+        out.push(code);
+        for _ in 0..=splits {
+            node(s, at, depth + 1, out)?;
+        }
+        Some(())
+    }
+    let stream = codes(text.trim())?;
+    let mut at = 0;
+    let mut out = Vec::new();
+    node(&stream, &mut at, 0, &mut out)?;
+    // Codes past the tree are left out.
+    if out == [0] {
+        return None;
+    }
+    Some(
+        out.iter()
+            .rev()
+            .map(|d| char::from_digit(u32::from(*d), 16).map_or('0', |c| c.to_ascii_uppercase()))
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2219,6 +2303,72 @@ mod tests {
         assert_eq!(states("FC"), vec![18]);
     }
 
+    #[test]
+    fn every_filament_to_32_reads_and_past_it_is_unpainted() {
+        let states = |t: &str| decode(t, TRI).iter().map(|f| f.state).collect::<Vec<_>>();
+        for (text, state) in [
+            ("DC", 16),
+            ("EC", 17),
+            ("0FC", 18),
+            ("1FC", 19),
+            ("2FC", 20),
+            ("DFC", 31),
+            ("EFC", 32),
+        ] {
+            assert_eq!(states(text), vec![state], "{text}");
+            assert!(is_valid(text), "{text}");
+        }
+        // 33 reads, as unpainted.
+        assert!(is_valid("0FFC"));
+        assert!(states("0FFC").is_empty());
+        // Trees with 19, 32 and 31 in them.
+        assert_eq!(states("01FC9"), vec![19]);
+        assert_eq!(states("2C0EFC43"), vec![1, 32, 5]);
+        assert_eq!(states("0FC0C10DFC6"), vec![31, 3, 18]);
+    }
+
+    #[test]
+    fn slic3rpe_texts_read_as_the_same_paint() {
+        for (escape, run) in [
+            ("4", "4"),
+            ("DC", "DC"),
+            ("00EC", "EC"),
+            ("01EC", "0FC"),
+            ("02EC", "1FC"),
+            ("0FEC", "EFC"),
+            ("FC", "0FC"),
+            ("002EC9", "01FC9"),
+            ("2C00FEC43", "2C0EFC43"),
+            ("01EC0C100EEC6", "0FC0C10DFC6"),
+            ("00EC01EC1", "EC0FC1"),
+            // 33 in a split: that half unpainted.
+            ("10EC41", "041"),
+        ] {
+            assert_eq!(escape_to_run(escape).as_deref(), Some(run), "{escape}");
+        }
+        // 33 and 255 on a whole triangle: unpainted, so no text.
+        assert_eq!(escape_to_run("10EC"), None);
+        assert_eq!(escape_to_run("EEEC"), None);
+        // Codes past the tree are left out of the rewrite.
+        assert_eq!(escape_to_run("1FC").as_deref(), Some("0FC"));
+        for bad in ["EC", "0EC", "00ec", "4 4", ""] {
+            assert_eq!(escape_to_run(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_text_that_runs_out_or_is_lower_case_does_not_read() {
+        for text in ["0fc", "dc", "0fC", "c", "C", "FFC", "1", "FC1"] {
+            assert!(decode(text, TRI).is_empty(), "{text}");
+            assert!(!is_valid(text), "{text}");
+        }
+        // Codes past a whole tree are ignored.
+        let states = |t: &str| decode(t, TRI).iter().map(|f| f.state).collect::<Vec<_>>();
+        assert_eq!(states("48"), vec![2]);
+        assert_eq!(states("02EC"), vec![17]);
+        assert!(is_valid("48") && is_valid("4444443"));
+    }
+
     /// The mesh tools read paint texts with their own copy of this reading (`sx_geom::paint_tree`); both must give the
     /// same pieces, so a picture or a paint target matches what slices.
     #[cfg(feature = "import")]
@@ -2226,8 +2376,38 @@ mod tests {
     fn the_mesh_tools_read_paint_texts_alike() {
         let tri64 = TRI.map(|p| p.map(f64::from));
         for text in [
-            "4", "8", "0C", "1C", "2C", "481", "485", "489", "1C0C843", "88083", "0C01", "8048C4C3",
-            "4444443", "zz", "", "1", "C3",
+            "4",
+            "8",
+            "0C",
+            "1C",
+            "2C",
+            "481",
+            "485",
+            "489",
+            "1C0C843",
+            "88083",
+            "0C01",
+            "8048C4C3",
+            "4444443",
+            "zz",
+            "",
+            "1",
+            "C3",
+            "EC",
+            "0FC",
+            "FC",
+            "1FC",
+            "EFC",
+            "0FFC",
+            "01FC9",
+            "2C0EFC43",
+            "0FC0C10DFC6",
+            "EC0FC1",
+            "0FFC41",
+            "0fc",
+            "48",
+            "FFC",
+            "02EC",
         ] {
             let ours: Vec<([[f32; 3]; 3], u8)> = decode(text, TRI).iter().map(|f| (f.v, f.state)).collect();
             let theirs: Vec<([[f32; 3]; 3], u8)> = sx_geom::paint_tree::leaves(text, tri64)
