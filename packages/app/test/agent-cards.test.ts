@@ -150,6 +150,20 @@ describe('agent cards', () => {
     expect(t.lines.at(-1)!.length).toBeLessThan(230)
   })
 
+  // A home is its own action: the hub homes under its home rules (printer state and plate) when the person approves.
+  it('words a home card from the hub-checked work, and never as a raw G-code line', () => {
+    const home = card({ title: 'Send G28', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'home', printerId: 'bay-4' } })
+    const t = describeCard(home, names)
+    expect(t.title).toBe('Home all axes of Bay 4?')
+    expect(t.blocked).toBeUndefined()
+    expect(t.startsPrint).toBe(false)
+    expect(t.lines.join(' ')).toMatch(/nozzle comes down to the plate/)
+    expect(t.lines.join(' ')).not.toMatch(/G-code/)
+    // Home work on a G-code action, or a G-code line on a home action, has nothing checked to show.
+    expect(describeCard(card({ actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'home', printerId: 'bay-4' } }), names).blocked).toMatch(/Deny/)
+    expect(describeCard(card({ actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'gcode', printerId: 'bay-4', line: 'G28' } }), names).blocked).toMatch(/Deny/)
+  })
+
   it('shows the whole G-code line and blocks Approve on one that hides a second command (N1)', () => {
     const gcode = (line: string) => card({ id: `g-${line.length}`, actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'gcode', printerId: 'bay-4', line } })
     const long = `M117 ${'x'.repeat(91)}`
