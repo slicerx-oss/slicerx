@@ -324,20 +324,40 @@ function projectArea(config: Uint8Array | undefined): unknown {
  * coordinates, so a part can sit far from its object's origin (m.3mf's at 128, 131 with the object at -53, 128). Models
  * here are stored centered on X and Y, so that offset moves into the object's placement: the position fields then read
  * where the object is, and rotate and scale turn it about itself. Where it prints does not change. Returns the offset.
+ *
+ * The parts are shifted where they lie, not copied: a big project's meshes would otherwise be held twice while it opens.
+ * A buffer `uses` counts more than once (shared by parts or objects) is copied, so each user gets its own shift. Each
+ * buffer's shift is recorded, so centering the same parts again (a project laid out again) reads them as they came and
+ * moves nothing twice.
  */
-function centerObject(parts: MeshPart[], volumes: ImportedVolume[], t: number[], ears: [number, number, number, number][] | undefined): [number, number] | null {
-  const b = bounds(parts, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+export function centerObject(parts: MeshPart[], volumes: ImportedVolume[], t: number[], ears: [number, number, number, number][] | undefined, uses: ReadonlyMap<Float32Array, number>): [number, number] | null {
+  // the bounds of the parts as they came, before any shift recorded on them
+  let b: { min: number[]; max: number[] } | null = null
+  for (const p of parts) {
+    const pb = bounds([p], [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    if (!pb) continue
+    const [sx, sy] = centered.get(p.positions) ?? [0, 0]
+    const min = [pb.min[0] + sx, pb.min[1] + sy, pb.min[2]]
+    const max = [pb.max[0] + sx, pb.max[1] + sy, pb.max[2]]
+    b = b ? { min: b.min.map((v, i) => Math.min(v, min[i]!)), max: b.max.map((v, i) => Math.max(v, max[i]!)) } : { min, max }
+  }
   if (!b) return null
-  const cx = (b.min[0] + b.max[0]) / 2
-  const cy = (b.min[1] + b.max[1]) / 2
+  const cx = (b.min[0]! + b.max[0]!) / 2
+  const cy = (b.min[1]! + b.max[1]!) / 2
   if (Math.abs(cx) < 1e-3 && Math.abs(cy) < 1e-3) return null
   const shift = (p: MeshPart): MeshPart => {
-    const out = new Float32Array(p.positions)
+    const [sx, sy] = centered.get(p.positions) ?? [0, 0]
+    if (sx === cx && sy === cy) return p
+    const own = sx === 0 && sy === 0 && (uses.get(p.positions) ?? 1) <= 1
+    const out = own ? p.positions : new Float32Array(p.positions)
+    const dx = cx - sx
+    const dy = cy - sy
     for (let i = 0; i + 2 < out.length; i += 3) {
-      out[i] = out[i]! - cx
-      out[i + 1] = out[i + 1]! - cy
+      out[i] = out[i]! - dx
+      out[i + 1] = out[i + 1]! - dy
     }
-    return { ...p, positions: out }
+    centered.set(out, [cx, cy])
+    return own ? p : { ...p, positions: out }
   }
   parts.splice(0, parts.length, ...parts.map(shift))
   for (const v of volumes) v.part = shift(v.part)
@@ -350,6 +370,9 @@ function centerObject(parts: MeshPart[], volumes: ImportedVolume[], t: number[],
   t[14] = t[14]! + t[2]! * cx + t[6]! * cy
   return [cx, cy]
 }
+
+/** The shift centerObject made in each buffer it moved, by buffer. */
+const centered = new WeakMap<Float32Array, readonly [number, number]>()
 
 function plateOffset(index: number, count: number, bed: { widthMm: number; depthMm: number }): [number, number] {
   const cols = Math.max(1, Math.ceil(Math.sqrt(count)))
@@ -796,6 +819,9 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const [ax, ay] = projectOrigin(files.get('Metadata/project_settings.config'))
   // Plates after the first sit to the side of it by the size of the bed the project was laid out on.
   const layoutBed = areaSize(projectArea(files.get('Metadata/project_settings.config'))) ?? bed
+  // How many parts and volumes use each positions buffer: centerObject copies a shared one rather than moving it.
+  const uses = new Map<Float32Array, number>()
+  for (const a of items) for (const p of [...a.parts, ...a.volumes.map((v) => v.part)]) uses.set(p.positions, (uses.get(p.positions) ?? 0) + 1)
   for (const a of items) {
     const { parts, volumes } = a
     if (parts.length === 0) continue
@@ -805,7 +831,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     t[12] = t[12]! - ox - ax
     t[13] = t[13]! - oy - ay
     const itemEars = ears.get(a.itemIndex + 1)?.map((e) => [...e] as [number, number, number, number])
-    if (a.placed) centerObject(parts, volumes, t, itemEars)
+    if (a.placed) centerObject(parts, volumes, t, itemEars, uses)
     const own = marks.objects.get(a.objectId)
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
     ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(Object.keys(a.rawObjectSettings).length ? { rawObjectSettings: a.rawObjectSettings } : {}), ...(a.noSlot.length ? { noSlot: a.noSlot } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })

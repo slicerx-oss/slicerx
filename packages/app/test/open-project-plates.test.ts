@@ -62,6 +62,31 @@ beforeEach(async () => {
 })
 
 describe('a multi-plate Bambu Studio project', () => {
+  it('sends one plate at a time to the engine, so the plates are not all encoded at once', async () => {
+    // Each load encodes its object whole before it goes (about 18 bytes a triangle); a big project's plates sent side by
+    // side held every copy at once.
+    const plateOf = (name: string) => PLATES.findIndex(([, on]) => on.some((id) => NAMES[id] === name))
+    const pending = new Set<string>()
+    let mixed = 0
+    const order: string[] = []
+    const gated = {
+      ...host,
+      slicer: {
+        loadParts: (name: string) => {
+          order.push(name)
+          pending.add(name)
+          if (new Set([...pending].map(plateOf)).size > 1) mixed++
+          return new Promise<MeshHandle>((resolve) => setTimeout(() => (pending.delete(name), resolve(handle(name))), 5))
+        },
+      },
+    } as unknown as Host
+    await openModelBytes(gated, 'Deck Box.3mf', deckBoxLike(), undefined, { fresh: true })
+    expect(mixed).toBe(0)
+    // in the file's plate order, the first plate first
+    expect(order.map(plateOf)).toEqual([...order.map(plateOf)].sort((a, b) => a - b))
+    expect(allPlates().map((p) => p.objects.map((o) => o.name))).toEqual(PLATES.map(([, on]) => on.map((id) => NAMES[id])))
+  })
+
   it('opens with the file plates in order, each named, with its own objects', async () => {
     await openModelBytes(host, 'Deck Box.3mf', deckBoxLike(), undefined, { fresh: true })
     const plates = allPlates()
