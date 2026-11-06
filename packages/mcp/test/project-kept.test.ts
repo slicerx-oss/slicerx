@@ -69,3 +69,55 @@ describe("a project slice keeps the file's plate type, tower spot and filament m
     expect(opened!.config['filament_vendor']).toEqual(['(Undefined)', '(Undefined)'])
   })
 })
+
+/** The printer settings of the report's file that the P1S profile has otherwise, none of them listed as changed. */
+const UNLISTED = {
+  different_settings_to_system: ['layer_height', '', '', ''],
+  support_air_filtration: '0',
+  fan_direction: 'left',
+  machine_max_speed_x: ['500', '500'],
+  machine_max_speed_y: ['500', '500'],
+  machine_max_acceleration_z: ['500', '500'],
+}
+const UNLISTED_KEYS = ['support_air_filtration', 'fan_direction', 'machine_max_speed_x', 'machine_max_speed_y', 'machine_max_acceleration_z']
+
+describe("a project slice keeps the file's printer settings, as the app's project open does", () => {
+  it("on the project's own printer, listed as changed or not", async () => {
+    const read = readProjectFile(project('printer.3mf', UNLISTED))
+    await profiles.prepare(['machine:bambu-p1s'])
+    const opened = await openProject(read, profiles, ['machine:bambu-p1s'], 0.4)
+    expect(opened?.ownGcode).toBe(true)
+    expect.soft(opened!.config['support_air_filtration']).toBe(false)
+    expect.soft(opened!.config['fan_direction']).toBe('left')
+    expect.soft(opened!.config['machine_max_speed_x']).toEqual([500, 500])
+    expect.soft(opened!.config['machine_max_speed_y']).toEqual([500, 500])
+    expect.soft(opened!.config['machine_max_acceleration_z']).toEqual([500, 500])
+  })
+
+  it("keeps the profile's bed height, nozzle, clearances and firmware", async () => {
+    await profiles.prepare(['machine:bambu-p1s'])
+    const base = await openProject(readProjectFile(project('base.3mf', {})), profiles, ['machine:bambu-p1s'], 0.4)
+    const held = { printable_height: '400', nozzle_type: ['hardened_steel'], nozzle_hrc: '60', extruder_clearance_radius: '1', gcode_flavor: 'klipper' }
+    const opened = await openProject(readProjectFile(project('held.3mf', held)), profiles, ['machine:bambu-p1s'], 0.4)
+    for (const k of Object.keys(held)) expect.soft(opened!.config[k], k).toEqual(base!.config[k])
+  })
+
+  it("takes the file's layer height limits, as sx project-settings does, and keeps the bed height", async () => {
+    await profiles.prepare(['machine:bambu-p1s'])
+    const base = await openProject(readProjectFile(project('layer-base.3mf', {})), profiles, ['machine:bambu-p1s'], 0.4)
+    const opened = await openProject(readProjectFile(project('layer.3mf', { min_layer_height: ['0.05'], max_layer_height: ['0.32'], printable_height: '400' })), profiles, ['machine:bambu-p1s'], 0.4)
+    expect(base!.config['max_layer_height']).not.toEqual([0.32])
+    expect.soft(opened!.config['min_layer_height']).toEqual([0.05])
+    expect.soft(opened!.config['max_layer_height']).toEqual([0.32])
+    expect.soft(opened!.config['printable_height']).toEqual(base!.config['printable_height'])
+  })
+
+  it("leaves them behind on another printer the slice names, as before", async () => {
+    await profiles.prepare(['machine:bambu-a1'])
+    const own = await openProject(readProjectFile(project('a1-base.3mf', {})), profiles, ['machine:bambu-a1'], 0.4)
+    const opened = await openProject(readProjectFile(project('a1.3mf', UNLISTED)), profiles, ['machine:bambu-a1'], 0.4)
+    expect(opened?.printer).toBe('bambu-a1')
+    expect(opened?.ownGcode).toBe(false)
+    for (const k of UNLISTED_KEYS) expect.soft(opened!.config[k], k).toEqual(own!.config[k])
+  })
+})
