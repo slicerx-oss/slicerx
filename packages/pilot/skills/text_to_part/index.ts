@@ -47,6 +47,8 @@ export function createTextToPart() {
     permission: 'slice',
     description:
       'Make a simple functional part from a description by writing it as parametric solids: plates and boxes (size and minimum corner), cylinders (diameter, height, base center, axis) and L brackets (two legs, width, thickness), plus through holes (diameter, a point on the axis, axis, optional countersink). For outlines boxes cannot make (rounded ends, hooks, gussets, a D shape) add profiles: closed loops of points, lines, arcs and circles extruded up along Z, inner loops as holes. Solids and profiles join into one body. Units are mm, Z up, bed at Z 0. Adds the part on a new plate and reports its size and volume for review before slicing. Holes are cut only when the geometry engine can; the output says if they are missing.',
+    localDescription:
+      'Make a simple functional part (name) from a description as parametric solids (plates, boxes, cylinders, L brackets) and holes through it (optional countersink). For outlines boxes cannot make (rounded ends, hooks, gussets, a D shape) use profiles: closed loops of points, lines, arcs and circles extruded up Z. All join into one body; mm, Z up, bed at Z 0. Adds the part on a new plate and reports its size and volume for review before slicing. Holes are cut only when the geometry engine can; the output says if any are missing.',
     input: z.object({
       name: z.string().min(1).max(60).describe('Short part name, such as "L bracket 40 mm"'),
       solids: z.array(SolidSpec).max(24).default([]),
