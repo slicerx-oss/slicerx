@@ -16,9 +16,11 @@
 //!
 //! A partner app (another program the person connects, such as `LayerMate`) holds a named key from
 //! `clients.create` with `partner: true`. It is an agent with less: it calls only [`PARTNER_METHODS`]
-//! and raises cards only to print, pause, cancel or skip one object, and asks for a queued plate's
-//! card (`queue.start`). It may pause and cancel on its own card, as an agent does, since those only
-//! stop a print; a print or a skip waits for a person and carries its work.
+//! and raises cards only to print, pause, cancel, skip one object or set one AMS slot, and asks for a
+//! queued plate's card (`queue.start`). It may pause and cancel on its own card, as an agent does,
+//! since those only stop a print; a print, a skip or a slot waits for a person and carries its work.
+//! A slot card is a `printer.adjust` on its own, with slot work ([`partner_may_ask_slot`]); a person
+//! approves it in the app on the computer, never from a phone away from home.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -390,6 +392,14 @@ const PARTNER_ACTIONS: &[&str] = &[
 /// Whether a partner may raise a card with these actions.
 pub(crate) fn partner_may_ask<'a>(mut actions: impl Iterator<Item = &'a str>) -> bool {
     actions.all(|a| PARTNER_ACTIONS.contains(&a))
+}
+
+/// Whether a partner may raise this card as a slot write: one `printer.adjust` action and nothing
+/// else. The hub raises it only with slot work (`kind: "slot"`), whose hash the action must match, so
+/// it never covers a change to a running print.
+pub(crate) fn partner_may_ask_slot<'a>(actions: impl Iterator<Item = &'a str>) -> bool {
+    let a: Vec<&str> = actions.collect();
+    a == ["printer.adjust"]
 }
 
 /// Whether a partner may answer its own card with these actions: only one that pauses or cancels.
@@ -850,6 +860,20 @@ mod tests {
             assert!(person_only([(a, "bay-1")].into_iter()), "{a}");
         }
         assert!(!may_answer(Role::Agent, true, true));
+        // A slot write is one printer.adjust on its own, which a person answers and the partner never does.
+        assert!(partner_may_ask_slot(["printer.adjust"].into_iter()));
+        assert!(!partner_may_ask(["printer.adjust"].into_iter()));
+        for a in [
+            vec!["printer.adjust", "printer.pause"],
+            vec!["printer.adjust", "printer.adjust"],
+            vec!["printer.gcode"],
+            vec![],
+        ] {
+            assert!(!partner_may_ask_slot(a.iter().copied()), "{a:?}");
+        }
+        assert!(!partner_may_grant(["printer.adjust"].into_iter()));
+        assert!(person_only([("printer.adjust", "bay-1")].into_iter()));
+        assert!(!partner_allowed("adjust.slot"));
         assert!(allowed(Role::Agent, "remoteStart.get") && allowed(Role::Agent, "queue.start"));
         assert!(!allowed(Role::Agent, "remoteStart.set") && allowed(Role::App, "remoteStart.set"));
         assert!(!partner_allowed("remoteStart.set"));

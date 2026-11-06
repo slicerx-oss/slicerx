@@ -11,7 +11,9 @@
 //! percent levels), fans 0 to 100 percent. Only while the printer is printing or paused.
 //!
 //! The same card writes a filament slot to the printer (`adjust.slot`, Bambu Lab AMS
-//! `ams_filament_setting`), from the app only and only while no print runs.
+//! `ams_filament_setting`), from the app only and only while no print runs. An agent or partner app
+//! asks for one with slot work on a card (`agent_work.rs`), which the hub checks with
+//! [`slot_ready`] before a person sees it and runs once a person approves it on the computer.
 //!
 //! The chamber light (`adjust.light`) needs no card: it is the app's own switch, like the one on
 //! the printer's screen, and an agent connection cannot call it. The hub mints the token itself.
@@ -21,7 +23,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 use sx_connect::{
-    Adjustment, ApprovalToken, FanKind, FilamentSlot, PrinterState, PrinterStatus, SlotSetting,
+    Adjustment, ApprovalToken, Capability, FanKind, FilamentSlot, PrinterSession, PrinterState,
+    PrinterStatus, SlotSetting,
 };
 
 use crate::rpc::{Bridge, Rpc, RpcError, arg, session, str_arg};
@@ -194,20 +197,21 @@ fn slot_shows(slot: &FilamentSlot, s: &SlotSetting) -> bool {
             .is_some_and(|m| m.to_ascii_uppercase().contains(&s.material.to_ascii_uppercase()))
 }
 
-/// Writes a filament slot to the printer, a change a person approved as a `printer.adjust` card,
-/// then reads the printer back. Not while a print runs or is paused: the slot may be feeding it.
-/// Answers `{slot, shown}`: the slot as the printer now reports it, and whether that report shows
-/// the change yet.
-pub(crate) async fn set_slot(
-    b: &Arc<Bridge>,
-    printer: &str,
-    setting: &SlotSetting,
-    token: &ApprovalToken,
-) -> Rpc<Value> {
+/// Refuses a slot write this printer cannot take now: its driver writes no slots, a print runs or
+/// is paused (the slot may be feeding it), or it reports no such slot. Answers the slot as reported.
+async fn slot_writable(s: &dyn PrinterSession, setting: &SlotSetting) -> Rpc<FilamentSlot> {
     if let Some(p) = setting.problem() {
         return Err(RpcError::new("bad_request", p));
     }
-    let s = session(b, printer).await?;
+    if !s.capabilities().contains(&Capability::SlotWrite) {
+        return Err(RpcError::new(
+            "not_supported",
+            format!(
+                "this printer cannot have its filament slots set from {}",
+                crate::app_name()
+            ),
+        ));
+    }
     let st = s.status().await?;
     if matches!(
         st.state,
@@ -218,12 +222,45 @@ pub(crate) async fn set_slot(
             "a slot is set while no print is running",
         ));
     }
-    if !st.slots.iter().any(|x| x.id == setting.slot) {
+    st.slots
+        .into_iter()
+        .find(|x| x.id == setting.slot)
+        .ok_or_else(|| {
+            RpcError::new(
+                "not_found",
+                format!("the printer reports no slot {}", setting.slot),
+            )
+        })
+}
+
+/// Checks a slot card's setting against the printer before a person sees the card: what
+/// [`slot_writable`] checks, and a spool with an RFID tag, which sets the slot itself.
+pub(crate) async fn slot_ready(b: &Arc<Bridge>, printer: &str, setting: &SlotSetting) -> Rpc<()> {
+    let slot = slot_writable(&*session(b, printer).await?, setting).await?;
+    if slot.spool_uid.is_some() {
         return Err(RpcError::new(
-            "not_found",
-            format!("the printer reports no slot {}", setting.slot),
+            "refused",
+            format!(
+                "slot {} holds a spool with an RFID tag, which sets the slot itself",
+                setting.slot
+            ),
         ));
     }
+    Ok(())
+}
+
+/// Writes a filament slot to the printer, a change a person approved as a `printer.adjust` card,
+/// then reads the printer back. Not while a print runs or is paused: the slot may be feeding it.
+/// Answers `{slot, shown}`: the slot as the printer now reports it, and whether that report shows
+/// the change yet.
+pub(crate) async fn set_slot(
+    b: &Arc<Bridge>,
+    printer: &str,
+    setting: &SlotSetting,
+    token: &ApprovalToken,
+) -> Rpc<Value> {
+    let s = session(b, printer).await?;
+    slot_writable(&*s, setting).await?;
     s.set_slot(setting, token).await?;
     let end = tokio::time::Instant::now() + SLOT_SHOWN_WAIT;
     loop {
