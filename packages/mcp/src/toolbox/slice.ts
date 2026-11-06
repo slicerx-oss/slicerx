@@ -336,10 +336,11 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     if (args.plate !== undefined && !read.summary.plates.some((p) => p.index === args.plate)) {
       throw new ToolInputError(`${basename(modelPath)} has no plate ${args.plate}. Plates: ${read.summary.plates.map((p) => p.index).join(', ')}.`, 'no_such_plate')
     }
-    // Bambu Studio and Orca keep a print sequence per plate, over the project's.
-    const seq = (read.summary.plates.find((p) => p.index === args.plate) ?? read.summary.plates[0])?.print_sequence
+    // A project keeps a print sequence and a plate type per plate, over the project's.
+    const own = read.summary.plates.find((p) => p.index === args.plate) ?? read.summary.plates[0]
+    const seq = own?.print_sequence
     const printer = read.summary.presets.printer ? printerForProfile(read.summary.presets.printer)?.printerId : undefined
-    if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, model: printer, gcode: args.project_gcode }
+    if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, model: printer, gcode: args.project_gcode, ...(own?.bed_type ? { bedType: own.bed_type } : {}) }
   }
   await progress(0.1, 'Resolving settings')
   // The project's own printer too: a slice of a project that names no machine: profile ends on it.

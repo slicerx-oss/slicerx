@@ -5,6 +5,7 @@
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
 import { appMissingKeys, importProject, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
+import { BED_TYPE_ENGINE, filePlateBedType } from '@slicerx/settings/bed-type'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { MAX_ENTRY_BYTES, openZip, type ZipReader } from './zip'
@@ -36,6 +37,8 @@ export interface ProjectPlate {
   objects: number
   /** The plate's own print sequence, when the project sets one for it (it wins over the project's). */
   print_sequence?: 'by layer' | 'by object'
+  /** The plate's own plate type (`curr_bed_type`, which picks the bed temperatures), when the project sets one for it (it wins over the project's). */
+  bed_type?: string
 }
 
 export interface ProjectSummary {
@@ -353,7 +356,8 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
       const meta = Object.fromEntries(node.children.filter((c) => c.name === 'metadata').map((c) => [c.attrs['key'] ?? '', c.attrs['value'] ?? '']))
       const id = Number.parseInt(meta['plater_id'] ?? '', 10)
       const seq = meta['print_sequence']
-      plates.push({ index: Number.isFinite(id) ? id : plates.length + 1, ...(meta['plater_name'] ? { name: meta['plater_name'] } : {}), objects: node.children.filter((c) => c.name === 'model_instance').length, ...(seq === 'by layer' || seq === 'by object' ? { print_sequence: seq } : {}) })
+      const bed = filePlateBedType(meta)
+      plates.push({ index: Number.isFinite(id) ? id : plates.length + 1, ...(meta['plater_name'] ? { name: meta['plater_name'] } : {}), objects: node.children.filter((c) => c.name === 'model_instance').length, ...(seq === 'by layer' || seq === 'by object' ? { print_sequence: seq } : {}), ...(bed ? { bed_type: BED_TYPE_ENGINE[bed] } : {}) })
     }
   }
   // The build sits at the end of the main model, after the geometry a plain 3MF keeps there, so the whole entry is read,
