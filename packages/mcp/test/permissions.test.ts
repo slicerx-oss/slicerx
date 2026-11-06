@@ -89,6 +89,7 @@ describe('a person approves anything that moves or heats a printer', () => {
     ['slicerx_printer_set_temperature', temp],
     ['slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' }],
     ['slicerx_printer_home', { printerId: 'bay-4' }],
+    ['slicerx_printer_filament_change', { printerId: 'bay-4' }],
     ['slicerx_printer_resume', { printerId: 'bay-3' }],
   ]
 
@@ -111,7 +112,7 @@ describe('a person approves anything that moves or heats a printer', () => {
   it('holds the same person-only actions as the hub', () => {
     // sx-link roles.rs PERSON_ONLY, and Home Assistant calls, which switch power.
     const card = (action: string, target = 'bay-4') => ({ actions: [{ action, target, paramsHash: 'a'.repeat(64) }] }) as Pick<ApprovalRequest, 'actions'>
-    for (const a of ['printer.start', 'printer.resume', 'printer.gcode', 'printer.home', 'printer.adjust']) expect(needsPerson(card(a)), a).toBe(true)
+    for (const a of ['printer.start', 'printer.resume', 'printer.gcode', 'printer.home', 'printer.filament_change', 'printer.adjust']) expect(needsPerson(card(a)), a).toBe(true)
     expect(needsPerson(card('plugin.call', 'home-assistant'))).toBe(true)
     expect(needsPerson(card('plugin.call', 'spoolman'))).toBe(false)
     expect(needsPerson(card('printer.pause'))).toBe(false)

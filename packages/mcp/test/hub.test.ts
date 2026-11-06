@@ -211,6 +211,28 @@ describe('person-only work through a scripted hub', () => {
     }
   })
 
+  // A filament change (M600) is its own card: the firmware parks the head for the swap, so it goes mid-print, and the hub
+  // asks about the plate on an idle or finished printer.
+  it('asks for a filament change on its own card, and refuses a printer that cannot take one', async () => {
+    const hub = scriptedHub({ ok: true }, true, { printer, status: { ...status, state: 'printing' } })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    const r = await h.call('slicerx_printer_filament_change', { printerId: 'bay-4' })
+    expect(data<{ status: string }>(r).status).toBe('needs_person')
+    const reg = hub.sent().find((s) => s.method === 'approvals.register')
+    expect(reg?.params['work']).toEqual({ kind: 'filament_change', printerId: 'bay-4' })
+    const card = reg?.params['request'] as { title: string; lines: string[]; actions: { action: string; paramsHash: string }[] }
+    expect(card.title).toBe('Change the filament on bay-4?')
+    expect(card.lines.join(' ')).toMatch(/parks the head/)
+    expect(card.actions).toEqual([{ action: 'printer.filament_change', target: 'bay-4', paramsHash: await hashParams({ printerId: 'bay-4' }) }])
+    for (const state of ['error', 'offline', 'preparing'] as const) {
+      const off = scriptedHub({ ok: true }, true, { printer, status: { ...status, state } })
+      const c = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: off.WS })
+      const refused = await c.call('slicerx_printer_filament_change', { printerId: 'bay-4' })
+      expect(refused.isError, state).toBe(true)
+      expect(off.sent().some((s) => s.method === 'approvals.register'), state).toBe(false)
+    }
+  })
+
   it('reports the hub refusing a home card approved after a print started', async () => {
     const hub = scriptedHub({ ok: false, code: 'bad_state', message: 'the printer homes only while it is idle or finished' })
     const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
@@ -717,6 +739,7 @@ describe('printer line tools never send in process', () => {
     ['printer.gcode', { printerId: 'bay-4', line: 'G28' }],
     ['printer.set_temperature', { printerId: 'bay-4', heater: 'bed', celsius: 60 }],
     ['printer.filament', { printerId: 'bay-4', action: 'load' }],
+    ['printer.filament_change', { printerId: 'bay-4' }],
   ] as const)('%s', async (name, input) => {
     const { localTools } = await import('../src/tools')
     const tool = localTools({} as never).find((t) => t.name === name)
