@@ -5,8 +5,13 @@
 //! 3, or, when both are set, in the codes after it) or a split (bits 0 and 1 count the split sides, 1 to 3; bits 2 and
 //! 3 name the special corner), followed by its children in order.
 //!
-//! After a leaf code C the state is a run: 3 plus each code, where every F adds 15 and the first code below F ends it.
-//! So 3 to 17 take one code and 18 to 32 two (18 is `C F 0`, text `0FC`). Files saved before 18 took two codes wrote it
+//! After a leaf code C the state is written one of two ways ([`Scheme`]). The `paint_*` attributes use a run: 3 plus
+//! each code, where every F adds 15 and the first code below F ends it, so 3 to 17 take one code and 18 to 32 two (18
+//! is `C F 0`, text `0FC`). The `slic3rpe:*` attributes and the facets JSON use an escape: one code for 3 to 16, or E
+//! and then an 8-bit value, low code first, for 17 and up (17 is `C E 0 0`). States 0 to 16 read the same either way.
+//!
+//! Each text reads on its own: one that runs out, or holds anything but `0` to `9` and `A` to `F`, does not read.
+//! Codes past a whole tree are ignored ([`left_over`] counts them). A state above [`MAX_STATE`] reads as unpainted. Files saved before 18 took two codes wrote it
 //! as a whole text of `FC`, which still reads as 18.
 //!
 //! The same reading as the slicer's (`sx_core::paint::decode`), here for the mesh tools: rendering painted models,
@@ -20,6 +25,32 @@ pub type Leaf = ([V3; 3], u8);
 /// Deepest nesting read, so a broken text cannot run away.
 const MAX_DEPTH: u32 = 12;
 
+/// The highest state a paint text names (for color, filament 32). A higher one reads as unpainted.
+pub const MAX_STATE: u8 = 32;
+
+/// How a text writes the states after a leaf code C.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scheme {
+    /// The `paint_*` attributes: F codes adding 15 each, ended by a code below F.
+    Run,
+    /// The `slic3rpe:*` attributes and the facets JSON: one code for 3 to 16, or E and then an 8-bit value (low code
+    /// first) for 17 and up.
+    Escape,
+}
+
+/// The codes of a text in stream order (the text is written backwards); `None` for anything but upper-case hex.
+fn codes(text: &str) -> Option<Vec<u8>> {
+    text.trim()
+        .bytes()
+        .rev()
+        .map(|c| match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            _ => None,
+        })
+        .collect()
+}
+
 fn mid(a: V3, b: V3) -> V3 {
     [
         f64::midpoint(a[0], b[0]),
@@ -31,25 +62,57 @@ fn mid(a: V3, b: V3) -> V3 {
 struct Reader {
     stream: Vec<u8>,
     at: usize,
+    scheme: Scheme,
 }
 
 impl Reader {
+    /// A reader of `text`, `None` when it is empty or not upper-case hex.
+    fn of(text: &str, scheme: Scheme) -> Option<Self> {
+        let stream = codes(text)?;
+        if stream.is_empty() {
+            return None;
+        }
+        Some(Self {
+            stream,
+            at: 0,
+            scheme,
+        })
+    }
+
     fn next(&mut self) -> Option<u8> {
         let v = *self.stream.get(self.at)?;
         self.at += 1;
         Some(v)
     }
 
-    /// The state of a leaf whose code is C: 3 plus the run of codes after it, each F adding 15 until one below F.
+    /// The codes not read yet: past a whole tree, they are ignored.
+    fn rest(&self) -> usize {
+        self.stream.len() - self.at
+    }
+
+    /// The state of a leaf whose code is C, from the codes after it; one above [`MAX_STATE`] is 0.
     fn extended(&mut self) -> Option<u8> {
-        let mut state: u8 = 3;
-        loop {
-            let c = self.next()?;
-            state = state.checked_add(c)?;
-            if c < 15 {
-                return Some(state);
+        let mut state: u32 = 3;
+        match self.scheme {
+            Scheme::Run => loop {
+                let c = self.next()?;
+                state += u32::from(c);
+                if c < 15 {
+                    break;
+                }
+            },
+            Scheme::Escape => {
+                let c = self.next()?;
+                if c == 14 {
+                    let lo = self.next()?;
+                    let hi = self.next()?;
+                    state = 17 + u32::from(lo) + 16 * u32::from(hi);
+                } else {
+                    state += u32::from(c);
+                }
             }
         }
+        Some(u8::try_from(state).ok().filter(|s| *s <= MAX_STATE).unwrap_or(0))
     }
 
     fn node(&mut self, v: [V3; 3], depth: u32, out: &mut Vec<Leaf>) -> Option<()> {
@@ -93,26 +156,28 @@ impl Reader {
     }
 }
 
-/// Every leaf of triangle `tri` that `text` describes, unpainted ones included, so the leaves cover the triangle.
-/// `None` for a text that does not parse.
+/// Every leaf of triangle `tri` that a `paint_*` text describes, unpainted ones included, so the leaves cover the
+/// triangle. `None` for a text that does not read.
 #[must_use]
 pub fn leaves(text: &str, tri: [V3; 3]) -> Option<Vec<Leaf>> {
     if is_legacy(text) {
         return Some(vec![(tri, LEGACY_STATE)]);
     }
-    let stream: Vec<u8> = text
-        .trim()
-        .chars()
-        .rev()
-        .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
-        .collect::<Option<_>>()?;
-    if stream.is_empty() {
-        return None;
-    }
-    let mut r = Reader { stream, at: 0 };
+    let mut r = Reader::of(text, Scheme::Run)?;
     let mut out = Vec::new();
     r.node(tri, 0, &mut out)?;
     Some(out)
+}
+
+/// How many codes a `paint_*` text has past its whole tree, which reading ignores; `None` for one that does not read.
+#[must_use]
+pub fn left_over(text: &str) -> Option<usize> {
+    if is_legacy(text) {
+        return Some(0);
+    }
+    let mut r = Reader::of(text, Scheme::Run)?;
+    parse_node(&mut r, 0)?;
+    Some(r.rest())
 }
 
 /// The state a whole text of `FC` stands for: files saved before 18 took two codes wrote it so.
@@ -187,32 +252,41 @@ fn parse_node(r: &mut Reader, depth: u32) -> Option<Node> {
     })
 }
 
-/// The tree of a paint text; `None` for one that does not read.
+/// The tree of a `paint_*` text; `None` for one that does not read.
 #[must_use]
 pub fn parse(text: &str) -> Option<Node> {
     if is_legacy(text) {
         return Some(Node::Leaf(LEGACY_STATE));
     }
-    let stream: Vec<u8> = text
-        .trim()
-        .chars()
-        .rev()
-        .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
-        .collect::<Option<_>>()?;
-    let mut r = Reader { stream, at: 0 };
+    parse_with(text, Scheme::Run)
+}
+
+/// The tree of a text written in `scheme`; `None` for one that does not read.
+#[must_use]
+pub fn parse_with(text: &str, scheme: Scheme) -> Option<Node> {
+    let mut r = Reader::of(text, scheme)?;
     parse_node(&mut r, 0)
 }
 
-fn encode_node(n: &Node, out: &mut Vec<u8>) {
+fn encode_node(n: &Node, scheme: Scheme, out: &mut Vec<u8>) {
     match n {
         Node::Leaf(s) if *s >= 3 => {
             out.push(0b1100);
-            let mut m = s - 3;
-            while m >= 15 {
-                out.push(15);
-                m -= 15;
+            match scheme {
+                Scheme::Run => {
+                    let mut m = s - 3;
+                    while m >= 15 {
+                        out.push(15);
+                        m -= 15;
+                    }
+                    out.push(m);
+                }
+                Scheme::Escape if *s >= 17 => {
+                    let v = s - 17;
+                    out.extend([14, v & 15, v >> 4]);
+                }
+                Scheme::Escape => out.push(s - 3),
             }
-            out.push(m);
         }
         Node::Leaf(s) => out.push(s << 2),
         Node::Split {
@@ -222,17 +296,32 @@ fn encode_node(n: &Node, out: &mut Vec<u8>) {
         } => {
             out.push(splits | (special << 2));
             for k in kids {
-                encode_node(k, out);
+                encode_node(k, scheme, out);
             }
         }
     }
 }
 
-/// The paint text of a tree (upper-case hex, written last code first): what `parse` reads back.
+/// The `paint_*` text of a tree (upper-case hex, written last code first): what `parse` reads back.
 #[must_use]
 pub fn encode(n: &Node) -> String {
+    encode_with(n, Scheme::Run)
+}
+
+/// A text written in the escape scheme as a `paint_*` text; `None` for one that does not read or is all unpainted.
+#[must_use]
+pub fn escape_to_run(text: &str) -> Option<String> {
+    match parse_with(text, Scheme::Escape)? {
+        Node::Leaf(0) => None,
+        n => Some(encode(&n)),
+    }
+}
+
+/// The text of a tree written in `scheme`: what `parse_with` reads back.
+#[must_use]
+pub fn encode_with(n: &Node, scheme: Scheme) -> String {
     let mut stream = Vec::new();
-    encode_node(n, &mut stream);
+    encode_node(n, scheme, &mut stream);
     stream
         .iter()
         .rev()
@@ -381,7 +470,7 @@ mod tests {
     #[test]
     fn a_tree_encodes_back_to_its_text() {
         for text in [
-            "4", "8", "0C", "1C", "2C", "481", "485", "489", "1C0C843", "88083", "0C01", "8048C4C3",
+            "4", "8", "0C", "1C", "2C", "481", "485", "489", "1C0C843", "88083", "0C01", "44443", "8048C4C3",
             "4444443",
         ] {
             let t = parse(text).unwrap();
@@ -396,7 +485,7 @@ mod tests {
             assert_eq!(a, b, "{text}");
         }
         assert!(parse("zz").is_none() && parse("1").is_none());
-        assert_eq!(simplify(parse("4444443").unwrap()), Node::Leaf(1));
+        assert_eq!(simplify(parse("44443").unwrap()), Node::Leaf(1));
     }
 
     /// A split in the order the format lists children (child 0 first); the tree holds them in stream order.
@@ -427,6 +516,131 @@ mod tests {
         assert_eq!(parse("FC"), Some(Node::Leaf(18)));
         assert_eq!(leaves("FC", TRI).unwrap(), vec![(TRI, 18)]);
         assert_eq!(encode(&parse("FC").unwrap()), "0FC");
+    }
+
+    /// Single leaves: state, its `paint_*` text, its escape text.
+    const LEAVES: &[(u8, &str, &str)] = &[
+        (1, "4", "4"),
+        (2, "8", "8"),
+        (3, "0C", "0C"),
+        (4, "1C", "1C"),
+        (15, "CC", "CC"),
+        (16, "DC", "DC"),
+        (17, "EC", "00EC"),
+        (18, "0FC", "01EC"),
+        (19, "1FC", "02EC"),
+        (20, "2FC", "03EC"),
+        (31, "DFC", "0EEC"),
+        (32, "EFC", "0FEC"),
+    ];
+
+    #[test]
+    fn every_filament_to_32_writes_and_reads_in_both_schemes() {
+        for &(s, run, esc) in LEAVES {
+            assert_eq!(encode(&Node::Leaf(s)), run, "{s}");
+            assert_eq!(parse(run), Some(Node::Leaf(s)), "{run}");
+            assert_eq!(leaves(run, TRI), Some(vec![(TRI, s)]), "{run}");
+            assert_eq!(encode_with(&Node::Leaf(s), Scheme::Escape), esc, "{s}");
+            assert_eq!(parse_with(esc, Scheme::Escape), Some(Node::Leaf(s)), "{esc}");
+            assert_eq!(escape_to_run(esc).as_deref(), Some(run), "{esc}");
+        }
+        // The escape scheme reads C F as 18.
+        assert_eq!(parse_with("FC", Scheme::Escape), Some(Node::Leaf(18)));
+    }
+
+    #[test]
+    fn a_state_past_32_reads_as_unpainted() {
+        // 33 in each scheme, and 255.
+        assert_eq!(parse("0FFC"), Some(Node::Leaf(0)));
+        assert_eq!(leaves("0FFC", TRI), Some(vec![(TRI, 0)]));
+        assert_eq!(parse_with("10EC", Scheme::Escape), Some(Node::Leaf(0)));
+        assert_eq!(parse_with("EEEC", Scheme::Escape), Some(Node::Leaf(0)));
+        assert_eq!(escape_to_run("10EC"), None);
+        // Inside a tree the other leaves keep their states.
+        assert_eq!(
+            parse("0FFC41"),
+            Some(Node::Split {
+                splits: 1,
+                special: 0,
+                kids: vec![Node::Leaf(1), Node::Leaf(0)]
+            })
+        );
+    }
+
+    #[test]
+    fn trees_write_and_read_in_both_schemes() {
+        let l = Node::Leaf;
+        let trees = [
+            (split(1, 0, vec![l(1), l(2)]), "481", "481"),
+            (split(1, 2, vec![l(0), l(19)]), "01FC9", "002EC9"),
+            (
+                split(3, 0, vec![l(5), l(0), l(32), l(1)]),
+                "2C0EFC43",
+                "2C00FEC43",
+            ),
+            (
+                split(2, 1, vec![split(1, 0, vec![l(18), l(3)]), l(0), l(31)]),
+                "0FC0C10DFC6",
+                "01EC0C100EEC6",
+            ),
+            (split(1, 0, vec![l(17), l(18)]), "EC0FC1", "00EC01EC1"),
+        ];
+        for (tree, run, esc) in trees {
+            assert_eq!(encode(&tree), run);
+            assert_eq!(parse(run).as_ref(), Some(&tree), "{run}");
+            assert_eq!(encode_with(&tree, Scheme::Escape), esc);
+            assert_eq!(parse_with(esc, Scheme::Escape).as_ref(), Some(&tree), "{esc}");
+            assert_eq!(escape_to_run(esc).as_deref(), Some(run), "{esc}");
+        }
+    }
+
+    #[test]
+    fn each_scheme_reads_the_other_as_written_or_not_at_all() {
+        let state = |t: &str, s: Scheme| match parse_with(t, s) {
+            Some(Node::Leaf(v)) => Some(v),
+            _ => None,
+        };
+        // Run texts: 19 and 32 read as 18 in the escape scheme, which stops after C F; 17 runs out there.
+        assert_eq!(state("1FC", Scheme::Run), Some(19));
+        assert_eq!(state("1FC", Scheme::Escape), Some(18));
+        assert_eq!(state("EFC", Scheme::Run), Some(32));
+        assert_eq!(state("EFC", Scheme::Escape), Some(18));
+        assert_eq!(state("EC", Scheme::Run), Some(17));
+        assert_eq!(state("EC", Scheme::Escape), None);
+        // Escape texts: 19 and 32 read as 17 in the run scheme, which stops after C E.
+        assert_eq!(state("02EC", Scheme::Escape), Some(19));
+        assert_eq!(state("02EC", Scheme::Run), Some(17));
+        assert_eq!(state("0FEC", Scheme::Escape), Some(32));
+        assert_eq!(state("0FEC", Scheme::Run), Some(17));
+        // FC: 18 in the escape scheme, and as a whole paint_* text.
+        assert_eq!(state("FC", Scheme::Escape), Some(18));
+        assert_eq!(parse("FC"), Some(Node::Leaf(18)));
+    }
+
+    #[test]
+    fn a_text_that_runs_out_or_is_lower_case_does_not_read() {
+        for text in ["0fc", "dc", "0fC", "c", "C", "FFC", "1", "FC1", "zz", ""] {
+            assert_eq!(parse(text), None, "{text}");
+            assert_eq!(leaves(text, TRI), None, "{text}");
+        }
+        assert_eq!(parse_with("00ec", Scheme::Escape), None);
+        assert_eq!(escape_to_run("00ec"), None);
+        assert_eq!(parse_with("0EC", Scheme::Escape), None);
+        // Spaces around a text are not part of it.
+        assert_eq!(parse(" 0FC\n"), Some(Node::Leaf(18)));
+    }
+
+    #[test]
+    fn codes_past_a_whole_tree_are_ignored_and_counted() {
+        assert_eq!(parse("48"), Some(Node::Leaf(2)));
+        assert_eq!(leaves("48", TRI), Some(vec![(TRI, 2)]));
+        assert_eq!(left_over("48"), Some(1));
+        assert_eq!(left_over("4444443"), Some(2));
+        assert_eq!(left_over("8048C4C3"), Some(1));
+        assert_eq!(left_over("0FC"), Some(0));
+        assert_eq!(left_over("FC"), Some(0));
+        assert_eq!(left_over("0fc"), None);
+        assert_eq!(escape_to_run("402EC").as_deref(), Some("1FC"));
     }
 
     #[test]

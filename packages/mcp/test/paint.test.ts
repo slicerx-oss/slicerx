@@ -2,8 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A client paints a design over MCP the way an agent would: a preview of a target, the person's yes, the paint
 // applied as a history step, read back, undone and painted again. Runs where sx-geom has been built.
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readZip } from '../src/zip'
 import { built, connect, data, GEOM_BUILD, noSx, sxBin, sxTimeout } from './helpers'
 
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release/sx-geom')
@@ -64,6 +66,35 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('painting a design', () => {
     expect((await h.call('slicerx_paint_apply', { preview: top.preview })).isError).toBeFalsy()
     const steps = data<{ output: { steps: { name: string; state: string }[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
     expect(steps).toMatchObject([{ name: 'Paint from a point filament 3', state: 'done' }])
+  })
+
+  it('paints filament 32, reads it back, and saves it for readers of either paint scheme', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const d = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Cube', from: 'sample:cube-20' })).output.design
+    const p = await h.call('slicerx_paint_preview', { design: d, state: 32, target: { kind: 'direction', direction: 'top' } })
+    expect(p.isError, JSON.stringify(p.content)).toBeFalsy()
+    const pv = data<{ output: Preview }>(p).output
+    expect(pv.picture.paintedAreaMm2['32']).toBeCloseTo(400, 1)
+    expect((await h.call('slicerx_paint_apply', { preview: pv.preview })).isError).toBeFalsy()
+    const back = data<{ output: ReadBack }>(await h.call('slicerx_paint_regions', { design: d })).output
+    expect(back.totalsMm2).toEqual({ 32: 400 })
+    expect(back.parts[0]?.states.map((s) => s.state)).toEqual([32])
+
+    // Saved: paint_color in its own scheme, and the facets JSON in the other, version 2.
+    const path = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d, file_name: 'filament-32' })).output.path
+    const zip = readZip(readFileSync(path))
+    const model = zip.text('3D/3dmodel.model') ?? ''
+    const texts = [...model.matchAll(/paint_color="([0-9A-F]+)"/g)].map((m) => m[1])
+    expect(texts.length).toBeGreaterThan(0)
+    expect(new Set(texts)).toEqual(new Set(['EFC']))
+    const facets = JSON.parse(zip.text('Metadata/Slic3r_facets_annotation.json') ?? '[]') as { mmSegmentationFacets: { dividing: string }[]; mmSegmentationFacetsVersion: number }[]
+    expect(facets).toHaveLength(1)
+    expect(facets[0]!.mmSegmentationFacetsVersion).toBe(2)
+    expect(new Set(facets[0]!.mmSegmentationFacets.map((f) => f.dividing))).toEqual(new Set(['0FEC']))
+
+    // Opened again, the paint is on filament 32.
+    const again = data<{ output: { designs: { design: string }[] } }>(await h.call('slicerx_design_open', { path })).output.designs[0]!.design
+    expect(data<{ output: ReadBack }>(await h.call('slicerx_paint_regions', { design: again })).output.totalsMm2).toEqual({ 32: 400 })
   })
 
   it('refuses a target that paints nothing, and bad targets in words', async () => {

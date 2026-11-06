@@ -150,8 +150,8 @@ describe('paint texts read in place', () => {
 })
 
 describe('paint data round trip', () => {
-  // Texts as a slicer writes them, one with lower case and spaces that a decode and encode would rewrite.
-  const original: Record<number, string> = { 0: encodeTree(trees[0]!)!, 1: ' 8c ' }
+  // Texts as a slicer writes them, one with spaces that a decode and encode would rewrite.
+  const original: Record<number, string> = { 0: encodeTree(trees[0]!)!, 1: ' 8C ' }
   const painter = () => {
     const { e } = entry()
     return new Painter(() => e, new Group(), () => {}, () => {}, () => CONTROL_PRESETS['orcaslicer'].gizmo.paint)

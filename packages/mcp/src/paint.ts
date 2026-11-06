@@ -86,7 +86,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.0.1',
+    version: '1.0.2',
     source: 'command',
     permission: 'read',
     description:
@@ -94,7 +94,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
     input: z.object({
       design: designArg,
       layer: layerArg,
-      state: paintState().describe('For color the filament slot, 1 to 18 (1 is the first); 0 clears paint'),
+      state: paintState().describe('For color the filament slot, 1 to 32 (1 is the first); 0 clears paint'),
       target: targetArg,
       part: z.number().int().min(0).optional().describe('Paint one part, from 0; absent: every part (a seed paints the part under its point)'),
       max_depth: z.number().int().min(0).max(10).optional().describe('How finely a height band splits triangles at its edges; 6 when left out'),

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import {
-  autoDetail, cylinderRegion, decodeTree, encodeTree, fillByAngle, fillConnected, isLeaf, leavesOf, paintDab, paintTexts, paintTriangle, readPaintTexts, slabRegion, sphereRegion,
+  autoDetail, cylinderRegion, decodeTree, encodeTree, fillByAngle, fillConnected, isLeaf, leavesOf, MAX_PAINT_STATE, paintDab, paintTextLeafCount, paintTextLeftOver, paintTexts, paintTriangle, readPaintTexts, slabRegion, sphereRegion,
   gapFill, paintLeafAt, paintPatch, replaceEverywhere, stateAt, trianglePoints, withPointFilter, type PaintMap, type PaintNode, type Tri,
 } from '../src/paint'
 
@@ -39,6 +39,84 @@ describe('paint text', () => {
   it('reads a whole text of FC, as files saved before wrote 18, as 18', () => {
     expect(decodeTree('FC')).toEqual({ state: 18 })
     expect(encodeTree(decodeTree('FC') as PaintNode)).toBe('0FC')
+  })
+
+  // Single leaves: state, its paint_* text, its escape text (the slic3rpe attributes and the facets JSON).
+  const LEAVES: [number, string, string][] = [
+    [1, '4', '4'], [2, '8', '8'], [3, '0C', '0C'], [4, '1C', '1C'], [15, 'CC', 'CC'], [16, 'DC', 'DC'],
+    [17, 'EC', '00EC'], [18, '0FC', '01EC'], [19, '1FC', '02EC'], [20, '2FC', '03EC'], [31, 'DFC', '0EEC'], [32, 'EFC', '0FEC'],
+  ]
+
+  it.each(LEAVES)('writes and reads filament %i in both schemes', (state, run, esc) => {
+    expect(encodeTree({ state })).toBe(run)
+    expect(decodeTree(run)).toEqual({ state })
+    expect(paintTextLeafCount(run)).toBe(1)
+    expect(encodeTree({ state }, 'escape')).toBe(esc)
+    expect(decodeTree(esc, 'escape')).toEqual({ state })
+  })
+
+  it('reads a state past 32 as unpainted, keeping the rest of the tree', () => {
+    expect(MAX_PAINT_STATE).toBe(32)
+    expect(decodeTree('0FFC')).toEqual({ state: 0 })
+    expect(paintTextLeafCount('0FFC')).toBe(0)
+    expect(decodeTree('10EC', 'escape')).toEqual({ state: 0 })
+    expect(decodeTree('EEEC', 'escape')).toEqual({ state: 0 })
+    expect(decodeTree('0FFC41')).toEqual({ splits: 1, special: 0, kids: [{ state: 1 }, { state: 0 }] })
+    expect(paintTextLeafCount('0FFC41')).toBe(1)
+  })
+
+  // Trees as the format lists children (child 0 first); the tree and the text hold them last child first.
+  const split = (splits: 1 | 2 | 3, special: 0 | 1 | 2, kids: PaintNode[]): PaintNode => ({ splits, special, kids: [...kids].reverse() })
+  const l = (state: number): PaintNode => ({ state })
+  const TREES: [string, PaintNode, string, string][] = [
+    ['T1', split(1, 0, [l(1), l(2)]), '481', '481'],
+    ['T2', split(1, 2, [l(0), l(19)]), '01FC9', '002EC9'],
+    ['T3', split(3, 0, [l(5), l(0), l(32), l(1)]), '2C0EFC43', '2C00FEC43'],
+    ['T4', split(2, 1, [split(1, 0, [l(18), l(3)]), l(0), l(31)]), '0FC0C10DFC6', '01EC0C100EEC6'],
+    ['T5', split(1, 0, [l(17), l(18)]), 'EC0FC1', '00EC01EC1'],
+  ]
+
+  it.each(TREES)('writes and reads tree %s in both schemes', (_name, tree, run, esc) => {
+    expect(encodeTree(tree)).toBe(run)
+    expect(decodeTree(run)).toEqual(tree)
+    expect(encodeTree(tree, 'escape')).toBe(esc)
+    expect(decodeTree(esc, 'escape')).toEqual(tree)
+    expect(paintTextLeafCount(run)).toBe(leavesOf(TRI, tree).filter((x) => x.state > 0).length)
+  })
+
+  it('reads each scheme the way the other writes it, or not at all', () => {
+    const state = (t: string, scheme?: 'run' | 'escape') => {
+      const n = decodeTree(t, scheme)
+      return n && isLeaf(n) ? n.state : null
+    }
+    expect(state('1FC')).toBe(19)
+    expect(state('1FC', 'escape')).toBe(18)
+    expect(state('EFC')).toBe(32)
+    expect(state('EFC', 'escape')).toBe(18)
+    expect(state('EC')).toBe(17)
+    expect(state('EC', 'escape')).toBeNull()
+    expect(state('02EC', 'escape')).toBe(19)
+    expect(state('02EC')).toBe(17)
+    expect(state('0FEC', 'escape')).toBe(32)
+    expect(state('0FEC')).toBe(17)
+    expect(state('FC', 'escape')).toBe(18)
+    expect(state('FC')).toBe(18)
+  })
+
+  it.each(['0fc', 'dc', '0fC', 'c', 'C', 'FFC', '1', 'FC1', 'zz', ''])('refuses %j: it runs out or is not upper-case hex', (t) => {
+    expect(decodeTree(t)).toBeNull()
+    expect(paintTextLeafCount(t)).toBe(-1)
+    expect(paintTextLeftOver(t)).toBe(-1)
+  })
+
+  it('reads a whole tree and ignores codes past it, and counts them', () => {
+    expect(decodeTree('48')).toEqual({ state: 2 })
+    expect(paintTextLeafCount('48')).toBe(1)
+    expect(paintTextLeftOver('48')).toBe(1)
+    expect(paintTextLeftOver('4444443')).toBe(2)
+    expect(paintTextLeftOver('8048C4C3')).toBe(1)
+    expect(paintTextLeftOver('0FC')).toBe(0)
+    expect(paintTextLeftOver('FC')).toBe(0)
   })
 
   it('refuses text that is not a tree, and writes nothing for an unpainted triangle', () => {

@@ -201,6 +201,145 @@ fn err(bytes: &[u8]) -> String {
     }
 }
 
+/// a one-object project of two triangles, with these attributes on its triangles and these other entries
+fn painted(tri_attrs: [&str; 2], extra: &[(&str, &str)]) -> Project {
+    let mesh = format!(
+        r#"<object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/><vertex x="1" y="1" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2" {}/><triangle v1="1" v2="3" v3="2" {}/></triangles></mesh></object>"#,
+        tri_attrs[0], tri_attrs[1]
+    );
+    let m = model(&mesh, r#"<item objectid="1"/>"#);
+    let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", m.as_bytes())];
+    entries.extend(extra.iter().map(|(n, t)| (*n, t.as_bytes())));
+    read_3mf(&zip_of(&entries)).expect("reads")
+}
+
+const FACETS: &str = "Metadata/Slic3r_facets_annotation.json";
+
+#[test]
+fn slic3rpe_paint_reads_in_its_own_scheme_as_paint_color_text() {
+    // 32 and 19 as the slic3rpe attributes write them, and support paint, which reads the same in both.
+    let p = painted(
+        [
+            r#"slic3rpe:mmu_segmentation="0FEC" slic3rpe:custom_supports="4""#,
+            r#"slic3rpe:mmu_segmentation="002EC9""#,
+        ],
+        &[],
+    );
+    let part = &p.objects[0].parts[0];
+    assert_eq!(
+        part.paint.color,
+        vec![(0, "EFC".to_owned()), (1, "01FC9".to_owned())]
+    );
+    assert_eq!(part.paint.support, vec![(0, "4".to_owned())]);
+    // paint_color wins over the other attribute and is kept as written.
+    let p = painted([r#"paint_color="EFC" slic3rpe:mmu_segmentation="4""#, ""], &[]);
+    assert_eq!(p.objects[0].parts[0].paint.color, vec![(0, "EFC".to_owned())]);
+}
+
+#[test]
+fn the_facets_json_paints_what_the_triangles_leave_unpainted() {
+    let json = r#"[{"id":1,"mmSegmentationFacets":[{"triangle":1,"dividing":"0FEC"},{"triangle":0,"dividing":"00EC"},{"triangle":7,"dividing":"4"}],"mmSegmentationFacetsVersion":2,"seamFacets":[{"triangle":0,"dividing":"8"}],"supportedFacets":[{"triangle":1,"dividing":"4"}],"supportedFacetsVersion":1,"fuzzySkinFacets":[{"triangle":1,"dividing":"4"}]}]"#;
+    let p = painted(["", ""], &[(FACETS, json)]);
+    let paint = &p.objects[0].parts[0].paint;
+    // In triangle order, as paint_color text; a triangle past the mesh is left out.
+    assert_eq!(paint.color, vec![(0, "EC".to_owned()), (1, "EFC".to_owned())]);
+    assert_eq!(paint.seam, vec![(0, "8".to_owned())]);
+    assert_eq!(paint.support, vec![(1, "4".to_owned())]);
+    assert_eq!(paint.fuzzy, vec![(1, "4".to_owned())]);
+    assert!(p.notes.is_empty(), "{:?}", p.notes);
+    // Paint on the triangles themselves is what a project of both carries; the JSON then adds nothing for that layer.
+    let p = painted([r#"paint_color="EFC""#, ""], &[(FACETS, json)]);
+    let paint = &p.objects[0].parts[0].paint;
+    assert_eq!(paint.color, vec![(0, "EFC".to_owned())]);
+    assert_eq!(paint.seam, vec![(0, "8".to_owned())]);
+}
+
+/// the worked example: object 5 of two parts, each a wrapper (3, 4) with one component on its own mesh (1 of 12
+/// triangles, 2 of 8), and the facets JSON
+fn two_volumes(json: &str) -> Project {
+    let mesh = |id: u32, tris: u32| {
+        let mut s = format!(r#"<object id="{id}" type="model"><mesh><vertices>"#);
+        for k in 0..=tris + 1 {
+            let _ = write!(s, r#"<vertex x="{k}" y="{}" z="0"/>"#, k % 2);
+        }
+        s.push_str("</vertices><triangles>");
+        for k in 0..tris {
+            let _ = write!(s, r#"<triangle v1="{k}" v2="{}" v3="{}"/>"#, k + 1, k + 2);
+        }
+        s.push_str("</triangles></mesh></object>");
+        s
+    };
+    let resources = format!(
+        r#"{}{}<object id="3" type="model"><components><component objectid="1"/></components></object><object id="4" type="model"><components><component objectid="2"/></components></object><object id="5" type="model" name="Box"><components><component objectid="3"/><component objectid="4"/></components></object>"#,
+        mesh(1, 12),
+        mesh(2, 8)
+    );
+    let m = model(&resources, r#"<item objectid="5"/>"#);
+    read_3mf(&zip_of(&[
+        ("3D/3dmodel.model", m.as_bytes()),
+        (FACETS, json.as_bytes()),
+    ]))
+    .expect("reads")
+}
+
+fn colors(p: &Project) -> Vec<Vec<(u32, String)>> {
+    p.objects[0].parts.iter().map(|q| q.paint.color.clone()).collect()
+}
+
+#[test]
+fn facets_json_ids_name_volumes_and_count_each_volumes_own_triangles() {
+    let p = two_volumes(
+        r#"[{"id": 3, "mmSegmentationFacets": [{"triangle": 0, "dividing": "4"}, {"triangle": 11, "dividing": "8"}], "mmSegmentationFacetsVersion": 1}, {"id": 4, "mmSegmentationFacets": [{"triangle": 0, "dividing": "02EC"}], "mmSegmentationFacetsVersion": 2}]"#,
+    );
+    assert_eq!(p.objects[0].parts.len(), 2);
+    assert_eq!(
+        colors(&p),
+        vec![
+            vec![(0, "4".to_owned()), (11, "8".to_owned())],
+            vec![(0, "1FC".to_owned())]
+        ]
+    );
+    assert!(p.notes.is_empty(), "{:?}", p.notes);
+    // A mesh's own id paints every volume built from it, here only the first.
+    let p = two_volumes(r#"[{"id": 1, "mmSegmentationFacets": [{"triangle": 2, "dividing": "8"}]}]"#);
+    assert_eq!(colors(&p), vec![vec![(2, "8".to_owned())], vec![]]);
+}
+
+#[test]
+fn a_facets_entry_for_a_whole_object_or_listed_twice_is_left_out_with_a_note() {
+    let p = two_volumes(r#"[{"id": 5, "mmSegmentationFacets": [{"triangle": 0, "dividing": "4"}]}]"#);
+    assert_eq!(colors(&p), vec![vec![], vec![]]);
+    assert_eq!(p.notes.len(), 1, "{:?}", p.notes);
+    assert!(
+        p.notes[0].contains("id 5") && p.notes[0].contains("whole object"),
+        "{:?}",
+        p.notes
+    );
+    let p = two_volumes(
+        r#"[{"id": 3, "mmSegmentationFacets": [{"triangle": 0, "dividing": "4"}]}, {"id": 3, "mmSegmentationFacets": [{"triangle": 1, "dividing": "8"}]}, {"id": 4, "mmSegmentationFacets": [{"triangle": 0, "dividing": "8"}]}]"#,
+    );
+    assert_eq!(colors(&p), vec![vec![], vec![(0, "8".to_owned())]]);
+    assert_eq!(p.notes.len(), 1, "{:?}", p.notes);
+    assert!(
+        p.notes[0].contains("id 3") && p.notes[0].contains("more than once"),
+        "{:?}",
+        p.notes
+    );
+}
+
+#[test]
+fn a_facets_painting_of_a_newer_version_is_left_out_with_a_note() {
+    let json = r#"[{"id":1,"mmSegmentationFacets":[{"triangle":0,"dividing":"0FEC"}],"mmSegmentationFacetsVersion":3,"seamFacets":[{"triangle":1,"dividing":"8"}]}]"#;
+    let p = painted(["", ""], &[(FACETS, json)]);
+    let paint = &p.objects[0].parts[0].paint;
+    assert!(paint.color.is_empty());
+    assert_eq!(paint.seam, vec![(1, "8".to_owned())]);
+    assert_eq!(p.notes.len(), 1, "{:?}", p.notes);
+    // A file that is not the JSON leaves the paint alone.
+    let p = painted([r#"paint_color="4""#, ""], &[(FACETS, "{not json")]);
+    assert_eq!(p.objects[0].parts[0].paint.color, vec![(0, "4".to_owned())]);
+}
+
 #[test]
 fn refuses_what_it_cannot_read() {
     assert!(err(b"not a zip").contains("not a ZIP"));

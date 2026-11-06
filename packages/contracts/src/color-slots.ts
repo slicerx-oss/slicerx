@@ -53,11 +53,8 @@ export const COLOR_MATCH_DELTA_E = 12
 /** The most slots a project holds. */
 export const COLOR_SLOT_MAX = 32
 
-/**
- * The highest filament a paint text can name. The text writes filaments 3 and up as one 4-bit code plus 3, so paint
- * reaches filament 18; filaments above it print whole parts only.
- */
-export const PAINT_FILAMENT_MAX = 18
+/** The highest filament paint names: every filament a project holds. */
+export const PAINT_FILAMENT_MAX = 32
 
 /** A CIELAB color: L, a, b. */
 export type Lab = readonly [number, number, number]
