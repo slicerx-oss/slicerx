@@ -2,17 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { Button, Dialog, Eyebrow, Icon } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
-import { appName } from '../edition'
 import { CheckLines, checkLines } from '../send/check-lines'
 import { useApp } from '../state/store'
-
-const PERMISSION_TEXT: Record<string, string> = {
-  queue: 'send a file to the printer',
-  start: 'heat and move the printer',
-  profile: 'change a saved profile',
-  slice: 'slice in this project',
-  read: 'read data',
-}
+import { allowsNote } from './approval-note'
 
 /**
  * The only place a user-initiated side effect gets approved. Its buttons are the sole path to a token. Laid out like
@@ -28,7 +20,6 @@ export function ApprovalDialog() {
   const errors = approval?.checks?.errors ?? []
   const warnings = approval?.checks?.warnings ?? []
   const first = approval?.requests[0]
-  const kinds = [...new Set(approval?.requests.map((r) => r.permission) ?? [])]
   const confirm = approval?.confirm
   const label = confirm ? (approval?.go ?? 'Confirm and approve') : 'Approve'
   return (
@@ -76,7 +67,7 @@ export function ApprovalDialog() {
       <CheckLines lines={checkLines(errors, warnings)} />
       <p className="approve-note">
         {confirm && errors.length === 0 ? `Pressing it confirms ${confirm.charAt(0).toLowerCase()}${confirm.slice(1)}. ` : ''}
-        Allows {appName()} to {kinds.map((k) => PERMISSION_TEXT[k] ?? k).join(' and ')}, once. The approval expires in 5 min.
+        {approval ? allowsNote(approval) : ''}
       </p>
     </Dialog>
   )
