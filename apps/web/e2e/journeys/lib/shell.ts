@@ -375,7 +375,7 @@ export async function machineBoxesChange(page: Page): Promise<void> {
   await plate.click()
   const types = page.getByTestId('slice-machine-plate-option')
   await expect(types.first()).toHaveText(/^Printer default \(.+\)$/)
-  await expect(types).toHaveCount(6)
+  await expect(types).toHaveCount(8)
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type="cool"]').click()
   await expect(plate).toHaveAttribute('aria-label', 'Plate: Cool plate')
   await expect(plate).toHaveAttribute('data-bed-type', 'cool')

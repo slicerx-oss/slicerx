@@ -291,7 +291,7 @@ test.describe('the machine card', () => {
     await page.keyboard.press('End')
     await expect(types.last()).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(plate).toHaveAttribute('aria-label', 'Plate: High temp plate')
+    await expect(plate).toHaveAttribute('aria-label', 'Plate: Supertack plate')
     await sidebarDone(page)
   })
 
