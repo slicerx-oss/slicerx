@@ -100,8 +100,9 @@ bridge build reads (`apps/desktop/src-tauri/src/link.rs`; `check-agent-bridge.mj
 the name). For the race, the fake answers every status read that starts within one hub tick a few seconds late, with
 the state the read started with, and the gate reports in that window, so the reading that lands after the pause still
 says printing. The hub keeps its app code and key in the bridge build's data folder (`hub/pairing-code`,
-`hub/hub-key.pub`); the detector code is never on disk, so the gate pairs its stand-in detector with the app code
-narrowed to the watch role. The gate reads them there, removes the fake printer and turns the permission off again at the end,
+`hub/hub-key.pub`); the detector code is never on disk and the app code narrowed to the watch role is not a detector, so
+the gate pairs its stand-in detector with a detector key it makes through the app connection (`clients.create`, role
+watch) and revokes the key at the end. The gate reads them there, removes the fake printer and turns the permission off again at the end,
 and stops the fake by its process id. w takes about a minute. Run it alone with `--only w`.
 
 When an account is given, e runs signed in, so the gate's downloads stay out of the public counts (test accounts are

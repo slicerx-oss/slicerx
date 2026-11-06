@@ -511,7 +511,9 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
                 } else {
                     roles::narrowed(role, params.get("role").and_then(Value::as_str))
                 };
-                conn.detector = role == Role::Watch && granted != Role::Agent && partner.is_none();
+                // Only the detector code (handed over stdin at start) or a detector key the person made in
+                // the app: the app code narrowed to watch may sit in a file on a headless hub.
+                conn.detector = role == Role::Watch && granted == Role::Watch && partner.is_none();
                 // Each remembered agent can ask the person through the app link, so the agent code
                 // remembers only so many; the person revokes old ones in Settings.
                 if by_code.is_some()
@@ -767,8 +769,9 @@ struct Conn {
     client: Option<String>,
     /// The partner app's name, when it paired with a partner key (roles.rs).
     partner: Option<String>,
-    /// The camera guard's own detector: the watch role from the detector code, the app code or a
-    /// detector key the person made, never an agent or partner key narrowed to it. Only it gets plate
+    /// The camera guard's own detector: the watch role from the detector code (handed over stdin at
+    /// start) or from a detector key the person made in the app, never the app, agent or partner
+    /// code or key narrowed to it. Only it gets plate
     /// checks and looks, and only it may answer them.
     detector: bool,
     /// The Origin header of the upgrade, when it had one.

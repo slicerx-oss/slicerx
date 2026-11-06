@@ -2904,3 +2904,54 @@ async fn s4_an_unknown_model_keeps_the_default_limits_as_its_cap() {
     .await;
     assert_eq!(r["result"]["catalogMaxNozzleC"], Value::Null, "{r}");
 }
+
+#[tokio::test]
+async fn t1_the_app_code_narrowed_to_watch_is_not_the_cameras_detector() {
+    let mut s = setup().await;
+    let _mocks = idle_bay4_with_plate(&mut s).await;
+    call(
+        &mut s.app,
+        20,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    // A headless hub may keep the app code in a file; pairing with it as a detector earns no trust.
+    let answered = detector_as(
+        &s.link,
+        CODE,
+        Arc::new(|_| json!({ "clear": true, "compared": true })),
+    )
+    .await;
+    let (mut phone, _) = approver(&mut s, 92).await;
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], false, "{r}");
+    assert_eq!(
+        answered.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "no plate pictures for it"
+    );
+    // A detector key the person made in the app is trusted.
+    let made = call(
+        &mut s.app,
+        21,
+        "clients.create",
+        json!({ "name": "Detector", "role": "watch" }),
+    )
+    .await;
+    let key = made["result"]["clientKey"].as_str().unwrap().to_owned();
+    let mut det = connect_async(format!("ws://127.0.0.1:{}/", s.link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let r = call(&mut det, 1, "pair", json!({ "clientKey": key, "role": "watch" })).await;
+    assert_eq!(r["result"]["role"], "watch", "{r}");
+    let r = call(
+        &mut det,
+        2,
+        "watch.plateResult",
+        json!({ "checkId": "none", "printerId": "bay-4", "clear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["recorded"], true, "{r}");
+}
