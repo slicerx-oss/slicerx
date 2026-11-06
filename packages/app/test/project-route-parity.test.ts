@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle } from '@slicerx/contracts'
 import { createContext, serverTools } from '@slicerx/mcp'
 import { h3cVariantProject, type H3cLayout } from '../../mcp/test/h3c-variant-projects'
+import { KEY as SCRIPT_KEY, scriptKeyProject, START as SCRIPT_START } from '../../mcp/test/script-key-project'
 import { binBuilt, SX_BUILD } from './binaries'
 
 const { openModelBytes } = await import('../src/state/actions')
@@ -38,6 +39,7 @@ const PRINTERS = {
   'prusa-mk4': { id: 'my-mk4', vendor: 'Prusa Research', model: 'MK4' },
   'bambu-a1': { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' },
   'bambu-h3c': { id: 'my-h3c', vendor: 'Bambu Lab', model: 'H3C' },
+  'bambu-p1s': { id: 'my-p1s', vendor: 'Bambu Lab', model: 'P1S' },
 } as const
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
@@ -71,10 +73,10 @@ async function appConfig(file: string, printer: keyof typeof PRINTERS): Promise<
 type SliceFile = { input: { parse: (a: unknown) => unknown }; run: (a: unknown, c: unknown) => Promise<{ structured: Record<string, unknown> }> }
 
 /** slicerx_slice_file in the MCP server: its G-code, and the request it sent sx. */
-async function mcpSlice(file: string, profiles: string[], out: string): Promise<{ gcode: Buffer; request: Record<string, unknown> }> {
+async function mcpSlice(file: string, profiles: string[], out: string, extra: Record<string, unknown> = {}): Promise<{ gcode: Buffer; request: Record<string, unknown> }> {
   const ctx = await createContext({ engine: 'sx', sxBin, allowDirs: [dirname(file)], outDir: out, printers: 'off' })
   const tool = serverTools(ctx).find((t) => t.name.endsWith('slice_file')) as unknown as SliceFile
-  const r = await tool.run(tool.input.parse({ model: file, plate: 1, profiles, project_settings: true }), { progress: () => {} })
+  const r = await tool.run(tool.input.parse({ model: file, plate: 1, profiles, project_settings: true, ...extra }), { progress: () => {} })
   const path = r.structured['gcode_path'] as string
   return { gcode: readFileSync(path), request: JSON.parse(readFileSync(join(dirname(path), 'request.json'), 'utf8')) as Record<string, unknown> }
 }
@@ -224,4 +226,21 @@ describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same 
       expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
     }, 120_000)
   }
+})
+
+// A Bambu Studio project on its own printer opens with its own start G-code when a person may approve it, as the app
+// does on open (project-printer.ts). That G-code reads a key no SlicerX setting has, which the project carries: the
+// app's slice takes the project's value for it, as sx slice <project.3mf> does, so the script renders.
+describe.skipIf(!binBuilt(sxBin, SX_BUILD))("a project's own G-code that reads a key SlicerX does not model, in the app", () => {
+  it('slices with the project\'s value for the key', async () => {
+    const file = join(dir, 'script-key.3mf')
+    writeFileSync(file, scriptKeyProject())
+    const out = mkdtempSync(join(dir, 'script-key-'))
+    const app = await appConfig(file, 'bambu-p1s')
+    expect(app['machine_start_gcode']).toBe(SCRIPT_START)
+    expect(app[SCRIPT_KEY]).toEqual(['187'])
+    // The MCP server's request for the plate, with the app's config in place of its own.
+    const mcp = await mcpSlice(file, ['machine:bambu-p1s'], join(out, 'mcp'), { project_gcode: 'profile' })
+    expect(appSlice(mcp.request, app, join(out, 'app')).toString()).toContain('M104 S187 ; hold')
+  }, 120_000)
 })

@@ -554,6 +554,11 @@ export interface AppState {
   /** Engine review read-back for original imported scripts; this is not a person's approval. */
   projectScriptReviews: { source: string; records: import('../project/script-review').ProjectScriptReview[] } | null
   /**
+   * The last opened project's values for keys no setting models, as its file holds them. A printer G-code the plate
+   * slices with that names one of them gets the project's value (scriptKeyValues), as sx slice <project.3mf> renders it.
+   */
+  projectScriptKeys: Record<string, SettingValue> | null
+  /**
    * Setting keys an opened project brought (print settings, part and modifier settings). A slice the engine refuses
    * over one of them drops that key, says so, and slices again, so one bad value in a file never blocks the plate.
    * `prior` is what the person had for each print setting the project changed (null: not set), so clearing the
@@ -892,6 +897,7 @@ export const appStore = createStore<AppState>()(() => ({
   unsavedPrompt: null,
   projectGcode: null,
   projectScriptReviews: null,
+  projectScriptKeys: null,
   projectSettings: null,
   projectImport: null,
   projectPrinter: null,
