@@ -62,6 +62,7 @@ export function clearProject(): void {
     ...(get().towerFromProject ? { tower: { auto: true, x: 0, y: 0 }, towerFromProject: false, projectTowers: {} } : {}),
     namedValues: [],
     fileSlotColors: [],
+    fileSlotVendors: [],
     // A resume plan belongs to the failed job: the next project slices from its first layer.
     resume: null,
   })
