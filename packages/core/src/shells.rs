@@ -48,6 +48,51 @@ pub(crate) struct Cache {
     regions: Memo<(i64, u64), Shared<Vec<Option<crate::session::RegionPrep>>>>,
     slit: Memo<(i64, u64), Option<Shared<Shapes>>>,
     slit_cut: Memo<SlitCutKey, Shared<Shapes>>,
+    /// The settings tags of the entries above, by run, so a kept session keeps only the last two runs' (`end_run`).
+    runs: RunTags,
+}
+
+/// How many settings tags one run notes; a run that uses more keeps every entry (see [`Cache::end_run`]).
+const RUN_TAGS: usize = 64;
+
+/// The settings tags a run's entries are keyed with, noted as they are asked for, and the run before's.
+struct RunTags {
+    /// The tags of this run, 0 for a free slot (a tag of 0 is noted as 1, so it stays with tag 1).
+    now: [std::sync::atomic::AtomicU64; RUN_TAGS],
+    /// This run asked for more tags than `now` holds.
+    full: std::sync::atomic::AtomicBool,
+    /// The tags of the run before, None when it asked for more than `now` holds.
+    before: std::sync::Mutex<Option<Vec<u64>>>,
+}
+
+impl Default for RunTags {
+    fn default() -> Self {
+        Self {
+            now: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
+            full: std::sync::atomic::AtomicBool::new(false),
+            before: std::sync::Mutex::new(Some(Vec::new())),
+        }
+    }
+}
+
+impl RunTags {
+    /// Notes that this run asked for an entry keyed with `tag`.
+    fn note(&self, tag: u64) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let t = tag.max(1);
+        for slot in &self.now {
+            match slot.load(Relaxed) {
+                v if v == t => return,
+                0 => match slot.compare_exchange(0, t, Relaxed, Relaxed) {
+                    Ok(_) => return,
+                    Err(v) if v == t => return,
+                    Err(_) => {}
+                },
+                _ => {}
+            }
+        }
+        self.full.store(true, Relaxed);
+    }
 }
 
 impl Clone for Cache {
@@ -64,6 +109,58 @@ impl std::fmt::Debug for Cache {
 }
 
 impl Cache {
+    /// Ends a run on a session a host keeps for later runs: the entries keyed with settings tags that neither this run
+    /// nor the one before asked for go. A setting the session never reads (a speed, a temperature) is in the tag, so
+    /// each new value of one would otherwise add a set of entries the session holds for good; the last two runs' stay,
+    /// so going back and forth between two values still finds them. A run that asked for more tags than it can
+    /// note, or follows one that did, keeps every entry.
+    pub(crate) fn end_run(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let now: Vec<u64> = self
+            .runs
+            .now
+            .iter()
+            .map(|s| s.swap(0, Relaxed))
+            .filter(|&t| t != 0)
+            .collect();
+        let full = self.runs.full.swap(false, Relaxed);
+        let mut before = self
+            .runs
+            .before
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !full && let Some(b) = before.as_ref() {
+            let keep = |tag: u64| {
+                let t = tag.max(1);
+                now.contains(&t) || b.contains(&t)
+            };
+            self.walks.retain(|k| keep(k.1));
+            self.bridged.retain(|k| keep(k.1));
+            self.cands.retain(|k| keep(k.1));
+            self.facts.retain(|k| keep(k.1));
+            self.inner.retain(|k| keep(k.1));
+            self.fixed_inner.retain(|k| keep(k.1));
+            self.regions.retain(|k| keep(k.1));
+            self.slit.retain(|k| keep(k.1));
+            self.slit_cut.retain(|k| keep(k.1));
+        }
+        *before = (!full).then_some(now);
+    }
+
+    /// How many entries the maps keyed with settings tags hold.
+    #[cfg(test)]
+    pub(crate) fn tagged_entries(&self) -> usize {
+        self.walks.len()
+            + self.bridged.len()
+            + self.cands.len()
+            + self.facts.len()
+            + self.inner.len()
+            + self.fixed_inner.len()
+            + self.regions.len()
+            + self.slit.len()
+            + self.slit_cut.len()
+    }
+
     /// The part of layer `m`'s outline that layer `m + toward` does not cover, opened by `opening` mm.
     pub(crate) fn free(&self, m: i64, toward: i64, opening: f64, work: impl FnOnce() -> Shapes) -> Shapes {
         let key = (m, toward, mm(opening));
@@ -102,6 +199,7 @@ impl Cache {
 
     /// The horizontal shell walk from a surface layer (see `horizontal_area`).
     fn walk(&self, key: (i64, i64, i64), tag: u64, work: impl FnOnce() -> Steps) -> Shared<Steps> {
+        self.runs.note(tag);
         let key = (key, tag);
         self.walks.get_or(key, || std::sync::Arc::new(work()))
     }
@@ -113,6 +211,7 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Vec<crate::bridging::Bridged>,
     ) -> std::sync::Arc<Vec<crate::bridging::Bridged>> {
+        self.runs.note(tag);
         let key = (m, tag);
         self.bridged.get_or(key, || std::sync::Arc::new(work()))
     }
@@ -124,6 +223,7 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Vec<Shapes>,
     ) -> std::sync::Arc<Vec<Shapes>> {
+        self.runs.note(tag);
         let key = (m, tag);
         self.cands.get_or(key, || std::sync::Arc::new(work()))
     }
@@ -136,11 +236,13 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Vec<Option<crate::session::RegionPrep>>,
     ) -> Shared<Vec<Option<crate::session::RegionPrep>>> {
+        self.runs.note(tag);
         self.regions.get_or((m, tag), || std::sync::Arc::new(work()))
     }
 
     /// Whether the regions of layer `m` for the settings fingerprinted by `tag` are worked out already.
     pub(crate) fn has_regions(&self, m: i64, tag: u64) -> bool {
+        self.runs.note(tag);
         self.regions.has(&(m, tag))
     }
 
@@ -151,6 +253,7 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Option<crate::bridging::Facts>,
     ) -> Option<std::sync::Arc<crate::bridging::Facts>> {
+        self.runs.note(tag);
         let key = (m, tag);
         self.facts.get_or(key, || work().map(std::sync::Arc::new))
     }
@@ -168,6 +271,7 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Option<Shapes>,
     ) -> Option<Shapes> {
+        self.runs.note(tag);
         self.fixed_inner
             .get_or((m, tag), || work().map(std::sync::Arc::new))
             .map(|a| (*a).clone())
@@ -175,6 +279,7 @@ impl Cache {
 
     /// The real infill area of layer `m` with its slit ([`Input::slit`]) for the settings fingerprinted by `tag`.
     pub(crate) fn slit(&self, m: i64, tag: u64, work: impl FnOnce() -> Option<Shapes>) -> Option<Shapes> {
+        self.runs.note(tag);
         self.slit
             .get_or((m, tag), || work().map(std::sync::Arc::new))
             .map(|a| (*a).clone())
@@ -183,6 +288,7 @@ impl Cache {
     /// The slit layer `m`'s walls cut out of its infill area as the shell rule reads it ([`Input::slit`]), empty where
     /// there is none. Every layer whose shell reaches `m` reads the same cut.
     fn slit_cut(&self, key: SlitCutKey, work: impl FnOnce() -> Shapes) -> Shared<Shapes> {
+        self.runs.note(key.1);
         self.slit_cut.get_or(key, || std::sync::Arc::new(work()))
     }
 
@@ -194,6 +300,7 @@ impl Cache {
         tag: u64,
         work: impl FnOnce() -> Option<Walls>,
     ) -> Option<Shared<Walls>> {
+        self.runs.note(tag);
         let key = (m, tag);
         self.inner.get_or(key, || work().map(std::sync::Arc::new))
     }
