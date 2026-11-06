@@ -953,7 +953,7 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         crate::hub_rpc::resolved(b, &id, true, "phone", None);
         if let Some((owner, work)) = b.agent_work.take(&id) {
             let token = serde_json::from_value(out).map_err(|_| err("failed", "the broker gave no token"))?;
-            crate::agent_work::run(b, id.clone(), work, token, owner);
+            crate::agent_work::run(b, id.clone(), work, token, owner, remote_start);
         }
     } else {
         crate::hub_rpc::declined(b, &id);

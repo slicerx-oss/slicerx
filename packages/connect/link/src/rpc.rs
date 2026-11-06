@@ -1734,7 +1734,8 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
             if let Some((owner, work)) = b.agent_work.take(&id) {
                 let token: ApprovalToken = serde_json::from_value(out.clone())
                     .map_err(|_| RpcError::new("protocol", "the broker gave no token"))?;
-                crate::agent_work::run(b, id.clone(), work, token, owner);
+                // Answered on this hub's own connection (the app): not a start approved from afar.
+                crate::agent_work::run(b, id.clone(), work, token, owner, false);
                 return Ok(json!({ "granted": true, "runBy": "hub" }));
             }
             Ok(out)

@@ -61,8 +61,15 @@ const BED_KEYS: &[&str] = &[
     "BED_TEMP_0",
 ];
 const CHAMBER_KEYS: &[&str] = &["CHAMBER", "CHAMBER_TEMP", "CHAMBER_TEMPERATURE"];
-/// Start macros that heat from their own defaults when the file gives them no nozzle temperature.
+/// Start macros this reader understands when the file gives them both temperatures; without either they
+/// heat from their own defaults.
 const START_MACROS: &[&str] = &["PRINT_START", "START_PRINT", "PRINTSTART", "STARTPRINT"];
+/// Macros whose names hold START or BEGIN that heat nothing: Klipper's object labels.
+const NOT_START: &[&str] = &[
+    "EXCLUDE_OBJECT_START",
+    "EXCLUDE_OBJECT_END",
+    "EXCLUDE_OBJECT_DEFINE",
+];
 
 impl JobHeat {
     fn raise(slot: &mut Option<f64>, v: f64) {
@@ -323,9 +330,17 @@ fn macro_heat(line: &str, heat: &mut JobHeat) {
         }
         return;
     }
-    // A start macro run with no nozzle temperature heats from its own defaults, which the file does not show.
-    if START_MACROS.contains(&name.as_str()) && !args.iter().any(|(k, _)| NOZZLE_KEYS.contains(&k.as_str())) {
-        heat.unknown(|| format!("`{name}` gets no nozzle temperature, so it heats from its own defaults"));
+    // A start macro heats from its own defaults for any heater the file does not name: it must get both
+    // temperatures. Any other macro named like a start (START, BEGIN) is not understood.
+    let named = |keys: &[&str]| args.iter().any(|(k, _)| keys.contains(&k.as_str()));
+    if START_MACROS.contains(&name.as_str()) {
+        if !named(NOZZLE_KEYS) || !named(BED_KEYS) {
+            heat.unknown(|| {
+                format!("`{name}` does not get both temperatures, so it heats from its own defaults")
+            });
+        }
+    } else if (name.contains("START") || name.contains("BEGIN")) && !NOT_START.contains(&name.as_str()) {
+        heat.unknown(|| format!("`{name}` looks like a start macro this reader does not know"));
     }
     for (k, v) in &args {
         // Klipper names extruders by object (`ACTIVATE_EXTRUDER EXTRUDER=extruder1`): not a temperature.
@@ -416,6 +431,17 @@ mod tests {
         assert_eq!(gcode_heat("M104 S200 B260\n").nozzle, Some(260.0));
         assert!(gcode_heat("PRINT_START\nM104 S215\n").unknown.is_some());
         assert!(gcode_heat("START_PRINT BED=60\n").unknown.is_some());
+        // Both heaters, or the macro heats the other from its own default.
+        assert!(gcode_heat("PRINT_START EXTRUDER=215\n").unknown.is_some());
+        assert!(gcode_heat("PRINT_START EXTRUDER=215 BED=60\n").unknown.is_none());
+        // A start macro by name that this reader does not know; Klipper's object labels are not one.
+        assert!(gcode_heat("_PRINT_BEGIN\n").unknown.is_some());
+        assert!(gcode_heat("custom_start T=1\n").unknown.is_some());
+        assert!(
+            gcode_heat("EXCLUDE_OBJECT_START NAME=lid\nEXCLUDE_OBJECT_END NAME=lid\n")
+                .unknown
+                .is_none()
+        );
         for g in [
             "M303 E0 S240 C8\n",
             "M104 S{first_layer_temperature[0]}\n",
