@@ -3,9 +3,9 @@
 // Journey: the Bambu Lab H3C, one extruder with nine hotends. With the H3C picked, a person adds a 2.85 mm TPU
 // filament and prints one box in it beside a PLA box. The Filament block shows each filament on its tool: the TPU on
 // the TPU tool with the line that says why, and the note that the TPU tool's number is not settled. Picking a tool by
-// hand reaches the slice, and the slice puts each filament on the tool shown. A chamber target over the H3C's 65 C is
-// held to 65 C in the field and in the slice, and says so. Review pictures with SX_SHOTS=1: the Filament block and the
-// Chamber temperature row at 1440 and 390 wide, saved to SX_SHOTS_DIR (test-results/shots by default).
+// hand reaches the slice, and the slice puts each filament on the tool shown. A filament's chamber temperature over the H3C's
+// 65 C is held to 65 C in the Filament dialog and in the slice, and says so. Review pictures with SX_SHOTS=1: the
+// Filament block and the Filament dialog's Chamber temperature at 1440 and 390 wide, saved to SX_SHOTS_DIR (test-results/shots by default).
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -43,6 +43,23 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(dir, name) })
 }
 
+/** At 390 px the left pane is a slice sheet on a phone, or folds behind its edge tab: opens whichever is there. */
+async function leftPane(page: Page): Promise<void> {
+  await openSheet(page)
+  const tab = page.getByTestId('edge-tab-left')
+  if ((await tab.count()) && (await tab.getAttribute('aria-expanded')) !== 'true') await tab.click()
+}
+
+/** Opens the Filament dialog of slot `n` from the rail, as a person does with the keyboard. */
+async function filamentDialog(page: Page, n: number) {
+  await page.locator(`[data-testid="slice-filament-slot"][data-slot="${n}"]`).focus()
+  await page.keyboard.press('Shift+F10')
+  await page.getByTestId('slice-filament-edit').click()
+  const dialog = page.getByRole('dialog', { name: new RegExp(`Filament ${n}`) })
+  await expect(dialog).toBeVisible()
+  return dialog
+}
+
 /** Adds filament 2 through the rail and picks Bambu TPU 75A (2.85 mm) for it in the Filament dialog. */
 async function addTpu285(page: Page): Promise<void> {
   if ((await page.locator('[data-testid="slice-filament-slot"][data-slot="2"]').count()) === 0) await page.getByTestId('slice-filament-add').first().click()
@@ -71,7 +88,7 @@ async function twoBoxes(page: Page): Promise<void> {
   })
 }
 
-test('the H3C puts each filament on its tool, keeps 2.85 mm TPU on the TPU tool and holds the chamber to 65 C', async ({ page }) => {
+test('the H3C puts each filament on its tool and keeps 2.85 mm TPU on the TPU tool', async ({ page }) => {
   test.slow()
   await page.setViewportSize(DESKTOP)
   await calm(page, 'advanced', { keepPrinter: true })
@@ -98,44 +115,65 @@ test('the H3C puts each filament on its tool, keeps 2.85 mm TPU on the TPU tool 
   const before = await pick.boundingBox()
   await pick.selectOption('3')
   expect(await pick.boundingBox()).toEqual(before)
-  await expect.poll(async () => (await sx(page)).plates.find((p) => p.id === (await sx(page)).activePlate)?.settings.hotendMap).toEqual([3, 8])
+  await expect.poll(async () => { const s = await sx(page); return s.plates.find((p) => p.id === s.activePlate)?.settings.hotendMap }).toEqual([3, 8])
   await startSlice(page)
   const done = await sx(page)
   expect(done.slice.status, done.slice.message).toBe('done')
   expect(done.slice.result?.filamentMap).toMatchObject({ nozzles: [2, 7], auto: false })
 
-  // The chamber: the H3C heats to 65 C at most. Typing 70 C keeps 65 C and says so under the field.
-  expect(done.profile?.limits.chamberMaxC).toBe(65)
-  await page.locator('#expert-search').fill('Chamber temperature')
-  const field = page.locator('#set-chamber_temperature')
-  await expect(field).toBeVisible()
+  // The phone width: the same rows in the slice sheet.
+  await page.setViewportSize(PHONE)
+  await leftPane(page)
+  const phoneRows = page.locator('.hotend-map')
+  await phoneRows.scrollIntoViewIfNeeded()
+  await expect(phoneRows.getByLabel('Tool for filament 2')).toBeVisible()
+  await expect(phoneRows.getByLabel('Tool for filament 2')).toHaveValue('8')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+  await shot(page, 'h3c-tools-390.png')
+  await page.setViewportSize(DESKTOP)
+})
+
+test('the H3C holds a chamber temperature over 65 C to 65 C, in the field and in the slice', async ({ page }) => {
+  test.slow()
+  await page.setViewportSize(DESKTOP)
+  await calm(page, 'advanced', { keepPrinter: true })
+  await expect.poll(async () => (await sx(page)).profile?.printerId, { timeout: 60_000 }).toBe('bambu-h3c')
+  if ((await state(page)).plate.length === 0) await boxOnPlate(page)
+  expect((await sx(page)).profile?.limits.chamberMaxC).toBe(65)
+
+  // The filament's Chamber temperature: typing 70 C keeps 65 C, and the line under the field says why.
+  let dialog = await filamentDialog(page, 1)
+  const field = dialog.getByTestId('slot-chamber')
   await field.fill('70')
   await field.press('Enter')
   await expect(field).toHaveValue('65')
-  const row = page.locator('[data-testid="slice-setting-row"][data-key="chamber_temperature"]')
-  await expect(row).toContainText('This printer heats its chamber to 65 C at most.')
-  await row.scrollIntoViewIfNeeded()
+  await expect(dialog).toContainText('This printer heats its chamber to 65 C at most.')
+  expect(await dialog.innerText()).not.toContain('chamber_temperature')
+  await dialog.locator('#slot-chamber-hint').scrollIntoViewIfNeeded()
   await shot(page, 'h3c-chamber-1440.png')
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
 
-  // A target over the limit that came in some other way (a project): the row says what slicing uses, and the slice
-  // holds the chamber to 65 C with a warning.
+  // A value over the limit that came in another way (a project): the line says what slicing uses, and the slice holds
+  // the chamber to 65 C with a warning.
   await patch(page, { overrides: { ...(await sx(page)).overrides, chamber_temperature: [70] } })
-  await expect(row).toContainText('70 C is over the 65 C this printer heats its chamber to. Slicing uses 65 C.')
+  dialog = await filamentDialog(page, 1)
+  await expect(dialog.getByTestId('slot-chamber')).toHaveValue('70')
+  await expect(dialog).toContainText('70 C is over the 65 C this printer heats its chamber to. Slicing uses 65 C.')
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await startSlice(page)
   const hot = await sx(page)
   expect(hot.slice.status, hot.slice.message).toBe('done')
   expect(hot.slice.result?.warnings?.some((w) => w.code === 'safety_limit' && /chamber/.test(w.message) && /65 C/.test(w.message)), JSON.stringify(hot.slice.result?.warnings)).toBe(true)
 
-  // The phone width: the same rows in the slice sheet.
+  // The phone width: the same field and line in the dialog.
   await page.setViewportSize(PHONE)
-  await openSheet(page)
-  const phoneRows = page.locator('.hotend-map')
-  await phoneRows.scrollIntoViewIfNeeded()
-  await expect(phoneRows.getByLabel('Tool for filament 2')).toHaveValue('8')
+  await leftPane(page)
+  dialog = await filamentDialog(page, 1)
+  await dialog.locator('#slot-chamber-hint').scrollIntoViewIfNeeded()
+  await expect(dialog.getByTestId('slot-chamber')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
-  await shot(page, 'h3c-tools-390.png')
-  await page.locator('#expert-search').fill('Chamber temperature')
-  await page.locator('[data-testid="slice-setting-row"][data-key="chamber_temperature"]').scrollIntoViewIfNeeded()
   await shot(page, 'h3c-chamber-390.png')
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
+  await patch(page, { overrides: {} })
   await page.setViewportSize(DESKTOP)
 })

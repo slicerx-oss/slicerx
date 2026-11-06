@@ -9,7 +9,8 @@ import type { EasyGoal, SettingValue } from '@slicerx/contracts/settings'
 import { isCompatibleWithPrinter, type PrinterContext } from './compat'
 import { settingDefault } from './defaults'
 import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, type VendorFile } from './filaments'
-import { filamentConfig, gcodeStatus, listFilamentProfiles, printerConfig, printerProfile, processConfig } from './profiles'
+import { hotendCount, TPU285 } from './hotends'
+import { filamentConfig, gcodeStatus, listFilamentProfiles, printerConfig, printerProfile, processConfig, processVariantTables } from './profiles'
 import { noStockNozzle, resolvedProfile } from './resolved'
 
 export interface SlotFilament {
@@ -41,7 +42,7 @@ export interface StockLayer {
   /** Where the settings come from: Orca's resolved system presets, or our own profile for models Orca has no preset for. */
   source: 'orca' | 'slicerx'
   values: Record<string, SettingValue>
-  limits: { nozzleMaxC?: number; bedMaxC?: number }
+  limits: { nozzleMaxC?: number; bedMaxC?: number; chamberMaxC?: number }
   /** The custom G-code in this layer is the shipped text for the model, so the engine may trust it. */
   shippedGcode: boolean
   /** Keys that carry G-code text, so a user override of one can withdraw the trust. */
@@ -81,6 +82,13 @@ const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
 /** Filament keys that override the printer's extruder value only when set. */
 export const FILAMENT_OVERRIDE_KEYS: ReadonlySet<string> = new Set(['filament_retraction_length', 'filament_z_hop', 'filament_z_hop_types', 'filament_retract_lift_above', 'filament_retract_lift_below', 'filament_retract_lift_enforce', 'filament_retraction_speed', 'filament_deretraction_speed', 'filament_retract_restart_extra', 'filament_retraction_minimum_travel', 'filament_wipe_distance', 'filament_retract_when_changing_layer', 'filament_wipe', 'filament_retract_before_wipe', 'filament_long_retractions_when_cut', 'filament_retraction_distances_when_cut', 'filament_travel_slope'])
 
+const NO_LEND: ReadonlySet<string> = new Set(['filament_diameter', 'filament_extruder_variant'])
+const tpuOnly = (p: Record<string, SettingValue>): boolean => {
+  const v = p['filament_extruder_variant']
+  const list = Array.isArray(v) ? v : v === undefined ? [] : [v]
+  return list.length > 0 && list.every((x) => String(x).endsWith(TPU285))
+}
+
 /** One value per slot for every key a slot's filament sets, so a three-color print has three entries. */
 export function perSlot(parts: readonly Record<string, SettingValue>[]): Record<string, SettingValue> {
   if (parts.length === 1) return { ...parts[0]! }
@@ -96,7 +104,10 @@ export function perSlot(parts: readonly Record<string, SettingValue>[]): Record<
       out[key] = parts.map((p) => (key in p ? (first(p[key]) ?? 'nil') : 'nil')) as SettingValue
       continue
     }
-    const fallback = first(parts.find((p) => key in p)?.[key])
+    // A preset written only for the TPU285 hotend (2.85 mm TPU on the H3C) never lends its diameter or variant to a
+    // slot that sets none: that slot is a 1.75 mm filament for the standard hotends.
+    const lender = parts.find((p) => key in p && !(NO_LEND.has(key) && tpuOnly(p)))
+    const fallback = lender ? first(lender[key]) : first(settingDefault(key))
     out[key] = parts.map((p) => (key in p ? first(p[key]) : fallback)) as SettingValue
   }
   return out
@@ -128,6 +139,10 @@ export function pickVariant(file: VendorFile, family: string, machineName: strin
  */
 export function pickExtruderVariant(cfg: Record<string, SettingValue>, variants: readonly string[], variant: string): Record<string, SettingValue> {
   if (variants.length < 2) return cfg
+  // A preset written only for the TPU285 hotend (2.85 mm TPU on the H3C) keeps that variant: it prints on that hotend
+  // alone, and the engine reads its hotend from it.
+  const own = cfg['filament_extruder_variant']
+  if (Array.isArray(own) && own.length === 1 && String(own[0]).endsWith(TPU285) && variants.includes(String(own[0]))) return cfg
   const i = Math.max(0, variants.indexOf(variant))
   const out: Record<string, SettingValue> = {}
   for (const [k, v] of Object.entries(cfg)) out[k] = Array.isArray(v) && v.length === variants.length ? ([v[i]] as SettingValue) : v
@@ -209,7 +224,7 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
     tier: input.tier,
     source: exact || (resolved && nozzle === profile.defaultNozzle) ? 'orca' : 'slicerx',
     values,
-    limits: { ...(profile.limits.hotendMaxTemp ? { nozzleMaxC: profile.limits.hotendMaxTemp } : {}), ...(profile.limits.bedMaxTemp ? { bedMaxC: profile.limits.bedMaxTemp } : {}) },
+    limits: { ...(profile.limits.hotendMaxTemp ? { nozzleMaxC: profile.limits.hotendMaxTemp } : {}), ...(profile.limits.bedMaxTemp ? { bedMaxC: profile.limits.bedMaxTemp } : {}), ...(profile.limits.chamberMaxTemp ? { chamberMaxC: profile.limits.chamberMaxTemp } : {}) },
     shippedGcode: gcodeStatus(printerId) === 'written',
     gcodeKeys: Object.keys(gcode),
     filamentIds,
@@ -337,6 +352,32 @@ const layerOf = (p: Record<string, SettingValue>): number => Number(first(p['lay
  * nozzle's Standard with the layer height scaled by the 0.4 mm ladder's ratio, kept within 25 to 75 percent of the nozzle.
  */
 async function tierProcess(printerId: string, tier: EasyGoal, nozzle: number, exact?: Awaited<ReturnType<typeof resolvedProfile>>): Promise<Record<string, SettingValue>> {
+  return withVariantTables(printerId, tier, nozzle, await tierProcessOwn(printerId, tier, nozzle, exact))
+}
+
+/**
+ * On a printer whose hotends are its tools (the H3C), the maker's process values per hotend type ride along with the
+ * tier's process, so the engine gives an object on the TPU285 or a High Flow hotend that hotend's values. The entry of
+ * the standard hotend stays the process's own value, so a print on standard hotends is as before. Other printers and
+ * nozzles without the maker's 0.4 mm values per variant are left as they are.
+ */
+function withVariantTables(printerId: string, tier: EasyGoal, nozzle: number, process: Record<string, SettingValue>): Record<string, SettingValue> {
+  if (nozzle !== 0.4 || !hotendCount(printerConfig(printerId, nozzle) as Record<string, unknown>)) return process
+  const tables = processVariantTables(printerId, tier)
+  const variants = tables['print_extruder_variant']
+  if (!Array.isArray(variants)) return process
+  const standard = (variants as unknown[]).map(String).indexOf('Direct Drive Standard')
+  const out: Record<string, SettingValue> = { ...process }
+  for (const [k, v] of Object.entries(tables)) {
+    if (!Array.isArray(v)) continue
+    const own = process[k]
+    const mine = Array.isArray(own) ? own[0] : own
+    out[k] = (standard >= 0 && mine !== undefined && k !== 'print_extruder_variant' && k !== 'print_extruder_id' ? v.map((x, i) => (i === standard ? mine : x)) : v) as SettingValue
+  }
+  return out
+}
+
+async function tierProcessOwn(printerId: string, tier: EasyGoal, nozzle: number, exact?: Awaited<ReturnType<typeof resolvedProfile>>): Promise<Record<string, SettingValue>> {
   const shipped = exact ?? (await resolvedProfile(printerId, tier, nozzle))
   if (!shipped) return { ...(processConfig(tier, nozzle, printerId) as Record<string, SettingValue>) }
   const own = { ...shipped.process } as Record<string, SettingValue>

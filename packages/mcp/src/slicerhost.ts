@@ -212,6 +212,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         trustedGcode: trustGcode?.(req.config as unknown as Record<string, SettingValue>) ?? false,
         emitPreview: req.options?.emitPreview ?? false,
         ...(req.options?.heightRanges?.length ? { heightRanges: req.options.heightRanges } : {}),
+        ...(req.options?.machineLimits?.chamberMaxC !== undefined ? { machineLimits: { chamberMaxC: req.options.machineLimits.chamberMaxC } } : {}),
       })
       const costPerKg = (() => {
         const v = req.config['filament_cost']
@@ -230,6 +231,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         // The engine's codes, layers and object ids when the summary carries them; the plain messages otherwise (the stub, an older sx).
         warnings: [...(summary.warning_details ?? summary.warnings.map((message): NonNullable<SliceSummary['warning_details']>[number] => ({ code: 'unsupported_setting', message }))).map((w): SliceWarning => ({ code: w.code as SliceWarning['code'], message: w.message, ...(w.layer !== undefined ? { layer: w.layer } : {}), ...(w.object_id ? { objectId: w.object_id } : {}) })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
         ...(summary.chamber_cooling ? { chamberCooling: summary.chamber_cooling } : {}),
+        ...(summary.filament_map ? { filamentMap: summary.filament_map } : {}),
         ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, ...(f.engine_object ? { engineObject: f.engine_object } : {}), name: f.name, features: f.features })) } : {}),
       }
       slices.set(id, { result, summary, config: req.config as unknown as Record<string, SettingValue>, ...(summary.gcode_path ? { gcodePath: summary.gcode_path } : {}), ...(summary.preview_path ? { previewPath: summary.preview_path } : {}) })

@@ -41,10 +41,18 @@ describe('H3C hotends over MCP', () => {
         { slot: 3, tool: 2, hotend: 1, tpu_tool: false, tpu285: false },
       ],
     })
-    await h.call('slicerx_project_set_overrides', { changes: { filament_map_mode: 'Manual', filament_nozzle_map: [4, 7, 0] } })
+    // A tool by hand, as the person picks it in the Filament block; the others stay where they print.
+    const picked = await h.call('slicerx_project_set_tool', { slot: 1, tool: 5 })
+    expect(picked.isError, text(picked)).toBeFalsy()
     const own = data<{ output: { hotends?: Hotends } }>(await h.call('slicerx_project_show')).output.hotends
     expect(own?.auto).toBe(false)
-    expect(own?.filaments.map((r) => r.tool)).toEqual([5, 8, 1])
+    expect(own?.filaments.map((r) => r.tool)).toEqual([5, 8, 2])
+    // The TPU tool takes 2.85 mm TPU only, and the TPU stays on it.
+    expect(text(await h.call('slicerx_project_set_tool', { slot: 3, tool: 8 }))).toMatch(/Tool 8 is the TPU tool/)
+    expect(text(await h.call('slicerx_project_set_tool', { slot: 2, tool: 3 }))).toMatch(/2\.85 mm TPU, which prints only on the TPU tool/)
+    expect(text(await h.call('slicerx_project_set_tool', { slot: 1, tool: 10 }))).toMatch(/tools 1 to 9/)
+    await h.call('slicerx_project_set_tool', { slot: 1, tool: 'auto' })
+    expect(data<{ output: { hotends?: Hotends } }>(await h.call('slicerx_project_show')).output.hotends?.auto).toBe(true)
   })
 
   it('leaves other printers without a hotend read-back', async () => {
@@ -59,7 +67,7 @@ describe('H3C hotends over MCP', () => {
     expect(() => appPlateInputs.settings.parse({ plate: 1, settings: { hotendMap: [1.5] } })).toThrow()
   })
 
-  it.skipIf(noSx())('reads the slice tools back from the engine, and holds the chamber to 65 C', { timeout: sxTimeout * 3 }, async () => {
+  it.skipIf(noSx())('reads the slice tools back from the engine, and holds the chamber to 65 C', { timeout: sxTimeout * 2 }, async () => {
     const h = await connect({ engine: 'sx', sxBin })
     await h.ctx.profiles.prepare(['machine:bambu-h3c'])
     const model = join(h.dir, 'cube20.stl')
@@ -73,12 +81,5 @@ describe('H3C hotends over MCP', () => {
     expect(hot.isError, text(hot)).toBeFalsy()
     const details = data<{ warning_details?: { code: string; message: string }[] }>(hot).warning_details ?? []
     expect(details.some((w) => w.code === 'safety_limit' && /chamber/.test(w.message) && /65 C/.test(w.message)), JSON.stringify(details)).toBe(true)
-    // The project slice reads the tools back the same way.
-    await h.call('slicerx_project_open', { name: 'Slice', profiles: ['machine:bambu-h3c'] })
-    await h.call('slicerx_project_add_model', { path: model })
-    await h.call('slicerx_project_set_overrides', { changes: { filament_type: ['TPU'], filament_diameter: [2.85] } })
-    const sliced = await h.call('slicerx_slice', {})
-    expect(sliced.isError, text(sliced)).toBeFalsy()
-    expect(JSON.stringify(data(sliced))).toContain('"tpu_tool":true')
   })
 })

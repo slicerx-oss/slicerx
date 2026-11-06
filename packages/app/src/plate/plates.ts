@@ -3,7 +3,7 @@
 // Multiple plates, the Bambu Studio and OrcaSlicer way: every plate has its own objects and its own
 // bed type, print sequence and filament order. The active plate's objects stay in `plate` so the
 // rest of the app keeps working on one plate; the others wait in `plates`.
-import { nozzleMapConfig } from '../filament/nozzle-map'
+import { hotendMapConfig, nozzleMapConfig } from '../filament/nozzle-map'
 import { fullPlate, get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
 import { quietly } from './history'
 import { plateTower } from './tower'
@@ -185,7 +185,7 @@ export function nameOptions(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'
 export function plateConfig(meta: PlateMeta | undefined): Record<string, string | number | number[]> {
   if (!meta) return {}
   const seq = meta.settings.sequence
-  const out: Record<string, string | number | number[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta) }
+  const out: Record<string, string | number | number[]> = { ...(seq ? { print_sequence: seq === 'by-object' ? 'by object' : 'by layer' } : {}), ...nozzleMapConfig(meta), ...hotendMapConfig(meta) }
   const order = meta.settings.filamentOrder
   if (order && order.length > 1) {
     out['first_layer_print_sequence'] = [...order]

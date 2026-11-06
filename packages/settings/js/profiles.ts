@@ -31,7 +31,7 @@ export interface PrinterProfile {
   nozzleCount: number
   flavor: string
   directDrive?: boolean
-  limits: { maxSpeed?: number; maxAccel?: number; hotendMaxTemp?: number; bedMaxTemp?: number }
+  limits: { maxSpeed?: number; maxAccel?: number; hotendMaxTemp?: number; bedMaxTemp?: number; chamberMaxTemp?: number }
   /** The maker's pages the profile follows. */
   sources: string[]
 }
@@ -233,6 +233,20 @@ export const PROCESS_SPEED_SOURCES = { orcaSlicer: SPEEDS.orcaCommit, bambuStudi
 export function processSpeedSource(printer: string, tier: string): string | undefined {
   const m = SPEEDS.models[printer]
   return m?.[tier] ?? (tier === 'strong' ? m?.['standard'] : undefined)
+}
+
+/**
+ * The maker's process values per extruder variant for a printer's tier (`print_extruder_variant`, one entry per
+ * variant: Bambu Lab's H3C lists Standard, High Flow and TPU285), in our value format: the variant names and ids and
+ * every list with one entry per variant. Empty when the maker's preset for the tier lists one variant or none.
+ */
+export function processVariantTables(printer: string, tier: string): Record<string, SettingValue> {
+  const src = processSpeedSource(printer, tier)
+  const raw = src ? SPEEDS.presets[src] : undefined
+  const variants = Array.isArray(raw?.['print_extruder_variant']) ? (raw!['print_extruder_variant'] as unknown[]) : []
+  if (!raw || variants.length < 2) return {}
+  const lists = Object.fromEntries(Object.entries(raw).filter(([, v]) => Array.isArray(v) && v.length === variants.length))
+  return importFlat(lists).config as unknown as Record<string, SettingValue>
 }
 
 /** Printers whose Fine tier carries the tuned quality values (from the shared P2S and H2C profiles). */

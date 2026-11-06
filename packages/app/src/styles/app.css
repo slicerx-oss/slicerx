@@ -910,6 +910,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .nozzle-row { display: flex; gap: 8px; align-items: center; }
 .nozzle-row .sname { flex: 1; min-width: 0; font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); color: var(--fg); }
 .nozzle-row .sx-select { flex: 0 1 auto; min-width: 0; }
+.hotend-map { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-soft); display: grid; gap: 8px; }
+.hotend-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 4px; align-items: center; }
+.hotend-row .sname { min-width: 0; font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); color: var(--fg); }
+.hotend-row .sx-select { min-width: 0; }
+.hotend-row .hotend-why { grid-column: 2 / -1; margin: 0; }
+.hotend-note { margin: 0; }
 .swap-state { margin: 0; color: var(--dim); }
 .slot-form { display: grid; gap: 12px; min-width: min(360px, 80vw); }
 .spool-pick { display: grid; gap: 6px; }

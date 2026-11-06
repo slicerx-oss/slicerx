@@ -1,5 +1,5 @@
 {
- "comment": "Per catalog model: G-code flavor and the maker's published pages the profile follows. Limits (speed, acceleration, temperatures) come from knowledge/printers where a model has an entry; models without one carry no limits. Flavor follows the maker's firmware as described on the linked page or, for generic printers, the firmware's own documentation.",
+ "comment": "Per catalog model: G-code flavor and the maker's published pages the profile follows. Limits (speed, acceleration, temperatures) come from knowledge/printers where a model has an entry; models without one carry no limits, except what a model's own limits entry here gives (the maker's published chamber limit of a model the knowledge base has no entry for yet). Flavor follows the maker's firmware as described on the linked page or, for generic printers, the firmware's own documentation.",
  "models": {
   "bambu-x1-carbon": {
    "flavor": "marlin",
@@ -64,8 +64,12 @@
   "bambu-h3c": {
    "flavor": "marlin",
    "sources": [
-    "https://bambulab.com/en-us/h3c/specs"
-   ]
+    "https://bambulab.com/en-us/h3c/specs",
+    "https://blog.bambulab.com/tool-changer-game-changer-bambu-lab-presents-h3c-the-defining-new-generation-of-3d-printers/"
+   ],
+   "limits": {
+    "chamberMaxTemp": 65
+   }
   },
   "bambu-h2d-pro": {
    "flavor": "marlin",

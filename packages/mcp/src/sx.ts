@@ -13,7 +13,8 @@ import { collisionError, refusedHits, sliceCollisions, sxCollisions } from './co
 import { featureFilaments } from './feature-filaments'
 import { ToolInputError } from './models'
 import type { Arranged, SlicerBackend, SliceJob, SliceJobObject, SliceSummary, ToolheadRemap } from './slicer'
-import { formatDuration } from './slicer'
+import { formatDuration, hotendReadback } from './slicer'
+import { hotendCount } from '@slicerx/settings/hotends'
 
 /** Finds a binary by name: an explicit path, other candidates in order, then PATH. */
 /** The engine's line after a custom G-code refusal for a printer it knows whose text matches none of its stock versions. */
@@ -266,7 +267,7 @@ function writeRequest(job: SliceJob): { requestPath: string; objects: (SliceJobO
     config: sxConfig(job.explicitConfig, job.widthsAsGiven),
     // The config is a whole resolved profile, so the engine's list of keys it never reads would be long and say
     // nothing about the person's file (import_report does that); a refused value names its key instead.
-    options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.emitPreview && job.previewFormat === 'v2' ? { previewFormat: 'v2' } : {}), configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
+    options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.emitPreview && job.previewFormat === 'v2' ? { previewFormat: 'v2' } : {}), configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(job.machineLimits?.chamberMaxC !== undefined ? { machineLimits: { chamberMaxC: job.machineLimits.chamberMaxC } } : {}) },
     meshes,
   }
   const requestPath = join(job.outDir, 'request.json')
@@ -432,6 +433,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
         primeTower?: { x?: number; y?: number; width?: number; depth?: number; angle?: number } | null
+        filamentMap?: { extruders?: number[]; nozzles?: number[]; auto?: boolean } | null
         projectPlates?: { plates?: number; sliced?: number }[]
         arrange?: unknown
       }
@@ -475,6 +477,11 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
             depth: round2(out.primeTower.depth ?? 0),
             angle: round2(out.primeTower.angle ?? 0),
           },
+        } : {}),
+        ...(out.filamentMap && Array.isArray(out.filamentMap.nozzles) ? {
+          filament_map: { extruders: out.filamentMap.extruders ?? [], nozzles: out.filamentMap.nozzles, auto: out.filamentMap.auto !== false },
+          // A printer whose hotends are its tools (the H3C): each filament the plate printed with, on its tool.
+          ...(hotendCount(job.config) ? { hotends: hotendReadback(job.config, out.filamentMap.nozzles, (out.stats?.filamentMm ?? []).flatMap((mm, i) => (mm > 0 ? [i + 1] : [])), out.filamentMap.auto !== false) } : {}),
         } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),
         // A project given without a plate: the engine sliced its first, and says when it has more.

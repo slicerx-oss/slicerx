@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Writes profiles/printers.json: one printer profile per model in @slicerx/printer-catalog (build volume,
 // nozzles, kinematics, enclosure from the catalog), the G-code flavor and source pages from
-// scripts/printer-specs.json, and the limits knowledge/printers holds for the models it covers. Where
+// scripts/printer-specs.json, and the limits knowledge/printers holds for the models it covers (plus a spec's own limits). Where
 // packages/profiles/machine.json (or cura/ultimaker.json) has a model, its G-code flavor and extruder type win.
 // Run with `node scripts/gen-profiles.mjs` (Node 24 reads the catalog's TypeScript directly).
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -26,6 +26,8 @@ const printers = catalog.PRINTER_MODELS.map((m) => {
   if (k?.motion?.maxAccel) limits.maxAccel = k.motion.maxAccel
   if (k?.hotend?.maxTemp) limits.hotendMaxTemp = k.hotend.maxTemp
   if (k?.bed?.maxTemp) limits.bedMaxTemp = k.bed.maxTemp
+  // A limit the maker publishes for a model the knowledge base has no entry for yet (the H3C's 65 C chamber).
+  Object.assign(limits, spec.limits ?? {})
   const brand = catalog.brandById(m.brand)
   return {
     id: m.id,

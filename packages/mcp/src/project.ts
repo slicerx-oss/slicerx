@@ -8,7 +8,10 @@ import { rotationMatrix, type ArrangedObject, type MovedCopies, type ObjectPlan,
 import type { EngineCall } from '@slicerx/cad-history'
 import type { DataStore } from './data'
 import type { ProfileCatalog } from './profiles'
-import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
+import { isGcodeKey, SHIPPED_GCODE_SOURCES, slicePrinter } from './config'
+import { autoHotends, hotendCount, hotendMapProblem } from '@slicerx/settings/hotends'
+import { printerProfile } from '@slicerx/settings'
+import { hotendReadback } from './slicer'
 import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
@@ -120,6 +123,8 @@ export class McpProject implements PilotProject {
   private projectOverrides: Record<string, SettingValue> = {}
   /** Filaments a client set, by number; the rest follow the filament profile. */
   private filamentSetup: Record<number, FilamentSetup> = {}
+  /** The tool of each filament (from 1, index slot - 1) set by hand on a printer whose hotends are its tools; unset is the slicer's pick. */
+  private toolMap: number[] | undefined
   private ranges: ProjectHeightRange[] = []
   private nextId = 1
   private nextVolume = 1
@@ -256,6 +261,51 @@ export class McpProject implements PilotProject {
     return { filament_type: list.map((f) => f.type), filament_colour: list.map((f) => f.color) }
   }
 
+  /**
+   * Puts filament `slot` (1-based) on `tool` (from 1) on a printer whose hotends are its tools (the H3C), as the person
+   * picks it in the Filament block; the other filaments keep the tools they print on now. 'auto' gives every filament
+   * back to the slicer's pick. Throws with the reason when the map does not fit the printer.
+   */
+  setTool(slot: number, tool: number | 'auto'): void {
+    if (tool === 'auto') {
+      this.toolMap = undefined
+      return
+    }
+    const n = this.filaments().length
+    if (slot < 1 || slot > n) throw new Error(`No filament ${slot}: the project has ${n}. Add one with slicerx_project_add_filament.`)
+    const now = this.hotends()
+    const map = Array.from({ length: n }, (_, i) => now?.filaments.find((r) => r.slot === i + 1)?.tool ?? 1)
+    map[slot - 1] = tool
+    const problem = hotendMapProblem(this.config(this.layout[0]?.index ?? 1) as Record<string, unknown>, map)
+    if (problem) throw new Error(problem.charAt(0).toUpperCase() + problem.slice(1))
+    this.toolMap = map
+  }
+
+  /** The printer's limits a slice of this project is held to, from the printer catalog (the H3C's 65 C chamber). */
+  machineLimits(): { chamberMaxC?: number } {
+    const ids = [...this.settings.profiles]
+    if (this.settings.printer) ids.unshift(`printer:${this.settings.printer}`)
+    const printer = slicePrinter(this.profiles, ids, [])
+    const chamber = printer ? printerProfile(printer.printerId)?.limits.chamberMaxTemp : undefined
+    return chamber ? { chamberMaxC: chamber } : {}
+  }
+
+  /**
+   * On a printer whose hotends are its tools (the H3C): each project filament on its tool before a slice, by the rule
+   * the engine uses with every filament counted as printed, or as the project's overrides set them by hand
+   * (`filament_map_mode` Manual with `filament_nozzle_map`). Undefined on any other printer.
+   */
+  hotends(plateIndex = this.layout[0]?.index ?? 1): ReturnType<typeof hotendReadback> | undefined {
+    const cfg = this.config(plateIndex) as Record<string, unknown>
+    if (!hotendCount(cfg)) return undefined
+    const n = this.filaments().length
+    const used = Array.from({ length: n }, (_, i) => i + 1)
+    const own = Array.isArray(cfg['filament_nozzle_map']) ? (cfg['filament_nozzle_map'] as unknown[]).map(Number) : []
+    const manual = String(cfg['filament_map_mode'] ?? '') === 'Manual' && own.length > 0
+    const map = manual ? used.map((s) => own[s - 1] ?? 0) : autoHotends(cfg, n, used)
+    return hotendReadback(cfg, map, used, !manual)
+  }
+
   private baseConfig(): Record<string, SettingValue> {
     const cfg: Record<string, SettingValue> = { ...defaultConfig(this.store) }
     const ids = [...this.settings.profiles]
@@ -291,7 +341,8 @@ export class McpProject implements PilotProject {
 
   config(plateIndex: number): PrintConfig {
     const plate = this.layout.find((p) => p.index === plateIndex)
-    return { ...this.baseConfig(), ...this.filamentConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
+    const tools = this.toolMap ? { filament_map_mode: 'Manual', filament_nozzle_map: this.toolMap.map((t) => t - 1) } : {}
+    return { ...this.baseConfig(), ...this.filamentConfig(), ...tools, ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
   }
 
   /**
@@ -1305,6 +1356,7 @@ export class McpProject implements PilotProject {
       bed: describeBed(this.bed(this.layout[0]?.index ?? 1)),
       plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index), ...this.safeByObject(p.index) })),
       filaments: this.filaments(),
+      ...(this.hotends() ? { hotends: this.hotends() } : {}),
       overrides: this.projectOverrides,
       height_ranges: this.heightRanges(),
     }
