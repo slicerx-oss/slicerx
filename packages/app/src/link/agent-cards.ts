@@ -48,6 +48,8 @@ export interface CardText {
   asksPlate?: boolean
   /** Why Approve stays off: the hub sent work this app will not word for a person. */
   blocked?: string
+  /** The footer's "Allows ... to" wording, when the work says it better than the card's permission class. */
+  allows?: string
   /** What the person is told when the hub runs the approved card and the printer refuses it (refusedNote). */
   outcome?: CardOutcome
 }
@@ -282,7 +284,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (slots) lines.push(slots)
   const said = oneLine(card.title)
   if (said) lines.push(`Note from ${who}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
-  return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}), outcome: outcomeOf(has, slotWork ? (slot?.slot ?? '') : null, startsPrint) }
+  return { title, lines, startsPrint, ...(asksPlate ? { asksPlate } : {}), ...(blocked ? { blocked } : {}), ...(slotWork ? { allows: 'change one filament slot' } : {}), outcome: outcomeOf(has, slotWork ? (slot?.slot ?? '') : null, startsPrint) }
 }
 
 /** What did not happen, by the card's action, and how a printer that was not ready for it is described. */
@@ -406,6 +408,7 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
       requests: [{ ...card, title: text.title, lines: text.lines }],
       ...(text.blocked ? { checks: { errors: [text.blocked], warnings: [] } } : {}),
       ...(text.startsPrint ? { confirm: BED_CLEAR, go: 'Bed is clear, approve' } : text.asksPlate ? { confirm: BED_CLEAR, go: 'Plate is clear, approve' } : {}),
+      ...(text.allows ? { allows: text.allows } : {}),
       approve: async () => {
         done()
         approved.set(card.id, text.outcome)
