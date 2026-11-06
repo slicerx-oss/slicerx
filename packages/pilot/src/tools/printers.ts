@@ -362,7 +362,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, job progress, loaded filament and machine cost. webUi: its web page for the person to open, null off its network. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
+    description: 'List printers with their state, job progress, loaded filament and machine cost. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer with no camera to watch. A printer with a problem now (an HMS code or print error) is named in the summary with it. printer.status reads one printer in full.',
     input: z.object({
       fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
       detail: z.enum(['summary', 'full']).default('summary'),
