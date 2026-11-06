@@ -666,6 +666,34 @@ mod tests {
 
     // The plate answer on a home card is about the plate as it was when the person answered: the hub
     // records that bed epoch with the work, and the home refuses if it moved before the work runs.
+    // A G-code card whose line can move the head says so in its summary, so the app asks about the plate,
+    // and keeps the bed epoch of that answer as a home card does. A line that cannot move asks nothing.
+    #[test]
+    fn a_motion_line_card_says_it_moves_and_keeps_its_plate_answer() {
+        let gcode = |line: &str| {
+            Work::parse(&json!({ "kind": "gcode", "printerId": "bay-1", "line": line })).unwrap()
+        };
+        assert_eq!(gcode("G29").summary()["motion"], true);
+        assert_eq!(gcode("BED_MESH_CALIBRATE").summary()["motion"], true);
+        assert_eq!(gcode("M104 S200").summary().get("motion"), None);
+        let w = Waiting::default();
+        for (id, line) in [("g-1", "G29"), ("g-2", "M104 S200")] {
+            w.hold(&card(id, &gcode(line)), 0, gcode(line), None, |_| true)
+                .unwrap();
+            w.answer_plate(id, |_| 9);
+        }
+        let answered = |id: &str| match w.take(id) {
+            Some((_, Work::Gcode { plate_epoch, .. })) => plate_epoch,
+            _ => panic!("no gcode work for {id}"),
+        };
+        assert_eq!(answered("g-1"), Some(9));
+        assert_eq!(
+            answered("g-2"),
+            None,
+            "a line that cannot move has no plate question"
+        );
+    }
+
     #[test]
     fn a_home_card_keeps_the_bed_epoch_its_plate_answer_was_given_in() {
         let home = || Work::parse(&json!({ "kind": "home", "printerId": "bay-1" })).unwrap();

@@ -241,6 +241,19 @@ describe('agent cards', () => {
     await second.deny()
     expect(calls).toEqual(['grant req-1 true', 'deny req-2'])
     expect(get().approval).toBeNull()
+    // A G-code card whose line can move the head (the hub's summary says so) asks about the plate too; a heater line does not.
+    emit(card({ id: 'req-g29', actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'gcode', printerId: 'bay-4', line: 'G29', motion: true } }))
+    const probe = get().approval!
+    expect(probe.confirm).toBe(BED_CLEAR)
+    expect(probe.go).toBe('Plate is clear, approve')
+    expect(probe.requests[0]!.lines.join(' ')).toMatch(/can move the head/)
+    await probe.approve()
+    expect(calls.at(-1)).toBe('grant req-g29 true')
+    emit(card({ id: 'req-m104', actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'gcode', printerId: 'bay-4', line: 'M104 S200' } }))
+    const heat = get().approval!
+    expect(heat.confirm).toBeUndefined()
+    await heat.approve()
+    expect(calls.at(-1)).toBe('grant req-m104 false')
     // A home card asks about the plate like a start, and its Approve carries the answer.
     emit(card({ id: 'req-3', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'home', printerId: 'bay-4' } }))
     const home = get().approval!
