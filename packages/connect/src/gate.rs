@@ -175,12 +175,12 @@ pub fn homes_axes(line: &str) -> bool {
         }
     }
     let mut rest = text.trim_start();
-    // A line number (`N10 G28`).
+    // A line number (`N10 G28`, `N 10 G28`), with any spacing around its digits.
     if let Some(after) = rest.strip_prefix('N') {
-        let digits = after.trim_start_matches(|c: char| c.is_ascii_digit());
-        if digits.len() < after.len() {
-            rest = digits.trim_start();
-        }
+        rest = after
+            .trim_start()
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .trim_start();
     }
     let Some(after) = rest.strip_prefix('G') else {
         return false;
@@ -296,6 +296,13 @@ mod tests {
             "G28X",
             "N5 G28",
             "n10g28",
+            "N 10 G28",
+            "n 10 g28",
+            "N\t10 G28",
+            "N10  G28",
+            "N 10\tG28",
+            "\tN5 G28",
+            "N G28",
             "G0028 Z",
             "G28.1",
             "G 28",

@@ -1747,6 +1747,10 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
                 ));
             }
             let out = hub_rpc::grant(b, broker, p).await?;
+            // A home card's plate answer is about the plate as it is now, when the person answered.
+            if p.get("bedClear").and_then(Value::as_bool) == Some(true) {
+                b.agent_work.answer_plate(&id, |printer| b.hub.bed(printer).epoch);
+            }
             hub_rpc::resolved(b, &id, true, via, conn.partner.as_deref());
             // Agent work runs here, under the person's token; the agent never gets the token.
             if let Some((owner, work)) = b.agent_work.take(&id) {

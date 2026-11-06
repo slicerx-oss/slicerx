@@ -159,4 +159,20 @@ describe('the printer controls dialog', () => {
     expect(calls.jog.mock.calls.at(-1)).toEqual(['bay-1', 'z', -1])
     expect(document.body.querySelector('[aria-label="Confirm move"]')).not.toBeNull()
   })
+
+  // A plate answer is about one printer's plate: the same dialog switched to another printer asks again.
+  it('drops the plate answer for jogs when the dialog shows another printer', async () => {
+    const { host, calls } = fakeHub(async () => undefined, async (...a: unknown[]) => {
+      if (a[2] as number < 0 && !(a[4] as { plateClear?: boolean } | undefined)?.plateClear) throw Object.assign(refuse('bed_check'), { details: { epoch: 4 } })
+    })
+    await show(host, idle)
+    await click(button('Z -'))
+    await click(button('Plate is clear, move'))
+    const other = { ...printer, id: 'bay-2', name: 'Bay 2' }
+    await act(async () => root!.render(createElement(HostContext.Provider, { value: host as never }, createElement(DeviceDialog, { printer: other, status: { ...idle, printerId: 'bay-2' }, onClose: () => undefined }))))
+    await act(async () => new Promise<void>((r) => setTimeout(r, 20)))
+    await click(button('Z -'))
+    expect(calls.jog.mock.calls.at(-1)).toEqual(['bay-2', 'z', -1])
+    expect(document.body.querySelector('[aria-label="Confirm move"]')).not.toBeNull()
+  })
 })
