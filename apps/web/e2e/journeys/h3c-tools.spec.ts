@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Journey: the Bambu Lab H3C, one extruder with nine hotends. With the H3C picked, a person adds a 2.85 mm TPU
 // filament and prints one box in it beside a PLA box. The Filament block shows each filament on its tool: the TPU on
-// the TPU tool with the line that says why, and the note that the TPU tool's number is not settled. Picking a tool by
+// the TPU tool (tool 8, where the printer reports its TPU hotend) with the line that says why. Picking a tool by
 // hand reaches the slice, and the slice puts each filament on the tool shown. A filament's chamber temperature over the H3C's
 // 65 C is held to 65 C in the Filament dialog and in the slice, and says so. Review pictures with SX_SHOTS=1: the
 // Filament block and the Filament dialog's Chamber temperature at 1440 and 390 wide, saved to SX_SHOTS_DIR (test-results/shots by default).
@@ -107,9 +107,7 @@ test('the H3C puts each filament on its tool and keeps 2.85 mm TPU on the TPU to
   await expect(rows.getByLabel('Tool for filament 2')).toHaveValue('8')
   await expect(rows.getByLabel('Tool for filament 2')).toBeDisabled()
   await expect(rows.locator('[data-slot="2"]')).toContainText('2.85 mm TPU prints only on the TPU tool')
-  const note = page.getByTestId('hotend-tpu-note')
-  await expect(note).toContainText('tool 8')
-  await expect(note).toContainText('tool 7')
+  await expect(rows).not.toContainText('device data')
   for (const raw of ['TPU285', 'nozzle_volume', 'tpu_slip']) expect(await rows.innerText()).not.toContain(raw)
   await rows.scrollIntoViewIfNeeded()
   await shot(page, 'h3c-tools-1440.png')
