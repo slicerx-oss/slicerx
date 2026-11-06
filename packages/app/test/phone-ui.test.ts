@@ -28,6 +28,8 @@ describe('qr encoder', () => {
     const root = createRoot(host)
     flushSync(() => root.render(createElement(PairQr, { link: 'slicerx://pair?o=abc' })))
     expect(host.querySelector('svg.pair-qr path')?.getAttribute('d')?.length).toBeGreaterThan(100)
+    // The link carries the pairing secret: it is drawn, never written into the page.
+    expect(host.innerHTML).not.toContain('slicerx://pair')
     root.unmount()
   })
 })
