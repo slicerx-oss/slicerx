@@ -26,6 +26,29 @@ const BY_NAME: Readonly<Record<string, BedType>> = {
 }
 
 /**
+ * Every plate type a project file can name in `curr_bed_type`, by its lowercase name, as the engine names it. A plate's
+ * own entry in the file may spell the Supertack plate "SuperTack Plate"; "Default Plate" means the printer's default.
+ */
+const PROJECT_PLATES: Readonly<Record<string, string>> = {
+  'cool plate': 'Cool Plate',
+  'engineering plate': 'Engineering Plate',
+  'high temp plate': 'High Temp Plate',
+  'textured pei plate': 'Textured PEI Plate',
+  'textured cool plate': 'Textured Cool Plate',
+  'supertack plate': 'Supertack Plate',
+}
+
+/**
+ * The plate type a project file's settings name in `curr_bed_type`, as the engine reads it, for the slice to keep.
+ * Undefined for "Default Plate" (the printer's default then counts, as for a file with none) and for a name no plate has.
+ */
+export function projectBedType(settings: Readonly<Record<string, unknown>>): string | undefined {
+  const raw = settings['curr_bed_type']
+  const v = Array.isArray(raw) ? raw[0] : raw
+  return typeof v === 'string' ? PROJECT_PLATES[v.trim().toLowerCase()] : undefined
+}
+
+/**
  * A printer profile's `default_bed_type`, as a number (Orca's legacy form) or a name. Orca 2.4.2 reads only the
  * number and falls back to High Temp Plate; a name is read here too, so profiles that write one get their plate.
  */

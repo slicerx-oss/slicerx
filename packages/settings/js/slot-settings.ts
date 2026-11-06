@@ -49,6 +49,26 @@ export function keptFlush(f: ProjectFlush, slots: readonly { color: string; type
   return out
 }
 
+/** A filament maker's name as a file may give it: one short line of letters, digits, spaces and plain punctuation. */
+const VENDOR = /^[\p{L}\p{N} ._&+()'/-]{1,64}$/u
+
+/**
+ * The maker of each of a project file's filaments (`filament_vendor`), by slot: '' for a slot it names none for, for
+ * "(Undefined)" and for text that is no maker's name. The slice sends a slot's own as it is while the slot holds the
+ * file's filament.
+ */
+export function projectSlotVendors(settings: Record<string, unknown>): string[] {
+  const raw = settings['filament_vendor']
+  const all = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : []
+  return all.map((v) => (typeof v === 'string' ? v.trim() : '')).map((v) => (v !== '(Undefined)' && VENDOR.test(v) ? v : ''))
+}
+
+/**
+ * A tower coordinate in mm as the file and the engine give it: only the floating point noise of moving it between the
+ * plate's and the printer's corner is taken off (a millionth of a millimeter), so 211.626 stays 211.626.
+ */
+export const towerMm = (v: number): number => Math.round(v * 1e6) / 1e6
+
 /**
  * A plate's tower front left corner on the plate from the file's wipe_tower_x and wipe_tower_y (printer coordinates):
  * Bambu Studio and Orca keep one entry per plate, and entry `index` is the plate's. Null when the file has no spot for it.
@@ -57,7 +77,7 @@ export function projectTowerFrom(settings: Record<string, unknown>, origin: read
   const x = entryAt(settings['wipe_tower_x'], index)
   const y = entryAt(settings['wipe_tower_y'], index)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-  return { x: Math.round((x - origin[0]) * 10) / 10, y: Math.round((y - origin[1]) * 10) / 10 }
+  return { x: towerMm(x - origin[0]), y: towerMm(y - origin[1]) }
 }
 
 /**
@@ -135,6 +155,6 @@ export function slotSettings(i: SlotSettingsInput): Record<string, SettingValue>
     flush_multiplier: kept && i.projectFlush ? i.projectFlush.multiplier : plan.multiplier,
     // The engine picks the tower's spot unless the person placed it.
     prime_tower_auto_position: tower.auto,
-    ...(tower.auto ? {} : { wipe_tower_x: tower.x + ox, wipe_tower_y: tower.y + oy }),
+    ...(tower.auto ? {} : { wipe_tower_x: towerMm(tower.x + ox), wipe_tower_y: towerMm(tower.y + oy) }),
   }
 }

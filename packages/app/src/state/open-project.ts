@@ -6,6 +6,7 @@ import type { Host, MeshHandle, SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { objectPalette } from '../edition'
 import { withAutoSpools } from '../filament/pick'
+import { projectSlotVendors } from '@slicerx/settings/slot-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
 import type { ImportedObject } from '../export/import3mf'
@@ -123,6 +124,9 @@ async function addProjectShown(
   }
   // The file's filament colors stay per slot; a second file only fills slots the first left without one.
   if (project.colors.length) mine(() => set((s) => ({ fileSlotColors: wasEmpty ? [...project.colors] : project.colors.map((c, i) => s.fileSlotColors[i] ?? c) })))
+  // So do its filament makers, which the slice sends while a slot holds the file's filament.
+  const vendors = projectSlotVendors(project.settings)
+  if (vendors.length) mine(() => set((s) => ({ fileSlotVendors: wasEmpty ? vendors : vendors.map((v, i) => s.fileSlotVendors[i] || v) })))
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()

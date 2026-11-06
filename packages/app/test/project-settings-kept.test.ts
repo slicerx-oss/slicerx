@@ -95,4 +95,28 @@ describe("an opened project's own plate type, tower spot and filament vendors", 
     // the plate card names the project's plate type
     expect(plateBedType(activeMeta(get()), plateSliceConfig(get(), activeMeta(get())) as Record<string, unknown>)).toMatchObject({ value: 'textured-pei', source: 'settings' })
   })
+
+  it("keeps every plate type the file names, and leaves Default Plate to the printer's", async () => {
+    for (const plate of ['Cool Plate', 'Engineering Plate', 'High Temp Plate', 'Textured Cool Plate', 'Supertack Plate']) {
+      clearProject()
+      expect((await sliced(project({ curr_bed_type: plate })))['curr_bed_type'], plate).toBe(plate)
+    }
+    clearProject()
+    // the P1S profile names no default plate, so smooth PEI, the engine's High Temp Plate
+    expect((await sliced(project({ curr_bed_type: 'Default Plate' })))['curr_bed_type']).toBe('High Temp Plate')
+  })
+
+  it("lets a plate type set on the plate win over the project's", async () => {
+    await sliced(project({ curr_bed_type: 'Textured PEI Plate' }))
+    set((s) => ({ plates: s.plates.map((p) => ({ ...p, settings: { ...p.settings, bedType: 'cool' as const } })) }))
+    expect(plateSliceConfig(get(), activeMeta(get()))['curr_bed_type' as never]).toBe('Cool Plate')
+  })
+
+  it("drops a slot's maker once the person sets that slot, and New project forgets them", async () => {
+    await sliced(project({ filament_vendor: ['Bambu Lab', 'Polymaker'] }))
+    set({ slotSetup: { 2: { type: 'PETG', brand: '', color: '#00ff00' } } })
+    expect(plateSliceConfig(get(), activeMeta(get()))['filament_vendor' as never]).toEqual(['Bambu Lab', '(Undefined)'])
+    clearProject()
+    expect(get().fileSlotVendors).toEqual([])
+  })
 })
