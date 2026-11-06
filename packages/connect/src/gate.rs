@@ -157,6 +157,39 @@ pub fn gcode_line_problem(line: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether one G-code line homes the printer: a `G28`, however it is written (any case, spaces, a line
+/// number, leading zeros, a decimal such as `G28.1`, axis words with or without a space, or a comment
+/// after it). Homing Z brings the nozzle down to the plate, so a host sends such a line only under its
+/// home rules. Errs toward yes: a line that reads as G28 to any firmware counts.
+pub fn homes_axes(line: &str) -> bool {
+    // Comments: `;` to the end of the line, and `( ... )`.
+    let mut text = String::with_capacity(line.len());
+    let mut depth = 0_u32;
+    for c in line.chars() {
+        match c {
+            ';' if depth == 0 => break,
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => text.push(c.to_ascii_uppercase()),
+            _ => {}
+        }
+    }
+    let mut rest = text.trim_start();
+    // A line number (`N10 G28`).
+    if let Some(after) = rest.strip_prefix('N') {
+        let digits = after.trim_start_matches(|c: char| c.is_ascii_digit());
+        if digits.len() < after.len() {
+            rest = digits.trim_start();
+        }
+    }
+    let Some(after) = rest.strip_prefix('G') else {
+        return false;
+    };
+    let after = after.trim_start();
+    let whole: String = after.chars().take_while(char::is_ascii_digit).collect();
+    !whole.is_empty() && whole.trim_start_matches('0') == "28"
+}
+
 /// [`gcode_line_problem`] as a driver error. Every driver calls it before the token check, so one
 /// call sends one command whatever the caller let through.
 pub(crate) fn one_gcode_line(printer: &str, line: &str) -> Result<()> {
@@ -251,6 +284,34 @@ impl ApprovalGate for MemoryGate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_home_line_reads_as_one_however_it_is_written() {
+        for line in [
+            "G28",
+            "g28",
+            "G28 Z",
+            "  g28 x y ",
+            "G28 ; home all",
+            "G28X",
+            "N5 G28",
+            "n10g28",
+            "G0028 Z",
+            "G28.1",
+            "G 28",
+            "(home first) G28",
+            "G28*71",
+            "G28 W",
+        ] {
+            assert!(homes_axes(line), "{line}");
+        }
+        for line in [
+            "G29", "G280", "G2", "G1 Z5", "M28", "; G28", "(G28)", "M117 G28", "G92 Z0", "", "N28", "G",
+            "N5 M28",
+        ] {
+            assert!(!homes_axes(line), "{line}");
+        }
+    }
 
     #[test]
     fn single_use_and_bound() {

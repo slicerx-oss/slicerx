@@ -568,7 +568,7 @@ pub(crate) async fn verified_sha(b: &Arc<Bridge>, printer: &str, path: &str, str
     }
 }
 
-fn to_permit(t: &ApprovalToken) -> sx_permit::ApprovalToken {
+pub(crate) fn to_permit(t: &ApprovalToken) -> sx_permit::ApprovalToken {
     sx_permit::ApprovalToken {
         request_id: t.request_id.clone(),
         token: t.token.clone(),
