@@ -96,6 +96,7 @@ fn main() -> ExitCode {
         Some("slice") if has(&args, "--request") => return cmd_request(&args[1..]),
         Some("slice") => cmd_slice(&args[1..]),
         Some("check") => return cmd_check(&args[1..]),
+        Some("arrange") => return cmd_arrange(&args[1..]),
         Some("schema") => return cmd_schema(&args[1..]),
         Some("metadata") => cmd_metadata(&args[1..]),
         Some("project-settings") => return cmd_project_settings(&args[1..]),
@@ -113,7 +114,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--preview-format v1|v2] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx arrange --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -706,7 +707,20 @@ fn cmd_request(args: &[String]) -> ExitCode {
         paths: &paths,
         painted: &painted,
     };
-    let resolve = |id: &str| meshes.get(id);
+    let arranging = req.plate.placement == api::PlatePlacement::Arrange;
+    let held = match held_meshes(&req, &meshes, arranging) {
+        Ok(h) => h,
+        Err(e) => return fail(EXIT_INPUT, e.to_string()),
+    };
+    let resolve = |id: &str| held.get(id).cloned().map_or_else(|| meshes.get(id), Ok);
+    let arranged = if arranging {
+        match arrange_or_refuse(&mut req, &resolve) {
+            Ok(a) => Some(a),
+            Err((code, why)) => return fail(code, why),
+        }
+    } else {
+        None
+    };
     let mut run = match api::run_request(&req, &resolve) {
         Ok(r) => r,
         Err(
@@ -753,6 +767,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     if !plate_notes.is_empty() {
         out["projectPlates"] = Value::Array(plate_notes);
+    }
+    if let Some(a) = &arranged {
+        out["arrange"] = serde_json::json!(a);
     }
     if let Some(dir) = flag(args, "--out-dir") {
         let dir = Path::new(dir);
@@ -825,7 +842,16 @@ fn cmd_check(args: &[String]) -> ExitCode {
         paths: &paths,
         painted: &painted,
     };
-    let check = match api::check_plate(&req, &|id: &str| meshes.get(id)) {
+    let arranging = req.plate.placement == api::PlatePlacement::Arrange;
+    let held = match held_meshes(&req, &meshes, arranging) {
+        Ok(h) => h,
+        Err(e) => return fail(EXIT_INPUT, e.to_string()),
+    };
+    let resolve = |id: &str| held.get(id).cloned().map_or_else(|| meshes.get(id), Ok);
+    if arranging && let Err((code, why)) = arrange_or_refuse(&mut req, &resolve) {
+        return fail(code, why);
+    }
+    let check = match api::check_plate(&req, &resolve) {
         Ok(c) => c,
         Err(
             e @ (sx_core::Error::Mesh { .. }
@@ -843,6 +869,116 @@ fn cmd_check(args: &[String]) -> ExitCode {
         ExitCode::from(EXIT_INPUT)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Every mesh the request names, loaded once and held, when `arranging`: the arrange reads the plate before the slice
+/// or the check reads it again, and [`Meshes`] lets a mesh go after its last expected use. Empty otherwise.
+fn held_meshes(
+    req: &sx_core::api::SliceRequest,
+    meshes: &Meshes<'_>,
+    arranging: bool,
+) -> sx_core::Result<std::collections::HashMap<String, std::sync::Arc<Mesh>>> {
+    let mut held = std::collections::HashMap::new();
+    if !arranging {
+        return Ok(held);
+    }
+    for id in mesh_uses(req).into_keys() {
+        let m = meshes.get(&id)?;
+        held.insert(id, m);
+    }
+    Ok(held)
+}
+
+/// Arranges the request's plate ([`sx_core::api::arrange_request`]). A plate whose objects do not all fit is refused:
+/// the report goes to stdout as `{"refused": "arrange", "arrange": ...}` and the error names the objects with no room.
+fn arrange_or_refuse(
+    req: &mut sx_core::api::SliceRequest,
+    meshes: &dyn Fn(&str) -> sx_core::Result<std::sync::Arc<Mesh>>,
+) -> Result<sx_core::arrange::Arrangement, (u8, String)> {
+    let total = req.plate.objects.len();
+    let a = sx_core::api::arrange_request(req, meshes).map_err(|e| match e {
+        sx_core::Error::Mesh { .. } | sx_core::Error::Config { .. } | sx_core::Error::EmptyPlate => {
+            (EXIT_INPUT, e.to_string())
+        }
+        e => (EXIT_SLICE, e.to_string()),
+    })?;
+    if a.not_fit.is_empty() {
+        return Ok(a);
+    }
+    println!("{}", json!({"refused": "arrange", "arrange": a}));
+    Err((EXIT_INPUT, no_room_text(&a, total)))
+}
+
+/// The refusal of a plate whose objects do not all fit: each object with no room by name, and how many fit.
+fn no_room_text(a: &sx_core::arrange::Arrangement, total: usize) -> String {
+    let names: Vec<&str> = a.not_fit.iter().map(|o| o.name.as_str()).collect();
+    format!(
+        "config key plate.arrange: no room on the bed for {} ({} of {total} objects fit); take some off the plate, \
+         scale them down, or slice them on another plate",
+        names.join(", "),
+        a.objects.len()
+    )
+}
+
+/// `sx arrange --request`: the layout `plate.placement` `arrange` gives the request's plate, without slicing it, as
+/// JSON on stdout (whatever placement the request names). Exit code 3 when some objects have no room (`notFit`).
+fn cmd_arrange(args: &[String]) -> ExitCode {
+    use sx_core::api;
+    let fail = |code: u8, msg: String| {
+        eprintln!("sx arrange: {msg}");
+        ExitCode::from(code)
+    };
+    let Some(src) = flag(args, "--request") else {
+        return fail(EXIT_USAGE, "--request needs a path or -".into());
+    };
+    let (text, base) = match read_request(src) {
+        Ok(r) => r,
+        Err(e) => return fail(EXIT_INPUT, e),
+    };
+    let raw: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => return fail(EXIT_INPUT, format!("request JSON: {e}")),
+    };
+    let mut req: api::SliceRequest = match serde_json::from_value(raw.clone()) {
+        Ok(r) => r,
+        Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
+    };
+    if req.options.plates.is_some() {
+        return fail(EXIT_INPUT, PLATES_OPTION.into());
+    }
+    req.plate.placement = api::PlatePlacement::Arrange;
+    let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
+    if let Err(e) = project_defaults(&mut req, &base, &paths) {
+        return fail(EXIT_INPUT, e.to_string());
+    }
+    let (cache, _, _) = match split_projects(&mut req, &base, &paths, &painted) {
+        Ok(split) => split,
+        Err(e) => return fail(EXIT_INPUT, e.to_string()),
+    };
+    let meshes = Meshes {
+        cache: std::sync::Mutex::new(cache),
+        uses: std::sync::Mutex::new(mesh_uses(&req)),
+        base: &base,
+        paths: &paths,
+        painted: &painted,
+    };
+    let total = req.plate.objects.len();
+    let a = match api::arrange_request(&mut req, &|id: &str| meshes.get(id)) {
+        Ok(a) => a,
+        Err(
+            e @ (sx_core::Error::Mesh { .. } | sx_core::Error::Config { .. } | sx_core::Error::EmptyPlate),
+        ) => {
+            return fail(EXIT_INPUT, e.to_string());
+        }
+        Err(e) => return fail(EXIT_SLICE, e.to_string()),
+    };
+    println!("{}", json!(a));
+    if a.not_fit.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("sx arrange: {}", no_room_text(&a, total));
+        ExitCode::from(EXIT_INPUT)
     }
 }
 

@@ -342,7 +342,23 @@ pub struct PlateSpec {
     /// them. With [`PlatePlacement::Keep`] the plate is refused when a part lands off the printable area.
     #[serde(default, skip_serializing_if = "PlatePlacement::is_center")]
     pub placement: PlatePlacement,
+    /// What [`PlatePlacement::Arrange`] keeps between objects and whether it turns them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arrange: Option<ArrangeSpec>,
     pub objects: Vec<ObjectSpec>,
+}
+
+/// What a request asks of the arrange (`plate.arrange`, with [`PlatePlacement::Arrange`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrangeSpec {
+    /// The spacing between objects and from the bed edge, mm; 6 when unset. Printing by object the objects keep the
+    /// extruder clearance apart whatever this says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing_mm: Option<f64>,
+    /// Whether an object may turn about Z where that packs better; on when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<bool>,
 }
 
 /// Where the build items of a 3MF plate given without a transform go ([`PlateSpec::placement`]).
@@ -357,6 +373,11 @@ pub enum PlatePlacement {
     /// recentering. A mesh file has no placement of its own (an STL or OBJ), so it is centered as with
     /// [`PlatePlacement::Center`]. A part that lands off the printable area refuses the plate ([`build_plate`]).
     Keep,
+    /// Every object of the plate packed on the printer's bed before the slice ([`arrange_request`]), its own transform
+    /// kept but for a turn about Z and its place: off the printer's keep-out zones, the extruder clearance apart when the
+    /// plate prints by object, and the spacing apart by layer. [`build_plate`] refuses a plate still marked so: the
+    /// arrange gives each object its transform and sets the placement back to [`PlatePlacement::Center`].
+    Arrange,
 }
 
 impl PlatePlacement {
@@ -1609,6 +1630,14 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
     if req.plate.placement == PlatePlacement::Keep {
         check_kept_on_area(&objects, request_area(bed, &req.config))?;
     }
+    if req.plate.placement == PlatePlacement::Arrange {
+        return Err(Error::Config {
+            key: "plate.arrange",
+            reason: "the plate is to be arranged before it is sliced (sx slice --request and sx arrange --request \
+                     arrange it); this build does not arrange"
+                .to_owned(),
+        });
+    }
     Ok(Plate { bed, objects })
 }
 
@@ -2128,6 +2157,83 @@ pub fn check_plate(
     out.micros = timer.micros();
     Ok(out)
 }
+
+/// Packs every object of a request's plate on the bed ([`PlatePlacement::Arrange`], [`crate::arrange`]) and writes
+/// the layout into `req`: each placed object's transform, and the placement back to [`PlatePlacement::Center`]. Objects
+/// with no room keep their transforms and are listed in the report's `notFit`, so a host refuses a slice of the plate.
+/// Printing by object, the layout gets heimdall's plate check ([`check_plate`]). While the check is sure of a strike,
+/// the plate is laid out again (at most [`ARRANGE_RETRIES`] times) with the objects spaced wider by the push the
+/// check asks for, and, when two objects or more stand taller than the gantry rod, those in lanes of their own across
+/// the bed; the layout with the fewest sure strikes is kept, the first of equals. `meshes` is asked for each mesh once.
+#[cfg(feature = "import")]
+pub fn arrange_request(
+    req: &mut SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+) -> Result<crate::arrange::Arrangement> {
+    use crate::collide::check::{Certainty, PlateCheck};
+    let held = std::cell::RefCell::new(std::collections::HashMap::<String, Arc<Mesh>>::new());
+    let get = |id: &str| -> Result<Arc<Mesh>> {
+        if let Some(m) = held.borrow().get(id) {
+            return Ok(m.clone());
+        }
+        let m = meshes(id)?;
+        held.borrow_mut().insert(id.to_owned(), m.clone());
+        Ok(m)
+    };
+    let spec = req.plate.arrange.unwrap_or_default();
+    req.plate.placement = PlatePlacement::Center;
+    let (config, _) = request_config_checked(req)?;
+    let plate = build_plate(req, &get)?;
+    let set = |req: &mut SliceRequest, transforms: &[[f32; 16]]| {
+        for (o, t) in req.plate.objects.iter_mut().zip(transforms) {
+            o.transform = Some(t.to_vec());
+        }
+    };
+    let (transforms, report) = crate::arrange::arrange(&plate, &config, spec, false, 0.0)?;
+    set(req, &transforms);
+    if !config.print_by_object() || !report.not_fit.is_empty() {
+        return Ok(report);
+    }
+    // The sure strikes of a check, and the widest push those between objects ask for.
+    let sure = |c: &PlateCheck| -> (usize, f64) {
+        c.collisions
+            .iter()
+            .zip(&c.certainty)
+            .filter(|(c, s)| c.severity == crate::collide::Severity::Hit && **s == Certainty::Sure)
+            .fold((0, 0.0_f64), |(n, push), (c, _)| {
+                (n + 1, push.max(f64::from(c.push_mm)))
+            })
+    };
+    let check = check_plate(req, &get)?;
+    let (mut strikes, mut push) = sure(&check);
+    let mut best = (transforms, report, check, strikes);
+    let lanes = crate::arrange::has_tall(&plate, &config);
+    let mut more = 0.0;
+    for _ in 0..ARRANGE_RETRIES {
+        if strikes == 0 {
+            break;
+        }
+        more += push.max(1.0) + 1.0;
+        let (t, r) = crate::arrange::arrange(&plate, &config, spec, lanes, more)?;
+        if !r.not_fit.is_empty() {
+            break;
+        }
+        set(req, &t);
+        let c = check_plate(req, &get)?;
+        (strikes, push) = sure(&c);
+        if strikes < best.3 {
+            best = (t, r, c, strikes);
+        }
+    }
+    let (transforms, mut report, check, _) = best;
+    set(req, &transforms);
+    report.check = Some(check);
+    Ok(report)
+}
+
+/// How many more layouts [`arrange_request`] tries while the plate check is sure of a strike.
+#[cfg(feature = "import")]
+const ARRANGE_RETRIES: usize = 3;
 
 /// The collision report of a sliced request: `hits` from its layer ranges, the layers' seconds and the start before
 /// them as the finished file reads them. Empty on a plate without a collision model.
@@ -2868,7 +2974,15 @@ pub const REQUEST_SCHEMA: &str = r#"{
             "heightMm": { "type": "number", "exclusiveMinimum": 0 }
           }
         },
-        "placement": { "enum": ["center", "keep"], "default": "center", "description": "Where a 3MF plate given without a transform goes. center: the plate centered on the bed as a whole (a slicer's project keeps its own positions). keep: each build item where the file's transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area (config printable_area, else the bed from 0, 0) is refused, naming it and the overhang. A mesh file without a transform (STL, OBJ) is centered under either." },
+        "placement": { "enum": ["center", "keep", "arrange"], "default": "center", "description": "Where a 3MF plate given without a transform goes. center: the plate centered on the bed as a whole (a slicer's project keeps its own positions). keep: each build item where the file's transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area (config printable_area, else the bed from 0, 0) is refused, naming it and the overhang. A mesh file without a transform (STL, OBJ) is centered under either. arrange: every object of the plate (each build item of a 3MF plate) packed on the bed before the slice, its transform kept but for a turn about Z and its place: off the printer's keep-out zones (bed_exclude_area, head_wrap_detect_zone), the extruder clearance apart printing by object, the spacing apart by layer; the result's arrange gives the layout, and a plate whose objects do not all fit is refused, naming them." },
+        "arrange": {
+          "type": "object",
+          "description": "With placement arrange: the spacing between objects and from the bed edge (spacingMm, 6 by default; by object the extruder clearance applies whatever it says), and whether objects may turn about Z (rotate, true by default).",
+          "properties": {
+            "spacingMm": { "type": "number", "minimum": 0 },
+            "rotate": { "type": "boolean" }
+          }
+        },
         "objects": {
           "type": "array",
           "minItems": 1,
