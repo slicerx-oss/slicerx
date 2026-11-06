@@ -6,6 +6,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { Seg } from '../src/components/seg'
 import { groupStacks, labelFit, layOutGroup, SETROWS_ATTR, SettingRow } from '../src/components/setting-row'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -43,6 +44,7 @@ function group(lines: number[], { bare = false } = {}): HTMLElement {
 beforeAll(() => {
   class RO {
     observe(): void {}
+    unobserve(): void {}
     disconnect(): void {}
   }
   ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = RO
@@ -130,5 +132,31 @@ describe('SettingRow in a list', () => {
       await Promise.resolve()
     })
     expect(host.querySelector('ul')!.getAttribute(SETROWS_ATTR)).toBe('inline')
+  })
+
+  it('counts a segmented row in the group, so a cramped row beside it stacks them both', async () => {
+    fakeLines()
+    document.documentElement.setAttribute('data-phone', '')
+    const host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const seg = <Seg label="Wipe" size="sm" full value="off" onChange={() => undefined} options={[{ value: 'off', label: 'Off' }, { value: 'part', label: 'Part' }]} />
+    await act(async () => {
+      root!.render(
+        <>
+          <ul id="cramped">
+            <SettingRow as="li" label={<label data-lines="3">Retraction length when the active extruder changes</label>} control={<input />} />
+            <SettingRow as="li" label={<label data-lines="1">Wipe</label>} control={seg} />
+          </ul>
+          <ul id="seg-cramped">
+            <SettingRow as="li" label={<label data-lines="1">Retraction length</label>} control={<input />} />
+            <SettingRow as="li" label={<label data-lines="3">Wipe while retracting before a tool change</label>} control={seg} />
+          </ul>
+        </>,
+      )
+      await Promise.resolve()
+    })
+    expect(host.querySelector('#cramped')!.getAttribute(SETROWS_ATTR)).toBe('stack')
+    expect(host.querySelector('#seg-cramped')!.getAttribute(SETROWS_ATTR)).toBe('stack')
   })
 })
