@@ -115,7 +115,7 @@ describe.skipIf(noSx())('placement on the Snapmaker U1', { timeout: sxTimeout },
 })
 
 describe('placement', () => {
-  it('takes only center or keep', async () => {
+  it('takes only center, keep or arrange', async () => {
     const h = await connect()
     const r = await h.call('slicerx_estimate_file', { model: join(h.dir, 'cube.stl'), placement: 'left' })
     expect(r.isError).toBe(true)
