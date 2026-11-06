@@ -3693,3 +3693,340 @@ async fn a_partner_key_opens_routes_only_to_the_phone_the_person_linked_never_by
     .await;
     assert!(r["result"]["clientKey"].is_string(), "{r}");
 }
+
+// ---- partner phones: our phone's rights from afar, never on their own app's cards ----
+
+/// A partner phone named `partner` with the approve right, opened over the relay, its signing key and
+/// its pairing id.
+async fn partner_approver(
+    s: &mut Setup,
+    seed: u8,
+    partner: &str,
+) -> (Device, ring::signature::Ed25519KeyPair, String) {
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(seed);
+    let pairing_id = ps::b64(&[seed; 16]);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": pairing_id, "deviceKey": ps::b64(&key), "kind": "phone", "peer": peer, "partner": partner, "rights": { "request": true, "approve": true } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    (
+        Device::open(&s.relay, &key).await.expect("a session"),
+        signer,
+        pairing_id,
+    )
+}
+
+/// A partner app key named `name`, connected to the hub, and its client id.
+async fn partner_key(s: &mut Setup, name: &str) -> (Ws, Value) {
+    let made = call(
+        &mut s.app,
+        90,
+        "clients.create",
+        json!({ "name": name, "role": "agent", "partner": true }),
+    )
+    .await;
+    let key = made["result"]["clientKey"].as_str().unwrap().to_owned();
+    let mut ws = connect_async(format!("ws://127.0.0.1:{}/", s.link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let r = call(&mut ws, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    (ws, made["result"]["clientId"].clone())
+}
+
+#[tokio::test]
+async fn a_partner_phone_approves_a_skip_from_afar_but_never_one_a_partner_app_asked_for() {
+    let mut s = setup().await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let cfg = json!({ "id": "bay-4", "name": "Bay 4", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    call(&mut s.app, 10, "printers.add", json!({ "config": cfg })).await;
+    let (f, _) = gcode_file("plate.gcode", "M104 S210\nG28\n");
+    let r = call(
+        &mut s.app,
+        11,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+    let (mut phone, signer, _) = partner_approver(&mut s, 87, "Example Phone").await;
+    // Partner keys: one under the phone's own name, and one of another app the phone was never linked to.
+    let (mut same_name, _) = partner_key(&mut s, "Example Phone").await;
+    let (mut other_app, _) = partner_key(&mut s, "Other App").await;
+
+    let epoch =
+        call(&mut s.agent, 14, "bed.state", json!({ "printerId": "bay-4" })).await["result"]["epoch"].clone();
+    let skip = |card: &str, id: &str| {
+        let actions = json!([{ "action": "printer.skip", "target": "bay-4", "paramsHash": sx_permit::hash_params(&json!({ "printerId": "bay-4", "id": id, "epoch": epoch })) }]);
+        json!({ "request": agent_card(card, "print.adjust", actions), "work": { "kind": "skip", "printerId": "bay-4", "id": id, "epoch": epoch } })
+    };
+
+    // (c) Any partner app asked, whatever its name: refused.
+    for (ws, card, obj) in [
+        (&mut same_name, "pk-same", "a.stl_id_1_copy_0"),
+        (&mut other_app, "pk-other", "b.stl_id_2_copy_0"),
+    ] {
+        let r = call(ws, 12, "approvals.register", skip(card, obj)).await;
+        assert!(r.get("result").is_some(), "{card}: {r}");
+        let view = phone
+            .event("approval.request", |d| d["request"]["id"] == card)
+            .await;
+        let r = phone
+            .call(
+                "approvals.decide",
+                signed_decision(&signer, &view["request"], "approve"),
+            )
+            .await;
+        assert_eq!(
+            r["e"]["code"], "forbidden",
+            "{card}: a partner app's skip was approved: {r}"
+        );
+        // It may still deny it.
+        let r = phone
+            .call(
+                "approvals.decide",
+                signed_decision(&signer, &view["request"], "deny"),
+            )
+            .await;
+        assert_eq!(r["ok"], true, "{card}: {r}");
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !mock_log(&mocks)
+            .await
+            .iter()
+            .any(|l| l.contains("EXCLUDE_OBJECT")),
+        "a skip a partner app asked for ran"
+    );
+
+    // (a) A skip the person's own client asked for: approved from afar, as on our phone.
+    let id = "lid.stl_id_0_copy_0";
+    let r = call(&mut s.agent, 13, "approvals.register", skip("pk-ours", id)).await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "pk-ours")
+        .await;
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let want = format!("gcode EXCLUDE_OBJECT NAME={id}");
+    let mut skipped = false;
+    for _ in 0..60 {
+        if mock_log(&mocks).await.contains(&want) {
+            skipped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(skipped, "{:?}", mock_log(&mocks).await);
+}
+
+#[tokio::test]
+async fn a_partner_phone_starts_from_afar_after_a_plate_pass_but_never_a_partner_apps_print() {
+    let mut s = setup().await;
+    let mocks = idle_bay4_with_plate(&mut s).await;
+    let clear = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    plate_detector(&s.link, clear.clone()).await;
+    let r = call(
+        &mut s.app,
+        23,
+        "remoteStart.set",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["enabled"], true, "{r}");
+    let (mut phone, signer, _) = partner_approver(&mut s, 88, "Example Phone").await;
+    let info = phone.call("host.info", json!({})).await;
+    assert_eq!(
+        info["r"]["remoteStart"], true,
+        "an approver partner phone starts from afar: {info}"
+    );
+    // Without the approve right, a partner phone reads no remote start.
+    let key: [u8; 32] = rand_bytes();
+    let (_, peer) = signing_phone(89);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[89; 16]), "deviceKey": ps::b64(&key), "kind": "phone", "peer": peer, "partner": "Example Phone", "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut watcher = Device::open(&s.relay, &key).await.expect("a session");
+    let info = watcher.call("host.info", json!({})).await;
+    assert_eq!(info["r"]["remoteStart"], false, "{info}");
+    // A partner app the phone has nothing to do with, under another name.
+    let (mut other_app, _) = partner_key(&mut s, "Other App").await;
+
+    let (ours, ours_sha) = gcode_file("cube.gcode", "M140 S60\nM104 S210\nG28\nG1 X10 Y10\n");
+    let r = call(
+        &mut s.agent,
+        20,
+        "approvals.register",
+        print_card("ps-ours", &ours, &ours_sha),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == "ps-ours")
+        .await;
+    // (d) No plate check yet: refused, as for our phone.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "forbidden", "a start with no plate pass: {r}");
+
+    let (theirs, theirs_sha) = gcode_file("theirs.gcode", "M140 S60\nM104 S210\nG28\nG1 X20 Y20\n");
+    let r = call(
+        &mut other_app,
+        21,
+        "approvals.register",
+        print_card("ps-own", &theirs, &theirs_sha),
+    )
+    .await;
+    assert!(r.get("result").is_some(), "{r}");
+    let own = phone
+        .event("approval.request", |d| d["request"]["id"] == "ps-own")
+        .await;
+
+    // A fresh plate pass.
+    let r = phone.call("plate.check", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["r"]["passes"], true, "{r}");
+    // (c) A partner app's print stays refused, even with the plate pass.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &own["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(
+        r["e"]["code"], "forbidden",
+        "a partner app's print was approved: {r}"
+    );
+    // (b) The person's own client's print starts, as from our phone.
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision_bed(&signer, &view["request"], "approve", true),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let mut ran = false;
+    for _ in 0..60 {
+        let log = mock_log(&mocks).await;
+        if log.iter().any(|l| l.starts_with("start ")) {
+            ran = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(ran, "{:?}", mock_log(&mocks).await);
+    assert!(
+        !mock_log(&mocks).await.iter().any(|l| l.contains("theirs")),
+        "a partner app's file went to the printer: {:?}",
+        mock_log(&mocks).await
+    );
+}
+
+#[tokio::test]
+async fn a_partner_phone_approves_our_phones_pause_but_never_one_a_partner_app_asked_for() {
+    let mut s = setup().await;
+    let mocks = printing_bay4(&mut s).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (mut phone, signer, _) = partner_approver(&mut s, 90, "Example Phone").await;
+    // Another partner app's phone, which may ask but not approve.
+    let other_key: [u8; 32] = rand_bytes();
+    let (_, other_peer) = signing_phone(91);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[91; 16]), "deviceKey": ps::b64(&other_key), "kind": "phone", "peer": other_peer, "partner": "Other App", "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    // Our own phone, which asks without the approve right here.
+    let our_key: [u8; 32] = rand_bytes();
+    let (_, our_peer) = signing_phone(92);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[92; 16]), "deviceKey": ps::b64(&our_key), "kind": "phone", "peer": our_peer, "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut other = Device::open(&s.relay, &other_key).await.expect("a session");
+    let mut ours = Device::open(&s.relay, &our_key).await.expect("a session");
+
+    // A pause or a stop a partner app asked for, its own included: refused, and it may deny it.
+    for (own, action) in [(false, "pause"), (true, "cancel")] {
+        let ask = json!({ "printerId": "bay-4", "action": action });
+        let r = if own {
+            phone.call("jobs.control", ask).await
+        } else {
+            other.call("jobs.control", ask).await
+        };
+        assert_eq!(r["ok"], true, "{action}: {r}");
+        let id = r["r"]["requestId"].as_str().unwrap().to_owned();
+        let view = phone
+            .event("approval.request", |d| d["request"]["id"] == id.as_str())
+            .await;
+        let r = phone
+            .call(
+                "approvals.decide",
+                signed_decision(&signer, &view["request"], "approve"),
+            )
+            .await;
+        assert_eq!(
+            r["e"]["code"], "forbidden",
+            "{action}: a partner app's request was approved: {r}"
+        );
+        let r = phone
+            .call(
+                "approvals.decide",
+                signed_decision(&signer, &view["request"], "deny"),
+            )
+            .await;
+        assert_eq!(r["ok"], true, "{action}: {r}");
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let log = mock_log(&mocks).await;
+    assert!(
+        !log.iter().any(|l| l.contains("pause") || l.contains("cancel")),
+        "{log:?}"
+    );
+
+    // Our phone's pause: the partner phone approves it, as our phone would.
+    let r = ours
+        .call("jobs.control", json!({ "printerId": "bay-4", "action": "pause" }))
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let id = r["r"]["requestId"].as_str().unwrap().to_owned();
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == id.as_str())
+        .await;
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+}
