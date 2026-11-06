@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { addToSums, hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages } from './pack-integrator-kit.mjs'
+import { addToSums, hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages, pendingChanges, toolsDocNote } from './pack-integrator-kit.mjs'
 
 const stemOf = (name) => name.replace('@', '').replace('/', '-')
 
@@ -111,6 +111,41 @@ test('kit metadata comes from the actual workspace package folders', () => {
   const packages = kitPackages()
   assert.deepEqual(packages.map((p) => p.name), ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp', '@slicerx/step-reader'])
   for (const p of packages) assert.match(p.version, /^\d+\.\d+\.\d+/)
+})
+
+test('names the kit packages with change files not folded into CHANGELOG.md yet', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-changes-'))
+  try {
+    for (const [folder, name] of [['ui/viewport', '@slicerx/viewport'], ['embed', '@slicerx/embed'], ['mcp', '@slicerx/mcp'], ['step-reader', '@slicerx/step-reader']]) {
+      mkdirSync(join(tmp, 'packages', folder), { recursive: true })
+      writeFileSync(join(tmp, 'packages', folder, 'package.json'), JSON.stringify({ name, version: '0.2.7' }))
+    }
+    assert.deepEqual(pendingChanges(tmp), [])
+    mkdirSync(join(tmp, 'packages', 'mcp', 'changes'))
+    writeFileSync(join(tmp, 'packages', 'mcp', 'changes', 'README.md'), '# Change files\n')
+    assert.deepEqual(pendingChanges(tmp), [], 'README.md is not a change file')
+    writeFileSync(join(tmp, 'packages', 'mcp', 'changes', 'feat-x.md'), '### Added\n\n- X.\n')
+    assert.deepEqual(pendingChanges(tmp), [{ name: '@slicerx/mcp', folder: 'packages/mcp', files: ['feat-x.md'] }])
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+  // the MCP package ships the CHANGELOG.md a release folds its change files into
+  assert.ok(kitPackages().find((p) => p.name === '@slicerx/mcp').files.includes('CHANGELOG.md'))
+})
+
+test('notes a TOOLS.md that is behind the tool list', () => {
+  const calls = []
+  const run = (status, stdout = '', stderr = '') => (cmd, args, opts) => {
+    calls.push({ args, cwd: opts.cwd })
+    return { status, stdout, stderr }
+  }
+  assert.equal(toolsDocNote('/repo', run(0, 'TOOLS.md is up to date')), undefined)
+  assert.deepEqual(calls[0], { args: ['exec', 'tsx', 'scripts/tools-doc.ts', '--check'], cwd: join('/repo', 'packages', 'mcp') })
+  assert.equal(
+    toolsDocNote('/repo', run(1, 'TOOLS.md is behind the tool list: 1 new or changed (slicerx_x 1.0.0), 0 gone or changed\n')),
+    'note: packages/mcp/TOOLS.md is not current (TOOLS.md is behind the tool list: 1 new or changed (slicerx_x 1.0.0), 0 gone or changed); a release writes it with pnpm --filter @slicerx/mcp tools-doc',
+  )
+  assert.match(toolsDocNote('/repo', run(1, '', 'trace\nError: boom')), /not current \(Error: boom\)/)
 })
 
 test('the STEP reader is its own optional tarball on the kit version line, listed in the manifest and SHA256SUMS.txt', () => {

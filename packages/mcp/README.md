@@ -468,6 +468,8 @@ npx @modelcontextprotocol/inspector node packages/mcp/dist/cli.js
 
 Tests that need the real core run when `target/release/sx` exists and are skipped otherwise.
 
+A pull request that changes the server for its users adds a file in `changes/` with its entries under `### Added`, `### Changed` or `### Fixed` ([changes/README.md](changes/README.md)). It leaves `CHANGELOG.md` and `TOOLS.md` alone. The release runs `node scripts/fold-changes.mjs packages/mcp <version>` from the repository root, which folds the change files into `CHANGELOG.md` under the new version and writes `TOOLS.md` from the tool list (`pnpm --filter @slicerx/mcp tools-doc` does only the second). Between releases, `TOOLS.md` on `main` can be behind the tools the server lists: a client gets the current list from `tools/list` (every tool is named `slicerx_*`), and the `TOOLS.md` of a release tag matches that release. The registry test checks the doc the tool list writes, not the committed file; `SLICERX_TOOLS_DOC_STRICT=1` also compares the file byte for byte, and `pnpm tools-doc --check` says whether it is behind.
+
 Packaging: `pnpm --filter @slicerx/mcp pack` runs the build (bundles, data, self-contained declarations from `scripts/emit-types.mjs`) and writes the tarball. Pack and publish with pnpm, which applies `publishConfig.exports` (the `dist/` entries with their types) and drops the `workspace:` ranges; `npm pack --dry-run <tarball>` lists what the registry would get. Publish with `pnpm publish --access public`; `prepublishOnly` stops a plain `npm publish` from the folder, which would ship the workspace manifest.
 
 Dependencies:

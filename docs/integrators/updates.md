@@ -8,6 +8,8 @@ Release tags. Desktop releases are tagged `desktop-v<version>`, for example `des
 
 The release notes. Each desktop release has a "For editions and integrations" section that starts with one line, `Update: required`, `Update: recommended` or `Update: optional`, and then lists what changed for edition builds: configuration keys, MCP tools and their results, CLI options and build steps.
 
+Unreleased MCP server changes. Between releases, `packages/mcp/CHANGELOG.md` ends at the last release, and each merged pull request's entries for `@slicerx/mcp` are a file in `packages/mcp/changes/`. A release moves them into the changelog under its version and writes `packages/mcp/TOOLS.md` again, so TOOLS.md on main can be behind as well. For the tools a build lists, call `tools/list` on its server (every tool is named `slicerx_*`), or read TOOLS.md at the release tag you build from.
+
 Two labels on merged pull requests, between releases:
 
 - `urgent`: a fix people must update for, such as a safety problem, data loss, a crash on open or a security hole. It ships in a release soon after it merges. If you can't wait, cherry-pick its commit onto the tag you build from.
