@@ -647,6 +647,26 @@ fn a_toolhead_hit_on_a_finely_meshed_neighbor_is_found_as_on_a_plain_box_and_qui
 }
 
 #[test]
+fn copies_of_a_finely_meshed_part_stacked_in_one_place_are_checked_quickly() {
+    // Parts added to a by-object plate land on one spot until Arrange moves them. Each copy's walk meets every other
+    // copy at every layer, and each probe asks a copy's mesh whether a point is inside it. Before, the same point was
+    // asked again for every copy and every row, and this plate took about 30 s in a test build (12 copies of a
+    // 4,800-triangle block); now each answer is kept for the layer, and it takes about 4 s.
+    let part = fine_block(20.0, 20.0, 12.0, 20);
+    let names: Vec<String> = (0..12).map(|k| format!("copy {k}")).collect();
+    let objects: Vec<(&str, Arc<Mesh>, f32, f32)> = names
+        .iter()
+        .map(|name| (name.as_str(), part.clone(), 100.0, 100.0))
+        .collect();
+    let (req, load) = request(&objects, json!({}), json!({}));
+    let started = std::time::Instant::now();
+    let check = api::check_plate(&req, &load).unwrap();
+    let took = started.elapsed().as_secs_f64();
+    assert!(!check.collisions.is_empty(), "the stacked copies meet");
+    assert!(took < 15.0, "{took:.1} s");
+}
+
+#[test]
 fn a_travel_between_the_islands_of_one_object_runs_through_the_object_printed_before() {
     // Two 4 mm feet 120 mm apart, one object, with a 15 mm box between them printed first.
     let feet = mesh(vec![
