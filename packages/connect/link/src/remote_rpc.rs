@@ -863,6 +863,14 @@ fn phone_may_approve(partner_phone: bool, raiser: Option<&crate::rpc::CardRaiser
     !partner_phone || raiser.is_some_and(|r| r.role != crate::rpc::RaiserRole::Partner)
 }
 
+/// Whether the pairing a decision was read under still approves now: present, a phone, with the approve
+/// right, and the same partner or none.
+fn still_approves(b: &Bridge, pairing_id: &str, was: &RemotePairing) -> bool {
+    b.remote
+        .pairing(pairing_id)
+        .is_some_and(|p| p.kind == PeerKind::Phone && p.rights.approve && p.partner == was.partner)
+}
+
 /// The bytes a phone signs for a decision (`decisionBytes` in approval.ts).
 fn decision_bytes(p: &Value) -> Option<Vec<u8>> {
     let mut body = json!({
@@ -977,6 +985,17 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
                 ));
             }
         }
+    }
+    // The heat read and the plate checks above take time: the phone must still be paired, with the
+    // approve right, when its approval is granted.
+    if decision == "approve" && !still_approves(b, &ctx.pairing_id, pairing) {
+        if let Some(key) = &start_key {
+            crate::remote_start::forget(b, key);
+        }
+        return Err(err(
+            "forbidden",
+            "this phone was removed or may no longer approve",
+        ));
     }
     let device = pairing.peer.get("deviceId").cloned().unwrap_or(Value::Null);
     b.hub.audit(json!({
