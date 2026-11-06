@@ -16,6 +16,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { reportCollisions } from './collide'
 import { resolveSliceConfig } from './config'
+import { ignoredArgumentsMessage } from './ignored-arguments'
 import type { DataStore } from './data'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import type { ProfileCatalog } from './profiles'
@@ -240,26 +241,29 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
   }
   const absolute = (c: CloudOptions, u: string): string => (/^https?:\/\//.test(u) ? u : `${c.apiUrl}${u.startsWith('/') ? '' : '/'}${u}`)
 
+  const sliceInput = {
+    model: z.string().min(1).describe('Absolute path to an STL or 3MF file, an http(s) URL, or a built-in test model such as sample:cube-20'),
+    plates: z
+      .array(z.number().int().min(1))
+      .min(1)
+      .max(32)
+      .optional()
+      .describe("3MF only: the plates to slice, plate numbers from 1 to 1000, each a slice of its own with its own result; only these are sliced, and each counts as one of the day's cloud slices. Default: the project's first plate"),
+    profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
+    overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('Setting keys to values, applied last'),
+    name: z.string().min(1).max(120).optional().describe('Job name shown in the job list; default the file name'),
+    emit_preview: z.boolean().default(false).describe('Also make the toolpath preview'),
+  }
+
   const slice = defineTool({
     name: 'cloud.slice',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
-      "Slice a model or a whole 3MF project in the integrator's cloud instead of on this machine: checks the account is invited and within its daily slices and upload limit, uploads the file gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues one job with the settings (schema defaults, then each profile, then overrides) and returns the job id. A 3MF slices each plate named in plates as a slice of its own (each counts as one of the day's cloud slices), or its first plate without plates; each build item is an object of its own. Follow it with slicerx_cloud_jobs, which gives each plate's result and downloads. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
-    input: z.object({
-      model: z.string().min(1).describe('Absolute path to an STL or 3MF file, an http(s) URL, or a built-in test model such as sample:cube-20'),
-      plates: z
-        .array(z.number().int().min(1))
-        .min(1)
-        .max(32)
-        .optional()
-        .describe("3MF only: the plates to slice, plate numbers from 1 to 1000, each a slice of its own with its own result; only these are sliced, and each counts as one of the day's cloud slices. Default: the project's first plate"),
-      profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
-      overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('Setting keys to values, applied last'),
-      name: z.string().min(1).max(120).optional().describe('Job name shown in the job list; default the file name'),
-      emit_preview: z.boolean().default(false).describe('Also make the toolpath preview'),
-    }),
+      "Slice a model or a whole 3MF project in the integrator's cloud instead of on this machine: checks the account is invited and within its daily slices and upload limit, uploads the file gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues one job with the settings (schema defaults, then each profile, then overrides) and returns the job id. A 3MF slices each plate named in plates as a slice of its own (each counts as one of the day's cloud slices), or its first plate without plates; each build item is an object of its own. Follow it with slicerx_cloud_jobs, which gives each plate's result and downloads. The job names no printer, so it never starts a print. Pick the printer, process and filament with profiles; an argument this tool does not take (printer, process) is ignored and named in an ignored_arguments warning. Answers that cloud slicing is not configured when this server has no cloud API.",
+    // Loose for now: an argument the tool does not take is ignored with a warning (ignored_arguments), not refused.
+    input: z.object(sliceInput).loose(),
     async run(i) {
       const c = need()
       const path = await resolveModel(deps.policy, i.model)
@@ -303,7 +307,10 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
           },
         })
       ).json()) as CloudJob
-      return { summary: `Queued cloud job ${job.id} (${job.status})${applied.length ? ` with ${applied.join(', ')}` : ''}`, output: { jobId: job.id, ...describe(c, job), meshSha256: sha, uploaded: has.status === 404 } }
+      // Arguments this tool does not take are left out of the job and named, as the local slice tools name them.
+      const ignored = ignoredArgumentsMessage(i as Record<string, unknown>, Object.keys(sliceInput))
+      const notes = ignored ? { warnings: [ignored], notices: [{ code: 'ignored_arguments' as const, message: ignored }] } : {}
+      return { summary: `Queued cloud job ${job.id} (${job.status})${applied.length ? ` with ${applied.join(', ')}` : ''}${ignored ? `. ${ignored}` : ''}`, output: { jobId: job.id, ...describe(c, job), meshSha256: sha, uploaded: has.status === 404, ...notes } }
     },
   })
 
