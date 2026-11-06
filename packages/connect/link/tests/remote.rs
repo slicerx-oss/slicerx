@@ -4108,3 +4108,54 @@ async fn a_plate_the_person_queued_gets_the_same_answer_from_afar_on_our_phone_a
         .await;
     assert_eq!(r["ok"], true, "a plate the person asked to start: {r}");
 }
+
+#[tokio::test]
+async fn a_partner_phone_never_approves_a_pause_a_partner_key_asked_for_over_the_relay() {
+    let mut s = setup().await;
+    let mocks = printing_bay4(&mut s).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (mut phone, signer, _) = partner_approver(&mut s, 95, "Example Phone").await;
+    // A partner app key that reaches the hub over the relay (`remote`), under another name.
+    let r = call(
+        &mut s.app,
+        20,
+        "clients.create",
+        json!({ "name": "Other App", "role": "agent", "partner": true, "remote": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    let key: [u8; 32] = ps::unb64(r["result"]["remote"]["deviceKey"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut other = Device::open(&s.relay, &key).await.expect("a session");
+    let r = other
+        .call("jobs.control", json!({ "printerId": "bay-4", "action": "pause" }))
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let id = r["r"]["requestId"].as_str().unwrap().to_owned();
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == id.as_str())
+        .await;
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(
+        r["e"]["code"], "forbidden",
+        "a partner key's relay pause was approved: {r}"
+    );
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "deny"),
+        )
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let log = mock_log(&mocks).await;
+    assert!(!log.iter().any(|l| l.contains("pause")), "{log:?}");
+}
