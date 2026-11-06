@@ -313,7 +313,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const home = gcodeTool({
     name: 'printer.home',
-    description: `Home every axis of a printer (G28), as the Home button on its Move tab does. Only while the printer is idle or finished, and only once the plate is confirmed clear in ${productName()} or on the phone; a person approves it, since the nozzle moves down to the plate. Read the result back with slicerx_printer_status.`,
+    description: `Home every axis of a printer (G28), as the Home button on its Move tab does. Only while the printer is idle or finished; a person approves it in ${productName()} and says the plate is clear, since the nozzle moves down to the plate. Read the result back with slicerx_printer_status.`,
     input: z.object({ printerId }),
     async ready(i, ctx) {
       const st = await ctx.host.printers.status(i.printerId)
@@ -324,7 +324,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     // approves a home (`printer.home`), never the raw line.
     work: { work: (i) => ({ kind: 'home', printerId: i.printerId }), action: 'printer.home', params: (i) => ({ printerId: i.printerId }) },
     title: (i) => `Home all axes of ${i.printerId}?`,
-    note: `Homing lowers the nozzle to the plate, so the printer homes only once the plate is clear and confirmed in ${productName()} or on the phone.`,
+    note: `Homing lowers the nozzle to the plate; the person approves it in ${productName()}, saying the plate is clear.`,
     summary: (i) => `${i.printerId}: homing`,
   })
 
