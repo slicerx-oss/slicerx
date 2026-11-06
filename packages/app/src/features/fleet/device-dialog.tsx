@@ -84,18 +84,19 @@ export function DeviceDialog({ printer, status, onClose }: { printer: PrinterInf
 function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; status: PrinterStatus }) {
   const [step, setStep] = useState<number>(1)
   const [busy, setBusy] = useState(false)
-  const [askPlate, setAskPlate] = useState(false)
+  // The bed epoch the hub asked about, while the plate question is open.
+  const [askPlate, setAskPlate] = useState<number | null>(null)
   const blocked = jogBlockedReason(status.state)
   const homeBlocked = homeBlockedReason(status.state)
   // One line for the tab: the shared cause (offline, an error), or both rules when the printer is busy.
   const moveNote = blocked && homeBlocked && blocked !== homeBlocked ? 'The head moves and homes only while the printer is idle or finished.' : (blocked ?? homeBlocked)
   // A confirm asked for one state never applies once the printer has moved on.
-  useEffect(() => setAskPlate(false), [status.state])
-  const home = async (plateClear: boolean) => {
+  useEffect(() => setAskPlate(null), [status.state])
+  const home = async (answer?: { epoch: number }) => {
     setBusy(true)
-    const a = await homePrinter(hub, printer.id, plateClear)
+    const a = await homePrinter(hub, printer.id, answer)
     setBusy(false)
-    setAskPlate(a.kind === 'ask-bed')
+    setAskPlate(a.kind === 'ask-bed' ? a.epoch : null)
     if (a.kind === 'homed') toast(`Homing ${printer.name}`, 'ok')
     else if (a.kind === 'error') toast(a.message, 'error')
   }
@@ -118,15 +119,15 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
     <section aria-label="Move the head">
       <p className="sx-small">Moves the head by hand, 0.1 to 10 mm a step. Home the printer first if it refuses.</p>
       <div className="calib-act">
-        <Button size="sm" disabled={busy || homeBlocked !== null || askPlate} onClick={() => void home(false)} tip={{ title: 'Home', body: 'Moves every axis to its end stop, so the printer knows where the head is.', ...(homeBlocked ? { reason: homeBlocked } : {}) }}>
+        <Button size="sm" disabled={busy || homeBlocked !== null || askPlate !== null} onClick={() => void home()} tip={{ title: 'Home', body: 'Moves every axis to its end stop, so the printer knows where the head is.', ...(homeBlocked ? { reason: homeBlocked } : {}) }}>
           Home
         </Button>
       </div>
-      {askPlate ? (
+      {askPlate !== null ? (
         <div role="alertdialog" aria-label="Confirm home" className="calib-act">
           <p className="sx-small">Is the build plate clear? Homing lowers the nozzle to the plate.</p>
-          <Button variant="primary" disabled={busy} onClick={() => void home(true)}>Plate is clear, home</Button>
-          <Button variant="ghost" onClick={() => setAskPlate(false)}>Cancel</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void home({ epoch: askPlate })}>Plate is clear, home</Button>
+          <Button variant="ghost" onClick={() => setAskPlate(null)}>Cancel</Button>
         </div>
       ) : null}
       <div className="calib-act" role="group" aria-label="Step size">
