@@ -3,7 +3,7 @@
 import type { SliceSummary } from './slicer'
 
 /** Keep the request object id and the engine's distinct ids when a project file expands into several objects. */
-export function featureFilaments(reported: { object?: string; name?: string; features?: Record<string, number[]> }[], objects: { name: string; id?: string }[]): NonNullable<SliceSummary['feature_filaments']> {
+export function featureFilaments(reported: { object?: string; name?: string; features?: Record<string, number[]>; nozzleMm?: number }[], objects: { name: string; id?: string }[]): NonNullable<SliceSummary['feature_filaments']> {
   return reported.flatMap((row) => {
     const match = /^o(\d+)(?:-([1-9]\d*))?$/.exec(row.object ?? '')
     if (!match) return []
@@ -14,6 +14,7 @@ export function featureFilaments(reported: { object?: string; name?: string; fea
       engine_object: match[0],
       name: match[2] ? row.name ?? `${source.name} (${match[2]})` : source.name,
       features: row.features ?? {},
+      ...(typeof row.nozzleMm === 'number' ? { nozzle_mm: row.nozzleMm } : {}),
     }]
   })
 }

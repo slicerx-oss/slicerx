@@ -204,7 +204,7 @@ describe('design tools with --app', () => {
 
 describe('plate edits over the app link', () => {
   // Stand-ins for the server's project tools: here they answer from the server's own project.
-  const here = ['project.move', 'project.rotate', 'project.scale', 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
+  const here = ['project.move', 'project.rotate', 'project.scale', 'project.object_nozzle', 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
   const route = (call: AppLinkCaller['call'], opts: RouteOptions) => {
     const tools = routeToApp(here as never, { call }, 'SlicerX', opts)
     return (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)
@@ -212,7 +212,7 @@ describe('plate edits over the app link', () => {
   const app = vi.fn(async (method: string) => ({ summary: `ran ${method}`, output: { objects: [{ id: 'obj_1' }] } }))
 
   it('move, turn and scale an object the server does not have on the app\'s plate, with no note', async () => {
-    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale', 'project.set_overrides'])
+    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale', 'project.object_nozzle', 'project.set_overrides'])
     const run = route(app as AppLinkCaller['call'], { serverHas: (o) => o === 'Bracket' })
     const out = await run('project.move', { object: 'Box', x: 50, y: 60 })
     expect(app).toHaveBeenCalledWith('project.move', { object: 'Box', x: 50, y: 60 })
@@ -223,6 +223,15 @@ describe('plate edits over the app link', () => {
     expect((await run('project.rotate', { object: 'Bracket', rotate: [0, 0, 90] })).summary).toBe('project.rotate here')
     expect((await run('project.object_settings', { object: 'Box', settings: {} })).summary).toBe('project.object_settings here')
     expect(app).not.toHaveBeenCalled()
+  })
+
+  it('picks an object nozzle on the app plate with the same arguments, and keeps the server own object here', async () => {
+    app.mockClear()
+    const run = route(app as AppLinkCaller['call'], { serverHas: (o) => o === 'Bracket' })
+    const args = { object: 'Box', nozzle: 2, new_filament: true }
+    expect((await run('project.object_nozzle', args)).summary).toBe('ran project.object_nozzle (in SlicerX)')
+    expect(app).toHaveBeenCalledWith('project.object_nozzle', args)
+    expect((await run('project.object_nozzle', { object: 'Bracket', nozzle: 2 })).summary).toBe('project.object_nozzle here')
   })
 
   it('run here while the link is off, and with --app refuse instead', async () => {
