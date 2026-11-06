@@ -668,8 +668,8 @@ const MAX_DRY_MINUTES: f64 = 1440.0;
 /// What a unit's sensors read, from its entry in a report. `humidity` is a level the printer sends
 /// as 1 wet to 5 dry, flipped here to 1 dry to 5 wet as the maker's apps show it; `humidity_raw`
 /// is the percentage, `temp` degrees C and `dry_time` the minutes of drying left. Values out of
-/// range (an AMS sends some while it powers on) are dropped, and so is a drying time past a day
-/// (`MAX_DRY_MINUTES`), which no unit runs. An AMS lite has no sensors, and only an AMS 2 Pro and an
+/// range (an AMS sends some while it powers on) are dropped, and so is a drying time below zero or past
+/// a day (`MAX_DRY_MINUTES`), which no unit runs: such a unit reads neither drying nor a time left. An AMS lite has no sensors, and only an AMS 2 Pro and an
 /// AMS HT can dry.
 fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
     if kind == "ams-lite" {
@@ -684,6 +684,10 @@ fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
     // Rounded readings of a few digits: the ranges below bound them.
     #[allow(clippy::cast_possible_truncation)]
     let whole = |x: f64| x.round() as i64;
+    // Only units that can dry report it, and a time outside 0 to a day is not a reading at all: neither
+    // drying nor a time left.
+    let dry_time = num("dry_time")
+        .filter(|m| (0.0..=MAX_DRY_MINUTES).contains(m) && matches!(kind, "ams-2-pro" | "ams-ht"));
     let c = UnitClimate {
         humidity_pct: num("humidity_raw")
             .map(whole)
@@ -695,11 +699,9 @@ fn unit_climate(unit: &Value, kind: &str) -> Option<UnitClimate> {
             .and_then(|h| u8::try_from(6 - h).ok()),
         // A unit with no reading sends 0.
         temp_c: num("temp").filter(|t| *t > 0.0 && *t <= 100.0),
-        drying: matches!(kind, "ams-2-pro" | "ams-ht")
-            .then(|| num("dry_time").map(|m| m > 0.0))
-            .flatten(),
-        dry_minutes_left: num("dry_time")
-            .filter(|m| *m > 0.0 && *m <= MAX_DRY_MINUTES && matches!(kind, "ams-2-pro" | "ams-ht"))
+        drying: dry_time.map(|m| m > 0.0),
+        dry_minutes_left: dry_time
+            .filter(|m| *m > 0.0)
             .and_then(|m| u32::try_from(whole(m)).ok()),
     };
     (c != UnitClimate::default()).then_some(c)
