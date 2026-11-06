@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_slice_file` 1.13.0 and `slicerx_estimate_file` 1.10.0 with `project_settings` slice a project whose kept printer G-code (stock text, or a script the stock review vouches for) reads a key SlicerX has no setting for, such as `fins_extrude_safe_temp` and `filament_ids` in a Bambu Lab H3C project saved by Bambu Studio 2.9.1. The key goes to the engine with the project's value, as `sx slice <project.3mf>` renders the script. Only keys a kept script names go along. Before, the slice was refused with `invalid_model` ("machine_start_gcode: variable fins_extrude_safe_temp does not exist").

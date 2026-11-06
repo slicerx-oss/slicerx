@@ -339,7 +339,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     const own = read.summary.plates.find((p) => p.index === args.plate) ?? read.summary.plates[0]
     const seq = own?.print_sequence
     const printer = read.summary.presets.printer ? printerForProfile(read.summary.presets.printer)?.printerId : undefined
-    if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, model: printer, gcode: args.project_gcode, ...(own?.bed_type ? { bedType: own.bed_type } : {}) }
+    if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, unmodeled: read.unmodeled, model: printer, gcode: args.project_gcode, ...(own?.bed_type ? { bedType: own.bed_type } : {}) }
   }
   await progress(0.1, 'Resolving settings')
   // The project's own printer too: a slice of a project that names no machine: profile ends on it.
