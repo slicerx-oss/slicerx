@@ -11,7 +11,7 @@ import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
 import type { ImportedObject } from '../export/import3mf'
 import { clearanceFor } from '../plate/clearance'
-import { slotCount } from '../filament/slots'
+import { slotCount, usedSlots } from '../filament/slots'
 import { bounds, compose } from '../plate/transform'
 import { clearProject } from '../project/new'
 import { keepBeforeOpen } from '../project/autosave'
@@ -276,6 +276,13 @@ async function addProjectShown(
     const { keepProjectFlushAndTower } = await import('../filament/project-kept')
     const kept = mine(() => keepProjectFlushAndTower(project.settings, madePlates))
     if (kept) note = `${note} ${kept}`
+    // On a printer whose hotends are its tools (the H3C), the tools the project set by hand, read as the MCP server reads
+    // them: the first plate prints on them, as it does with a filament map set by hand.
+    const { projectHotends } = await import('@slicerx/settings/hotends')
+    const first = madePlates[0]?.id
+    const s = get()
+    const hotends = first ? projectHotends(project.settings, resolveConfig(s.easy, s.overrides) as Record<string, unknown>, Math.max(slotCount(s), project.colors.length), [...usedSlots(s)]) : undefined
+    if (hotends) mine(() => set((st) => ({ plates: st.plates.map((p) => (p.id === first ? { ...p, settings: { ...p.settings, hotendMap: hotends.map((h) => h + 1) } } : p)) })))
   } else if (wasEmpty && hasSettings) {
     mine(() => set({ projectImport: null }))
     // Our own project, or a PrusaSlicer one: its print and filament settings on the current printer.
