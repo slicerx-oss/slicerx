@@ -21,7 +21,8 @@ export interface DeviceHub {
     issues(printerId: string): Promise<PrinterIssue[]>
     objects(printerId: string): Promise<PrintObject[]>
     jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
-    home(printerId: string, o?: { plateClear?: boolean }): Promise<void>
+    /** `plateClear` answers the plate question for this home, about the plate of bed `epoch`. */
+    home(printerId: string, o?: { plateClear: true; epoch: number }): Promise<void>
     /** `epoch` is the bed epoch read with the list, so a click never skips in a later print. */
     skipObject(printerId: string, id: string, epoch: number): Promise<void>
     startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean }): Promise<unknown>
@@ -172,19 +173,30 @@ export async function startStored(
   }
 }
 
-export type HomeAnswer = { kind: 'homed' } | { kind: 'ask-bed' } | { kind: 'error'; message: string }
+/** `ask-bed` carries the bed epoch the question is about; the answer goes back with it. */
+export type HomeAnswer = { kind: 'homed' } | { kind: 'ask-bed'; epoch: number } | { kind: 'error'; message: string }
 
 /**
- * Homes the printer. Homing Z lowers the nozzle to the plate, so when the last print may still be on it (finished, or
- * canceled straight back to idle) the hub refuses with `bed_check`; the caller asks, and calls again with `plateClear`
- * once the person said so. That answer goes with this home only, so the next print start still asks about the plate.
+ * Homes the printer. Homing Z lowers the nozzle to the plate, so unless the hub knows the plate is clear (the print
+ * start rule) it refuses with `bed_check` and names the bed epoch it asks about; the caller asks, and calls again with
+ * `answer` once the person said so. The answer goes with this home only, so the next print start still asks, and it
+ * covers only that epoch: after a print in between, the hub asks again.
  */
-export async function homePrinter(hub: DeviceHub, printerId: string, plateClear = false): Promise<HomeAnswer> {
+export async function homePrinter(hub: DeviceHub, printerId: string, answer?: { epoch: number }): Promise<HomeAnswer> {
   try {
-    await (plateClear ? hub.device.home(printerId, { plateClear: true }) : hub.device.home(printerId))
+    await (answer ? hub.device.home(printerId, { plateClear: true, epoch: answer.epoch }) : hub.device.home(printerId))
     return { kind: 'homed' }
   } catch (e) {
-    if ((e as { code?: string } | null)?.code === 'bed_check') return { kind: 'ask-bed' }
+    if ((e as { code?: string } | null)?.code !== 'bed_check') return { kind: 'error', message: deviceError(e) }
+    const named = (e as { details?: { epoch?: unknown } }).details?.epoch
+    if (typeof named === 'number') return { kind: 'ask-bed', epoch: named }
+    // A hub whose refusal does not name the epoch: the one it reports now.
+    try {
+      const epoch = (await hub.bed.state(printerId)).epoch
+      if (typeof epoch === 'number') return { kind: 'ask-bed', epoch }
+    } catch {
+      // fall through
+    }
     return { kind: 'error', message: deviceError(e) }
   }
 }
