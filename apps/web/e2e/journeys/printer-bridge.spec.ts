@@ -1463,7 +1463,9 @@ test('Partner phone: pairs under its app name, listed in Devices, approve and se
   const dialog = page.getByRole('dialog', { name: 'Pair a partner phone' })
   await dialog.getByTestId('partner-phone-name').fill('Example Phone')
   await dialog.getByTestId('partner-phone-make').click()
-  const link = (await dialog.getByRole('img', { name: 'Pairing QR code' }).getAttribute('data-link')) ?? ''
+  await expect(dialog.getByRole('img', { name: 'Pairing QR code' })).toBeVisible()
+  // The link is drawn only as the QR code; the end-to-end build hands it over through a test-only global.
+  const link = await page.evaluate(() => (globalThis as { __sxE2ePairLink?: string }).__sxE2ePairLink ?? '')
   expect(link).toMatch(/^slicerx:\/\/pair#v=1&/)
 
   // The partner app on the phone, under the same name. Throwaway identity and store, this test only.
