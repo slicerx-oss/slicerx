@@ -25,13 +25,14 @@
 // slicerx-kit-assets-<kit version>/ holding the contents of assets/, and lists it in SHA256SUMS.txt. The zip is
 // reproducible: sorted entries and one fixed time (SOURCE_DATE_EPOCH, else the HEAD commit's), so two packs of one
 // commit give the same bytes.
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateRawSync } from 'node:zlib'
 import { exportAssets, readEdition } from './export-kit-assets.mjs'
+import { changeFiles } from './fold-changes.mjs'
 
 const REPO = 'slicerx-oss/slicerx'
 /** The platforms an engine release builds, by the suffix of its archive names. */
@@ -274,9 +275,37 @@ export function zipAssets(dest, version, seconds = sourceDate()) {
   return { file, entries }
 }
 
+const KIT_FOLDERS = ['ui/viewport', 'embed', 'mcp', 'step-reader']
+
 export function kitPackages() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  return ['ui/viewport', 'embed', 'mcp', 'step-reader'].map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
+  return KIT_FOLDERS.map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
+}
+
+/**
+ * The kit packages whose change files (packages/<folder>/changes, scripts/fold-changes.mjs) are not folded into
+ * CHANGELOG.md yet, as `{ name, folder, files }`. A kit packed from a release commit has none: the release that bumps
+ * the versions folds them. A kit packed from any other commit names them, so its CHANGELOG.md reads as the last release.
+ */
+export function pendingChanges(root = resolve(dirname(fileURLToPath(import.meta.url)), '..')) {
+  return KIT_FOLDERS.map((folder) => ({
+    name: JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')).name,
+    folder: `packages/${folder}`,
+    files: changeFiles(join(root, 'packages', folder, 'changes')).map((c) => c.name),
+  })).filter((p) => p.files.length)
+}
+
+/**
+ * A note when the committed packages/mcp/TOOLS.md is behind the tool list (scripts/tools-doc.ts --check), or
+ * undefined when it is current. The release writes it with the change files; between releases it may lag. `run` is
+ * spawnSync, replaceable in tests.
+ */
+export function toolsDocNote(root = resolve(dirname(fileURLToPath(import.meta.url)), '..'), run = spawnSync) {
+  const win = process.platform === 'win32'
+  const r = run(win ? 'pnpm.cmd' : 'pnpm', ['exec', 'tsx', 'scripts/tools-doc.ts', '--check'], { cwd: join(root, 'packages', 'mcp'), encoding: 'utf8', shell: win })
+  if (r.status === 0) return undefined
+  const said = String(r.stdout ?? '').trim() || String(r.stderr ?? '').trim().split('\n').at(-1) || `exit ${r.status}`
+  return `note: packages/mcp/TOOLS.md is not current (${said}); a release writes it with pnpm --filter @slicerx/mcp tools-doc`
 }
 
 function packPackages(dest) {
@@ -299,6 +328,11 @@ function packPackages(dest) {
   console.log(`credit kit: ${join(dest, 'credit-kit')}`)
   console.log(`npm install ${files.map((f) => join(dest, f)).join(' ')}`)
   for (const p of manifest.packages.filter((p) => p.optional)) console.log(`optional, to read STEP files: npm install ${join(dest, p.file)}`)
+  const doc = toolsDocNote()
+  if (doc) console.log(doc)
+  for (const p of pendingChanges()) {
+    console.log(`note: ${p.name} has ${p.files.length} change file${p.files.length === 1 ? '' : 's'} not in its CHANGELOG.md yet (${p.folder}/changes); a release folds them with node scripts/fold-changes.mjs ${p.folder} <version>`)
+  }
 }
 
 async function main(args) {

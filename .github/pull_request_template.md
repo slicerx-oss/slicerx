@@ -25,6 +25,7 @@
 - [ ] Tests added or updated
 - [ ] Screenshot or recording attached for UI changes
 - [ ] Docs updated if behavior or a public interface changed
+- [ ] MCP server changes: a file in `packages/mcp/changes/`, and no edit to `packages/mcp/CHANGELOG.md` or `packages/mcp/TOOLS.md` (a release writes both)
 - [ ] Any code from another project is credited, and its license is compatible with Apache-2.0
 - [ ] No secrets, keys, or private model files in the diff
 - [ ] AI tools helped with this change (name them here: ...), and I have read [CONTRIBUTING-AI.md](../CONTRIBUTING-AI.md)

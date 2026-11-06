@@ -3,13 +3,13 @@
 // mimir's print run read back by MCP clients: the app's answer passed on field for field, nothing else it might carry
 // (never the file, its SHA-256, a card's token or request id, an access code or a serial), safe defaults for an answer
 // of the wrong shape, plain refusals without the app, and a print a client queues still waiting for the person.
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import type { AgentWork } from '@slicerx/pilot'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppLinkCaller } from '../src/app-route'
 import { mimirRunTools, pick, type RunState } from '../src/mimir-run'
+import { toolsDoc } from '../src/tooldocs'
 import { connect, data, text } from './helpers'
 
 // What the app answers while a sliced and sent plate prints on Bay 2.
@@ -141,9 +141,9 @@ describe('slicerx_mimir_run', () => {
     expect(tool.approval).toBeUndefined()
   })
 
-  it('TOOLS.md is current', () => {
-    const doc = readFileSync(join(__dirname, '../TOOLS.md'), 'utf8')
-    expect(doc).toContain('| `slicerx_mimir_run` |  |  | read |')
+  it('has its row in TOOLS.md', () => {
+    const doc = toolsDoc(mimirRunTools(undefined, 'SlicerX'))
+    expect(doc).toMatch(/\| `slicerx_mimir_run` \| [\d.]+ \|  \|  \| read \|/)
     expect(doc).toContain('never the file, its SHA-256, a card')
   })
 

@@ -2,11 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir an edition runs, read back by MCP clients: the app's answer passed on field for field, nothing else it
 // might carry (never a voice text or a doc), and plain refusals without the app.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppLinkCaller } from '../src/app-route'
 import { mimirBrainTools, pick, type BrainState } from '../src/mimir-brain'
+import { toolsDoc } from '../src/tooldocs'
 
 // What the app answers for an edition with a voice, printers and web off, a Sonnet step-up, synced memory and 2 docs.
 const HARBOR: BrainState = {
@@ -63,8 +62,8 @@ describe('slicerx_mimir_brain', () => {
     expect(out.summary).toContain('mimir cloud on its base model with no step-up')
   })
 
-  it('TOOLS.md is current', () => {
-    const doc = readFileSync(join(__dirname, '../TOOLS.md'), 'utf8')
+  it('has its row in TOOLS.md', () => {
+    const doc = toolsDoc(mimirBrainTools(undefined, 'SlicerX'))
     expect(doc).toContain('| `slicerx_mimir_brain` |')
     expect(doc).toContain('never the voice text or the docs themselves')
   })

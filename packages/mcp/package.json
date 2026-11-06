@@ -65,6 +65,7 @@
     "dev": "tsx src/cli.ts",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",
+    "tools-doc": "tsx scripts/tools-doc.ts",
     "test": "vitest run",
     "prepack": "node scripts/build.mjs && node ../../scripts/copy-integrator-docs.mjs .",
     "prepublishOnly": "node ../../scripts/publish-guard.mjs"
