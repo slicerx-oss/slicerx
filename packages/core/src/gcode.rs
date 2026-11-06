@@ -1738,7 +1738,7 @@ pub(crate) fn settle_cooling(
     let settled: Vec<Option<Settled>> = {
         let shared = Shared::new(out, config);
         let view: &SliceOutput = out;
-        par::map(&view.layers, |l| {
+        let mut settled = par::map(&view.layers, |l| {
             if l.paths.is_empty() {
                 return None;
             }
@@ -1771,10 +1771,10 @@ pub(crate) fn settle_cooling(
             let same = relaid.is_none()
                 && layer_fan(c, l.local, planned, slot) == layer_fan(c, l.local, planned + beyond, slot);
             Some((relaid, beyond, same.then_some(chunk)))
-        })
+        });
+        settle_units(view, config, beside, &mut settled, &shared);
+        settled
     };
-    let mut settled = settled;
-    settle_units(out, config, beside, &mut settled);
     for (l, s) in out.layers.iter_mut().zip(settled) {
         if let Some((relaid, beyond, chunk)) = s {
             if let Some(m) = relaid {
@@ -1849,11 +1849,25 @@ fn written_beyond(l: &LayerPaths, view: &SliceOutput, config: &PrintConfig) -> O
 /// one slowdown over both from their speeds before it, with their summed time held to the target once
 /// (`paths::recool_unit`). `settled` holds what each layer of the range settled to on its own; a unit's layers
 /// in the range take the unit's result instead. The layers in `beside` are only read.
+/// The filament view of a cooling unit's layer `u` with its settings `c`: a layer of the range reads the view the
+/// range shares; a layer beside it makes its own.
+fn unit_filament<'a>(
+    shared: &'a Shared<'_>,
+    u: &UnitLayer<'_>,
+    c: &'a PrintConfig,
+) -> std::borrow::Cow<'a, PrintConfig> {
+    match u.2 {
+        Some(_) => shared.filament(u.1.cfg, crate::paths::first_slot(u.1)),
+        None => c.for_filament(crate::paths::first_slot(u.1)),
+    }
+}
+
 fn settle_units(
     out: &SliceOutput,
     config: &PrintConfig,
     beside: (Option<&SliceOutput>, Option<&SliceOutput>),
     settled: &mut [Option<SettledLayer>],
+    shared: &Shared<'_>,
 ) {
     let below = beside.0.and_then(|b| b.layers.last().map(|l| (b, l, None)));
     let above = beside.1.and_then(|a| a.layers.first().map(|l| (a, l, None)));
@@ -1878,7 +1892,7 @@ fn settle_units(
             Some(Some(s)) => Some(Beyond::Secs(f64::from(s.1))),
             Some(None) => {
                 let c = u.0.config_at(config, u.1.cfg);
-                let fc = c.for_filament(crate::paths::first_slot(u.1));
+                let fc = shared.filament(u.1.cfg, crate::paths::first_slot(u.1));
                 let long = crate::paths::cooling_time(u.1, &fc)
                     > 2.0 * c.slow_down_layer_time.max(c.fan_cooling_layer_time) + 30.0;
                 long.then_some(Beyond::Long)
@@ -1891,10 +1905,7 @@ fn settle_units(
         let [s, o] = unit;
         let (bs, bo) = (beyond(s)?, beyond(o)?);
         let (sc, oc) = (s.0.config_at(config, s.1.cfg), o.0.config_at(config, o.1.cfg));
-        let (sf, of) = (
-            sc.for_filament(crate::paths::first_slot(s.1)),
-            oc.for_filament(crate::paths::first_slot(o.1)),
-        );
+        let (sf, of) = (unit_filament(shared, s, sc), unit_filament(shared, o, oc));
         let secs = |b: Beyond| match b {
             Beyond::Long => 0.0,
             Beyond::Secs(t) => t,
