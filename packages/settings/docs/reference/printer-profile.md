@@ -31,7 +31,7 @@
 
 ### `printer_extruder_id`
 
-**Printer extruder id**
+**Extruder number on the printer**
 
 - Type: list of integers, one per extruder
 - Default: [1]
@@ -105,7 +105,7 @@
 
 ### `use_3mf`
 
-**Use 3mf**
+**Send as 3MF**
 
 - Type: boolean
 - Default: off

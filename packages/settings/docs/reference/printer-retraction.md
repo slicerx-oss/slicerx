@@ -4,7 +4,7 @@
 
 ### `deretract_speed_extruder_change`
 
-**Deretract speed extruder change** (develop mode)
+**Deretraction speed after an extruder change** (develop mode)
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -37,7 +37,7 @@
 
 ### `parking_pos_retraction`
 
-**Parking pos retraction**
+**Parking position retraction**
 
 - Type: number
 - Unit: mm
@@ -69,7 +69,7 @@
 
 ### `retract_length_toolchange`
 
-**Retract length toolchange**
+**Retraction length at a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -79,7 +79,7 @@
 
 ### `retract_lift_above`
 
-**Retract lift above**
+**Z hop only above height**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -91,7 +91,7 @@
 
 ### `retract_lift_below`
 
-**Retract lift below**
+**Z hop only below height**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -126,7 +126,7 @@ How far the nozzle lifts before a tool change and stays lifted until it reaches 
 
 ### `retract_restart_extra`
 
-**Retract restart extra**
+**Extra length on restart**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -137,7 +137,7 @@ How far the nozzle lifts before a tool change and stays lifted until it reaches 
 
 ### `retract_restart_extra_toolchange`
 
-**Retract restart extra toolchange**
+**Extra length on restart after a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -170,9 +170,10 @@ How fast the filament pulls back by the tool change retraction length, beyond th
 
 ### `retraction_distances_when_cut`
 
-**Retraction distances when cut** (develop mode)
+**Retraction distance when cutting filament** (develop mode)
 
 - Type: list of numbers, one per extruder
+- Unit: mm
 - Default: [18]
 - Recommended range: 10 to 18
 - Automatic: The value 0 means automatic and is always allowed.

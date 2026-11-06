@@ -4,7 +4,7 @@
 
 ### `bbl_use_printhost`
 
-**Bbl use printhost**
+**Send through a print host**
 
 - Type: boolean
 - Default: off
@@ -22,7 +22,7 @@
 
 ### `host_type`
 
-**Host type**
+**Print host type**
 
 - Type: enum
 - Default: "octoprint"
@@ -68,7 +68,7 @@
 
 ### `printhost_authorization_type`
 
-**Printhost authorization type**
+**Print host authorization type**
 
 - Type: enum
 - Default: "key"
@@ -105,7 +105,7 @@
 
 ### `printhost_ssl_ignore_revoke`
 
-**Printhost ssl ignore revoke**
+**Ignore certificate revocation checks**
 
 - Type: boolean
 - Default: off
