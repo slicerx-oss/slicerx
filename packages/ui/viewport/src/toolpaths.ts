@@ -47,6 +47,8 @@ import { changeSequence, poseAt, printedTop, type ChangeSequence, type ToolChang
 /** Instances per draw call. Keeps each GPU buffer well under driver limits. */
 const CHUNK = 1 << 20
 const LAYER_LUT_W = 1024
+/** Tool colors and finishes the preview keeps: one per filament, as many as a project holds. */
+const TOOL_LUT_SIZE = 32
 const COLOR_MODE: Record<ColorMode, number> = { feature: 0, tool: 1, speed: 2, flow: 3, layerTime: 4, width: 5, height: 6, fan: 7, temperature: 8 }
 
 export const MARKER_KINDS: readonly MarkerKind[] = ['retractions', 'seams', 'lifts', 'wipes', 'toolChanges', 'pauses']
@@ -170,7 +172,7 @@ const BEAD_COLOR = /* glsl */ `
   uint tool = (aSegB.z >> 8u) & 0xffu;
   vec3 c;
   if (uColorMode == 0) c = texelFetch(uFeatureLut, ivec2(int(min(feat, 15u)), 0), 0).rgb;
-  else if (uColorMode == 1) c = texelFetch(uToolLut, ivec2(int(min(tool, 15u)), 0), 0).rgb;
+  else if (uColorMode == 1) c = texelFetch(uToolLut, ivec2(int(min(tool, ${TOOL_LUT_SIZE - 1}u)), 0), 0).rgb;
   else if (uColorMode == 2) {
     float s = float(aSegB.z >> 16u) * 0.1;
     c = texture(uRamp, vec2(clamp((s - uSpeedRange.x) / max(1e-3, uSpeedRange.y - uSpeedRange.x), 0.0, 1.0), 0.5)).rgb;
@@ -195,7 +197,7 @@ const BEAD_COLOR = /* glsl */ `
   // One filament picked out (hovering its slot in the sidebar): every other one's beads drop to a quarter.
   if (uHighlight >= 0 && int(tool) != uHighlight) c *= 0.25;
   vSegColor = c;
-  vFinish = texelFetch(uFinishLut, ivec2(int(min(tool, 15u)), 0), 0);
+  vFinish = texelFetch(uFinishLut, ivec2(int(min(tool, ${TOOL_LUT_SIZE - 1}u)), 0), 0);
   // What surface the bead belongs to from afar: a wall (1), a flat top, bottom or solid layer (2), anything else (0).
   vSurf = feat <= 2u || feat == 13u ? 1.0 : feat == 3u || feat == 4u || feat == 5u || feat == 7u || feat == 11u ? 2.0 : 0.0;
   // Only the walls of the live layer glow, so it reads as a lit ring at the nozzle height rather than a plane.
@@ -502,8 +504,8 @@ function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
 }
 
-/** One finish per tool (16 at most), satin for tools without one. */
-function finishTexture(finishes: readonly (ToolpathFinish | undefined)[], size = 16): DataTexture {
+/** One finish per tool (32 at most), satin for tools without one. */
+function finishTexture(finishes: readonly (ToolpathFinish | undefined)[], size = TOOL_LUT_SIZE): DataTexture {
   const data = new Float32Array(size * 4)
   for (let i = 0; i < size; i++) data.set(BEAD_FINISHES[finishes[i] ?? finishes[0] ?? 'satin'], i * 4)
   const t = new DataTexture(data, size, 1, RGBAFormat, FloatType)
@@ -592,7 +594,7 @@ export class Toolpaths {
     uColorMode: { value: 0 },
     uHighlight: { value: -1 },
     uFeatureLut: { value: lutTexture(FEATURE_COLORS.map((f) => f.color)) },
-    uToolLut: { value: lutTexture(DEFAULT_TOOL_COLORS) },
+    uToolLut: { value: lutTexture(DEFAULT_TOOL_COLORS, TOOL_LUT_SIZE) },
     uFinishLut: { value: finishTexture([]) },
     uCrease: { value: 0.55 },
     uRamp: { value: rampTexture(HEAT_RAMP) },
@@ -1090,7 +1092,7 @@ export class Toolpaths {
 
   private uploadToolColors(): void {
     const old = this.uniforms.uToolLut.value
-    this.uniforms.uToolLut.value = lutTexture(this.userToolColors ?? this.themeToolColors)
+    this.uniforms.uToolLut.value = lutTexture(this.userToolColors ?? this.themeToolColors, TOOL_LUT_SIZE)
     old.dispose()
     this.head.setColors(this.userToolColors ?? this.themeToolColors)
     this.purge.setColors(this.userToolColors ?? this.themeToolColors)
