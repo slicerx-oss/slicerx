@@ -95,6 +95,11 @@ one shared target beside the lock and every command run under `heavy.sh` builds 
 
 A `CARGO_TARGET_DIR` the caller sets still wins, and `sccache` becomes the `RUSTC_WRAPPER` when it is installed.
 
+The nightly does not use that shared target. It builds into `$CI_HOME/target-nightly`, which it wipes before the build
+and again when it ends (`SX_CI_NIGHTLY_TARGET=keep` keeps it for a look afterwards), so the full rebuild never stays on
+the disk. It needs 30 GB free to start and skips the run with a message under that (`SX_CI_MIN_FREE_GB` sets another
+floor); the other tiers keep the 15 GB floor.
+
 A machine that shares its cores with other work can cap cargo and test threads under the lock the same way:
 
     echo 4 > ~/.slicerx-heavy.lock.jobs
