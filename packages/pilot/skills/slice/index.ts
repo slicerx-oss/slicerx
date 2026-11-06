@@ -3,6 +3,7 @@
 // Slices project plates on the host's slicer (WASM worker pool or native core), and records the slice in the chat's
 // print run: its time, filament, cost and warnings, and the plate's fingerprint from before the slice.
 import type { Cell } from '@slicerx/contracts'
+import { hotendCount, hotendRows } from '@slicerx/settings/hotends'
 import { z } from 'zod'
 import { fmtDuration, fmtGrams, fmtMoney, sliceFigures, type ToolShared } from '../../src/shared'
 import { defineSkill } from '../../src/tool'
@@ -10,9 +11,9 @@ import { defineSkill } from '../../src/tool'
 export function createSlice(shared: ToolShared) {
   return defineSkill({
     name: 'slice',
-    version: '2.3.1',
+    version: '2.4.0',
     permission: 'slice',
-    description: 'Slice project plates with the current settings and overrides. Reports layers, print time, filament grams and cost per plate. Run arrange first for batches.',
+    description: 'Slice project plates with the current settings and overrides. Reports layers, print time, filament grams and cost per plate, and on a printer whose hotends are its tools (the H3C) which tool printed each filament (hotends, with the TPU tool flagged). Run arrange first for batches.',
     input: z.object({
       plates: z.array(z.number().int().min(1)).optional().describe('Plate numbers; default all'),
       profile: z.string().optional().describe('Process profile name to report, such as "0.20 Standard"'),
@@ -63,9 +64,14 @@ export function createSlice(shared: ToolShared) {
         summary: `${indexes.length} plate${indexes.length === 1 ? '' : 's'}, ${fmtDuration(time)}, ${fmtGrams(grams)}, ${fmtMoney(cost)}`,
         output: {
           plates: indexes.map((idx) => {
-            const r = shared.slices.get(idx)?.result
+            const made = shared.slices.get(idx)
+            const r = made?.result
             if (!r) return null
-            const base = { plate: idx, layers: r.layerCount, ...sliceFigures(r) }
+            const cfg = made.config as Record<string, unknown>
+            // A printer whose hotends are its tools (the H3C): each filament the plate printed with on its tool, with the TPU tool flagged.
+            const used = r.stats.filamentMm.flatMap((mm, i) => (mm > 0 ? [i + 1] : []))
+            const hotends = r.filamentMap && hotendCount(cfg) ? { hotends: { auto: r.filamentMap.auto, filaments: hotendRows(cfg, r.filamentMap.nozzles, used) } } : {}
+            const base = { plate: idx, layers: r.layerCount, ...sliceFigures(r), ...hotends }
             // Which filament each object's walls, infill, support and other features printed with, when the host reports it.
             return r.featureFilaments?.length ? { ...base, featureFilaments: r.featureFilaments } : base
           }),

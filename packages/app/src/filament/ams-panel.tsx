@@ -19,7 +19,8 @@ import { useResolvedSlots } from './use-slots'
 import { SetupNotes } from './setup-plan'
 import { resetSlots, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
-import { currentMap, hasRack, mapExtruders, masterExtruder, nozzleName, pickedMap, setNozzleAuto, setSlotNozzle } from './nozzle-map'
+import { tpu285Slot, tpuHotend } from '@slicerx/settings/hotends'
+import { currentHotends, currentMap, deviceTpuTool, hasRack, mapExtruders, mapHotends, masterExtruder, nozzleName, pickedMap, setHotendAuto, setNozzleAuto, setSlotHotend, setSlotNozzle, toolName } from './nozzle-map'
 import { spoolLeft } from './left'
 
 const Dialogs = lazy(() => import('./dialogs').then((m) => ({ default: () => (
@@ -193,6 +194,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
         </>
       )}
       <NozzleRows slots={slots} />
+      <HotendRows slots={slots} />
       {loading || slots.length === 0 ? <SetupNotes /> : null}
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
     </Block>
@@ -246,3 +248,67 @@ export function NozzleRows({ slots }: { slots: ResolvedSlot[] }) {
   )
 }
 
+
+/**
+ * On a printer whose hotends are its tools (the Bambu Lab H3C, nine on one extruder): which tool prints each filament
+ * in use. The slicer picks them unless the plate sets them; picking a tool for one filament sets the plate's map by hand.
+ * 2.85 mm TPU prints only on the TPU tool, and no other filament may take that tool.
+ */
+export function HotendRows({ slots }: { slots: ResolvedSlot[] }) {
+  const meta = useApp((s) => activeMeta(s))
+  const picked = useApp((s) => pickedMap(s))
+  const easy = useApp((s) => s.easy)
+  const overrides = useApp((s) => s.overrides)
+  const cfg = useMemo(() => resolveConfig(easy, overrides) as Record<string, unknown>, [easy, overrides])
+  const tools = mapHotends(cfg)
+  if (!meta || tools === 0) return null
+  const shown = slots.filter((s) => s.used)
+  if (shown.length === 0) return null
+  const tpu = tpuHotend(cfg)
+  const tpuTool = tpu === undefined ? undefined : tpu + 1
+  const device = deviceTpuTool(cfg)
+  const current = currentHotends(meta, picked, cfg, slots.length, shown.map((s) => s.index))
+  const auto = !meta.settings.hotendMap
+  return (
+    <div className="hotend-map" role="group" aria-label="Tool for each filament">
+      <SwitchRow
+        id="hotend-auto"
+        icon="nozzle"
+        label="Pick tools automatically"
+        // One line in both states, so picking a tool by hand moves nothing on the screen.
+        detail="Each filament gets a tool of its own, so a color change is a tool swap with no flush."
+        checked={auto}
+        onChange={(on) => (on ? setHotendAuto(meta.id) : setSlotHotend(meta.id, shown[0]!.index, current[shown[0]!.index - 1] ?? 1, current))}
+      />
+      {shown.map((s) => {
+        const tpu285 = tpu285Slot(cfg, s.index)
+        return (
+          <div key={s.index} className="hotend-row" data-slot={s.index}>
+            <Swatch color={s.color} />
+            <span className="sname">Filament {s.label}</span>
+            <Select
+              id={`hotend-${s.index}`}
+              size="sm"
+              aria-label={`Tool for filament ${s.index}`}
+              value={current[s.index - 1] ?? 1}
+              disabled={tpu285 && tpuTool !== undefined}
+              onChange={(e) => setSlotHotend(meta.id, s.index, Number(e.target.value), current)}
+            >
+              {Array.from({ length: tools }, (_, i) => i + 1).map((t) => (
+                <option key={t} value={t} disabled={tpuTool !== undefined && !tpu285 && t === tpuTool}>
+                  {toolName(t, t === tpuTool)}
+                </option>
+              ))}
+            </Select>
+            {tpu285 ? <p className="hotend-why sx-small sx-muted">2.85 mm TPU prints only on the TPU tool.</p> : null}
+          </div>
+        )
+      })}
+      {tpuTool !== undefined && device !== undefined && device !== tpuTool ? (
+        <p className="hotend-note sx-small sx-muted" data-testid="hotend-tpu-note">
+          Bambu Lab&apos;s print profiles make tool {tpuTool} the TPU tool, but the printer&apos;s own device data points to tool {device}. Check which tool your printer&apos;s screen calls the TPU tool before you print TPU.
+        </p>
+      ) : null}
+    </div>
+  )
+}

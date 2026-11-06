@@ -190,12 +190,14 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slot-z-hop` | In the Filament dialog (Advanced and up), the filament's own Z hop height in mm, empty for the printer's value |
 | `slot-z-hop-type` | In the Filament dialog (Advanced and up), the filament's own Z hop type (Auto, Normal, Slope, Spiral or Ramp), or Printer value |
 | `slot-travel-slope` | In the Filament dialog (Advanced and up), the filament's own travel slope in degrees: the angle its lifts climb at, empty for the printer's value |
+| `slot-chamber` | In the Filament dialog (Advanced and up), on a printer with a chamber limit (the H3C's 65 C): the filament's chamber temperature in C, held to the limit, with the limit on the line under it |
 | `slice-filament-target` | Under the spools: what a click moves (`data-kind` objects, plate or filament) |
 | `slice-filament-target-*` | With two or more filaments in use and nothing selected, the option that picks the filament to move, by slot |
 | `slice-filament-slot-line` | The line under the spools: the hovered or focused spool, else the one the target prints with |
 | `slice-filament-note` | Why the target prints with its spool, or that it is another material than the profile's (`data-other`) |
 | `slice-filament-foot` | The section's last line: how to change a filament and Add filament, or, with `data-from="printer"`, where the printer's slots come from and how to change or add one |
 | `slice-filament-add` | Add filament: adds the next filament and opens it (no printer reports the slots) |
+| `hotend-tpu-note` | Under the tool rows of a printer whose hotends are its tools (the H3C): the TPU tool's number is not settled yet (print profiles against the device data) |
 | `slice-filament-foot-reset` | Reset to printer, in the line under the rail (the printer's slots, one changed here) |
 | `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |
 | `slice-filament-menu` | The Filament options menu |

@@ -74,6 +74,13 @@ describe('H3C stock layer', () => {
     expect(layer!.values['filament_diameter']).toEqual([1.75, 2.85])
   })
 
+  it('keeps a slot without its own diameter at 1.75 mm beside the 2.85 mm TPU', async () => {
+    // The printer's default filament sets no diameter or variant of its own; it must not take the TPU's.
+    const layer = await stockLayer({ printerId: 'bambu-h3c', tier: 'standard', slots: [{ type: 'PLA' }, slots[1]!] })
+    expect(layer!.values['filament_diameter']).toEqual([1.75, 2.85])
+    expect((layer!.values['filament_extruder_variant'] as string[])[0]).not.toMatch(/TPU285/)
+  })
+
   it('gives the H3C its 65 C chamber limit', async () => {
     expect(printerProfile('bambu-h3c')!.limits.chamberMaxTemp).toBe(65)
     const layer = await stockLayer({ printerId: 'bambu-h3c', tier: 'standard', slots })

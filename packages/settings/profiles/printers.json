@@ -377,9 +377,12 @@
    "nozzleCount": 9,
    "flavor": "marlin",
    "directDrive": true,
-   "limits": {},
+   "limits": {
+    "chamberMaxTemp": 65
+   },
    "sources": [
-    "https://bambulab.com/en-us/h3c/specs"
+    "https://bambulab.com/en-us/h3c/specs",
+    "https://blog.bambulab.com/tool-changer-game-changer-bambu-lab-presents-h3c-the-defining-new-generation-of-3d-printers/"
    ]
   },
   {

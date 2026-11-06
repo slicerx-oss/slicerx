@@ -75,7 +75,7 @@ export function clearPlate(): void {
  * preset or project), except with a project's G-code the person chose in the project G-code dialog and has not edited
  * since. Everything else gets the strict linter.
  */
-export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partial<Pick<AppState, 'vouchedGcode' | 'projectScriptReviews'>>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number } } {
+export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partial<Pick<AppState, 'vouchedGcode' | 'projectScriptReviews'>>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number; chamberMaxC?: number } } {
   const p = s.profile
   if (!p) return {}
   const vouched = s.vouchedGcode ?? {}

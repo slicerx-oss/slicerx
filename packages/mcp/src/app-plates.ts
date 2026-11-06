@@ -31,6 +31,8 @@ export interface AppPlate {
   slice: 'empty' | 'not-sliced' | 'slicing' | 'sliced' | 'stale'
   shown: boolean
   settings: z.infer<typeof appPlateSettings>
+  /** The shown plate on a printer whose hotends are its tools (the H3C): each filament in use on its tool. */
+  hotends?: { auto: boolean; filaments: { slot: number; tool: number; hotend: number; tpuTool: boolean; tpu285: boolean }[] }
   entries: AppPlateEntry[]
 }
 export interface AppPlates {
@@ -71,7 +73,7 @@ function summary(p: AppPlates): string {
 export function appPlateTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const list = defineTool({
     name: 'app.plates',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). Includes plate settings and entries with concrete object ids, copy relationships, transforms, bounds in mm, locked/printable flags and object/part settings. Reads through the app link without changing the shown plate; the app must be open with the link on.`,
@@ -83,7 +85,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
   })
   const show = defineTool({
     name: 'app.plate_show',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description: `Show one plate of the project open in ${appName}, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). It changes only what the window shows, never the project, and answers busy while the person is in Model or using a paint, brim or face tool. Returns the plates read back, with the one now shown.`,
@@ -102,12 +104,12 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     add: 'Add an empty plate and show it. Inherit the shown plate settings unless settings is supplied. Optionally give a name.',
     duplicate: 'Copy a plate with its objects, copies, paint and settings, and show the new plate. Optionally give a name. New object ids are in entries.',
     rename: 'Rename a plate. Names are trimmed and must be 1 to 40 characters.',
-    settings: 'Merge per-plate bedType, sequence, filamentOrder, slotMap or nozzleMap overrides. With replace: true, replace every override; an empty settings object clears them.',
+    settings: 'Merge per-plate bedType, sequence, filamentOrder, slotMap, nozzleMap or hotendMap overrides. With replace: true, replace every override; an empty settings object clears them. On a printer whose hotends are its tools (the H3C), the shown plate reads back hotends: each filament in use on its tool and hotend, with the TPU tool flagged.',
     remove: 'Remove a plate. A populated plate requires deleteObjects: true, which deletes its contents too. Refuses the last plate and locked objects. Undo in the app restores it.',
     move: 'Move only the concrete object ids supplied from the shown plate to another plate, arranging into free space. Copies not named stay put. Refuses locked objects or a move where any object does not fit; nothing moves on refusal.',
   }
   const edit = <S extends z.ZodType>(action: keyof typeof appPlateInputs, input: S) => defineTool({
-    name: `app.plate_${action}`, version: '1.0.0', source: 'command', permission: 'slice', input,
+    name: `app.plate_${action}`, version: '1.1.0', source: 'command', permission: 'slice', input,
     description: `${descriptions[action]} Edits the project open in ${appName} through the app link, with edit permission. Needs Slice open and no tool, load, slice or history edit in progress. One toolbar Undo step; returns every plate and its objects/settings read back, plus changedPlate.`,
     async run(args) {
       const out = await call(link, appName, `plates.${action}`, args as Record<string, unknown>)

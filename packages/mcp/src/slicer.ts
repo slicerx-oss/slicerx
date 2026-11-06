@@ -4,6 +4,7 @@
 // stub gives a rough estimate from the mesh so clients can be built and tested
 // before the core ships.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { hotendRows } from '@slicerx/settings/hotends'
 import { basename, extname, join } from 'node:path'
 import type { HeightRange, PlateCheck, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement, ScriptIdentity, ScriptReplacementChoice, AppliedScriptReplacement } from '@slicerx/contracts'
 import type { SliceCollision } from './collide'
@@ -35,6 +36,8 @@ export interface SliceJob {
   emitGcode: boolean
   /** The custom G-code is SlicerX's shipped text, so the engine's normal G-code checks apply rather than the strict ones. */
   trustedGcode?: boolean
+  /** The printer's limits the engine holds the slice to (sx engine): the chamber target, from the printer catalog (the H3C's 65 C). */
+  machineLimits?: { chamberMaxC?: number }
   /** Line widths the engine gets as they are, percents too, as the app sends them for an opened project (sx engine only). */
   widthsAsGiven?: readonly string[]
   /** Also write the SXPV preview buffer (sx engine only). */
@@ -85,6 +88,14 @@ export interface Arranged {
 }
 
 export interface SliceSummary {
+  /** sx engine: which extruder and hotend each filament printed on, when the printer has a filament map (H2D, H2C, H3C). */
+  filament_map?: { extruders: number[]; nozzles: number[]; auto: boolean }
+  /**
+   * sx engine, on a printer whose hotends are its tools (the H3C): each filament the plate printed with on its tool
+   * (from 1) and hotend (from 0), whether that is the TPU tool, and whether the filament is 2.85 mm TPU; `auto` when
+   * the slicer picked the tools.
+   */
+  hotends?: { auto: boolean; filaments: HotendReadback[] }
   script_replacements?: AppliedScriptReplacement[]
   /** With placement arrange: the layout the slice used. */
   arranged?: Arranged
@@ -267,4 +278,18 @@ export function createStubSlicer(): SlicerBackend {
       return summary
     },
   }
+}
+
+/** One filament on its tool, as the MCP tools read it back. */
+export interface HotendReadback {
+  slot: number
+  tool: number
+  hotend: number
+  tpu_tool: boolean
+  tpu285: boolean
+}
+
+/** The filaments `used` (1-based) on their hotends (`nozzles`, 0-based, index slot - 1), in the MCP's words. */
+export function hotendReadback(config: Record<string, unknown>, nozzles: readonly number[], used: readonly number[], auto: boolean): { auto: boolean; filaments: HotendReadback[] } {
+  return { auto, filaments: hotendRows(config, nozzles, used).map((r) => ({ slot: r.slot, tool: r.tool, hotend: r.hotend, tpu_tool: r.tpuTool, tpu285: r.tpu285 })) }
 }

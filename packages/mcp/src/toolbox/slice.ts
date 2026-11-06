@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { gcodeLabel, printerForProfile } from '@slicerx/settings'
+import { gcodeLabel, printerForProfile, printerProfile } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName, type ScriptReplacementChoice } from '@slicerx/contracts'
@@ -185,6 +185,23 @@ export const summaryShape = {
     filaments: z.array(z.string()).optional().describe('With derived: the filament_type of each filament the plate prints, in slot order'),
     text: z.string(),
   }).optional(),
+  /** sx engine: which extruder and hotend each filament printed on, when the printer has a filament map (H2D, H2C, H3C). */
+  filament_map: z.object({
+    extruders: z.array(z.number()).describe('The extruder of each filament (index slot - 1), from 1'),
+    nozzles: z.array(z.number()).describe('The nozzle or hotend of each filament (index slot - 1), from 0'),
+    auto: z.boolean().describe('True when the slicer picked the map, false when the settings gave it'),
+  }).optional(),
+  /** sx engine, on a printer whose hotends are its tools (the H3C): each filament the plate printed with on its tool. */
+  hotends: z.object({
+    auto: z.boolean().describe('True when the slicer picked the tools, false when the settings gave them (filament_map_mode Manual with filament_nozzle_map)'),
+    filaments: z.array(z.object({
+      slot: z.number().describe('The filament, from 1'),
+      tool: z.number().describe('The tool as the printer and the app number it, from 1'),
+      hotend: z.number().describe('The hotend index the engine and the G-code use, from 0'),
+      tpu_tool: z.boolean().describe('The tool is the TPU hotend, the one for 2.85 mm TPU'),
+      tpu285: z.boolean().describe('The filament is 2.85 mm TPU'),
+    })),
+  }).optional().describe('On a printer whose hotends are its tools (the H3C): which tool printed each filament, with the TPU tool flagged. Bambu Lab\'s print profiles put the TPU tool on tool 8, while the H3C device data names tool 7; captures from a real printer will settle it.'),
   /** sx engine: the prime tower as placed, when the plate prints one. */
   prime_tower: z.object({
     x: z.number().describe('Front left corner on the bed, mm'),
@@ -363,6 +380,9 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   }
   // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
   if (asked3mf && explicit['thumbnails'] === undefined) explicit['thumbnails'] = config['thumbnails'] = PLATE_THUMBNAILS
+  // The printer's chamber limit from the catalog (the H3C heats to 65 C): the engine holds the slice to it and warns.
+  const sliced = slicePrinter(profiles, args.profiles, presets ?? [], project)
+  const chamberMaxC = sliced ? printerProfile(sliced.printerId)?.limits.chamberMaxTemp : undefined
   await progress(0.2, arrangeOnly ? 'Arranging' : 'Slicing')
   const outDir = join(d.policy.outDir, 'jobs', `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
   const arrangeSpec = { ...(args.spacing_mm !== undefined ? { spacingMm: args.spacing_mm } : {}), ...(args.rotate === false ? { rotate: false } : {}) }
@@ -379,6 +399,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     outDir,
     emitGcode,
     trustedGcode,
+    ...(chamberMaxC !== undefined ? { machineLimits: { chamberMaxC } } : {}),
     ...(widthsAsGiven.length ? { widthsAsGiven } : {}),
     emitPreview: emitGcode && args.preview === true && slicer.kind === 'sx',
     ...(args.preview_format === 'v2' ? { previewFormat: 'v2' as const } : {}),

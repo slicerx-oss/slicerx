@@ -22,6 +22,7 @@ import { resolveConfig } from '../adapters/config'
 import { effectiveMode, useLayout } from '../first-run/look'
 import { settingTipAttrs } from '../lib/tips'
 import { useFilamentCount } from './count'
+import { chamberLimit, chamberNote, parseChamber } from '../plate/chamber-limit'
 
 const NO_BRAND = ''
 
@@ -146,6 +147,7 @@ export function SlotDialog() {
               <LiftHeight slot={slot.index} />
               <LiftType slot={slot.index} />
               <TravelSlope slot={slot.index} />
+              <ChamberTemp slot={slot.index} />
             </>
           ) : null}
         </div>
@@ -244,6 +246,22 @@ function LiftType({ slot }: { slot: number }) {
  * The filament's own travel slope: the angle its slope, spiral or ramp lifts climb at. Empty uses the printer's value.
  * Edits only this slot's entry of the per-filament list, live like the rest of the dialog.
  */
+/**
+ * The filament's chamber temperature in C, on a printer with a chamber limit (the H3C's 65 C): the field takes no more
+ * than the limit, and the line under it says the limit, or what slicing uses for a value over it.
+ */
+function ChamberTemp({ slot }: { slot: number }) {
+  const { config } = useSlotLift(CHAMBER_KEY)
+  const limit = useApp((s) => chamberLimit(s.profile))
+  if (limit === undefined) return null
+  const list = config[CHAMBER_KEY]
+  const raw = Number(Array.isArray(list) ? (list[slot - 1] ?? list[0]) : list)
+  const own = Number.isFinite(raw) ? raw : undefined
+  return <SlotNumber slot={slot} id="slot-chamber" settingKey={CHAMBER_KEY} label="Chamber temperature C" own={own} hint={chamberNote(own, limit) ?? ''} parse={(t) => parseChamber(t, limit)} />
+}
+
+const CHAMBER_KEY = 'chamber_temperature'
+
 function TravelSlope({ slot }: { slot: number }) {
   const { config } = useSlotLift(SLOPE_KEY)
   return <SlotNumber slot={slot} id="slot-travel-slope" settingKey={SLOPE_KEY} label="Travel slope °" own={slotSlope(config, slot)} hint={slopeHint(config, slot)} parse={parseSlope} />

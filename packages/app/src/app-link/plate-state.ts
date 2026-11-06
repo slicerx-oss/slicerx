@@ -5,6 +5,9 @@ import { allPlates } from '../plate/plates'
 import { objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { bounds } from '../plate/transform'
 import { get } from '../state/store'
+import { resolveConfig } from '../adapters/config'
+import { hotendReadback, mapHotends } from '../filament/nozzle-map'
+import { resolveSlots } from '../filament/slots'
 import { drawnObjects } from '../viewport/drawn'
 const round = (v: number) => Math.round(v * 1000) / 1000
 
@@ -34,11 +37,16 @@ export function drawnPlate(): number | null | undefined {
 export function platesState() {
   const s = get()
   const rows = plateRows(s)
+  // A printer whose hotends are its tools (the H3C): the shown plate's filaments in use on their tools.
+  const cfg = resolveConfig(s.easy, s.overrides) as Record<string, unknown>
+  const slots = mapHotends(cfg) ? resolveSlots(s) : []
+  const hotends = slots.length ? hotendReadback(s, s.plates.find((p) => p.id === s.activePlate), cfg, slots.length, slots.filter((r) => r.used).map((r) => r.index)) : undefined
   const plates = allPlates(s).map((p, i) => {
     const row = rows[i]!
     return {
       number: row.number, id: p.id, name: p.name, objects: p.objects.length, slice: row.state, shown: row.shown,
       settings: structuredClone(p.settings),
+      ...(hotends && p.id === s.activePlate ? { hotends } : {}),
       entries: p.objects.map((e) => {
         const b = bounds(e.parts, e.transform)
         return {

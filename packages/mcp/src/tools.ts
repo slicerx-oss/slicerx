@@ -193,11 +193,11 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const show = defineTool({
     name: 'project.show',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation. A plate printed by object has byObject, its clearance plan by the footprint rule. With check: true (sx engine), each such plate also gets byObject.engine, heimdall\'s plate check before a slice: clean, collisions as a slice lists them, each with certainty (sure: a slice of the plate is refused for it; slice_decides: only the slice can tell), leftSure (the pairs with a sure strike, a and b with id and name), fixes, unchecked (what only the slice checks: tree_support, tool_change_trips, raft or painted_brim, per object with the objects near it), order and micros. The check slices nothing; it is off by default.',
+      'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. On a printer whose hotends are its tools (the H3C), hotends gives each filament on its tool (from 1) and hotend (from 0), with the TPU tool and 2.85 mm TPU flagged: the slicer\'s rule with every filament counted as printed, or the project\'s own map (filament_map_mode Manual with filament_nozzle_map, hotends from 0); slicerx_slice reports what the engine used. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation. A plate printed by object has byObject, its clearance plan by the footprint rule. With check: true (sx engine), each such plate also gets byObject.engine, heimdall\'s plate check before a slice: clean, collisions as a slice lists them, each with certainty (sure: a slice of the plate is refused for it; slice_decides: only the slice can tell), leftSure (the pairs with a sure strike, a and b with id and name), fixes, unchecked (what only the slice checks: tree_support, tool_change_trips, raft or painted_brim, per object with the objects near it), order and micros. The check slices nothing; it is off by default.',
     input: z.object({ check: z.boolean().optional().describe("Also run heimdall's plate check on each by-object plate (sx engine). Default false.") }),
     async run(i) {
       const project = need()
@@ -276,6 +276,28 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     },
   })
 
+  const setTool = defineTool({
+    name: 'project.set_tool',
+    version: '1.0.0',
+    source: 'settings',
+    permission: 'slice',
+    description: "On a printer whose hotends are its tools (the Bambu Lab H3C, nine on one extruder): put a filament of the open project on a tool, as the person picks it in the app's Filament block; the other filaments keep the tools they print on now. tool 'auto' gives every filament back to the slicer's pick (each filament a tool of its own, 2.85 mm TPU on the TPU tool). Refuses a tool the printer lacks, 2.85 mm TPU off the TPU tool and any other filament on it. Answers with the project, whose hotends read it back.",
+    input: z.object({
+      slot: z.number().int().min(1).max(MAX_FILAMENTS).describe('Filament number, 1-based, as slicerx_project_show lists them'),
+      tool: z.union([z.number().int().min(1).max(64), z.literal('auto')]).describe("The tool, from 1 as the printer numbers them, or 'auto' for the slicer's pick"),
+    }),
+    async run(i) {
+      const project = need()
+      try {
+        project.setTool(i.slot, i.tool)
+        const described = project.describe()
+        return { summary: i.tool === 'auto' ? 'The slicer picks the tools' : `Filament ${i.slot} prints on tool ${i.tool}`, output: { hotends: described['hotends'] ?? null, project: described } }
+      } catch (e) {
+        return { ok: false, summary: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  })
+
   const temperature = gcodeTool({
     name: 'printer.set_temperature',
     description: 'Set a nozzle, bed or chamber target temperature on a printer (0 turns the heater off). Heats hardware, so it follows the start permission.',
@@ -312,5 +334,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, addFilament, setFilament, ...placementTools(deps, need), temperature, filament, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, addFilament, setFilament, setTool, ...placementTools(deps, need), temperature, filament, gcode] as PilotTool<never>[]
 }
