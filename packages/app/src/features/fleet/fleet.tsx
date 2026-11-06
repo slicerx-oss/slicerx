@@ -530,7 +530,7 @@ function TileMenu({ r, groups, disabled = false, onView, onRepaste }: { r: Fleet
       </Menu>
       {device ? (
         <Suspense fallback={null}>
-          <DeviceDialog printer={r} status={st} onClose={() => setDevice(false)} />
+          <DeviceDialog key={r.id} printer={r} status={st} onClose={() => setDevice(false)} />
         </Suspense>
       ) : null}
       <NewBayDialog open={baying} printer={r} onClose={() => setBaying(false)} />
