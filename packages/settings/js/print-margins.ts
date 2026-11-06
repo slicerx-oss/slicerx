@@ -396,12 +396,14 @@ function outlineLength(size: PrintSize, base?: readonly FirstLayerShape[], hull?
  * length round the object (`perimeterMm`), a skirt of its own counts the loops `min_skirt_length` adds round it
  * (skirtLoops), at the engine's spacing.
  */
-function skirtOf(cfg: Record<string, SettingValue>, grow: number, perimeterMm?: number): number {
+function skirtOf(cfg: Record<string, SettingValue>, grow: number, perimeterMm?: number, printed = false): number {
   const { loops, distance, shield } = skirtSettings(cfg)
   if (loops === 0 && !shield) return 0
   const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
   const spacing = Math.max(marginNumber(cfg['line_width'], 0), nozzle * 1.2)
-  const brim = marginText(cfg['brim_type']) === 'no_brim' ? 0 : Math.max(0, marginNumber(cfg['brim_width'], 0))
+  // `printed`: the skirt round the brim the first layer prints, which for an automatic brim is the one in `grow`.
+  const kind = marginText(cfg['brim_type']) || 'auto_brim'
+  const brim = kind === 'no_brim' || (printed && kind === 'auto_brim') ? 0 : Math.max(0, marginNumber(cfg['brim_width'], 0))
   const asked = Math.max(1, loops)
   // The engine puts the skirt at the brim width plus the skirt distance from the outline, or from the brim with a draft shield.
   const reach = Math.max(grow, brim) + distance + asked * spacing
@@ -431,6 +433,14 @@ export function objectPrintMargins(cfg: Record<string, SettingValue>) {
     reach: (size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly Pt[]) => {
       const own = Math.max(growOf(cfg, size, base), support)
       return Math.max(own, skirtOf(cfg, own, outlineLength(size, base, hull)))
+    },
+    /**
+     * `reach` as the first layer prints it, for the bed edge: an automatic brim at the width it prints (no brim_width
+     * floor, which only keeps the prime tower clear) and the skirt round that.
+     */
+    printedReach: (size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly Pt[]) => {
+      const own = Math.max(growOf(cfg, size, base, true), support)
+      return Math.max(own, skirtOf(cfg, own, outlineLength(size, base, hull), true))
     },
     skirt: skirtOf(cfg, 0) > 0,
     ...(cut !== undefined ? { firstLayerMm: cut } : {}),

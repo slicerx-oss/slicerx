@@ -93,6 +93,10 @@ export const arrangeInput = {
   ...arrangeBase,
   spacing_mm: z.number().min(0).max(50).optional().describe('Space between parts and from the bed edge, mm (default 6). Printing by object the parts keep the extruder clearance apart whatever this says.'),
   rotate: z.boolean().default(true).describe('Let a part turn about Z where that packs better (default true). Each part keeps its own rotation and scale either way.'),
+  step_deg: z.number().min(1).max(90).optional().describe('The turn step while rotate is on, degrees (default 10), as the app\'s Arrange options give it.'),
+  effort: z.enum(['quick', 'normal', 'thorough']).optional().describe('How long the arrange searches for a fuller layout (default normal). Counted work, not time, so the same plate gives the same layout on any machine.'),
+  keep: z.array(z.string().min(1)).max(500).optional().describe("Ids of parts (objects[].id of an earlier call) that stay where the plate puts them; the others are packed round them, as the app's Arrange selection does. A kept part is not listed in objects. An id the plate does not have is refused."),
+  new_plates: z.boolean().optional().describe("Lay the parts with no room out on new, empty plates too, in the same call, as the app's Arrange moves them to new plates: plates lists each one's parts, each plate as an arrange of the parts still left lays it out. not_fit still names every part with no room on this plate."),
 }
 
 export const sliceFileInput = {
@@ -121,7 +125,12 @@ export const arrangedShape = {
     transform: z.array(z.number()).describe('Its new 4x4 transform, column-major, bed mm'),
   })),
   not_fit: z.array(z.object({ id: z.string(), name: z.string(), reason: z.enum(['no_room', 'too_large']) })).describe('Parts with no room: no_room beside the others, too_large even on an empty bed. They are never overlapped.'),
+  order: z.array(z.string()).optional().describe('Printing by object: the print order the layout takes (object ids) when it is not the plate\'s own, so a part taller than the gantry rod prints after the low ones under its gantry; a slice with placement arrange prints in it'),
   check: z.unknown().optional().describe("Printing by object: heimdall's plate check of the layout (as sx check gives it), when every part fits"),
+  plates: z.array(z.object({
+    objects: z.array(z.object({ id: z.string(), name: z.string(), center_mm: z.tuple([z.number(), z.number()]), turn_deg: z.number(), transform: z.array(z.number()) })),
+    order: z.array(z.string()).optional(),
+  })).optional().describe('With new_plates: the parts with no room laid out on new plates, in order, each with its parts as objects gives them (and its print order by object). A part no plate takes stays in not_fit only.'),
 }
 
 /** A collision as the slice tools answer it (collide.ts SliceCollision): plate mm, layers from 1. */
@@ -264,7 +273,7 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep' | 'arrange'; spacing_mm?: number | undefined; rotate?: boolean | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
+export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep' | 'arrange'; spacing_mm?: number | undefined; rotate?: boolean | undefined; step_deg?: number | undefined; effort?: 'quick' | 'normal' | 'thorough' | undefined; keep?: string[] | undefined; new_plates?: boolean | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -376,7 +385,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   const chamberMaxC = sliced ? printerProfile(sliced.printerId)?.limits.chamberMaxTemp : undefined
   await progress(0.2, arrangeOnly ? 'Arranging' : 'Slicing')
   const outDir = join(d.policy.outDir, 'jobs', `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
-  const arrangeSpec = { ...(args.spacing_mm !== undefined ? { spacingMm: args.spacing_mm } : {}), ...(args.rotate === false ? { rotate: false } : {}) }
+  const arrangeSpec = { ...(args.spacing_mm !== undefined ? { spacingMm: args.spacing_mm } : {}), ...(args.rotate === false ? { rotate: false } : {}), ...(args.step_deg !== undefined ? { stepDeg: args.step_deg } : {}), ...(args.effort ? { effort: args.effort } : {}), ...(args.keep?.length ? { keep: args.keep } : {}), ...(args.new_plates ? { newPlates: true } : {}) }
   const job: SliceJob = {
     modelPath,
     ...(args.plate !== undefined ? { modelPlate: args.plate } : {}),

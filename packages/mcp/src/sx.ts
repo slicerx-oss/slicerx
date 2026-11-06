@@ -284,10 +284,18 @@ export function readArranged(v: unknown): Arranged | undefined {
   if (!Array.isArray(a['objects']) || !Array.isArray(a['notFit'])) return undefined
   const str = (x: unknown): string => (typeof x === 'string' ? x : '')
   const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
-  const objects = (a['objects'] as Record<string, unknown>[]).map((o) => {
-    const c = Array.isArray(o['centerMm']) ? (o['centerMm'] as unknown[]) : []
-    return { id: str(o['id']), name: str(o['name']), center_mm: [round2(num(c[0])), round2(num(c[1]))] as [number, number], turn_deg: round2(num(o['turnDeg'])), transform: Array.isArray(o['transform']) ? (o['transform'] as unknown[]).map(num) : [] }
-  })
+  const placedOf = (list: Record<string, unknown>[]) =>
+    list.map((o) => {
+      const c = Array.isArray(o['centerMm']) ? (o['centerMm'] as unknown[]) : []
+      return { id: str(o['id']), name: str(o['name']), center_mm: [round2(num(c[0])), round2(num(c[1]))] as [number, number], turn_deg: round2(num(o['turnDeg'])), transform: Array.isArray(o['transform']) ? (o['transform'] as unknown[]).map(num) : [] }
+    })
+  const objects = placedOf(a['objects'] as Record<string, unknown>[])
+  const plates = Array.isArray(a['plates'])
+    ? (a['plates'] as Record<string, unknown>[]).map((p) => ({
+        objects: placedOf(Array.isArray(p['objects']) ? (p['objects'] as Record<string, unknown>[]) : []),
+        ...(Array.isArray(p['order']) && p['order'].length ? { order: (p['order'] as unknown[]).map(str) } : {}),
+      }))
+    : []
   const notFit = (a['notFit'] as Record<string, unknown>[]).map((o) => ({ id: str(o['id']), name: str(o['name']), reason: o['reason'] === 'too_large' ? ('too_large' as const) : ('no_room' as const) }))
   let check: Arranged['check']
   if (a['check']) {
@@ -307,7 +315,9 @@ export function readArranged(v: unknown): Arranged | undefined {
     fits: notFit.length === 0,
     objects,
     not_fit: notFit,
+    ...(Array.isArray(a['order']) && a['order'].length ? { order: (a['order'] as unknown[]).map(str) } : {}),
     ...(check ? { check } : {}),
+    ...(plates.length ? { plates } : {}),
   }
 }
 

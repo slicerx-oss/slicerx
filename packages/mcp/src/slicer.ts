@@ -23,8 +23,11 @@ export interface SliceJob {
    * engine). Unset centers the plate.
    */
   placement?: 'center' | 'keep' | 'arrange'
-  /** With placement arrange: the spacing between parts and from the bed edge, mm, and whether parts may turn about Z. */
-  arrange?: { spacingMm?: number; rotate?: boolean }
+  /**
+   * With placement arrange: the spacing between parts and from the bed edge, mm, whether parts may turn about Z and by
+   * what step, how long the search runs, and the ids of parts that stay where they are.
+   */
+  arrange?: { spacingMm?: number; rotate?: boolean; stepDeg?: number; effort?: 'quick' | 'normal' | 'thorough'; keep?: string[]; newPlates?: boolean }
   /** Resolved settings: schema defaults, then profiles, then overrides, in schema shapes. */
   config: Record<string, SettingValue>
   /** Only the keys the profiles and overrides set, for engines with their own defaults. */
@@ -85,6 +88,10 @@ export interface Arranged {
   fits: boolean
   objects: { id: string; name: string; center_mm: [number, number]; turn_deg: number; transform: number[] }[]
   not_fit: { id: string; name: string; reason: 'no_room' | 'too_large' }[]
+  /** With new_plates: the parts with no room laid out on new plates, in order. */
+  plates?: { objects: { id: string; name: string; center_mm: [number, number]; turn_deg: number; transform: number[] }[]; order?: string[] }[]
+  /** Printing by object: the print order the layout takes (engine object ids), when it is not the plate's own. */
+  order?: string[]
   /** Printing by object: heimdall's plate check of the layout, when every part fits. */
   check?: PlateCheck
 }

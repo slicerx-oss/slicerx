@@ -80,12 +80,12 @@ function run(args, key, input) {
 }
 
 /** The engine's own message, without the CLI's prefix: the text the desktop shows for the same failure. */
-const message = (stderr) => stderr.trim().split('\n').pop()?.replace(/^sx (slice|metadata): /, '') || 'the slice failed'
+const message = (stderr) => stderr.trim().split('\n').pop()?.replace(/^sx (slice|metadata|arrange): /, '') || 'the slice failed'
 
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   if (url.pathname === '/healthz') return send(res, 200, 'ok')
-  const m = /^\/s\/([^/]+)\/(meshes|slices|checks|metadata|script-review)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
+  const m = /^\/s\/([^/]+)\/(meshes|slices|checks|arranges|metadata|script-review)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
   if (!m || !safe(m[1]) || (m[3] && !safe(decodeURIComponent(m[3])))) return send(res, 404, 'not found')
   const [, session, kind, rawId, file] = m
   const id = rawId ? decodeURIComponent(rawId) : ''
@@ -120,6 +120,19 @@ async function handle(req, res) {
     const r = await run(['check', '--request', request], `${session}/check-${id}`)
     rmSync(request, { force: true })
     if (r.signal) return send(res, 499, 'canceled')
+    return r.code === 0 || (r.code === 3 && r.stdout.trim().startsWith('{')) ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
+  }
+  // the plate's layout, as the desktop's arrange_plate runs it: `sx arrange` prints it with exit code 0, or 3 when some
+  // objects have no room (notFit)
+  if (kind === 'arranges' && id && req.method === 'POST') {
+    const body = JSON.parse((await read(req)).toString('utf8'))
+    const ids = new Set(body.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
+    body.meshes = Object.fromEntries([...ids].map((m) => [m, join(dir, `${m}.sxmp`)]))
+    body.options = { ...body.options, configReport: false }
+    const request = join(dir, `arrange-${id}.json`)
+    writeFileSync(request, JSON.stringify(body))
+    const r = await run(['arrange', '--request', request], `${session}/arrange-${id}`)
+    rmSync(request, { force: true })
     return r.code === 0 || (r.code === 3 && r.stdout.trim().startsWith('{')) ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
   }
   if (kind === 'slices' && id) {

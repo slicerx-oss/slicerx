@@ -5,7 +5,7 @@
 // extruder column per object and part. Each is one store update, so one undo step.
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry } from '../state/store'
 import { effectiveSlot, MAX_SLOTS } from '../filament/slots'
-import { currentMargins, printPastBed, type PrintMargins } from './arrange'
+import { marginsOf, printPastBed, type PrintMargins } from './arrange'
 import { bounds, fitsBed, reachFrom } from './transform'
 
 import { ROLE_LABEL } from './volumes'
@@ -139,12 +139,12 @@ export interface ObjectWarning {
   text: string
 }
 
-export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'>, margins: PrintMargins = currentMargins()): ObjectWarning[] {
+export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'>, margins: PrintMargins = marginsOf(e)): ObjectWarning[] {
   const out: ObjectWarning[] = []
   const b = bounds(e.parts, e.transform)
   const outline = b && s.bed.round ? reachFrom(e.parts, e.transform, s.bed.widthMm / 2, s.bed.depthMm / 2) : undefined
   if (b && !fitsBed(b, s.bed, 0.01, outline)) out.push({ kind: 'off-bed', text: 'Off the bed' })
-  else if (b && printPastBed(b, s.bed, margins, outline)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
+  else if (b && printPastBed(b, s.bed, margins, outline, true)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
   const have = s.printerSlots.length
   if (have > 0) {
     const missing = [...new Set(e.handle.parts.map((p) => effectiveSlot(e, p)).filter((n) => n > have))]

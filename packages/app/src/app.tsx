@@ -206,6 +206,19 @@ function Shell() {
       stop?.()
     }
   }, [host])
+  // Arrange in the engine, where the host has it (the desktop): the same call and layout as sx and the MCP server.
+  useEffect(() => {
+    if (!hostSlices() || !host.slicer.arrangePlate) return undefined
+    let stop: (() => void) | undefined
+    let gone = false
+    void import('./plate/engine-arrange').then((m) => {
+      if (!gone) stop = m.setArrangeEngine(host.slicer)
+    })
+    return () => {
+      gone = true
+      stop?.()
+    }
+  }, [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
   useEffect(() => startReadySignal(), [])
   // Code that failed to download (a dropped connection while the app starts) is fetched again by a reload.
