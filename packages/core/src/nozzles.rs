@@ -1067,8 +1067,8 @@ fn mm(d: f64) -> String {
 }
 
 /// A printer whose filaments share its nozzles by a map, with nozzles of different sizes, on the automatic map: the
-/// map is picked after the objects are sliced, so the objects print with the first nozzle's settings, as they always
-/// have, and the slice warns ([`auto_map_warning`]).
+/// map is picked after the objects are sliced, but each object's nozzle must be known before, so the plate is refused
+/// ([`auto_map_refusal`]).
 fn auto_map_on_sizes(cfg: &PrintConfig) -> bool {
     if !shared(cfg) || !sizes_differ(cfg) {
         return false;
@@ -1121,19 +1121,21 @@ fn hotend_of_object(cfg: &PrintConfig, slots: &[u8]) -> Option<Nozzle> {
     })
 }
 
-/// What the slice says about an automatic filament map on nozzles of different sizes (key `filament_map`); none
-/// otherwise. One place for the words, so a host that refuses the plate instead says the same.
+/// Why a plate on an automatic filament map is refused when the nozzles differ in size (key `filament_map`); none
+/// otherwise. One place for the words, so a host that checks the plate first says the same.
 #[must_use]
-pub fn auto_map_warning(cfg: &PrintConfig) -> Option<String> {
+pub fn auto_map_refusal(cfg: &PrintConfig) -> Option<String> {
     if !auto_map_on_sizes(cfg) {
         return None;
     }
-    let list: Vec<String> = sizes(cfg).into_iter().map(mm).collect();
+    let s = sizes(cfg);
+    let list = match s.as_slice() {
+        [left, right] => format!("left {}, right {}", mm(*left), mm(*right)),
+        _ => s.into_iter().map(mm).collect::<Vec<_>>().join(", "),
+    };
     Some(format!(
-        "Set the filament map by hand to print each object with its own nozzle (filament_map): the nozzles are \
-         different sizes ({}), and on the automatic map every object's line widths and layer height follow the first \
-         nozzle",
-        list.join(", ")
+        "the nozzles are different sizes ({list}), so each filament needs its nozzle set: pick a nozzle for each \
+         object or set the filament map by hand"
     ))
 }
 

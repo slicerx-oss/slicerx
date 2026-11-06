@@ -6745,7 +6745,7 @@ fn per_nozzle_sizes_and_layer_heights_ride_the_request() {
 }
 
 #[test]
-fn an_automatic_filament_map_on_nozzles_of_different_sizes_slices_at_one_height_and_warns() {
+fn an_automatic_filament_map_on_nozzles_of_different_sizes_is_refused() {
     let b = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
     let load = move |_: &str| Ok(b.clone());
     let req = two_nozzle_request(
@@ -6753,22 +6753,12 @@ fn an_automatic_filament_map_on_nozzles_of_different_sizes_slices_at_one_height_
         json!({"printer_model": "Bambu Lab H2D", "single_extruder_multi_material": true,
                "filament_map_mode": "Auto For Flush"}),
     );
-    let run = common::run_request(&req, &load).unwrap();
-    // Both boxes on the first nozzle's 0.2 mm layers.
-    let z: Vec<i64> = run
-        .report
-        .layer_z
-        .iter()
-        .map(|&v| (f64::from(v) * 1000.0).round() as i64)
-        .collect();
-    assert_eq!(z, (1..=30).map(|k| k * 200).collect::<Vec<i64>>());
+    let Err(err) = common::run_request(&req, &load) else {
+        panic!("an automatic map on nozzles of two sizes should be refused");
+    };
     assert!(
-        run.report
-            .warnings
-            .iter()
-            .any(|w| w.message.starts_with("Set the filament map by hand")
-                && w.message.contains("filament_map")),
-        "{:?}",
-        run.report.warnings
+        matches!(&err, sx_core::Error::Config { key: "filament_map", reason }
+            if reason.contains("left 0.4 mm, right 0.6 mm") && reason.contains("pick a nozzle for each object")),
+        "{err}"
     );
 }

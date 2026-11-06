@@ -15217,11 +15217,18 @@ fn z_turn(o: &crate::plate::PlateObject) -> f64 {
 
 /// Per printable object: the extruder whose nozzle it prints with when the printer's nozzles differ in size and its
 /// nozzle is not the first extruder's size ([`crate::nozzles::nozzle_of_object`]). Refuses an object on nozzles of two
-/// sizes, and one whose nozzle is smaller than the plate's first layer is tall.
+/// sizes, one whose nozzle is smaller than the plate's first layer is tall, and an automatic filament map on nozzles of
+/// different sizes ([`crate::nozzles::auto_map_refusal`]).
 fn object_nozzles(
     printable: &[&crate::plate::PlateObject],
     config: &PrintConfig,
 ) -> Result<Vec<Option<usize>>> {
+    if let Some(reason) = crate::nozzles::auto_map_refusal(config) {
+        return Err(Error::Config {
+            key: "filament_map",
+            reason,
+        });
+    }
     if !crate::nozzles::per_nozzle(config) {
         return Ok(vec![None; printable.len()]);
     }
