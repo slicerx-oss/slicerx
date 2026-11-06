@@ -429,7 +429,8 @@ impl Meta {
 
 /// One finished object as an obstacle.
 struct Obstacle {
-    object: PlateObject,
+    /// The object, its mesh with it until [`Model::free_mesh`] lets it go.
+    object: std::sync::RwLock<PlateObject>,
     /// The height grid, made the first time a move comes near enough to need it.
     grid: OnceLock<Grid>,
     /// The surface by cell, for where a move first meets the part, made on first use.
@@ -463,7 +464,14 @@ impl Obstacle {
     }
 
     fn surface(&self) -> &grid::Surface {
-        crate::par::Init::once(&self.surface, || grid::Surface::of_object(&self.object))
+        crate::par::Init::once(&self.surface, || grid::Surface::of_object(&self.object()))
+    }
+
+    /// The object (its mesh empty once [`Model::free_mesh`] let it go).
+    fn object(&self) -> std::sync::RwLockReadGuard<'_, PlateObject> {
+        self.object
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -514,6 +522,19 @@ impl std::fmt::Debug for Model {
 }
 
 impl Model {
+    /// Lets go of object `j`'s mesh, for a one-shot slice once no walk can read it: the walk of an object never reads
+    /// its own obstacle, so once every other object's moves are walked, the last object's mesh only holds memory.
+    /// Its footprint, height and hull stay.
+    pub(crate) fn free_mesh(&self, j: usize) {
+        if let Some(o) = self.objects.get(j) {
+            let mut g = o
+                .object
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            g.mesh = std::sync::Arc::default();
+        }
+    }
+
     /// The model of a by-object plate, its objects in print order.
     pub(crate) fn new(
         objects: &[&PlateObject],
@@ -570,7 +591,7 @@ impl Model {
             }
             #[allow(clippy::cast_possible_truncation, reason = "heights of a print fit in f32")]
             built.push(Obstacle {
-                object: (*o).clone(),
+                object: std::sync::RwLock::new((*o).clone()),
                 grid: OnceLock::new(),
                 surface: OnceLock::new(),
                 top: top as f32,
