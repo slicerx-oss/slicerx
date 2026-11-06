@@ -773,13 +773,13 @@ mod tests {
             "out_of_range"
         );
         assert_eq!(
-            jog_problem(JogAxis::Z, -5.0, &known, idle, sx_permit::BedState::Unknown)
+            jog_problem(JogAxis::Z, -5.0, &known, idle, sx_permit::BedState::Clear)
                 .unwrap_err()
                 .code,
             "out_of_range",
             "below the bed"
         );
-        assert!(jog_problem(JogAxis::Z, -4.0, &known, idle, sx_permit::BedState::Unknown).is_ok());
+        assert!(jog_problem(JogAxis::Z, -4.0, &known, idle, sx_permit::BedState::Clear).is_ok());
         let unhomed = motion(Some([true, true, false]), Some([5.0, 5.0, 4.0]));
         assert_eq!(
             jog_problem(JogAxis::Z, 1.0, &unhomed, idle, sx_permit::BedState::Unknown)
@@ -828,9 +828,14 @@ mod tests {
     fn home_only_while_idle_and_never_onto_a_plate_that_may_hold_a_print() {
         use sx_permit::BedState::{Busy, Clear, NotCleared, Unknown};
         let code = |s, bed, ok| home_problem(s, bed, ok).err().map(|e| e.code);
-        assert_eq!(code(PrinterState::Idle, Unknown, false), None);
         assert_eq!(code(PrinterState::Idle, Clear, false), None);
         assert_eq!(code(PrinterState::Finished, Clear, false), None);
+        // As for a start: any plate the hub does not know is clear is asked about, idle or not.
+        assert_eq!(
+            code(PrinterState::Idle, Unknown, false).as_deref(),
+            Some("bed_check")
+        );
+        assert_eq!(code(PrinterState::Idle, Unknown, true), None);
         // A finished print, or one canceled straight back to idle, may still be on the plate.
         assert_eq!(
             code(PrinterState::Finished, Unknown, false).as_deref(),
@@ -876,7 +881,16 @@ mod tests {
             "bed_check"
         );
         assert!(jog_problem(JogAxis::Z, 1.0, &known, idle, sx_permit::BedState::NotCleared).is_ok());
-        assert!(jog_problem(JogAxis::Z, -1.0, &known, idle, sx_permit::BedState::Unknown).is_ok());
+        // The start rule: only a plate the hub knows is clear takes the nozzle down without the question.
+        // A clear plate goes unknown when the printer went unwatched, and someone may have printed there.
+        for bed in [sx_permit::BedState::Unknown, sx_permit::BedState::Busy] {
+            assert_eq!(
+                jog_problem(JogAxis::Z, -1.0, &known, idle, bed).unwrap_err().code,
+                "bed_check",
+                "{bed:?}"
+            );
+        }
+        assert!(jog_problem(JogAxis::Z, -1.0, &known, idle, sx_permit::BedState::Clear).is_ok());
     }
 
     fn obj(id: &str, name: &str) -> PrintObject {
