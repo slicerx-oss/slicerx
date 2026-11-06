@@ -45,6 +45,9 @@ pub(crate) enum Work {
     /// action is `printer.home`, never the raw line, so a person sees a home and the hub's rules.
     Home {
         printer: String,
+        /// The bed epoch when the person said on the card that the plate is clear
+        /// ([`Waiting::answer_plate`]); the home refuses if the epoch moved before it runs.
+        plate_epoch: Option<u64>,
     },
     /// A change to a running print, checked against the safe limits when it runs.
     Adjust {
@@ -135,7 +138,10 @@ impl Work {
                 })
             }
             Some("resume") => Ok(Work::Resume { printer }),
-            Some("home") => Ok(Work::Home { printer }),
+            Some("home") => Ok(Work::Home {
+                printer,
+                plate_epoch: None,
+            }),
             Some("gcode") => {
                 let line = str_arg(p, "line")?;
                 // One G-code command, short enough that every card shows it whole: a line break
@@ -188,7 +194,7 @@ impl Work {
             Work::Print { printer, .. }
             | Work::Resume { printer }
             | Work::Gcode { printer, .. }
-            | Work::Home { printer }
+            | Work::Home { printer, .. }
             | Work::Adjust { printer, .. }
             | Work::Pause { printer }
             | Work::Cancel { printer }
@@ -210,7 +216,7 @@ impl Work {
             }),
             Work::Resume { printer } => json!({ "kind": "resume", "printerId": printer }),
             Work::Gcode { printer, line } => json!({ "kind": "gcode", "printerId": printer, "line": line }),
-            Work::Home { printer } => json!({ "kind": "home", "printerId": printer }),
+            Work::Home { printer, .. } => json!({ "kind": "home", "printerId": printer }),
             Work::Adjust { printer, change } => {
                 json!({ "kind": "adjust", "printerId": printer, "change": change })
             }
@@ -261,7 +267,7 @@ impl Work {
             )],
             // Its own action: the hub checks this token, then sends G28 under its home rules with one it
             // mints, as for the app's Home button.
-            Work::Home { printer } => vec![(
+            Work::Home { printer, .. } => vec![(
                 "printer.home".into(),
                 printer.clone(),
                 hash(&json!({ "printerId": printer })),
@@ -418,6 +424,18 @@ impl Waiting {
         lock(&self.0).contains_key(request_id)
     }
 
+    /// The person answered a home card's plate question: records the bed epoch of its printer now
+    /// (`epoch_of`), so the home goes ahead only on that plate. Other work has no plate question.
+    pub(crate) fn answer_plate(&self, request_id: &str, epoch_of: impl Fn(&str) -> u64) {
+        if let Some(Held {
+            work: Work::Home { printer, plate_epoch },
+            ..
+        }) = lock(&self.0).get_mut(request_id)
+        {
+            *plate_epoch = Some(epoch_of(printer));
+        }
+    }
+
     pub(crate) fn take(&self, request_id: &str) -> Option<(u64, Work)> {
         lock(&self.0).remove(request_id).map(|h| (h.owner, h.work))
     }
@@ -486,16 +504,13 @@ async fn execute(
         Work::Gcode { printer, line } => Ok(session(b, &printer).await?.send_gcode(&line, token).await?),
         // A card can wait: the printer may have started a job, or finished one, since it was made. The
         // person's token is for `printer.home`; checked and used up here, it lets the hub send G28 under
-        // its own token. "The plate is clear" on the card answers the plate question for this home, about
-        // the plate as it is now (the hub runs the work as the person approves).
-        Work::Home { printer } => {
+        // its own token. "The plate is clear" on the card answers the plate question for the bed epoch
+        // recorded when the person answered; if a job or an unwatched gap moved it since, the home asks.
+        Work::Home { printer, plate_epoch } => {
             let broker = b
                 .broker
                 .as_ref()
                 .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
-            let plate_said = broker
-                .grant_info(&token.request_id)
-                .is_some_and(|g| g.bed_confirmed);
             broker
                 .verify(
                     &crate::hub_rpc::to_permit(token),
@@ -504,8 +519,7 @@ async fn execute(
                     &sx_permit::hash_params(&json!({ "printerId": printer })),
                 )
                 .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
-            let answer = plate_said.then(|| b.hub.bed(&printer).epoch);
-            crate::device::home_checked(b, &printer, answer, HomeLine::Mint).await
+            crate::device::home_checked(b, &printer, plate_epoch, HomeLine::Mint).await
         }
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
@@ -578,6 +592,31 @@ mod tests {
         let g = Work::parse(&json!({ "kind": "gcode", "printerId": "bay-1", "line": "G28" })).unwrap();
         assert_ne!(w.actions(), g.actions());
         assert_ne!(w.summary(), g.summary());
+    }
+
+    // The plate answer on a home card is about the plate as it was when the person answered: the hub
+    // records that bed epoch with the work, and the home refuses if it moved before the work runs.
+    #[test]
+    fn a_home_card_keeps_the_bed_epoch_its_plate_answer_was_given_in() {
+        let home = || Work::parse(&json!({ "kind": "home", "printerId": "bay-1" })).unwrap();
+        let w = Waiting::default();
+        for id in ["h-1", "h-2"] {
+            w.hold(&card(id, &home()), 0, home(), None, |_| true).unwrap();
+        }
+        w.answer_plate("h-1", |printer| {
+            assert_eq!(printer, "bay-1");
+            7
+        });
+        let answered = |id: &str| match w.take(id) {
+            Some((_, Work::Home { plate_epoch, .. })) => plate_epoch,
+            _ => panic!("no home work for {id}"),
+        };
+        assert_eq!(answered("h-1"), Some(7));
+        assert_eq!(answered("h-2"), None, "no answer, no epoch");
+        // Only a home records it.
+        w.hold(&card("c-1", &cancel()), 0, cancel(), None, |_| true)
+            .unwrap();
+        w.answer_plate("c-1", |_| panic!("a cancel has no plate question"));
     }
 
     #[test]
