@@ -222,3 +222,83 @@ describe('partner phones over remote access', () => {
     expect(puts).toEqual([expect.objectContaining({ pairingId: 'pp', kind: 'phone', partner: 'Example Phone', rights: { request: true, approve: false } })])
   })
 })
+
+describe('taking a phone away from approving over remote access', () => {
+  const partner = (approve: boolean): RemotePairing => ({ ...phone('pp'), partner: 'Example Phone', rights: { request: true, approve } })
+  const source = (list: () => RemotePairing[]) => ({ identity: async () => me, hostDh: async () => 'host-dh', pairings: async () => list() })
+
+  it('tells the hub before the pair store when approve goes off, and does not wait for remote access to be on', async () => {
+    const order: string[] = []
+    let rights = { request: true, approve: true }
+    const host = {
+      attachRelay: () => undefined,
+      setEndpoints: () => undefined,
+      devices: async () => [{ pairingId: 'pp', name: 'Pocket', platform: 'ios', online: false, partner: 'Example Phone', rights }],
+      setRights: async (_id: string, next: typeof rights) => {
+        order.push(`store approve ${next.approve}`)
+        rights = next
+      },
+      onDevicesChanged: () => () => undefined,
+      revoke: async () => undefined,
+      handlePipe: () => undefined,
+    } as unknown as PairHost
+    const bridge = { listen: async () => ({ urls: [], stop: async () => undefined, onPipe: () => () => undefined }) }
+    const remote = {
+      sync: async () => void order.push('sync'),
+      unpaired: async () => undefined,
+      lowerRights: async (id: string, r: { request?: boolean; approve: false }) => (order.push(`hub ${id} approve ${r.approve}`), true),
+    }
+    const access = createPhoneAccess({ host: async () => host, bridge: bridge as never, remote: () => remote })
+    await access.setEnabled(true)
+    await access.setPartnerRights!('pp', { approve: false })
+    expect(order).toEqual(['hub pp approve false', 'store approve false', 'sync'])
+    // Turning it back on needs no head start.
+    order.length = 0
+    await access.setPartnerRights!('pp', { approve: true })
+    expect(order).toEqual(['store approve true', 'sync'])
+
+    // Remote access off on this hub: the lowered right is handed over all the same.
+    const h = hub()
+    const puts: RemotePairing[] = []
+    h.remote.pairings.put = async (p) => void puts.push(p)
+    const r = createRemoteAccess({ remote: h.remote, source: source(() => [partner(true)]) })
+    expect(await r.lowerRights('pp', { request: true, approve: false })).toBe(true)
+    expect(puts).toEqual([expect.objectContaining({ pairingId: 'pp', kind: 'phone', partner: 'Example Phone', rights: { request: true, approve: false } })])
+    expect(r.getState().pendingRights ?? []).toEqual([])
+  })
+
+  it('keeps a lowered right the hub did not hear and hands it over first at the next sync, also after a reconnect', async () => {
+    const h = hub()
+    // Remote access is on at the hub, from an earlier run of the app.
+    await h.remote.configure({ enabled: true, relay: 'wss://relay.example.invalid' })
+    const puts: string[] = []
+    let reachable = false
+    h.remote.pairings.put = async (p) => {
+      if (!reachable) throw new Error('the hub is not connected')
+      puts.push(`${p.pairingId} approve ${p.rights?.approve}`)
+    }
+    let local = partner(true)
+    const r = createRemoteAccess({ remote: h.remote, source: source(() => [local]) })
+    expect(await r.lowerRights('pp', { request: true, approve: false })).toBe(false)
+    local = partner(false)
+    expect(r.getState().pendingRights).toEqual(['pp'])
+    await expect(r.sync()).rejects.toThrow(/not connected/)
+    expect(r.getState().pendingRights).toEqual(['pp'])
+    // The bridge comes back: a new connection, whose status the app has not read yet.
+    reachable = true
+    const again = createRemoteAccess({ remote: h.remote, source: source(() => [local]) })
+    expect(again.getState().pendingRights).toEqual(['pp'])
+    await again.sync()
+    expect(puts[0]).toBe('pp approve false')
+    expect(again.getState().pendingRights).toEqual([])
+  })
+
+  it('hands the hub every pairing at the first sync after a connect, before anything read the status', async () => {
+    const h = hub()
+    // Remote access is on at the hub, from an earlier run of the app.
+    await h.remote.configure({ enabled: true, relay: 'wss://relay.example.invalid' })
+    const r = createRemoteAccess({ remote: h.remote, source: source(() => [partner(false)]) })
+    await r.sync()
+    expect(h.calls).toContain('put pp phone')
+  })
+})

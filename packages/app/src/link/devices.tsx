@@ -13,6 +13,7 @@ import { liveBridge, type PartnerRouteRow, type RememberedClient } from './bridg
 import { toast } from '../state/store'
 import { usePhoneAccess, usePhoneState, type PhoneDevice } from '../lib/phone'
 import { PairDialog } from '../features/phone/pair-dialog'
+import { RightsPending } from '../features/phone/remote-rows'
 import { appName } from '../edition'
 
 function kind(c: RememberedClient): { label: string; icon: IconName } {
@@ -261,6 +262,7 @@ export function PartnerPhoneRows({ keys = [] }: { keys?: PartnerKey[] }) {
                   disabled={busy === d.id || !phone.setPartnerRights}
                   onChange={(v) => void run(d, () => phone.setPartnerRights?.(d.id, { approve: v }) ?? Promise.resolve())}
                 />
+                <RightsPending pairingId={d.id} />
                 <SwitchRow
                   id={`partner-send-${d.id}`}
                   testId="partner-phone-send-row"

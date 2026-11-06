@@ -464,6 +464,7 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `partner-phone-revoke` | Revoke on a partner phone's row; it removes the pairing and disconnects the phone |
 | `partner-phone-approve-row` | The row's switch that lets the phone approve prints, pauses and skips |
 | `partner-phone-send-row` | The row's switch that lets the phone send prints and see the library |
+| `partner-phone-rights-pending` | Under a partner phone's approve switch: approve is off here but remote access hasn't heard yet, with Retry |
 | `partner-phone-key` | The row's pick of the partner app key on this computer it is linked to |
 | `partner-phone-pair` | Pair a partner phone, which opens the pairing dialog for a partner |
 | `partner-phone-name` | The partner app's name in the pairing dialog |

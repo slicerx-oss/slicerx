@@ -60,7 +60,7 @@ export function PendingRemovals() {
     <div className="remote-status" role="status">
       <Pill state="run">Removal pending</Pill>
       <span className="sx-small">
-        {n === 1 ? '1 phone was' : `${n} phones were`} removed here, but the hub has not confirmed it yet, so {n === 1 ? 'it' : 'they'} can still reach your printers until it does.
+        {n === 1 ? '1 phone was' : `${n} phones were`} removed here, but remote access hasn&apos;t confirmed it yet, so {n === 1 ? 'it' : 'they'} can still reach your printers until it does.
       </span>
       <Button
         size="sm"
@@ -76,7 +76,37 @@ export function PendingRemovals() {
       >
         Retry removal
       </Button>
-      {failed ? <span className="sx-small sx-muted">The hub is not reachable. It is retried every few minutes.</span> : null}
+      {failed ? <span className="sx-small sx-muted">Remote access isn&apos;t reachable right now. It&apos;s retried every few minutes.</span> : null}
+    </div>
+  )
+}
+
+/** Under a phone's approve switch: the right is off here, but the hub has not heard yet. With a retry. */
+export function RightsPending({ pairingId }: { pairingId: string }) {
+  const remote = useRemoteAccess()
+  const { pendingRights } = useRemoteState(remote)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  if (!remote || !pendingRights?.includes(pairingId)) return null
+  return (
+    <div className="remote-status" role="status" data-testid="partner-phone-rights-pending">
+      <Pill state="run">Not sent yet</Pill>
+      <span className="sx-small">Approve is off here, but remote access hasn&apos;t heard yet. Until it does, this phone can still approve away from home.</span>
+      <Button
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          setFailed(false)
+          remote
+            .sync()
+            .catch(() => setFailed(true))
+            .finally(() => setBusy(false))
+        }}
+      >
+        Retry
+      </Button>
+      {failed ? <span className="sx-small sx-muted">Remote access isn&apos;t reachable right now. It&apos;s retried every few minutes.</span> : null}
     </div>
   )
 }
