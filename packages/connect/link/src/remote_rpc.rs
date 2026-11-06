@@ -857,9 +857,10 @@ fn approvals_list(b: &Bridge, p: &RemotePairing) -> Value {
 
 /// Whether a phone may approve a card with this recorded raiser. Our phone may approve any card it is
 /// shown. A partner phone never approves what a partner app raised, through any partner key or any
-/// partner phone, decided by the raiser's role the hub recorded and never by a name.
+/// partner phone, decided by the raiser's role the hub recorded and never by a name. With no raiser on
+/// record it approves nothing: the rule fails closed.
 fn phone_may_approve(partner_phone: bool, raiser: Option<&crate::rpc::CardRaiser>) -> bool {
-    !partner_phone || !raiser.is_some_and(|r| r.role == crate::rpc::RaiserRole::Partner)
+    !partner_phone || raiser.is_some_and(|r| r.role != crate::rpc::RaiserRole::Partner)
 }
 
 /// The bytes a phone signs for a decision (`decisionBytes` in approval.ts).
@@ -939,7 +940,8 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
     }
     let decision = p.get("decision").and_then(Value::as_str).unwrap_or_default();
     // A partner phone has our phone's rights, but never approves anything a partner app asked for,
-    // through any partner key or partner phone, its own included. It may still deny it.
+    // through any partner key or partner phone, its own included, nor a card whose raiser the hub did
+    // not record. It may still deny it.
     if decision == "approve" && !phone_may_approve(pairing.partner.is_some(), lock(&b.card_raisers).get(&id))
     {
         return Err(err(
