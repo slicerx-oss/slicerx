@@ -2457,6 +2457,14 @@ impl Prepared {
     pub fn session(&self) -> &SliceSession {
         &self.session
     }
+
+    /// Lets go of what a later run on this session works out again (the shell rule's entries and the seam plan),
+    /// keeping what preparing it built (its parts and layer plan), so a host that keeps it can make room before it
+    /// prepares another. A later run gives the same bytes, a little slower than on a whole session and much faster
+    /// than on a new one.
+    pub fn lighten(&mut self) {
+        self.session.lighten();
+    }
 }
 
 /// Prepares `req`'s session ([`build_plate`], then [`build_session`]).
@@ -3570,6 +3578,29 @@ mod tests {
     /// The grown and inset outlines and the slits are what a layer's walls, infill area and bridge facts are worked
     /// out from; a later run finds those, so a kept session lets them go once a run ends. One-shot runs keep theirs
     /// until the session is shed.
+    /// A lightened session keeps its parts and plan and slices again to the same bytes, rebuilding the shell rule's
+    /// entries and the seam plan.
+    #[test]
+    fn a_lightened_session_slices_again_to_the_same_bytes() {
+        let mesh = cube();
+        let meshes = |_: &str| Ok(mesh.clone());
+        let req: SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": {"objects": [{"mesh": 1}]},
+            "config": {"top_shell_layers": 4, "bottom_shell_layers": 4, "seam_position": "aligned"},
+        }))
+        .unwrap();
+        let mut prepared = prepare(&req, &meshes).unwrap();
+        let first = run_prepared(&req, &prepared, &NoProgress).unwrap();
+        assert!(prepared.session.cache_tagged_entries() > 0);
+        assert!(prepared.session.has_seam_plan());
+        prepared.lighten();
+        assert_eq!(prepared.session.cache_tagged_entries(), 0);
+        assert!(!prepared.session.has_seam_plan());
+        let again = run_prepared(&req, &prepared, &NoProgress).unwrap();
+        assert!(first.gcode == again.gcode && first.preview == again.preview);
+        assert!(prepared.session.cache_tagged_entries() > 0);
+    }
+
     #[test]
     fn a_kept_session_lets_go_of_what_a_later_run_never_asks_for() {
         let mesh = cube();
