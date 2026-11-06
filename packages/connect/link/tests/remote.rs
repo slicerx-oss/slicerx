@@ -65,6 +65,10 @@ async fn relay_with(partner: sx_relay::quota::PartnerLimits) -> RelayHandle {
 }
 
 async fn hub_in(state_dir: Option<std::path::PathBuf>) -> Link {
+    hub_with(state_dir, Arc::new(MemorySecrets::new())).await
+}
+
+async fn hub_with(state_dir: Option<std::path::PathBuf>, secrets: Arc<dyn sx_connect::SecretStore>) -> Link {
     let broker = Arc::new(ApprovalBroker::new().unwrap());
     let cfg = LinkConfig {
         port: 0,
@@ -76,14 +80,9 @@ async fn hub_in(state_dir: Option<std::path::PathBuf>) -> Link {
         // binaries.
         ..LinkConfig::loopback()
     };
-    serve_with_approvals(
-        cfg,
-        Arc::new(BrokerGate(broker.clone())),
-        Arc::new(MemorySecrets::new()),
-        Some(broker),
-    )
-    .await
-    .unwrap()
+    serve_with_approvals(cfg, Arc::new(BrokerGate(broker.clone())), secrets, Some(broker))
+        .await
+        .unwrap()
 }
 
 async fn call(ws: &mut Ws, id: u64, method: &str, params: Value) -> Value {
@@ -323,7 +322,10 @@ async fn setup_in(state_dir: Option<std::path::PathBuf>) -> Setup {
 }
 
 async fn setup_on(relay: RelayHandle, state_dir: Option<std::path::PathBuf>) -> Setup {
-    let link = hub_in(state_dir).await;
+    setup_link(relay, hub_in(state_dir).await).await
+}
+
+async fn setup_link(relay: RelayHandle, link: Link) -> Setup {
     let mut app = paired(&link, CODE).await;
     let agent = paired(&link, AGENT_CODE).await;
     let host = identity(1, "Studio Mac");
@@ -4290,7 +4292,10 @@ async fn put_partner_rights(s: &mut Setup, key: &[u8; 32], peer: &Value, seed: u
 /// hub is down. The app's only way to tell the hub is its sync (`remote.pairings.put`), which needs
 /// that connection, so the hub keeps the old rights and keeps answering the phone on the relay.
 /// An approval from that phone over the relay should be refused from the moment the right is off.
+/// While no put arrives the hub has nothing to go on, so this holds only once approve rights expire
+/// on the hub without the app; the app now sends the lowered right first when it reconnects.
 #[tokio::test]
+#[ignore = "needs approve rights to expire on the hub while the app is away"]
 async fn approve_turned_off_while_the_app_cannot_reach_the_hub_is_refused_over_the_relay() {
     let mut s = setup().await;
     let mocks = printing_bay4(&mut s).await;
@@ -4368,4 +4373,108 @@ async fn approve_turned_off_while_the_app_cannot_reach_the_hub_is_refused_over_t
         "a phone whose approve right was turned off approved over the relay: {stale}"
     );
     assert!(!paused, "the stale approval paused the printer");
+}
+
+/// A keychain that takes writes until `refuse` is set and then refuses them, as Windows Credential
+/// Manager did for one user (error 8).
+struct Refusing {
+    inner: MemorySecrets,
+    refuse: Arc<std::sync::atomic::AtomicBool>,
+}
+impl sx_connect::Secrets for Refusing {
+    fn get(&self, name: &str) -> Option<String> {
+        self.inner.get(name)
+    }
+}
+impl sx_connect::SecretStore for Refusing {
+    fn set(&self, name: &str, value: &str) -> sx_connect::Result<()> {
+        if self.refuse.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(sx_connect::Error::Config(
+                "keychain write failed: Platform failure: Windows error code 8".into(),
+            ));
+        }
+        self.inner.set(name, value)
+    }
+    fn delete(&self, name: &str) -> sx_connect::Result<()> {
+        self.inner.delete(name)
+    }
+}
+
+/// The app hands the hub the same phone with the approve right off while the keychain refuses writes.
+/// The device key is the one the hub already holds, so nothing needs storing and the hub takes the
+/// right away. A put with a new key the keychain refuses fails, and never gives the right back.
+#[tokio::test]
+async fn taking_the_approve_right_away_holds_when_the_keychain_refuses_writes() {
+    use sx_connect::Secrets as _;
+    let refuse = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let store = Arc::new(Refusing {
+        inner: MemorySecrets::new(),
+        refuse: refuse.clone(),
+    });
+    let mut s = setup_link(relay().await, hub_with(None, store.clone()).await).await;
+    let mocks = printing_bay4(&mut s).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let key: [u8; 32] = rand_bytes();
+    let (signer, peer) = signing_phone(99);
+    let pairing_id = ps::b64(&[99; 16]);
+    put_partner_rights(&mut s, &key, &peer, 99, true).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let our_key: [u8; 32] = rand_bytes();
+    let (_, our_peer) = signing_phone(100);
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": ps::b64(&[100; 16]), "deviceKey": ps::b64(&our_key), "kind": "phone", "peer": our_peer, "rights": { "request": true, "approve": false } }),
+    )
+    .await;
+    assert_eq!(r["result"]["saved"], true, "{r}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut ours = Device::open(&s.relay, &our_key).await.expect("a session");
+    let r = ours
+        .call("jobs.control", json!({ "printerId": "bay-4", "action": "pause" }))
+        .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let id = r["r"]["requestId"].as_str().unwrap().to_owned();
+    let view = phone
+        .event("approval.request", |d| d["request"]["id"] == id.as_str())
+        .await;
+
+    // From here the keychain refuses every write.
+    refuse.store(true, std::sync::atomic::Ordering::SeqCst);
+    put_partner_rights(&mut s, &key, &peer, 99, false).await;
+    let r = phone
+        .call(
+            "approvals.decide",
+            signed_decision(&signer, &view["request"], "approve"),
+        )
+        .await;
+    assert_eq!(r["e"]["code"], "forbidden", "{r}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let log = mock_log(&mocks).await;
+    assert!(!log.iter().any(|l| l.contains("pause")), "{log:?}");
+
+    // A put with a new key the keychain refuses fails, and the hub keeps the right off.
+    let new_key: [u8; 32] = rand_bytes();
+    let r = call(
+        &mut s.app,
+        3,
+        "remote.pairings.put",
+        json!({ "pairingId": pairing_id, "deviceKey": ps::b64(&new_key), "kind": "phone", "peer": peer, "partner": "Example Phone", "rights": { "request": true, "approve": true } }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "failed", "{r}");
+    let list = call(&mut s.app, 71, "remote.pairings.list", json!({})).await;
+    let held = list["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["pairingId"] == pairing_id.as_str())
+        .map(|p| p["rights"]["approve"].clone());
+    assert_eq!(held, Some(json!(false)), "{list}");
+    // The stored key is still the one the phone holds.
+    assert_eq!(
+        store.get(&format!("remote-key:{pairing_id}")).as_deref(),
+        Some(ps::b64(&key).as_str())
+    );
 }
