@@ -19,7 +19,6 @@ import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
 import { geomMatrix, geomPaint, readWithGeom, type GeomProject } from './geom-project'
-import { checkOpenedPaint, type PartPaint } from './paint-check'
 import { withBambuMissingKeys } from '@slicerx/settings/app-defaults'
 import { filePlateBedType, type BedType } from '@slicerx/settings/bed-type'
 
@@ -98,8 +97,6 @@ export interface ImportedProject {
   settingsNote?: string
   /** Why the project's painted brim ears were left out, when they are in a format this version does not read. */
   earsNote?: string
-  /** What paint opens unpainted, when some does not read or names a filament past the project's (paint-check.ts). */
-  paintNote?: string
 }
 
 /** Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them. */
@@ -906,9 +903,6 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const histories = parseHistories(files, fileIds)
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
-  // Paint the project cannot show opens unpainted: the file's filaments are the colors it lists.
-  const painted = plates.flatMap((p) => p.objects.filter((o) => o.paint))
-  const paintNote = painted.length ? checkOpenedPaint(painted.map((o) => o.paint as Record<number, PartPaint>), colors.length) : null
-  for (const o of painted) if (!Object.keys(o.paint!).length) delete o.paint
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(paintNote ? { paintNote } : {}) }
+  // Paint is checked by the open (open-project.ts), against the filaments the project has once it is open.
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}) }
 }

@@ -143,9 +143,10 @@ export async function saveProject(host: Host, opts: { as?: boolean } = {}): Prom
   const file = get().projectFile
   const ref = !opts.as && file && host.files.saveTo ? await host.files.saveTo(file, blob) : await host.files.save(`${fileBase()}.sx3mf`, blob, { accept: ['.sx3mf'] })
   if (!ref) return false
-  // Paint above filament 16 saves for every reader that takes it; one slicer can't show it, and the toast says so.
+  // Paint above filament 16 saves for every reader that takes it; one slicer can't show it, and the toast says so on its
+  // second line, where Details would hide it.
   const paintNote = savedPaintNote(plates.flatMap((p) => p.objects))
-  if (paintNote) toast(`Saved ${ref.name}. ${paintNote}`, 'warn')
+  if (paintNote) toast(`Saved ${ref.name}. ${paintNote}`, 'warn', undefined, undefined, { secondLine: true })
   else toast(`Saved ${ref.name}`, 'ok')
   if (ref.path) set({ projectFile: ref })
   markClean()

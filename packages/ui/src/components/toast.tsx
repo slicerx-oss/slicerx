@@ -19,6 +19,11 @@ export interface ToastOptions {
   /** A close button at the end, for a notice someone may want gone before its time; `onDismiss` hears it. */
   dismissible?: boolean
   onDismiss?: () => void
+  /**
+   * The rest of the message on a second line under the first sentence, in place of Details: for a note whose point is
+   * in that rest (a save that went through, then what to know about it).
+   */
+  secondLine?: boolean
 }
 
 interface ToastRecord {
@@ -30,6 +35,7 @@ interface ToastRecord {
   action?: { label: string; run: () => void }
   dismissible?: boolean
   onDismiss?: () => void
+  secondLine?: boolean
 }
 
 /** Whether a toast with this tone and option stays until dismissed: a warning or an error does, and so does one that asks to. */
@@ -176,7 +182,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       const persist = staysUntilDismissed(tone, options?.persist)
-      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}), ...(options?.dismissible ? { dismissible: true } : {}), ...(options?.onDismiss ? { onDismiss: options.onDismiss } : {}) }], max))
+      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}), ...(options?.dismissible ? { dismissible: true } : {}), ...(options?.onDismiss ? { onDismiss: options.onDismiss } : {}), ...(options?.secondLine ? { secondLine: true } : {}) }], max))
       // A line that stays has no time to run out, so it neither starts the card's time nor lengthens it.
       if (persist) return
       const ms = readingTime(message, tone, options?.duration)
@@ -244,9 +250,10 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
               data-testid="toast"
               data-tone={t.tone === 'plain' ? undefined : t.tone}
               data-expanded={open.has(t.id) ? '' : undefined}
+              data-lines={t.secondLine ? '2' : undefined}
             >
               {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
-              <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
+              <ToastText message={t.message} expanded={open.has(t.id)} secondLine={t.secondLine === true} onDetails={() => details(t.id)} />
               {t.action ? (
                 <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                   {t.action.label}
@@ -276,7 +283,7 @@ export function splitLead(message: ReactNode): { lead: ReactNode; rest: string }
   return m ? { lead: m[1], rest: m[2] ?? '' } : { lead: message, rest: '' }
 }
 
-function ToastText({ message, expanded, onDetails }: { message: ReactNode; expanded: boolean; onDetails: () => void }) {
+function ToastText({ message, expanded, secondLine, onDetails }: { message: ReactNode; expanded: boolean; secondLine: boolean; onDetails: () => void }) {
   const { lead, rest } = splitLead(message)
   const text = useRef<HTMLSpanElement>(null)
   // A line wraps to two lines before Details takes over, so Details also shows for a first sentence that still does
@@ -297,7 +304,7 @@ function ToastText({ message, expanded, onDetails }: { message: ReactNode; expan
         <span className="sx-toast-lead">{lead}</span>
         {rest ? <span className="sx-toast-more"> {rest}</span> : null}
       </span>
-      {rest || clipped ? (
+      {(rest && !secondLine) || clipped ? (
         // The label is drawn from data-label, so a toast's text (what it announces, and what a client reads) stays its
         // message.
         <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details" data-label={expanded ? 'Less' : 'Details'} aria-label={expanded ? 'Less' : 'Details'} aria-expanded={expanded} onClick={onDetails} />
