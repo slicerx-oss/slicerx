@@ -1770,7 +1770,17 @@ pub(crate) fn settle_cooling(
             let slot = crate::paths::first_slot(l);
             let same = relaid.is_none()
                 && layer_fan(c, l.local, planned, slot) == layer_fan(c, l.local, planned + beyond, slot);
-            Some((relaid, beyond, same.then_some(chunk)))
+            // Kept for the writer, a chunk gives back the room reserved for it, so the written layers wait for
+            // the writer at their own size.
+            Some((
+                relaid,
+                beyond,
+                same.then(|| {
+                    let mut chunk = chunk;
+                    chunk.bytes.shrink_to_fit();
+                    chunk
+                }),
+            ))
         });
         settle_units(view, config, beside, &mut settled, &shared);
         settled
