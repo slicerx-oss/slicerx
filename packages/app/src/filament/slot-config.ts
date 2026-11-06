@@ -55,7 +55,9 @@ export function slotConfig(s: AppState, plateId: string = s.activePlate): Record
   const top = slots.reduce((n, r) => (r.used ? Math.max(n, r.index) : n), 0)
   const tuned = tunedFilamentConfig(s, slots.slice(0, Math.max(1, top)))
   if (top < 2) return tuned
-  const list = slots.slice(0, top)
+  // A slot that still holds the file's filament (its color or a default, not one set by hand or loaded in the printer)
+  // keeps the maker the project names for it.
+  const list = slots.slice(0, top).map((r, i) => (r.brand || r.source === 'user' || r.source === 'printer' ? r : { ...r, brand: s.fileSlotVendors[i] ?? '' }))
   // The plate's own tower: an opened project keeps one spot per plate.
   const tower = plateTower(s, plateId)
   const cfg = resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>

@@ -5,6 +5,7 @@
 // current one. The app's project open and the MCP server's project slices call these, so one project on one printer
 // slices the same in both.
 import type { PrintConfig, SettingValue } from '@slicerx/contracts/settings'
+import { projectBedType } from './bed-type'
 import { changedKeys, keptEngineChoices, projectDefaults, sameChoice, SLICERX_KEEP_VALUES } from './engine-choices'
 import { GCODE_TEXT_KEYS } from './gcode-review'
 import { importFlat } from './import'
@@ -15,6 +16,9 @@ import { settingDef } from './schema'
 import { selectVariants } from './variants'
 import { FILAMENT_OVERRIDE_KEYS } from './stock-layer'
 import { coerce, NIL } from './value'
+
+/** The key a project names its plate type in, which the slice keeps although no preset section holds it. */
+const PLATE_TYPE_KEY = 'curr_bed_type'
 
 export interface ProjectSettings {
   /** Changes against the current settings, in our keys. */
@@ -72,6 +76,12 @@ export function projectSettingChanges(raw: Record<string, unknown>, current: Pri
     }
     taken[key] = value
     if (!sameValue(value, now[key])) values[key] = value
+  }
+  // The plate type is no preset setting, but it picks the bed temperatures, so the slice keeps the project's.
+  const plate = projectBedType(read)
+  if (plate !== undefined) {
+    taken[PLATE_TYPE_KEY] = plate
+    if (!sameValue(plate, now[PLATE_TYPE_KEY])) values[PLATE_TYPE_KEY] = plate
   }
   return { values, taken, left }
 }
@@ -217,7 +227,7 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
   const keeps = new Set(keptEngineChoices(settings))
   const whole = (k: string) => {
     const section = settingDef(k)?.section
-    return !match.asked && (section === 'process' || section === 'filament') && !keeps.has(k)
+    return k === PLATE_TYPE_KEY || (!match.asked && (section === 'process' || section === 'filament') && !keeps.has(k))
   }
   const only = changedKeys(settings)
   // A file that does not list its changes counts every key as its own.
