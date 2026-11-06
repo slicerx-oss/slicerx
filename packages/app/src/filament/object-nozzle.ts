@@ -224,6 +224,11 @@ export interface NozzleChoice {
   current: boolean
   /** The filament the object prints with on this nozzle. */
   filament: number
+  /**
+   * The filaments this nozzle prints now, as its menu row names them: the object's own on its nozzle; on another nozzle
+   * the plate's printed filaments the map sends there, or on a tool changer the tool's own filament. Empty when none.
+   */
+  onNozzle: number[]
   /** Other objects on the object's filament; moving it there moves them too, unless the object gets a filament of its own. */
   sharedWith: string[]
   /** Painted objects that moving the object's filament to this nozzle would print on two nozzles. */
@@ -235,16 +240,20 @@ export function nozzleChoices(s: AppState, entry: PlateEntry, cfg: Record<string
   const kind = nozzleKind(cfg)
   if (!kind) return []
   const meta = activeMeta(s)
-  const map = plateMap(s, meta, cfg, resolveSlots(s).length)
+  const count = resolveSlots(s).length
+  const map = plateMap(s, meta, cfg, count)
   const own = objectSlots(meta, entry)
   const now = objectNozzle(s, entry, cfg)
+  const printed = [...new Set(s.plate.filter((p) => p.printable !== false).flatMap((p) => objectSlots(meta, p)))].sort((a, b) => a - b)
   return nozzleSizes(cfg).map((mm, i) => {
     const extruder = i + 1
     const current = now !== null && 'extruder' in now && now.extruder === extruder
+    // A tool changer's tool n holds filament n whether or not anything prints it yet; the map's nozzles hold what it sends.
+    const onNozzle = current ? own.filter((f) => extruderOfSlot(cfg, map, f) === extruder) : kind === 'tools' ? (extruder <= count ? [extruder] : []) : printed.filter((f) => extruderOfSlot(cfg, map, f) === extruder)
     const moving = kind === 'map' ? own.filter((f) => extruderOfSlot(cfg, map, f) !== extruder) : []
     const sharedWith = [...new Set(moving.flatMap((f) => sharers(s, meta, entry.id, f).map((o) => o.name)))]
     const split = moving.length ? paintSplit(s, meta, cfg, map, moving, extruder) : []
-    return { extruder, mm, label: nozzleLabel(cfg, extruder), current, filament: kind === 'tools' ? Math.min(extruder, MAX_SLOTS) : (own[0] ?? 1), sharedWith, paintSplit: split }
+    return { extruder, mm, label: nozzleLabel(cfg, extruder), current, filament: kind === 'tools' ? Math.min(extruder, MAX_SLOTS) : (own[0] ?? 1), onNozzle, sharedWith, paintSplit: split }
   })
 }
 
