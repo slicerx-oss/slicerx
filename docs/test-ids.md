@@ -444,6 +444,9 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `devices-empty` | The line shown when no key is held |
 | `device-<id>` | A key's row; `<id>` is the hub's client id |
 | `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
+| `partner-routes` | The list of open partner routes under Devices: a partner app's connection to its own phone |
+| `partner-route-<id>` | One open route's row; `<id>` is the route's id |
+| `partner-route-close-<id>` | End route on that row |
 
 ## mimir's notes: the chip and Settings > Memory
 
