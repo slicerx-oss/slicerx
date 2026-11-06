@@ -6,6 +6,7 @@
 import type { SettingValue } from '@slicerx/contracts/settings'
 import { extruderCount, flushInputs, flushValues, FLUSH_DEFAULTS, printerMinFlush, variantIndex } from './flush'
 import type { FlushSettings } from './flush-defaults'
+import { settingDef } from './schema'
 
 /** The flush volumes a project was saved with, and the filaments they were worked out for. */
 export interface ProjectFlush {
@@ -168,4 +169,46 @@ export function slotSettings(i: SlotSettingsInput): Record<string, SettingValue>
     prime_tower_auto_position: tower.auto,
     ...(tower.auto ? {} : { wipe_tower_x: towerMm(tower.x + ox), wipe_tower_y: towerMm(tower.y + oy) }),
   }
+}
+
+/** Project keys with one entry per filament beside the filament settings: colors, makers, preset ids and names. */
+const FILAMENT_PROJECT_LISTS = new Set(['filament_colour', 'filament_type', 'filament_vendor', 'filament_ids', 'filament_settings_id'])
+
+/** Whether a project's settings (project_settings.config) keep `key` as one entry per filament. */
+export function isFilamentList(key: string): boolean {
+  return FILAMENT_PROJECT_LISTS.has(key) || settingDef(key)?.section === 'filament'
+}
+
+/**
+ * Settings as a project file keeps them (in its text form), with every per-filament list (`isFilamentList`) at `count` entries,
+ * so a reader that takes the lists together by index finds each filament in all of them. A missing entry comes from
+ * `own(key, index, list, settings)` when that gives one, else from the list's last entry, which is the value the
+ * engine slices a filament past the end of a list with. A value given once becomes a list; entries past `count` are
+ * dropped, and an empty list (a filament override no filament sets) stays empty. The filament map lists and the flush
+ * matrix are not per-filament lists here: their writers size them from the filaments.
+ */
+export function evenFilamentLists(
+  settings: Readonly<Record<string, unknown>>,
+  count: number,
+  own?: (key: string, index: number, list: readonly unknown[], settings: Readonly<Record<string, unknown>>) => unknown,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...settings }
+  if (count < 1) return out
+  const set = (v: unknown): boolean => v !== undefined && v !== null
+  for (const [key, value] of Object.entries(settings)) {
+    if (!isFilamentList(key) || !set(value) || (Array.isArray(value) && !value.some(set))) continue
+    const given: unknown[] = Array.isArray(value) ? value.slice(0, count) : [value]
+    const list = [...given]
+    let last = given.findLast(set)
+    for (let i = 0; i < count; i++) {
+      if (set(list[i])) {
+        last = list[i]
+        continue
+      }
+      const mine = own?.(key, i, given, settings)
+      list[i] = set(mine) ? mine : last
+    }
+    out[key] = list
+  }
+  return out
 }

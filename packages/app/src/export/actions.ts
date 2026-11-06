@@ -18,12 +18,18 @@ import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store
 import { appName } from '../edition'
 import { exportingUserId } from './identity'
 import { savedPaintNote } from './paint-check'
+import { railFilaments, type RailFilaments } from './rail-filaments'
 import type { ProjectInput } from './threemf'
 import { fromVault } from './vault'
+import { evenFilamentLists } from '@slicerx/settings/slot-settings'
 
 const fileBase = projectBase
 
-function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}): Record<string, unknown> {
+/**
+ * The settings a file carries, as project files write them. With `rail` (a project save) they list every filament on the rail,
+ * each per-filament list with one entry per filament; without it, the filaments the slice prints (print output).
+ */
+function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}, rail: RailFilaments | null = null): Record<string, unknown> {
   const s = get()
   const config = api.resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>
   const out: Record<string, unknown> = {}
@@ -32,10 +38,12 @@ function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}): Re
     out[k] = def ? api.toOrca(def, v) : v
   }
   // Multi-color plates carry their filament colors, types and flush matrix, as strings like Orca's project files.
-  for (const [k, v] of Object.entries(slotConfig(s))) out[k] = Array.isArray(v) ? v.map(String) : String(v)
+  for (const [k, v] of Object.entries(rail?.slotKeys ?? slotConfig(s))) out[k] = Array.isArray(v) ? v.map(String) : String(v)
   // Each slot's preset id, which Bambu printers read per tray (tray_info_idx); empty for a slot without a preset, as Orca writes it.
   const ids = s.profile?.filamentIds
   if (ids?.length) out['filament_ids'] = [...ids]
+  // Every filament of the save in every per-filament list, those no part prints with their own values.
+  if (rail) Object.assign(out, evenFilamentLists(out, rail.count, rail.own))
   // A printer with two extruders: the plate's filament map as Bambu Studio keeps it in the project (`filament_map`
   // per filament, 1 the left extruder, and `filament_map_mode`), the slicer's pick unless the plate set its own.
   if (mapExtruders(config) === 2) {
@@ -104,7 +112,8 @@ async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInp
  */
 export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}, opts: { offPage?: boolean } = {}): Promise<Uint8Array> {
   const s = get()
-  const settings = extra.settings ?? orcaSettings(await loadSettings())
+  const api = extra.settings ? null : await loadSettings()
+  const settings = extra.settings ?? orcaSettings(api!, {}, await railFilaments(api!))
   // a project saved rolled back keeps the bodies made after the marker
   const held = extra.gcode ? [] : heldBodies(s)
   const input: ProjectInput = {
@@ -240,11 +249,25 @@ export function projectExportHost(host: Host) {
       const plate = plates.find((p) => p.objects.some((o) => o.id === req.objectId)) ?? plates[req.plate ?? 0]
       if (!plate) return null
       const slots = [...req.slots].sort((a, b) => a.slot - b.slot)
-      const settings = orcaSettings(await loadSettings(), {
-        filament_colour: slots.map((x) => x.color),
-        filament_type: slots.map((x) => x.material),
-        ...(slots.some((x) => x.preset) ? { filament_settings_id: slots.map((x) => x.preset ?? '') } : {}),
-      })
+      // The model's filaments in their slots, over the rail's, with every per-filament list as long as the filaments.
+      const api = await loadSettings()
+      const top = slots.reduce((n, x) => Math.max(n, x.slot), 0)
+      const base = orcaSettings(api, {}, await railFilaments(api, top))
+      const count = Math.max(top, Array.isArray(base['filament_colour']) ? base['filament_colour'].length : 1)
+      const bySlot = (key: string, value: (x: (typeof slots)[number]) => string): unknown[] => {
+        const list: unknown[] = Array.isArray(base[key]) ? [...(base[key] as unknown[])] : []
+        for (const x of slots) list[x.slot - 1] = value(x)
+        return list
+      }
+      const settings = evenFilamentLists(
+        {
+          ...base,
+          filament_colour: bySlot('filament_colour', (x) => x.color),
+          filament_type: bySlot('filament_type', (x) => x.material),
+          ...(slots.some((x) => x.preset) ? { filament_settings_id: bySlot('filament_settings_id', (x) => x.preset ?? '') } : {}),
+        },
+        count,
+      )
       const bytes = await sx3mfBytes([plate], { settings })
       const name = `${(req.name ?? fileBase(plate.objects)).replace(/\.(sx)?3mf$/i, '')}.sx3mf`
       const ref = await host.files.save(name, new Blob([bytes as BlobPart], { type: 'application/vnd.slicerx.sx3mf' }), { accept: ['.sx3mf'] })

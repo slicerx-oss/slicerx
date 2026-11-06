@@ -48,11 +48,12 @@ export function tunedFilamentConfig(s: AppState, list: readonly ResolvedSlot[]):
 
 /**
  * The filament keys a multi-color slice carries: one entry per slot up to the highest one used, plus
- * the flush matrix. Single-color plates send nothing, so they slice exactly as before.
+ * the flush matrix. Single-color plates send nothing, so they slice exactly as before. `count` gives every one of
+ * the first `count` slots instead, used or not, as a project save lists them.
  */
-export function slotConfig(s: AppState, plateId: string = s.activePlate): Record<string, SettingValue> {
-  const slots = resolveSlots(s)
-  const top = slots.reduce((n, r) => (r.used ? Math.max(n, r.index) : n), 0)
+export function slotConfig(s: AppState, plateId: string = s.activePlate, count?: number): Record<string, SettingValue> {
+  const slots = resolveSlots(s, count)
+  const top = count ?? slots.reduce((n, r) => (r.used ? Math.max(n, r.index) : n), 0)
   const tuned = tunedFilamentConfig(s, slots.slice(0, Math.max(1, top)))
   if (top < 2) return tuned
   // A slot that still holds the file's filament (its color or a default, not one set by hand or loaded in the printer)
