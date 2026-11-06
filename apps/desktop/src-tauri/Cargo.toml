@@ -28,6 +28,8 @@ tauri-build = { version = "=2.7.0", features = [] }
 
 [dependencies]
 sx-core.workspace = true
+# jemalloc on macOS and Linux (src/main.rs); empty with MSVC, so Windows keeps the system allocator.
+sx-alloc.workspace = true
 sx-connect = { workspace = true, optional = true }
 sx-llm = { workspace = true, optional = true }
 keyring = { version = "=4.2.0", optional = true }
