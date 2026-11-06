@@ -1272,12 +1272,13 @@ fn clamp_temperatures(cfg: &mut PrintConfig, limits: &Limits) -> Vec<Issue> {
 }
 
 /// Bed and plate temperature keys by Orca's plate type name.
-pub(crate) const PLATES: [(&str, &str); 5] = [
+pub(crate) const PLATES: [(&str, &str); 6] = [
     ("Cool Plate", "cool_plate_temp"),
     ("Engineering Plate", "eng_plate_temp"),
     ("High Temp Plate", "hot_plate_temp"),
     ("Textured PEI Plate", "textured_plate_temp"),
     ("Supertack Plate", "supertack_plate_temp"),
+    ("Textured Cool Plate", "textured_cool_plate_temp"),
 ];
 
 /// Sets the bed temperatures from the chosen plate type. Runs before the temperature limits, so
@@ -2029,6 +2030,21 @@ mod tests {
         assert!(
             (c.hot_plate_temp - 35.0).abs() < 1e-9 && (c.hot_plate_temp_initial_layer - 40.0).abs() < 1e-9
         );
+        // every plate type a project can name reads its own temperatures
+        for (plate, key) in PLATES {
+            let mut c = cfg(json!({
+                "curr_bed_type": plate,
+                "hot_plate_temp": ["60"],
+                (key): ["42"],
+                (format!("{key}_initial_layer")): ["47"],
+            }));
+            assert!(clamp_config(&mut c, &Limits::default()).is_empty(), "{plate}");
+            assert!(
+                (c.hot_plate_temp - 42.0).abs() < 1e-9
+                    && (c.hot_plate_temp_initial_layer - 47.0).abs() < 1e-9,
+                "{plate}"
+            );
+        }
         let mut c = cfg(json!({ "curr_bed_type": "Cool Plate", "cool_plate_temp": ["0"] }));
         assert_eq!(
             clamp_config(&mut c, &Limits::default())[0].code,
