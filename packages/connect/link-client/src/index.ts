@@ -773,10 +773,10 @@ export interface LinkHost extends PrinterHost {
    * are `not_supported`). `jog` moves the head 0.1 to 10 mm while the printer is idle or finished and rejects
    * with `out_of_range` outside the limits, `not_homed` for an unhomed axis, `position_unknown` for Z
    * down on a printer that does not report the head position, and `bed_check` for Z down unless the hub
-   * knows the plate is clear (`bed.confirmClear`), the print start rule. `home` sends `G28` while the printer
-   * is idle or finished (`bad_state` otherwise) and rejects with `bed_check`, under the same plate rule, with
-   * `details.epoch`, the bed epoch the question is about; `plateClear` with that `epoch` answers it for that
-   * home only. `skipObject` needs a running print and the bed `epoch` read with the list
+   * knows the plate is clear, the print start rule. `home` sends `G28` while the printer is idle or finished
+   * (`bad_state` otherwise) and rejects with `bed_check` under the same plate rule. A `bed_check` refusal
+   * carries `details.epoch`, the bed epoch the question is about; `plateClear` with that `epoch` answers it
+   * for that call only, and it is not recorded as a clear plate. `skipObject` needs a running print and the bed `epoch` read with the list
    * (`job_changed` when another print started since). On printers that cannot list objects (Bambu
    * Lab), `objects` lists the plate `printLocal` sent with `objects`, and is `not_supported` for
    * prints sent some other way. `startFile` prints a
@@ -788,7 +788,8 @@ export interface LinkHost extends PrinterHost {
     history(printerId: string): Promise<PrintRecord[]>
     issues(printerId: string): Promise<PrinterIssue[]>
     objects(printerId: string): Promise<PrintObject[]>
-    jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
+    /** `plateClear`: the person's answer to the plate question for a step down, with the bed `epoch` it was asked in. */
+    jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number, o?: { plateClear: true; epoch: number }): Promise<void>
     /** `plateClear`: the person's answer to the plate question, for this home only, with the bed `epoch` it was asked in. */
     home(printerId: string, o?: { plateClear: true; epoch: number }): Promise<void>
     skipObject(printerId: string, id: string, epoch: number): Promise<void>
@@ -1427,7 +1428,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       history: (printerId) => call<PrintRecord[]>('history.list', { printerId }),
       issues: (printerId) => call<PrinterIssue[]>('issues.list', { printerId }),
       objects: (printerId) => call<PrintObject[]>('objects.list', { printerId }),
-      jog: async (printerId, axis, distanceMm, feedMmMin) => void (await call('jog', { printerId, axis, distanceMm, ...(feedMmMin ? { feedMmMin } : {}) })),
+      jog: async (printerId, axis, distanceMm, feedMmMin, o) =>
+        void (await call('jog', { printerId, axis, distanceMm, ...(feedMmMin ? { feedMmMin } : {}), ...(o?.plateClear ? { plateClear: true, epoch: o.epoch } : {}) })),
       home: async (printerId, o) => void (await call('home', { printerId, ...(o?.plateClear ? { plateClear: true, epoch: o.epoch } : {}) })),
       skipObject: async (printerId, id, epoch) => void (await call('objects.skip', { printerId, id, epoch })),
       startFile: (printerId, path, o = {}) =>
