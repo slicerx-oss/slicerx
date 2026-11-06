@@ -3389,6 +3389,95 @@ async fn a_plate_answer_for_home_holds_only_for_the_bed_epoch_it_was_asked_in() 
     );
 }
 
+// A jog down takes the person's plate answer the way a home does: for the bed epoch the refusal named,
+// never written to the bed record.
+#[tokio::test]
+async fn a_jog_down_takes_the_plate_answer_for_its_bed_epoch() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut ws = paired(&link).await;
+    add_bay4(&mut ws, &mocks).await;
+    until_bay4(&mut ws, "idle").await;
+    mocks
+        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20] }))
+        .await;
+    let down = |answer: Option<u64>| {
+        let mut p = json!({ "printerId": "bay-4", "axis": "z", "distanceMm": -1 });
+        if let Some(e) = answer {
+            p["plateClear"] = json!(true);
+            p["epoch"] = json!(e);
+        }
+        p
+    };
+    let r = call(&mut ws, 100, "jog", down(None)).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let epoch = r["error"]["details"]["epoch"]
+        .as_u64()
+        .expect("the refusal names the bed epoch");
+    let r = call(
+        &mut ws,
+        101,
+        "jog",
+        json!({ "printerId": "bay-4", "axis": "z", "distanceMm": -1, "plateClear": true }),
+    )
+    .await;
+    assert_eq!(
+        r["error"]["code"], "bad_request",
+        "an answer names its epoch: {r}"
+    );
+    let r = call(&mut ws, 102, "jog", down(Some(epoch + 1))).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let r = call(&mut ws, 103, "jog", down(Some(epoch))).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert_eq!(
+        bed(&mut ws).await["state"],
+        "unknown",
+        "the answer is not a standing clear plate"
+    );
+}
+
+// The person answers the plate question on an agent's home card, as on a start card: approved with
+// "the plate is clear" it homes once, without it the hub asks, and the bed record is not set.
+#[tokio::test]
+async fn a_home_card_takes_the_plate_answer_given_on_it() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let mut ag = agent(&link).await;
+    let bay = json!({ "printerId": "bay-4" });
+    let work = json!({ "kind": "home", "printerId": "bay-4" });
+    let g28 = |log: Vec<String>| log.into_iter().filter(|l| l == "gcode G28").count();
+    for (n, (id, clear)) in [("p-1", false), ("p-2", true)].into_iter().enumerate() {
+        let r = call(
+            &mut ag,
+            50 + n as u64,
+            "approvals.register",
+            json!({ "request": card(id, "printer.home", "printer.home", &bay), "work": work }),
+        )
+        .await;
+        assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+        let r = call(
+            &mut app,
+            60 + n as u64,
+            "approvals.grant",
+            json!({ "requestId": id, "bedClear": clear }),
+        )
+        .await;
+        assert_eq!(r["result"]["runBy"], "hub", "{r}");
+        let done = wait_event(&mut ag, "approval.done", |d| d["requestId"] == id).await;
+        if clear {
+            assert_eq!(done["ok"], true, "{done}");
+        } else {
+            assert_eq!(done["code"], "bed_check", "{done}");
+            assert_eq!(g28(mock_log(&mocks).await), 0);
+        }
+    }
+    assert_eq!(g28(mock_log(&mocks).await), 1);
+    assert_eq!(bed(&mut app).await["state"], "unknown");
+}
+
 /// Registers an agent's raw G-code card for `line` on bay-4 and has the app approve it; the hub's
 /// `approval.done` for it.
 async fn approved_line(ag: &mut Ws, app: &mut Ws, id: &str, line: &str) -> Value {
