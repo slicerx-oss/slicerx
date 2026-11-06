@@ -177,6 +177,74 @@ export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: re
   return { kept, parked, dropped }
 }
 
+/** Printer setting types a project's file carries over: numbers, switches and choices, as for its print settings. */
+const PLAIN_TYPES: ReadonlySet<string> = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent', 'floatsOrPercents', 'bools', 'enums'])
+/** Printer setting groups that stay the profile's: how SlicerX reaches the printer (host, credentials, upload). */
+const HELD_GROUPS: ReadonlySet<string> = new Set(['network'])
+/** The printer's identity: its model, variant, structure and presets. Its notes are free text and stay the profile's. */
+const IDENTITY_GROUP = 'profile'
+const IDENTITY_TEXT_HELD: ReadonlySet<string> = new Set(['printer_notes'])
+/** One line of plain text of at most 200 characters, or a list of such: a name, not a script. */
+const plainName = (v: SettingValue): boolean => (Array.isArray(v) ? v : [v]).every((x) => typeof x === 'string' && x.length <= 200 && ![...x].some((c) => c.charCodeAt(0) < 32))
+/**
+ * Printer settings of other types whose value the file brings when it fits: the extruder colors (`#RRGGBB`, with an
+ * optional alpha) and the spot arrange starts from (two fractions of the bed).
+ */
+const TAKEN_WHEN: Readonly<Record<string, (v: SettingValue) => boolean>> = {
+  extruder_colour: (v) => Array.isArray(v) && v.length > 0 && v.every((c) => typeof c === 'string' && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c)),
+  best_object_pos: (v) => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && n >= 0 && n <= 1),
+}
+/**
+ * Printer settings that stay the profile's on the project's own printer, since a check reads them as what the machine
+ * is or allows: its bed height, its nozzle and the nozzle's hardness, the clearances a print by object is checked with,
+ * the firmware the G-code review checks against, how many tool heads it has and its printed mass limit.
+ * `sx project-settings` prints the file's value for them; the app keeps the profile's.
+ */
+const HELD_KEYS: ReadonlySet<string> = new Set([
+  'printable_height',
+  'extruder_printable_height',
+  'nozzle_diameter',
+  'nozzle_type',
+  'nozzle_hrc',
+  'extruder_type',
+  'extruder_clearance_radius',
+  'extruder_clearance_max_radius',
+  'extruder_clearance_height_to_rod',
+  'extruder_clearance_height_to_lid',
+  'extruder_clearance_dist_to_rod',
+  'extruder_height_gap',
+  'machine_max_printed_mass',
+  'gcode_flavor',
+  'extruder_max_nozzle_count',
+  'master_extruder_id',
+  'physical_extruder_map',
+  'parallel_printheads_count',
+  'support_parallel_printheads',
+])
+
+/**
+ * The printer settings of another slicer's 3MF project that go over its own printer's profile: every number, switch
+ * and choice of the printer the file holds, listed as changed or not, its identity (model, variant, structure,
+ * presets), its extruder colors and its arrange spot, as `sx project-settings` reads them. Its G-code goes through the
+ * G-code review instead, and free text, areas and the settings above (`HELD_KEYS`, `HELD_GROUPS`) stay the profile's,
+ * so no check reads a looser machine than ours.
+ */
+export function projectOwnPrinterSettings(settings: Record<string, unknown>): Record<string, SettingValue> {
+  const imported = importFlat(selectVariants(settings)).config as Record<string, SettingValue>
+  const out: Record<string, SettingValue> = {}
+  for (const [key, value] of Object.entries(imported)) {
+    const def = settingDef(key)
+    if (!def || def.section !== 'printer' || HELD_GROUPS.has(def.group) || HELD_KEYS.has(key) || GCODE_TEXT_KEYS.includes(key)) continue
+    const identityText = def.group === IDENTITY_GROUP && (def.type === 'string' || def.type === 'strings')
+    if (identityText && (IDENTITY_TEXT_HELD.has(key) || !plainName(value))) continue
+    const fits = TAKEN_WHEN[key]
+    if (!identityText && (fits ? !fits(value) : !PLAIN_TYPES.has(def.type))) continue
+    if (value === NIL || (Array.isArray(value) && (value as unknown[]).includes(NIL))) continue
+    out[key] = value
+  }
+  return out
+}
+
 /** What a Bambu Studio or Orca project's open puts over the printer's settings, before its G-code (`applyProjectSettings` in the app). */
 export interface ProjectPrinterChanges {
   /** The project's settings that apply, in our keys: what goes over the printer's settings. */
@@ -189,12 +257,14 @@ export interface ProjectPrinterChanges {
   keeps: string[]
   /** On the project's own printer: whether the file lists what it changed from its presets. */
   listed: boolean
+  /** The printer settings of the file in `values` (`projectOwnPrinterSettings`), which stay with the project's printer. */
+  printerKeys: string[]
 }
 
 /**
  * The settings a Bambu Studio or Orca project's open applies over `current`, the settings of the printer it opens on.
- * With a profile for the file's printer (`match`), that is the file's whole process and filament settings and what it
- * changed of the printer's; else the settings that suit the current printer (`nozzle` is its nozzle, undefined without
+ * With a profile for the file's printer (`match`), that is the file's whole process and filament settings and its
+ * printer settings (`projectOwnPrinterSettings`); else the settings that suit the current printer (`nozzle` is its nozzle, undefined without
  * a printer). The project's own G-code is not in `values`: on its own printer it goes through the G-code review.
  */
 export function projectPrinterChanges(settings: Record<string, unknown>, match: ProjectPrinterMatch | null, current: PrintConfig, nozzle: number | undefined): ProjectPrinterChanges {
@@ -214,14 +284,14 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
     const ours = Object.fromEntries(keeps.filter((k) => !sameChoice(now[k], SLICERX_KEEP_VALUES[k])).map((k) => [k, SLICERX_KEEP_VALUES[k] as SettingValue]))
     const { kept, dropped } = carryOver({ ...own, ...ours }, [], sameNozzle)
     // Left out names only real changes: a value equal to the current one loses nothing.
-    return { values: kept, all: values, dropped: dropped.filter((k) => k in values), keeps, listed: false }
+    return { values: kept, all: values, dropped: dropped.filter((k) => k in values), keeps, listed: false, printerKeys: [] }
   }
   // The process and the filaments are taken whole: the file holds what it was sliced with, the system presets its
   // presets came from (inherits_group) with the person's changes on top, and Bambu Studio opens it as it is. Our
   // profile starts from its own standard process and its own filament, so taking only the listed changes left every
   // value of other presets behind (a "0.12mm Fine" project sliced at 0.20 mm; a Generic PLA project at Bambu PLA
-  // Basic's flow). The printer keeps to what the file lists, since its profile is that printer's system preset. A
-  // project made for another nozzle keeps to its list too.
+  // Basic's flow). The printer's settings are the file's too (projectOwnPrinterSettings, below), as `sx project-settings`
+  // reads them. A project made for another nozzle keeps to its list.
   // A few engine choices of ours stay unless the person changed them in the project (SLICERX_KEEPS), or the value it
   // inherited is one the keep leaves alone (arachne walls); the note says so.
   const keeps = new Set(keptEngineChoices(settings))
@@ -234,5 +304,8 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
   const applied = Object.fromEntries(Object.entries(taken).filter(([k]) => !only || only.has(k) || whole(k)))
   // One of the person's printers keeps its own G-code, as on any switch to it; the project printer's goes through the review.
   const settingsOnly = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
-  return { values: settingsOnly, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined }
+  // The file's printer settings, listed or not, on the printer it was made for; a project for another nozzle keeps to
+  // what the file lists, as before.
+  const printer = match.asked ? {} : projectOwnPrinterSettings(settings)
+  return { values: { ...printer, ...settingsOnly }, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined, printerKeys: Object.keys(printer) }
 }

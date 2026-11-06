@@ -71,7 +71,7 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
 
 /**
  * The second step: the project's settings on top of the printer's profile. On its own printer that is the file's whole
- * process, what it changed from its filament and printer presets, and its machine G-code. On the current printer (no profile
+ * process, what it changed from its filament presets, its printer settings and its machine G-code. On the current printer (no profile
  * for the file's) it is the settings that suit it, and no G-code. Returns the keys applied and the note to show.
  */
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; changed: string[]; note: string } {
@@ -93,8 +93,8 @@ export function applyProjectSettings(source: string, settings: Record<string, un
   const applied = changes.values
   const keptNote = changes.listed && !match.asked ? Object.keys(all).filter((k) => keeps.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
   if (match.own) {
-    // One of the person's printers: its own G-code, as on any switch to it.
-    const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
+    // One of the person's printers: its own G-code and printer settings, as on any switch to it.
+    const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k) && !changes.printerKeys.includes(k)))
     set((st) => ({ overrides: { ...st.overrides, ...kept }, goal: 'custom' as const }))
     return { keys: Object.keys(kept), changed: Object.keys(all), note: `Opened on ${match.own.name}, a ${match.model} ${mm(match.nozzle)} like the project's.${keptNote ? ` ${keptNote}` : ''}` }
   }
@@ -109,7 +109,7 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     overrides: { ...st.overrides, ...applied, ...gcode },
     vouchedGcode: { ...st.vouchedGcode, ...vouched },
     projectGcode: null,
-    projectPrinter: st.projectPrinter ? { ...st.projectPrinter, gcodeKeys: Object.keys(gcode), recognizedGcodeKeys: [...recognized] } : null,
+    projectPrinter: st.projectPrinter ? { ...st.projectPrinter, gcodeKeys: Object.keys(gcode), recognizedGcodeKeys: [...recognized], printerKeys: changes.printerKeys } : null,
     goal: 'custom' as const,
   }))
   let note = match.asked
@@ -294,7 +294,8 @@ export function leaveProjectPrinter(to: AppState['printerModel']): void {
   const pp = s.projectPrinter
   if (!pp || pp.parked) return
   const toNozzle = to ? nozzleOf(s, to) : undefined
-  const { kept, parked, dropped } = carryOver(s.overrides, pp.gcodeKeys, toNozzle !== undefined && sameMm(toNozzle, pp.nozzle))
+  // The file's printer settings stay with it too: they describe the project's printer, not the one the plate moves to.
+  const { kept, parked, dropped } = carryOver(s.overrides, [...pp.gcodeKeys, ...(pp.printerKeys ?? [])], toNozzle !== undefined && sameMm(toNozzle, pp.nozzle))
   const vouched = Object.fromEntries(Object.entries(s.vouchedGcode).filter(([k]) => !pp.gcodeKeys.includes(k)))
   set({ overrides: kept, vouchedGcode: vouched, projectPrinter: { ...pp, parked } })
   if (!to) return
