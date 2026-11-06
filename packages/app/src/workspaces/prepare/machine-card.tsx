@@ -21,13 +21,15 @@ import './machine-card.css'
 const PrinterThumb = lazy(() => import('./printer-thumb').then((m) => ({ default: m.PrinterThumb })))
 const PrinterSettingsDialog = lazy(() => import('./printer-settings').then((m) => ({ default: m.PrinterSettingsDialog })))
 
-/** Each plate type's icon in the plate popover. */
+/** Each plate type's icon in the plate popover. The Textured Cool and Supertack plates share their family's icon. */
 export const BED_ICON: Record<BedType, IconName> = {
   'textured-pei': 'textured-plate',
   'smooth-pei': 'smooth-plate',
   cool: 'plate-cool',
   engineering: 'engineering-plate',
   'high-temp': 'plate-high-temp',
+  'textured-cool': 'textured-plate',
+  supertack: 'plate-cool',
 }
 
 /** Nozzle types in words, as setup records them. */
