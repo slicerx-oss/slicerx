@@ -296,9 +296,9 @@ test('device.home asks the hub to home one printer and passes a refusal through 
   await assert.rejects(host.device.home('bay-1'), (e: unknown) => e instanceof LinkError && (e.code as string) === 'bed_check')
   await host.bed.confirmClear('bay-1')
   assert.equal(await host.device.home('bay-1'), undefined)
-  // The person's answer for one home goes with that call only.
-  await host.device.home('bay-1', { plateClear: true })
-  assert.deepEqual(h.sent().filter((s) => s.method === 'home').map((s) => s.params), [{ printerId: 'bay-1' }, { printerId: 'bay-1' }, { printerId: 'bay-1', plateClear: true }])
+  // The person's answer for one home goes with that call only, with the bed epoch it was asked in.
+  await host.device.home('bay-1', { plateClear: true, epoch: 3 })
+  assert.deepEqual(h.sent().filter((s) => s.method === 'home').map((s) => s.params), [{ printerId: 'bay-1' }, { printerId: 'bay-1' }, { printerId: 'bay-1', plateClear: true, epoch: 3 }])
 })
 
 test('a dropped connection says so once, rejects the call in flight and every later one, and a close is told apart', async () => {

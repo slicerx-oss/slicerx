@@ -49,16 +49,21 @@ describe('homing', () => {
     expect(homeBlockedReason('offline')).toMatch(/not reachable/)
   })
 
-  it('sends the plate answer with that home only, and maps the refusals', async () => {
+  it('sends the plate answer with that home only, bound to the bed epoch it was asked in, and maps the refusals', async () => {
     const calls: unknown[] = []
     const confirmClear = vi.fn(async () => ({}))
     const h = hub({ home: async (...a: unknown[]) => void calls.push(a) })
     h.bed.confirmClear = confirmClear
-    expect(await homePrinter(h, 'bay', false)).toEqual({ kind: 'homed' })
-    expect(await homePrinter(h, 'bay', true)).toEqual({ kind: 'homed' })
-    expect(calls).toEqual([['bay'], ['bay', { plateClear: true }]])
+    expect(await homePrinter(h, 'bay')).toEqual({ kind: 'homed' })
+    expect(await homePrinter(h, 'bay', { epoch: 4 })).toEqual({ kind: 'homed' })
+    expect(calls).toEqual([['bay'], ['bay', { plateClear: true, epoch: 4 }]])
     expect(confirmClear).not.toHaveBeenCalled()
-    expect(await homePrinter(hub({ home: async () => { throw refuse('bed_check') } }), 'bay')).toEqual({ kind: 'ask-bed' })
+    // The refusal names the epoch the question is about; an older hub's refusal is read from bed.state.
+    const askedIn = (epoch: number) => Object.assign(refuse('bed_check'), { details: { epoch } })
+    expect(await homePrinter(hub({ home: async () => { throw askedIn(7) } }), 'bay')).toEqual({ kind: 'ask-bed', epoch: 7 })
+    const plain = hub({ home: async () => { throw refuse('bed_check') } })
+    plain.bed.state = async () => ({ askOnPrint: true, epoch: 5 })
+    expect(await homePrinter(plain, 'bay')).toEqual({ kind: 'ask-bed', epoch: 5 })
     expect(await homePrinter(hub({ home: async () => { throw refuse('forbidden') } }), 'bay')).toEqual({ kind: 'error', message: expect.stringMatching(/own network/) })
     expect(await homePrinter(hub({ home: async () => { throw new Error('the printer did not answer') } }), 'bay')).toEqual({ kind: 'error', message: 'the printer did not answer' })
   })
