@@ -124,6 +124,26 @@ describe('cloud slicing against the API contract', () => {
     expect(text(missing)).toMatch(/no such job/)
   })
 
+  it('names the arguments it does not take, points printer, process, filament and machine to profiles, and still queues the job', async () => {
+    const { cloud, calls } = fakeCloud()
+    const h = await connect({ cloud })
+    const r = await h.call('slicerx_cloud_slice', { model: join(h.dir, 'cube.stl'), printer: 'Snapmaker U1', process: 'process:standard', filament: 'PLA', machine: 'U1', speed: 'fast' })
+    expect(r.isError, text(r)).toBeFalsy()
+    const message = 'Ignored arguments this tool does not take: printer, process, filament, machine, speed. Name the printer, process and filament in profiles instead, by id from slicerx_list_profiles, such as "profiles": ["machine:snapmaker-u1", "process:standard"].'
+    const out = data<{ output: { jobId: string; warnings?: string[]; notices?: { code: string; message: string }[] } }>(r).output
+    expect(out.jobId).toBe('job-1')
+    expect(out.warnings).toEqual([message])
+    expect(out.notices).toEqual([{ code: 'ignored_arguments', message }])
+    expect(text(r)).toContain('Ignored arguments this tool does not take: printer, process, filament, machine, speed.')
+    // The job goes out as it would without them: none of the ignored names reaches the request.
+    const submitted = calls.find((c) => new URL(c.url).pathname === '/v1/jobs' && c.method === 'POST')?.body as { request: { config: Record<string, unknown> } }
+    for (const k of ['printer', 'process', 'filament', 'machine', 'speed']) expect(submitted.request.config).not.toHaveProperty(k)
+    // An argument it takes draws no warning.
+    const clean = data<{ output: { warnings?: string[]; notices?: unknown[] } }>(await h.call('slicerx_cloud_slice', { model: join(h.dir, 'cube.stl'), profiles: [] })).output
+    expect(clean.warnings).toBeUndefined()
+    expect(clean.notices).toBeUndefined()
+  })
+
   const err = (status: number, code: string, message: string, headers?: Record<string, string>): Response => Response.json({ error: { code, message } }, { status, ...(headers ? { headers } : {}) })
   const sliceWith = async (cloud: CloudOptions): Promise<string> => {
     const h = await connect({ cloud })
