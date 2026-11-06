@@ -501,6 +501,21 @@ mod tests {
     }
 
     #[test]
+    fn a_filament_change_line_reads_as_one_however_it_is_written() {
+        for line in ["M600", "m600", "M600 B1", "M 600", "N 5 M600", "M0600 ; swap", "n10m600"] {
+            assert!(changes_filament(line), "{line}");
+            assert!(moves_axes(line), "{line}");
+        }
+        for line in ["M60", "M6000", "M601", "M701", "LOAD_FILAMENT", "; M600", "M117 M600"] {
+            assert!(!changes_filament(line), "{line}");
+        }
+        assert_eq!(command_name("n 10 resume"), Some("RESUME".to_owned()));
+        assert_eq!(command_name("exclude_object name=a"), Some("EXCLUDE_OBJECT".to_owned()));
+        assert_eq!(command_name("g01 x1"), Some("G1".to_owned()));
+        assert_eq!(command_name("; nothing"), None);
+    }
+
+    #[test]
     fn a_home_line_reads_as_one_however_it_is_written() {
         for line in [
             "G28",

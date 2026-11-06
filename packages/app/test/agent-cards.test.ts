@@ -254,6 +254,27 @@ describe('agent cards', () => {
     expect(heat.confirm).toBeUndefined()
     await heat.approve()
     expect(calls.at(-1)).toBe('grant req-m104 false')
+    // A filament change mid-print parks the head itself, so it goes on a plain Approve; on an idle printer it asks about the
+    // plate. A raw M600 line reads the same way.
+    emit(card({ id: 'req-swap', actions: [{ action: 'printer.filament_change', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'filament_change', printerId: 'bay-4', printing: true } }))
+    const swap = get().approval!
+    expect(swap.requests[0]!.title).toMatch(/Change the filament/)
+    expect(swap.requests[0]!.lines.join(' ')).toMatch(/parks the head/)
+    expect(swap.confirm).toBeUndefined()
+    await swap.approve()
+    expect(calls.at(-1)).toBe('grant req-swap false')
+    emit(card({ id: 'req-swap-idle', actions: [{ action: 'printer.filament_change', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'filament_change', printerId: 'bay-4', printing: false } }))
+    const idleSwap = get().approval!
+    expect(idleSwap.confirm).toBe(BED_CLEAR)
+    expect(idleSwap.go).toBe('Plate is clear, approve')
+    await idleSwap.approve()
+    expect(calls.at(-1)).toBe('grant req-swap-idle true')
+    emit(card({ id: 'req-m600', actions: [{ action: 'printer.gcode', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'gcode', printerId: 'bay-4', line: 'M600', filamentChange: true, printing: true } }))
+    const rawSwap = get().approval!
+    expect(rawSwap.confirm).toBeUndefined()
+    expect(rawSwap.requests[0]!.lines.join(' ')).toMatch(/parks the head/)
+    await rawSwap.approve()
+    expect(calls.at(-1)).toBe('grant req-m600 false')
     // A home card asks about the plate like a start, and its Approve carries the answer.
     emit(card({ id: 'req-3', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'c' }], work: { kind: 'home', printerId: 'bay-4' } }))
     const home = get().approval!

@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Journey: a G-code line that can move the head asks about the plate first. An agent asks the hub to send a raw line;
 // a probe (G29) can bring the nozzle down to the plate, so its card in the app asks whether the plate is clear and the
-// hub sends it only on that answer, while a heater line goes on a plain Approve. Against a real sx-link and the Klipper
+// hub sends it only on that answer, while a heater line goes on a plain Approve. A filament change (M600) mid-print
+// goes on a plain Approve too, since the firmware parks the head for the swap. Against a real sx-link and the Klipper
 // mock, each step reads the mock's own command log, not just the page. The harness, with this file's own hub on a free
 // loopback port, is in e2e/bridge-hub.ts. Needs SX_LINK_BIN (a built sx-link); the tests skip without it.
 import type { Page } from '@playwright/test'
 import { hashParams, type ApprovalRequest } from '@slicerx/contracts'
 import { ONBOARDING_VERSION } from '../../../../packages/app/src/first-run/onboarding.ts'
-import { connectApp, hub, logOf, useBridge } from '../bridge-hub'
+import { connectApp, ctl, hub, logOf, useBridge } from '../bridge-hub'
 import { expect, journey as test } from '../journey'
 import { toSlice } from './lib/slice'
 
@@ -76,4 +77,21 @@ test('a heater line goes on a plain Approve, with no plate question', async ({ p
   await card.getByRole('button', { name: 'Approve', exact: true }).click()
   await expect.poll(() => sent('M104 S200'), { message: 'the printer got M104 S200', timeout: 20_000 }).toBe(1)
   expect(await sent('G29')).toBe(1)
+})
+
+test('a filament change mid-print goes on a plain Approve', async ({ page }) => {
+  await ctl('/set', { mock: 'moonraker', state: 'printing' })
+  try {
+    await expect.poll(async () => (await hub.admin.status(ID)).state, { timeout: 20_000 }).toBe('printing')
+    await askForLine('mg-m600', 'M600')
+    const card = cardOn(page)
+    await expect(card).toContainText('M600', { timeout: 30_000 })
+    await expect(card).toContainText('parks the head')
+    await expect(card.getByRole('button', { name: /Plate is clear/ })).toHaveCount(0)
+    expect(await sent('M600')).toBe(0)
+    await card.getByRole('button', { name: 'Approve', exact: true }).click()
+    await expect.poll(() => sent('M600'), { message: 'the printer got M600', timeout: 20_000 }).toBe(1)
+  } finally {
+    await ctl('/set', { mock: 'moonraker', state: 'idle' })
+  }
 })

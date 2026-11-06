@@ -3616,7 +3616,6 @@ async fn a_motion_line_runs_under_the_motion_guard() {
         "G34",
         "G80",
         "G92 Z0",
-        "M600",
         "FOO_MACRO",
         "G999",
     ];
@@ -3707,6 +3706,100 @@ async fn a_motion_line_runs_under_the_motion_guard() {
             .await
             .contains(&"gcode BED_MESH_CALIBRATE".to_owned())
     );
+}
+
+/// Registers an agent's filament change card and waits for the app to see it.
+async fn filament_card(ag: &mut Ws, app: &mut Ws, id: &str) -> Value {
+    let p = json!({ "printerId": "bay-4" });
+    let r = call(
+        ag,
+        50,
+        "approvals.register",
+        json!({ "request": card(id, "printer.filament_change", "printer.filament_change", &p), "work": { "kind": "filament_change", "printerId": "bay-4" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{id}: {r}");
+    wait_event(app, "approval", |d| d["id"] == id).await
+}
+
+/// Approves a card in the app, with or without "the plate is clear", and waits for the work to end.
+async fn grant_and_wait(ag: &mut Ws, app: &mut Ws, id: &str, plate_clear: bool) -> Value {
+    let r = call(
+        app,
+        51,
+        "approvals.grant",
+        json!({ "requestId": id, "bedClear": plate_clear }),
+    )
+    .await;
+    assert_eq!(r["result"]["runBy"], "hub", "{id}: {r}");
+    wait_event(ag, "approval.done", |d| d["requestId"] == id).await
+}
+
+// A filament change (M600) has its own card. The firmware parks the head for the swap, so it goes on
+// approve while a print runs or is paused; on an idle or finished printer it follows the plate rule
+// like any other line that moves. A raw M600 line takes the same path. A raw RESUME or EXCLUDE_OBJECT
+// mid-print is refused with a pointer to the action that does it.
+#[tokio::test]
+async fn a_filament_change_goes_mid_print_and_asks_about_an_idle_plate() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    let m600s = |log: Vec<String>| log.iter().filter(|l| l.as_str() == "gcode M600").count();
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+
+    let shown = filament_card(&mut ag, &mut app, "f-1").await;
+    assert_eq!(shown["work"]["kind"], "filament_change", "{shown}");
+    assert_eq!(shown["work"]["printing"], true, "{shown}");
+    let done = grant_and_wait(&mut ag, &mut app, "f-1", false).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(m600s(mock_log(&mocks).await), 1);
+
+    // A raw M600 card says it is a filament change, and goes the same way mid-print.
+    let p = json!({ "printerId": "bay-4", "line": "M600" });
+    let r = call(
+        &mut ag,
+        52,
+        "approvals.register",
+        json!({ "request": card("f-raw", "printer.gcode", "printer.gcode", &p), "work": { "kind": "gcode", "printerId": "bay-4", "line": "M600" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let shown = wait_event(&mut app, "approval", |d| d["id"] == "f-raw").await;
+    assert_eq!(shown["work"]["filamentChange"], true, "{shown}");
+    assert_eq!(shown["work"]["printing"], true, "{shown}");
+    let done = grant_and_wait(&mut ag, &mut app, "f-raw", false).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(m600s(mock_log(&mocks).await), 2);
+
+    // Resume and skip have their own actions; the raw lines are refused mid-print and say so.
+    let done = approved_line(&mut ag, &mut app, "f-resume", "RESUME").await;
+    assert_eq!(done["code"], "bad_state", "{done}");
+    assert!(
+        done["message"].as_str().unwrap_or("").contains("resume action"),
+        "{done}"
+    );
+    let done = approved_line(&mut ag, &mut app, "f-skip", "EXCLUDE_OBJECT NAME=a").await;
+    assert_eq!(done["code"], "bad_state", "{done}");
+    assert!(
+        done["message"].as_str().unwrap_or("").contains("skip action"),
+        "{done}"
+    );
+
+    // Canceled back to idle, the part may still be on the plate: the change asks first.
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let shown = filament_card(&mut ag, &mut app, "f-2").await;
+    assert_eq!(shown["work"]["printing"], false, "{shown}");
+    let done = grant_and_wait(&mut ag, &mut app, "f-2", false).await;
+    assert_eq!(done["code"], "bed_check", "{done}");
+    assert_eq!(m600s(mock_log(&mocks).await), 2);
+    filament_card(&mut ag, &mut app, "f-3").await;
+    let done = grant_and_wait(&mut ag, &mut app, "f-3", true).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(m600s(mock_log(&mocks).await), 3);
 }
 
 #[tokio::test]

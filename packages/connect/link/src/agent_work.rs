@@ -720,6 +720,37 @@ mod tests {
     }
 
     #[test]
+    fn a_filament_change_is_its_own_card_and_keeps_its_plate_answer() {
+        let w = Work::parse(&json!({ "kind": "filament_change", "printerId": "bay-1" })).unwrap();
+        assert_eq!(w.kind(), "filament_change");
+        assert_eq!(
+            w.summary(),
+            json!({ "kind": "filament_change", "printerId": "bay-1" })
+        );
+        assert_eq!(
+            w.actions(),
+            vec![(
+                "printer.filament_change".to_owned(),
+                "bay-1".to_owned(),
+                sx_permit::hash_params(&json!({ "printerId": "bay-1" })),
+            )]
+        );
+        // A raw M600 says it is a filament change, not a plain line that moves.
+        let raw = Work::parse(&json!({ "kind": "gcode", "printerId": "bay-1", "line": "M600" })).unwrap();
+        assert_eq!(raw.summary()["filamentChange"], true);
+        assert_eq!(raw.summary().get("motion"), None);
+        let waiting = Waiting::default();
+        waiting
+            .hold(&card("f-1", &w), 0, w, None, |_| true)
+            .unwrap();
+        waiting.answer_plate("f-1", |_| 4);
+        match waiting.take("f-1") {
+            Some((_, Work::FilamentChange { plate_epoch, .. })) => assert_eq!(plate_epoch, Some(4)),
+            _ => panic!("no filament change work"),
+        }
+    }
+
+    #[test]
     fn a_home_card_keeps_the_bed_epoch_its_plate_answer_was_given_in() {
         let home = || Work::parse(&json!({ "kind": "home", "printerId": "bay-1" })).unwrap();
         let w = Waiting::default();
