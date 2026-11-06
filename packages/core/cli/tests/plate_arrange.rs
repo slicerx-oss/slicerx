@@ -292,3 +292,79 @@ fn objects_with_no_room_are_named_and_never_overlapped() {
     assert!(why.contains(left[0]), "{why}");
     assert!(gcode.is_empty());
 }
+
+#[test]
+fn turned_parts_land_on_a_round_bed_centered_on_its_origin() {
+    // A delta's round bed, 150 mm across its radius and centered on 0, 0: the printable area does not start at 0, 0, so
+    // the nest's plate coordinates start at its front left corner, -150, -150. Bars turned 30 degrees as imported; the
+    // nest turns them again, and each new transform must put the bar where the nest put its outline.
+    let area: Vec<[f64; 2]> = (0..64)
+        .map(|k| {
+            let a = f64::from(k) * std::f64::consts::TAU / 64.0;
+            [150.0 * a.cos(), 150.0 * a.sin()]
+        })
+        .collect();
+    let config = a1(&json!({
+        "printable_area": area,
+        "printer_model": "FLSun V400",
+        "head_wrap_detect_zone": [],
+        "bed_exclude_area": [],
+    }));
+    let (s, c) = 30.0_f64.to_radians().sin_cos();
+    let bars: Vec<Value> = (0..8)
+        .map(|k| {
+            let (sx, sy) = (2.0, 0.5);
+            let at = [-30.0 + 4.0 * f64::from(k), -20.0 + 3.0 * f64::from(k)];
+            json!({
+                "id": format!("bar{k}"),
+                "name": format!("Bar {k}"),
+                "mesh": "c",
+                "transform": [c * sx, s * sx, 0, 0, -s * sy, c * sy, 0, 0, 0, 0, 0.25, 0, at[0], at[1], 0, 1],
+            })
+        })
+        .collect();
+    let mut req = request(&config, &bars, None);
+    req["plate"]["bed"] = json!({"widthMm": 300, "depthMm": 300, "heightMm": 410, "round": true});
+    let (out, _) = run("round-bed", "arrange", &req);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let report = stdout_json(&out);
+    let objects = report["objects"].as_array().unwrap();
+    assert_eq!(objects.len(), 8, "{report}");
+    assert!(
+        objects.iter().any(|o| o["turnDeg"].as_f64().unwrap() > 0.5),
+        "the nest turned some bar: {report}"
+    );
+    for o in objects {
+        let t: Vec<f64> = o["transform"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        let corners: Vec<[f64; 2]> = [(0.0, 0.0), (20.0, 0.0), (0.0, 20.0), (20.0, 20.0)]
+            .iter()
+            .map(|&(x, y)| [t[0] * x + t[4] * y + t[12], t[1] * x + t[5] * y + t[13]])
+            .collect();
+        for p in &corners {
+            assert!(
+                p[0].hypot(p[1]) <= 150.0,
+                "{} reaches {p:?}, off the round bed: {report}",
+                o["id"]
+            );
+        }
+        // and its middle is where the report says
+        let mid = [
+            corners.iter().map(|p| p[0]).sum::<f64>() / 4.0,
+            corners.iter().map(|p| p[1]).sum::<f64>() / 4.0,
+        ];
+        let center = [
+            o["centerMm"][0].as_f64().unwrap(),
+            o["centerMm"][1].as_f64().unwrap(),
+        ];
+        assert!(
+            (mid[0] - center[0]).hypot(mid[1] - center[1]) < 0.01,
+            "{}: {mid:?} against {center:?}",
+            o["id"]
+        );
+    }
+}
