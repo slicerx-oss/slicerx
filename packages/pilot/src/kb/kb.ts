@@ -54,6 +54,8 @@ export interface KbSetting {
   bounds?: { min?: number; max?: number }
   values?: string[]
   note?: string
+  /** `slicerx` for a SlicerX setting (design/NAMES.md): the catalog keeps its own name for it, such as sleipnir. */
+  origin?: 'slicerx'
 }
 
 /** One entry of knowledge/skills.yaml: a multi-step job mimir can run. */
@@ -165,10 +167,14 @@ export function keptEditionDocs(bundled: Pick<KbIndex, 'docs'>, edition: KbEditi
   return edition.index.docs.filter((d) => d.edition === edition.id && !taken.has(`${d.kind}:${norm(d.id)}`) && !taken.has(`${d.kind}:${norm(d.name)}`))
 }
 
-/** A printer setting goes by its settings schema label, the words the Printer settings dialog shows. */
+/**
+ * A setting goes by its settings schema label, the words the settings dialogs show. A SlicerX feature keeps the name the
+ * catalog gives it (smart_layer is sleipnir), and a key the schema does not list keeps its catalog label.
+ */
 function schemaLabel(s: KbSetting): KbSetting {
+  if (s.origin === 'slicerx') return s
   const def = settingDef(s.key)
-  return def?.section === 'printer' && def.label !== s.label ? { ...s, label: def.label } : s
+  return def && def.label !== s.label ? { ...s, label: def.label } : s
 }
 
 /**

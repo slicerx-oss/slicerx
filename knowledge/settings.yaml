@@ -23,12 +23,12 @@ settings:
   - {key: layer_height, label: Layer height, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.04, max: 0.8}, note: "Bambu: 20 to 70 percent of the nozzle (0.08 to 0.28 mm on 0.4). Prusa: below 80 percent (about 0.32 mm on 0.4)"}
   - {key: initial_layer_print_height, label: First layer height, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.08, max: 0.8}}
   - {key: line_width, label: Default line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: outer_wall_line_width, label: Outer wall line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: inner_wall_line_width, label: Inner wall line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: sparse_infill_line_width, label: Sparse infill line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: internal_solid_infill_line_width, label: Solid infill line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: top_surface_line_width, label: Top surface line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
-  - {key: initial_layer_line_width, label: First layer line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: outer_wall_line_width, label: Line width of outer walls, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: inner_wall_line_width, label: Line width of inner walls, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: sparse_infill_line_width, label: Line width of sparse infill, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: internal_solid_infill_line_width, label: Line width of solid infill, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: top_surface_line_width, label: Line width of top surfaces, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
+  - {key: initial_layer_line_width, label: Line width on the first layer, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
   - {key: seam_position, label: Seam position, group: quality, scope: process, type: enum, values: [nearest, aligned, aligned_back, back, random], pilot: edit}
   - {key: seam_gap, label: Seam gap, group: quality, scope: process, type: percent_or_mm, pilot: edit}
   - {key: seam_slope_type, label: Scarf joint seam, group: quality, scope: process, type: enum, values: [none, external, all], pilot: edit}
@@ -39,7 +39,7 @@ settings:
   - {key: xy_hole_compensation, label: X-Y hole compensation, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: -0.5, max: 0.5}}
   - {key: xy_contour_compensation, label: X-Y contour compensation, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: -0.5, max: 0.5}}
   - {key: elefant_foot_compensation, label: Elephant foot compensation, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 1.0}, note: "Orca spells the key elefant"}
-  - {key: hole_to_polyhole, label: Convert holes to polyholes, group: quality, scope: process, type: bool, pilot: edit}
+  - {key: hole_to_polyhole, label: Print round holes as polyholes, group: quality, scope: process, type: bool, pilot: edit}
   - {key: precise_z_height, label: Precise Z height, group: quality, scope: process, type: bool, pilot: edit}
   - {key: resolution, label: Slice resolution, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.001, max: 0.1}}
   - {key: enable_arc_fitting, label: Arc fitting, group: quality, scope: process, type: bool, pilot: edit}
@@ -68,13 +68,13 @@ settings:
   - {key: sparse_infill_density, label: Infill density, group: strength, scope: process, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: sparse_infill_pattern, label: Infill pattern, group: strength, scope: process, type: enum, values: [rectilinear, alignedrectilinear, zigzag, crosszag, lockedzag, line, grid, triangles, tri-hexagon, cubic, adaptivecubic, quartercubic, supportcubic, lightning, honeycomb, 3dhoneycomb, lateral-honeycomb, lateral-lattice, crosshatch, tpmsd, tpmsfk, gyroid, concentric, hilbertcurve, archimedeanchords, octagramspiral], pilot: edit}
   - {key: top_surface_pattern, label: Top surface pattern, group: quality, scope: process, type: enum, values: [monotonic, monotonicline, rectilinear, alignedrectilinear, concentric, spiralinset, hilbertcurve, archimedeanchords, octagramspiral], pilot: edit}
-  - {key: internal_solid_infill_pattern, label: Internal solid infill pattern, group: strength, scope: process, type: enum, pilot: edit}
-  - {key: infill_wall_overlap, label: Infill and wall overlap, group: strength, scope: process, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
+  - {key: internal_solid_infill_pattern, label: Pattern of internal solid infill, group: strength, scope: process, type: enum, pilot: edit}
+  - {key: infill_wall_overlap, label: Overlap between infill and walls, group: strength, scope: process, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: infill_combination, label: Combine infill layers, group: strength, scope: process, type: bool, pilot: edit}
-  - {key: ensure_vertical_shell_thickness, label: Ensure vertical shell thickness, group: strength, scope: process, type: enum, values: [none, ensure_critical_only, ensure_moderate, ensure_all], pilot: edit}
-  - {key: only_one_wall_top, label: Only one wall on top surfaces, group: quality, scope: process, type: bool, pilot: edit}
+  - {key: ensure_vertical_shell_thickness, label: Keep shells thick on steep sides, group: strength, scope: process, type: enum, values: [none, ensure_critical_only, ensure_moderate, ensure_all], pilot: edit}
+  - {key: only_one_wall_top, label: Single wall on the top surface, group: quality, scope: process, type: bool, pilot: edit}
   - {key: interface_shells, label: Interface shells, group: strength, scope: process, type: bool, pilot: edit}
-  - {key: extra_perimeters_on_overhangs, label: Extra perimeters on overhangs, group: quality, scope: process, type: bool, pilot: edit}
+  - {key: extra_perimeters_on_overhangs, label: More walls under overhangs, group: quality, scope: process, type: bool, pilot: edit}
 
   # Speed and motion
   - {key: outer_wall_speed, label: Outer wall speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
@@ -87,11 +87,11 @@ settings:
   - {key: bridge_speed, label: Bridge speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 300}}
   - {key: internal_bridge_speed, label: Internal bridge speed, group: speed, scope: process, type: percent_or_mm_s, pilot: edit}
   - {key: initial_layer_speed, label: First layer speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 300}}
-  - {key: initial_layer_infill_speed, label: First layer infill speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 300}}
+  - {key: initial_layer_infill_speed, label: Infill speed on the first layer, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 300}}
   - {key: support_speed, label: Support speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
   - {key: travel_speed, label: Travel speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 20, max: 1000}}
-  - {key: enable_overhang_speed, label: Slow down for overhangs, group: speed, scope: process, type: bool, pilot: edit}
-  - {key: slowdown_for_curled_perimeters, label: Slow down for curled perimeters, group: speed, scope: process, type: bool, pilot: edit}
+  - {key: enable_overhang_speed, label: Slow down on overhangs, group: speed, scope: process, type: bool, pilot: edit}
+  - {key: slowdown_for_curled_perimeters, label: Slow down on curling walls, group: speed, scope: process, type: bool, pilot: edit}
   - {key: default_acceleration, label: Default acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 100, max: 50000}}
   - {key: outer_wall_acceleration, label: Outer wall acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 0, max: 50000}}
   - {key: inner_wall_acceleration, label: Inner wall acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 0, max: 50000}}
@@ -100,7 +100,7 @@ settings:
   - {key: initial_layer_acceleration, label: First layer acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 0, max: 20000}}
   - {key: travel_acceleration, label: Travel acceleration, group: motion, scope: process, type: float, unit: mm/s2, pilot: edit, bounds: {min: 0, max: 50000}}
   - {key: default_jerk, label: Default jerk, group: motion, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 0, max: 50}}
-  - {key: accel_to_decel_enable, label: Limit accel to decel, group: motion, scope: process, type: bool, pilot: edit, note: "Klipper only"}
+  - {key: accel_to_decel_enable, label: Cap acceleration change per move, group: motion, scope: process, type: bool, pilot: edit, note: "Klipper only"}
   - {key: machine_max_acceleration_extruding, label: Maximum acceleration when extruding, group: motion, scope: machine, type: float, unit: mm/s2, pilot: read}
   - {key: machine_max_speed_x, label: Maximum speed X, group: motion, scope: machine, type: float, unit: mm/s, pilot: read}
 
@@ -110,26 +110,26 @@ settings:
   - {key: overhang_fan_speed, label: Overhang fan speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_threshold, label: Overhang fan threshold, group: cooling, scope: filament, type: enum, pilot: edit}
   - {key: pre_start_fan_time, label: Fan lead time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 5}}
-  - {key: close_fan_the_first_x_layers, label: No cooling for first layers, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 20}}
-  - {key: full_fan_speed_layer, label: Full fan speed at layer, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 50}}
+  - {key: close_fan_the_first_x_layers, label: Fan off for the first layers, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 20}}
+  - {key: full_fan_speed_layer, label: Layer where the fan reaches full speed, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 50}}
   - {key: slow_down_layer_time, label: Minimum layer time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 60}}
-  - {key: slow_down_min_speed, label: Minimum print speed when slowing, group: cooling, scope: filament, type: float, unit: mm/s, pilot: edit, bounds: {min: 1, max: 100}}
-  - {key: slow_down_for_layer_cooling, label: Slow down for better layer cooling, group: cooling, scope: filament, type: bool, pilot: edit}
+  - {key: slow_down_min_speed, label: Slowest speed when cooling a layer, group: cooling, scope: filament, type: float, unit: mm/s, pilot: edit, bounds: {min: 1, max: 100}}
+  - {key: slow_down_for_layer_cooling, label: Slow printing on short layers to cool them, group: cooling, scope: filament, type: bool, pilot: edit}
   - {key: additional_cooling_fan_speed, label: Auxiliary fan speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
-  - {key: reduce_fan_stop_start_freq, label: Keep fan always on, group: cooling, scope: filament, type: bool, pilot: edit}
+  - {key: reduce_fan_stop_start_freq, label: Avoid stopping the fan between layers, group: cooling, scope: filament, type: bool, pilot: edit}
   - {key: activate_air_filtration, label: Activate air filtration, group: cooling, scope: filament, type: bool, pilot: edit}
 
   # Temperature (guarded: they touch hardware limits and material safety)
   - {key: nozzle_temperature, label: Nozzle temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}, note: "Also capped by the printer max hotend temperature"}
-  - {key: nozzle_temperature_initial_layer, label: First layer nozzle temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
-  - {key: cool_plate_temp, label: Bed temperature (Cool Plate), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
-  - {key: supertack_plate_temp, label: Bed temperature (Cool Plate SuperTack), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}}
-  - {key: textured_cool_plate_temp, label: Bed temperature (Textured Cool Plate), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
-  - {key: eng_plate_temp, label: Bed temperature (Engineering Plate), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
-  - {key: hot_plate_temp, label: Bed temperature (High Temp or smooth PEI), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
-  - {key: textured_plate_temp, label: Bed temperature (Textured PEI), group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
+  - {key: nozzle_temperature_initial_layer, label: Hotend temperature for the first layer, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
+  - {key: cool_plate_temp, label: Bed temperature on the Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
+  - {key: supertack_plate_temp, label: Bed temperature on the SuperTack plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}}
+  - {key: textured_cool_plate_temp, label: Bed temperature on the Textured Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
+  - {key: eng_plate_temp, label: Bed temperature on the Engineering Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
+  - {key: hot_plate_temp, label: Bed temperature on the High Temp plate or smooth PEI, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
+  - {key: textured_plate_temp, label: Bed temperature on textured PEI, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
   - {key: chamber_temperature, label: Chamber temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}, note: "Only on printers with active chamber heating (X1E, H2D, Core One, Voron with heater)"}
-  - {key: activate_chamber_temp_control, label: Activate chamber temperature control, group: temperature, scope: filament, type: bool, pilot: guarded}
+  - {key: activate_chamber_temp_control, label: Control chamber heating, group: temperature, scope: filament, type: bool, pilot: guarded}
   - {key: curr_bed_type, label: Plate type, group: temperature, scope: plate, type: enum, values: [Supertack Plate, Cool Plate, Engineering Plate, High Temp Plate, Textured PEI Plate, Textured Cool Plate], pilot: edit}
 
   # Extrusion and retraction
@@ -161,18 +161,18 @@ settings:
   - {key: support_type, label: Support type, group: support, scope: process, type: enum, values: ["normal(auto)", "tree(auto)", "normal(manual)", "tree(manual)"], pilot: edit}
   - {key: support_style, label: Support style, group: support, scope: process, type: enum, values: [default, grid, snug, organic, tree_slim, tree_strong, tree_hybrid], pilot: edit}
   - {key: support_threshold_angle, label: Support threshold angle, group: support, scope: process, type: int, unit: deg, pilot: edit, bounds: {min: 0, max: 90}, note: "Higher angle, more support; lower angle, less"}
-  - {key: support_on_build_plate_only, label: Support on build plate only, group: support, scope: process, type: bool, pilot: edit}
-  - {key: support_top_z_distance, label: Support top Z distance, group: support, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 1}}
+  - {key: support_on_build_plate_only, label: Only support from the bed, group: support, scope: process, type: bool, pilot: edit}
+  - {key: support_top_z_distance, label: Vertical gap between support and part, group: support, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 1}}
   - {key: support_object_xy_distance, label: Support XY distance, group: support, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 5}}
-  - {key: support_interface_top_layers, label: Support top interface layers, group: support, scope: process, type: int, pilot: edit, bounds: {min: 0, max: 10}}
+  - {key: support_interface_top_layers, label: Interface layers under the part, group: support, scope: process, type: int, pilot: edit, bounds: {min: 0, max: 10}}
   - {key: support_interface_spacing, label: Support interface spacing, group: support, scope: process, type: float, unit: mm, pilot: edit}
-  - {key: independent_support_layer_height, label: Independent support layer height, group: support, scope: process, type: bool, pilot: edit}
+  - {key: independent_support_layer_height, label: Separate support layer height, group: support, scope: process, type: bool, pilot: edit}
   - {key: raft_layers, label: Raft layers, group: adhesion, scope: process, type: int, pilot: edit, bounds: {min: 0, max: 10}}
 
   # Adhesion
   - {key: brim_type, label: Brim type, group: adhesion, scope: process, type: enum, values: [no_brim, outer_only, inner_only, outer_and_inner, auto_brim, brim_ears, painted], pilot: edit}
   - {key: brim_width, label: Brim width, group: adhesion, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 30}}
-  - {key: brim_object_gap, label: Brim to object gap, group: adhesion, scope: process, type: float, unit: mm, pilot: edit}
+  - {key: brim_object_gap, label: Gap between brim and part, group: adhesion, scope: process, type: float, unit: mm, pilot: edit}
   - {key: skirt_loops, label: Skirt loops, group: adhesion, scope: process, type: int, pilot: edit}
   - {key: draft_shield, label: Draft shield, group: adhesion, scope: process, type: enum, pilot: edit}
 
