@@ -1770,9 +1770,13 @@ impl SliceSession {
                     min_z = min_z.min(v[2]);
                     xy = [xy[0].min(v[0]), xy[1].min(v[1]), xy[2].max(v[0]), xy[3].max(v[1])];
                 }
-                // Read from the plate's mesh in place: a painted part's paint is tens of megabytes.
-                let paint =
-                    crate::paint::Facets::of_part(&obj.mesh, part_index, |p| &p.paint, &obj.transform);
+                // Read from the plate's mesh in place: a painted part's paint is tens of megabytes. A part without
+                // paint keeps no hold on the mesh, so the plate's mesh can go once nothing else reads it.
+                let paint = if part.paint.is_empty() {
+                    crate::paint::Facets::default()
+                } else {
+                    crate::paint::Facets::of_part(&obj.mesh, part_index, |p| &p.paint, &obj.transform)
+                };
                 painted_supports.extend(
                     part.support_paint
                         .iter()
@@ -16581,7 +16585,7 @@ mod shared_paint_tests {
         assert_eq!(shared.parts.len(), copied.parts.len());
         for (k, (a, b)) in shared.parts.iter().zip(&copied.parts).enumerate() {
             assert!(
-                in_place(&a.paint),
+                in_place(&a.paint) || a.paint.is_empty(),
                 "part {k}: the paint is read in place, not copied"
             );
             assert!(
