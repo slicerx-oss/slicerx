@@ -358,14 +358,15 @@ pub(crate) fn forget(b: &Bridge, key: &str) {
     lock(&b.remote_start.approved).remove(key);
 }
 
-/// Whether a start needs the remote start check, from the queued plate's mark (`Some`, which decides:
-/// a local approval never counts an old remote one) or, for an agent's print (`None`), the approval
-/// the hub holds. `Ok(Some(at))` is a remote approval given at `at`; a queued plate marked remote whose
-/// approval the hub no longer holds (a restart) is refused.
+/// Whether a start needs the remote start check. `mark` is the start's own word on whether a phone
+/// approved it from afar (a queued plate's mark, or how an agent's print card was answered), which
+/// decides: a local approval never counts an old remote one. `Ok(Some(at))` is a remote approval given
+/// at `at`. A remote start whose approval the hub no longer holds (a restart), and a start that does
+/// not say how it was approved, are refused.
 pub(crate) fn needs_check(mark: Option<bool>, held: Option<Instant>) -> Result<Option<Instant>, Why> {
     match (mark, held) {
-        (Some(false), _) | (None, None) => Ok(None),
-        (Some(true), None) => Err(Why::StartLate),
+        (Some(false), _) => Ok(None),
+        (Some(true) | None, None) => Err(Why::StartLate),
         (_, Some(at)) => Ok(Some(at)),
     }
 }
@@ -779,7 +780,6 @@ mod tests {
         assert_eq!(needs_check(Some(true), then), Ok(then));
         assert_eq!(needs_check(Some(true), None), Err(Why::StartLate));
         assert_eq!(needs_check(None, then), Ok(then));
-        assert_eq!(needs_check(None, None), Ok(None));
     }
 
     #[test]
@@ -791,5 +791,25 @@ mod tests {
         // A start macro with no temperature arguments heats from its own defaults.
         assert!(verdict(b"PRINT_START\nM104 S215\n").is_err());
         assert!(verdict(b"START_PRINT\nM104 S215\n").is_err());
+    }
+
+    #[test]
+    fn a_start_that_does_not_say_how_it_was_approved_refuses() {
+        assert_eq!(needs_check(None, None), Err(Why::StartLate));
+    }
+
+    #[test]
+    fn a_start_macro_must_name_both_heaters_and_unknown_start_macros_refuse() {
+        // A nozzle argument and no bed: the macro heats the bed from its own default.
+        assert!(verdict(b"PRINT_START EXTRUDER=215\n").is_err());
+        assert_eq!(verdict(b"PRINT_START EXTRUDER=215 BED=60\n"), Ok(()));
+        // A start macro this reader does not know, by name.
+        assert!(verdict(b"_PRINT_BEGIN\nM104 S215\n").is_err());
+        assert!(verdict(b"my_start_routine T=1\nM104 S215\n").is_err());
+        // Klipper's object labels are not start macros.
+        assert_eq!(
+            verdict(b"M104 S215\nEXCLUDE_OBJECT_START NAME=lid\nEXCLUDE_OBJECT_END NAME=lid\n"),
+            Ok(())
+        );
     }
 }

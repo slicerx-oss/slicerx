@@ -408,11 +408,20 @@ impl Waiting {
 
 /// Runs approved agent work with the person's token, then tells the agent and the app how it went
 /// (`approval.done {requestId, ok, code?, message?}`).
-pub(crate) fn run(b: &Arc<Bridge>, request_id: String, work: Work, token: ApprovalToken, owner: u64) {
+/// `remote` says a phone approved the card from afar, so a print gets the remote start check before
+/// its start command.
+pub(crate) fn run(
+    b: &Arc<Bridge>,
+    request_id: String,
+    work: Work,
+    token: ApprovalToken,
+    owner: u64,
+    remote: bool,
+) {
     let b = b.clone();
     tokio::spawn(async move {
         let printer = work.printer().to_owned();
-        let out = execute(&b, &request_id, work, &token).await;
+        let out = execute(&b, &request_id, work, &token, remote).await;
         let mut data = serde_json::Map::new();
         data.insert("requestId".into(), json!(request_id));
         data.insert("printerId".into(), json!(printer));
@@ -428,7 +437,13 @@ pub(crate) fn run(b: &Arc<Bridge>, request_id: String, work: Work, token: Approv
     });
 }
 
-async fn execute(b: &Arc<Bridge>, request_id: &str, work: Work, token: &ApprovalToken) -> Rpc<()> {
+async fn execute(
+    b: &Arc<Bridge>,
+    request_id: &str,
+    work: Work,
+    token: &ApprovalToken,
+    remote: bool,
+) -> Rpc<()> {
     match work {
         Work::Print { printer, file, opts } => {
             // One hold for the upload and the start, so nothing else lands in between.
@@ -439,7 +454,7 @@ async fn execute(b: &Arc<Bridge>, request_id: &str, work: Work, token: &Approval
             crate::hub_rpc::record_upload(b, &rf, size).await;
             // A start approved from afar: a fresh compared plate check now, after the upload, within
             // its time of the approval.
-            crate::remote_start::before_start(b, request_id, &printer, None)
+            crate::remote_start::before_start(b, request_id, &printer, Some(remote))
                 .await
                 .map_err(|why| RpcError::new("plate_check", why.message()))?;
             crate::hub_rpc::start_with_token_held(b, &json!({ "file": rf, "opts": opts, "token": token }))
