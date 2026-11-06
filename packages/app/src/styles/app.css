@@ -577,6 +577,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .approve-dialog .cl-list { margin: 0 0 12px; }
 .approve-note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--dim); }
 .approve-dialog .sx-dialog-foot { justify-content: space-between; }
+/* The footer buttons are 34 px; at phone width invisible padding gives Approve and Deny a 44 px hit area (UI spec 9). */
+.approve-dialog .sx-dialog-foot .sx-btn { position: relative; }
+@media (pointer: coarse), (max-width: 700px) { .approve-dialog .sx-dialog-foot .sx-btn::before { content: ''; position: absolute; inset: -6px 0; } }
 .about { display: grid; gap: 12px; justify-items: start; }
 .about p { margin: 0; }
 .keys-list { margin: 0; }
@@ -702,6 +705,15 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dev-list li, .tok-list li { padding: 10px 0; border-top: 1px solid var(--line-soft); }
 .dev-list li { justify-content: flex-start; }
 .dev-list li .sx-btn { margin-left: auto; }
+/* Hit areas past the drawn controls (UI spec 2 and 9): invisible padding gives each button and print watch switch 28 px on
+   desktop and 44 px at phone width, with its box, its look and the row unchanged. The inset counts from inside the 1 px
+   border. The partner phone rows set their own. */
+.dev-list li:not(.dev-partner) .sx-btn, .watch-rows .sx-switch { position: relative; }
+.watch-rows .sx-switch::before { content: ''; position: absolute; inset: -5px -1px; }
+@media (pointer: coarse), (max-width: 700px) {
+  .dev-list li:not(.dev-partner) .sx-btn::before { content: ''; position: absolute; inset: -9px 0; }
+  .watch-rows .sx-switch::before { inset: -13px -5px; }
+}
 .tok-list li[data-state=revoked], .tok-list li[data-state=expired] { opacity: .6; }
 .ptk-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ptk-form .sx-input { flex: 1 1 180px; min-width: 0; }
