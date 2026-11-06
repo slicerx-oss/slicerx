@@ -1061,6 +1061,22 @@ fn control_work(p: &Value, printer: &str) -> Result<(Work, &'static str), (&'sta
     }
 }
 
+/// Who a relay pairing raises cards as: a partner phone, or a partner app key made with remote access
+/// (which reaches the relay as an agent pairing), is a partner app; otherwise an agent or our phone.
+fn relay_raiser(b: &Bridge, pairing: &RemotePairing) -> crate::rpc::RaiserRole {
+    let partner_key = pairing
+        .client_id
+        .as_deref()
+        .is_some_and(|c| lock(&b.hub.clients).iter().any(|k| k.id == c && k.partner));
+    if pairing.partner.is_some() || partner_key {
+        crate::rpc::RaiserRole::Partner
+    } else if pairing.kind == PeerKind::Agent {
+        crate::rpc::RaiserRole::Agent
+    } else {
+        crate::rpc::RaiserRole::Phone
+    }
+}
+
 async fn control(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p: &Value) -> Reply {
     if !pairing.rights.request {
         return Err(err("forbidden", "this device may not send jobs"));
@@ -1137,13 +1153,7 @@ async fn control(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p
     lock(&b.card_raisers).insert(
         request_id.clone(),
         crate::rpc::CardRaiser {
-            role: if pairing.partner.is_some() {
-                crate::rpc::RaiserRole::Partner
-            } else if pairing.kind == PeerKind::Agent {
-                crate::rpc::RaiserRole::Agent
-            } else {
-                crate::rpc::RaiserRole::Phone
-            },
+            role: relay_raiser(b, pairing),
             id: Some(ctx.pairing_id.clone()),
         },
     );
