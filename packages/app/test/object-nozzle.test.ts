@@ -194,6 +194,25 @@ describe('the nozzle chip', () => {
     root.unmount()
   })
 
+  it('names on each nozzle row the filament that nozzle prints, and only the nozzle when it prints none', () => {
+    setProfileLayer(H2D, [])
+    // a prints filament 2 on the left nozzle; b prints filament 1 on the right one.
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer', nozzleMap: [2, 1] } }], plate: [entry('a', [2]), entry('b', [1])], slotSetup: slots(2) })
+    expect(objectNozzle(get(), get().plate[0]!)).toEqual({ extruder: 1, mm: 0.4 })
+    const items = (e: PlateEntry) => {
+      const { el, root } = render(e)
+      flushSync(() => el.querySelector<HTMLButtonElement>('[data-testid="object-nozzle"]')!.click())
+      const text = [...document.querySelectorAll('[data-testid="object-nozzle-pick"] [data-testid="object-nozzle-item"]')].map((i) => i.textContent)
+      root.unmount()
+      document.body.innerHTML = ''
+      return text
+    }
+    expect(items(get().plate[0]!)).toEqual(['Left nozzle, 0.4 mmfilament 2', 'Right nozzle, 0.6 mmfilament 1'])
+    // With b gone, the right nozzle prints no filament: its row names the nozzle and its size only.
+    set({ plate: [entry('a', [2])] })
+    expect(items(get().plate[0]!)).toEqual(['Left nozzle, 0.4 mmfilament 2', 'Right nozzle, 0.6 mm'])
+  })
+
   it('warns on Move filament when the move would print a painted object on two nozzles, and still lets the person move it', () => {
     setProfileLayer(H2D, [])
     // a is filament 1 with a face painted filament 2; b is filament 1. Moving filament 1 left splits a's paint off.
