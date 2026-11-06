@@ -94,12 +94,13 @@ function Move({ hub, printer, status }: { hub: DeviceHub; printer: PrinterInfo; 
   // person said the plate is clear in, which later steps down send until the printer moves on.
   const [askMove, setAskMove] = useState<number | null>(null)
   const [moveClear, setMoveClear] = useState<number | null>(null)
-  // A confirm asked for one state never applies once the printer has moved on.
+  // A confirm asked for one state, or about one printer's plate, never applies once the printer moved on or the
+  // dialog shows another printer.
   useEffect(() => {
     setAskPlate(null)
     setAskMove(null)
     setMoveClear(null)
-  }, [status.state])
+  }, [status.state, printer.id])
   const home = async (answer?: { epoch: number }) => {
     setBusy(true)
     const a = await homePrinter(hub, printer.id, answer)
