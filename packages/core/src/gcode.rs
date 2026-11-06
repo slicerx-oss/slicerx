@@ -991,7 +991,9 @@ pub(crate) fn changes_tool(text: &str, prefix: &str, next: i64) -> bool {
 /// unload and a load, a change to another extruder costs the switch (`machine_tool_change_time`,
 /// or Bambu's name for it, `machine_switch_extruder_time`), plus a load when that extruder is
 /// empty or an unload and a load when it last held a different filament. As in Orca, the first
-/// unload of the print is free (`extruder_unloaded`).
+/// unload of the print is free (`extruder_unloaded`). On a printer whose hotends are its tools (the H3C,
+/// [`crate::nozzles::hotend_tools`]) each hotend stands for an extruder, from `filament_nozzle_map`, and a
+/// swap takes [`crate::nozzles::hotend_change_time`].
 #[derive(Clone, Debug)]
 pub(crate) struct ChangeClock {
     map: Vec<usize>,
@@ -1000,6 +1002,8 @@ pub(crate) struct ChangeClock {
     /// No map on a printer with one tool per filament: filament `n` is tool `n`, also when the settings list one
     /// nozzle for every tool.
     per_filament: bool,
+    /// The map's entries are hotends (`filament_nozzle_map`), on a printer whose hotends are its tools.
+    by_hotend: bool,
     unloaded: bool,
     switch: f64,
     load: f64,
@@ -1017,28 +1021,50 @@ impl ChangeClock {
             clippy::cast_sign_loss,
             reason = "extruder numbers are small"
         )]
-        let map: Vec<usize> = match c.raw.get("filament_map") {
-            Some(serde_json::Value::Array(a)) => a
-                .iter()
-                .filter_map(num)
-                .map(|v| (v.round().max(1.0) as usize) - 1)
-                .collect(),
-            _ => Vec::new(),
+        let map: Vec<usize> = if crate::nozzles::hotend_tools(c) {
+            match c.raw.get("filament_nozzle_map") {
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(num)
+                    .map(|v| v.round().max(0.0) as usize)
+                    .collect(),
+                _ => Vec::new(),
+            }
+        } else {
+            match c.raw.get("filament_map") {
+                Some(serde_json::Value::Array(a)) => a
+                    .iter()
+                    .filter_map(num)
+                    .map(|v| (v.round().max(1.0) as usize) - 1)
+                    .collect(),
+                _ => Vec::new(),
+            }
         };
         Self::with_map(c, map)
     }
 
-    /// The clock for a candidate filament map: the extruder (0-based) of each filament.
+    /// The clock for a candidate filament map: the extruder (0-based) of each filament, or its hotend on a printer
+    /// whose hotends are its tools.
     pub(crate) fn with_map(c: &PrintConfig, map: Vec<usize>) -> Self {
-        let nozzles = match c.raw.get("nozzle_diameter") {
-            Some(serde_json::Value::Array(a)) => a.len(),
-            _ => 1,
+        let by_hotend = crate::nozzles::hotend_tools(c);
+        let nozzles = if by_hotend {
+            crate::nozzles::hotends(c)
+        } else {
+            match c.raw.get("nozzle_diameter") {
+                Some(serde_json::Value::Array(a)) => a.len(),
+                _ => 1,
+            }
         };
-        let switch = match c.raw.get("machine_tool_change_time") {
-            Some(_) => c.raw_number("machine_tool_change_time", 0.0),
-            None => c.raw_number("machine_switch_extruder_time", 0.0),
+        let switch = if by_hotend {
+            crate::nozzles::hotend_change_time(c)
+        } else {
+            match c.raw.get("machine_tool_change_time") {
+                Some(_) => c.raw_number("machine_tool_change_time", 0.0),
+                None => c.raw_number("machine_switch_extruder_time", 0.0),
+            }
         };
         Self {
+            by_hotend,
             per_filament: map.is_empty() && crate::nozzles::tool_per_filament(c),
             map,
             extruder: None,
@@ -1056,7 +1082,12 @@ impl ChangeClock {
         let f = usize::from(tool.max(1) - 1);
         if let Some(map) = map {
             for &h in held.iter().filter(|&&h| h != 0) {
-                let e = map.extruder_of(h).min(self.filament_of.len().saturating_sub(1));
+                let e = if self.by_hotend {
+                    map.nozzle_of(h)
+                } else {
+                    map.extruder_of(h)
+                }
+                .min(self.filament_of.len().saturating_sub(1));
                 if let Some(s) = self.filament_of.get_mut(e) {
                     *s = Some(usize::from(h - 1));
                 }
@@ -2982,6 +3013,23 @@ fn emit_layer(
                         #[allow(clippy::cast_precision_loss, reason = "tool indexes are small")]
                         ctx.set_num(k, v as f64);
                     }
+                    // One extruder whose hotends are its tools (the H3C): the hotends the two filaments print on.
+                    if crate::nozzles::hotend_tools(c) {
+                        let hotend = |f: i64| {
+                            let slot = u8::try_from(f.max(0) + 1).unwrap_or(1);
+                            #[allow(clippy::cast_precision_loss, reason = "a hotend index")]
+                            let h = crate::nozzles::hotend_of_slot(c, slot) as f64;
+                            h
+                        };
+                        for (k, v) in [
+                            ("current_hotend", hotend(prev)),
+                            ("current_nozzle_id", hotend(prev)),
+                            ("next_hotend", hotend(next)),
+                            ("next_nozzle_id", hotend(next)),
+                        ] {
+                            ctx.set_num(k, v);
+                        }
+                    }
                     ctx.set_num("toolchange_z", f64::from(l.z));
                     // orca's change at the tower reads the new filament's outer wall volumetric speed, any other
                     // change the start's (`WipeTowerIntegration::append_tcr`)
@@ -2995,12 +3043,14 @@ fn emit_layer(
                         crate::customgcode::outer_wall_volumetric_speed(base, speed_slot),
                     );
                     // The flush starts from what the new filament's nozzle holds: the old filament on one
-                    // nozzle, nothing when the nozzle already holds the new one or is empty.
+                    // nozzle, nothing when the nozzle already holds the new one or is empty. A hotend of the H3C
+                    // that still holds the new filament flushes nothing even without a flush matrix entry for it.
+                    let by_hotend = crate::nozzles::hotend_tools(c);
                     let flush_from = match out.filament_map.as_ref() {
                         Some(m) => held
                             .get(m.nozzle_of(p.tool))
                             .copied()
-                            .filter(|&h| h != 0)
+                            .filter(|&h| h != 0 && !(by_hotend && h == p.tool))
                             .map(|h| i64::from(h - 1)),
                         None => Some(prev),
                     };
