@@ -784,15 +784,16 @@ fn card_view(b: &Bridge, id: &str) -> Option<Value> {
     Some(view)
 }
 
-/// Where a card's work summary goes in the view. A connected app's work has its own key: a phone built
-/// before it knew that kind checks `work` against a fixed list and would refuse the whole approvals
-/// list over one card. Without `work`, such a phone shows the card with no Approve, as for any card it
-/// cannot check.
+/// Where a card's work summary goes in the view. A connected app's work and a home have their own keys:
+/// a phone built before it knew those kinds checks `work` against a fixed list and would refuse the
+/// whole approvals list over one card. Without `work`, such a phone shows the card with no Approve, as
+/// for any card it cannot check; a phone never approves a home anyway (`approvable_remotely`).
 fn work_key(summary: &Value) -> &'static str {
     match summary["kind"].as_str() {
         Some("plugin") => "connectedAppWork",
         // A skip, under its own key for the same reason.
         Some("skip") => "objectWork",
+        Some("home") => "homeWork",
         _ => "work",
     }
 }

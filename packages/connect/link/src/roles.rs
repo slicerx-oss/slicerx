@@ -314,6 +314,7 @@ const PERSON_ONLY: &[&str] = &[
     "printer.start",
     "printer.resume",
     "printer.gcode",
+    "printer.home",
     "printer.adjust",
     "printer.skip",
 ];

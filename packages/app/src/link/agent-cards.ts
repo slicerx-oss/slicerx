@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Cards the hub raises for work an AI agent asked for over MCP (a print start, a resume, a G-code line).
+// Cards the hub raises for work an AI agent asked for over MCP (a print start, a resume, a G-code line, a home).
 // The person decides from what the hub itself verified: the actions it will run and the printer they
 // target, plus the file name, size, hash and options when the hub sends them. The agent's own title and
 // lines are never the headline: they show as one labeled note, cut short, because a misled agent could
@@ -15,7 +15,7 @@ const PRINT_OPTIONS = new Set<string>(SEND_OPTION_IDS)
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
-  kind: 'print' | 'resume' | 'gcode' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'plugin'
+  kind: 'print' | 'resume' | 'gcode' | 'home' | 'adjust' | 'pause' | 'cancel' | 'skip' | 'plugin'
   /** Empty for a connected app's tool, which targets no printer. */
   printerId: string
   /** A connected app's tool: the app, the tool's bare name and its input, as the hub will run them. */
@@ -111,6 +111,7 @@ const WORK_ACTIONS: Record<VerifiedWork['kind'], string[]> = {
   print: ['printer.upload', 'printer.start'],
   resume: ['printer.resume'],
   gcode: ['printer.gcode'],
+  home: ['printer.home'],
   adjust: ['printer.adjust'],
   pause: ['printer.pause'],
   cancel: ['printer.cancel'],
@@ -148,6 +149,7 @@ const ACTION_WORDS: Record<string, string> = {
   'printer.resume': 'resume the print',
   'printer.cancel': 'cancel the print',
   'printer.gcode': 'send a G-code line',
+  'printer.home': 'home every axis',
   'printer.config': 'change the running print',
   'printer.adjust': 'change the running print',
   'printer.skip': 'skip one object of the running print',
@@ -164,7 +166,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (card.origin !== 'mcp' && card.origin !== 'phone') return { title: card.title, lines: card.lines, startsPrint: card.actions.some((a) => a.action === 'printer.start') }
   const has = (action: string) => card.actions.some((a) => a.action === action)
   const targetOf = (action: string) => card.actions.find((a) => a.action === action)?.target
-  const printerId = targetOf('printer.start') ?? targetOf('printer.resume') ?? targetOf('printer.gcode') ?? targetOf('printer.config') ?? card.actions.find((a) => a.action.startsWith('printer.'))?.target
+  const printerId = targetOf('printer.start') ?? targetOf('printer.resume') ?? targetOf('printer.gcode') ?? targetOf('printer.home') ?? targetOf('printer.config') ?? card.actions.find((a) => a.action.startsWith('printer.'))?.target
   const printer = printerId ? printerName(printerId) : null
   const on = printer ? ` on ${printer}` : ''
   const startsPrint = has('printer.start')
@@ -185,6 +187,8 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
       ? `Resume the print${on}?`
       : has('printer.gcode')
         ? `Send a G-code line${printer ? ` to ${printer}` : ''}?`
+      : has('printer.home')
+        ? `Home all axes${printer ? ` of ${printer}` : ''}?`
         : has('printer.config') || has('printer.adjust')
           ? `Change the running print${on}?`
           : has('printer.skip')
@@ -208,6 +212,8 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
     if (plainGcodeLine(w.line)) lines.push(`G-code: ${w.line}`)
     else blocked = 'The G-code is not one short line, so it cannot be shown in full. Deny this request.'
   }
+  // The hub homes only while the printer is idle or finished, and asks about a plate it does not know is clear.
+  if (w?.kind === 'home') lines.push('Homing moves every axis to its end stop, and the nozzle comes down to the plate. The hub refuses it unless the printer is idle or finished and the plate is known clear.')
   if (has('plugin.call')) {
     // A connected app's change shows as exactly what the hub will run; one this app cannot word gets no Approve.
     if (plugin) lines.push(`Change: ${plugin}`)
