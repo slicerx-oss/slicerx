@@ -20,7 +20,7 @@ import { SetupNotes } from './setup-plan'
 import { resetSlots, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
 import { tpu285Slot, tpuHotend } from '@slicerx/settings/hotends'
-import { currentHotends, currentMap, deviceTpuTool, hasRack, mapExtruders, mapHotends, masterExtruder, nozzleName, pickedMap, setHotendAuto, setNozzleAuto, setSlotHotend, setSlotNozzle, toolName } from './nozzle-map'
+import { currentHotends, currentMap, hasRack, mapExtruders, mapHotends, masterExtruder, nozzleName, pickedMap, setHotendAuto, setNozzleAuto, setSlotHotend, setSlotNozzle, toolName } from './nozzle-map'
 import { nozzleLabel, sizesDiffer } from './object-nozzle'
 import { spoolLeft } from './left'
 
@@ -271,7 +271,6 @@ export function HotendRows({ slots }: { slots: ResolvedSlot[] }) {
   if (shown.length === 0) return null
   const tpu = tpuHotend(cfg)
   const tpuTool = tpu === undefined ? undefined : tpu + 1
-  const device = deviceTpuTool(cfg)
   const current = currentHotends(meta, picked, cfg, slots.length, shown.map((s) => s.index))
   const auto = !meta.settings.hotendMap
   return (
@@ -309,11 +308,6 @@ export function HotendRows({ slots }: { slots: ResolvedSlot[] }) {
           </div>
         )
       })}
-      {tpuTool !== undefined && device !== undefined && device !== tpuTool ? (
-        <p className="hotend-note sx-small sx-muted" data-testid="hotend-tpu-note">
-          Bambu Lab&apos;s print profiles make tool {tpuTool} the TPU tool, but the printer&apos;s own device data points to tool {device}. Check which tool your printer&apos;s screen calls the TPU tool before you print TPU.
-        </p>
-      ) : null}
     </div>
   )
 }
