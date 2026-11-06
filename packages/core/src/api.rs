@@ -363,7 +363,7 @@ pub struct PlateSpec {
 }
 
 /// What a request asks of the arrange (`plate.arrange`, with [`PlatePlacement::Arrange`]).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArrangeSpec {
     /// The spacing between objects and from the bed edge, mm; 6 when unset. Printing by object the objects keep the
@@ -373,6 +373,44 @@ pub struct ArrangeSpec {
     /// Whether an object may turn about Z where that packs better; on when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotate: Option<bool>,
+    /// The turn step while turning, degrees (1 to 90); 10 when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_deg: Option<f64>,
+    /// How long the nest searches for a fuller layout: `quick`, `normal` (when unset) or `thorough`. Counted work, not
+    /// time, so the same plate gives the same layout on any machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<ArrangeEffort>,
+    /// The ids of objects that stay where they are: the others are packed round them, and kept clear of them by the
+    /// same spacing (by object, the same clearance). An id the plate does not have is refused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keep: Vec<String>,
+    /// Whether the objects with no room are laid out on new, empty plates as well, in the same call
+    /// ([`crate::arrange::Arrangement::plates`]): each plate as an arrange of the objects still left lays it out. A
+    /// slice slices this plate only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new_plates: bool,
+}
+
+/// How long an arrange searches ([`ArrangeSpec::effort`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArrangeEffort {
+    Quick,
+    #[default]
+    Normal,
+    Thorough,
+}
+
+impl ArrangeEffort {
+    /// The work the nest may spend after its first layout, in sx-geom's units (the app's arrange efforts).
+    #[must_use]
+    pub fn budget(self) -> f64 {
+        match self {
+            Self::Quick => 1.5e6,
+            Self::Normal => 6.0e6,
+            Self::Thorough => 24.0e6,
+        }
+    }
 }
 
 /// Where the build items of a 3MF plate given without a transform go ([`PlateSpec::placement`]).
@@ -2184,7 +2222,19 @@ pub fn arrange_request(
     req: &mut SliceRequest,
     meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
 ) -> Result<crate::arrange::Arrangement> {
-    use crate::collide::check::{Certainty, PlateCheck};
+    arrange_request_with(req, meshes, &mut |_| {})
+}
+
+/// [`arrange_request`], handing `first` the plate's first layout once, before the plate check runs on it (by layer,
+/// the layout itself), so a host can show it at once. With [`ArrangeSpec::new_plates`] the objects with no room are
+/// then laid out on new, empty plates ([`crate::arrange::Arrangement::plates`]): each as an arrange of the objects
+/// still left lays it out, until none is left or no empty bed takes one.
+#[cfg(feature = "import")]
+pub fn arrange_request_with(
+    req: &mut SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+    first: &mut dyn FnMut(&crate::arrange::Arrangement),
+) -> Result<crate::arrange::Arrangement> {
     let held = std::cell::RefCell::new(std::collections::HashMap::<String, Arc<Mesh>>::new());
     let get = |id: &str| -> Result<Arc<Mesh>> {
         if let Some(m) = held.borrow().get(id) {
@@ -2194,17 +2244,76 @@ pub fn arrange_request(
         held.borrow_mut().insert(id.to_owned(), m.clone());
         Ok(m)
     };
-    let spec = req.plate.arrange.unwrap_or_default();
+    let spec = req.plate.arrange.clone().unwrap_or_default();
+    let mut left = req.clone();
+    let mut report = arrange_one(req, &get, first)?;
+    if !spec.new_plates {
+        return Ok(report);
+    }
+    let mut rest: Vec<String> = report
+        .not_fit
+        .iter()
+        .filter(|n| n.reason == "no_room")
+        .map(|n| n.id.clone())
+        .collect();
+    let next = ArrangeSpec {
+        keep: Vec::new(),
+        new_plates: false,
+        ..spec
+    };
+    while !rest.is_empty() {
+        left.plate.objects.retain(|o| rest.contains(&o.id));
+        left.plate.arrange = Some(next.clone());
+        let mut plate = left.clone();
+        let r = arrange_one(&mut plate, &get, &mut |_| {})?;
+        if r.objects.is_empty() {
+            break;
+        }
+        rest = r
+            .not_fit
+            .iter()
+            .filter(|n| n.reason == "no_room")
+            .map(|n| n.id.clone())
+            .collect();
+        report.plates.push(crate::arrange::PlateLayout {
+            objects: r.objects,
+            order: r.order,
+            check: r.check,
+        });
+    }
+    Ok(report)
+}
+
+/// One plate of [`arrange_request_with`].
+#[cfg(feature = "import")]
+fn arrange_one(
+    req: &mut SliceRequest,
+    get: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+    first: &mut dyn FnMut(&crate::arrange::Arrangement),
+) -> Result<crate::arrange::Arrangement> {
+    use crate::collide::check::{Certainty, PlateCheck};
+    let spec = req.plate.arrange.clone().unwrap_or_default();
+    if let Some(id) = spec
+        .keep
+        .iter()
+        .find(|id| !req.plate.objects.iter().any(|o| &o.id == *id))
+    {
+        return Err(Error::Config {
+            key: "plate.arrange.keep",
+            reason: format!("the plate has no object {id}"),
+        });
+    }
     req.plate.placement = PlatePlacement::Center;
     let (config, _) = request_config_checked(req)?;
-    let plate = build_plate(req, &get)?;
+    let plate = build_plate(req, get)?;
     let set = |req: &mut SliceRequest, transforms: &[[f32; 16]]| {
         for (o, t) in req.plate.objects.iter_mut().zip(transforms) {
             o.transform = Some(t.to_vec());
         }
     };
-    let (transforms, report) = crate::arrange::arrange(&plate, &config, spec, false, 0.0)?;
+    let (transforms, report) = crate::arrange::arrange(&plate, &config, &spec, false, 0.0)?;
     set(req, &transforms);
+    first(&report);
     if !config.print_by_object() || !report.not_fit.is_empty() {
         return Ok(report);
     }
@@ -2218,9 +2327,46 @@ pub fn arrange_request(
                 (n + 1, push.max(f64::from(c.push_mm)))
             })
     };
-    let check = check_plate(req, &get)?;
-    let (mut strikes, mut push) = sure(&check);
-    let mut best = (transforms, report, check, strikes);
+    // The check of the layout in `req`, and when it is sure of a strike, the check in another print order when that is
+    // sure of fewer: the check's own one-click new order when it clears every sure strike, and the order that prints the
+    // objects taller than the gantry rod after the low ones their gantry passes over.
+    let tall_last = crate::arrange::tall_last(&plate, &config);
+    let judge = |req: &SliceRequest| -> Result<(PlateCheck, usize, f64, Vec<String>)> {
+        let check = check_plate(req, get)?;
+        let (n, push) = sure(&check);
+        let sure_ones: Vec<u32> = check
+            .collisions
+            .iter()
+            .zip(&check.certainty)
+            .enumerate()
+            .filter(|(_, (c, s))| c.severity == crate::collide::Severity::Hit && **s == Certainty::Sure)
+            .filter_map(|(i, _)| u32::try_from(i).ok())
+            .collect();
+        let fix = check.fixes.iter().find_map(|f| {
+            (f.kind == crate::collide::report::FixKind::Reorder
+                && f.one_click
+                && !f.order.is_empty()
+                && sure_ones.iter().all(|i| f.clears.contains(i)))
+            .then(|| f.order.clone())
+        });
+        let mut best = (check, n, push, Vec::new());
+        if n == 0 {
+            return Ok(best);
+        }
+        let orders = fix.into_iter().chain(tall_last.clone());
+        for order in orders {
+            let mut again = req.clone();
+            in_order(&mut again.plate.objects, &order);
+            let other = check_plate(&again, get)?;
+            let (m, push_m) = sure(&other);
+            if m < best.1 {
+                best = (other, m, push_m, order);
+            }
+        }
+        Ok(best)
+    };
+    let (check, mut strikes, mut push, order) = judge(req)?;
+    let mut best = (transforms, report, check, strikes, order);
     let lanes = crate::arrange::has_tall(&plate, &config);
     let mut more = 0.0;
     for _ in 0..ARRANGE_RETRIES {
@@ -2228,21 +2374,32 @@ pub fn arrange_request(
             break;
         }
         more += push.max(1.0) + 1.0;
-        let (t, r) = crate::arrange::arrange(&plate, &config, spec, lanes, more)?;
+        let (t, r) = crate::arrange::arrange(&plate, &config, &spec, lanes, more)?;
         if !r.not_fit.is_empty() {
             break;
         }
         set(req, &t);
-        let c = check_plate(req, &get)?;
-        (strikes, push) = sure(&c);
+        let (c, n, p, order) = judge(req)?;
+        (strikes, push) = (n, p);
         if strikes < best.3 {
-            best = (t, r, c, strikes);
+            best = (t, r, c, strikes, order);
         }
     }
-    let (transforms, mut report, check, _) = best;
+    let (transforms, mut report, check, _, order) = best;
     set(req, &transforms);
+    if !order.is_empty() {
+        in_order(&mut req.plate.objects, &order);
+    }
+    report.order = order;
     report.check = Some(check);
     Ok(report)
+}
+
+/// `objects` in the print order `order` (object ids); objects it does not name keep their places after it.
+#[cfg(feature = "import")]
+fn in_order(objects: &mut [ObjectSpec], order: &[String]) {
+    let rank = |o: &ObjectSpec| order.iter().position(|id| id == &o.id).unwrap_or(order.len());
+    objects.sort_by_key(rank);
 }
 
 /// How many more layouts [`arrange_request`] tries while the plate check is sure of a strike.
@@ -2998,10 +3155,14 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "placement": { "enum": ["center", "keep", "arrange"], "default": "center", "description": "Where a 3MF plate given without a transform goes. center: the plate centered on the bed as a whole (a slicer's project keeps its own positions). keep: each build item where the file's transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area (config printable_area, else the bed from 0, 0) is refused, naming it and the overhang. A mesh file without a transform (STL, OBJ) is centered under either. arrange: every object of the plate (each build item of a 3MF plate) packed on the bed before the slice, its transform kept but for a turn about Z and its place: off the printer's keep-out zones (bed_exclude_area, head_wrap_detect_zone), the extruder clearance apart printing by object, the spacing apart by layer; the result's arrange gives the layout, and a plate whose objects do not all fit is refused, naming them." },
         "arrange": {
           "type": "object",
-          "description": "With placement arrange: the spacing between objects and from the bed edge (spacingMm, 6 by default; by object the extruder clearance applies whatever it says), and whether objects may turn about Z (rotate, true by default).",
+          "description": "With placement arrange: the spacing between objects and from the bed edge (spacingMm, 6 by default; by object the extruder clearance applies whatever it says), whether objects may turn about Z (rotate, true by default) and by what step (stepDeg, 10 by default), how long the search runs (effort: quick, normal by default, or thorough; counted work, so the same plate gives the same layout anywhere), and the ids of objects that stay where they are, the others packed round them (keep). newPlates: the objects with no room are laid out on new, empty plates too (the result's plates), each as an arrange of the objects still left would lay it out; a slice slices this plate only.",
           "properties": {
             "spacingMm": { "type": "number", "minimum": 0 },
-            "rotate": { "type": "boolean" }
+            "rotate": { "type": "boolean" },
+            "stepDeg": { "type": "number", "minimum": 1, "maximum": 90 },
+            "effort": { "enum": ["quick", "normal", "thorough"] },
+            "keep": { "type": "array", "items": { "type": "string" } },
+            "newPlates": { "type": "boolean" }
           }
         },
         "objects": {
