@@ -722,6 +722,17 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dev-list li.dev-partner > .min0 { flex: 1 1 0; min-width: 0; }
 .dev-partner .dev-rights { flex-basis: 100%; display: grid; gap: 8px; padding-left: 28px; }
 .dev-partner .dev-rights .sx-btn { margin-left: 0; }
+/* Hit areas past the visible controls (UI spec 2 and 9): the switches reach 28 px on desktop, and at phone width the
+   switches and Revoke reach 44 px by invisible padding, counted from inside their 1 px border. A select opens only
+   from its own box, so the key select grows to 44 px there. Each switch row is at least 44 px so neighbors never overlap. */
+.dev-partner .sx-btn { position: relative; }
+.dev-partner .sx-switch::before { content: ''; position: absolute; inset: -5px -1px; }
+@media (pointer: coarse), (max-width: 700px) {
+  .dev-partner .sx-switchrow { min-height: var(--h-lg); align-items: center; }
+  .dev-partner .sx-switch::before { inset: -13px -5px; }
+  .dev-partner .sx-btn::before { content: ''; position: absolute; inset: -8px -1px; }
+  .dev-partner .sx-select { height: var(--h-lg); }
+}
 .ptk-made { display: grid; gap: 8px; border-radius: var(--r-sm); padding: 10px 12px; background: var(--ink-2); font-size: var(--fs-md); }
 .ptk-made p { margin: 0; display: flex; gap: 6px; align-items: flex-start; }
 .ptk-made .sx-ic { color: var(--green); flex: none; }
