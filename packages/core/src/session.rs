@@ -2939,6 +2939,31 @@ impl SliceSession {
         self.collide.as_deref()
     }
 
+    /// Ends a run on a session a host keeps for later runs (`shells::Cache::end_run`), on its followers and on the
+    /// whole plate session of its copies too.
+    pub(crate) fn end_kept_run(&self) {
+        self.cache.end_run();
+        for s in &self.followers {
+            s.end_kept_run();
+        }
+        if let Some(w) = &self.whole_plate
+            && let Some(Some(s)) = w.session.get()
+        {
+            s.end_kept_run();
+        }
+    }
+
+    /// How many entries the shell rule's maps keyed with settings tags hold, over the followers too.
+    #[cfg(test)]
+    pub(crate) fn cache_tagged_entries(&self) -> usize {
+        self.cache.tagged_entries()
+            + self
+                .followers
+                .iter()
+                .map(Self::cache_tagged_entries)
+                .sum::<usize>()
+    }
+
     /// Marks the session as sliced once, by a one-shot run (see [`Self::is_one_shot`]).
     pub(crate) fn set_one_shot(&mut self) {
         self.one_shot = true;

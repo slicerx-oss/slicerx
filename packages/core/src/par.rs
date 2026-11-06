@@ -197,6 +197,17 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> Memo<K, V> {
 }
 
 impl<K: std::hash::Hash + Eq, V> Memo<K, V> {
+    /// Keeps the worked out entries whose key `keep` accepts. Entries a job is working out stay.
+    pub(crate) fn retain(&self, mut keep: impl FnMut(&K) -> bool) {
+        self.lock().retain(|k, v| v.is_none() || keep(k));
+    }
+
+    /// How many entries are worked out.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.lock().values().filter(|v| v.is_some()).count()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<K, Option<V>>> {
         self.map.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }

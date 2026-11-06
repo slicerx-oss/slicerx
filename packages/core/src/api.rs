@@ -2782,6 +2782,9 @@ fn run_prepared_timed(
             }
         }
     }
+    if let Held::Kept(p) = &held {
+        p.session.end_kept_run();
+    }
     report.warnings.extend(overlap_notes(&overlaps, &overlap_objects));
     let hardness = crate::preflight::nozzle_hardness(&config, &report.stats.filament_mm);
     for i in config_issues.iter().chain(&hardness) {
@@ -3529,6 +3532,39 @@ mod tests {
                 .take_while(|(s, _)| *s == Stage::Layers)
                 .all(|(_, f)| *f > LAYERS_SESSION)
         );
+    }
+
+    /// A speed is in the settings tag of the shell rule's entries, so each new value of it adds a set of them to a kept
+    /// session. Only the last two runs' tags stay, and every run still writes a fresh session's bytes.
+    #[test]
+    fn a_kept_sessions_shell_entries_stay_bounded_over_speed_edits() {
+        let mesh = cube();
+        let meshes = |_: &str| Ok(mesh.clone());
+        let req_at = |speed: u32| -> SliceRequest {
+            serde_json::from_value(serde_json::json!({
+                "plate": {"objects": [{"mesh": 1}]},
+                "config": {"outer_wall_speed": [speed], "top_shell_layers": 4, "bottom_shell_layers": 4},
+            }))
+            .unwrap()
+        };
+        let prepared = prepare(&req_at(50), &meshes).unwrap();
+        let mut after = Vec::new();
+        for speed in [50, 40, 50, 30, 35, 45, 25, 30] {
+            let req = req_at(speed);
+            let kept = run_prepared(&req, &prepared, &NoProgress).unwrap();
+            let fresh = run_request(&req, &meshes).unwrap();
+            assert!(
+                kept.gcode == fresh.gcode && kept.preview == fresh.preview,
+                "outer wall speed {speed}: a kept session gives other bytes"
+            );
+            after.push(prepared.session.cache_tagged_entries());
+        }
+        let one = after[0];
+        assert!(one > 0, "the cube's layers read the shell rule's entries");
+        // 50, 40 and back to 50: two values' entries, the same as after 40.
+        assert_eq!(after[2], after[1], "{after:?}");
+        // Every later run holds at most two values' entries.
+        assert!(after.iter().all(|&n| n <= 2 * one), "{after:?}");
     }
 
     #[test]
