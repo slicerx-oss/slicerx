@@ -220,7 +220,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Unit: mm
 - Default: 0.2
 - Recommended range: 0.08 to 0.8
-- Orca limits: 0 to none
+- Orca limits: 0.01 to none
 - Tier: Advanced, quality
 - Changing it redoes: layers (the whole slice)
 - Easy mode: Set by the Detail control.
@@ -284,7 +284,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 - Type: number
 - Default: 1
-- Recommended range: 0 to 2
+- Recommended range: 0.01 to 2
 - Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
@@ -435,7 +435,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Unit: mm
 - Default: 0.2
 - Recommended range: 0.04 to 0.8
-- Orca limits: 0 to none
+- Orca limits: 0.01 to none
 - Tier: Simple, quality
 - Changing it redoes: layers (the whole slice)
 - Easy mode: Set by the Detail control. 0.28 to 0.08 mm on a 0.4 mm nozzle, scaled with the nozzle, kept between 0.2 and 0.75 of its diameter.
