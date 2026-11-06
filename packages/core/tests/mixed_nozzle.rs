@@ -443,31 +443,22 @@ fn the_slice_report_names_each_objects_nozzle_when_the_sizes_differ() {
 }
 
 #[test]
-fn an_automatic_map_with_nozzles_of_different_sizes_prints_with_the_first_nozzle_and_warns() {
-    // The automatic map is picked after the objects are sliced: every object prints with the first nozzle's
-    // settings, and the slice says how to print each with its own.
+fn an_automatic_map_with_nozzles_of_different_sizes_is_refused() {
+    // The automatic map is picked after the objects are sliced, but each object's nozzle must be known before: the
+    // plate is refused, naming both sizes and how to set the map.
     let c = h2d(["0.4", "0.6"], None);
-    let run = slice(
-        &c,
-        vec![(cube(1), 70.0, Value::Null), (cube(2), 150.0, Value::Null)],
-    )
-    .unwrap();
-    let p = read(&gcode(&run));
-    for side in ["left", "right"] {
-        assert_eq!(p[side].outer_widths, BTreeSet::from([420]), "{side} walls");
-        assert_eq!(p[side].zs(), tops(0.2, 0.2, 12.0), "{side} layers");
-    }
-    let warned: Vec<&str> = run
-        .report
-        .warnings
-        .iter()
-        .map(|w| w.message.as_str())
-        .filter(|m| m.starts_with("Set the filament map by hand"))
-        .collect();
-    assert_eq!(warned.len(), 1, "{:?}", run.report.warnings);
-    for w in ["filament_map", "0.4 mm", "0.6 mm"] {
-        assert!(warned[0].contains(w), "{} should say {w}", warned[0]);
-    }
+    expect_refusal(
+        slice(
+            &c,
+            vec![(cube(1), 70.0, Value::Null), (cube(2), 150.0, Value::Null)],
+        ),
+        "filament_map",
+        &[
+            "left 0.4 mm, right 0.6 mm",
+            "pick a nozzle for each object",
+            "filament map by hand",
+        ],
+    );
     // Nozzles of one size keep the automatic map, with no warning.
     let same = h2d(["0.4", "0.4"], None);
     let run = slice(

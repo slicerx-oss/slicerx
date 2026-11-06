@@ -191,33 +191,29 @@ fn slice_prints_each_object_with_its_nozzles_widths_and_layers() {
 }
 
 #[test]
-fn an_automatic_map_on_nozzles_of_different_sizes_slices_with_the_first_nozzle_and_warns() {
+fn an_automatic_map_on_nozzles_of_different_sizes_is_refused() {
     let dir = temp("auto");
     let mut c = changer();
     c["printer_model"] = serde_json::json!("Bambu Lab H2D");
     c["single_extruder_multi_material"] = serde_json::json!(true);
     c["filament_map_mode"] = serde_json::json!("Auto For Flush");
     let req = request(&dir.0, &c);
-    let out = dir.0.join("out");
-    let o = sx()
-        .args(["slice", "--request"])
-        .arg(&req)
-        .arg("--out-dir")
-        .arg(&out)
-        .output()
-        .unwrap();
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let p = read(&std::fs::read_to_string(out.join("slice.gcode")).unwrap());
-    assert_eq!(p["left"].0, BTreeSet::from([450]));
-    assert_eq!(p["right"].0, BTreeSet::from([450]));
-    let report: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert!(
-        report["warnings"].as_array().unwrap().iter().any(|w| w["message"]
-            .as_str()
-            .is_some_and(|m| m.starts_with("Set the filament map by hand"))),
-        "{}",
-        report["warnings"]
-    );
+    for cmd in ["slice", "check"] {
+        let mut run = sx();
+        run.args([cmd, "--request"]).arg(&req);
+        if cmd == "slice" {
+            run.arg("--out-dir").arg(dir.0.join("out"));
+        }
+        let o = run.output().unwrap();
+        assert!(!o.status.success(), "{cmd} should refuse");
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(
+            err.contains("filament_map")
+                && err.contains("left 0.4 mm, right 0.6 mm")
+                && err.contains("filament map by hand"),
+            "{cmd}: {err}"
+        );
+    }
     // With the map set by hand it checks, and prints each object with its own nozzle.
     c["filament_map_mode"] = serde_json::json!("Manual");
     c["filament_map"] = serde_json::json!([1, 2]);
