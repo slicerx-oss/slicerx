@@ -221,6 +221,19 @@ pub fn homes_axes(line: &str) -> bool {
     command_word(&command_text(line)).is_some_and(|(code, _)| code == "G28" || code.starts_with("G28."))
 }
 
+/// The command of one line as firmware reads it (as [`moves_axes`] reads it): `G1` for `g01 x1`,
+/// `RESUME` for `n 10 resume`. `None` for a line with no command (empty, or only a comment).
+pub fn command_name(line: &str) -> Option<String> {
+    command_word(&command_text(line)).map(|(code, _)| code)
+}
+
+/// Whether one line is a filament change (`M600`), however it is written. The firmware parks the head
+/// for the swap and waits for the person, so a host may send it while a print runs or is paused; on an
+/// idle or finished printer it still moves the head like any other line that moves.
+pub fn changes_filament(line: &str) -> bool {
+    command_name(line).as_deref() == Some("M600")
+}
+
 /// G-codes that cannot move the head: a dwell, millimeter units and absolute positioning. `G92` is
 /// read on its own: it is safe only when it sets the extruder alone.
 const STILL_G: &[&str] = &["G4", "G21", "G90"];
@@ -502,15 +515,34 @@ mod tests {
 
     #[test]
     fn a_filament_change_line_reads_as_one_however_it_is_written() {
-        for line in ["M600", "m600", "M600 B1", "M 600", "N 5 M600", "M0600 ; swap", "n10m600"] {
+        for line in [
+            "M600",
+            "m600",
+            "M600 B1",
+            "M 600",
+            "N 5 M600",
+            "M0600 ; swap",
+            "n10m600",
+        ] {
             assert!(changes_filament(line), "{line}");
             assert!(moves_axes(line), "{line}");
         }
-        for line in ["M60", "M6000", "M601", "M701", "LOAD_FILAMENT", "; M600", "M117 M600"] {
+        for line in [
+            "M60",
+            "M6000",
+            "M601",
+            "M701",
+            "LOAD_FILAMENT",
+            "; M600",
+            "M117 M600",
+        ] {
             assert!(!changes_filament(line), "{line}");
         }
         assert_eq!(command_name("n 10 resume"), Some("RESUME".to_owned()));
-        assert_eq!(command_name("exclude_object name=a"), Some("EXCLUDE_OBJECT".to_owned()));
+        assert_eq!(
+            command_name("exclude_object name=a"),
+            Some("EXCLUDE_OBJECT".to_owned())
+        );
         assert_eq!(command_name("g01 x1"), Some("G1".to_owned()));
         assert_eq!(command_name("; nothing"), None);
     }

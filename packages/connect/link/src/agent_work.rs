@@ -52,6 +52,15 @@ pub(crate) enum Work {
         /// ([`Waiting::answer_plate`]); the home refuses if the epoch moved before it runs.
         plate_epoch: Option<u64>,
     },
+    /// A filament change (`M600`), checked when the person approves: while a print runs or is paused
+    /// the firmware parks the head, so it goes; on an idle or finished printer it follows the plate rule.
+    /// Its card action is `printer.filament_change`.
+    FilamentChange {
+        printer: String,
+        /// The bed epoch when the person said on the card that the plate is clear, for an idle or
+        /// finished printer ([`Waiting::answer_plate`]).
+        plate_epoch: Option<u64>,
+    },
     /// A change to a running print, checked against the safe limits when it runs.
     Adjust {
         printer: String,
@@ -152,6 +161,10 @@ impl Work {
                 printer,
                 plate_epoch: None,
             }),
+            Some("filament_change") => Ok(Work::FilamentChange {
+                printer,
+                plate_epoch: None,
+            }),
             Some("gcode") => {
                 let line = str_arg(p, "line")?;
                 // One G-code command, short enough that every card shows it whole: a line break
@@ -186,7 +199,7 @@ impl Work {
             }),
             _ => Err(RpcError::new(
                 "bad_request",
-                "work.kind is print, resume, gcode, home, adjust, skip, slot or plugin",
+                "work.kind is print, resume, gcode, home, filament_change, adjust, skip, slot or plugin",
             )),
         }
     }
@@ -210,6 +223,7 @@ impl Work {
             | Work::Resume { printer }
             | Work::Gcode { printer, .. }
             | Work::Home { printer, .. }
+            | Work::FilamentChange { printer, .. }
             | Work::Adjust { printer, .. }
             | Work::Pause { printer }
             | Work::Cancel { printer }
@@ -231,6 +245,10 @@ impl Work {
                 "opts": opts,
             }),
             Work::Resume { printer } => json!({ "kind": "resume", "printerId": printer }),
+            // A raw M600 is a filament change, which goes mid-print: the card words it as one.
+            Work::Gcode { printer, line, .. } if sx_connect::changes_filament(line) => {
+                json!({ "kind": "gcode", "printerId": printer, "line": line, "filamentChange": true })
+            }
             // `motion`: the line can move the head, so the card asks about the plate (the motion guard).
             Work::Gcode { printer, line, .. } if sx_connect::moves_axes(line) => {
                 json!({ "kind": "gcode", "printerId": printer, "line": line, "motion": true })
@@ -239,6 +257,9 @@ impl Work {
                 json!({ "kind": "gcode", "printerId": printer, "line": line })
             }
             Work::Home { printer, .. } => json!({ "kind": "home", "printerId": printer }),
+            Work::FilamentChange { printer, .. } => {
+                json!({ "kind": "filament_change", "printerId": printer })
+            }
             Work::Adjust { printer, change } => {
                 json!({ "kind": "adjust", "printerId": printer, "change": change })
             }
@@ -294,6 +315,12 @@ impl Work {
             // mints, as for the app's Home button.
             Work::Home { printer, .. } => vec![(
                 "printer.home".into(),
+                printer.clone(),
+                hash(&json!({ "printerId": printer })),
+            )],
+            // Its own action, as for a home: the hub checks this token, then sends M600 with one it mints.
+            Work::FilamentChange { printer, .. } => vec![(
+                "printer.filament_change".into(),
                 printer.clone(),
                 hash(&json!({ "printerId": printer })),
             )],
@@ -404,6 +431,7 @@ impl Work {
             Work::Resume { .. } => "resume",
             Work::Gcode { .. } => "gcode",
             Work::Home { .. } => "home",
+            Work::FilamentChange { .. } => "filament_change",
             Work::Adjust { .. } => "adjust",
             Work::Pause { .. } => "pause",
             Work::Cancel { .. } => "cancel",
@@ -509,7 +537,7 @@ impl Waiting {
     pub(crate) fn answer_plate(&self, request_id: &str, epoch_of: impl Fn(&str) -> u64) {
         match lock(&self.0).get_mut(request_id) {
             Some(Held {
-                work: Work::Home { printer, plate_epoch },
+                work: Work::Home { printer, plate_epoch } | Work::FilamentChange { printer, plate_epoch },
                 ..
             }) => *plate_epoch = Some(epoch_of(printer)),
             Some(Held {
@@ -612,6 +640,32 @@ async fn execute(
                 .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
             crate::device::home_checked(b, &printer, plate_epoch, HomeLine::Mint).await
         }
+        // As for a home: the person's `printer.filament_change` token is checked and used up here, and the
+        // hub sends M600 under one it mints, by the rules for the printer's state when it runs.
+        Work::FilamentChange { printer, plate_epoch } => {
+            let broker = b
+                .broker
+                .as_ref()
+                .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
+            broker
+                .verify(
+                    &crate::hub_rpc::to_permit(token),
+                    "printer.filament_change",
+                    &printer,
+                    &sx_permit::hash_params(&json!({ "printerId": printer })),
+                )
+                .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
+            crate::device::filament_change_checked(
+                b,
+                &printer,
+                plate_epoch,
+                HomeLine::Minted {
+                    line: "M600",
+                    title: "Change the filament",
+                },
+            )
+            .await
+        }
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),
@@ -627,6 +681,28 @@ async fn execute(
                 .map(|_| ())
         }
     }
+}
+
+/// The card's work summary with the hub's facts about the printer now: for a filament change, whether
+/// a print runs or is paused (`printing`), so the card asks about the plate only when it does not.
+pub(crate) fn with_printer_facts(b: &Bridge, mut summary: Value) -> Value {
+    let field = |k: &str| summary.get(k).cloned().unwrap_or(Value::Null);
+    let swap = field("kind") == "filament_change" || field("filamentChange") == true;
+    if let (true, Some(printer)) = (swap, field("printerId").as_str().map(str::to_owned)) {
+        let state = b
+            .hub
+            .observed(&printer)
+            .map(|o| o.0)
+            .or_else(|| b.hub.state_of(&printer));
+        let printing = matches!(
+            state,
+            Some(sx_connect::PrinterState::Printing | sx_connect::PrinterState::Paused)
+        );
+        if let Some(o) = summary.as_object_mut() {
+            o.insert("printing".into(), json!(printing));
+        }
+    }
+    summary
 }
 
 /// `approvals.register` from an agent: the work rides along as `work`.
@@ -740,9 +816,7 @@ mod tests {
         assert_eq!(raw.summary()["filamentChange"], true);
         assert_eq!(raw.summary().get("motion"), None);
         let waiting = Waiting::default();
-        waiting
-            .hold(&card("f-1", &w), 0, w, None, |_| true)
-            .unwrap();
+        waiting.hold(&card("f-1", &w), 0, w, None, |_| true).unwrap();
         waiting.answer_plate("f-1", |_| 4);
         match waiting.take("f-1") {
             Some((_, Work::FilamentChange { plate_epoch, .. })) => assert_eq!(plate_epoch, Some(4)),

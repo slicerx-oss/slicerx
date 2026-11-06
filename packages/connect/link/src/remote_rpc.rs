@@ -835,6 +835,8 @@ fn work_key(summary: &Value) -> &'static str {
         // A skip, under its own key for the same reason.
         Some("skip") => "objectWork",
         Some("home") => "homeWork",
+        // A filament change moves the head: a phone only denies it, as a home.
+        Some("filament_change") => "filamentChangeWork",
         _ => "work",
     }
 }

@@ -61,6 +61,7 @@ export const SIDE_EFFECT_ACTIONS = [
   'printer.cancel',
   'printer.gcode',
   'printer.home',
+  'printer.filament_change',
   'printer.adjust',
   'printer.skip',
   'plugin.call',
@@ -81,6 +82,8 @@ export type SideEffectAction = (typeof SIDE_EFFECT_ACTIONS)[number]
  * - printer.pause | resume | cancel: `{ printerId }`
  * - printer.gcode: `{ printerId, line }`
  * - printer.home: `{ printerId }`, a home the hub runs under its home rules (printer state and plate)
+ * - printer.filament_change: `{ printerId }`, an M600 the hub sends while a print runs or is paused, or under the
+ *   plate rule on an idle or finished printer
  * - printer.adjust: `{ printerId, change }`, the change to a running print as the hub checks it
  *   or `{ printerId, slot }`, a SlotSetting written to an AMS slot (approved in the app only; an agent or
  *   partner app asks with slot work, which the hub runs)
