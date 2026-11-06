@@ -649,6 +649,11 @@ fn decidable(b: &Bridge, id: &str) -> bool {
     shown_to_phones(b.agent_work.kind(id)) || b.hub.item_for_request(id).is_some()
 }
 
+/// Whether a paired phone lists this card, so an "approval waiting" push for it opens to something.
+pub(crate) fn phone_can_show(b: &Bridge, id: &str) -> bool {
+    decidable(b, id)
+}
+
 /// Whether a card holding agent work of this kind goes to phones.
 fn shown_to_phones(kind: Option<&str>) -> bool {
     kind.is_some_and(|k| !matches!(k, "plugin" | "slot"))
