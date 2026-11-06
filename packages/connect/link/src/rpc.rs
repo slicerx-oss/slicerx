@@ -319,6 +319,30 @@ impl CardRaiser {
     }
 }
 
+/// Forgets who raised each card, and the partner each names, once the broker no longer holds the card
+/// open (decided or expired), so both maps keep only cards still waiting.
+pub(crate) fn forget_closed_cards(
+    broker: &sx_permit::ApprovalBroker,
+    raisers: &mut HashMap<String, CardRaiser>,
+    partners: &mut HashMap<String, String>,
+) {
+    raisers.retain(|id, _| broker.is_open(id));
+    partners.retain(|id, _| broker.is_open(id));
+}
+
+impl Bridge {
+    /// [`forget_closed_cards`] on this hub's maps, after a decision and on every watch tick (expiry).
+    pub(crate) fn forget_closed_cards(&self) {
+        if let Some(broker) = &self.broker {
+            forget_closed_cards(
+                broker,
+                &mut crate::hub::lock(&self.card_raisers),
+                &mut crate::hub::lock(&self.card_partners),
+            );
+        }
+    }
+}
+
 /// Error body sent to the client: `{ code, message }`, codes from `PrinterErrorCode` plus
 /// `bad_request`, `locked` and `unauthorized`.
 #[derive(Debug, Clone)]
@@ -2912,5 +2936,64 @@ mod place_tests {
             "id": "p", "name": "p", "plugin": "octoprint", "host": "x.octoeverywhere.com", "tunnel": "octoeverywhere",
         }));
         assert!(unknown.is_err());
+    }
+}
+
+#[cfg(test)]
+mod card_map_tests {
+    use super::*;
+
+    fn card(id: &str, expires_at: &str) -> sx_permit::ApprovalRequest {
+        sx_permit::ApprovalRequest {
+            id: id.to_owned(),
+            session_id: "s".into(),
+            tool: "printer.pause".into(),
+            permission: sx_permit::PermissionClass::Start,
+            title: String::new(),
+            lines: vec![],
+            printer_id: Some("bay-1".into()),
+            params_hash: sx_permit::hash_params(&json!({})),
+            actions: vec![sx_permit::ApprovalAction {
+                action: "printer.pause".into(),
+                target: "bay-1".into(),
+                params_hash: sx_permit::hash_params(&json!({ "printerId": "bay-1" })),
+            }],
+            expires_at: expires_at.into(),
+            origin: None,
+        }
+    }
+
+    #[test]
+    fn the_hub_forgets_who_raised_a_card_once_it_is_decided_or_expires() {
+        let broker = sx_permit::ApprovalBroker::new().unwrap();
+        let mut raisers = HashMap::new();
+        let mut partners = HashMap::new();
+        for (id, expires_at) in [
+            ("granted", "2099-01-01T00:00:00.000Z"),
+            ("denied", "2099-01-01T00:00:00.000Z"),
+            ("expired", "2000-01-01T00:00:00.000Z"),
+            ("waiting", "2099-01-01T00:00:00.000Z"),
+        ] {
+            broker.register(card(id, expires_at)).unwrap();
+            raisers.insert(
+                id.to_owned(),
+                CardRaiser {
+                    role: RaiserRole::Partner,
+                    id: Some("key".into()),
+                },
+            );
+            partners.insert(id.to_owned(), "Example Phone".to_owned());
+        }
+        broker.grant("granted").unwrap();
+        broker.deny("denied").unwrap();
+        forget_closed_cards(&broker, &mut raisers, &mut partners);
+        assert_eq!(raisers.keys().collect::<Vec<_>>(), ["waiting"], "{raisers:?}");
+        assert_eq!(partners.keys().collect::<Vec<_>>(), ["waiting"], "{partners:?}");
+        broker.deny("waiting").unwrap();
+        forget_closed_cards(&broker, &mut raisers, &mut partners);
+        assert!(
+            raisers.is_empty() && partners.is_empty(),
+            "{raisers:?} {partners:?}"
+        );
     }
 }
