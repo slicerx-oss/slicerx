@@ -68,7 +68,9 @@ export function PrinterSettingsDialog({ printer }: { printer: { vendor: string; 
   const overrides = useApp((s) => s.overrides)
   const layout = useLayout()
   const mode = effectiveMode(useApp((s) => s.settingsMode), layout)
-  const levels = useMemo(() => visibleLevels(mode, layout), [mode, layout])
+  // No printer setting is at the Simple level, so a dialog opened in Simple (always on a phone, or from Search on a
+  // wider window) lists the Advanced ones rather than none.
+  const levels = useMemo(() => visibleLevels(mode === 'simple' ? 'advanced' : mode, layout), [mode, layout])
   const [tab, setTab] = useState('basic')
   const [query, setQuery] = useState('')
   const focus = useApp((s) => s.settingFocus)

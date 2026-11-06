@@ -54,6 +54,42 @@ test.describe('the machine card in the sheet', () => {
   })
 })
 
+test.describe('Printer settings on a phone', () => {
+  // A phone is Simple, so the printer list offers no Printer settings; Search still opens it, as on a wider window.
+  test('Search opens Printer settings, and every tab lists its settings', async ({ page }) => {
+    await sidebarAs(page, { mode: 'simple', printer: BAY_1 })
+    await page.getByTestId('slice-machine-printer').click()
+    await expect(page.getByTestId('slice-machine-printer-option').first()).toBeVisible()
+    await expect(page.getByTestId('slice-machine-printer-settings')).toHaveCount(0)
+    await dismiss(page)
+    await closeSheet(page)
+    await page.getByTestId('phone-search').click()
+    await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
+    await page.keyboard.type('Printer settings')
+    await page.locator('.sx-palette-item', { hasText: /^Printer settings/ }).first().click()
+    const dialog = page.getByRole('dialog', { name: /Printer settings/ })
+    await expect(dialog).toBeVisible()
+    const tabs = dialog.getByRole('radiogroup', { name: 'Printer settings tab' })
+    for (const name of ['Basic information', 'Extruder and retraction', 'Motion ability', 'Multimaterial', 'Cooling']) {
+      await tabs.getByRole('radio', { name }).click()
+      await expect(tabs.getByRole('radio', { name })).toBeChecked()
+      await expect(dialog.locator('ul.expert > li').first()).toBeVisible()
+      await expect(dialog.getByText('No printer setting matches.')).toHaveCount(0)
+    }
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    // A printer setting found by name opens the dialog on it.
+    await page.getByTestId('phone-search').click()
+    await page.keyboard.type('Retraction length')
+    await page.locator('.sx-palette-item', { hasText: 'Printer setting' }).first().click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('#ps-retraction_length')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    await sidebarDone(page)
+  })
+})
+
 test.describe('the Objects card in the sheet', () => {
   test('a row is one 44 px line with the name, the parts and their colors; print always shows and lock waits for the desktop', async ({ page }) => {
     await objectRowIsCompact(page, true)
