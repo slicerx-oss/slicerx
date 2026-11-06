@@ -55,7 +55,9 @@ function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}): Re
     out['filament_nozzle_map'] = currentHotends(meta, pickedMap(s), config, slots, [...usedSlots(s)]).map((t) => String(t - 1))
     out['filament_map_mode'] = meta?.settings.hotendMap ? 'Manual' : 'Auto For Flush'
   }
-  return { ...out, ...extra }
+  // Values other slicers refuse from a project (an automatic filament ironing speed, an empty post-processing list) are
+  // left out, so the file opens in them without a settings error and reopens here the same.
+  return api.withoutRefusedValues({ ...out, ...extra })
 }
 
 /** The settings of a .gcode.3mf, which a Bambu Lab printer, Bambu Studio and OrcaSlicer read: in their values. */

@@ -8,7 +8,7 @@
 import type { SettingValue } from '@slicerx/contracts'
 import type { VaultMark } from '@slicerx/contracts/sx3mf-marks'
 import { productName } from '@slicerx/contracts'
-import { orcaReadable, settingDef, toOrca } from '@slicerx/settings'
+import { orcaReadable, settingDef, toOrca, withoutRefusedValues } from '@slicerx/settings'
 import { entryData, gcodeLabelIds, projectFiles } from '@slicerx/threemf'
 import type { SliceSummary } from './slicer'
 import { writeZip } from './zip'
@@ -24,7 +24,7 @@ function orcaSettings(config: Readonly<Record<string, SettingValue>>): Record<st
     const def = settingDef(k)
     out[k] = def ? toOrca(def, v) : v
   }
-  return orcaReadable(out)
+  return orcaReadable(withoutRefusedValues(out))
 }
 
 /**
