@@ -13,7 +13,7 @@ import { areaOrigin } from '@slicerx/threemf/area'
 import { hotendCount, hotendTypes, tpu285Slot, TPU285 } from '@slicerx/settings/hotends'
 import { loadFlushData } from '@slicerx/settings/flush'
 import { FLUSH_DEFAULTS } from '@slicerx/settings/flush-defaults'
-import { defaultSlotColors, normalizeColor, objectPaletteColors, plateTowerIndexes, projectFlushFrom, projectSlotVendors, projectTowerFrom, slotSettings } from '@slicerx/settings/slot-settings'
+import { defaultSlotColors, normalizeColor, objectPaletteColors, plateTowerIndexes, projectFlushFrom, projectSlotTypes, projectSlotVendors, projectTowerFrom, slotSettings } from '@slicerx/settings/slot-settings'
 import { carryOver, GCODE_TEXT_KEYS, layerConfig, matchProjectPrinter, nearestGoalBy, printerName, printerProfile, projectPrinterChanges, projectPrinterOffer, projectSettingChanges, sliceBedType, stockLayer, type ProjectPrinterMatch } from '@slicerx/settings'
 import type { ProfileCatalog } from './profiles'
 import { projectPrinterReport, type ProjectPrinterReport, type ProjectRead } from './projectfile'
@@ -74,12 +74,13 @@ function route(read: ProjectRead, profiles: ProfileCatalog, names: readonly stri
 }
 
 /**
- * The slots a fresh plate gives a project's filaments (resolveSlots and slotsOf in the app): PLA, one, or one per slot
- * up to the last its parts print with.
+ * The slots a fresh plate gives a project's filaments (resolveSlots and slotsOf in the app): one, or one per slot up to
+ * the last its parts print with, each of the type the file names for it (PLA where it names none).
  */
 function plateSlots(read: ProjectRead): { type: string }[] {
   const n = read.opened?.slots ?? 1
-  return Array.from({ length: n >= 2 ? n : 1 }, () => ({ type: 'PLA' }))
+  const types = read.opened ? projectSlotTypes(read.opened.settings) : []
+  return Array.from({ length: n >= 2 ? n : 1 }, (_, i) => ({ type: types[i] || 'PLA' }))
 }
 
 /**
@@ -161,7 +162,7 @@ export async function openProject(read: ProjectRead, profiles: ProfileCatalog, n
 /**
  * The filament keys of a plate of two or more slots, as the app's slot config gives them on a fresh plate (slots.ts
  * resolveSlots, slot-config.ts): each slot's color from the file (where it names none, its parts' color on open, else a
- * default), PLA, the file's filament maker; the flush matrix, the file's own while it has one for those filaments; and for another
+ * default), the type the file names for it (PLA where it names none), the file's filament maker; the flush matrix, the file's own while it has one for those filaments; and for another
  * slicer's project with
  * project_settings.config, the tower spot it saved for the plate (project-kept.ts keepProjectFlushAndTower).
  * `opensOn` is the settings of the printer the project opened on, whose bed the file's spot is read against.
@@ -178,7 +179,8 @@ async function plateSlotKeys(read: ProjectRead, cfg: Record<string, SettingValue
   const partColor = (i: number) => (used.includes(i + 1) ? (colors.length ? palette[0] : palette[i] ?? palette[0]) : undefined)
   // Each slot's maker, the file's own, as the app sends it while the slot holds the file's filament.
   const vendors = projectSlotVendors(settings)
-  const list = Array.from({ length: slots }, (_, i) => ({ color: normalizeColor(colors[i] ?? partColor(i), fallback[i % 8]!), type: 'PLA', brand: vendors[i] ?? '' }))
+  const types = projectSlotTypes(settings)
+  const list = Array.from({ length: slots }, (_, i) => ({ color: normalizeColor(colors[i] ?? partColor(i), fallback[i % 8]!), type: types[i] || 'PLA', brand: vendors[i] ?? '' }))
   let tower = { auto: true, x: 0, y: 0 }
   const projectFlush = from === 'orca' ? projectFlushFrom(settings) : null
   if (from === 'orca') {
