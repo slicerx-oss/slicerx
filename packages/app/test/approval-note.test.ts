@@ -45,6 +45,7 @@ describe('the approval footer', () => {
       ['print', { actions: [...t('printer.upload'), ...t('printer.start')], work: { kind: 'print', printerId: 'bay-4', file: { name: 'cube.gcode' } } }, footer('heat and move the printer')],
       ['resume', { actions: t('printer.resume'), work: { kind: 'resume', printerId: 'bay-4' } }, footer('heat and move the printer')],
       ['gcode', { actions: t('printer.gcode'), work: { kind: 'gcode', printerId: 'bay-4', line: 'G28' } }, footer('heat and move the printer')],
+      ['home', { actions: t('printer.home'), work: { kind: 'home', printerId: 'bay-4' } }, footer('heat and move the printer')],
       ['adjust', { actions: t('printer.adjust'), work: { kind: 'adjust', printerId: 'bay-4', change: { speedPct: 120 } } }, footer('heat and move the printer')],
       ['pause', { actions: t('printer.pause'), work: { kind: 'pause', printerId: 'bay-4' } }, footer('heat and move the printer')],
       ['cancel', { actions: t('printer.cancel'), work: { kind: 'cancel', printerId: 'bay-4' } }, footer('heat and move the printer')],
