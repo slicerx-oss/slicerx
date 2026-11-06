@@ -10,7 +10,8 @@ import { saveProject } from '../src/export/actions'
 import { readProject } from '../src/export/import3mf'
 import { projectFiles, writeProject } from '../src/export/threemf'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { get, set, type PlateEntry } from '../src/state/store'
+import { openModelBytes } from '../src/state/actions'
+import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
 const FACETS = 'Metadata/Slic3r_facets_annotation.json'
 const bed = { widthMm: 256, depthMm: 256 }
@@ -118,6 +119,65 @@ describe('opening paint the project cannot show', () => {
     const back = await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: {} }), bed)
     expect(back.plates[0]!.objects[0]!.paint).toEqual(paint)
     expect(back.paintNote).toBe('3 painted triangles have codes past their paint, which are ignored.')
+  })
+})
+
+describe('reopening a saved project in the app', () => {
+  // The save lists filament_colour for the filaments parts use only, so the open counts the filaments on the rail once
+  // the project is open (added by hand, the printer's, the parts'), not that list.
+  const saved: { blob?: Blob } = {}
+  const host = {
+    kind: 'web',
+    capabilities: { threads: 1 },
+    files: { save: vi.fn(async (_name: string, blob: Blob) => ((saved.blob = blob), { id: '1', name: 'box.sx3mf', size: blob.size })) },
+    slicer: { loadParts: async (name: string, parts: { name: string; slot?: number }[]) => ({ id: name, hash: name, name, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: parts.map((p) => ({ name: p.name, slot: p.slot ?? 1, triangles: 12 })) }) },
+  } as unknown as Host
+  const slots = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [i + 1, { type: 'PLA', brand: '', color: '#FFFFFF' }]))
+  /** Two parts in filaments 1 and 2, as Layered X has them: the save lists those two in filament_colour. */
+  const twoParts = (paint: PlateEntry['paint']): PlateEntry => {
+    const e = entry(paint)
+    return { ...e, handle: { ...e.handle, parts: [{ name: 'Box', slot: 1, triangles: 12 }, { name: 'Box 2', slot: 2, triangles: 12 }] }, parts: [boxMesh(20, 20, 20), { ...boxMesh(10, 10, 10), name: 'Box 2', slot: 2 }], colors: ['#bd93f9', '#303241'] }
+  }
+  /** Saves `paint` with `rail` filaments added by hand, then opens the file with `reopen` on the rail. */
+  async function roundTrip(paint: NonNullable<PlateEntry['paint']>, rail: number, reopen = rail): Promise<{ paint: PlateEntry['paint']; toasts: string[]; listed: number }> {
+    set({ plate: [twoParts(paint)], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', projectFile: null, printerId: null, printerSlots: [], slotSetup: slots(rail), fileSlotColors: [], layerMarks: {}, toast: null })
+    expect(await saveProject(host)).toBe(true)
+    const bytes = new Uint8Array(await saved.blob!.arrayBuffer())
+    const listed = ((await readProject(bytes, bed)).settings['filament_colour'] as unknown[] | undefined)?.length ?? 0
+    set({ plate: [], slotSetup: slots(reopen), toast: null })
+    const toasts: string[] = []
+    const stop = appStore.subscribe((s, prev) => void (s.toast && s.toast !== prev.toast && toasts.push(s.toast.text)))
+    try {
+      await openModelBytes(host, 'box.sx3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, undefined, { fresh: true })
+    } finally {
+      stop()
+    }
+    return { paint: get().plate[0]?.paint, toasts, listed }
+  }
+  const unpainted = (toasts: string[]) => toasts.filter((t) => /opens unpainted|this project has/.test(t))
+
+  it('keeps paint on filament 25 of 32 that no part uses, with no note', async () => {
+    const paint = { 0: { color: { 2: '7FC', 3: '7FC' } } }
+    const back = await roundTrip(paint, 32)
+    // the save lists the two filaments the parts use
+    expect(back.listed).toBe(2)
+    expect(back.paint).toEqual(paint)
+    expect(unpainted(back.toasts)).toEqual([])
+  })
+
+  it('keeps paint on filament 3 of 4 that no part uses, with no note', async () => {
+    const paint = { 0: { color: { 2: '0C', 5: '0C' } } }
+    const back = await roundTrip(paint, 4)
+    expect(back.listed).toBe(2)
+    expect(back.paint).toEqual(paint)
+    expect(unpainted(back.toasts)).toEqual([])
+  })
+
+  it('still leaves paint on a filament the open project does not have off, with its note', async () => {
+    // Saved with 4 filaments, opened where the rail has the parts' 2 only (another machine): paint on 3 goes, on 2 stays.
+    const back = await roundTrip({ 0: { color: { 2: '0C', 5: '8' } } }, 4, 2)
+    expect(back.paint).toEqual({ 0: { color: { 5: '8' } } })
+    expect(unpainted(back.toasts)).toEqual(['Paint on filament 3 and up opens unpainted: this project has 2 filaments.'])
   })
 })
 
