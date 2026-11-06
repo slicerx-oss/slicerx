@@ -2953,6 +2953,17 @@ impl SliceSession {
         }
     }
 
+    /// How many entries the shell rule's maps a later run never asks for hold, over the followers too.
+    #[cfg(test)]
+    pub(crate) fn cache_unread_entries(&self) -> usize {
+        self.cache.unread_entries()
+            + self
+                .followers
+                .iter()
+                .map(Self::cache_unread_entries)
+                .sum::<usize>()
+    }
+
     /// How many entries the shell rule's maps keyed with settings tags hold, over the followers too.
     #[cfg(test)]
     pub(crate) fn cache_tagged_entries(&self) -> usize {
