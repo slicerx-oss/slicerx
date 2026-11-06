@@ -833,9 +833,12 @@ pub(crate) fn mode_of(cfg: &PrintConfig) -> Option<Mode> {
             // The printer maker's `disabled` keeps the shells under and over flat surfaces but no band along a
             // leaning wall; its `enabled` (and `partial`, see `surfaces_only`) is the full rule.
             "ensure_critical_only" | "disabled" => Some(Mode::CriticalOnly),
-            "ensure_moderate" => Some(Mode::Moderate),
+            // The older switch's off, "0", is `ensure_moderate` and its on, "1", `ensure_all`, as the legacy table
+            // the project importers read has it (packages/settings/legacy.json).
+            "ensure_moderate" | "0" => Some(Mode::Moderate),
             _ => None,
         },
+        Some(serde_json::Value::Number(n)) if n.as_u64() == Some(0) => Some(Mode::Moderate),
         _ => None,
     }
 }
