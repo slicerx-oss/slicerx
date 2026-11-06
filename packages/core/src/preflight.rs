@@ -1237,6 +1237,25 @@ fn clamp_temperatures(cfg: &mut PrintConfig, limits: &Limits) -> Vec<Issue> {
             *v = bed_max;
         }
     }
+    // Each filament's chamber target, which the start G-code reads as the highest of them
+    // (`overall_chamber_temperature`): held to the printer's chamber limit when the request gives one (the H3C
+    // heats to 65 C), as the nozzle and bed are. Without a limit it stays as given.
+    if let (Some(chamber_max), Some(Value::Array(list))) = (
+        limits.chamber_max_c.filter(|c| c.is_finite()),
+        cfg.raw.get_mut("chamber_temperature"),
+    ) {
+        for v in list.iter_mut() {
+            if let Some(t) = number(v).filter(|t| *t > chamber_max) {
+                issues.push(warn(
+                    "chamber_temperature_clamped",
+                    format!(
+                        "chamber_temperature {t} C is above the chamber limit of {chamber_max} C; using {chamber_max} C"
+                    ),
+                ));
+                *v = Value::from(chamber_max);
+            }
+        }
+    }
     // The per-filament lists of every plate type, which the G-code writer and the start G-code variables
     // read from the raw config.
     for key in PLATES
