@@ -140,6 +140,9 @@ export function createSetupTools() {
     description:
       'Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. Call it with everything the user has said so far. It returns the current stage, the question to ask with its options, and what it resolved from the printer catalog, with where to find each value on the printer. It changes nothing: setup.look, printer_test and printer_add (profileId is resolved.model.id) make the changes, each after asking the user. The where-to-find wording comes from vendor documentation and is unchecked on a printer; say so if the user cannot find a screen. ' +
       SECRET_RULE,
+    localDescription:
+      'Guides a new user through printer setup one question at a time: look and feel (optional), brand, model, nozzle, connection method, connection test, adding the printer, a first calibration suggestion. Call it with all the user has said so far. Returns the stage, the question with its options, and what it resolved from the printer catalog with where each value is on the printer (from vendor documentation, unchecked: say so if the user cannot find a screen). It changes nothing: setup.look, printer_test and printer_add (profileId is resolved.model.id) do, each after asking. ' +
+      SECRET_RULE,
     input,
     args: (raw) => {
       const i = flatInput(raw)
@@ -363,6 +366,9 @@ export function createSetupTools() {
     permission: 'printer_config',
     description:
       `Adds the printer to ${productName()} with its profile, nozzle and connection. The app asks first and shows vendor, model, nozzle and address on the card, with the access code masked; the code goes to the system keychain from the app secure field, not from chat. Leave connection out to add a printer for slicing only. profileId is resolved.model.id from printer_setup. ` +
+      SECRET_RULE,
+    localDescription:
+      `Adds the printer to ${productName()} with its profile (profileId), nozzle (nozzleMm) and connection; leave connection out for slicing only. The app asks first, showing vendor, model, nozzle and address with the access code masked; the code goes to the system keychain from the app secure field. ` +
       SECRET_RULE,
     input: z.object({
       profileId: z.string().min(1).describe('Model id from printer_setup (resolved.model.id)'),
