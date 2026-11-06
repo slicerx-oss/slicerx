@@ -5049,7 +5049,8 @@ mod tests {
         );
         // An H3C reporting only its product name still gets a model.
         assert_eq!(
-            model_from_version(&json!({ "module": [{ "name": "ota", "product_name": "Bambu Lab H3C" }] })).as_deref(),
+            model_from_version(&json!({ "module": [{ "name": "ota", "product_name": "Bambu Lab H3C" }] }))
+                .as_deref(),
             Some("H3C")
         );
         assert_eq!(model_from_report(&json!({ "printer_type": "Z9" })), None);
