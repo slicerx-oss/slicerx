@@ -2975,6 +2975,20 @@ impl SliceSession {
                 .sum::<usize>()
     }
 
+    /// What [`crate::api::Prepared::lighten`] lets go of: the shell rule's entries and the seam plan, on the followers
+    /// too.
+    pub(crate) fn lighten(&mut self) {
+        self.cache = crate::shells::Cache::default();
+        self.seams = std::sync::OnceLock::new();
+        self.followers.iter_mut().for_each(Self::lighten);
+    }
+
+    /// Whether the session holds a seam plan, over the followers too.
+    #[cfg(test)]
+    pub(crate) fn has_seam_plan(&self) -> bool {
+        self.seams.get().is_some_and(Option::is_some) || self.followers.iter().any(Self::has_seam_plan)
+    }
+
     /// Marks the session as sliced once, by a one-shot run (see [`Self::is_one_shot`]).
     pub(crate) fn set_one_shot(&mut self) {
         self.one_shot = true;

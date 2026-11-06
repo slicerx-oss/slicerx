@@ -271,6 +271,15 @@ fn run_slice_kept(
         Some(p)
     });
     let fresh = hit.is_none();
+    // A new session is prepared beside the ones kept, which then wait for a later slice: each lets go of what such a
+    // slice works out again first, so the new one slices with room. One a slice still runs on is left whole.
+    if fresh {
+        for (_, p) in lock(&kept.sessions).iter_mut() {
+            if let Some(p) = Arc::get_mut(p) {
+                p.lighten();
+            }
+        }
+    }
     let progress = Cancellable {
         progress,
         flag: cancel,
@@ -748,6 +757,13 @@ mod tests {
         )
         .expect("it slices");
         assert_eq!(kept_count(&state), 2);
+        // Back to the first settings: their session, lightened while the other was prepared, gives a fresh one's bytes.
+        let back = run_kept(&state, &with(base.clone(), 6), false).expect("it slices");
+        assert_eq!(kept_count(&state), 2);
+        assert!(same(
+            &back,
+            &run(&state, with(base.clone(), 6)).expect("it slices")
+        ));
         run_kept(
             &state,
             &with(serde_json::json!({ "layer_height": 0.28 }), 5),
