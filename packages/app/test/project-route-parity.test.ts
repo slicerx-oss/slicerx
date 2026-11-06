@@ -131,16 +131,17 @@ const spot = (k: number) => `1 0 0 0 1 0 0 0 1 ${100 + 20 * k} 110 0`
 /**
  * A Bambu Studio project of `n` 12 mm cubes, cube k printing with filament k. `forA1` names the A1 and carries a flush
  * matrix and a tower spot, as Bambu Studio saves a project for the printer; else it names no printer. `named` is how
- * many filaments the file lists, fewer than `n` for a file that names no color for the last slots.
+ * many filaments the file lists, fewer than `n` for a file that names no color for the last slots. `types` is the
+ * filament type the file names for each, PLA for each by default.
  */
-function bambuProject(n: number, forA1: boolean, named = n): string {
+function bambuProject(n: number, forA1: boolean, named = n, types?: string[]): string {
   const ids = Array.from({ length: n }, (_, k) => k)
   const objects = ids.map((k) => `<object id="${2 * k + 1}" type="model">${cubeMesh(12)}</object><object id="${2 * k + 2}" type="model"><components><component objectid="${2 * k + 1}"/></components></object>`).join('')
   const items = ids.map((k) => `<item objectid="${2 * k + 2}" transform="${spot(k)}"/>`).join('')
   const cfg = `<?xml version="1.0" encoding="UTF-8"?><config>${ids.map((k) => `<object id="${2 * k + 2}"><metadata key="name" value="cube ${k + 1}"/><metadata key="extruder" value="${k + 1}"/><part id="${2 * k + 1}" subtype="normal_part"><metadata key="name" value="cube ${k + 1}"/><metadata key="extruder" value="${k + 1}"/></part></object>`).join('')}<plate><metadata key="plater_id" value="1"/>${ids.map((k) => `<model_instance><metadata key="object_id" value="${2 * k + 2}"/><metadata key="instance_id" value="0"/></model_instance>`).join('')}</plate></config>`
-  const settings: Record<string, unknown> = { filament_colour: COLORS.slice(0, named), filament_type: ids.slice(0, named).map(() => 'PLA'), layer_height: '0.2', initial_layer_print_height: '0.2', enable_prime_tower: '1', prime_tower_width: '35' }
+  const settings: Record<string, unknown> = { filament_colour: COLORS.slice(0, named), filament_type: types ?? ids.slice(0, named).map(() => 'PLA'), layer_height: '0.2', initial_layer_print_height: '0.2', enable_prime_tower: '1', prime_tower_width: '35' }
   if (forA1) Object.assign(settings, { printer_settings_id: 'Bambu Lab A1 0.4 nozzle', printer_model: 'Bambu Lab A1', nozzle_diameter: ['0.4'], flush_volumes_matrix: ids.flatMap((i) => ids.map((j) => (i === j ? '0' : String(200 + 10 * i + j)))), flush_multiplier: ['1'], wipe_tower_x: ['165'], wipe_tower_y: ['200'] })
-  const path = join(dir, `bambu-${n}${forA1 ? '-a1' : ''}-${named}.3mf`)
+  const path = join(dir, `bambu-${n}${forA1 ? '-a1' : ''}-${named}${types ? `-${types.join('-')}` : ''}.3mf`)
   writeFileSync(path, zip([{ name: '3D/3dmodel.model', data: model('BambuStudio-02.08.04.61', objects, items) }, { name: 'Metadata/model_settings.config', data: cfg }, { name: 'Metadata/project_settings.config', data: JSON.stringify(settings) }]))
   return path
 }
@@ -160,8 +161,8 @@ function prusaProject(n: number): string {
 /** The repo PrusaSlicer fixture's own settings, which the generated projects reuse. */
 let prusaConfig = ''
 
-const CASES: { name: string; file: () => Promise<string> | string; printer: keyof typeof PRINTERS; profiles: string[]; slots?: number }[] = [
-  { name: 'a PrusaSlicer project on the MK4', file: () => join(repo, 'packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf'), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'] },
+const CASES: { name: string; file: () => Promise<string> | string; printer: keyof typeof PRINTERS; profiles: string[]; slots?: number; types?: string[] }[] = [
+  { name: 'a PrusaSlicer project on the MK4', file: () => join(repo, 'packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf'), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], types: ['PETG'] },
   { name: 'an Orca project on the A1', file: () => join(repo, 'packages/geom/tests/corpus/orca-subtypes.3mf'), printer: 'bambu-a1', profiles: ['machine:bambu-a1'] },
   { name: 'a Bambu Studio project on the A1', file: () => join(repo, 'packages/geom/tests/corpus/bambu-subtypes.3mf'), printer: 'bambu-a1', profiles: ['machine:bambu-a1'] },
   // The app opens the project on the printer it names, from another printer; the MCP server names that printer.
@@ -170,6 +171,9 @@ const CASES: { name: string; file: () => Promise<string> | string; printer: keyo
   { name: 'a 2-filament Bambu Studio project saved for the A1, with its flush matrix and tower spot', file: () => bambuProject(2, true), printer: 'prusa-mk4', profiles: ['machine:bambu-a1'], slots: 2 },
   { name: 'a 4-filament Bambu Studio project on the A1', file: () => bambuProject(4, false), printer: 'bambu-a1', profiles: ['machine:bambu-a1'], slots: 4 },
   { name: 'a 3-filament Bambu Studio project on the A1 that lists one filament', file: () => bambuProject(3, false, 1), printer: 'bambu-a1', profiles: ['machine:bambu-a1'], slots: 3 },
+  // Each slot slices as the filament type the file names for it.
+  { name: 'a PETG Bambu Studio project saved for the A1', file: () => bambuProject(1, true, 1, ['PETG']), printer: 'bambu-a1', profiles: ['machine:bambu-a1'], types: ['PETG'] },
+  { name: 'a 2-filament PLA and TPU Bambu Studio project saved for the A1', file: () => bambuProject(2, true, 2, ['PLA', 'TPU']), printer: 'bambu-a1', profiles: ['machine:bambu-a1'], slots: 2, types: ['PLA', 'TPU'] },
   { name: 'a 2-filament PrusaSlicer project on the MK4 with a multi-material unit', file: () => prusaProject(2), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], slots: 2 },
   { name: 'a 4-filament PrusaSlicer project on the MK4 with a multi-material unit', file: () => prusaProject(4), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], slots: 4 },
 ]
@@ -190,6 +194,11 @@ describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same 
         expect((app['filament_colour'] as string[]).length).toBe(c.slots)
         expect((app['flush_volumes_matrix'] as number[]).length % (c.slots * c.slots)).toBe(0)
         for (let t = 1; t < c.slots; t++) expect(mcp.gcode.toString()).toMatch(new RegExp(`^T${t}\\b`, 'm'))
+      }
+      if (c.types) {
+        // the file's own filament types, in the app and the MCP server alike
+        expect(app['filament_type']).toEqual(c.types)
+        expect(mcp.request['config']).toMatchObject({ filament_type: c.types })
       }
       expect(firstDifference(appSlice(mcp.request, app, join(out, 'app')), mcp.gcode)).toBeNull()
       expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
