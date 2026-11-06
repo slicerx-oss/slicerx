@@ -5331,14 +5331,14 @@ fn placement_keep_slices_a_3mf_where_the_file_puts_it() {
         "{err}"
     );
     assert!(!err.contains("Object_1 is"), "{err}");
-    // An unknown placement is invalid input, and the schema lists both.
+    // An unknown placement is invalid input, and the schema lists the three.
     let (status, err) = run(&one, Some("left"), None);
     assert_eq!(status.code(), Some(3), "{err}");
     let out = sx().args(["schema", "request"]).output().unwrap();
     let schema: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         schema["properties"]["plate"]["properties"]["placement"]["enum"],
-        serde_json::json!(["center", "keep"])
+        serde_json::json!(["center", "keep", "arrange"])
     );
 }
 

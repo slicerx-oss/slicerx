@@ -79,6 +79,9 @@ pub mod api;
 mod arachne;
 #[doc(hidden)]
 pub mod arcfit;
+// Arrange for a plate of distinct objects, on sx-geom's nest.
+#[cfg(feature = "import")]
+pub mod arrange;
 #[doc(hidden)]
 pub mod bgcode;
 mod brick;
