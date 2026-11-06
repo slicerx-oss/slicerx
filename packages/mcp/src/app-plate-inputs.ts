@@ -6,7 +6,7 @@ const plate = z.union([z.number().int().min(1), z.string().min(1).max(80)]).desc
 const name = z.string().trim().min(1).max(40)
 const slot = z.number().int().min(1)
 export const appPlateSettings = z.object({
-  bedType: z.enum(['cool', 'engineering', 'high-temp', 'textured-pei', 'smooth-pei']).optional(),
+  bedType: z.enum(['cool', 'engineering', 'high-temp', 'textured-pei', 'smooth-pei', 'textured-cool', 'supertack']).optional(),
   sequence: z.enum(['by-layer', 'by-object']).optional(),
   filamentOrder: z.array(slot).max(256).refine((v) => new Set(v).size === v.length, 'Filament slots must be unique').optional(),
   slotMap: z.record(z.string().regex(/^[1-9]\d*$/), slot).optional(),

@@ -63,9 +63,10 @@ export interface ExtraLayers {
   scriptReviews?: { key: string; slot?: number; text: string; review: ScriptReview }[]
   /**
    * A project file's own settings, applied first. `model` is the printer model the project was saved for (`bambu-a1`),
-   * which its G-code is compared with when no printer profile names one.
+   * which its G-code is compared with when no printer profile names one. `bedType` is the sliced plate's own plate type
+   * in the file (`curr_bed_type`), which goes over the project's.
    */
-  project?: { name: string; config: Record<string, SettingValue>; model?: string | undefined; gcode?: ProjectGcode | undefined; opened?: OpenedProject | undefined } | undefined
+  project?: { name: string; config: Record<string, SettingValue>; model?: string | undefined; gcode?: ProjectGcode | undefined; opened?: OpenedProject | undefined; bedType?: string | undefined } | undefined
   /** The user's preset files, applied after the profiles. */
   presets?: PresetLayer[] | undefined
   /** A filament per slot, applied after the preset files and before the overrides. */
@@ -146,6 +147,8 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     Object.assign(explicit, extra.project.config)
     applied.push(`project:${extra.project.name}`)
   }
+  // The plate's own plate type goes over the project's, as the app opens a project's plates.
+  if (extra.project?.bedType) explicit['curr_bed_type'] = extra.project.bedType
   let untrustedProfile = false
   for (const name of names) {
     const p = profiles.get(name, printer)
