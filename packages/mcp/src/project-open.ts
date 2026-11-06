@@ -111,10 +111,11 @@ export async function openProject(read: ProjectRead, profiles: ProfileCatalog, n
     if (!own) return undefined
     const ownLayer = layerConfig(own.values, OPENED_EASY, LAYER_TOUCHED)
     values = Object.fromEntries(Object.entries(values).filter(([k, v]) => (changes !== undefined && k in changes.all) || JSON.stringify(v) !== JSON.stringify(ownLayer[k])))
-    // The person's printer instead of the project's: the settings made for the project's nozzle stay behind (leaveProjectPrinter).
+    // The person's printer instead of the project's: its G-code, its printer settings and the settings made for its
+    // nozzle stay behind (leaveProjectPrinter).
     const to = await layerFor(r.printer, 'standard', r.nozzle)
     if (!to) return undefined
-    values = carryOver(values, GCODE_TEXT_KEYS, Math.abs(to.nozzle - at.nozzle) < 1e-6).kept
+    values = carryOver(values, [...GCODE_TEXT_KEYS, ...(changes?.printerKeys ?? [])], Math.abs(to.nozzle - at.nozzle) < 1e-6).kept
     printer = { printer: r.printer, nozzle: r.nozzle }
   }
   const layer = await layerFor(printer.printer, tier, printer.nozzle)

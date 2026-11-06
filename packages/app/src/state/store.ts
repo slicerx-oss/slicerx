@@ -679,6 +679,8 @@ export interface ProjectPrinter {
   previousPrinterId: string | null
   gcodeKeys: string[]
   recognizedGcodeKeys?: string[]
+  /** The printer settings the project's file brought (`projectOwnPrinterSettings`), which stay with this printer too. */
+  printerKeys?: string[]
   parked: Record<string, SettingValue> | null
 }
 
