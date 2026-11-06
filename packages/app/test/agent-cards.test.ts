@@ -418,6 +418,20 @@ describe('cards the hub could not carry out', () => {
     stop()
   })
 
+  it('says the axes were not homed when the hub refuses a home card', async () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.emit(card({ id: 'h-1', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'h' }], work: { kind: 'home', printerId: 'bay-4' } }))
+    await get().approval!.approve()
+    h.done({ requestId: 'h-1', printerId: 'bay-4', ok: false, code: 'bad_state', message: 'printing' })
+    expect(get().toast?.text).toBe('Bay 4 is not idle, so the axes were not homed.')
+    h.emit(card({ id: 'h-2', actions: [{ action: 'printer.home', target: 'bay-4', paramsHash: 'h' }], work: { kind: 'home', printerId: 'bay-4' } }))
+    await get().approval!.approve()
+    h.done({ requestId: 'h-2', printerId: 'bay-4', ok: false, code: 'plate_check', message: 'plate' })
+    expect(get().toast?.text).toBe('Bay 4 has something on the plate, so the axes were not homed.')
+    stop()
+  })
+
   it('shows nothing beyond the approval when the hub carries it out', async () => {
     const h = fakeHub()
     const stop = watchHubCards(h.hub, names)
