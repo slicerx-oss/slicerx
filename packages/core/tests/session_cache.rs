@@ -418,6 +418,69 @@ fn a_repeat_and_any_layer_ranges_on_a_kept_session_give_a_fresh_ones_bytes() {
 
 /// A one-shot run sheds its session once the last layer range is cut; it writes the bytes of a kept session, which
 /// never sheds.
+/// A 40 x 20 x 12 mm box whose right half prints with other walls and infill, from a modifier volume.
+fn modifier_box() -> Case {
+    let object = wedge(40.0, 20.0, 12.0, 12.0);
+    let modifier = wedge(20.0, 24.0, 14.0, 14.0);
+    let req = serde_json::from_value(json!({
+        "plate": {"objects": [{
+            "id": "box", "name": "box", "mesh": "box",
+            "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1],
+            "volumes": [{
+                "role": "modifier", "mesh": "half",
+                "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 120,98,-1,1],
+                "settings": {"wall_loops": 4, "sparse_infill_density": 40, "top_shell_layers": 6},
+            }],
+        }]},
+        "config": common::with_base(&json!({"layer_height": 0.2})),
+        "options": {"flavor": "marlin2", "nowUnix": 1_790_000_000, "nowOffsetMinutes": 0},
+    }))
+    .unwrap();
+    Case {
+        name: "modifier box".to_owned(),
+        req,
+        meshes: vec![("box".to_owned(), object), ("half".to_owned(), modifier)],
+    }
+}
+
+/// A kept session drops some of its entries when a run ends (the shell rule's outlines a later run never asks for,
+/// and the entries of settings two runs back): painted plates, a modifier and plates of several filaments slice again
+/// on it, the same and with another wall speed and back, to a fresh session's bytes.
+#[test]
+fn painted_and_modifier_plates_slice_again_on_a_kept_session_to_fresh_bytes() {
+    let mut list = vec![modifier_box()];
+    list.extend(cases().into_iter().filter(|c| c.name == "painted tile"));
+    for name in [
+        "painted-request.json",
+        "colors-request.json",
+        "objsettings-request.json",
+        "objranges-request.json",
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("cli/tests/fixtures")
+            .join(name);
+        list.push(Case::fixture(&path).unwrap());
+    }
+    for case in list {
+        let load = |id: &str| case.mesh(id);
+        let prepared = api::prepare(&case.req, &load).unwrap();
+        api::run_prepared(&case.req, &prepared, &sx_core::NoProgress).unwrap();
+        let mut slower = case.req.clone();
+        slower.config["outer_wall_speed"] = json!([31]);
+        let mut faster = case.req.clone();
+        faster.config["outer_wall_speed"] = json!([77]);
+        for (what, req) in [
+            ("again", &case.req),
+            ("slower walls", &slower),
+            ("faster walls", &faster),
+            ("back", &case.req),
+        ] {
+            assert_eq!(case.key(req), case.key(&case.req), "{} {what}", case.name);
+            kept_is_fresh(&case, &prepared, req).unwrap_or_else(|e| panic!("{} {what}: {e}", case.name));
+        }
+    }
+}
+
 #[test]
 fn a_one_shot_run_gives_a_kept_sessions_bytes() {
     for case in ci_cases() {

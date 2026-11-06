@@ -113,7 +113,8 @@ impl Cache {
     /// nor the one before asked for go. A setting the session never reads (a speed, a temperature) is in the tag, so
     /// each new value of one would otherwise add a set of entries the session holds for good; the last two runs' stay,
     /// so going back and forth between two values still finds them. A run that asked for more tags than it can
-    /// note, or follows one that did, keeps every entry.
+    /// note, or follows one that did, keeps every entry. The entries a later run never asks for (the grown and inset
+    /// outlines and the slits) go too.
     pub(crate) fn end_run(&self) {
         use std::sync::atomic::Ordering::Relaxed;
         let now: Vec<u64> = self
@@ -145,6 +146,18 @@ impl Cache {
             self.slit_cut.retain(|k| keep(k.1));
         }
         *before = (!full).then_some(now);
+        // What a layer's walls, infill area and bridge facts were worked out from: a later run finds those three
+        // and never asks for these again.
+        self.grown.clear();
+        self.inset.clear();
+        self.slit.clear();
+        self.slit_cut.clear();
+    }
+
+    /// How many entries the maps a later run of a kept session never asks for hold.
+    #[cfg(test)]
+    pub(crate) fn unread_entries(&self) -> usize {
+        self.grown.len() + self.inset.len() + self.slit.len() + self.slit_cut.len()
     }
 
     /// How many entries the maps keyed with settings tags hold.

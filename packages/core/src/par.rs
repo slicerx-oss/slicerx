@@ -202,6 +202,11 @@ impl<K: std::hash::Hash + Eq, V> Memo<K, V> {
         self.lock().retain(|k, v| v.is_none() || keep(k));
     }
 
+    /// Drops every worked out entry. Entries a job is working out stay.
+    pub(crate) fn clear(&self) {
+        self.retain(|_| false);
+    }
+
     /// How many entries are worked out.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {

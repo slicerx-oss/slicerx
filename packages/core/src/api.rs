@@ -3567,6 +3567,27 @@ mod tests {
         assert!(after.iter().all(|&n| n <= 2 * one), "{after:?}");
     }
 
+    /// The grown and inset outlines and the slits are what a layer's walls, infill area and bridge facts are worked
+    /// out from; a later run finds those, so a kept session lets them go once a run ends. One-shot runs keep theirs
+    /// until the session is shed.
+    #[test]
+    fn a_kept_session_lets_go_of_what_a_later_run_never_asks_for() {
+        let mesh = cube();
+        let meshes = |_: &str| Ok(mesh.clone());
+        let req: SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": {"objects": [{"mesh": 1}]},
+            "config": {"top_shell_layers": 4, "bottom_shell_layers": 4},
+        }))
+        .unwrap();
+        let prepared = prepare(&req, &meshes).unwrap();
+        let first = run_prepared(&req, &prepared, &NoProgress).unwrap();
+        assert_eq!(prepared.session.cache_unread_entries(), 0);
+        assert!(prepared.session.cache_tagged_entries() > 0);
+        let again = run_prepared(&req, &prepared, &NoProgress).unwrap();
+        assert!(first.gcode == again.gcode && first.preview == again.preview);
+        assert_eq!(prepared.session.cache_unread_entries(), 0);
+    }
+
     #[test]
     fn a_cancel_while_the_session_is_prepared_stops_there() {
         use std::sync::atomic::{AtomicBool, Ordering};
