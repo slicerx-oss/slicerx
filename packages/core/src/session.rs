@@ -5327,7 +5327,13 @@ impl SliceSession {
         let (mut out_layers, first_layer_info) = par::join(
             || {
                 par::map_owned(jobs, |job| {
-                    let p = print_layer(job);
+                    let mut p = print_layer(job);
+                    // Each layer gives back the room its buffers grew into as soon as it is done, so the layers
+                    // finished while the others run do not hold it until the last one ends.
+                    p.points.shrink_to_fit();
+                    p.paths.shrink_to_fit();
+                    p.zs.shrink_to_fit();
+                    p.flows.shrink_to_fit();
                     tick(Stage::Paths, &path_done, path_total);
                     p
                 })
@@ -5369,9 +5375,6 @@ impl SliceSession {
                 message: format!("{open} contour chains did not close and were dropped"),
                 layer: None,
             });
-        }
-        for l in &mut out_layers {
-            l.points.shrink_to_fit();
         }
         #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
         let layer_height = self.plan.height as f32;
