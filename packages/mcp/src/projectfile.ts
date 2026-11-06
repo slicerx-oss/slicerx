@@ -4,7 +4,7 @@
 // slots and its print settings, so a file can be sliced the way it was saved.
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { appMissingKeys, importProject, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
+import { appMissingKeys, importProject, unmodeledValues, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { BED_TYPE_ENGINE, filePlateBedType } from '@slicerx/settings/bed-type'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
@@ -151,6 +151,12 @@ export interface ProjectRead {
   opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; used: number[] }
   /** Metadata/model_settings.config, else Metadata/Slic3r_PE_model.config, as the file has it: what objectLayerHeights reads. */
   objectSettings?: string
+  /**
+   * The project's values for the keys its settings hold that the schema does not model, as the file holds them. The
+   * engine renders a printer G-code placeholder from any key its config holds, as `sx slice <project.3mf>` does from
+   * the file, so a kept script that names one of them slices with the project's value (scriptKeyValues).
+   */
+  unmodeled?: Record<string, SettingValue>
 }
 
 /** Part types that print no filament of their own, by either slicer's name, as the engine reads them. */
@@ -417,6 +423,8 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
     .sort()
     .map((k) => ({ from: k, to: LEGACY_KEYS[k] as string }))
   const fromOf = new Map(renamed.map((r) => [r.to, r.from]))
+  // The keys the schema has no setting for (project keys, the file's own names and the rest), as the file holds them.
+  const unmodeled = unmodeledValues(kept)
   const importReport: ImportReport = {
     ...(source ? { source } : {}),
     ...(read.skipped ? { skipped: read.skipped } : {}),
@@ -455,5 +463,6 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
       ...(madeFor ? { project_printer: madeFor } : {}),
     },
     config,
+    unmodeled,
   }
 }
