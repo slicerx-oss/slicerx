@@ -39,9 +39,13 @@ class FakeSocket {
   }
 }
 
-/** The hub and the methods the server sent it, in order (hello and pair left out). */
-export function scriptedLinkHub(handler: HubHandler): { WS: typeof WebSocket; sent: { method: string; params: Record<string, unknown> }[] } {
+/**
+ * The hub and the methods the server sent it, in order (hello and pair left out). `emit` sends a hub event to every
+ * connection, as sx-link does (`approval.done` once a person approved a card and the hub ran its work).
+ */
+export function scriptedLinkHub(handler: HubHandler): { WS: typeof WebSocket; sent: { method: string; params: Record<string, unknown> }[]; emit: (event: string, data: unknown) => void } {
   const sent: { method: string; params: Record<string, unknown> }[] = []
+  const sockets: FakeSocket[] = []
   const keys = crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as Promise<CryptoKeyPair>
   const WS = class extends FakeSocket {
     constructor() {
@@ -74,7 +78,11 @@ export function scriptedLinkHub(handler: HubHandler): { WS: typeof WebSocket; se
         if (method === 'plugins') return []
         return handler(method, params) ?? {}
       })
+      sockets.push(this)
     }
   }
-  return { WS: WS as unknown as typeof WebSocket, sent }
+  const emit = (event: string, data: unknown) => {
+    for (const s of sockets) s.fire('message', { data: JSON.stringify({ event, data }) })
+  }
+  return { WS: WS as unknown as typeof WebSocket, sent, emit }
 }
