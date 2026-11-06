@@ -1544,6 +1544,23 @@ impl Model {
         }
     }
 
+    /// Puts the plate type a 3MF plate names for itself in `settings` as `curr_bed_type`, over the project's, as the
+    /// app opens a project's plates ([`sx_core::api::load_3mf_plate_bed_type`]); nothing for other files or a plate
+    /// that names none.
+    fn keep_bed_type(
+        &self,
+        settings: &mut serde_json::Map<String, Value>,
+        model: &str,
+        bytes: &[u8],
+    ) -> sx_core::Result<()> {
+        if let Model::Items(_, _, plate_no) = self
+            && let Some(plate) = sx_core::api::load_3mf_plate_bed_type(bytes, model, *plate_no)?
+        {
+            settings.insert("curr_bed_type".to_owned(), Value::String(plate));
+        }
+        Ok(())
+    }
+
     /// The marks and tool changes the project sets on the plate's layers, which a request slicing the same plate takes
     /// too unless it brings its own (see [`split_projects`]). None for other files.
     fn layer_marks(&self) -> sx_core::api::ProjectMarks {
@@ -1642,6 +1659,11 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     config.trusted_gcode_keys = review_config_scripts(&config.raw, target.as_ref(), None)?.0;
     // With no explicit script target, only the stock check can trust the project's text.
     let stock_checked = target.is_none();
+    // A plate's own plate type wins over the project's, as in the app, unless --config names one. It picks the bed
+    // temperatures below.
+    if !has(args, "--no-project-settings") && preset.as_ref().and_then(|p| p.get("curr_bed_type")).is_none() {
+        model_file.keep_bed_type(&mut config.raw, model, &bytes)?;
+    }
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
     let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
     if sx_core::preflight::blocks(&issues) {

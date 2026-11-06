@@ -107,6 +107,20 @@ pub fn load_3mf_plate_index(bytes: &[u8], file_name: &str, plate: u32) -> Result
     crate::threemf::plate_list_index(bytes, file_name, plate)
 }
 
+/// The plate type plate `plate` of a 3MF project names for itself in `Metadata/model_settings.config`, as
+/// the engine names it in `curr_bed_type` (one of the plate table's names, in any letter case). `None` when the plate
+/// names none, names "Default Plate" (the project's or the printer's plate then counts), or names a plate type the
+/// engine does not know.
+pub fn load_3mf_plate_bed_type(bytes: &[u8], file_name: &str, plate: u32) -> Result<Option<String>> {
+    let own = crate::threemf::plate_bed_type(bytes, file_name, plate)?;
+    Ok(own.and_then(|v| {
+        crate::preflight::PLATES
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&v))
+            .map(|(name, _)| (*name).to_owned())
+    }))
+}
+
 /// What a project's prime tower spot came to for one of its plates ([`keep_plate_tower`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlateTower {

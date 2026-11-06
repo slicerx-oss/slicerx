@@ -1183,6 +1183,36 @@ pub(crate) fn plate_list_index(bytes: &[u8], name: &str, plate: u32) -> Result<O
     Ok(in_order.then(|| ids.iter().position(|&id| id == plate)).flatten())
 }
 
+/// The plate type plate `plate` of a 3MF project names for itself, as the file writes it: `bed_type` in the
+/// plate's entry of `Metadata/model_settings.config`, else `curr_bed_type` there (as our own project files write it).
+/// `None` when the plate names none, or the file has no such plate.
+pub(crate) fn plate_bed_type(bytes: &[u8], name: &str, plate: u32) -> Result<Option<String>> {
+    let zip = Zip::open(bytes).map_err(|e| Error::mesh(name, e))?;
+    let Ok(xml) = zip.read("Metadata/model_settings.config") else {
+        return Ok(None);
+    };
+    let (mut id, mut bed, mut curr) = (None, None, None);
+    let mut in_instance = false;
+    for t in tags(&xml) {
+        match (t.name, t.closing) {
+            ("plate", false) => (id, bed, curr) = (None, None, None),
+            ("plate", true) if id == Some(plate) => return Ok(bed.or(curr)),
+            ("model_instance", c) => in_instance = !c,
+            ("metadata", false) if !in_instance => {
+                let value = t.attr("value").map(|v| v.trim().to_owned());
+                match t.attr("key") {
+                    Some("plater_id") => id = value.and_then(|v| v.parse::<u32>().ok()),
+                    Some("bed_type") => bed = value,
+                    Some("curr_bed_type") => curr = value,
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(None)
+}
+
 /// The plate numbers (`plater_id`) of Bambu and Orca project metadata, in the file's order.
 fn plate_ids(xml: &[u8]) -> Vec<u32> {
     let mut ids = Vec::new();
@@ -3087,6 +3117,30 @@ mod tests {
         assert_eq!(plates[1].1.bounds().unwrap().0[0], 300.0);
         assert_eq!(Mesh::load(&bytes, "p.3mf").unwrap().parts.len(), 1);
     }
+
+    #[test]
+    fn each_plate_names_its_own_plate_type() {
+        // bed_type as project files write it, curr_bed_type as SlicerX saves it; an object's metadata is not
+        // the plate's
+        let settings = r#"<config><plate><metadata key="plater_id" value="1"/><metadata key="bed_type" value="Cool Plate"/><model_instance><metadata key="object_id" value="2"/><metadata key="bed_type" value="Engineering Plate"/></model_instance></plate><plate><metadata key="plater_id" value="2"/><metadata key="curr_bed_type" value=" textured cool plate "/></plate><plate><metadata key="plater_id" value="3"/></plate><plate><metadata key="plater_id" value="4"/><metadata key="bed_type" value="SuperTack Plate"/><metadata key="curr_bed_type" value="Cool Plate"/></plate><plate><metadata key="plater_id" value="5"/><metadata key="bed_type" value="Default Plate"/></plate></config>"#;
+        let bytes = zip(&[("Metadata/model_settings.config", settings.as_bytes(), false)]);
+        let own = |p| plate_bed_type(&bytes, "p.3mf", p).unwrap();
+        assert_eq!(own(1).as_deref(), Some("Cool Plate"));
+        assert_eq!(own(2).as_deref(), Some("textured cool plate"));
+        assert_eq!(own(3), None);
+        assert_eq!(own(4).as_deref(), Some("SuperTack Plate"));
+        assert_eq!(own(9), None);
+        let engine = |p| crate::api::load_3mf_plate_bed_type(&bytes, "p.3mf", p).unwrap();
+        assert_eq!(engine(1).as_deref(), Some("Cool Plate"));
+        assert_eq!(engine(2).as_deref(), Some("Textured Cool Plate"));
+        assert_eq!(engine(3), None);
+        assert_eq!(engine(4).as_deref(), Some("Supertack Plate"));
+        assert_eq!(engine(5), None);
+        // a plain 3MF names none
+        let plain = zip(&[("3D/3dmodel.model", b"<model/>", true)]);
+        assert_eq!(plate_bed_type(&plain, "p.3mf", 1).unwrap(), None);
+    }
+
     #[test]
     fn a_project_without_plate_entries_is_plate_1() {
         // Object settings in model_settings.config but no <plate> there: one plate numbered 1, as a plain 3MF
