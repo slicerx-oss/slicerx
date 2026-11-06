@@ -212,7 +212,7 @@ export const summaryShape = {
       tpu_tool: z.boolean().describe('The tool is the TPU hotend, the one for 2.85 mm TPU'),
       tpu285: z.boolean().describe('The filament is 2.85 mm TPU'),
     })),
-  }).optional().describe('On a printer whose hotends are its tools (the H3C): which tool printed each filament, with the TPU tool flagged. Bambu Lab\'s print profiles put the TPU tool on tool 8, while the H3C device data names tool 7; captures from a real printer will settle it.'),
+  }).optional().describe('On a printer whose hotends are its tools (the H3C): which tool printed each filament, with the TPU tool flagged: on the H3C, tool 8 (hotend 7), where the printer reports its TPU hotend.'),
   /** sx engine: the prime tower as placed, when the plate prints one. */
   prime_tower: z.object({
     x: z.number().describe('Front left corner on the bed, mm'),

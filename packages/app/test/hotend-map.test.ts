@@ -67,7 +67,7 @@ describe('tool rows in the Filament block', () => {
     return el
   }
 
-  it('lists the nine tools per filament, keeps 2.85 mm TPU on the TPU tool, and says the tool number is not settled', () => {
+  it('lists the nine tools per filament, keeps 2.85 mm TPU on the TPU tool, tool 8', () => {
     setProfileLayer(H3C, [])
     const el = render([slot(1, '#ff6a13'), slot(2, '#222222', 'TPU'), slot(3, '#0a2989')])
     const selects = [...el.querySelectorAll('select')]
@@ -79,11 +79,8 @@ describe('tool rows in the Filament block', () => {
     expect(selects[1]!.disabled).toBe(true)
     const tpu = el.querySelector('[data-slot="2"]')!
     expect(tpu.textContent).toContain('2.85 mm TPU prints only on the TPU tool')
-    // The hardware question, in plain words and without setting names.
-    const note = el.querySelector('[data-testid="hotend-tpu-note"]')!
-    expect(note.textContent).toContain('tool 8')
-    expect(note.textContent).toContain('tool 7')
-    expect(note.textContent).not.toMatch(/[a-z]+_[a-z]+/)
+    // The printer reports its TPU hotend at index 7, tool 8, as the print profiles have it: no note hedges the number.
+    expect(el.textContent).not.toContain('device data')
     // A pick by hand sets the plate map.
     selects[2]!.value = '6'
     flushSync(() => selects[2]!.dispatchEvent(new Event('change', { bubbles: true })))
