@@ -3398,3 +3398,130 @@ async fn h1_a_numbered_line_heating_past_the_limit_refuses_a_start_from_afar() {
         .await;
     assert_eq!(r["e"]["code"], "not_supported", "{r}");
 }
+
+// B8: a partner app's card to set an AMS slot is approved on the computer only. A phone away from
+// home never lists it and cannot approve it; the card keeps waiting for the app, which then sets it.
+#[tokio::test]
+async fn b8_a_phone_never_approves_an_ams_slot_from_afar() {
+    let mut s = setup().await;
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    let r = call(
+        &mut s.app,
+        10,
+        "secrets.set",
+        json!({ "name": "bambu-code", "value": mocks.str("accessCode") }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let cfg = json!({
+        "id": "bay-1", "name": "Bay 1", "plugin": "bambu-lan", "host": "127.0.0.1", "port": mocks.port("bambu"),
+        "serial": mocks.str("serial"), "credentialRef": "bambu-code", "ftpPort": mocks.port("bambu-ftp"),
+        "cameraPort": mocks.port("bambu-camera"),
+    });
+    let r = call(&mut s.app, 11, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "bay-1", "{r}");
+    for i in 0..100 {
+        let st = call(&mut s.app, 100 + i, "status", json!({ "printerId": "bay-1" })).await;
+        if st["result"]["slots"].as_array().is_some_and(|x| x.len() >= 2) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let r = call(
+        &mut s.app,
+        12,
+        "clients.create",
+        json!({ "name": "LayerMate", "role": "agent", "partner": true }),
+    )
+    .await;
+    let key = r["result"]["clientKey"].as_str().unwrap().to_owned();
+    let mut p = connect_async(format!("ws://127.0.0.1:{}/", s.link.addr().port()))
+        .await
+        .unwrap()
+        .0;
+    let r = call(&mut p, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    let (mut phone, signer) = approver(&mut s, 86).await;
+
+    let setting = json!({ "slot": "A2", "filamentId": "GFG99", "material": "PETG", "color": "#1a2b3c", "nozzleTempMin": 220, "nozzleTempMax": 260 });
+    let mut card = agent_card(
+        "slot-1",
+        "printer.adjust",
+        json!([{ "action": "printer.adjust", "target": "bay-1", "paramsHash": sx_permit::hash_params(&json!({ "printerId": "bay-1", "slot": setting })) }]),
+    );
+    card["printerId"] = json!("bay-1");
+    let r = call(
+        &mut p,
+        2,
+        "approvals.register",
+        json!({ "request": card, "work": { "kind": "slot", "printerId": "bay-1", "setting": setting } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+
+    // The phone's list leaves it out.
+    let list = phone.call("approvals.list", json!({})).await;
+    assert_eq!(list["ok"], true, "{list}");
+    assert!(
+        !list["r"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v["request"]["id"] == "slot-1"),
+        "{list}"
+    );
+    // A signed approval of the exact card is refused all the same.
+    let pending = call(&mut s.app, 13, "approvals.pending", json!({})).await;
+    let mut request = pending["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "slot-1")
+        .unwrap()
+        .clone();
+    let o = request.as_object_mut().unwrap();
+    o.remove("work");
+    o.remove("partner");
+    let r = phone
+        .call("approvals.decide", signed_decision(&signer, &request, "approve"))
+        .await;
+    assert_eq!(r["ok"], false, "{r}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let writes = |state: Value| {
+        state["log"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l.as_str().unwrap().starts_with("ams_filament_setting"))
+            .count()
+    };
+    assert_eq!(writes(mocks.state().await), 0);
+
+    // The card still waits for the person on the computer, whose approval sets the slot.
+    let pending = call(&mut s.app, 14, "approvals.pending", json!({})).await;
+    assert!(
+        pending["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == "slot-1"),
+        "{pending}"
+    );
+    let r = call(
+        &mut s.app,
+        15,
+        "approvals.grant",
+        json!({ "requestId": "slot-1" }),
+    )
+    .await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    let mut written = 0;
+    for _ in 0..60 {
+        written = writes(mocks.state().await);
+        if written > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(written, 1);
+}

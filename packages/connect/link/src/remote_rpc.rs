@@ -10,10 +10,10 @@
 //! empty-plate picture, the temperature and chamber limits, and the person's signed plate answer).
 //! The phone reads that check with `plate.check`, the still beside the empty-plate picture. It may
 //! deny any card it sees. Scheduled starts, resume, raw G-code and adjustments are approved in the
-//! app or at the printer. Never remote: `print.local`, `bed.confirmClear` (the person must be at
-//! the printer), resume, uploads, secrets, printer setup, clients and settings. Approver phones also
-//! read and answer the question mimir waits on in the app (`mimir.questions`, `mimir.answer`),
-//! which unlocks nothing on a printer.
+//! app or at the printer, and a card to set an AMS slot is not shown to phones at all. Never remote:
+//! `print.local`, `bed.confirmClear` (the person must be at the printer), resume, uploads, secrets,
+//! printer setup, clients and settings. Approver phones also read and answer the question mimir
+//! waits on in the app (`mimir.questions`, `mimir.answer`), which unlocks nothing on a printer.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -609,16 +609,16 @@ async fn watch(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, p: &Value) -> Reply {
 
 /// Cards a phone sees from afar: ones whose work the hub runs itself after a person's answer
 /// (agent work, remote pause and cancel) and queued or scheduled plates. Cards whose token goes
-/// back to the app that raised them are answered in the app, and so is a connected app's call
-/// (switching a Home Assistant device): a phone could only deny it, and a phone built before the
-/// kind existed would show an Approve the hub then refuses.
+/// back to the app that raised them are answered in the app, and so are a connected app's call
+/// (switching a Home Assistant device) and setting an AMS slot: a phone could only deny them, and a
+/// phone built before the kind existed would show an Approve the hub then refuses.
 fn decidable(b: &Bridge, id: &str) -> bool {
     shown_to_phones(b.agent_work.kind(id)) || b.hub.item_for_request(id).is_some()
 }
 
 /// Whether a card holding agent work of this kind goes to phones.
 fn shown_to_phones(kind: Option<&str>) -> bool {
-    kind.is_some_and(|k| k != "plugin")
+    kind.is_some_and(|k| !matches!(k, "plugin" | "slot"))
 }
 
 /// What a phone may do with a card over the relay (`docs/safety.md`).
@@ -1096,6 +1096,13 @@ async fn control(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slot_card_stays_in_the_app_and_is_never_approved_from_afar() {
+        // Setting an AMS slot is answered on the computer only: phones never list it or approve it.
+        assert!(!shown_to_phones(Some("slot")));
+        assert!(!stops_only(Some("slot")));
+    }
 
     #[test]
     fn a_connected_app_card_stays_in_the_app() {

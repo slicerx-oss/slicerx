@@ -82,7 +82,8 @@ export type SideEffectAction = (typeof SIDE_EFFECT_ACTIONS)[number]
  * - printer.gcode: `{ printerId, line }`
  * - printer.home: `{ printerId }`, a home the hub runs under its home rules (printer state and plate)
  * - printer.adjust: `{ printerId, change }`, the change to a running print as the hub checks it
- *   or `{ printerId, slot }`, a SlotSetting written to an AMS slot (app only)
+ *   or `{ printerId, slot }`, a SlotSetting written to an AMS slot (approved in the app only; an agent or
+ *   partner app asks with slot work, which the hub runs)
  * - printer.skip: `{ printerId, id }`, one object of the running print to stop printing (the hub pins the job)
  * - plugin.call: `{ pluginId, tool, input }`
  * - profile.write: `{ profileId, changes }`
