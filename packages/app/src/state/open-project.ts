@@ -359,13 +359,13 @@ async function addProjectShown(
     note = `${note ? `${note} ` : ''}${n} of its objects touch, so they were loaded as ${joined.length === 1 ? 'one object' : `${joined.length} objects`} with parts.`
   }
   // What the reader left out of the file or read another way (paint in a newer format, parts of a type it does not
-  // know, read as normal parts) is said too.
+  // know, read as normal parts) is said too, on two lines (wrap), so it is not hidden behind Details.
   if (project.readerNote) note = `${note ? `${note} ` : ''}${project.readerNote}`
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
   mine(() => undefined)
   offerNote?.settle?.()
-  openNote(note, joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : offerNote?.action, offerNote ? { details: offerNote.details, wrap: true } : {})
+  openNote(note, joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : offerNote?.action, offerNote ? { details: offerNote.details, wrap: true } : project.readerNote ? { wrap: true } : {})
   return 'told'
 }
 
