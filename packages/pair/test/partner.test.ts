@@ -167,21 +167,101 @@ describe('partner phones', () => {
     ownConn.close()
   })
 
-  it('never approves a print, even with both rights; only pausing or stopping', async () => {
+  it('approves a print our phone sent, as our phone would, but never one any partner app sent', async () => {
+    const w = await world()
+    const opened = async (name: string, partner?: string) => {
+      const phone = w.phone(name, partner === undefined ? {} : { partner })
+      await pairByLink(w, phone, partner === undefined ? undefined : w.host.createOffer({ partner }))
+      const pairingId = (await phone.client.hosts())[0]?.pairingId ?? ''
+      if (partner !== undefined) await w.host.setRights(pairingId, { request: true, approve: true, introduce: false, send: true })
+      return phone.client.connect(pairingId)
+    }
+    const conn = await opened('Pixel 8', 'Example Phone')
+    // Another phone of the same app, under the same name spelled otherwise.
+    const twin = await opened('Pixel 9', 'example  phone')
+    const own = await opened('iPhone')
+    // A phone of another partner app, under another name.
+    const stranger = await opened('Galaxy', 'Other App')
+    const gcode = new TextEncoder().encode('G28\n')
+
+    // Its own app's print: refused for it and for the other phone of that app. Either may deny it.
+    const slice = await conn.uploadSlice({ name: 'clip.gcode', kind: 'gcode', data: gcode, stats: { timeS: 60 } })
+    const { requestId } = await conn.send({ sliceId: slice.sliceId, target: { printerIds: ['bay-2'] }, start: true })
+    for (const c of [conn, twin]) {
+      const view = (await c.approvals()).find((v) => v.request.id === requestId)
+      if (!view) throw new Error('no card')
+      await expect(c.approve(view)).rejects.toMatchObject({ code: 'forbidden' })
+    }
+    expect((await w.sim.status('bay-2')).state).toBe('idle')
+
+    // Another partner app's print, whatever its name: refused too.
+    const theirs = await stranger.uploadSlice({ name: 'theirs.gcode', kind: 'gcode', data: gcode, stats: { timeS: 60 } })
+    const asked = await stranger.send({ sliceId: theirs.sliceId, target: { printerIds: ['bay-2'] }, start: true })
+    const strangers = (await conn.approvals()).find((v) => v.request.id === asked.requestId)
+    if (!strangers) throw new Error('no card')
+    await expect(conn.approve(strangers)).rejects.toMatchObject({ code: 'forbidden' })
+    expect((await w.sim.status('bay-2')).state).toBe('idle')
+
+    // Our phone's print: the partner phone approves it.
+    const ours = await own.uploadSlice({ name: 'bracket.gcode', kind: 'gcode', data: gcode, stats: { timeS: 60 } })
+    const sent = await own.send({ sliceId: ours.sliceId, target: { printerIds: ['bay-2'] }, start: true })
+    const view = (await conn.approvals()).find((v) => v.request.id === sent.requestId)
+    if (!view) throw new Error('no card')
+    await conn.approve(view)
+    for (let i = 0; i < 200 && (await w.sim.status('bay-2')).state === 'idle'; i++) await flush(2)
+    expect((await w.sim.status('bay-2')).state).not.toBe('idle')
+
+    const mine = (await twin.approvals()).find((v) => v.request.id === requestId)
+    if (!mine) throw new Error('no card')
+    await twin.deny(mine)
+    expect(w.host.audit()).toMatchObject([
+      { requestId: sent.requestId, decision: 'approve', deviceName: 'Pixel 8' },
+      { requestId, decision: 'deny', deviceName: 'Pixel 9' },
+    ])
+    for (const c of [conn, twin, own, stranger]) c.close()
+  })
+
+  it('asks to pause a print but never approves its own pause; it may deny it', async () => {
     const w = await world()
     const phone = w.phone('Pixel 8', { partner: 'Example Phone' })
     await pairByLink(w, phone, w.host.createOffer({ partner: 'Example Phone' }))
     const pairingId = (await phone.client.hosts())[0]?.pairingId ?? ''
-    await w.host.setRights(pairingId, { request: true, approve: true, introduce: false, send: true })
+    await w.host.setRights(pairingId, { request: true, approve: true, introduce: false, send: false })
     const conn = await phone.client.connect(pairingId)
-    const slice = await conn.uploadSlice({ name: 'clip.gcode', kind: 'gcode', data: new TextEncoder().encode('G28\n'), stats: { timeS: 60 } })
-    const { requestId } = await conn.send({ sliceId: slice.sliceId, target: { printerIds: ['bay-2'] }, start: true })
-    const view = (await conn.approvals()).find((v) => v.request.id === requestId)
+    const printerId = (await conn.printers())[0]?.id ?? ''
+    const asked = await conn.control(printerId, 'pause')
+    const view = (await conn.approvals()).find((v) => v.request.id === asked.requestId)
     if (!view) throw new Error('no card')
     await expect(conn.approve(view)).rejects.toMatchObject({ code: 'forbidden' })
-    expect((await w.sim.status('bay-2')).state).toBe('idle')
     await conn.deny(view)
-    expect(w.host.audit()).toMatchObject([{ requestId, decision: 'deny' }])
+    expect(w.host.audit()).toMatchObject([{ requestId: asked.requestId, decision: 'deny' }])
+    conn.close()
+  })
+
+  it('never approves a card that names no action, since it cannot tell what it grants; it may deny one', async () => {
+    const w = await world()
+    const phone = w.phone('Pixel 8', { partner: 'Example Phone' })
+    await pairByLink(w, phone, w.host.createOffer({ partner: 'Example Phone' }))
+    const pairingId = (await phone.client.hosts())[0]?.pairingId ?? ''
+    await w.host.setRights(pairingId, { request: true, approve: true, introduce: false, send: false })
+    const conn = await phone.client.connect(pairingId)
+    w.feed.push({
+      id: 'pilot-1',
+      sessionId: 's1',
+      tool: 'start_print',
+      permission: 'start',
+      title: 'Start Bracket on Bay 2',
+      lines: ['PETG, 0.2 mm'],
+      paramsHash: '0'.repeat(64),
+      actions: [],
+      expiresAt: new Date(w.env.now() + 60_000).toISOString(),
+    })
+    const view = (await conn.approvals()).find((v) => v.request.id === 'pilot-1')
+    if (!view) throw new Error('no card')
+    await expect(conn.approve(view)).rejects.toMatchObject({ code: 'forbidden' })
+    expect(w.feed.decisions).toEqual([])
+    await conn.deny(view)
+    expect(w.feed.decisions).toMatchObject([{ requestId: 'pilot-1', decision: { kind: 'deny' } }])
     conn.close()
   })
 
