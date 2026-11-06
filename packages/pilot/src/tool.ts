@@ -157,6 +157,8 @@ export type AgentWork =
   | { kind: 'home'; printerId: string }
   /** Set one filament slot while no print runs, hashed as `printer.adjust` `{printerId, slot: setting}`. Approved in the app only. */
   | { kind: 'slot'; printerId: string; setting: SlotSetting }
+  /** A filament change (M600): mid-print as it is, on an idle or finished printer under the plate rule. */
+  | { kind: 'filament_change'; printerId: string }
   /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
