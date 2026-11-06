@@ -152,7 +152,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `disable_m73`
 
-**Disable m73**
+**Skip print progress updates**
 
 - Type: boolean
 - Default: off
@@ -170,7 +170,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `enable_power_loss_recovery`
 
-**Enable power loss recovery**
+**Power loss recovery**
 
 - Type: enum
 - Default: "printer_configuration"
@@ -180,7 +180,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `extruder_clearance_dist_to_rod`
 
-**Extruder clearance dist to rod**
+**Extruder clearance distance to rod**
 
 - Type: number
 - Unit: mm
@@ -296,7 +296,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `farthest_point_timelapse`
 
-**Farthest point timelapse**
+**Timelapse at the farthest point**
 
 - Type: boolean
 - Default: off
@@ -305,7 +305,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `gcode_flavor`
 
-**Gcode flavor**
+**G-code flavor**
 
 - Type: enum
 - Default: "marlin"
@@ -315,7 +315,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `gcode_skip_config_block`
 
-**Gcode skip config block**
+**Leave the settings block out of G-code**
 
 - Type: boolean
 - Default: off
@@ -391,7 +391,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `max_layer_height`
 
-**Max layer height**
+**Maximum layer height**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -402,7 +402,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `min_layer_height`
 
-**Min layer height**
+**Minimum layer height**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -444,9 +444,10 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `nozzle_hrc`
 
-**Nozzle hrc** (develop mode)
+**Nozzle hardness** (develop mode)
 
 - Type: integer
+- Unit: HRC
 - Default: 0
 - Recommended range: 0 to 500
 - Changing it redoes: G-code only
@@ -485,7 +486,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `parallel_printheads_count`
 
-**Parallel printheads count**
+**Number of parallel printheads**
 
 - Type: integer
 - Default: 1
@@ -495,7 +496,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `pellet_modded_printer`
 
-**Pellet modded printer**
+**Prints from pellets**
 
 - Type: boolean
 - Default: off
@@ -600,7 +601,7 @@ The print core each extruder holds, such as AA 0.4 or BB 0.4. UltiMaker printers
 
 ### `support_parallel_printheads`
 
-**Support parallel printheads**
+**Has parallel printheads**
 
 - Type: boolean
 - Default: off
@@ -609,7 +610,7 @@ The print core each extruder holds, such as AA 0.4 or BB 0.4. UltiMaker printers
 
 ### `time_cost`
 
-**Time cost**
+**Machine cost per hour**
 
 - Type: number
 - Unit: money per hour
@@ -652,9 +653,10 @@ Where the head goes before and after each extruder's tool change, in printer coo
 
 ### `wrapping_detection_layers`
 
-**Wrapping detection layers** (develop mode)
+**Wrap detection layers** (develop mode)
 
 - Type: integer
+- Unit: layers
 - Default: 20
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only

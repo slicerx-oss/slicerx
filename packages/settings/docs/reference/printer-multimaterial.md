@@ -26,7 +26,7 @@
 
 ### `enable_filament_ramming`
 
-**Enable filament ramming**
+**Filament ramming**
 
 - Type: boolean
 - Default: on
@@ -73,9 +73,10 @@
 
 ### `machine_load_filament_time`
 
-**Machine load filament time**
+**Filament load time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only
@@ -83,9 +84,10 @@
 
 ### `machine_tool_change_time`
 
-**Machine tool change time**
+**Tool change time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only
@@ -93,9 +95,10 @@
 
 ### `machine_unload_filament_time`
 
-**Machine unload filament time**
+**Filament unload time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only
@@ -112,7 +115,7 @@
 
 ### `master_extruder_id`
 
-**Master extruder id**
+**Main extruder number**
 
 - Type: integer
 - Default: 1
@@ -121,7 +124,7 @@
 
 ### `nozzle_flush_dataset`
 
-**Nozzle flush dataset**
+**Nozzle flush table**
 
 - Type: list of integers, one per extruder
 - Default: [0]
@@ -131,7 +134,7 @@
 
 ### `physical_extruder_map`
 
-**Physical extruder map** (develop mode)
+**Physical extruder order** (develop mode)
 
 - Type: list of integers, one per extruder
 - Default: [0]
@@ -198,7 +201,7 @@ How far under its printing temperature a print core may start printing after a t
 
 ### `wait_for_temp_on_wipe_tower`
 
-**Wait for temp on prime tower**
+**Wait for temperature on prime tower**
 
 - Type: boolean
 - Default: off

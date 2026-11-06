@@ -23,7 +23,7 @@
 
 ### `cooling_filter_enabled`
 
-**Cooling filter enabled**
+**Cooling filter**
 
 - Type: boolean
 - Default: off
@@ -32,7 +32,7 @@
 
 ### `enable_pre_heating`
 
-**Enable pre heating**
+**Preheat before a nozzle change**
 
 - Type: boolean
 - Default: off
@@ -51,9 +51,10 @@
 
 ### `fan_kickstart`
 
-**Fan kickstart**
+**Fan kick-start time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Recommended range: 0 to no maximum
 - Changing it redoes: G-code only
@@ -61,7 +62,7 @@
 
 ### `fan_speedup_overhangs`
 
-**Fan speedup overhangs**
+**Fan speed-up for overhangs only**
 
 - Type: boolean
 - Default: on
@@ -70,16 +71,17 @@
 
 ### `fan_speedup_time`
 
-**Fan speedup time**
+**Fan speed-up time**
 
 - Type: number
+- Unit: s
 - Default: 0
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `part_cooling_fan_min_pwm`
 
-**Part cooling fan min pwm**
+**Lowest part cooling fan speed**
 
 - Type: integer
 - Unit: %
@@ -90,7 +92,7 @@
 
 ### `support_air_filtration`
 
-**Support air filtration** (develop mode)
+**Has air filtration** (develop mode)
 
 - Type: boolean
 - Default: on
@@ -99,7 +101,7 @@
 
 ### `support_chamber_temp_control`
 
-**Support chamber temp control**
+**Has chamber temperature control**
 
 - Type: boolean
 - Default: on
@@ -108,7 +110,7 @@
 
 ### `support_cooling_filter`
 
-**Support cooling filter**
+**Has cooling filter**
 
 - Type: boolean
 - Default: off

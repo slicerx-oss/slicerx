@@ -33,7 +33,7 @@ G-code written each time the print moves to another feature, such as outer wall,
 
 ### `emit_machine_limits_to_gcode`
 
-**Emit machine limits to gcode**
+**Write machine limits to G-code**
 
 - Type: boolean
 - Default: on
@@ -129,7 +129,7 @@ G-code run before each object after the first when printing by object, over the 
 
 ### `thumbnails_format`
 
-**Thumbnails format**
+**Thumbnail format**
 
 - Type: enum
 - Default: "PNG"
