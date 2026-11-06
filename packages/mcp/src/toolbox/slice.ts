@@ -20,6 +20,7 @@ import { reviewProjectScripts } from '../project-script-review'
 import { replacementConfig } from '../script-replacement'
 import type { Arranged, SliceJob, SliceSummary } from '../slicer'
 import type { ServerToolDeps } from './deps'
+import { ignoredArgumentsMessage } from '../ignored-arguments'
 
 const CHAMBER_KEY = 'chamber_cooling_mode'
 
@@ -248,19 +249,7 @@ export const summaryShape = {
   note: z.string().optional(),
 }
 
-/** Arguments a client may mean as a printer, process or filament profile; profiles is where those go. */
-const PROFILE_LIKE = new Set(['printer', 'process', 'filament', 'machine'])
-
-/**
- * The warning for arguments a slice tool does not take (`known` are the ones it does), or undefined when there are
- * none. The tools accept them for now and slice without them, so a client sees what was ignored.
- */
-export function ignoredArgumentsMessage(args: Record<string, unknown>, known: readonly string[]): string | undefined {
-  const ignored = Object.keys(args).filter((k) => !known.includes(k))
-  if (!ignored.length) return undefined
-  const hint = ignored.some((k) => PROFILE_LIKE.has(k)) ? ' Name the printer, process and filament in profiles instead, by id from slicerx_list_profiles, such as "profiles": ["machine:snapmaker-u1", "process:standard"].' : ''
-  return `Ignored arguments this tool does not take: ${ignored.join(', ')}.${hint}`
-}
+export { ignoredArgumentsMessage }
 
 /** The warning for a slice that named no printer, with the size of the generic bed the engine used. */
 export function noPrinterMessage(config: Record<string, unknown>): string {
