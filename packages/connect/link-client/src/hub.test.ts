@@ -298,6 +298,9 @@ test('device.home asks the hub to home one printer and passes a refusal through 
   assert.equal(await host.device.home('bay-1'), undefined)
   // The person's answer for one home goes with that call only, with the bed epoch it was asked in.
   await host.device.home('bay-1', { plateClear: true, epoch: 3 })
+  // A jog down takes the same answer.
+  await host.device.jog('bay-1', 'z', -1, undefined, { plateClear: true, epoch: 3 })
+  assert.deepEqual(h.sent().find((s) => s.method === 'jog')?.params, { printerId: 'bay-1', axis: 'z', distanceMm: -1, plateClear: true, epoch: 3 })
   assert.deepEqual(h.sent().filter((s) => s.method === 'home').map((s) => s.params), [{ printerId: 'bay-1' }, { printerId: 'bay-1' }, { printerId: 'bay-1', plateClear: true, epoch: 3 }])
 })
 
