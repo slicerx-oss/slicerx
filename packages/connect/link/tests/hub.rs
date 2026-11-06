@@ -3564,6 +3564,151 @@ async fn a_raw_g28_line_runs_under_the_home_rules() {
     assert_eq!(done["ok"], true, "{done}");
 }
 
+/// Registers an agent's raw G-code card for `line` on bay-4 and has the app approve it, saying the plate
+/// is clear when `plate_clear`; the hub's `approval.done` for it.
+async fn approved_line_with(ag: &mut Ws, app: &mut Ws, id: &str, line: &str, plate_clear: bool) -> Value {
+    let p = json!({ "printerId": "bay-4", "line": line });
+    let r = call(
+        ag,
+        32,
+        "approvals.register",
+        json!({ "request": card(id, "printer.gcode", "printer.gcode", &p), "work": { "kind": "gcode", "printerId": "bay-4", "line": line } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{line}: {r}");
+    let r = call(
+        app,
+        33,
+        "approvals.grant",
+        json!({ "requestId": id, "bedClear": plate_clear }),
+    )
+    .await;
+    assert_eq!(r["result"]["runBy"], "hub", "{line}: {r}");
+    wait_event(ag, "approval.done", |d| d["requestId"] == id).await
+}
+
+// The motion guard: a raw line that can move the head (a move, a probe, a leveling or start macro, an
+// unknown code or macro) runs only while the printer is idle or finished, under the printer lock, and
+// only onto a plate the hub knows is clear or the person said is clear. A line that cannot move (a
+// heater, a fan, a message) goes as before, even mid-print.
+#[tokio::test]
+async fn a_motion_line_runs_under_the_motion_guard() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    let sent = |log: Vec<String>| log.into_iter().filter(|l| l.starts_with("gcode ")).count();
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    let before = sent(mock_log(&mocks).await);
+    let lines = [
+        "G29",
+        "g 29",
+        "N 10 G30",
+        "BED_MESH_CALIBRATE",
+        "probe",
+        "Z_TILT_ADJUST",
+        "QUAD_GANTRY_LEVEL",
+        "G1 Z-5",
+        "G0 X10",
+        "M48",
+        "G34",
+        "G80",
+        "G92 Z0",
+        "M600",
+        "FOO_MACRO",
+        "G999",
+    ];
+    for (n, line) in lines.iter().enumerate() {
+        let done = approved_line(&mut ag, &mut app, &format!("m-{n}"), line).await;
+        assert_eq!(
+            (done["ok"].clone(), done["code"].clone()),
+            (json!(false), json!("bad_state")),
+            "{line}: {done}"
+        );
+    }
+    assert_eq!(
+        sent(mock_log(&mocks).await),
+        before,
+        "nothing that moves went out mid-print"
+    );
+    // A fan line is not motion: it goes mid-print as before.
+    let done = approved_line(&mut ag, &mut app, "m-fan", "M106 S128").await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(mock_log(&mocks).await.contains(&"gcode M106 S128".to_owned()));
+
+    // Canceled back to idle, the part may still be on the plate: a probe asks first.
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let done = approved_line(&mut ag, &mut app, "m-ask", "G29").await;
+    assert_eq!(done["code"], "bed_check", "{done}");
+    assert!(!mock_log(&mocks).await.contains(&"gcode G29".to_owned()));
+    // The card shows it as a line that moves, so the app asks about the plate on Approve.
+    let p = json!({ "printerId": "bay-4", "line": "G29" });
+    let r = call(
+        &mut ag,
+        34,
+        "approvals.register",
+        json!({ "request": card("m-show", "printer.gcode", "printer.gcode", &p), "work": { "kind": "gcode", "printerId": "bay-4", "line": "G29" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let shown = wait_event(&mut app, "approval", |d| d["id"] == "m-show").await;
+    assert_eq!(shown["work"]["motion"], true, "{shown}");
+    let r = call(&mut app, 35, "approvals.deny", json!({ "requestId": "m-show" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    // Approved with "the plate is clear", the line goes out exactly as approved, and the answer is not
+    // recorded as a clear plate.
+    let done = approved_line_with(&mut ag, &mut app, "m-ok", "G29", true).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(mock_log(&mocks).await.contains(&"gcode G29".to_owned()));
+    assert_eq!(bed(&mut app).await["state"], "not_cleared");
+
+    // The same through `gcode` with a person's token: it asks, names the epoch, and goes with the answer.
+    let token_for = |id: &'static str, line: &'static str| json!({ "request": card(id, "printer.gcode", "printer.gcode", &json!({ "printerId": "bay-4", "line": line })) });
+    let _ = call(
+        &mut app,
+        36,
+        "approvals.register",
+        token_for("t-1", "BED_MESH_CALIBRATE"),
+    )
+    .await;
+    let t = call(&mut app, 37, "approvals.grant", json!({ "requestId": "t-1" })).await["result"].clone();
+    let r = call(
+        &mut app,
+        38,
+        "gcode",
+        json!({ "printerId": "bay-4", "line": "BED_MESH_CALIBRATE", "token": t }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let epoch = r["error"]["details"]["epoch"]
+        .as_u64()
+        .expect("the refusal names the bed epoch");
+    let _ = call(
+        &mut app,
+        39,
+        "approvals.register",
+        token_for("t-2", "BED_MESH_CALIBRATE"),
+    )
+    .await;
+    let t = call(&mut app, 40, "approvals.grant", json!({ "requestId": "t-2" })).await["result"].clone();
+    let r = call(
+        &mut app,
+        41,
+        "gcode",
+        json!({ "printerId": "bay-4", "line": "BED_MESH_CALIBRATE", "token": t, "plateClear": true, "epoch": epoch }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert!(
+        mock_log(&mocks)
+            .await
+            .contains(&"gcode BED_MESH_CALIBRATE".to_owned())
+    );
+}
+
 #[tokio::test]
 async fn a_jog_knows_where_the_head_is_and_restores_absolute_mode() {
     let link = hub(None).await;

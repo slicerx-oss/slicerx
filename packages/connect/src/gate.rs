@@ -285,6 +285,145 @@ impl ApprovalGate for MemoryGate {
 mod tests {
     use super::*;
 
+    // The motion guard fails closed: a line moves the head unless it is on the short list of lines that
+    // cannot (heaters, fans, messages, reports, waits), however it is written.
+    #[test]
+    fn a_line_that_can_move_the_head_reads_as_motion_however_it_is_written() {
+        for line in [
+            // Moves and homes.
+            "G0 X10",
+            "G1 Z-5",
+            "g1 x1",
+            "G2 X1 Y1 I1",
+            "G3 X1 Y1 J1",
+            "G00 Z1",
+            "G 1 Z1",
+            "G28",
+            "g28 z",
+            // Probing and leveling, by code: Marlin, RepRap, Prusa and Bambu Lab forms.
+            "G29",
+            "g29",
+            "G29.1 Z0.2",
+            "G29.2 S1",
+            "G29 ; mesh",
+            "N 10 G29",
+            "n10g29",
+            "\tG29",
+            "G 29",
+            "G030",
+            "G30",
+            "G31",
+            "G32",
+            "G34",
+            "G80",
+            "G81",
+            "M48",
+            "M48 P10",
+            "G38.2 Z-10",
+            "G12",
+            "G27",
+            "G60",
+            "G61",
+            // Probing and leveling macros on Klipper.
+            "BED_MESH_CALIBRATE",
+            "bed_mesh_calibrate PROFILE=default",
+            "PROBE",
+            "probe",
+            "PROBE_CALIBRATE",
+            "PROBE_ACCURACY",
+            "QUAD_GANTRY_LEVEL",
+            "Z_TILT_ADJUST",
+            "SCREWS_TILT_CALCULATE",
+            "Z_ENDSTOP_CALIBRATE",
+            "BED_SCREWS_ADJUST",
+            "DELTA_CALIBRATE",
+            "N 5 Z_TILT_ADJUST",
+            "BED_MESH_PROFILE LOAD=default",
+            // Start macros home, level and purge.
+            "PRINT_START",
+            "START_PRINT BED=60",
+            // Position and mode changes that make the next move land somewhere else.
+            "G92 Z0",
+            "G92 X0 Y0",
+            "G92",
+            "G91",
+            "G20",
+            "M84",
+            "M18",
+            "M17",
+            // Filament changes and tool changes move the head.
+            "M600",
+            "M701",
+            "M702",
+            "LOAD_FILAMENT",
+            "UNLOAD_FILAMENT",
+            "T1",
+            "T0",
+            // Unknown codes and macros fail closed.
+            "G999",
+            "M999",
+            "M1002 gcode_claim_action : 1",
+            "FOO_BAR",
+            "MY_MACRO X=1",
+            "EXCLUDE_OBJECT NAME=a",
+            "RESUME",
+            "SET_KINEMATIC_POSITION Z=0",
+        ] {
+            assert!(moves_axes(line), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_line_that_cannot_move_the_head_passes_however_it_is_written() {
+        for line in [
+            "M104 S200",
+            "m104 s0",
+            "M109 S210",
+            "M140 S60",
+            "M190 S60",
+            "M141 S40",
+            "M191 S40",
+            "M106 S128",
+            "M107",
+            "M117 Printing",
+            "M117 G28",
+            "M118 hi",
+            "M105",
+            "M114",
+            "M115",
+            "M119",
+            "M155 S2",
+            "M73 P10",
+            "M82",
+            "M83",
+            "M220 S100",
+            "M221 S100",
+            "M300 S440 P200",
+            "M400",
+            "M503",
+            "N5 M104 S0",
+            "N 5 M106",
+            "G4 P100",
+            "G4 S1",
+            "G90",
+            "G21",
+            "G92 E0",
+            "g92 e0",
+            "; a comment",
+            "(only a comment)",
+            "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=200",
+            "TURN_OFF_HEATERS",
+            "SET_FAN_SPEED FAN=aux SPEED=0.5",
+            "TEMPERATURE_WAIT SENSOR=extruder MINIMUM=200",
+            "RESPOND MSG=hi",
+            "STATUS",
+            "QUERY_ENDSTOPS",
+            "GET_POSITION",
+        ] {
+            assert!(!moves_axes(line), "{line}");
+        }
+    }
+
     #[test]
     fn a_home_line_reads_as_one_however_it_is_written() {
         for line in [
