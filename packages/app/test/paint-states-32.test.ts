@@ -8,6 +8,7 @@ import type { FileRef, Host } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveProject } from '../src/export/actions'
 import { readProject } from '../src/export/import3mf'
+import { checkOpenedPaint } from '../src/export/paint-check'
 import { projectFiles, writeProject } from '../src/export/threemf'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { openModelBytes } from '../src/state/actions'
@@ -93,32 +94,40 @@ describe('saving paint on filaments 17 to 32', () => {
   it('opens filament 17 to 32 paint as it was saved', async () => {
     const paint = { 0: { color: { 2: 'EC', 3: 'EFC', 4: '01FC9', 5: '0FC0C10DFC6' } } }
     const back = await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: filaments(32) }), bed)
-    expect(back.plates[0]!.objects[0]!.paint).toEqual(paint)
-    expect(back.paintNote).toBeUndefined()
+    const read = back.plates[0]!.objects[0]!.paint!
+    expect(checkOpenedPaint([read], 32)).toBeNull()
+    expect(read).toEqual(paint)
   })
 })
 
 describe('opening paint the project cannot show', () => {
+  // The open checks the paint against the filaments the project has once it is open (open-project.ts).
+  const opened = async (paint: NonNullable<PlateEntry['paint']>, filaments: number) => {
+    const back = (await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: {} }), bed)).plates[0]!.objects[0]!.paint!
+    return { paint: back, note: checkOpenedPaint([back], filaments) }
+  }
+
   it('leaves paint past the project filaments off, with one note', async () => {
     // Four filaments: 4 stays, 5 goes, and a split keeps its filament 1 half.
     const paint = { 0: { color: { 1: '1C', 2: '2C', 3: '2C41' } } }
-    const back = await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: filaments(4) }), bed)
-    expect(back.plates[0]!.objects[0]!.paint).toEqual({ 0: { color: { 1: '1C', 3: '041' } } })
-    expect(back.paintNote).toBe('Paint on filament 5 and up opens unpainted: this project has 4 filaments.')
+    const back = await opened(paint, 4)
+    expect(back.paint).toEqual({ 0: { color: { 1: '1C', 3: '041' } } })
+    expect(back.note).toBe('Paint on filament 5 and up opens unpainted: this project has 4 filaments.')
+    expect((await opened({ 0: { color: { 1: '8' } } }, 1)).note).toBe('Paint on filament 2 and up opens unpainted: this project has 1 filament.')
   })
 
   it('leaves paint past filament 32, and paint that does not read, off with one note', async () => {
     const paint = { 0: { color: { 1: '4', 2: '0FFC', 3: '0fc', 4: 'FFC' }, seam: { 5: '8', 6: 'zz' } } }
-    const back = await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: {} }), bed)
-    expect(back.plates[0]!.objects[0]!.paint).toEqual({ 0: { color: { 1: '4' }, seam: { 5: '8' } } })
-    expect(back.paintNote).toBe('Paint on filaments above 32 opens unpainted. Some paint in the file could not be read and opens unpainted.')
+    const back = await opened(paint, 0)
+    expect(back.paint).toEqual({ 0: { color: { 1: '4' }, seam: { 5: '8' } } })
+    expect(back.note).toBe('Paint on filaments above 32 opens unpainted. Some paint in the file could not be read and opens unpainted.')
   })
 
   it('opens paint with codes past its tree, ignoring them, with one note', async () => {
     const paint = { 0: { color: { 1: '48', 2: '8048C4C3', 3: '4' }, seam: { 4: '4444443' } } }
-    const back = await readProject(writeProject({ plates: [plateOf(paint)], bed, settings: {} }), bed)
-    expect(back.plates[0]!.objects[0]!.paint).toEqual(paint)
-    expect(back.paintNote).toBe('3 painted triangles have codes past their paint, which are ignored.')
+    const back = await opened(paint, 0)
+    expect(back.paint).toEqual(paint)
+    expect(back.note).toBe('3 painted triangles have codes past their paint, which are ignored.')
   })
 })
 
@@ -191,12 +200,14 @@ describe('the save toast', () => {
   it('says one slicer cannot show paint above filament 16', async () => {
     set({ plate: [entry({ 0: { color: { 3: 'EC' } } })] })
     expect(await saveProject(host())).toBe(true)
-    expect(get().toast).toMatchObject({ text: "Saved box.sx3mf. OrcaSlicer can't show paint on filaments above 16.", tone: 'warn' })
+    // On two lines: the save, then the warning, which Details would otherwise hide.
+    expect(get().toast).toMatchObject({ text: "Saved box.sx3mf. OrcaSlicer can't show paint on filaments above 16.", tone: 'warn', secondLine: true })
   })
 
   it('is the plain saved line for paint up to filament 16', async () => {
     set({ plate: [entry({ 0: { color: { 3: 'DC' } } })] })
     expect(await saveProject(host())).toBe(true)
     expect(get().toast).toMatchObject({ text: 'Saved box.sx3mf', tone: 'ok' })
+    expect(get().toast!.secondLine).toBeUndefined()
   })
 })

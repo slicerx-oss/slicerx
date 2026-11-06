@@ -229,6 +229,22 @@ describe('toasts on screen', () => {
     expect(stack.style.top).toBe('')
   })
 
+  it('shows the rest on a second line when asked, with no Details, and leaves other toasts as they were', () => {
+    const SAVED = "Saved Layered_X.sx3mf. OrcaSlicer can't show paint on filaments above 16."
+    act(() => post(SAVED, { tone: 'warn', secondLine: true }))
+    act(() => post(NOZZLE_NOTE))
+    const [two, one] = [...host.querySelectorAll<HTMLElement>('[data-testid=toast]')]
+    expect(two!.getAttribute('data-lines')).toBe('2')
+    expect(two!.querySelector('.sx-toast-lead')!.textContent).toBe('Saved Layered_X.sx3mf.')
+    expect(two!.querySelector('.sx-toast-more')!.textContent!.trim()).toBe("OrcaSlicer can't show paint on filaments above 16.")
+    expect(two!.querySelector('[data-testid=toast-details]')).toBeNull()
+    expect(two!.textContent).toBe(SAVED)
+    // its dismiss button stays, as a warning's does
+    expect(two!.querySelector('[data-testid=toast-dismiss]')).not.toBeNull()
+    expect(one!.hasAttribute('data-lines')).toBe(false)
+    expect(one!.querySelector('[data-testid=toast-details]')).not.toBeNull()
+  })
+
   it('has no Details on a one sentence toast', () => {
     act(() => post('Saved.'))
     expect(host.querySelector('[data-testid=toast-details]')).toBeNull()
@@ -394,6 +410,10 @@ describe('the card\'s look', () => {
     expect(card).toContain('var(--shadow-float)')
     expect(card).toContain('var(--lift-edge)')
     expect(css).toMatch(/\.sx-toasts:not\(:empty\)[^{]*\{[^}]*\}[\s\S]*\.sx-toasts:not\(:empty\), \.sx-rail\[data-peek\] \{[^}]*--lift-glass/)
+  })
+  it('puts the rest of a two-line note on its own line, and keeps it hidden on other notes', () => {
+    expect(rule('.sx-toast[data-lines="2"] .sx-toast-more')).toContain('display: block')
+    expect(rule('.sx-toast-more')).toContain('display: none')
   })
   it('wraps a note to two lines before Details takes over', () => {
     const text = rule('.sx-toast-text')

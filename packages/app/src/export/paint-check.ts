@@ -19,8 +19,9 @@ function capped(n: PaintNode, limit: number): PaintNode {
 }
 
 /**
- * Takes out of `paint` what the project cannot show: texts that do not read, and color paint past `filaments` (0 when
- * the file names none: up to 32). Returns the one note to show, or null when nothing was taken out or ignored.
+ * Takes out of `paint` what the project cannot show: texts that do not read, and color paint past `filaments` (the
+ * filaments the open project has; 0 for up to 32). Returns the one note to show, or null when nothing was taken out or
+ * ignored.
  */
 export function checkOpenedPaint(paint: Iterable<Record<number, PartPaint>>, filaments: number): string | null {
   const limit = filaments > 0 ? Math.min(filaments, PAINT_MAX) : PAINT_MAX
@@ -50,7 +51,7 @@ export function checkOpenedPaint(paint: Iterable<Record<number, PartPaint>>, fil
     }
   }
   const notes: string[] = []
-  if (over) notes.push(limit < PAINT_MAX ? `Paint on filament ${limit + 1} and up opens unpainted: this project has ${limit} filaments.` : `Paint on filaments above ${PAINT_MAX} opens unpainted.`)
+  if (over) notes.push(limit < PAINT_MAX ? `Paint on filament ${limit + 1} and up opens unpainted: this project has ${limit} ${limit === 1 ? 'filament' : 'filaments'}.` : `Paint on filaments above ${PAINT_MAX} opens unpainted.`)
   if (unread) notes.push('Some paint in the file could not be read and opens unpainted.')
   if (extra) notes.push(`${extra} painted ${extra === 1 ? 'triangle has' : 'triangles have'} codes past their paint, which are ignored.`)
   return notes.length ? notes.join(' ') : null
