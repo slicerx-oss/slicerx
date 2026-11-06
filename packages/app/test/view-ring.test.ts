@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Model's ring menu: what it is for after a right click, its verbs for each target, Delete never on a ring, and every
-// verb naming an MCP tool the server has (packages/mcp/TOOLS.md), for an agent to do the same.
-import { readFileSync } from 'node:fs'
+// verb naming an MCP tool the server has (its tool list, as packages/mcp/TOOLS.md lists it), for an agent to do the same.
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createContext, serverTools } from '@slicerx/mcp'
 import { describe, expect, it } from 'vitest'
 import { ringTarget } from '../src/plate/view-ring'
 import { MORE_AGENT_TOOLS, RING_VERBS } from '../src/workspaces/design/view-ring'
@@ -24,8 +26,15 @@ describe('the view ring', () => {
     }
   })
 
-  it('names an MCP tool the server has for every verb, other than a change of view', () => {
-    const tools = new Set(readFileSync(join(__dirname, '..', '..', 'mcp', 'TOOLS.md'), 'utf8').match(/`slicerx_[a-z_]+`/g)?.map((t) => t.slice(1, -1)))
+  it('names an MCP tool the server has for every verb, other than a change of view', async () => {
+    // the registry, not the committed TOOLS.md, which is written again at each release; a stand-in sx-geom lists the
+    // geometry tools, and no tool is called
+    const dir = mkdtempSync(join(tmpdir(), 'sx-view-ring-'))
+    const geom = join(dir, process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
+    writeFileSync(geom, '')
+    chmodSync(geom, 0o755)
+    const ctx = await createContext({ engine: 'stub', sxGeomBin: geom, printers: 'demo', outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), allowDirs: [dir] })
+    const tools = new Set(serverTools(ctx).map((t) => `slicerx_${t.name.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`))
     for (const verbs of Object.values(RING_VERBS))
       for (const v of verbs) {
         expect(v.agent, v.id).toMatch(/^(slicerx_[a-z_]+|view)$/)

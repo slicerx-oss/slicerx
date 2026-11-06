@@ -66,6 +66,12 @@ Signed-off-by: Your Name <you@example.com>
 - Add or update tests. A bug fix needs a test that fails without the fix. A change that alters G-code output updates the golden files in the same pull request and explains why.
 - Include a screenshot or short recording for any UI change, and the before and after slice time on the reference plate for any change to slicing.
 - A change to a public surface (npm package, crate, CLI JSON, C ABI, MCP tools) adds a line to that package's `CHANGELOG.md`.
+  The MCP server (`packages/mcp`) is the exception: add a file in `packages/mcp/changes/` instead, named after your
+  branch (such as `feat-partner-routes.md`), with your entries under `### Added`, `### Changed` or `### Fixed`
+  ([packages/mcp/changes/README.md](packages/mcp/changes/README.md)). Don't edit `packages/mcp/CHANGELOG.md` or
+  `packages/mcp/TOOLS.md`: the release folds the change files into the changelog and writes TOOLS.md again, so
+  between releases TOOLS.md on `main` can be behind the tools the server lists. For the current list, ask a server
+  built from `main` (`tools/list`, every tool named `slicerx_*`), or read TOOLS.md at a release tag.
 - Fill in the pull request template. A maintainer reviews within a week; ping the thread if it has been longer.
 
 ### What CI runs
