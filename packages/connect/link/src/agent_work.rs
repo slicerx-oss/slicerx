@@ -40,6 +40,9 @@ pub(crate) enum Work {
     Gcode {
         printer: String,
         line: String,
+        /// The bed epoch when the person said on the card that the plate is clear, for a line that can
+        /// move the head ([`Waiting::answer_plate`]).
+        plate_epoch: Option<u64>,
     },
     /// Home every axis (`G28`) under the hub's home rules, checked when the person approves. Its card
     /// action is `printer.home`, never the raw line, so a person sees a home and the hub's rules.
@@ -156,7 +159,11 @@ impl Work {
                 if let Some(why) = sx_connect::gcode_line_problem(&line) {
                     return Err(RpcError::new("bad_request", format!("work.line: {why}")));
                 }
-                Ok(Work::Gcode { printer, line })
+                Ok(Work::Gcode {
+                    printer,
+                    line,
+                    plate_epoch: None,
+                })
             }
             Some("skip") => {
                 let id = str_arg(p, "id")?;
@@ -224,7 +231,13 @@ impl Work {
                 "opts": opts,
             }),
             Work::Resume { printer } => json!({ "kind": "resume", "printerId": printer }),
-            Work::Gcode { printer, line } => json!({ "kind": "gcode", "printerId": printer, "line": line }),
+            // `motion`: the line can move the head, so the card asks about the plate (the motion guard).
+            Work::Gcode { printer, line, .. } if sx_connect::moves_axes(line) => {
+                json!({ "kind": "gcode", "printerId": printer, "line": line, "motion": true })
+            }
+            Work::Gcode { printer, line, .. } => {
+                json!({ "kind": "gcode", "printerId": printer, "line": line })
+            }
             Work::Home { printer, .. } => json!({ "kind": "home", "printerId": printer }),
             Work::Adjust { printer, change } => {
                 json!({ "kind": "adjust", "printerId": printer, "change": change })
@@ -272,7 +285,7 @@ impl Work {
                 printer.clone(),
                 hash(&json!({ "printerId": printer })),
             )],
-            Work::Gcode { printer, line } => vec![(
+            Work::Gcode { printer, line, .. } => vec![(
                 "printer.gcode".into(),
                 printer.clone(),
                 hash(&json!({ "printerId": printer, "line": line })),
@@ -490,15 +503,25 @@ impl Waiting {
         lock(&self.0).contains_key(request_id)
     }
 
-    /// The person answered a home card's plate question: records the bed epoch of its printer now
-    /// (`epoch_of`), so the home goes ahead only on that plate. Other work has no plate question.
+    /// The person answered the plate question of a home card or of a card for a line that can move the
+    /// head: records the bed epoch of its printer now (`epoch_of`), so the work goes ahead only on that
+    /// plate. Other work has no plate question.
     pub(crate) fn answer_plate(&self, request_id: &str, epoch_of: impl Fn(&str) -> u64) {
-        if let Some(Held {
-            work: Work::Home { printer, plate_epoch },
-            ..
-        }) = lock(&self.0).get_mut(request_id)
-        {
-            *plate_epoch = Some(epoch_of(printer));
+        match lock(&self.0).get_mut(request_id) {
+            Some(Held {
+                work: Work::Home { printer, plate_epoch },
+                ..
+            }) => *plate_epoch = Some(epoch_of(printer)),
+            Some(Held {
+                work:
+                    Work::Gcode {
+                        printer,
+                        line,
+                        plate_epoch,
+                    },
+                ..
+            }) if sx_connect::moves_axes(line) => *plate_epoch = Some(epoch_of(printer)),
+            _ => {}
         }
     }
 
@@ -563,11 +586,13 @@ async fn execute(
             Ok(())
         }
         Work::Resume { printer } => Ok(session(b, &printer).await?.resume(token).await?),
-        // A raw home line lowers the nozzle as a home does, so it goes under the home rules too.
-        Work::Gcode { printer, line } if sx_connect::homes_axes(&line) => {
-            crate::device::home_checked(b, &printer, None, HomeLine::Approved { line: &line, token }).await
-        }
-        Work::Gcode { printer, line } => Ok(session(b, &printer).await?.send_gcode(&line, token).await?),
+        // A raw home line goes under the home rules, any other line that can move the head under the
+        // motion guard, with the plate answer the person gave on the card.
+        Work::Gcode {
+            printer,
+            line,
+            plate_epoch,
+        } => crate::device::line_checked(b, &printer, plate_epoch, &line, token).await,
         // A card can wait: the printer may have started a job, or finished one, since it was made. The
         // person's token is for `printer.home`; checked and used up here, it lets the hub send G28 under
         // its own token. "The plate is clear" on the card answers the plate question for the bed epoch

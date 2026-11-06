@@ -1257,21 +1257,10 @@ async fn dispatch(
                 return Err(RpcError::new("bad_request", format!("line: {why}")));
             }
             let token: ApprovalToken = arg(&p, "token")?;
-            // A home line lowers the nozzle, so it goes under the home rules whoever approved it.
-            if sx_connect::homes_axes(&line) {
-                crate::device::home_checked(
-                    b,
-                    &id,
-                    None,
-                    crate::device::HomeLine::Approved {
-                        line: &line,
-                        token: &token,
-                    },
-                )
-                .await?;
-            } else {
-                session(b, &id).await?.send_gcode(&line, &token).await?;
-            }
+            // A home goes under the home rules and any other line that can move the head under the
+            // motion guard, whoever approved it; `plateClear` with `epoch` answers the plate question.
+            let answer = crate::device::plate_answer(&p)?;
+            crate::device::line_checked(b, &id, answer, &line, &token).await?;
             Ok(json!({ "ok": true }))
         }
         "snapshot" => {
