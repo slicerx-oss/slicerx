@@ -1496,6 +1496,25 @@ test('Partner phone: pairs under its app name, listed in Devices, approve and se
   await expect(send).toHaveAttribute('aria-checked', 'false')
   // Without Remote access the hub holds no partner phones, so there is no key to link it to yet.
   await expect(row.getByTestId('partner-phone-key')).toBeDisabled()
+  // Each control in the row reaches the hit area UI spec 2 and 9 ask for: 28 px on desktop and 44 px at phone width,
+  // checked from its center to each side.
+  const hits = async (need: number) => {
+    const out: Record<string, boolean> = {}
+    for (const id of ['partner-phone-approve-row', 'partner-phone-send-row', 'partner-phone-revoke', 'partner-phone-key']) {
+      out[id] = await row.getByTestId(id).evaluate((el, n) => {
+        el.scrollIntoView({ block: 'center' })
+        const r = el.getBoundingClientRect()
+        const [x, y, d] = [r.left + r.width / 2, r.top + r.height / 2, n / 2 - 1]
+        return [[x, y - d], [x, y + d], [x - d, y], [x + d, y]].every(([px, py]) => el.contains(document.elementFromPoint(px ?? 0, py ?? 0)))
+      }, need)
+    }
+    return out
+  }
+  const all = (v: boolean) => ({ 'partner-phone-approve-row': v, 'partner-phone-send-row': v, 'partner-phone-revoke': v, 'partner-phone-key': v })
+  expect(await hits(28)).toEqual(all(true))
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await hits(44)).toEqual(all(true))
+  await page.setViewportSize({ width: 1440, height: 900 })
   const [host] = await client.hosts()
   let conn = await client.connect(host?.pairingId ?? '', { via: 'lan' })
   expect(conn.info.partner).toBe('Example Phone')
