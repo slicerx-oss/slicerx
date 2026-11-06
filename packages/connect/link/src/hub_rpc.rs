@@ -724,6 +724,10 @@ pub(crate) struct Asker<'a> {
     pub words: String,
     /// A partner app's name, for the card's `partner`.
     pub partner: Option<&'a str>,
+    /// The asker's role: a partner app's card is never approved by a partner phone.
+    pub role: crate::rpc::RaiserRole,
+    /// The asking key's client id.
+    pub client: Option<&'a str>,
 }
 
 /// Raises the card for a queued plate; `asked` says who asked for it (`queue.start`).
@@ -749,6 +753,13 @@ async fn raise_card_asked(
         if let Some(partner) = a.partner {
             lock(&b.card_partners).insert(card.id.clone(), partner.to_owned());
         }
+        lock(&b.card_raisers).insert(
+            card.id.clone(),
+            crate::rpc::CardRaiser {
+                role: a.role,
+                id: a.client.map(str::to_owned),
+            },
+        );
     }
     if let Some(u) = b.hub.update_item(&item.id, |i| {
         i.request_id = Some(card.id.clone());

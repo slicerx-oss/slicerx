@@ -78,6 +78,9 @@ pub(crate) struct Bridge {
     /// adds it to the card as `partner`, so the app can say who asked without reading the
     /// partner's own lines.
     pub(crate) card_partners: StdMutex<HashMap<String, String>>,
+    /// Request id to who raised it: the role and the key (client id) or pairing that asked. A partner
+    /// phone never approves a card a partner app raised (`remote_rpc::raised_by_partner`).
+    pub(crate) card_raisers: StdMutex<HashMap<String, CardRaiser>>,
     /// Agent work waiting for a person's answer.
     pub(crate) agent_work: crate::agent_work::Waiting,
     /// Remote start's working state: file heat read once per file, starts approved from afar, and
@@ -192,6 +195,7 @@ impl Bridge {
             next_conn: AtomicU64::new(1),
             card_owners: StdMutex::new(HashMap::new()),
             card_partners: StdMutex::new(HashMap::new()),
+            card_raisers: StdMutex::new(HashMap::new()),
             agent_work: crate::agent_work::Waiting::default(),
             remote_start: crate::remote_start::State::default(),
             live_clients: StdMutex::new(Vec::new()),
@@ -282,6 +286,36 @@ impl Bridge {
     fn host_ok(&self, host: &str) -> bool {
         let p = self.port;
         host == format!("127.0.0.1:{p}") || host == format!("localhost:{p}")
+    }
+}
+
+/// Who raised a card, by role: the app, an agent key, a partner app (its key or one of its phones) or one
+/// of our phones. Kept per card so the partner phone rule goes by the raiser's role, never by a name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RaiserRole {
+    App,
+    Agent,
+    Partner,
+    Phone,
+}
+
+/// Who raised a card: its role, and the key's client id or the phone's pairing id when known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CardRaiser {
+    pub role: RaiserRole,
+    pub id: Option<String>,
+}
+
+impl CardRaiser {
+    /// The role of a hub connection that raises a card: a partner app key, the app, or an agent key.
+    pub(crate) fn role_of(partner: bool, role: Role) -> RaiserRole {
+        if partner {
+            RaiserRole::Partner
+        } else if role == Role::App {
+            RaiserRole::App
+        } else {
+            RaiserRole::Agent
+        }
     }
 }
 
@@ -906,6 +940,8 @@ async fn dispatch(
             let asker = words.map(|words| hub_rpc::Asker {
                 words,
                 partner: conn.partner.as_deref(),
+                role: CardRaiser::role_of(conn.partner.is_some(), conn.role),
+                client: conn.client.as_deref(),
             });
             hub_rpc::queue_start(b, asker.as_ref(), &p).await
         }
@@ -1702,6 +1738,13 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
     if let Some(name) = &conn.partner {
         crate::hub::lock(&b.card_partners).insert(id.clone(), name.clone());
     }
+    crate::hub::lock(&b.card_raisers).insert(
+        id.clone(),
+        CardRaiser {
+            role: CardRaiser::role_of(conn.partner.is_some(), conn.role),
+            id: conn.client.clone(),
+        },
+    );
     if conn.role == Role::Agent {
         crate::hub::lock(&b.card_owners).insert(id.clone(), conn.id);
         if person {
