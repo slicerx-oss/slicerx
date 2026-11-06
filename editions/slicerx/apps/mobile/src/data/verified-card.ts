@@ -14,6 +14,7 @@ const VERB: Record<SideEffectAction, string> = {
   'printer.resume': 'Resume the print on',
   'printer.cancel': 'Stop the print on',
   'printer.gcode': 'Run a G-code line on',
+  'printer.home': 'Home every axis of',
   'printer.adjust': 'Change the running print on',
   'printer.skip': 'Skip an object on',
   'printer.config': 'Change settings on',
@@ -25,7 +26,7 @@ const VERB: Record<SideEffectAction, string> = {
 }
 
 /** Most important first: the question names the action that does the most. */
-const ORDER: SideEffectAction[] = ['printer.start', 'printer.cancel', 'printer.gcode', 'printer.adjust', 'printer.config', 'printer.resume', 'printer.skip', 'printer.pause', 'printer.upload', 'profile.write', 'project.replace', 'plugin.call', 'share.publish', 'share.notify']
+const ORDER: SideEffectAction[] = ['printer.start', 'printer.cancel', 'printer.gcode', 'printer.home', 'printer.adjust', 'printer.config', 'printer.resume', 'printer.skip', 'printer.pause', 'printer.upload', 'profile.write', 'project.replace', 'plugin.call', 'share.publish', 'share.notify']
 
 /** Requests the requester described itself. A phone's own job and a click on the computer are not. */
 export function describedByRequester(r: Pick<ApprovalRequest, 'origin'>, source: 'pilot' | 'pair' | 'host'): boolean {

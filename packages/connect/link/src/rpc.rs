@@ -1194,7 +1194,21 @@ async fn dispatch(
                 return Err(RpcError::new("bad_request", format!("line: {why}")));
             }
             let token: ApprovalToken = arg(&p, "token")?;
-            session(b, &id).await?.send_gcode(&line, &token).await?;
+            // A home line lowers the nozzle, so it goes under the home rules whoever approved it.
+            if sx_connect::homes_axes(&line) {
+                crate::device::home_checked(
+                    b,
+                    &id,
+                    None,
+                    crate::device::HomeLine::Approved {
+                        line: &line,
+                        token: &token,
+                    },
+                )
+                .await?;
+            } else {
+                session(b, &id).await?.send_gcode(&line, &token).await?;
+            }
             Ok(json!({ "ok": true }))
         }
         "snapshot" => {
