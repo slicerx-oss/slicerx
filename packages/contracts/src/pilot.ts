@@ -102,6 +102,12 @@ export interface ApprovalAction {
 /** Where a request to start a print came from (sx-permit `StartOrigin`, wire names). The hub refuses a start from anywhere but `local_click` unless the grant says the bed is clear. */
 export type ApprovalOrigin = 'local_click' | 'pilot' | 'mcp' | 'phone' | 'queue' | 'schedule' | 'inbox'
 
+/**
+ * A client's reason for a card travels as one of the request's lines, this prefix first ("Why: The spool tag says
+ * PETG"). The app shows it as the client's words, not checked, capped and as plain text.
+ */
+export const REASON_PREFIX = 'Why: '
+
 export interface ApprovalRequest {
   id: string
   sessionId: string
