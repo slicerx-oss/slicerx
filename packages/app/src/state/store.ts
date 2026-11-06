@@ -249,6 +249,8 @@ export interface PendingApproval {
   confirm?: string
   /** The approve button's label when it carries `confirm`, the statement first: "Bed is clear, start print". */
   go?: string
+  /** What approving lets the app do, when the card's work says it better than its permission class (approval-note.ts). */
+  allows?: string
   approve: () => Promise<void>
   deny: () => Promise<void>
 }
