@@ -182,11 +182,7 @@ pub(crate) fn arrange(
         let o = &plate.objects[s.k];
         match placed.iter().find(|p| p.0 == s.k) {
             Some(&(_, angle, offset)) => {
-                let t = turned(
-                    &o.transform,
-                    angle,
-                    [offset[0] + origin[0], offset[1] + origin[1]],
-                );
+                let t = turned(&o.transform, angle, offset, origin);
                 transforms[s.k] = t;
                 let hull = moved(&s.hull, angle, offset);
                 let b = bbox(&hull);
@@ -504,19 +500,29 @@ fn bbox(ring: &[[f64; 2]]) -> [f64; 4] {
         })
 }
 
-/// `t` (column-major) turned about Z by `deg` (its move too) and moved by `offset`, machine coordinates.
+/// `t` (column-major, machine coordinates) as the nest placed it: turned about Z by `deg` about the plate's origin
+/// `origin` (the printable area's front left corner, where the nest's coordinates start), its move too, then moved by
+/// `offset` (plate coordinates). On a bed whose area does not start at 0, 0 (a delta, centered on it) the turn is about
+/// that corner, as the nest turned the outline.
 #[allow(clippy::cast_possible_truncation, reason = "transforms are f32 mm")]
-fn turned(t: &[f32; 16], deg: f64, offset: [f64; 2]) -> [f32; 16] {
+fn turned(t: &[f32; 16], deg: f64, offset: [f64; 2], origin: [f64; 2]) -> [f32; 16] {
     let (s, c) = deg.to_radians().m_sin_cos();
     let mut out = *t;
     for col in 0..4 {
-        let x = f64::from(t[col * 4]);
-        let y = f64::from(t[col * 4 + 1]);
-        out[col * 4] = (c * x - s * y) as f32;
-        out[col * 4 + 1] = (s * x + c * y) as f32;
+        let (mut x, mut y) = (f64::from(t[col * 4]), f64::from(t[col * 4 + 1]));
+        if col == 3 {
+            x -= origin[0];
+            y -= origin[1];
+        }
+        let (u, v) = (c * x - s * y, s * x + c * y);
+        let (u, v) = if col == 3 {
+            (u + offset[0] + origin[0], v + offset[1] + origin[1])
+        } else {
+            (u, v)
+        };
+        out[col * 4] = u as f32;
+        out[col * 4 + 1] = v as f32;
     }
-    out[12] = (f64::from(out[12]) + offset[0]) as f32;
-    out[13] = (f64::from(out[13]) + offset[1]) as f32;
     out
 }
 
