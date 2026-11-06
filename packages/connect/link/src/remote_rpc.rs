@@ -13,7 +13,8 @@
 //! app or at the printer, and a card to set an AMS slot is not shown to phones at all. Never remote:
 //! `print.local`, `bed.confirmClear` (the person must be at the printer), resume, uploads, secrets,
 //! printer setup, clients and settings. Approver phones also read and answer the question mimir
-//! waits on in the app (`mimir.questions`, `mimir.answer`), which unlocks nothing on a printer.
+//! waits on in the app (`mimir.questions`, `mimir.answer`), which unlocks nothing on a printer. A
+//! partner phone has the same rights, but never approves what any partner app asked for.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -592,8 +593,9 @@ fn host_info(b: &Bridge, p: &RemotePairing) -> Reply {
         // Partner phones register their own push token here; our phone does it through the app.
         "push": p.partner.is_some(),
         "mimir": true,
-        // Starts under the remote start rule, with `plate.check` for the card's pictures.
-        "remoteStart": true,
+        // Starts under the remote start rule, with `plate.check` for the card's pictures. A partner
+        // phone has it while it may approve.
+        "remoteStart": p.partner.is_none() || p.rights.approve,
         "rights": {
             "request": p.rights.request,
             "approve": p.rights.approve && p.kind == PeerKind::Phone,
@@ -853,6 +855,14 @@ fn approvals_list(b: &Bridge, p: &RemotePairing) -> Value {
     )
 }
 
+/// Whether a partner app raised this card, through any partner key or any partner phone. Decided by the
+/// raiser's role the hub recorded, never by a name, since a partner names itself.
+fn raised_by_partner(b: &Bridge, id: &str) -> bool {
+    lock(&b.card_raisers)
+        .get(id)
+        .is_some_and(|r| r.role == crate::rpc::RaiserRole::Partner)
+}
+
 /// The bytes a phone signs for a decision (`decisionBytes` in approval.ts).
 fn decision_bytes(p: &Value) -> Option<Vec<u8>> {
     let mut body = json!({
@@ -929,6 +939,17 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         return Err(err("forbidden", "the decision does not match the request"));
     }
     let decision = p.get("decision").and_then(Value::as_str).unwrap_or_default();
+    // A partner phone has our phone's rights, but never approves anything a partner app asked for,
+    // through any partner key or partner phone, its own included. It may still deny it.
+    if decision == "approve" && pairing.partner.is_some() && raised_by_partner(b, &id) {
+        return Err(err(
+            "forbidden",
+            format!(
+                "a partner phone cannot approve what a partner app asked for; approve this in the {} app, on another phone or at the printer",
+                crate::app_name()
+            ),
+        ));
+    }
     // The person's plate answer, signed with the decision; a start from afar needs it and a pass.
     let bed_clear = p.get("bedClear").and_then(Value::as_bool) == Some(true);
     let mut remote_start = false;
@@ -1111,6 +1132,19 @@ async fn control(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p
         return Err(err("bad_request", e.to_string()));
     }
     lock(&ctx.jobs).insert(request_id.clone(), (job_id.clone(), printer.clone()));
+    lock(&b.card_raisers).insert(
+        request_id.clone(),
+        crate::rpc::CardRaiser {
+            role: if pairing.partner.is_some() {
+                crate::rpc::RaiserRole::Partner
+            } else if pairing.kind == PeerKind::Agent {
+                crate::rpc::RaiserRole::Agent
+            } else {
+                crate::rpc::RaiserRole::Phone
+            },
+            id: Some(ctx.pairing_id.clone()),
+        },
+    );
     b.hub.emit("approval", card);
     b.hub.emit(
         "alert",
