@@ -6,7 +6,7 @@
 // the app opens it with on that printer instead (project-open.ts).
 // Shared by the file tools and cloud slicing.
 import type { SettingValue, ScriptReview } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, type GcodeChange, type GcodeKept } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, scriptKeyValues, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import type { OpenedProject } from './project-open'
@@ -66,7 +66,7 @@ export interface ExtraLayers {
    * which its G-code is compared with when no printer profile names one. `bedType` is the sliced plate's own plate type
    * in the file (`curr_bed_type`), which goes over the project's.
    */
-  project?: { name: string; config: Record<string, SettingValue>; model?: string | undefined; gcode?: ProjectGcode | undefined; opened?: OpenedProject | undefined; bedType?: string | undefined } | undefined
+  project?: { name: string; config: Record<string, SettingValue>; unmodeled?: Record<string, SettingValue> | undefined; model?: string | undefined; gcode?: ProjectGcode | undefined; opened?: OpenedProject | undefined; bedType?: string | undefined } | undefined
   /** The user's preset files, applied after the profiles. */
   presets?: PresetLayer[] | undefined
   /** A filament per slot, applied after the preset files and before the overrides. */
@@ -191,6 +191,9 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     for (const k of LAYER_FOLLOWING_GAPS) if (explicit[k] === undefined && below[k] !== undefined) explicit[k] = below[k]
   }
   const { kept, replaced } = extra.project ? projectGcode(store, profiles, names, extra.project, explicit, extra.scriptReviews) : { kept: [], replaced: [] }
+  // A key the schema does not model that a script left in the slice names goes with it, the project's value as the
+  // file has it: the engine renders the script from its whole config, as sx slice <project.3mf> renders it from the file.
+  if (extra.project?.unmodeled) Object.assign(explicit, scriptKeyValues({ ...defaultConfig(store), ...explicit }, extra.project.unmodeled))
   // A preset file's G-code inherited from a shipped profile is that profile's text; only its own G-code is untrusted.
   // The project's G-code that is left is stock text, which projectGcode checked.
   // An opened project brings no G-code but its printer text, which projectGcode checked.
