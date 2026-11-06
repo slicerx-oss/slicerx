@@ -1878,6 +1878,25 @@ mod tests {
     }
 
     #[test]
+    fn a_chamber_target_over_the_printer_limit_is_lowered_to_it() {
+        // Each filament's chamber target, as the start G-code reads them (overall_chamber_temperature).
+        let mut c = cfg(json!({ "chamber_temperature": [70, 40] }));
+        let limits = Limits {
+            chamber_max_c: Some(65.0),
+            ..Limits::default()
+        };
+        let issues = clamp_config(&mut c, &limits);
+        assert_eq!(c.raw["chamber_temperature"], json!([65.0, 40]));
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].code, "chamber_temperature_clamped");
+        assert!(!blocks(&issues));
+        // Without the printer's limit the target stays as given.
+        let mut c = cfg(json!({ "chamber_temperature": [70, 40] }));
+        assert!(clamp_config(&mut c, &Limits::default()).is_empty());
+        assert_eq!(c.raw["chamber_temperature"], json!([70, 40]));
+    }
+
+    #[test]
     fn the_printer_layer_limits_never_move_a_set_layer_height() {
         // min_layer_height and max_layer_height bound generated variable layers, not a height the user set.
         for lh in [0.32, 0.06] {
