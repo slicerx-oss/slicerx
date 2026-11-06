@@ -249,6 +249,7 @@ pub(crate) async fn watch(b: Arc<Bridge>) {
         let ids: Vec<String> = b.printers.lock().await.keys().cloned().collect();
         futures::future::join_all(ids.iter().map(|id| observe(&b, id))).await;
         run_queue(&b).await;
+        b.forget_closed_cards();
         crate::watch::heater_steps(&b).await;
         if b.hub.prune(now_ms()) {
             b.hub.save_queue();
@@ -710,6 +711,7 @@ pub(crate) fn resolved(b: &Bridge, request_id: &str, granted: bool, via: &str, b
         o.insert("by".into(), json!(by));
     }
     b.hub.emit("approval.resolved", data);
+    b.forget_closed_cards();
 }
 
 // ---- the queue ----
