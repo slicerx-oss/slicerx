@@ -4,10 +4,10 @@
 // outside client works on, and printer controls the app exposes as buttons
 // (temperatures, filament load and unload, home, a G-code line). They are written
 // as mimir tools so the same permission gate and approval tokens apply.
-import { assistantText } from '@slicerx/contracts'
+import { assistantText, productName } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
-import type { ApprovalToken, PrinterHost } from '@slicerx/contracts'
+import type { PrinterHost, SideEffectAction } from '@slicerx/contracts'
 import { defineTool, type AgentWork, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DataStore } from './data'
@@ -40,15 +40,6 @@ export interface LocalToolDeps {
 
 const printerId = z.string().min(1).describe('Printer id from slicerx_printer_list, such as "bay-2"')
 
-/** A host that can send one G-code line, directly (sx-link) or through the printer's plugin (simulator, desktop). */
-export async function sendGcodeLine(host: PrinterHost, id: string, line: string, token: ApprovalToken | undefined): Promise<void> {
-  const direct = (host as Partial<{ sendGcode(p: string, l: string, t: ApprovalToken): Promise<void> }>).sendGcode
-  if (direct && token) return direct.call(host, id, line, token)
-  const info = (await host.list()).find((p) => p.id === id)
-  if (!info) throw new Error(`No printer ${id}`)
-  await host.callTool(info.plugin, 'gcode', { printerId: id, line }, token)
-}
-
 async function firmware(host: PrinterHost, id: string): Promise<'klipper' | 'bambu' | 'marlin'> {
   const info = (await host.list()).find((p) => p.id === id)
   if (!info) throw new Error(`No printer ${id}`)
@@ -65,13 +56,15 @@ function gcodeTool<I extends { printerId: string }>(spec: {
   /** A line the card shows under what it sends. */
   note?: string
   /**
-   * Throws when the printer may not take the lines now. Checked before a card is made, and again by `run` before an
-   * in-process send. Over sx-link the hub sends the approved line itself, so a rule that must hold at send time
-   * belongs in the hub's own work kind (`work`).
+   * Throws when the printer may not take the lines now, checked before a card is made. The hub sends the approved
+   * line itself, so a rule that must hold at send time belongs in the hub (its own work kind, `work`).
    */
   ready?(i: I, ctx: ToolContext): Promise<void>
-  /** The work the hub runs once a person approves, when it has its own kind with its own checks (`home`). */
-  work?(i: I): AgentWork
+  /**
+   * The work the hub runs once a person approves, when it has its own kind with its own checks (`home`), and the card
+   * action that approves it.
+   */
+  work?: { work(i: I): AgentWork; action: SideEffectAction; params(i: I): unknown }
 }): PilotTool<I> {
   const plan = async (i: I, ctx: ToolContext): Promise<string[]> => {
     await spec.ready?.(i, ctx)
@@ -90,22 +83,24 @@ function gcodeTool<I extends { printerId: string }>(spec: {
       const lines = await plan(i, ctx)
       const line = lines[0]
       if (lines.length !== 1 || !line) throw new Error('Send one G-code line at a time so a person can approve each.')
-      return spec.work?.(i) ?? { kind: 'gcode', printerId: i.printerId, line }
+      return spec.work?.work(i) ?? { kind: 'gcode', printerId: i.printerId, line }
     },
     async approval(i, ctx) {
       const lines = await plan(i, ctx)
+      const own = spec.work
       return {
         title: spec.title(i),
         lines: [`Sends: ${lines.join(' ; ')}`, ...(spec.note ? [spec.note] : [])],
         printerId: i.printerId,
-        actions: lines.map((line) => ({ action: 'printer.gcode' as const, target: i.printerId, params: { printerId: i.printerId, line } })),
+        actions: own
+          ? [{ action: own.action, target: i.printerId, params: own.params(i) }]
+          : lines.map((line) => ({ action: 'printer.gcode' as const, target: i.printerId, params: { printerId: i.printerId, line } })),
       }
     },
-    async run(i, ctx) {
-      if (!ctx.token) return { ok: false, summary: 'Not approved' }
-      const lines = await plan(i, ctx)
-      for (const line of lines) await sendGcodeLine(ctx.host.printers, i.printerId, line, ctx.token)
-      return { summary: spec.summary(i), output: { printerId: i.printerId, sent: lines } }
+    // Never sent from here: these actions are person only (gate.ts needsPerson), so the card goes to the hub, which
+    // sends the line once a person approves it, under its own rules.
+    async run() {
+      return { ok: false, summary: `A person approves this in ${productName()} or on the phone, and the hub sends it.` }
     },
   })
 }
@@ -340,17 +335,18 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const home = gcodeTool({
     name: 'printer.home',
-    description: 'Home every axis of a printer (G28), as the Home button on its Move tab does. Only while the printer is idle or finished; a person approves it, since the nozzle moves down to the plate. Read the result back with slicerx_printer_status.',
+    description: `Home every axis of a printer (G28), as the Home button on its Move tab does. Only while the printer is idle or finished, and only once the plate is confirmed clear in ${productName()} or on the phone; a person approves it, since the nozzle moves down to the plate. Read the result back with slicerx_printer_status.`,
     input: z.object({ printerId }),
     async ready(i, ctx) {
       const st = await ctx.host.printers.status(i.printerId)
       if (st.state !== 'idle' && st.state !== 'finished') throw new Error(`${i.printerId} is ${st.state}; it homes only while the printer is idle or finished.`)
     },
     lines: () => ['G28'],
-    // The hub checks the printer state and the plate again when the person approves, under the printer lock.
-    work: (i) => ({ kind: 'home', printerId: i.printerId }),
+    // The hub checks the printer state and the plate again when the person approves, under the printer lock. The card
+    // approves a home (`printer.home`), never the raw line.
+    work: { work: (i) => ({ kind: 'home', printerId: i.printerId }), action: 'printer.home', params: (i) => ({ printerId: i.printerId }) },
     title: (i) => `Home all axes of ${i.printerId}?`,
-    note: 'Homing lowers the nozzle to the plate; make sure the plate is clear.',
+    note: `Homing lowers the nozzle to the plate, so the printer homes only once the plate is clear and confirmed in ${productName()} or on the phone.`,
     summary: (i) => `${i.printerId}: homing`,
   })
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! Work an agent (the MCP server) asks for that only a person may approve: start a print, resume,
-//! send raw G-code, skip one object of the running print. The agent registers the card together with the work. The hub checks that the
+//! send raw G-code, home, skip one object of the running print. The agent registers the card together with the work. The hub checks that the
 //! card's actions are exactly the work's (same printer, file hash, options, line), shows the card to
 //! the app and phones, and when a person approves it there, runs the work itself with the token.
 //! The agent never sees the token and cannot run the work on its own.
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use sx_connect::{Adjustment, ApprovalToken, JobFile, RemoteFile, StartOptions};
 
+use crate::device::HomeLine;
 use crate::hub::{lock, start_params, upload_params};
 use crate::hub_rpc::decode_file;
 use crate::rpc::{Bridge, Rpc, RpcError, session, str_arg};
@@ -40,7 +41,8 @@ pub(crate) enum Work {
         printer: String,
         line: String,
     },
-    /// Home every axis (`G28`) under the hub's home rules, checked when the person approves.
+    /// Home every axis (`G28`) under the hub's home rules, checked when the person approves. Its card
+    /// action is `printer.home`, never the raw line, so a person sees a home and the hub's rules.
     Home {
         printer: String,
     },
@@ -208,8 +210,7 @@ impl Work {
             }),
             Work::Resume { printer } => json!({ "kind": "resume", "printerId": printer }),
             Work::Gcode { printer, line } => json!({ "kind": "gcode", "printerId": printer, "line": line }),
-            // Cards show it as the line it sends, which every app and phone already reads.
-            Work::Home { printer } => json!({ "kind": "gcode", "printerId": printer, "line": "G28" }),
+            Work::Home { printer } => json!({ "kind": "home", "printerId": printer }),
             Work::Adjust { printer, change } => {
                 json!({ "kind": "adjust", "printerId": printer, "change": change })
             }
@@ -258,11 +259,12 @@ impl Work {
                 printer.clone(),
                 hash(&json!({ "printerId": printer, "line": line })),
             )],
-            // The card shows and approves the line it sends.
+            // Its own action: the hub checks this token, then sends G28 under its home rules with one it
+            // mints, as for the app's Home button.
             Work::Home { printer } => vec![(
-                "printer.gcode".into(),
+                "printer.home".into(),
                 printer.clone(),
-                hash(&json!({ "printerId": printer, "line": "G28" })),
+                hash(&json!({ "printerId": printer })),
             )],
             Work::Adjust { printer, change } => {
                 let canon: Value =
@@ -477,9 +479,29 @@ async fn execute(
             Ok(())
         }
         Work::Resume { printer } => Ok(session(b, &printer).await?.resume(token).await?),
+        // A raw home line lowers the nozzle as a home does, so it goes under the home rules too.
+        Work::Gcode { printer, line } if sx_connect::homes_axes(&line) => {
+            crate::device::home_checked(b, &printer, None, HomeLine::Approved { line: &line, token }).await
+        }
         Work::Gcode { printer, line } => Ok(session(b, &printer).await?.send_gcode(&line, token).await?),
-        // A card can wait: the printer may have started a job, or finished one, since it was made.
-        Work::Home { printer } => crate::device::home_checked(b, &printer, false, Some(token)).await,
+        // A card can wait: the printer may have started a job, or finished one, since it was made. The
+        // person's token is for `printer.home`; checked and used up here, it lets the hub send G28 under
+        // its own token.
+        Work::Home { printer } => {
+            let broker = b
+                .broker
+                .as_ref()
+                .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
+            broker
+                .verify(
+                    &crate::hub_rpc::to_permit(token),
+                    "printer.home",
+                    &printer,
+                    &sx_permit::hash_params(&json!({ "printerId": printer })),
+                )
+                .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
+            crate::device::home_checked(b, &printer, None, HomeLine::Mint).await
+        }
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),

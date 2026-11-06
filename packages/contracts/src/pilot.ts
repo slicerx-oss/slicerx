@@ -60,6 +60,7 @@ export const SIDE_EFFECT_ACTIONS = [
   'printer.resume',
   'printer.cancel',
   'printer.gcode',
+  'printer.home',
   'printer.adjust',
   'printer.skip',
   'plugin.call',
@@ -79,6 +80,7 @@ export type SideEffectAction = (typeof SIDE_EFFECT_ACTIONS)[number]
  *   and the content hash the card shows; `sha256` is left out only for a file whose content is not known)
  * - printer.pause | resume | cancel: `{ printerId }`
  * - printer.gcode: `{ printerId, line }`
+ * - printer.home: `{ printerId }`, a home the hub runs under its home rules (printer state and plate)
  * - printer.adjust: `{ printerId, change }`, the change to a running print as the hub checks it
  *   or `{ printerId, slot }`, a SlotSetting written to an AMS slot (app only)
  * - printer.skip: `{ printerId, id }`, one object of the running print to stop printing (the hub pins the job)
