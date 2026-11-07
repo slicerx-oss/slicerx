@@ -10,6 +10,7 @@ import type { Host, MeshPart } from '@slicerx/contracts'
 import { decodeTree, leavesOf } from '@slicerx/viewport'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
 import { history, inStep } from '../src/plate/history'
+import { switchPlate } from '../src/plate/plates'
 import { commitStroke } from '../src/plate/paint'
 import { forgetTexture, paintOpenedFromTexture, textureRepaints, type TextureSource } from '../src/plate/texture-paint'
 import { checkCrossings, type CrossingRunner, type Quiet } from '../src/state/import-auto'
@@ -89,7 +90,7 @@ function triangleOf(p: MeshPart, t: number): [V3, V3, V3] {
   return [corner(0), corner(1), corner(2)]
 }
 
-function wrongFaces(e: PlateEntry, k = 0, dx = 0): string[] {
+function wrongFaces(e: PlateEntry, k = 0, dx = 0, as: (want: number) => number = (w) => w): string[] {
   const p = e.parts[k]!
   const own = e.slotOverrides?.[p.name] ?? p.slot
   const texts = e.paint?.[k]?.color ?? {}
@@ -97,7 +98,7 @@ function wrongFaces(e: PlateEntry, k = 0, dx = 0): string[] {
   for (let t = 0; t < p.indices.length / 3; t++) {
     const tri = triangleOf(p, t)
     const mid = [0, 1, 2].map((j) => (tri[0][j]! + tri[1][j]! + tri[2][j]! - (j === 0 ? 3 * dx : 0)) / 3)
-    const want = mid.some((c) => c > 20 + 1e-6) ? 2 : 1
+    const want = as(mid.some((c) => c > 20 + 1e-6) ? 2 : 1)
     const text = texts[t]
     const got = text ? [...new Set(leavesOf(tri, decodeTree(text)!).map((l) => l.state || own))] : [own]
     if (got.length !== 1 || got[0] !== want) wrong.push(`${t} ${mid.map((c) => c.toFixed(1)).join(',')}: ${got.join('/')} for ${want}`)
@@ -222,11 +223,7 @@ describe.skipIf(!liveEngine)('paint from a texture and the crossing rebuild', ()
     expect(o.parts[0]!.indices.length).toBe(rebuilt.indices.length)
     expect(wrongFaces(o)).toEqual([])
   })
-  /**
-   * The engine with something done to the project while the next paint.texture call is on its way. Answers whether
-   * that call came: with a carry of paint through the rebuild (fix/paint-after-crossing-rebuild) the paint moves
-   * with the mesh, so nothing is painted again and these cases only check the faces.
-   */
+
   /** The open's step for the crossing check, noting whether the rebuild kept the texture's paint by number. */
   const keptStep = () => {
     const before = get().plate[0]!.paint?.[0]?.color
@@ -236,6 +233,11 @@ describe.skipIf(!liveEngine)('paint from a texture and the crossing rebuild', ()
     return { edit: (fn: () => void) => step(() => { fn(); kept ??= get().plate[0]!.paint?.[0]?.color === before }), kept: () => kept === true }
   }
 
+  /**
+   * The engine with something done to the project while the next paint.texture call is on its way. Answers whether
+   * that call came: if the rebuild carries the paint onto its new triangles, the paint moves with the mesh, so nothing
+   * is painted again and these cases only check the faces.
+   */
   const duringNextPaint = (fn: () => void): (() => boolean) => {
     let done = false
     setGeomProvider({
@@ -326,11 +328,54 @@ describe.skipIf(!liveEngine)('paint from a texture and the crossing rebuild', ()
     set({ plate: [entry(part())] })
     await paintOpenedFromTexture(['o'], source())
     const e = get().plate[0]!
-    const mine = (e.slotOverrides?.['boxes'] ?? 1) === 2 ? 1 : 2
+    // the texture's own filament for the part, and the other one, which the person picks
+    const textureOwn = e.slotOverrides?.['boxes'] ?? e.parts[0]!.slot
+    const mine = textureOwn === 2 ? 1 : 2
     inStep({}, () => set((s) => ({ plate: s.plate.map((x) => ({ ...x, slotOverrides: { ...x.slotOverrides, boxes: mine } })) })))
-    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, openStep(), quiet)
+    const steps = history().state().undo
+    const step = keptStep()
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, step.edit, quiet)
+    const left = get().plate[0]!.paint?.[0]?.color
     await textureRepaints()
-    expect(get().plate[0]!.parts[0]!.indices.length).toBe(rebuilt.indices.length)
-    expect(get().plate[0]!.slotOverrides?.['boxes']).toBe(mine)
+    const o = get().plate[0]!
+    expect(o.parts[0]!.indices.length).toBe(rebuilt.indices.length)
+    expect(o.slotOverrides?.['boxes']).toBe(mine)
+    // the faces the texture left to the part's own filament print in the person's; the others in the texture's
+    expect(wrongFaces(o, 0, 0, (w) => (w === textureOwn ? mine : w))).toEqual([])
+    if (!step.kept()) return
+    // painted again, in the rebuild's step
+    expect(o.paint?.[0]?.color).not.toBe(left)
+    expect(history().state().undo).toBe(steps + 1)
+  })
+
+  it('paints a second crossing part again on its own rebuild after the first part\'s repaint', async () => {
+    set({ plate: [entry(part(), part2())] })
+    await paintOpenedFromTexture(['o'], source())
+    const own2 = get().plate[0]!.slotOverrides?.['boxes2']
+    const only = (name: string, mesh: typeof rebuilt): CrossingRunner => async (p) => (p.name === name ? { crossing: true, mesh } : { crossing: false })
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], only('boxes', rebuilt), openStep(), quiet)
+    await textureRepaints()
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], only('boxes2', rebuilt2), openStep(), quiet)
+    await textureRepaints()
+    const o = get().plate[0]!
+    expect(o.parts[1]!.indices.length).toBe(rebuilt2.indices.length)
+    expect(wrongFaces(o)).toEqual([])
+    expect(wrongFaces(o, 1, 100)).toEqual([])
+    expect(o.slotOverrides?.['boxes2']).toBe(own2)
+  })
+
+  it('paints the rebuilt part again once its plate is shown again, when another plate was shown while the engine painted', async () => {
+    set({ plate: [entry(part())], plates: [{ id: 'p', name: 'Plate 1', objects: [], settings: {} }, { id: 'q', name: 'Plate 2', objects: [], settings: {} }], activePlate: 'p' })
+    await paintOpenedFromTexture(['o'], source())
+    const step = keptStep()
+    const ran = duringNextPaint(() => switchPlate('q'))
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, step.edit, quiet)
+    await textureRepaints()
+    expect(ran()).toBe(step.kept())
+    switchPlate('p')
+    await textureRepaints()
+    const o = get().plate[0]!
+    expect(o.parts[0]!.indices.length).toBe(rebuilt.indices.length)
+    expect(wrongFaces(o)).toEqual([])
   })
 })
