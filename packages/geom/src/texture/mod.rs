@@ -378,18 +378,17 @@ impl Grid {
             .map(|k| c[k].abs().max((self.n[k] - 1 - c[k]).abs()))
             .max()
             .unwrap_or(0);
-        let inside = |k: usize, x: i64| (0..self.n[k]).contains(&x);
-        for r in 0..=last {
-            for dx in -r..=r {
+        // rings nearer than the grid's box hold no cells: a point far outside starts at the box
+        let first = (0..3)
+            .map(|k| (-c[k]).max(c[k] - (self.n[k] - 1)).max(0))
+            .max()
+            .unwrap_or(0);
+        for r in first..=last {
+            // only the ring's cells inside the grid, so a ring costs at most the grid's own cells
+            for dx in (-r).max(-c[0])..=r.min(self.n[0] - 1 - c[0]) {
                 let x = c[0] + dx;
-                if !inside(0, x) {
-                    continue;
-                }
-                for dy in -r..=r {
+                for dy in (-r).max(-c[1])..=r.min(self.n[1] - 1 - c[1]) {
                     let y = c[1] + dy;
-                    if !inside(1, y) {
-                        continue;
-                    }
                     // the ring's shell only: every z on its x and y faces, the two z faces inside them
                     let (mut dz, end, step) = if dx.abs() == r || dy.abs() == r {
                         ((-r).max(-c[2]), r.min(self.n[2] - 1 - c[2]), 1)
@@ -1127,6 +1126,27 @@ pub(crate) mod tests {
             said[0].contains(&format!("{:.1} mm", got.min_edge_mm)),
             "{said:?}"
         );
+    }
+
+    #[test]
+    fn a_triangle_far_outside_the_source_is_found_without_scanning_the_empty_rings() {
+        // one small triangle 1 km off a 20 mm source square: about 10^5 empty rings, each once 10^10 cells to scan
+        let src = square_source();
+        let mut far = TriMesh::default();
+        for p in [[1e6, 1e6, 0.0], [1e6 + 5.0, 1e6, 0.0], [1e6, 1e6 + 5.0, 0.0]] {
+            far.push_vertex(p);
+        }
+        far.triangles.push([0, 1, 2]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let got = paint(&src, &[far], &opts()).map(|p| p.matched);
+            let _ = tx.send(got);
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the nearest search took over 10 s")
+            .unwrap();
+        assert_eq!(got.nearest, 1);
     }
 
     /// Two 20 mm squares in z = 0 at x 0 and x 100: the first shows nothing, the second is red.
