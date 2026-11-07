@@ -2,12 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // pnpm --filter @slicerx/pilot eval:creative [--prompt id,id] [--log] [--change "what changed"]
 //   live: --mode live --model id --usd-in n --usd-out n [--cap-usd 1.50] [--record]
-//         [--long-above tokens --usd-in-long n --usd-out-long n]
+//         [--long-above tokens --usd-in-long n --usd-out-long n] [--usd-per-search 0.01]
 //         [--provider openai|anthropic|openai-compatible] [--base-url http://127.0.0.1:11434/v1]
 // The default replays the recorded replies in evals/creative/recordings, offline and with no key, and lists the
 // prompts that have no recording yet. A live run asks a model and needs the model's price per million input and
 // output tokens, so it can stop: no new request starts once the spend reaches the cap less the stop margin
-// (CAP_USD 1.50 by default, stopping at 1.40). --record saves each live reply as that prompt's recording.
+// (CAP_USD 1.50 by default, stopping at 1.40), or when the most it could cost would take the spend past the cap.
+// A reply cut off before its usage arrived is charged that most. --record saves each live reply as that prompt's
+// recording.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
@@ -17,7 +19,7 @@ import { createNodeTransport } from '../../src/node/index'
 import { createTransportClient } from '../../src/provider/client'
 import type { LlmClient } from '../../src/provider/types'
 import { evalGeom } from '../geom'
-import { budgetedClient, createBudget, DEFAULT_CAP_USD, runLive, STOP_MARGIN_USD, type Price } from './live'
+import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
 import { runPrompt, scoreParts, type CreativeScore, type PromptRun } from './run'
@@ -53,7 +55,12 @@ if (mode === 'live') {
   const usdIn = Number(arg('usd-in', local ? '0' : ''))
   const usdOut = Number(arg('usd-out', local ? '0' : ''))
   const longAbove = arg('long-above')
-  const price: Price = { usdIn, usdOut }
+  const usdPerSearch = Number(arg('usd-per-search', local ? '0' : String(DEFAULT_USD_PER_SEARCH)))
+  const price: Price = { usdIn, usdOut, usdPerSearch }
+  if (!Number.isFinite(usdPerSearch) || usdPerSearch < 0) {
+    console.error('--usd-per-search is dollars per hosted web search, 0 or more.')
+    process.exit(2)
+  }
   if (!PROVIDERS.includes(provider)) {
     console.error(`Unknown --provider "${provider}". Use ${PROVIDERS.join(', ')}.`)
     process.exit(2)
@@ -126,7 +133,7 @@ if (client) {
 
 const passed = scores.filter((s) => s.score.pass).length
 console.log(
-  `\n${mode}: ${scores.length} scored, ${passed} passed${skipped.length ? `, ${skipped.length} skipped with no geometry engine` : ''}${mode === 'live' ? `, spent $${budget.spentUsd.toFixed(2)} of $${capUsd.toFixed(2)}` : ''}${budget.stopped ? ' (stopped at the cost cap)' : ''}`,
+  `\n${mode}: ${scores.length} scored, ${passed} passed${skipped.length ? `, ${skipped.length} skipped with no geometry engine` : ''}${mode === 'live' ? `, spent $${budget.spentUsd.toFixed(2)} of $${capUsd.toFixed(2)}${budget.cutOff ? ` ($${budget.estimatedUsd.toFixed(2)} of it the most ${budget.cutOff} cut-off repl${budget.cutOff === 1 ? 'y' : 'ies'} could cost)` : ''}` : ''}${budget.stopped ? ' (stopped at the cost cap)' : ''}`,
 )
 if (waiting.length) console.log(`${waiting.length} prompt${waiting.length === 1 ? ' has' : 's have'} no recording yet: ${waiting.join(', ')}`)
 
