@@ -48,7 +48,11 @@ export function tagged(loops: readonly SketchLoop[], id: string, mode: ProjectMo
   })
 }
 
-const idNumber = (id: string | undefined): number => Number(/^p(\d+)$/.exec(id ?? '')?.[1] ?? 0)
+/** The number in a projection id; 0 for one that is not an id, or past the most a sketch ever counts to. */
+const idNumber = (id: string | undefined): number => {
+  const n = Number(/^p(\d{1,7})$/.exec(id ?? '')?.[1] ?? 0)
+  return n <= 1_000_000 ? n : 0
+}
 
 /**
  * The next projection id of a sketch. Ids only count up: one that was removed, or whose projection a file lost, is

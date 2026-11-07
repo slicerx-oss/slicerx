@@ -6,7 +6,7 @@
 import { nextProjectionId, withProjection, withoutProjection, type FaceFrame, type Projection, type ProjectMode, type ProjectSource, type SketchItem, type SketchLoop } from '@slicerx/cad-history'
 import type { PickEvent } from '@slicerx/viewport'
 import { Button, Seg } from '@slicerx/ui'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { get } from '../state/store'
 import { errorText, Message, Note, useProbe } from './panel-kit'
 import { addsTo, bodySource, edgeSource, faceSource, projectNow, projectionName } from './project-sketch'
@@ -58,37 +58,55 @@ export function ProjectCard({ frame, value, onChange, locked = false, sketch }: 
   // the edges projection a pick adds to, while picking edges
   const [edges, setEdges] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // the projections as they are now, for a pick that answers after other changes; and the picks still to run, in order
+  const latest = useRef(value)
+  latest.current = value
+  const open = useRef<string | null>(null)
+  const queue = useRef<Promise<void>>(Promise.resolve())
 
-  const put = async (source: ProjectSource, id: string) => {
+  const change = (next: Projected) => {
+    latest.current = next
+    onChange(next)
+  }
+
+  /** Puts `source` in as projection `id`; one that adds to an open projection removed meanwhile is dropped. */
+  const put = async (source: ProjectSource, id: string, adds: boolean) => {
     const loops = await projectNow(source, frame, sketch)
-    const was = value.list.find((p) => p.id === id)
-    onChange(fromSketch(withProjection(asSketch(value, frame), { id, source, mode: was?.mode ?? mode }, loops)))
+    const now = latest.current
+    const was = now.list.find((p) => p.id === id)
+    if (adds && !was) return
+    change(fromSketch(withProjection(asSketch(now, frame), { id, source, mode: was?.mode ?? mode }, loops)))
   }
 
   const onPick = (hit: PickEvent) => {
     const e = hit.objectId ? get().plate.find((p) => p.id === hit.objectId) : undefined
-    if (!e || hit.triangle === null || !hit.point || busy || !picking) return
+    const kind = picking
+    if (!e || hit.triangle === null || !hit.point || !kind) return
     const part = hit.partIndex ?? 0
     setBusy(true)
     setNote(null)
     const run = async () => {
-      const fresh = () => nextProjectionId(asSketch(value, frame))
-      if (picking === 'body') {
-        await put(bodySource(e), fresh())
+      const fresh = () => nextProjectionId(asSketch(latest.current, frame))
+      if (kind === 'body') {
+        await put(bodySource(e), fresh(), false)
         setPicking(null)
-      } else if (picking === 'face') {
-        await put(faceSource(e, part, hit.triangle!, hit.point!), fresh())
+      } else if (kind === 'face') {
+        await put(faceSource(e, part, hit.triangle!, hit.point!), fresh(), false)
         setPicking(null)
       } else {
-        const open = edges ? value.list.find((p) => p.id === edges) : undefined
-        const next = await edgeSource(e, part, hit.triangle!, hit.point!, open?.source)
+        const from = open.current ? latest.current.list.find((p) => p.id === open.current) : undefined
+        const next = await edgeSource(e, part, hit.triangle!, hit.point!, from?.source)
         // an edge of another body or part starts a projection of its own
-        const id = open && addsTo(open.source, next) ? open.id : fresh()
-        await put(next, id)
+        const adds = !!from && addsTo(from.source, next)
+        const id = adds ? from.id : fresh()
+        await put(next, id, adds)
+        open.current = id
         setEdges(id)
       }
     }
-    run()
+    // picks run one after another, each on what the one before left
+    queue.current = queue.current
+      .then(run)
       .catch((err: unknown) => setNote(errorText(err)))
       .finally(() => setBusy(false))
   }
@@ -96,15 +114,17 @@ export function ProjectCard({ frame, value, onChange, locked = false, sketch }: 
   const start = (k: Kind) => {
     setNote(null)
     setEdges(null)
+    open.current = null
     setPicking(picking === k ? null : k)
   }
   const switchMode = (id: string, m: ProjectMode) => {
-    const p = value.list.find((x) => x.id === id)
-    if (p) onChange(fromSketch(withProjection(asSketch(value, frame), { ...p, mode: m }, null)))
+    const p = latest.current.list.find((x) => x.id === id)
+    if (p) change(fromSketch(withProjection(asSketch(latest.current, frame), { ...p, mode: m }, null)))
   }
   const remove = (id: string) => {
+    if (open.current === id) open.current = null
     if (edges === id) setEdges(null)
-    onChange(fromSketch(withoutProjection(asSketch(value, frame), id)))
+    change(fromSketch(withoutProjection(asSketch(latest.current, frame), id)))
   }
 
   return (
@@ -120,7 +140,7 @@ export function ProjectCard({ frame, value, onChange, locked = false, sketch }: 
             </p>
           ) : null}
           {picking === 'edges' && edges ? (
-            <Button size="sm" className="tp-pill" data-testid="sketch-project-done" onClick={() => (setPicking(null), setEdges(null))}>
+            <Button size="sm" className="tp-pill" data-testid="sketch-project-done" onClick={() => (setPicking(null), setEdges(null), (open.current = null))}>
               Done
             </Button>
           ) : null}

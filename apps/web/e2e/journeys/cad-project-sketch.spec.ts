@@ -7,6 +7,7 @@
 import { journey as test, expect } from '../journey'
 import { bounds, facePick, height, pick, toolPanel } from '../cad-helpers'
 import { shotBoth, sketchOnTop, studio } from './lib/cad'
+import { projectCardLaidOut } from './lib/project-card'
 
 test.skip(({ isMobile }) => isMobile, 'The modeling tools run at desktop width; the phone legs are in phone-cad.spec.ts')
 
@@ -29,6 +30,8 @@ test.describe('project-sketch', () => {
     const row = card.getByTestId('sketch-projection-p1')
     await expect(row).toContainText('Face of')
     await expect(row.getByRole('radio', { name: 'Real' })).toHaveAttribute('aria-checked', 'true')
+    // the desktop panel is narrow: the name takes its own line over its choice
+    await projectCardLaidOut(card, row, true)
     await shotBoth(page, info, 'project-face-1440')
     // the projected outline is a profile: Extrude joins it to the box
     const extrude = panel.getByRole('button', { name: 'Extrude', exact: true })
