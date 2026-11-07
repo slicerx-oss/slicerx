@@ -142,6 +142,12 @@ export function createAnthropicAdapter(): LlmAdapter {
       let outputTokens = 0
       let cacheReadTokens = 0
       let cacheWriteTokens = 0
+      // reported as usage.server_tool_use.web_search_requests; undefined until the reply names it
+      let webSearches: number | undefined
+      const searchesIn = (u: Obj): void => {
+        const s = isObj(u['server_tool_use']) ? u['server_tool_use']['web_search_requests'] : undefined
+        if (typeof s === 'number' && Number.isFinite(s)) webSearches = Math.max(webSearches ?? 0, s)
+      }
       for await (const msg of parseSse(body)) {
         let ev: unknown
         try {
@@ -159,6 +165,7 @@ export function createAnthropicAdapter(): LlmAdapter {
             const u = isObj(m['usage']) ? m['usage'] : {}
             cacheReadTokens = num(u['cache_read_input_tokens'])
             cacheWriteTokens = num(u['cache_creation_input_tokens'])
+            searchesIn(u)
             inputTokens = num(u['input_tokens']) + cacheWriteTokens + cacheReadTokens
             outputTokens = num(u['output_tokens'])
             break
@@ -221,6 +228,7 @@ export function createAnthropicAdapter(): LlmAdapter {
             const d = isObj(ev['delta']) ? ev['delta'] : {}
             const u = isObj(ev['usage']) ? ev['usage'] : {}
             outputTokens = num(u['output_tokens']) || outputTokens
+            searchesIn(u)
             const reason = str(d['stop_reason'])
             if (reason === 'max_tokens') stop = 'length'
             else if (reason === 'tool_use') stop = 'tool_calls'
@@ -240,7 +248,7 @@ export function createAnthropicAdapter(): LlmAdapter {
         }
       }
       if (stop === 'end' && sawCall) stop = 'tool_calls'
-      yield { type: 'usage', inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }
+      yield { type: 'usage', inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, ...(webSearches === undefined ? {} : { webSearches }) }
       const raw = [...blocks.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b)
       yield { type: 'done', stop, raw }
     },
