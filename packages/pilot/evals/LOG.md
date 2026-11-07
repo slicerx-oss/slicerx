@@ -18,3 +18,4 @@ One row per eval run. `results.jsonl` has the per scenario scores.
 | 2026-09-30 14:07 | live | gpt-6-sol | make-model-logo | 1 | 95.4 | 100% | 4 | 0 | make_model logo smoke run |
 | 2026-11-07 16:28 | live | claude-haiku-5-5 | creative | 1 | 30 | 30% | 1.2 | 0 | creative prompts |
 | 2026-11-07 18:19 | live | claude-haiku-5-5 | creative | 1 | 45 | 45% | 11.1 | 0 | creative prompts; default answer on (9 answered); 3 built nothing (1 asked, 1 declined, 1 none): pip-chain asked, flexi-dragon declined, phone-stand none |
+| 2026-11-07 19:38 | live | claude-haiku-5-5 | creative | 1 | 60 | 60% | 13.1 | 0 | creative prompts; default answer on (8 answered); 1 built nothing (1 asked, 0 declined, 0 none): pip-chain asked |

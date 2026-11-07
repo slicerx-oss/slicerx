@@ -2,17 +2,17 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T18:11:14.285Z",
+ "capturedAt": "2026-11-07T19:30:05.642Z",
  "steps": [
   {
-   "text": "Before I design this, I need one measurement from you: **how thick is your desk edge, in mm?** The clamp that sits on the edge has to match it, and I won't guess that.\n\nOnce I have it, here's what I'll do:\n1. Show you the dimension sheet: 100 mm length, five slots sized for USB plugs and cables, the edge clamp, and a base. Slot sizes will be marked as guesses unless you tell me your plug or cable size.\n2. Build the part in steps you can edit in Model.\n3. Pick your P1S with PLA, slice it, and queue it only if you ask.\n\nIf you also know your cable type (USB-C, USB-A, or thick charging cables), tell me and I'll size the slots to fit."
+   "text": "I can design this. Before I build, I need one measurement from you: **how thick is your desk edge, in mm?** The hook that sits over the edge has to match it. If you can also tell me the widest USB plug you use (USB-C and Lightning plugs are about 8 to 12 mm across, the cable itself about 4 to 6 mm), I'll size the slots to fit.\n\nUntil you answer, here is what I plan to build, with my guesses marked:\n\n- **Length:** 100 mm (yours).\n- **Five slots:** about 8 mm wide each, on a 16 mm pitch, through a top channel (guess).\n- **Depth front to back:** about 40 mm (guess).\n- **Height above the desk:** about 20 mm (guess).\n- **Walls:** 2.4 mm, six 0.4 mm perimeters (guess).\n- **Hook:** drops over the desk edge; its depth depends on your desk thickness (asked).\n\nOnce you give the desk thickness, I'll show you the full dimension sheet to confirm before any geometry is built."
   },
   {
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Desk cable organizer",
+      "title": "Desk cable organizer, 5 slots",
       "views": [
        "front",
        "side",
@@ -23,114 +23,103 @@
         "plane": "yz",
         "points": [
          [
-          -40,
-          12
-         ],
-         [
-          4,
-          12
-         ],
-         [
-          4,
-          -25
-         ],
-         [
-          0,
-          -25
-         ],
-         [
           0,
           0
          ],
          [
-          -40,
+          40,
           0
+         ],
+         [
+          40,
+          20
+         ],
+         [
+          0,
+          20
          ]
         ],
-        "from": 0,
-        "to": 100
+        "from": -50,
+        "to": 50
        }
       ],
       "dims": [
        {
-        "key": "length",
-        "label": "Length along the desk edge",
+        "key": "length_mm",
+        "label": "Length",
         "value": 100,
         "unit": "mm",
+        "min": 100,
+        "max": 100,
         "source": "asked",
-        "note": "Given by you"
+        "note": "Your length"
        },
        {
-        "key": "slot_count",
-        "label": "Cable slots",
-        "value": 5,
+        "key": "slot_width_mm",
+        "label": "Slot width",
+        "value": 8,
         "unit": "mm",
-        "source": "asked",
-        "note": "Given by you (count)"
-       },
-       {
-        "key": "plate_depth",
-        "label": "Top plate depth, over the desk",
-        "value": 44,
-        "unit": "mm",
+        "min": 6,
+        "max": 12,
         "source": "guess",
-        "note": "Common default"
+        "note": "Cable 4 to 6 mm plus clearance"
        },
        {
-        "key": "plate_thickness",
-        "label": "Top plate thickness",
-        "value": 12,
+        "key": "slot_pitch_mm",
+        "label": "Slot pitch",
+        "value": 16,
         "unit": "mm",
+        "min": 12,
+        "max": 20,
         "source": "guess",
-        "note": "Common default"
+        "note": "Five slots with 10 mm end margins fill 100 mm"
        },
        {
-        "key": "lip_drop",
-        "label": "Front lip drop below the top",
-        "value": 25,
+        "key": "depth_mm",
+        "label": "Depth, front to back",
+        "value": 40,
         "unit": "mm",
-        "source": "guess",
-        "note": "Assumes a typical 25 mm desk edge; change it to match your desk"
+        "min": 30,
+        "max": 60,
+        "source": "guess"
        },
        {
-        "key": "lip_thickness",
-        "label": "Front lip thickness",
-        "value": 4,
+        "key": "height_mm",
+        "label": "Height above desk",
+        "value": 20,
         "unit": "mm",
-        "source": "guess",
-        "note": "Common default"
+        "min": 15,
+        "max": 30,
+        "source": "guess"
        },
        {
-        "key": "slot_width",
-        "label": "Cable slot width",
-        "value": 10,
+        "key": "wall_mm",
+        "label": "Wall thickness",
+        "value": 2.4,
         "unit": "mm",
+        "min": 1.6,
+        "max": 3.2,
         "source": "guess",
-        "note": "Fits USB-C plugs and most cables"
+        "note": "Six 0.4 mm perimeters"
        },
        {
-        "key": "slot_pitch",
-        "label": "Slot spacing (centre to centre)",
-        "value": 18,
+        "key": "desk_edge_mm",
+        "label": "Desk edge thickness",
+        "value": 28,
         "unit": "mm",
+        "min": 18,
+        "max": 40,
         "source": "guess",
-        "note": "Common default"
+        "note": "Common desk tops are 25 to 30 mm; measure yours"
        },
        {
-        "key": "slot_length",
-        "label": "Slot length across the plate",
-        "value": 32,
+        "key": "hook_depth_mm",
+        "label": "Hook depth under the top",
+        "value": 15,
         "unit": "mm",
-        "source": "guess",
-        "note": "Common default"
-       },
-       {
-        "key": "slot_depth",
-        "label": "Slot depth",
-        "value": 10,
-        "unit": "mm",
-        "source": "guess",
-        "note": "Leaves a 2 mm floor"
+        "min": 10,
+        "max": 25,
+        "source": "guess"
        }
       ]
      }
@@ -142,46 +131,43 @@
     {
      "name": "design.plan",
      "args": {
-      "part": "Desk cable organizer",
+      "part": "Desk cable organizer, 5 slots",
       "units": "mm",
       "features": [
        {
-        "name": "Base hook profile",
+        "name": "Body and desk hook",
         "kind": "extrude",
         "sizes": {
          "length": 100,
-         "plate_depth": 44,
-         "plate_thickness": 12,
-         "lip_drop": 25,
-         "lip_thickness": 4
+         "body_depth": 42.4,
+         "body_height": 20,
+         "hook_plate_height": 30.4,
+         "hook_plate_thickness": 2.4,
+         "hook_lip_depth": 17.4,
+         "desk_edge": 28
         }
        },
        {
-        "name": "Cable slots",
+        "name": "Five cable slots",
         "kind": "cut",
         "sizes": {
+         "slot_width": 8,
+         "slot_pitch": 16,
          "slot_count": 5,
-         "slot_width": 10,
-         "slot_pitch": 18,
-         "slot_length": 32,
-         "slot_depth": 10
+         "slot_depth": 12,
+         "end_margin": 10
         }
        }
       ],
       "assumptions": [
-       "Organizer rests on top of the desk with the plate, and a lip hangs down the front edge of the desk.",
-       "Slots run front to back across the plate, centred on X with 18 mm pitch.",
-       "Desk edge thickness assumed 25 mm (change if yours differs).",
-       "PLA, 0.4 mm nozzle, no supports needed."
+       "Organizer sits on the desk top behind the edge; the J-hook wraps the front edge and a lip runs under the desk top.",
+       "Desk edge thickness 28 mm, hook depth under the top 15 mm, both guesses.",
+       "Slots run front to back, leaving a 8 mm floor and a 2.4 mm front wall.",
+       "Printed as modeled, the hook lip needs supports, or print it flipped."
       ],
       "questions": [
-       "Is the desk edge a different thickness than 25 mm?"
-      ],
-      "overall": {
-       "x": 100,
-       "y": 44,
-       "z": 37
-      }
+       "Confirm the desk edge is 28 mm thick (measure yours before printing)."
+      ]
      }
     }
    ]
@@ -193,21 +179,6 @@
      "args": {
       "name": "Desk cable organizer"
      }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Desk cable organizer",
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 100,
-       "heightMm": 44
-      },
-      "distance_mm": 12,
-      "extent": "oneSide",
-      "operation": "new",
-      "name": "Top plate"
-     }
     }
    ]
   },
@@ -217,7 +188,7 @@
      "name": "geom.build",
      "args": {
       "design": "d1",
-      "name": "Base hook",
+      "name": "Body and desk hook",
       "solids": [
        {
         "type": "box",
@@ -228,8 +199,8 @@
         ],
         "max": [
          100,
-         4,
-         12
+         2.4,
+         20
         ]
        },
        {
@@ -237,12 +208,110 @@
         "min": [
          0,
          0,
-         -25
+         -30.4
         ],
         "max": [
          100,
-         4,
+         2.4,
          0
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         0,
+         -15,
+         -30.4
+        ],
+        "max": [
+         100,
+         2.4,
+         -28
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "name": "geom.info",
+     "args": {
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "d1",
+      "label": "Five cable slots",
+      "part": 0,
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         14,
+         -38,
+         8
+        ],
+        "max": [
+         22,
+         0,
+         21
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         30,
+         -38,
+         8
+        ],
+        "max": [
+         38,
+         0,
+         21
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         46,
+         -38,
+         8
+        ],
+        "max": [
+         54,
+         0,
+         21
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         62,
+         -38,
+         8
+        ],
+        "max": [
+         70,
+         0,
+         21
+        ]
+       },
+       {
+        "type": "box",
+        "min": [
+         78,
+         -38,
+         8
+        ],
+        "max": [
+         86,
+         0,
+         21
         ]
        }
       ]
@@ -256,72 +325,72 @@
      "name": "geom.subtract",
      "args": {
       "design": "d1",
+      "label": "Five cable slots",
       "part": 0,
-      "label": "Cable slots",
       "solids": [
        {
         "type": "box",
         "min": [
-         9,
-         -36,
-         2
+         92,
+         108.8,
+         8
         ],
         "max": [
-         19,
-         -4,
-         13
+         100,
+         146.8,
+         21
         ]
        },
        {
         "type": "box",
         "min": [
-         27,
-         -36,
-         2
+         108,
+         108.8,
+         8
         ],
         "max": [
-         37,
-         -4,
-         13
+         116,
+         146.8,
+         21
         ]
        },
        {
         "type": "box",
         "min": [
-         45,
-         -36,
-         2
+         124,
+         108.8,
+         8
         ],
         "max": [
-         55,
-         -4,
-         13
+         132,
+         146.8,
+         21
         ]
        },
        {
         "type": "box",
         "min": [
-         63,
-         -36,
-         2
+         140,
+         108.8,
+         8
         ],
         "max": [
-         73,
-         -4,
-         13
+         148,
+         146.8,
+         21
         ]
        },
        {
         "type": "box",
         "min": [
-         81,
-         -36,
-         2
+         156,
+         108.8,
+         8
         ],
         "max": [
-         91,
-         -4,
-         13
+         164,
+         146.8,
+         21
         ]
        }
       ]
@@ -341,7 +410,7 @@
    ]
   },
   {
-   "text": "The desk cable organizer is built as one editable part in a new design, \"Desk cable organizer\". It passed the plan check: 100 x 44 x 37 mm, watertight, 2 mm minimum wall.\n\n- **Hook:** a 12 mm top plate that rests on the desk, with a 4 mm front lip that hangs 25 mm down the desk edge.\n- **Slots:** five 10 mm wide slots, 18 mm apart, 32 mm long and 10 mm deep, leaving a 2 mm floor.\n\nThe 25 mm desk edge is a guess. If your desk edge is a different thickness, tell me and I'll change the lip. The other sizes are common defaults, as you asked. The part is not sliced or sent to the printer yet. When you're ready, I can slice it for your P1S in PLA and queue it after you approve."
+   "text": "The desk cable organizer is built as a single part in the open project, with five 8 mm slots on a 16 mm pitch across 100 mm. It passed the plan check: watertight, two features, and a minimum wall of 2 mm.\n\n- **Size:** 100 mm long, 42.4 mm deep, 50.4 mm tall including the hook.\n- **Desk hook:** a J-shaped hook wraps the front edge of a 28 mm desk, with a 15 mm lip under the top.\n- **Slots:** 12 mm deep with an 8 mm floor, running front to back.\n\nThe desk thickness is a guess, so measure your desk before you print. The hook lip overhangs, so it will need supports, or you can print the part on its side. I haven't sliced or queued it, since you only asked for the build. Say the word and I'll slice it for the P1S with PLA."
   }
  ],
  "defaultAnswer": true,
