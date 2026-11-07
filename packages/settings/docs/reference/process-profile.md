@@ -44,7 +44,7 @@
 
 ### `print_extruder_id`
 
-**Print extruder id**
+**Print extruder number**
 
 - Type: list of integers, one per extruder
 - Default: [1]

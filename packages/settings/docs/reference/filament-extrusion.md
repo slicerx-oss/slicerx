@@ -77,7 +77,7 @@
 
 ### `filament_max_volumetric_speed`
 
-**Max volumetric speed**
+**Maximum volumetric speed**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3/s
@@ -102,7 +102,7 @@
 
 ### `filament_shrinkage_compensation_z`
 
-**Filament shrinkage compensation z**
+**Shrinkage compensation Z**
 
 - Type: list of percents, one per extruder
 - Unit: %

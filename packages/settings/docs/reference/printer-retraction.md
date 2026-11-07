@@ -37,7 +37,7 @@
 
 ### `parking_pos_retraction`
 
-**Parking position retraction**
+**Filament parking distance**
 
 - Type: number
 - Unit: mm
@@ -103,7 +103,7 @@
 
 ### `retract_lift_enforce`
 
-**Retract lift enforce**
+**Z hop surfaces**
 
 - Type: list of enum values, one per extruder
 - Default: ["All Surfaces"]
