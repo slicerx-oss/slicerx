@@ -105,6 +105,7 @@ describe("a plate's own layer heights", () => {
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options?.layerTopsMm).toEqual(expected())
+    expect(requests[0]!.options?.layerTopsExact).toBe(true)
   })
 
   it('name an object whose own layer height they replace, in the engine words', async () => {
@@ -120,7 +121,8 @@ describe("a plate's own layer heights", () => {
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options?.layerTopsMm).toEqual([0.2, 0.4, 0.6, 0.8])
-    expect(requests[0]!.options).not.toHaveProperty('layerTopsExact')
+    // The job's own layers, sent as exact so the engine keeps them as the job printed them.
+    expect(requests[0]!.options?.layerTopsExact).toBe(true)
   })
 
   it('are not used on a calibration plate, which keeps its own bands', async () => {
@@ -181,6 +183,8 @@ describe('a plate without its own layer heights', () => {
     const on = engine()
     await slicePlate(on.host)
     expect(on.requests[0]!.options?.layerTopsMm).toEqual([0.2, 0.4, 0.6])
+    // sleipnir's tops are not exact: the engine keeps its fixed layers where colors change.
+    expect(on.requests[0]!.options).not.toHaveProperty('layerTopsExact')
     set({ easy: { ...get().easy, varyLayerHeight: false }, slice: { status: 'idle' } })
     const off = engine()
     await slicePlate(off.host)

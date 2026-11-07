@@ -219,9 +219,10 @@ export interface SliceOptions {
    */
   layerTopsMm?: number[]
   /**
-   * With layerTopsMm: the tops are exact, a plate's own layer heights set by hand. A multi-color plate keeps them
-   * (sleipnir's tops give way to fixed layers wherever two or more filaments print), and a Z shrinkage compensation
-   * stretches them with the model above the first layer.
+   * With layerTopsMm: the tops are exact, a plate's own layer heights set by hand or a sliced job's layers for a
+   * resume. A multi-color plate keeps them (sleipnir's tops give way to fixed layers wherever two or more filaments
+   * print). Without resumeFromLayer, a Z shrinkage compensation stretches them above the first layer, inside the
+   * printer's layer height limits.
    */
   layerTopsExact?: boolean
   /**
