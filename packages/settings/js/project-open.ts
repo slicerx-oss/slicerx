@@ -196,8 +196,9 @@ const TAKEN_WHEN: Readonly<Record<string, (v: SettingValue) => boolean>> = {
 }
 /**
  * Printer settings that stay the profile's on the project's own printer, since a check reads them as what the machine
- * is or allows: its bed height, its nozzle and the nozzle's hardness, the clearances a print by object is checked with,
- * the firmware the G-code review checks against, how many tool heads it has and its printed mass limit.
+ * is or allows: its bed height, its nozzle, the nozzle's hardness and height (the travel collision check reads the
+ * height), the clearances a print by object is checked with, the firmware the G-code review checks against, how many
+ * tool heads it has and its printed mass limit.
  * `sx project-settings` prints the file's value for them; the app keeps the profile's.
  */
 const HELD_KEYS: ReadonlySet<string> = new Set([
@@ -206,6 +207,7 @@ const HELD_KEYS: ReadonlySet<string> = new Set([
   'nozzle_diameter',
   'nozzle_type',
   'nozzle_hrc',
+  'nozzle_height',
   'extruder_type',
   'extruder_clearance_radius',
   'extruder_clearance_max_radius',
