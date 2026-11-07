@@ -8,7 +8,7 @@
 // conversation. A cloud model gets every tool on every turn, as before.
 import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
-import { messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
+import { messageTokens, MIMIR_CONTEXT, MOVING_PARTS_LINE, REPLY_RESERVE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { builtinCommands } from '../src/commands/builtin'
@@ -182,7 +182,8 @@ describe('the mimir tab on a local model', () => {
     const used = c.total + REPLY_RESERVE + CONVERSATION_ROOM
     expect(used, `used ${used} of ${MIMIR_CONTEXT} tokens (system ${c.system}, messages ${c.messages}, ${c.count} tools ${c.tools}, the reply ${REPLY_RESERVE}, the conversation ${CONVERSATION_ROOM}), spare ${MIMIR_CONTEXT - used}`).toBeLessThanOrEqual(MIMIR_CONTEXT)
     if (kind === 'build') expect(MIMIR_CONTEXT - used, `a build turn keeps ${BUILD_SPARE} spare`).toBeGreaterThanOrEqual(BUILD_SPARE)
-    // the system prompt goes whole and first: the one a cloud model gets, plus the line naming the registered tabs
+    // the system prompt goes whole and first: the one a cloud model gets, plus the line naming the registered tabs, less
+    // the cloud-only line for parts that move
     const cloud = read(await turn(CLOUD, message, before))
     const sent = read(local)
     expect(sent.messages[0]!.role).toBe('system')
@@ -191,7 +192,9 @@ describe('the mimir tab on a local model', () => {
     expect(sent.messages[0]!.content).toContain(AMERICAN)
     expect(cloud.messages[0]!.content).toContain(AMERICAN)
     expect(cloud.messages[0]!.content).not.toContain(TABS)
-    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content)
+    expect(cloud.messages[0]!.content).toContain(MOVING_PARTS_LINE)
+    expect(sent.messages[0]!.content).not.toContain(MOVING_PARTS_LINE)
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content.replace(`\n${MOVING_PARTS_LINE}`, ''))
   })
 
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {

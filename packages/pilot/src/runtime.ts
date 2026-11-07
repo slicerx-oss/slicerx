@@ -50,6 +50,7 @@ import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismis
 import { capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
 import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
+import { clearanceProfileOf, gapRows } from '../skills/fit_check/clearance'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
@@ -533,6 +534,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
   // until a run starts a part with it; the run after that asks again.
   const confirmed = new Set<string>()
+  // Sessions whose last plan (design.plan) has pieces that print assembled and move: their sheets get the fit rule's gaps
+  const printInPlace = new Set<string>()
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
@@ -723,7 +726,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const book = playbooks(availableSkills(kb.skills(), has))
     // the playbooks go in with the rules, so the edition's voice still comes last
     const tabs = local ? tabsLine(opts.tabs ?? []) : ''
-    return basePrompt(scope, has, [tabs, book].filter(Boolean).join('\n\n'))
+    return basePrompt(scope, has, [tabs, book].filter(Boolean).join('\n\n'), { cloud: !local })
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
@@ -897,6 +900,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
+    if (tool.name === 'design.plan') {
+      const pieces = (input as { printInPlace?: unknown }).printInPlace
+      if (Array.isArray(pieces) && pieces.length >= 2) printInPlace.add(sessionId)
+      else printInPlace.delete(sessionId)
+    }
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       const design = (input as { design?: unknown } | null)?.design
       // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
@@ -950,7 +958,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       })
     ctx.sheet = (draft) =>
       new Promise((resolve, reject) => {
-        const sheet = { ...draft, id: `sheet_${newId()}` }
+        // a print-in-place plan's sheet shows the fit rule's gaps as guesses, unless it has its own
+        const gaps = printInPlace.has(sessionId) ? gapRows(draft.dims, clearanceProfileOf(context)) : []
+        const sheet = { ...draft, dims: [...draft.dims, ...gaps], id: `sheet_${newId()}` }
         const onAbort = (): void => {
           sheets.delete(sheet.id)
           reject(new Error('Run canceled.'))
