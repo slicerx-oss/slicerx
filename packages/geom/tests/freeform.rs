@@ -786,4 +786,20 @@ fn open_chains_turn_with_their_planes() {
         ),
         "loft: profile 4 meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
     );
+    // with both ends of every strip marked, the landmarks say how the ring closes: start to start
+    let marked = |turn: f64| {
+        let strips = around(4, 20.0, 90.0, |k| {
+            let a = (f64::from(k) * turn).to_radians();
+            let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
+            json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }], "landmarks": [[-c, -s], [c, s]] })
+        });
+        json!({ "profiles": strips, "closed": true, "thicken": thick })
+    };
+    solid(&run("sketch.loft", &marked(25.0)));
+    // turned 45 degrees each, that closing span twists the strip 135 degrees, so the shell folds onto itself
+    let err = fails("sketch.loft", &marked(45.0));
+    assert!(
+        err.starts_with("thicken: a 1 mm outward shell runs into itself"),
+        "{err}"
+    );
 }
