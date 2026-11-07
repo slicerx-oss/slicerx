@@ -7,7 +7,7 @@ import { DEFAULT_POLICY } from '@slicerx/contracts'
 import { neutralEdition } from '@slicerx/edition-config'
 import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
-import { loadRecording } from '../evals/creative/recordings'
+import { loadRecording, parseRecording } from '../evals/creative/recordings'
 import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, runPrompt } from '../evals/creative/run'
 import { createPilot, createScriptedClient, editionToolGroups, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
 import { CAD_TOOLS } from '@slicerx/pilot/evals'
@@ -60,30 +60,35 @@ describe('the tab options the app and the creative eval share', () => {
   })
 })
 
-describe('a reply that builds nothing', () => {
-  const text = (id: string): string => {
-    const rec = loadRecording(id)
-    return rec.status === 'recorded' ? rec.steps.map((s) => s.text ?? '').join('\n') : ''
-  }
+// Replies from an earlier live run, kept here as text so a new capture of the recordings never changes these cases.
+const REPLIES = {
+  taco: "I can't model a folded taco shell as it would look. It curves freely in two directions, and the tools only build shapes made from outlines extruded or turned around one axis.\n\nThe closest versions I can build:\n\n1. **Half-tube shell:** a U-shaped taco shell extruded along its length.\n2. **Nothing for now.**\n\nWhich version do you want? Once you pick one, I'll ask for the sizes I still need.",
+  flexiFish: 'A fish with a sculpted, freely curving body is outside what I can model, but I can build a close version. Which one would you like?\n\n1. **Turned segmented fish:** a row of rounded segment blocks.\n2. **Nothing for now.**',
+  shipHull: "A hull's curved planking bends in two directions at once, and the tools can't model that freely curving surface. I can build the closest version instead. Which would you like?",
+  gearPair: 'Nothing is built or sliced yet. The 20-tooth gear would be 30 mm pitch diameter and the 40-tooth gear 60 mm, both on one base plate with a pin each, and both fit the P1S bed. Should the gears print already seated on their pins with running clearance, or as loose pieces you assemble?',
+  phoneStand: "Before I model it, I need your phone's size. The slot width depends on the phone's thickness with its case, and the stand's width depends on its width. Which phone is it, and do you use a case? If you don't know the exact numbers, a case-on or case-off choice is enough, and I'll use typical dimensions for that model.",
+  // cut off mid list: no question and no refusal
+  pipChain: "A fully flat chain can't link on the bed. Two rings can only interlock if one passes through the other's hole, and a link lying flat has no height to pass through.\n\n1. **Classic chain, printed with supports.** Odd links lie flat and",
+}
 
+describe('a reply that builds nothing', () => {
   it('is declined when it says the part cannot be modeled or built', () => {
-    expect(classifyNoBuild(text('taco'))).toBe('declined')
-    expect(classifyNoBuild(text('flexi-fish'))).toBe('declined')
-    expect(classifyNoBuild(text('ship-hull'))).toBe('declined')
+    expect(classifyNoBuild(REPLIES.taco)).toBe('declined')
+    expect(classifyNoBuild(REPLIES.flexiFish)).toBe('declined')
+    expect(classifyNoBuild(REPLIES.shipHull)).toBe('declined')
     expect(classifyNoBuild("I can't build a knitted surface. Want ribs instead?")).toBe('declined')
   })
 
   it('is asked when it puts a question to the person and does not decline', () => {
-    expect(classifyNoBuild(text('gear-pair'))).toBe('asked')
-    expect(classifyNoBuild(text('phone-stand'))).toBe('asked')
+    expect(classifyNoBuild(REPLIES.gearPair)).toBe('asked')
+    expect(classifyNoBuild(REPLIES.phoneStand)).toBe('asked')
     expect(classifyNoBuild('How tall should it be?')).toBe('asked')
   })
 
   it('is none when it neither asks nor declines', () => {
     expect(classifyNoBuild('')).toBe('none')
     expect(classifyNoBuild('Here is a dragon.')).toBe('none')
-    // cut off mid list: no question and no refusal
-    expect(classifyNoBuild(text('pip-chain'))).toBe('none')
+    expect(classifyNoBuild(REPLIES.pipChain)).toBe('none')
   })
 
   it('is scored with its reason instead of a plain parse failure', async () => {
@@ -133,9 +138,8 @@ describe('the default answer to a clarifying question', () => {
   })
 
   it('replays the answer only for a recording captured with it, and marks an older question stale', async () => {
-    const asked = loadRecording('gear-pair')
-    if (asked.status !== 'recorded') throw new Error('gear-pair has a recording')
-    const old = await runPrompt(CREATIVE_PROMPTS.find((x) => x.id === 'gear-pair')!, { geom: undefined, steps: asked.steps, tabTools: true })
+    // a question recorded on the tab tools but before the default answer (no defaultAnswer on the recording)
+    const old = await runPrompt(CREATIVE_PROMPTS.find((x) => x.id === 'gear-pair')!, { geom: undefined, steps: [{ text: REPLIES.gearPair }], tabTools: true })
     expect(old.answered).toBe(false)
     expect(old.noBuild).toBe('asked')
     expect(old.stale).toMatch(/default answer/)
@@ -167,14 +171,19 @@ describe('the default answer to a clarifying question', () => {
   })
 })
 
-describe('the recordings from before the tab tools', () => {
-  it('all replay as stale until a live run captures them again', async () => {
+describe('the recordings', () => {
+  it('replay a recording from before the tab tools as stale', async () => {
+    const old = parseRecording(JSON.stringify({ status: 'recorded', model: 'm', provider: 'p', capturedAt: '2026-11-07T00:00:00Z', steps: [{ calls: [{ name: 'text_to_part', args: { prompt: 'a cable organizer' } }] }, { text: 'Done.' }] }))
+    if (old.status !== 'recorded') throw new Error('recorded')
+    expect(old.tabTools).toBeUndefined()
+    const run = await runPrompt(P, { geom: undefined, steps: old.steps, tabTools: old.tabTools === true })
+    expect(run.stale).toMatch(/design tools/)
+  })
+
+  it('are all captured on the tab tools', () => {
     for (const p of CREATIVE_PROMPTS) {
       const rec = loadRecording(p.id)
-      if (rec.status !== 'recorded') continue
-      expect(rec.tabTools, p.id).toBeUndefined()
-      const run = await runPrompt(p, { geom: undefined, steps: rec.steps, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true })
-      expect(run.stale, p.id).toMatch(/design tools/)
+      if (rec.status === 'recorded') expect(rec.tabTools, p.id).toBe(true)
     }
   })
 })
