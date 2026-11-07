@@ -13,7 +13,7 @@
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
 // renders no React. React renders on clicks, drags of points and edits only.
-import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
+import { ownLoops, patternFromFields, patternProblem, type Pattern, type PatternFields, type Projection, type SketchLoop } from '@slicerx/cad-history'
 import { afterLoopChange, afterReverse, curveStates, fitKey, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
 import { dimensionFor, isDimension, measured, pointAt, pointHit, settle, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
@@ -40,6 +40,7 @@ import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revol
 import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
 import { bindNext, sketchNext } from './history/record'
+import { ProjectCard, type Projected } from './project-card'
 import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
@@ -227,6 +228,8 @@ interface SketchInit {
   from?: SketchOpen
   /** For Extrude or Revolve from a finished sketch: the body Join and Cut start on */
   target?: { objectId: string; partIndex: number } | null
+  /** Model geometry projected into it, and their curves, kept apart from the drawing */
+  projected?: Projected
 }
 
 function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
@@ -234,7 +237,9 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
   const p = ed?.step.params
   if (!ed || !p || !((p.op === 'shape.extrude' && p.shape.type === 'sketch') || p.op === 'sketch.revolve')) return null
   const loops = p.op === 'sketch.revolve' ? p.loops : p.shape.type === 'sketch' ? p.shape.loops : []
-  const sketch = fromLoops(loops)
+  const sketch = fromLoops(ownLoops(loops))
+  const drawnOn = ed.step.sketch ? sketchById(get().timeline, ed.step.sketch) : null
+  const projected = { list: drawnOn?.projections ?? [], loops: loops.filter((l) => l.projected !== undefined) }
   const constraints = (p.op === 'sketch.revolve' ? p.constraints : p.shape.type === 'sketch' ? p.shape.constraints : undefined) ?? []
   if (!sketch) return { note: 'This sketch has segments given by length and angle, which sketch mode cannot show. Its numbers can still change in the history list.' }
   const now = nowOf(ed.step, ed.entry.transform)
@@ -264,6 +269,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
       axis: p.op === 'sketch.revolve' ? axisSegment(sketch, p.axis) : null,
       constraints,
       ...(p.op === 'shape.extrude' && p.pattern ? { pattern: p.pattern } : {}),
+      projected,
     },
   }
 }
@@ -272,7 +278,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
 function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
   const k = sketchById(get().timeline, open.id)
   if (!k) return null
-  const sketch = fromLoops(k.loops)
+  const sketch = fromLoops(ownLoops(k.loops))
   if (!sketch) return { note: 'This sketch has segments given by length and angle, which sketch mode cannot show.' }
   const ext = extent(sketch)
   const r = ext ? ext.radius + 20 : 50
@@ -298,6 +304,7 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
       constraints: (k.constraints ?? []) as SketchConstraint[],
       from: open,
       ...(open.mode === 'edit' ? {} : { target }),
+      projected: { list: k.projections ?? [], loops: k.loops.filter((l) => l.projected !== undefined) },
     },
   }
 }
@@ -411,6 +418,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const view = cameraBus()?.cad
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
   const [constraints, setConstraints] = useDraft<SketchConstraint[]>('constraints', init?.constraints ?? [])
+  // model geometry projected into the sketch: drawn and checked with it, never edited as its own loops
+  const [projected, setProjected] = useDraft<Projected>('projected', init?.projected ?? { list: [], loops: [] })
+  const projectedShapes = useMemo(() => fromLoops(projected.loops) ?? [], [projected.loops])
   // The sketch's own undo and redo: each drawn, typed, edited or deleted change is a step; the solver settling a change
   // and the frames of one point drag fold into the step that started them.
   const hist = useRef<{ past: SketchSnap[]; future: SketchSnap[]; cur: SketchSnap; restoring: boolean }>({ past: [], future: [], cur: { sketch, constraints }, restoring: false })
@@ -687,12 +697,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   // sketch.check runs a moment after each change, once the solve for it has run.
   useEffect(() => {
-    if (!sketch.length) return void setCheck(null)
+    if (!sketch.length && !projected.loops.length) return void setCheck(null)
     const ac = new AbortController()
     const t = setTimeout(() => {
       void afterSolve(solving).then(() => {
         if (ac.signal.aborted) return
-        checkSketch(toLoops(sketch), ac.signal).then(
+        checkSketch([...toLoops(sketch), ...projected.loops], ac.signal).then(
           (c) => !ac.signal.aborted && setCheck(c),
           (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
         )
@@ -702,7 +712,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       clearTimeout(t)
       ac.abort()
     }
-  }, [sketch])
+  }, [sketch, projected.loops])
 
   // The solver runs a moment after each change: it says how defined the sketch is, and moves the drawing to meet
   // its constraints. A conflict leaves the drawing as it is.
@@ -764,6 +774,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         paths.push({ points: p.points, ...(p.closed ? { closed: true } : {}), tone })
       }
     })
+    // projected curves: real ones fixed, reference ones dashed as construction
+    for (const e of projectedShapes) for (const p of entityPaths(e)) paths.push({ points: p.points, ...(p.closed ? { closed: true } : {}), tone: e.construction ? 'construction' : 'fixed' })
     // the one being placed shows with the kept ones, picked
     const placing = dimField && dimField.index === undefined ? dimMark(sketch, dimField.c, dimField.c.value, -1, (mm) => formatLength(mm, units)) : null
     const editing = dimField?.index ?? pickedCon
@@ -789,9 +801,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       // the origin always shows, for dimensions to measure from
       fixed: featureOnly ? [] : [[0, 0], ...(pal.constraints ? marks.fixed : [])],
       ...(pal.constraints ? { glyphs: glyphs.map((g) => (g.of === pickedCon ? { ...g, picked: true } : g)) } : {}),
-      ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
+      ...(pal.profiles ? { profiles: profileRings([...sketch, ...projectedShapes]) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon, units, editValues])
+  }, [view, plane, sketch, projectedShapes, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon, units, editValues])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
@@ -1574,21 +1586,31 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const op = canInto ? operation : 'new'
   // Flip says where the extrusion goes now; the engine's flip is relative to the operation
   const intoFace = goesIntoFace(flip, op)
-  const loops = toLoops(sketch)
-  const loopsKey = useMemo(() => toLoops(sketch), [sketch])
+  const loops = [...toLoops(sketch), ...projected.loops]
+  const loopsKey = useMemo(() => [...toLoops(sketch), ...projected.loops], [sketch, projected.loops])
   // A sketch step opened from the history saves into its place; the steps after it run again.
   const saveSketch = (params: Parameters<typeof saveStep>[1]) => saveStep(host.slicer, params)
   // a step of a body opened from its history saves into its place; a finished sketch makes a new step on it
   const stepEdit = init !== undefined && !init.from
   // What the drawing is as a profile, and why Extrude or Revolve can't run yet; the footer shows the reason under it.
-  const closedProfiles = useMemo(() => profileRings(sketch).length, [sketch])
-  const profile = profileState({ drawn: sketch.length > 0, closedProfiles, checked: check !== null, ok: check?.ok === true, issues })
+  const closedProfiles = useMemo(() => profileRings([...sketch, ...projectedShapes]).length, [sketch, projectedShapes])
+  const profile = profileState({ drawn: sketch.length > 0 || projectedShapes.length > 0, closedProfiles, checked: check !== null, ok: check?.ok === true, issues })
   const reason = applyReason({ profile, drawing: draft.points.length > 0, checked: check !== null, ...(issues[0] ? { firstIssue: issues[0].message } : {}), finish, axis: !!axis, op, target: !!target })
   const ready = reason === null
   // the view's mode pill and the app's read-back: where and with what the sketch draws, and what it is as a profile
   useEffect(() => {
     if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name, profile, dof: solved ? solved.solved.dof : null, ready, reason, loops: loopsKey })
   }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
+  const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list })
+  // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
+  // timeline first and the solid names it, and a finished one takes changed projections first.
+  const keepProjections = async (): Promise<string | null> => {
+    const id = init?.from?.id ?? null
+    if (stepEdit || featureOnly) return id
+    if (!id) return projected.list.length ? finishSketch(sketchBody()).id : null
+    if (JSON.stringify(projected.list) !== JSON.stringify(init?.projected?.list ?? [])) await updateSketch(host.slicer, id, sketchBody())
+    return id
+  }
   const go = async () => {
     if (!ready) return
     setBusy(true)
@@ -1607,7 +1629,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (bad) throw new Error(bad)
         bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...into, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
-        sketchNext(init?.from?.id ?? null)
+        sketchNext(await keepProjections())
         r = stepEdit ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
@@ -1615,7 +1637,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
-        sketchNext(init?.from?.id ?? null)
+        sketchNext(await keepProjections())
         r = stepEdit ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
       }
       toast(r.message, r.warn ? 'warn' : 'ok')
@@ -1630,11 +1652,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   // Finish sketch: the sketch goes in the timeline as it is, no solid; the camera stays where it is.
   const finishOnly = async () => {
-    if (busy || !sketch.length || draft.points.length) return
+    if (busy || (!sketch.length && !projected.loops.length) || draft.points.length) return
     setBusy(true)
     setNote(null)
     try {
-      const s = { frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}) }
+      const s = sketchBody()
       if (init?.from) {
         const r = await updateSketch(host.slicer, init.from.id, s)
         toast(r.replayed ? `Changed ${plane.label} and rebuilt ${r.replayed === 1 ? 'the body' : `${r.replayed} bodies`} made from it.` : `Changed ${plane.label}.`, 'ok')
@@ -1982,6 +2004,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       </div>
     </div>
   ) : null
+  // edges, a face or a body projected onto the plane; a step opened from the history keeps what it has
+  const projectCard = <ProjectCard frame={plane.frame} value={projected} onChange={setProjected} locked={stepEdit} />
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label} {...(change ? { action: change } : {})}>
       {planeAsk}
@@ -1995,6 +2019,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {drawing}
           {messages}
           {picks}
+          {projectCard}
           {solid}
           {svgImport}
         </>
@@ -2003,6 +2028,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           <Card title="Drawing" sub={familyName(familyOf(draft.tool))} state={dof ?? undefined} testId="sketch-drawing" dense>
             {drawing}
             {picks}
+          </Card>
+          <Card title="Project" {...(projected.list.length ? { sub: `${projected.list.length}` } : {})} testId="sketch-project-card" dense>
+            {projectCard}
           </Card>
           <Card
             title="Solid"
