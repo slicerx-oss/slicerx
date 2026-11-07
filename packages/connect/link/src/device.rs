@@ -329,6 +329,23 @@ pub(crate) fn filament_change_problem(
     )
 }
 
+/// Why a raw line that cannot move the head but changes how a running print goes (`LineRule::NoPrint`:
+/// extrusion and positioning modes, the E frame, speed and flow factors, dwells and waits) may not go
+/// now: only while no print runs. It asks nothing about the plate, since the head does not move.
+pub(crate) fn no_print_problem(
+    state: PrinterState,
+    _bed: sx_permit::BedState,
+    _plate_clear: bool,
+) -> Rpc<()> {
+    if state != PrinterState::Idle && state != PrinterState::Finished {
+        return Err(RpcError::new(
+            "bad_state",
+            "a line that changes how a print runs goes only while the printer is idle or finished",
+        ));
+    }
+    Ok(())
+}
+
 fn guard_problem(
     state: PrinterState,
     bed: sx_permit::BedState,
@@ -371,9 +388,11 @@ pub(crate) async fn home_checked(
     guarded(b, printer, answer, home_problem, send).await
 }
 
-/// Sends one raw line a person approved with `token`: a home under the home rules, any other line that
-/// can move the head under the motion guard (state, the printer lock and the plate, `answer` as for a
-/// home), and a line that cannot move as it is.
+/// Sends one raw line a person approved with `token`, by its [`sx_connect::LineRule`]: a home under the
+/// home rules, the plain filament change under its own, any other line that can move the head under the
+/// motion guard (state, the printer lock and the plate, `answer` as for a home), a line that changes how
+/// a running print goes only while no print runs (state and the printer lock), a heater, fan, message or
+/// report line as it is, and a refused line not at all.
 pub(crate) async fn line_checked(
     b: &Arc<Bridge>,
     printer: &str,
@@ -383,16 +402,29 @@ pub(crate) async fn line_checked(
 ) -> Rpc<()> {
     let send = HomeLine::Approved { line, token };
     if sx_connect::homes_axes(line) {
-        home_checked(b, printer, answer, send).await
-    } else if sx_connect::changes_filament(line) {
-        filament_change_checked(b, printer, answer, send).await
-    } else if sx_connect::moves_axes(line) {
-        guarded(b, printer, answer, motion_problem, send)
-            .await
-            .map_err(|e| pointing_to_action(e, line))
-    } else {
-        Ok(session(b, printer).await?.send_gcode(line, token).await?)
+        return home_checked(b, printer, answer, send).await;
     }
+    if sx_connect::changes_filament(line) {
+        return filament_change_checked(b, printer, answer, send).await;
+    }
+    let rule = match sx_connect::line_rule(line) {
+        sx_connect::LineRule::AnyTime => {
+            return Ok(session(b, printer).await?.send_gcode(line, token).await?);
+        }
+        sx_connect::LineRule::Refused(why) => return Err(RpcError::new("bad_request", why)),
+        sx_connect::LineRule::NoPrint => no_print_problem,
+        sx_connect::LineRule::Motion => motion_problem,
+    };
+    guarded(b, printer, answer, rule, send)
+        .await
+        .map_err(|e| pointing_to_action(e, line))?;
+    // A raw G91 leaves the printer in relative mode: the next line that moves, jog or start sends G90
+    // first, as after a jog whose closing G90 did not go through.
+    if sx_connect::command_name(line).as_deref() == Some("G91") {
+        b.hub.set_relative_left(printer, true);
+        crate::hub_rpc::save(b).await;
+    }
+    Ok(())
 }
 
 /// A filament change (`M600`) under [`filament_change_problem`], with the printer held and its state
@@ -406,9 +438,9 @@ pub(crate) async fn filament_change_checked(
     guarded(b, printer, answer, filament_change_problem, send).await
 }
 
-/// A raw `RESUME` or `EXCLUDE_OBJECT` refused for the printer's state names the action that does it: the
-/// resume action resumes a paused print and the skip action skips one object of the running print, both
-/// with their own checks.
+/// A raw line refused for the printer's state that has a control of its own names that control in plain
+/// words: Resume for a paused print, Skip object for one object of the running print, and the print speed
+/// control for a speed or flow factor, each with its own checks.
 fn pointing_to_action(e: RpcError, line: &str) -> RpcError {
     if e.code != "bad_state" {
         return e;
@@ -416,11 +448,19 @@ fn pointing_to_action(e: RpcError, line: &str) -> RpcError {
     match sx_connect::command_name(line).as_deref() {
         Some("RESUME") => RpcError::new(
             "bad_state",
-            "a raw RESUME goes only while the printer is idle or finished; to resume a paused print, use the resume action (printer.resume)",
+            "a raw RESUME goes only while the printer is idle or finished; to resume a paused print, use Resume",
         ),
         Some("EXCLUDE_OBJECT") => RpcError::new(
             "bad_state",
-            "a raw EXCLUDE_OBJECT goes only while the printer is idle or finished; to skip one object of the running print, use the skip action (printer.skip)",
+            "a raw EXCLUDE_OBJECT goes only while the printer is idle or finished; to skip one object of the running print, use Skip object",
+        ),
+        Some("M220") => RpcError::new(
+            "bad_state",
+            "a raw speed factor goes only while no print runs; to change the speed of a running print, use its print speed control",
+        ),
+        Some("M221") => RpcError::new(
+            "bad_state",
+            "a raw flow factor goes only while no print runs; a running print's flow is not changed from here",
         ),
         _ => e,
     }
@@ -1101,6 +1141,35 @@ mod tests {
                 let got = no_print_problem(s, bed, false).err().map(|e| e.code);
                 assert_eq!(got.as_deref(), want, "{s:?} {bed:?}");
             }
+        }
+    }
+
+    // The person's plate answer counts only for the bed epoch it was given in: an answer for an earlier
+    // epoch leaves the plate as the hub records it, so the guard asks again.
+    #[test]
+    fn a_plate_answer_counts_only_for_its_own_epoch() {
+        let mut rec = sx_permit::BedRecord::new();
+        rec.state = sx_permit::BedState::NotCleared;
+        rec.epoch = 5;
+        assert_eq!(plate_for(&rec, Some(5)), sx_permit::BedState::Clear);
+        for stale in [None, Some(4), Some(6), Some(0)] {
+            assert_eq!(
+                plate_for(&rec, stale),
+                sx_permit::BedState::NotCleared,
+                "{stale:?}"
+            );
+            assert_eq!(
+                motion_problem(PrinterState::Idle, plate_for(&rec, stale), false)
+                    .unwrap_err()
+                    .code,
+                "bed_check"
+            );
+            assert_eq!(
+                filament_change_problem(PrinterState::Idle, plate_for(&rec, stale), false)
+                    .unwrap_err()
+                    .code,
+                "bed_check"
+            );
         }
     }
 
