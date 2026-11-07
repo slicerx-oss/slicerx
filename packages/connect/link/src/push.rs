@@ -647,13 +647,28 @@ pub(crate) fn alert(b: &Bridge, alert: &str, printer_id: Option<&str>, request_i
     if let Some(kind) = PushKind::for_alert(alert) {
         let token = sx_connect::Secrets::get(b.secrets_ref(), ACCESS_TOKEN_SECRET);
         // Partner phones the hub knows from remote access follow their pairing's approve right as it is now.
-        let no_approvals: HashSet<String> = b
+        let mut no_approvals: HashSet<String> = b
             .remote
             .partner_pairings()
             .into_iter()
             .filter(|p| !p.rights.approve)
             .map(|p| p.pairing_id)
             .collect();
+        // No partner phone approves a card a partner app raised, or one whose raiser the hub has no record
+        // of, so none of them is asked to.
+        if kind == PushKind::Approval
+            && !request_id
+                .is_some_and(|id| crate::remote_rpc::phone_may_approve(true, lock(&b.card_raisers).get(id)))
+        {
+            no_approvals.extend(
+                b.hub
+                    .push
+                    .regs()
+                    .into_iter()
+                    .filter(|r| r.partner.is_some())
+                    .filter_map(|r| r.tag),
+            );
+        }
         b.hub
             .push
             .notify(kind, printer_id, request_id, token, &no_approvals);
