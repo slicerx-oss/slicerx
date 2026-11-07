@@ -3,6 +3,7 @@
 // settings.get, settings.plan and settings.apply. Reading goes through the host's project, planning is
 // deterministic code; applying lands in the project (class slice) or a saved profile (class profile).
 import { assistantText } from '@slicerx/contracts'
+import { rangeMessage } from '@slicerx/settings'
 import type { SettingsDiff, SettingValue } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KnowledgeBase } from '../kb/kb'
@@ -227,7 +228,7 @@ export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<n
         if (def?.bounds && typeof v === 'number') {
           const { min, max } = def.bounds
           if ((min !== undefined && v < min) || (max !== undefined && v > max)) {
-            rejected.push(`${k}=${v} is outside ${min ?? '-inf'} to ${max ?? 'inf'}`)
+            rejected.push(rangeMessage(k, v, min, max, def.unit ? ' ' + def.unit : ''))
             continue
           }
         }
