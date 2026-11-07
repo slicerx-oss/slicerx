@@ -20,7 +20,7 @@ use std::f64::consts::{PI, TAU};
 pub const CLOSE_MM: f64 = 0.001;
 const ARC_TOL_MM: f64 = sketch_spline::TOL_MM;
 const MIN_LEN_MM: f64 = 1e-6;
-const MAX_MM: f64 = 100_000.0;
+pub(crate) const MAX_MM: f64 = 100_000.0;
 /// most points one loop may have once flattened
 pub const RING_POINTS: usize = 65_536;
 /// most points a whole sketch may have once flattened
