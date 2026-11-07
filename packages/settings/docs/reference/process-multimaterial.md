@@ -186,7 +186,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Default: none (the slice works it out when nothing sets it)
 - Recommended range: 0 to 2
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Hidden (profile key), multicolor
+- Tier: Hidden (profile key)
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
