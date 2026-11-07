@@ -206,7 +206,9 @@ pub(crate) struct RamLine {
 ///   `WipeTower::plan_toolchange`): the new filament primes `filament_prime_volume` ([`prime_volume_of`]), or
 ///   `filament_prime_volume_nc` (60 when unlisted) after a hotend swap on the rack, and when the nozzle changes the old one
 ///   first rams out `filament_change_length` (`filament_change_length_nc` for a hotend swap) mm of filament.
-///   The flush itself goes to the chute, and only when the nozzle held another filament.
+///   The flush itself goes to the chute, and only when the nozzle held another filament. On a printer whose
+///   hotends are its tools (the H3C, [`crate::nozzles::hotend_tools`]) a hotend swap counts as a change of extruder:
+///   `filament_prime_volume` and `filament_change_length`.
 /// - A Prusa tool changer (the XL; `PrusaSlicer`'s `WipeTower::extract_wipe_volumes`): each head that
 ///   already holds its filament wipes `filament_minimal_purge_on_wipe_tower`, after the old head rams
 ///   `filament_multitool_ramming_volume` when `filament_multitool_ramming` is on.
@@ -226,7 +228,10 @@ pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> Ch
             slot_of("filament_nozzle_map", from, ef - 1.0),
             slot_of("filament_nozzle_map", to, et - 1.0),
         );
-        let nozzle_change = (ef - et).abs() < 0.5 && (nf - nt).abs() > 0.5;
+        // A printer whose hotends are its tools (the H3C) swaps hotends at every change of hotend, and that swap is
+        // a change of extruder: the nozzle change values belong to a rack beside a second extruder (the H2C).
+        let nozzle_change =
+            !crate::nozzles::hotend_tools(cfg) && (ef - et).abs() < 0.5 && (nf - nt).abs() > 0.5;
         let wipe = if saving_mode(cfg) {
             SAVING_PRIME
         } else if nozzle_change {
@@ -4085,6 +4090,48 @@ mod tests {
             ("prime_volume", serde_json::json!(15)),
         ]);
         assert!((purge_volume(&other, 2, 1, 2) - 15.0 * PURGE_EXTRA).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_hotend_swap_on_the_h3c_wipes_the_prime_volume_and_on_a_rack_the_nozzle_change_one() {
+        let primes = [
+            ("printer_model", serde_json::json!("Bambu Lab H3C")),
+            ("filament_prime_volume", serde_json::json!(["30", "30", "70"])),
+            ("filament_prime_volume_nc", serde_json::json!(["60", "60", "70"])),
+            ("filament_change_length", serde_json::json!(["2", "2", "2"])),
+            ("filament_change_length_nc", serde_json::json!(["5", "5", "5"])),
+        ];
+        let with = |extra: &[(&str, serde_json::Value)]| {
+            let mut pairs = primes.to_vec();
+            pairs.extend(extra.iter().cloned());
+            cfg(&pairs)
+        };
+        // One extruder whose nine hotends are its tools: every filament change swaps hotends, and the new hotend
+        // primes the filament's own prime volume, as at a change of extruder.
+        let h3c = with(&[
+            ("nozzle_diameter", serde_json::json!([0.4])),
+            ("extruder_max_nozzle_count", serde_json::json!([9])),
+            ("filament_map", serde_json::json!([1, 1, 1])),
+            ("filament_nozzle_map", serde_json::json!([0, 2, 7])),
+        ]);
+        let area = h3c.filament_area(1);
+        let p = change_purge(&h3c, 3, 1, 2);
+        assert!((p.wipe - 30.0).abs() < 1e-9, "{p:?}");
+        assert!((p.ram - 2.0 * area).abs() < 1e-9, "{p:?}");
+        assert!((change_purge(&h3c, 3, 2, 3).wipe - 70.0).abs() < 1e-9);
+        // Two extruders, the right one with a rack: a swap on the rack is a nozzle change.
+        let rack = with(&[
+            ("nozzle_diameter", serde_json::json!([0.4, 0.4])),
+            ("extruder_max_nozzle_count", serde_json::json!([1, 4])),
+            ("filament_map", serde_json::json!([2, 2, 1])),
+            ("filament_nozzle_map", serde_json::json!([1, 2, 0])),
+        ]);
+        let p = change_purge(&rack, 3, 1, 2);
+        assert!((p.wipe - 60.0).abs() < 1e-9, "{p:?}");
+        assert!((p.ram - 5.0 * area).abs() < 1e-9, "{p:?}");
+        // A change of extruder primes the filament's own prime volume.
+        assert!((change_purge(&rack, 3, 2, 3).wipe - 70.0).abs() < 1e-9);
+        assert!((change_purge(&rack, 3, 3, 1).wipe - 30.0).abs() < 1e-9);
     }
 
     #[test]
