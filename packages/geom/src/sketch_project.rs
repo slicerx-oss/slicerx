@@ -741,9 +741,15 @@ pub fn fit(pts: &[V2], closed: bool) -> Option<Loop> {
         ring.clone_from(&p);
         ring.push(p[0]);
         let first = pieces(&ring);
-        // better still, at the start of a straight run, so a curve between two straight sides stays whole
+        // better still, at the start of the longest straight run, so a curve between two straight sides stays whole:
+        // a single facet that fits no circle inside a round seen at a tilt is a line too, and a short one
+        let line_len = |k: usize| match first[k].0 {
+            Piece::Line(to) => d2(ring[first[k - 1].1], to),
+            Piece::Arc(..) => 0.0,
+        };
         let straight = (1..first.len())
-            .find(|&k| matches!(first[k].0, Piece::Line(_)) && !matches!(first[k - 1].0, Piece::Line(_)));
+            .filter(|&k| matches!(first[k].0, Piece::Line(_)) && !matches!(first[k - 1].0, Piece::Line(_)))
+            .max_by(|&a, &b| line_len(a).total_cmp(&line_len(b)));
         if let Some(k) = straight {
             p.rotate_left(first[k - 1].1 % n);
         } else if first.len() >= 2 {
@@ -914,6 +920,51 @@ mod tests {
         assert_eq!(k.iter().filter(|x| **x == "spline").count(), 2, "{k:?}");
         assert_eq!(k.iter().filter(|x| **x == "line").count(), 2, "{k:?}");
         assert!(!k.contains(&"arc"), "{k:?}");
+    }
+
+    /// a slot `len` mm between end centers with round ends of radius `r`, `n` facets to a whole round, seen at `tilt`
+    /// degrees across its length
+    fn tilted_slot(len: f64, r: f64, n: u32, tilt: f64) -> Vec<V2> {
+        let k = tilt.to_radians().m_cos();
+        let step = 360.0 / f64::from(n);
+        let squash = |p: V2| [p[0], p[1] * k];
+        let mut ring = vec![[0.0, -r * k], [len, -r * k]];
+        ring.extend(
+            arc_pts([len, 0.0], r, -90.0, 90.0, step)
+                .into_iter()
+                .skip(1)
+                .map(squash),
+        );
+        ring.extend([[len, r * k], [0.0, r * k]]);
+        ring.extend(
+            arc_pts([0.0, 0.0], r, 90.0, 270.0, step)
+                .into_iter()
+                .skip(1)
+                .map(squash),
+        );
+        ring
+    }
+
+    #[test]
+    fn a_larger_tilted_slot_starts_on_a_side_and_keeps_each_end_whole() {
+        // ends whose facets now and then fit no one circle, so a single facet reads as a short line inside the round;
+        // the seam takes the longest straight run, a real side, and never cuts an end in two
+        for (r, n, tilt) in [
+            (8.0, 48, 45.0),
+            (10.0, 48, 45.0),
+            (10.0, 64, 60.0),
+            (12.0, 64, 60.0),
+            (15.0, 64, 45.0),
+            (15.0, 96, 30.0),
+            (20.0, 96, 70.0),
+        ] {
+            let l = fit(&tilted_slot(30.0, r, n, tilt), true).unwrap();
+            assert_eq!(
+                kinds(&l),
+                ["line", "spline", "line", "spline"],
+                "r {r} n {n} tilt {tilt}: {l:?}"
+            );
+        }
     }
 
     #[test]
