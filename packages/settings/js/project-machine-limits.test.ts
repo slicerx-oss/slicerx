@@ -78,6 +78,14 @@ describe("a project's machine limits on every route of the open", () => {
   })
 })
 
+describe("a project's nozzle height on its own printer", () => {
+  it("stays the printer's, since the travel collision check reads it", () => {
+    const changes = projectPrinterChanges({ nozzle_diameter: ['0.4'], nozzle_height: '9', different_settings_to_system: ['nozzle_height', '', ''] }, MATCH, current, 0.4)
+    expect(changes.values).not.toHaveProperty('nozzle_height')
+    expect(changes.printerKeys).not.toContain('nozzle_height')
+  })
+})
+
 describe('clampMachineLimits', () => {
   it("holds every entry to the profile's, and an entry past the profile's list to its lowest", () => {
     expect(clampMachineLimits({ machine_max_acceleration_x: [30000, 30000, 30000] }, PROFILE)).toEqual({ machine_max_acceleration_x: [20000, 10000, 10000] })
