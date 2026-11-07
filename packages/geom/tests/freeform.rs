@@ -402,8 +402,14 @@ fn sections_that_bow_opposite_ways_make_a_twisted_panel_not_a_bow_tie() {
     solid(&m);
     let b = &m["bounds"];
     assert!(b["max"][0].as_f64().unwrap() > 10.0 && b["min"][0].as_f64().unwrap() < -10.0);
-    // the same with each end and the middle marked, and one profile drawn right to left
+    // the second drawn right to left still runs end to end with the first
     let back: Vec<[f64; 2]> = down.iter().rev().copied().collect();
+    let drawn_back = run(
+        "sketch.loft",
+        &json!({ "profiles": [open_at(0.0, &up), open_at(10.0, &back)], "thicken": thick }),
+    );
+    assert!((volume(&drawn_back) - volume(&m)).abs() < volume(&m) * 1e-9);
+    // the same with each end and the middle marked, and one profile drawn right to left
     let marked = run(
         "sketch.loft",
         &json!({ "profiles": [arc_at(&level(0.0), &up, &[[-10.0, 0.0], [0.0, 2.0], [10.0, 0.0]]), arc_at(&level(10.0), &back, &[[-10.0, 0.0], [0.0, -2.0], [10.0, 0.0]])], "thicken": thick }),
@@ -690,5 +696,72 @@ fn a_centered_shell_takes_twice_one_side() {
     assert!(
         err.contains("8 mm centered shell") && err.ends_with("thicken to one side"),
         "{err}"
+    );
+}
+
+#[test]
+fn open_chains_turn_with_their_planes() {
+    // three troughs 120 degrees apart around the z axis, the fewest a ring takes, and each chain's inside meets the next
+    // one's inside
+    let u = half_circle(3.0, 24);
+    let thick = json!({ "thicknessMm": 1 });
+    let troughs = around(
+        3,
+        20.0,
+        120.0,
+        |_| json!({ "open": true, "loops": [{ "points": u }] }),
+    );
+    let ruled = run(
+        "sketch.loft",
+        &json!({ "profiles": troughs, "closed": true, "thicken": thick }),
+    );
+    solid(&ruled);
+    let smooth = run(
+        "sketch.loft",
+        &json!({ "profiles": troughs, "closed": true, "smooth": true, "thicken": thick }),
+    );
+    solid(&smooth);
+    // a half pipe 3 to 4 mm out: fuller with smooth sides than straight ones, short of carrying it around a circle
+    let ring = PI / 2.0 * (16.0 - 9.0) * 2.0 * PI * 20.0;
+    assert!(
+        volume(&ruled) < volume(&smooth) && volume(&smooth) < ring,
+        "{} {} {ring}",
+        volume(&ruled),
+        volume(&smooth)
+    );
+    // an elbow of two of them, the second drawn either way
+    let back: Vec<[f64; 2]> = u.iter().rev().copied().collect();
+    let elbow = |second: &[[f64; 2]]| {
+        let mut p = around(
+            2,
+            20.0,
+            120.0,
+            |_| json!({ "open": true, "loops": [{ "points": u }] }),
+        );
+        p[1]["loops"][0]["points"] = json!(second);
+        run("sketch.loft", &json!({ "profiles": p, "thicken": thick }))
+    };
+    let (a, b) = (elbow(&u), elbow(&back));
+    solid(&a);
+    solid(&b);
+    assert!(
+        (volume(&a) - volume(&b)).abs() < volume(&a) * 1e-9,
+        "{} {}",
+        volume(&a),
+        volume(&b)
+    );
+    // four flat strips around the axis, each turned 45 degrees more in its plane: the last meets the first half a turn
+    // around, which the ring can't close without its sides crossing
+    let strips = around(4, 20.0, 90.0, |k| {
+        let a = (f64::from(k) * 45.0).to_radians();
+        let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
+        json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }] })
+    });
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": strips, "closed": true, "thicken": thick })
+        ),
+        "loft: profile 4 meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
     );
 }
