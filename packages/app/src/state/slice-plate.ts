@@ -106,7 +106,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const own = profile ? (await import('../plate/layer-profile')).plateProfileTops(profile, toPrint, config) : null
     const planned = !own && smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
     abort.signal.throwIfAborted()
-    // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
+    // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan. Those tops are the
+    // layers the job printed, so they go as exact, as a plate's own do: the engine keeps them as given.
     const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (own ?? planned)
     // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
     const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : own && layerTopsMm === own ? smartLayerWarning(s, "This plate's own layer heights") : null
@@ -133,7 +134,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(own && layerTopsMm === own ? { layerTopsExact: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === s.resume?.layerTopsMm) ? { layerTopsExact: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,

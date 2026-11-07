@@ -10,7 +10,7 @@ import { readLayerHeights } from '@slicerx/threemf/layer-heights'
 import { readProject } from '../src/export/import3mf'
 import { projectFiles, writeProject } from '../src/export/threemf'
 import { zip } from '../src/export/zip'
-import { plateProfileFromFile } from '../src/plate/layer-profile'
+import { cleanProfile, heightAt, plateProfileFromFile, profileTops } from '../src/plate/layer-profile'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 import type { PlateEntry } from '../src/state/store'
@@ -75,6 +75,35 @@ describe('a plate profile in a project file', () => {
     // rising heights, as the curve needs
     expect(three.every((p, i) => i === 0 || p[0] >= three[i - 1]![0])).toBe(true)
     expect([got.get(4)!.length, got.get(5)!.length]).toEqual([67, 71])
+    // Pairs from the middle, as the file gives them.
+    expect(three[5]).toEqual([0.584689, 0.104689])
+    expect(three[20]).toEqual([2.153869, 0.116496])
+    expect(got.get(4)![20]).toEqual([2.363957, 0.083974])
+    expect(got.get(4)![40]).toEqual([4.146684, 0.097216])
+    expect(got.get(5)![5]).toEqual([1, 0.28])
+    expect(got.get(5)![40]).toEqual([6.834527, 0.125958])
+  })
+
+  it("slices a curve from another slicer's project at layers the printer prints", () => {
+    const text = readFileSync(join(__dirname, 'fixtures', 'layer-heights-profile-another-slicer.txt'), 'utf8')
+    const limits = { minMm: 0.08, maxMm: 0.28, firstMm: 0.2 }
+    for (const [, pairs] of readLayerHeights(text)) {
+      const clean = cleanProfile(pairs, limits)!
+      const top = pairs[pairs.length - 1]![0]
+      const tops = profileTops(clean.points, top, limits)
+      expect(tops[0]).toBe(0.2)
+      expect(tops[tops.length - 1]).toBeGreaterThanOrEqual(top - 1e-3)
+      tops.slice(1).forEach((t, i) => {
+        const h = Number((t - tops[i]!).toFixed(4))
+        expect(h).toBeGreaterThanOrEqual(limits.minMm)
+        expect(h).toBeLessThanOrEqual(limits.maxMm)
+      })
+      // Each layer follows the file's curve where it starts, inside the limits.
+      tops.slice(1, -2).forEach((t, i) => {
+        const want = Math.min(limits.maxMm, Math.max(limits.minMm, heightAt(clean.points, tops[i]!)))
+        expect(Math.abs(t - tops[i]! - want)).toBeLessThan(2e-4)
+      })
+    }
   })
 
   it('still reads the comma form, and a mix of separators', () => {
