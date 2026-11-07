@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { DISMISSED_LINE, MOVING_PARTS_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { DISMISSED_LINE, MOVING_PARTS_LINE, MOVING_PARTS_ORDER, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 
@@ -204,24 +204,56 @@ describe('the skill playbooks in the prompt', () => {
 
 describe('the line for parts that move', () => {
   const all = (): boolean => true
+  /** The cloud prompt less its two cloud-only parts: the line for parts that move and the plan line's pointer to it. */
+  const asLocal = (cloud: string): string => cloud.replace(`\n${MOVING_PARTS_LINE}`, '').replace(MOVING_PARTS_ORDER, '')
+
   it('is one line, in the cloud prompt only, after the check line', () => {
     expect(MOVING_PARTS_LINE).not.toContain('\n')
-    expect(MOVING_PARTS_LINE).toContain("design.plan's printInPlace")
+    expect(MOVING_PARTS_LINE).toContain('call design.plan with the moving pieces by name in printInPlace')
     expect(MOVING_PARTS_LINE).toContain('above and below')
     for (const scope of ['full', 'cad'] as const) {
       const cloud = systemPrompt(scope, all, '', { cloud: true })
       const local = systemPrompt(scope, all)
       expect(cloud.split(MOVING_PARTS_LINE)).toHaveLength(2)
       expect(cloud.indexOf(MOVING_PARTS_LINE)).toBeGreaterThan(cloud.indexOf('- After the last feature of a planned part, call design.check'))
-      // the local prompt is the cloud one without the line, to the byte
+      // the local prompt is the cloud one without the cloud-only parts, to the byte
       expect(local).not.toContain(MOVING_PARTS_LINE)
-      expect(cloud.replace(`\n${MOVING_PARTS_LINE}`, '')).toBe(local)
+      expect(local).not.toContain(MOVING_PARTS_ORDER)
+      expect(asLocal(cloud)).toBe(local)
       expect(systemPrompt(scope, all, '', { cloud: false })).toBe(local)
     }
   })
 
-  it('is left out without design.plan or design.check', () => {
-    expect(systemPrompt('full', (n) => n !== 'design.check', '', { cloud: true })).not.toContain(MOVING_PARTS_LINE)
-    expect(systemPrompt('full', (n) => n !== 'design.plan', '', { cloud: true })).not.toContain(MOVING_PARTS_LINE)
+  it('names jointed, articulated and flexi parts, and a simpler version offered in place of a creature', () => {
+    expect(MOVING_PARTS_LINE).toContain('(a hinge, chain, gears, jointed, articulated or flexi segments, including a simpler version offered in place of a creature)')
+  })
+
+  it('plans a part that moves before its sheet in the cloud prompt, and keeps the sheet first for other parts', () => {
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, all, '', { cloud: true })
+      const planLine = cloud.split('\n').find((l) => l.includes('call design.plan with the part'))!
+      // other parts keep the sheet first, then the plan
+      expect(planLine).toMatch(/first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then/)
+      // the plan line ends by pointing at the line for parts that move, which comes after it
+      expect(planLine.endsWith(MOVING_PARTS_ORDER)).toBe(true)
+      expect(cloud.indexOf(MOVING_PARTS_LINE)).toBeGreaterThan(cloud.indexOf(planLine))
+      // in that line the plan names the moving pieces before the sheet that fills in their gaps
+      const plan = MOVING_PARTS_LINE.indexOf('call design.plan')
+      const sheet = MOVING_PARTS_LINE.indexOf('then show the sizes on a sheet')
+      expect(MOVING_PARTS_LINE).toContain('the plan comes first and the sheet after it')
+      expect(plan).toBeGreaterThan(-1)
+      expect(sheet).toBeGreaterThan(plan)
+      // the local plan line keeps the sheet first with no exception
+      expect(systemPrompt(scope, all)).not.toContain('planned before its sheet')
+    }
+  })
+
+  it('is left out without design.plan or design.check, and so is the plan line pointer', () => {
+    for (const has of [(n: string) => n !== 'design.check', (n: string) => n !== 'design.plan']) {
+      const cloud = systemPrompt('full', has, '', { cloud: true })
+      expect(cloud).not.toContain(MOVING_PARTS_LINE)
+      expect(cloud).not.toContain(MOVING_PARTS_ORDER)
+      expect(cloud).toBe(systemPrompt('full', has))
+    }
   })
 })
