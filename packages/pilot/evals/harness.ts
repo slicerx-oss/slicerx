@@ -4,6 +4,7 @@
 // checks, an audited approval broker, an in-memory project and a
 // deterministic stand-in slicer.
 import type {
+  CommandSpec,
   PilotConfig,
   ApprovalVerifier,
   DemoFleet,
@@ -32,7 +33,9 @@ import { createMemoryProject, type MemoryProject } from '../src/memory-project'
 import type { PilotProject } from '../src/project'
 import type { LlmClient } from '../src/provider/types'
 import type { PrintRunHost } from '../src/run/print-run'
-import { createPilot } from '../src/runtime'
+import { createPilot, type CreatePilotOptions } from '../src/runtime'
+import type { EditionConfig } from '@slicerx/edition-config'
+import { editionToolGroups, tabOptions, withBrain } from '../src/tab-options'
 import type { PilotTool, ToolHost } from '../src/tool'
 
 let sharedKb: KnowledgeBase | null = null
@@ -289,6 +292,12 @@ export interface EvalEnvOptions {
   config?: Partial<PilotConfig>
   /** Keeps a print run per chat, for tests of the run's tools and cards. */
   printRun?: PrintRunHost
+  /**
+   * Runs mimir as the app's tab does, through the tab options the app uses (src/tab-options.ts): its step and tool call
+   * limits, the cad scope when `slices` is false, the edition's brain pack (tool groups, web search, routing) and the
+   * commands. `scope` is then ignored.
+   */
+  tab?: { slices: boolean; edition: Pick<EditionConfig, 'ai'>; commands?: CommandSpec[] }
 }
 
 export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport' | 'localNetwork'>>
@@ -325,7 +334,11 @@ export function createEvalEnv(opts: EvalEnvOptions) {
   const policy = opts.policy ?? DEFAULT_POLICY
   // Minted token strings, so tests can prove none leak into events or model input.
   const tokens: string[] = []
-  const pilot = createPilot({
+  const base: PilotConfig = { provider: opts.client.provider, model: opts.model ?? 'scripted', maxSteps: 24, maxToolCalls: 40, webSearch: opts.webSearch ?? true, ...opts.config }
+  // the tab's config carries the edition's brain pack, as the app's does (session.ts)
+  const config = opts.tab ? withBrain(base, opts.tab.edition) : base
+  const tab = opts.tab ? tabOptions({ slices: opts.tab.slices, config, kb, tools: opts.tools ?? [], commands: opts.tab.commands ?? [], toolGroups: editionToolGroups(opts.tab.edition) }) : null
+  const options: CreatePilotOptions = {
     host: {
       llm: { available: async () => true, stream: () => { throw new Error('evals pass a client') } },
       approvals: {
@@ -341,7 +354,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
       slicer,
       ...(opts.hosts ? opts.hosts({ broker, audit }) : {}),
     },
-    config: { provider: opts.client.provider, model: opts.model ?? 'scripted', maxSteps: 24, maxToolCalls: 40, webSearch: opts.webSearch ?? true, ...opts.config },
+    config,
     policy,
     client: opts.client,
     kb,
@@ -350,15 +363,17 @@ export function createEvalEnv(opts: EvalEnvOptions) {
     machineRates: { 'bay-1': 0.34, 'bay-2': 0.21, 'bay-3': 0.18, 'bay-4': 0.26, 'bay-5': 0.3 },
     project: () => project,
     ...(opts.tools ? { tools: opts.tools } : {}),
-    ...(opts.scope ? { scope: opts.scope } : {}),
+    ...(opts.scope && !opts.tab ? { scope: opts.scope } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.printRun ? { printRun: opts.printRun } : {}),
     now: () => {
       clock += 1
       return opts.realClock ? Date.now() : clock
     },
-  })
-  return { pilot, audit, broker, sim, project, kb, policy, tokens }
+    ...(tab ?? {}),
+  }
+  const pilot = createPilot(options)
+  return { pilot, audit, broker, sim, project, kb, policy: options.policy, tokens, options }
 }
 
 /** Marks a granted request as user or policy approved, from the run's events. */

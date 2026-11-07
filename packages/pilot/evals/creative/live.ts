@@ -146,13 +146,13 @@ export function budgetedClient(base: LlmClient, model: string, price: Price, bud
 }
 
 /** Runs the prompts in order on a budgeted client; no prompt starts once the budget says stop, and the run ends there. */
-export async function* runLive(prompts: readonly CreativePrompt[], opts: { geom: ToolHost['geom']; client: LlmClient; budget: Budget; timeoutMs?: number }): AsyncGenerator<{ prompt: CreativePrompt; run: PromptRun }> {
+export async function* runLive(prompts: readonly CreativePrompt[], opts: { geom: ToolHost['geom']; client: LlmClient; budget: Budget; timeoutMs?: number; defaultAnswer?: boolean }): AsyncGenerator<{ prompt: CreativePrompt; run: PromptRun }> {
   for (const prompt of prompts) {
     if (!canStart(opts.budget)) {
       opts.budget.stopped = true
       return
     }
-    const run = await runPrompt(prompt, { geom: opts.geom, client: opts.client, ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }) })
+    const run = await runPrompt(prompt, { geom: opts.geom, client: opts.client, ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }), ...(opts.defaultAnswer === undefined ? {} : { defaultAnswer: opts.defaultAnswer }) })
     yield { prompt, run }
     if (opts.budget.stopped) return
   }
