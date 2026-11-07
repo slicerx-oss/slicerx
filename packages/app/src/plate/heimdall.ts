@@ -7,6 +7,7 @@ import type { Collision, CollisionFix } from '@slicerx/contracts'
 import type { StrikeMark } from '@slicerx/viewport'
 import type { AppState } from '../state/store'
 import { preflightProblem } from './engine-check'
+import { resumeVoid } from './resume-tops'
 
 const NONE: Collision[] = []
 
@@ -81,7 +82,13 @@ export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
  * plate as it sits now, by the footprint rule; once the engine's plate check has answered for the plate as it sits,
  * its answer replaces the rule's, and that answer holds nothing back (the slice decides).
  */
-export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'> & Partial<Pick<AppState, 'plateCheck'>>): string | null {
+export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'> & Partial<Pick<AppState, 'plateCheck' | 'resume'>>): string | null {
+  // A resume plan kept for another plate, or for this one before a change, would print the whole plate into the part on
+  // the bed: Print and Export wait until it is planned again or cleared (Print everything again). Callers pass the store.
+  if (s.resume) {
+    const voided = resumeVoid(s as AppState)
+    if (voided) return voided
+  }
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
     return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`} on this plate. See ${hits.length === 1 ? 'it' : 'them'} in Slice, apply a fix or change the plate, and slice again.`

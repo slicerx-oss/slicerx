@@ -15,7 +15,7 @@ import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
 import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { jobLayerTops, resumeFor, resumeLayers, sliceInputsKey, type ResumeLayers } from './resume-tops'
+import { activeResume, jobLayerTops, printEverythingAgain, resumeFor, resumeLayers, sliceInputsKey, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
@@ -34,9 +34,11 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const plate = useApp((s) => s.plate)
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
-  const active = useApp((s) => s.resume)
+  // The plan that holds for this plate as it is; a kept plan that does not is said apart (kept).
+  const active = useApp(activeResume)
+  const kept = useApp((s) => s.resume !== null && activeResume(s) === null)
   const activePlate = useApp((s) => s.activePlate)
-  const storedTops = useApp((s) => s.resume?.layerTopsMm)
+  const storedTops = useApp((s) => activeResume(s)?.layerTopsMm)
   const doneSlice = useApp((s) => (s.slice.status === 'done' && !s.slice.stale ? s.slice.result : null))
   // What the plate's layers come from (every slice input that moves them): the job's layers hold while it stays the same.
   const inputs = useApp(sliceInputsKey)
@@ -145,8 +147,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     void slicePlate(host)
   }
   const everything = () => {
-    set({ resume: null })
-    markStale()
+    printEverythingAgain()
     closeResume()
   }
 
@@ -159,6 +160,14 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
       {parts.length === 0 ? (
         <p className="rs-warn" role="status">
           <Icon name="warning" size={15} /> Nothing is on the plate. Open the project that was printing first; the rest is sliced from it.
+        </p>
+      ) : null}
+      {kept ? (
+        <p className="rs-active" role="status" data-testid="resume-kept">
+          <Icon name="warning" size={16} /> A resume plan is kept that no longer matches this plate, so Print and Export wait. Plan it again here, or
+          <button type="button" className="rs-link" onClick={everything}>
+            Print everything again
+          </button>
         </p>
       ) : null}
       {active ? (
@@ -274,6 +283,7 @@ export function ResumeDialog() {
     () =>
       registerCommands([
         { id: 'print-rest', title: 'Print the rest from this height', section: 'plate', keywords: ['resume', 'failed print', 'continue', 'power loss', 'restart from layer'], run: () => openResume() },
+        { id: 'print-everything', title: 'Print everything again', section: 'plate', keywords: ['resume', 'whole plate', 'clear resume'], enabled: () => get().resume !== null, run: () => printEverythingAgain() },
       ]),
     [],
   )
