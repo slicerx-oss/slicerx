@@ -390,7 +390,7 @@ fn facets_paint(json: &str, root: &str, models: &mut HashMap<String, Model>, not
         }
     }
     if newer {
-        notes.push("some paint in this project was saved in a newer format and is left out".to_owned());
+        notes.push("Some paint in this file uses a newer format and was left out.".to_owned());
     }
 }
 

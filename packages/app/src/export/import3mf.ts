@@ -706,17 +706,25 @@ function namesLine(names: readonly string[]): string {
 
 /**
  * One note for what a reader left out of a file or read another way: the geometry engine's notes, each said once, and
- * the parts of a type this version does not know, by name, which were read as normal parts. The file's own part type
- * text is never shown. Undefined when it read the file whole.
+ * the parts of a type this version does not know, by name, which were read as normal parts. An engine note that is a
+ * whole sentence (a capital first, a period last) is said as it is; the others are joined after "Not everything in
+ * this file was read:". The file's own part type text is never shown. Undefined when it read the file whole.
  */
 export function readerNoteOf(unknownType: readonly string[], notes: readonly string[]): string | undefined {
   const sentences: string[] = []
   const lines: string[] = []
+  const whole: string[] = []
   for (const n of notes) {
-    const line = n.trim().replace(/[.;\s]+$/, '')
+    const t = n.trim()
+    if (/^[A-Z].*[.!?]$/s.test(t)) {
+      if (!whole.includes(t)) whole.push(t)
+      continue
+    }
+    const line = t.replace(/[.;\s]+$/, '')
     if (line && !lines.includes(line)) lines.push(line)
   }
   if (lines.length) sentences.push(`Not everything in this file was read: ${lines.join('; ')}.`)
+  sentences.push(...whole)
   const names = [...new Set(unknownType)]
   if (names.length === 1) sentences.push(`${names[0]} is a part of a type this version doesn't know, so it was read as a normal part.`)
   else if (names.length) sentences.push(`${namesLine(names)} are parts of a type this version doesn't know, so they were read as normal parts.`)
