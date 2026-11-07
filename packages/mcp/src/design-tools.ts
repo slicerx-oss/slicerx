@@ -463,15 +463,22 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
+  /** Whether `next` can be a rebuild of the part in `tied`: open, started after it, and tied to no plan. */
+  const rebuilt = (tied: string, next: string): boolean => {
+    const ids = designs.list().map((d) => d.id)
+    return ids.indexOf(next) > ids.indexOf(tied) && plans.tiedTo(next).length === 0
+  }
+
   /**
    * The design a plan was built in, and how it was chosen: the one it is tied to (or given now, which ties it), else
    * the one design named as the part, else the only design open. With several open and none tied or named, or two
    * named as the part, it refuses and asks which, rather than check the wrong part. A design given now ties a client
    * plan, or an untied card plan on the card's own side; a card plan is not tied again to another design, and a
    * client's given design for an untied card plan is checked without tying it. The one exception is a replacement: on
-   * the card's own side, a card plan whose part failed a check and still has its fix round follows the design given
-   * now, since a part rebuilt as a new design to fix it is still the plan's part. Its failed checks carry over, so a
-   * replacement never buys a second fix round.
+   * the card's own side, a card plan whose last check failed and still has its fix round follows the design given now,
+   * since a part rebuilt as a new design to fix it is still the plan's part. Only a design started after the one the
+   * plan is tied to and tied to no other plan qualifies, once per failed check, so a mistaken or injected id never
+   * moves a plan onto another part. Its failed checks carry over, so a replacement never buys a second fix round.
    */
   const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'given' | 'matched by name' | 'latest' } => {
     if (given) {
@@ -484,10 +491,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         } catch {
           id = undefined
         }
-        const replaces = opts.cardSide && id !== undefined && id !== entry.design && (entry.failedChecks ?? 0) > 0
+        const replaces = opts.cardSide && id !== undefined && id !== entry.design && entry.replaceable && rebuilt(entry.design, id)
         if (replaces) {
           const design = designs.get(id!)
-          plans.tie(entry.plan.planId, design.id)
+          plans.replace(entry.plan.planId, design.id)
           return { design, how: 'tied to the plan' }
         }
         if (id !== entry.design)

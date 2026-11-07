@@ -426,6 +426,43 @@ describe('design.check picks the design it checks', () => {
     await expect(client.run(client.input.parse({ planId: 'box-1', design: 'd1' }), {} as ToolContext)).rejects.toThrow(/already tied to design d2/)
   })
 
+  it('never follows a design named in the check that is older than the tied one or tied to another plan', async () => {
+    // the hinge plan failed on d2; d0 is older, d1 is the bracket, tied to its own plan and passed. A design id the model
+    // names, by mistake or from text in a file, moves the hinge plan to neither
+    const bad = (id: string, name: string) => {
+      const d = boxDesign(id, name)
+      d.parts[0] = { name, slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
+      return d
+    }
+    const plans = createPlanRegistry()
+    plans.put({ ...boxPlan, planId: 'bracket-1', part: 'Bracket' }, 'd1', 'card')
+    plans.put({ ...boxPlan, part: 'Hinge' }, 'd2', 'card')
+    const all = [boxDesign('d0', 'Old'), boxDesign('d1', 'Bracket'), bad('d2', 'Hinge')]
+    const tool = designToolset(hostOf(all), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    const check = async (args: Record<string, unknown>) => (await tool.run(tool.input.parse(args), {} as ToolContext)).output as { design: string; pass: boolean }
+    expect(await check({ planId: 'bracket-1' })).toMatchObject({ design: 'd1', pass: true })
+    expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: false })
+    await expect(check({ planId: 'box-1', design: 'd1' })).rejects.toThrow(/already tied to design d2/)
+    await expect(check({ planId: 'box-1', design: 'd0' })).rejects.toThrow(/already tied to design d2/)
+    expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1 })
+    expect(plans.get('box-1')?.closed).toBeUndefined()
+  })
+
+  it('follows one replacement per failed check, and none after a pass', async () => {
+    const d1 = boxDesign('d1', 'Hinge')
+    d1.parts[0] = { name: 'Hinge', slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
+    const plans = createPlanRegistry()
+    plans.put({ ...boxPlan, part: 'Hinge' }, 'd1', 'card')
+    const all = [d1, boxDesign('d2', 'Hinge v2'), boxDesign('d3', 'Hinge v3')]
+    const tool = designToolset(hostOf(all), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    const check = async (args: Record<string, unknown>) => (await tool.run(tool.input.parse(args), {} as ToolContext)).output as { design: string; pass: boolean }
+    expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd1', pass: false })
+    expect(await check({ planId: 'box-1', design: 'd2' })).toMatchObject({ design: 'd2', pass: true })
+    // the rebuild passed: the plan stays with it
+    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/already tied to design d2/)
+    expect(plans.get('box-1')?.design).toBe('d2')
+  })
+
   it('a replacement keeps the one fix round: a second miss on the new design closes the plan', async () => {
     const bad = (id: string) => {
       const d = boxDesign(id, 'Spinner ring')
