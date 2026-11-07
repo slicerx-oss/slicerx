@@ -48,20 +48,39 @@ export function tagged(loops: readonly SketchLoop[], id: string, mode: ProjectMo
   })
 }
 
-/** The number in a projection id; 0 for one that is not an id, or past the most a sketch ever counts to. */
-const idNumber = (id: string | undefined): number => {
-  const n = Number(/^p(\d{1,7})$/.exec(id ?? '')?.[1] ?? 0)
-  return n <= 1_000_000 ? n : 0
+/**
+ * Projection ids of a sketch count up from p1 and stay under this, in the editor and in a file alike, so every id
+ * handed out is one the count can see. A sketch that has handed out p999999 takes no more projections.
+ */
+export const MAX_PROJECTION = 1_000_000
+
+/** What a sketch that has handed out every projection id says. */
+export const TOO_MANY_PROJECTIONS = 'This sketch has too many projections; project into a new sketch.'
+
+/** The number in a projection id; 0 for one that is not an id, or at or past the cap. */
+export const idNumber = (id: unknown): number => {
+  const n = typeof id === 'string' ? Number(/^p(\d{1,7})$/.exec(id)?.[1] ?? 0) : 0
+  return n < MAX_PROJECTION ? n : 0
 }
 
 /**
  * The next projection id of a sketch. Ids only count up: one that was removed, or whose projection a file lost, is
- * never handed out again, since an extrude made with it still names it.
+ * never handed out again, since an extrude made with it still names it. An id the sketch already holds is skipped,
+ * and a sketch past the cap is refused.
  */
 export function nextProjectionId(k: Pick<SketchItem, 'projections' | 'loops' | 'nextProjection'>): string {
-  let n = k.nextProjection ?? 0
-  for (const p of k.projections ?? []) n = Math.max(n, idNumber(p.id))
-  for (const l of k.loops) n = Math.max(n, idNumber(l.projected))
+  let n = k.nextProjection !== undefined && k.nextProjection < MAX_PROJECTION ? k.nextProjection : 0
+  const held = new Set<string>()
+  for (const p of k.projections ?? []) {
+    held.add(p.id)
+    n = Math.max(n, idNumber(p.id))
+  }
+  for (const l of k.loops) {
+    if (l.projected !== undefined) held.add(l.projected)
+    n = Math.max(n, idNumber(l.projected))
+  }
+  while (held.has(`p${n + 1}`)) n++
+  if (n + 1 >= MAX_PROJECTION) throw Object.assign(new Error(TOO_MANY_PROJECTIONS), { code: 'invalid_input' })
   return `p${n + 1}`
 }
 
