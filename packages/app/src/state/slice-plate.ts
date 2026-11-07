@@ -3,7 +3,7 @@
 // Slicing a plate: the configuration and objects the engine gets, and the run itself. It loads the first time a plate
 // slices (actions.ts slicePlate), so the startup shell stays small.
 import { engineErrorText } from '../lib/engine-errors'
-import type { Host, LayerGcode, PlateObject, PrintConfig, SlicerHost } from '@slicerx/contracts'
+import type { Host, LayerGcode, PlateObject, PrintConfig, SliceRequest, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { readPreview } from '@slicerx/contracts'
 import { scriptKeyValues } from '@slicerx/settings/script-keys'
 import { resolveConfig } from '../adapters/config'
@@ -54,6 +54,89 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
   return toPrint.map((p, i) => objectToMachine({ id: p.id, name: p.name, mesh: handles[i]!.id, transform: p.transform, ...overridesOf(meta, p), ...(p.volumes?.length ? { volumes: requestVolumes(p) } : {}), ...(Object.keys(objectOverrides(s, p)).length ? { settings: objectOverrides(s, p) } : {}), ...(Object.keys(partOverridesOf(entries, p)).length ? { partSettings: partOverridesOf(entries, p) } : {}), ...(p.brimPoints?.length ? { brimPoints: p.brimPoints } : {}) }, origin))
 }
 
+/**
+ * The request a plate slices with, and what the slice notes beside it: the objects, the resolved settings and the layer
+ * plan (a resume's stored tops, the plate's own layer heights, sleipnir's plan or height ranges), with the resume's
+ * options when `s.resume` is set. `onObjects` runs once the objects are ready.
+ */
+export async function plateSliceRequest(
+  host: Host,
+  s: AppState,
+  signal: AbortSignal,
+  onObjects?: () => void,
+): Promise<{ request: SliceRequest; toPrint: PlateEntry[]; config: PrintConfig; replaces: SliceWarning | null; skippedTools: SliceWarning[] }> {
+  // The plate's own print sequence (Bambu Studio and Orca set it per plate).
+  const meta = s.plates.find((p) => p.id === s.activePlate)
+  const config = plateSliceConfig(s, meta)
+  const toPrint = s.plate.filter((p) => p.printable !== false)
+  const objects = await plateObjects(host.slicer, s, meta, s.plate)
+  if (signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
+  onObjects?.()
+  // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
+  // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
+  const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
+  // A slice canceled while its plan runs goes no further; the plan stops unless the next slice takes it over.
+  // The plate's own layer heights (the layer height editor) replace sleipnir's plan and the fixed layer height.
+  const profile = !s.calibration[s.activePlate] && meta?.settings.layerProfile?.length ? meta.settings.layerProfile : null
+  const own = profile ? (await import('../plate/layer-profile')).plateProfileTops(profile, toPrint, config) : null
+  const planned = !own && smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, signal).catch(() => null) : null
+  signal.throwIfAborted()
+  // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan. Those tops are the
+  // layers the job printed, so they go as exact and as sliced: the engine keeps them as given, not stretched again
+  // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job.
+  const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (own ?? planned)
+  // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
+  const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : own && layerTopsMm === own ? smartLayerWarning(s, "This plate's own layer heights") : null
+  // A project's settings by height: range keys by object, and with no other plan, the layer heights by height the
+  // engine plans the plate's layers from.
+  const { heightRangesOf } = await import('../plate/layer-ranges')
+  const byRanges = smart === 'off' && !s.calibration[s.activePlate] && !layerTopsMm
+  const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint, { layerHeights: byRanges })]
+  // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
+  // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
+  const marks = get().layerMarks[s.activePlate] ?? []
+  const calibGcode = s.calibration[s.activePlate]?.layerGcode ?? []
+  const markTools = marks.length ? await import('../plate/layer-marks') : null
+  const layerGcode: LayerGcode[] = [...calibGcode, ...(markTools ? markTools.layerGcodeByHeight(marks) : [])]
+  // A project's tool changes by height go to the engine, which notes those that do not apply to the plate; those the
+  // file saved for a plate of several filaments are noted here in the same words.
+  const toolChanges = markTools ? markTools.toolChangesByHeight(marks) : []
+  const skippedTools = markTools ? markTools.skippedToolChanges(marks) : []
+  const request: SliceRequest = {
+    plate: {
+      bed: s.bed,
+      objects,
+    },
+    config,
+    options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === s.resume?.layerTopsMm) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === s.resume?.layerTopsMm ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+  }
+  return { request, toPrint, config, replaces, skippedTools }
+}
+
+/**
+ * The layers the shown plate prints, from the engine: the request slicePlate sends with no resume, sliced without
+ * G-code or a preview, and its layerZ. One source for every layer plan (the plate's own layer heights, sleipnir, height
+ * ranges, objects' own heights, a Z shrinkage over every filament the plate uses, painted ones included, and the
+ * printer's layer limits). Throws what a slice would refuse; an abort stops it.
+ */
+export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<number[]> {
+  await (await import('./profile-sync')).profileReady()
+  signal.throwIfAborted()
+  const at = get()
+  const s: AppState = { ...at, plate: at.historyEdit ? fullPlate(at) : at.plate, resume: null }
+  if (!s.plate.some((p) => p.printable !== false)) throw new Error('Nothing on this plate prints')
+  const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), resolveConfig(s.easy, s.overrides))
+  if (conflict) throw new Error(conflict)
+  const { request } = await plateSliceRequest(host, s, signal)
+  const sliced = await host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal })
+  try {
+    signal.throwIfAborted()
+    return Array.from(sliced.layerZ)
+  } finally {
+    host.slicer.release?.(sliced.id)
+  }
+}
+
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
 export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Promise<void> {
   // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
@@ -90,61 +173,15 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
   let again = false
   try {
-    // The plate's own print sequence (Bambu Studio and Orca set it per plate).
-    const meta = s.plates.find((p) => p.id === s.activePlate)
-    const config = plateSliceConfig(s, meta)
-    const toPrint = s.plate.filter((p) => p.printable !== false)
-    const objects = await plateObjects(host.slicer, s, meta, s.plate)
-    if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
-    sliceStage(timed, 'objects')
-    // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
-    // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
-    const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
-    // A slice canceled while its plan runs goes no further; the plan stops unless the next slice takes it over.
-    // The plate's own layer heights (the layer height editor) replace sleipnir's plan and the fixed layer height.
-    const profile = !s.calibration[s.activePlate] && meta?.settings.layerProfile?.length ? meta.settings.layerProfile : null
-    const own = profile ? (await import('../plate/layer-profile')).plateProfileTops(profile, toPrint, config) : null
-    const planned = !own && smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
-    abort.signal.throwIfAborted()
-    // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan. Those tops are the
-    // layers the job printed, so they go as exact and as sliced: the engine keeps them as given, not stretched again
-    // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job.
-    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (own ?? planned)
-    // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
-    const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : own && layerTopsMm === own ? smartLayerWarning(s, "This plate's own layer heights") : null
-    // A project's settings by height: range keys by object, and with no other plan, the layer heights by height the
-    // engine plans the plate's layers from.
-    const { heightRangesOf } = await import('../plate/layer-ranges')
-    const byRanges = smart === 'off' && !s.calibration[s.activePlate] && !layerTopsMm
-    const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint, { layerHeights: byRanges })]
-    // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
-    // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
-    const marks = get().layerMarks[s.activePlate] ?? []
-    const calibGcode = s.calibration[s.activePlate]?.layerGcode ?? []
-    const markTools = marks.length ? await import('../plate/layer-marks') : null
-    const layerGcode: LayerGcode[] = [...calibGcode, ...(markTools ? markTools.layerGcodeByHeight(marks) : [])]
-    // A project's tool changes by height go to the engine, which notes those that do not apply to the plate; those the
-    // file saved for a plate of several filaments are noted here in the same words.
-    const toolChanges = markTools ? markTools.toolChangesByHeight(marks) : []
-    const skippedTools = markTools ? markTools.skippedToolChanges(marks) : []
+    const { request, toPrint, config, replaces, skippedTools } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
     const sliceWith = async () =>
-      host.slicer.slice(
-        {
-          plate: {
-            bed: s.bed,
-            objects,
-          },
-          config,
-          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === s.resume?.layerTopsMm) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === s.resume?.layerTopsMm ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+      host.slicer.slice(request, {
+        signal: abort.signal,
+        onProgress: (progress) => {
+          const cur = get().slice
+          if (cur.status === 'running' && currentSlice(abort)) set({ slice: { ...cur, progress } })
         },
-        {
-          signal: abort.signal,
-          onProgress: (progress) => {
-            const cur = get().slice
-            if (cur.status === 'running' && currentSlice(abort)) set({ slice: { ...cur, progress } })
-          },
-        },
-      )
+      })
     // The native engine already spreads layers across threads; shards there only add halo work.
     sliceStage(timed, 'request')
     const sliced = await sliceWith()

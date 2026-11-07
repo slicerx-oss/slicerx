@@ -12,13 +12,16 @@ import { planResume, type ResumePlan } from '../geom/resume'
 import { useHost } from '../host'
 import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
-import { get, markStale, set, showSliced, useApp } from '../state/store'
+import { markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { jobLayerTops, resumePlanTops } from './resume-tops'
+import { resumeLayers, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
 type By = 'height' | 'layer'
+
+/** Shown while the engine works out the job's layers, when the app has none (a reopened project, a printer's resume). */
+const WORKING = 'Working out the layers...'
 
 function Body({ printerName, startLayer }: { printerName?: string | undefined; startLayer?: number | undefined }) {
   const host = useHost()
@@ -26,6 +29,12 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const active = useApp((s) => s.resume)
+  const activePlate = useApp((s) => s.activePlate)
+  const plates = useApp((s) => s.plates)
+  const objectSettings = useApp((s) => s.objectSettings)
+  const calibration = useApp((s) => s.calibration)
+  const storedTops = useApp((s) => s.resume?.layerTopsMm)
+  const doneSlice = useApp((s) => (s.slice.status === 'done' ? s.slice.result : null))
   const cfg = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
   const layerHeightMm = Number(cfg['layer_height']) || 0.2
   const firstLayerHeightMm = Number(cfg['initial_layer_print_height']) || layerHeightMm
@@ -33,30 +42,52 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const [height, setHeight] = useState('')
   const [layer, setLayer] = useState(startLayer ? String(startLayer) : '')
   const [declareZ, setDeclareZ] = useState(false)
-  const [plan, setPlan] = useState<ResumePlan | null>(null)
+  const [plan, setPlan] = useState<(ResumePlan & { tops: number[] }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The job's layers the plan counts in, for the plate they came from: the app's, or the engine's when the app has none.
+  const [layers, setLayers] = useState<ResumeLayers | null>(null)
+  const [layersError, setLayersError] = useState<string | null>(null)
   const abort = useRef<AbortController | null>(null)
   const parts = useMemo(() => plate.filter((p) => p.printable !== false).flatMap((p) => p.parts.map((part) => ({ mesh: toGeom(part), transform: p.transform }))), [plate])
   const value = by === 'height' ? Number(height.replace(',', '.')) : Number(layer)
   const valid = by === 'height' ? Number.isFinite(value) && value > 0 : Number.isInteger(value) && value >= 1
 
-  // The plan follows the input, a moment after typing stops.
+  // The job's layers, worked out again whenever the plate or its settings change. Closing the dialog or showing
+  // another plate drops a run still going, and its answer with it.
+  useEffect(() => {
+    setLayers(null)
+    setLayersError(null)
+    if (parts.length === 0) return
+    const ac = new AbortController()
+    resumeLayers(host, ac.signal)
+      .then((l) => {
+        if (!ac.signal.aborted && l) setLayers(l)
+      })
+      .catch((e: unknown) => {
+        if (!ac.signal.aborted) setLayersError(e instanceof Error ? e.message : String(e))
+      })
+    return () => ac.abort()
+  }, [host, parts, activePlate, plates, objectSettings, calibration, easy, overrides, storedTops, doneSlice])
+
+  const working = parts.length > 0 && !layers && !layersError
+  const layersReady = layers !== null && layers.plate === activePlate ? layers : null
+
+  // The plan follows the input, a moment after typing stops, in the job's layers.
   useEffect(() => {
     abort.current?.abort()
     setPlan(null)
     setError(null)
-    if (!valid || parts.length === 0) return
+    setBusy(false)
+    if (!valid || parts.length === 0 || !layersReady) return
+    const tops = layersReady.tops
     const ac = new AbortController()
     abort.current = ac
     const t = setTimeout(() => {
       setBusy(true)
-      // The job's layers, or the ones the resumed slice will print (a plate's own layer heights), never even layers
-      // when the plate has its own.
-      const tops = resumePlanTops(get())
-      planResume(parts, { ...(by === 'height' ? { measuredHeightMm: value } : { failedLayer: value }), layerHeightMm, firstLayerHeightMm, ...(tops ? { layerTopsMm: tops } : {}), includeRemainingMesh: true }, ac.signal)
+      planResume(parts, { ...(by === 'height' ? { measuredHeightMm: value } : { failedLayer: value }), layerHeightMm, firstLayerHeightMm, layerTopsMm: tops, includeRemainingMesh: true }, ac.signal)
         .then((p) => {
-          if (!ac.signal.aborted) setPlan(p)
+          if (!ac.signal.aborted) setPlan({ ...p, tops })
         })
         .catch((e: unknown) => {
           if (!ac.signal.aborted) setError(e instanceof Error ? e.message : String(e))
@@ -69,16 +100,15 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
       clearTimeout(t)
       ac.abort()
     }
-  }, [by, value, valid, parts, layerHeightMm, firstLayerHeightMm])
+  }, [by, value, valid, parts, layerHeightMm, firstLayerHeightMm, layersReady])
 
   const remaining = useMemo(() => (plan?.remaining ? [fromGeom(plan.remaining, 'rest', 1)] : null), [plan])
   const whole = useMemo(() => plate.filter((p) => p.printable !== false).flatMap((p) => p.parts), [plate])
 
   const go = () => {
     if (!plan) return
-    // Only the job's own layers are stored: the slice sends them back as sliced. The plate's own tops go as they are.
-    const tops = jobLayerTops(get())
-    set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), ...(tops ? { layerTopsMm: tops } : {}) } })
+    // The layers the plan counted in are the job's, so the slice sends them back as sliced and prints the same ones.
+    set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops } })
     markStale()
     closeResume()
     showSliced()
@@ -134,24 +164,24 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
           <Input id="rs-layer" mono inputMode="numeric" placeholder="157" value={layer} onChange={(e) => setLayer(e.target.value)} autoFocus />
         </Field>
       )}
-      {error ? (
+      {layersError || error ? (
         <p className="app-err" role="alert">
-          {error}
+          {layersError ?? error}
         </p>
       ) : null}
-      <div className="rs-plan" data-state={busy ? 'busy' : plan ? 'ready' : 'idle'} aria-live="polite">
+      <div className="rs-plan" data-state={busy || working ? 'busy' : plan ? 'ready' : 'idle'} aria-live="polite">
         <div className="rs-art" aria-hidden="true">
           <div className="rs-sil">
             {whole.length ? <Silhouette parts={whole} /> : null}
             {plan ? <i className="rs-cut" style={{ bottom: `${Math.max(0, Math.min(100, (plan.printedHeightMm / Math.max(0.001, plateHeight(whole))) * 100))}%` }} /> : null}
           </div>
           <Icon name="arrow-right" size={16} />
-          <div className="rs-sil rs-rest">{remaining ? <Silhouette parts={remaining} /> : <span className="rs-empty">{busy ? 'Planning' : 'What is left'}</span>}</div>
+          <div className="rs-sil rs-rest">{remaining ? <Silhouette parts={remaining} /> : <span className="rs-empty">{working ? WORKING : busy ? 'Planning' : 'What is left'}</span>}</div>
         </div>
         <dl className="rs-facts">
           <div>
             <dt>Printed</dt>
-            <dd>{plan ? `${plan.printedHeightMm.toFixed(2)} mm, ${plan.resumeLayer} of ${plan.layerCount} layers` : busy ? 'Planning' : 'Enter a height or a layer'}</dd>
+            <dd>{plan ? `${plan.printedHeightMm.toFixed(2)} mm, ${plan.resumeLayer} of ${plan.layerCount} layers` : working ? WORKING : busy ? 'Planning' : 'Enter a height or a layer'}</dd>
           </div>
           <div>
             <dt>Resumes at</dt>
