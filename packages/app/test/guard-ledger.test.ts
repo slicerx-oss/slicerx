@@ -5,7 +5,7 @@
 // card; without an entry, for another file or a second time, the guard shows its own bed-clear card as before. Only
 // the send card's Print handler writes the ledger.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalToken, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { guardedPrinters, sendPreflight } from '../src/plate/guard'
@@ -180,9 +180,11 @@ describe('the send ledger in the guard', () => {
       }
     }
     walk(root)
+    // Paths under src with forward slashes, as written below, on every system (Windows joins with backslashes).
+    const rel = (f: string): string => relative(root, f).split(sep).join('/')
     const writers = files.filter((f) => /\.mark\(/.test(readFileSync(f, 'utf8')) && /send-ledger/.test(readFileSync(f, 'utf8')))
-    expect(writers.map((f) => f.slice(root.length + 1))).toEqual(['workspaces/mimir/send-card.tsx'])
-    const users = files.filter((f) => /from '[./]*\/?(plate\/)?send-ledger'/.test(readFileSync(f, 'utf8'))).map((f) => f.slice(root.length + 1))
+    expect(writers.map(rel)).toEqual(['workspaces/mimir/send-card.tsx'])
+    const users = files.filter((f) => /from '[./]*\/?(plate\/)?send-ledger'/.test(readFileSync(f, 'utf8'))).map(rel)
     expect(users.sort()).toEqual(['plate/guard.ts', 'workspaces/mimir/send-card.tsx', 'workspaces/mimir/session.ts'])
   })
 })
