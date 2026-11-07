@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A plate's own layer heights in a project file: written as each object's layer_height_profile, from its bottom to its
 // top, the form other slicers' project files use, and read back onto the plate.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
 import { readLayerHeights } from '@slicerx/threemf/layer-heights'
@@ -53,11 +55,26 @@ describe('a plate profile in a project file', () => {
   })
 
   it("reads lines in other slicers' form: semicolons, six decimals, one pair per layer", async () => {
-    // Made by hand in the form of their saved projects (no saved file from one is in the repo yet).
+    // Made by hand in the form of their saved projects; the next test reads one from a real project.
     const files = projectFiles(input()).concat([{ name: 'Metadata/layer_heights_profile.txt', data: FIXTURE }])
     const objs = (await readProject(zip(files), bed)).plates[0]!.objects
     expect(objs[0]!.layerProfile).toEqual([[0, 0.2], [0.2, 0.2], [0.36, 0.16], [0.48, 0.12], [0.6, 0.12], [10, 0.12]])
     expect(objs[1]!.layerProfile).toEqual([[0, 0.2], [6, 0.28]])
+  })
+
+  it('reads the profile part of a project from another slicer', () => {
+    const text = readFileSync(join(__dirname, 'fixtures', 'layer-heights-profile-another-slicer.txt'), 'utf8')
+    const got = readLayerHeights(text)
+    expect([...got.keys()]).toEqual([3, 4, 5])
+    const three = got.get(3)!
+    expect(three).toHaveLength(37)
+    expect(three[0]).toEqual([0, 0.2])
+    expect(three[three.length - 1]![0]).toBe(3.483481)
+    expect(Math.min(...three.map((p) => p[1]))).toBe(0.08)
+    expect(Math.max(...three.map((p) => p[1]))).toBe(0.2)
+    // rising heights, as the curve needs
+    expect(three.every((p, i) => i === 0 || p[0] >= three[i - 1]![0])).toBe(true)
+    expect([got.get(4)!.length, got.get(5)!.length]).toEqual([67, 71])
   })
 
   it('still reads the comma form, and a mix of separators', () => {
