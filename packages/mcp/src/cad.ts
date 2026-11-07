@@ -815,13 +815,16 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
       fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
       fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
-      center: vec2.optional().describe('Where the middle of the artwork lands, sketch mm; the origin when absent (on the bed, its corner)'),
+      center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
       tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
     }),
     async run(i) {
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
-      const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center: i.center, toleranceMm: i.tolerance_mm })
+      // the middle of the plane, as the sketch panel starts it
+      const bed = i.frame ? undefined : host.bed?.()
+      const center = i.center ?? (bed ? [bed.widthMm / 2, bed.depthMm / 2] : [0, 0])
+      const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center, toleranceMm: i.tolerance_mm })
       const req = { svg: i.svg, options }
       const out = deps.files.engine ? await call('sketch.svg', req) : await engine('sketch.svg', req)
       const loopsIn = out['loops'] as Loops
