@@ -5,6 +5,7 @@ import type { MeshHandle } from '@slicerx/contracts'
 import { beforeAll, beforeEach, expect, it } from 'vitest'
 import { runCall, useDesignHost } from '../src/app-link/methods'
 import { get, set } from '../src/state/store'
+import { mimirPlans } from '../src/workspaces/mimir/plans'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('app-link-inspect-replies', { freshCache: true })
@@ -64,6 +65,20 @@ it('reads the gaps of a body for print in place, with the plate profile, without
   expect(JSON.stringify(result)).not.toMatch(/positions|indices/)
   expect(get().plate[0]).toBe(before)
   await expect(runCall('geom.fit_check', { design, part: [3] })).rejects.toMatchObject({ code: 'invalid_input' })
+})
+
+it('holds print-in-place gaps to the plate layer height and filament, in geom.fit_check and design.check', async () => {
+  const design = await box()
+  set({ overrides: { layer_height: 0.28 }, slotSetup: { 1: { type: 'PETG', brand: '', color: '#50fa7b' } } })
+  try {
+    const fit = (await runCall('geom.fit_check', { design })) as { output: { limits: Record<string, unknown> } }
+    expect(fit.output.limits).toEqual({ side_mm: 0.4, vertical_mm: 0.84, material: 'PETG', nozzle_mm: 0.4, layer_height_mm: 0.28 })
+    mimirPlans.put({ planId: 'pip-app', part: 'Tray', units: 'mm', features: [{ name: 'Tray', kind: 'extrude', sizes: { size: 20 } }], assumptions: [], questions: [], printInPlace: ['Lid', 'Tray'] }, design, 'client')
+    const check = (await runCall('design.check', { planId: 'pip-app' })) as { output: { items: { name: string; want: string }[] } }
+    expect(check.output.items.find((i) => i.name === 'gaps')?.want).toBe('at least 0.4 mm side by side and 0.84 mm above or below between moving pieces (PETG, 0.4 mm nozzle, 0.28 mm layers)')
+  } finally {
+    set({ overrides: {}, slotSetup: {} })
+  }
 })
 
 it('refuses an impossible shell without changing the body or its steps', async () => {
