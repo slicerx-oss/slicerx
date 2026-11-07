@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // pnpm --filter @slicerx/pilot eval --mode replay|live [--scenario id|group|gate|all]
 //   [--runs n] [--model id] [--max-requests n] [--log] [--change "what changed"]
-//   [--provider openai|openai-compatible] [--base-url http://127.0.0.1:11434/v1]
-// Live mode reads the key from OPENAI_API_KEY or the macOS Keychain at request
-// time and stops starting new runs once --max-requests provider calls were made.
+//   [--provider openai|anthropic|openai-compatible] [--base-url http://127.0.0.1:11434/v1]
+// Live mode reads the key from OPENAI_API_KEY or the macOS Keychain (anthropic:
+// ANTHROPIC_API_KEY) at request time and stops starting new runs once
+// --max-requests provider calls were made.
 // With --provider openai-compatible it talks to a local server (Ollama, LM Studio)
 // with no key and no reasoning setting, and reports first token time, output
 // tokens per second and malformed tool calls per run.
@@ -38,8 +39,8 @@ const reasoning = arg('reasoning', DEFAULT_CONFIG.reasoning ?? 'medium') as 'low
 const provider = arg('provider', 'openai') ?? 'openai'
 const baseUrl = arg('base-url')
 const local = provider === 'openai-compatible'
-if (provider !== 'openai' && !local) {
-  console.error(`Unknown --provider "${provider}". Use openai or openai-compatible.`)
+if (provider !== 'openai' && provider !== 'anthropic' && !local) {
+  console.error(`Unknown --provider "${provider}". Use openai, anthropic or openai-compatible.`)
   process.exit(2)
 }
 
@@ -60,8 +61,8 @@ if (selected.length === 0) {
 
 let requests = 0
 const transport = createNodeTransport({ onRequest: () => void requests++ })
-if (mode === 'live' && !local && !(await transport.available('openai'))) {
-  console.error('Live mode needs OPENAI_API_KEY or the Keychain item slicerx-openai-api-key.')
+if (mode === 'live' && !local && !(await transport.available(provider))) {
+  console.error(provider === 'anthropic' ? 'Live mode needs ANTHROPIC_API_KEY.' : 'Live mode needs OPENAI_API_KEY or the Keychain item slicerx-openai-api-key.')
   process.exit(2)
 }
 
