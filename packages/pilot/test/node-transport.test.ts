@@ -141,6 +141,48 @@ describe('node transport, anthropic route', () => {
     ])
   })
 
+  it('never follows a redirect, so the key header cannot reach another host', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', KEY)
+    vi.stubEnv('OPENAI_API_KEY', `${KEY}-openai`)
+    // fetch as Node runs it: a 307 to another origin is followed with the custom key header still on, unless
+    // redirect is 'error', which fails the call instead
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        sent.push({ url: String(url), init: init ?? {} })
+        if (init?.redirect === 'error') throw new TypeError('fetch failed', { cause: new Error('unexpected redirect') })
+        sent.push({ url: 'https://evil.example/v1/messages', init: init ?? {} })
+        return new Response(TOOL_REPLY, { status: 200 })
+      }),
+    )
+    const transport = createNodeTransport()
+    const err = await collect(transport.stream(createAnthropicAdapter().build(REQUEST))).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(TransportError)
+    expect((err as TransportError).message).toBe('anthropic request failed: fetch failed: unexpected redirect')
+    expect(sent.map((s) => s.url)).toEqual(['https://api.anthropic.com/v1/messages'])
+    expect(sent[0]!.init.redirect).toBe('error')
+    // every route sends with redirect 'error'
+    const openai = await collect(createTransportClient(transport, 'openai').stream(REQUEST))
+    expect(openai.find((e) => e.type === 'error')).toMatchObject({ message: 'openai request failed: fetch failed: unexpected redirect' })
+    expect(sent.map((s) => s.init.redirect)).toEqual(['error', 'error'])
+    expect(sent.some((s) => s.url.includes('evil.example'))).toBe(false)
+  })
+
+  it('a failed fetch that quotes the key loses it, and a key with a line break inside counts as missing', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', KEY)
+    mockFetch(() => {
+      throw new TypeError(`Headers.append: "${KEY}" is an invalid header value.`)
+    })
+    const err = await collect(createNodeTransport().stream(createAnthropicAdapter().build(REQUEST))).catch((e: unknown) => e)
+    expect((err as TransportError).message).toBe('anthropic request failed: Headers.append: "[key]" is an invalid header value.')
+    sent = []
+    vi.stubEnv('ANTHROPIC_API_KEY', `${KEY}\n${KEY}`)
+    const transport = createNodeTransport()
+    expect(await transport.available('anthropic')).toBe(false)
+    await expect(collect(transport.stream(createAnthropicAdapter().build(REQUEST)))).rejects.toThrow('No API key for anthropic: set ANTHROPIC_API_KEY (or SLICERX_ANTHROPIC_API_KEY)')
+    expect(sent).toHaveLength(0)
+  })
+
   it('sends only to api.anthropic.com over https, and refuses a request that brings its own key header', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', KEY)
     mockFetch(() => new Response(TOOL_REPLY, { status: 200 }))
