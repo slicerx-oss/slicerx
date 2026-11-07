@@ -813,6 +813,9 @@ struct Reader {
     load_time: f64,
     unload_time: f64,
     change_time: f64,
+    /// Whether the hotends are the tools (the H3C): a change to a hotend that holds no filament yet unloads the
+    /// filament it leaves first.
+    by_hotend: bool,
     retract_length: Vec<f64>,
     retract_speed: Vec<f64>,
     deretract_speed: Vec<f64>,
@@ -1007,6 +1010,7 @@ impl Reader {
                     None => cfg.raw_number("machine_switch_extruder_time", 0.0),
                 }
             },
+            by_hotend,
             retract_length: retract_list(cfg, "retraction_length", filaments),
             retract_speed: retract_list(cfg, "retraction_speed", filaments),
             deretract_speed: retract_list(cfg, "deretraction_speed", filaments),

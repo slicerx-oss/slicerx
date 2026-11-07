@@ -270,21 +270,29 @@ fn a_tpu_filament_without_the_tpu_hotend_is_refused() {
 
 /// The print time of two cubes on filaments 1 and 2 with `edit` applied, and the number of changes.
 fn timed(edit: &[(&str, Value)]) -> (f64, usize) {
-    let mut c = h3c(2);
+    timed_on(&[1, 2], edit)
+}
+
+fn timed_on(slots: &[u8], edit: &[(&str, Value)]) -> (f64, usize) {
+    let mut c = h3c(slots.len());
     for (k, v) in edit {
         c.insert((*k).into(), v.clone());
     }
-    let run = slice(c, &[1, 2]).unwrap();
+    let run = slice(c, slots).unwrap();
     (run.report.stats.time_s, changes(&gcode(&run)).len())
 }
 
 #[test]
-fn a_hotend_swap_costs_the_hotend_change_time_and_no_unload() {
+fn a_hotend_swap_back_costs_the_hotend_change_time_and_no_unload() {
     let (base, n) = timed(&[]);
     assert!(n >= 40, "{n} changes");
-    // Each hotend keeps its filament loaded: the unload time costs nothing.
+    // Each hotend keeps its filament loaded: only the one change into the second hotend, still empty, unloads the
+    // first filament (28 s on the stock settings).
     let (no_unload, _) = timed(&[("machine_unload_filament_time", json!(0))]);
-    assert!((base - no_unload).abs() < 1.0, "{base} against {no_unload}");
+    assert!(
+        (base - no_unload - 28.0).abs() < 1.0,
+        "{base} against {no_unload}"
+    );
     // The stock H3C gives no hotend change time, so a swap takes its switch time (4 s): 10 s more each, 14 s.
     let (slow, _) = timed(&[("machine_switch_extruder_time", json!(14))]);
     let per = (slow - base) / n as f64;
@@ -293,6 +301,21 @@ fn a_hotend_swap_costs_the_hotend_change_time_and_no_unload() {
     let (hotend, _) = timed(&[("machine_hotend_change_time", json!(9))]);
     let per = (hotend - base) / n as f64;
     assert!((per - 5.0).abs() < 0.05, "{per} s more per change over {n}");
+}
+
+#[test]
+fn a_change_into_an_empty_hotend_unloads_the_filament_it_leaves() {
+    // Three filaments on three hotends: the first loads in the start, and each of the other two is first reached
+    // from a hotend that holds a filament, which unloads once. Later swaps between loaded hotends unload nothing.
+    let (base, n) = timed_on(&[1, 2, 3], &[]);
+    assert!(n >= 60, "{n} changes");
+    let (no_unload, _) = timed_on(&[1, 2, 3], &[("machine_unload_filament_time", json!(0))]);
+    assert!(
+        (base - no_unload - 56.0).abs() < 1.0,
+        "{base} against {no_unload}"
+    );
+    let (slow, _) = timed_on(&[1, 2, 3], &[("machine_unload_filament_time", json!(38))]);
+    assert!((slow - base - 20.0).abs() < 1.0, "{slow} against {base}");
 }
 
 #[test]

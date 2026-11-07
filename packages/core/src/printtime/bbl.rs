@@ -458,7 +458,8 @@ impl Reader {
 
     /// A filament change to filament `id`: the switch time when the nozzle changes, and the load time when that
     /// nozzle's filament changes, with the unload time too when it held another one. A switch back to a nozzle
-    /// that still holds `id` takes the switch time only.
+    /// that still holds `id` takes the switch time only. On a printer whose hotends are its tools, a change to a
+    /// hotend that holds no filament yet also takes the unload time, for the filament it leaves.
     pub(super) fn bbl_filament_change(&mut self, id: usize) {
         let next = self.filament_map.get(id).copied().unwrap_or(0);
         let active = self
@@ -475,7 +476,12 @@ impl Reader {
             match *slot {
                 Some(f) if f == id => {}
                 Some(_) => extra += self.unload_time + self.load_time,
-                None => extra += self.load_time,
+                None => {
+                    extra += self.load_time;
+                    if self.by_hotend && self.extruder.is_some() {
+                        extra += self.unload_time;
+                    }
+                }
             }
             *slot = Some(id);
         }
