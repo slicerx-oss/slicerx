@@ -456,6 +456,28 @@ fn open_chain_landmarks_at_the_ends_count_as_the_ends() {
         ),
         "profiles: profile 2 and profile 1 mark different numbers of landmarks between their ends (1 and 2); mark the same points on every profile"
     );
+    // the start and the middle against the middle and the end: the same counts, but not the same points
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0], [0.0, -5.0]]), arc_at(&level(10.0), &u, &[[0.0, -5.0], u[24]])], "thicken": thick })
+        ),
+        "profiles: profile 2's landmark 1 is between its ends and profile 1's is at its start; mark the same points on every profile"
+    );
+    // a lone start against a lone end of a chain drawn the same way
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0]]), arc_at(&level(10.0), &u, &[u[24]])], "thicken": thick })
+        ),
+        "profiles: profile 2's landmark 1 is at its end and profile 1's is at its start; mark the same points on every profile"
+    );
+    // the same point marked on a chain drawn the other way is its end, and it lofts
+    let back: Vec<[f64; 2]> = u.iter().rev().copied().collect();
+    solid(&run(
+        "sketch.loft",
+        &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0]]), arc_at(&level(10.0), &back, &[u[0]])], "thicken": thick }),
+    ));
 }
 
 #[test]
