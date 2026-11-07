@@ -31,8 +31,12 @@ const PLAN_LINE = `- Every new part shows its sizes on the dimension sheet first
 const STEPS_LINE = `- Build in several small steps, each named for what it is ("Base", "Mounting holes"), rather than one large call.`
 const BIND_LINE = `- Once the part is built, never before, tie the sheet's sizes to the steps they set with pilot.sheet_bind, a row for each size that sets one step; skip it when none does.`
 const CHECK_LINE = `- After the last feature of a planned part, call design.check with the plan's planId (and the design id when it asks which). If items fail, fix those items in one round and call design.check again. If any item still fails, never say the part is done: stop building, list each failed item plainly, with what the plan wants and what the part has, and ask the person how to go on (design.check says so too, and checks that plan no more). A part with no plan: read it back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
-// cloud prompt only: a local model's window has no room for it (its build turn is within a few hundred tokens of full)
-export const MOVING_PARTS_LINE = `- For a part whose pieces print assembled and move (a hinge, chain, gears, flexi joints), list the moving pieces in design.plan's printInPlace, then show the gaps on a sheet (it fills in the fit rule's gaps as guesses), build each piece as its own body with that gap on every face where pieces meet, above and below included, and run design.check.`
+// cloud prompt only: a local model's window has no room for it (its build turn is within a few hundred tokens of full).
+// Such a part turns the plan line's order round: the plan names the moving pieces first, so the sheet after it gets the
+// fit rule's gaps (the runtime adds them only to a sheet that follows a plan with printInPlace).
+export const MOVING_PARTS_LINE = `- For a part whose pieces print assembled and move (a hinge, chain, gears, jointed, articulated or flexi segments, including a simpler version offered in place of a creature), the plan comes first and the sheet after it: call design.plan with the moving pieces by name in printInPlace, then show the sizes on a sheet (it fills in the fit rule's gaps as guesses), build each piece as its own body with that gap on every face where pieces meet, above and below included, and run design.check.`
+// the cloud plan line's last sentence, pointing at the line above for the one kind of part planned before its sheet
+export const MOVING_PARTS_ORDER = ` A part whose pieces print assembled and move is planned before its sheet instead, as below.`
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 
 // with design.plan every step of a planned feature names it, so design.check ties the steps to the plan by that tag
@@ -45,11 +49,14 @@ export interface PromptOptions {
 
 /**
  * The design tool lines, with the plan only when design.plan is offered and the check only when both it and
- * design.check are; a cloud model with both also gets the line for parts that move.
+ * design.check are; a cloud model with both also gets the line for parts that move, which are planned before their
+ * sheet, and the plan line says so.
  */
 const buildLines = (has: HasTool, o: PromptOptions): string => {
   const checks = has('design.check') && has('design.plan')
-  return [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${PLAN_LINE}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(checks && o.cloud ? [MOVING_PARTS_LINE] : [])].join('\n')
+  const moving = checks && o.cloud === true
+  const plan = moving ? `${PLAN_LINE}${MOVING_PARTS_ORDER}` : PLAN_LINE
+  return [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${plan}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, checks ? CHECK_LINE : READ_BACK_LINE, ...(moving ? [MOVING_PARTS_LINE] : [])].join('\n')
 }
 
 // What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is
@@ -134,7 +141,8 @@ const rulesPrompt = (scope: PilotScope, has: HasTool, o: PromptOptions): string 
 /**
  * The system prompt, naming the app as its edition does and only the tools `has` says the model is offered. `extra`
  * (the skill playbooks) joins the rules; the edition's voice always comes after both. `o.cloud` adds the lines only a
- * cloud model gets (MOVING_PARTS_LINE); without it the prompt is the one a local model gets.
+ * cloud model gets (MOVING_PARTS_LINE, and MOVING_PARTS_ORDER at the end of the plan line); without it the prompt is the
+ * one a local model gets.
  */
 export const systemPrompt = (scope: PilotScope = 'full', has: HasTool = ALL_TOOLS, extra = '', o: PromptOptions = {}): string =>
   [rulesPrompt(scope, has, o), extra, editionVoiceBlock(assistantVoice())].filter(Boolean).join('\n\n')
