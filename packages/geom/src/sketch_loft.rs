@@ -1612,5 +1612,27 @@ mod tests {
             err(&[many, other]),
             "profiles: a profile marks at most 64 landmarks"
         );
+        // 64 spread around the square, every 0.625 mm, loft
+        let marks: Vec<V2> = (0..64)
+            .map(|i| {
+                let d = f64::from(i) * 40.0 / 64.0;
+                if d < 10.0 {
+                    [d, 0.0]
+                } else if d < 20.0 {
+                    [10.0, d - 10.0]
+                } else if d < 30.0 {
+                    [30.0 - d, 10.0]
+                } else {
+                    [0.0, 40.0 - d]
+                }
+            })
+            .collect();
+        let m = loft_with(
+            &[closed_at(0.0, marks.clone()), closed_at(10.0, marks)],
+            &Options::default(),
+        )
+        .unwrap();
+        closed(&m);
+        assert!((m.volume() - 1000.0).abs() < 1e-6, "{}", m.volume());
     }
 }
