@@ -4,9 +4,9 @@
 // each step replayed on the geometry engine as CAD history. A part built through design.new and geom.extrude replays
 // from its history alone to the same body, and a recorded reply that builds with the design tools replays through the
 // eval and is scored on that body.
-import { replayHistory } from '@slicerx/cad-history'
+import { IDENTITY, replayHistory, type DesignHost, type HistoryMesh, type Mat4 } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
-import { headlessDesignHost } from '../evals/creative/design-host'
+import { headlessDesignHost, plainBed } from '../evals/creative/design-host'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
 import { runPrompt } from '../evals/creative/run'
@@ -24,6 +24,12 @@ const size = (parts: { positions: ArrayLike<number> }[]): number[] => {
     hi[k] = Math.max(hi[k]!, p.positions[i + k]!)
   }
   return hi.map((h, k) => Math.round((h - lo[k]!) * 100) / 100)
+}
+
+const corner = (parts: { positions: ArrayLike<number> }[]): number[] => {
+  const lo = [Infinity, Infinity, Infinity]
+  for (const p of parts) for (let i = 0; i + 2 < p.positions.length; i += 3) for (let k = 0; k < 3; k++) lo[k] = Math.min(lo[k]!, p.positions[i + k]!)
+  return lo.map((v) => Math.round(v * 100) / 100)
 }
 
 const call = async (tools: ReturnType<typeof tabToolset>, name: string, input: unknown) => {
@@ -87,6 +93,10 @@ describe('a recorded reply that builds with the design tools', () => {
     expect(run.parsed.pass).toBe(true)
     expect(run.parsed.detail).toMatch(/1 design, 2 feature steps/)
     expect(size(run.parts)).toEqual([100, 30, 20])
+    // it stayed where it was built (10 to 110 by 5 to 35 mm), and the cut hollowed it: more than a box's 12 triangles
+    expect(corner(run.parts)).toEqual([10, 5, 0])
+    expect(run.parts.reduce((n, p) => n + p.indices.length / 3, 0)).toBeGreaterThan(12)
+    expect(run.parsed.detail).not.toMatch(/moved/)
   })
 
   it('marks a recording from before the tab tools stale', async () => {
@@ -94,5 +104,108 @@ describe('a recorded reply that builds with the design tools', () => {
     const run = await runPrompt(P, { geom: undefined, steps: [{ calls: [{ name: 'text_to_part', args: { prompt: 'a tray' } }] }, { text: 'Done.' }], answerRecorded: true })
     expect(run.stale).toMatch(/design tools/)
     expect(run.calls).toEqual(['text_to_part'])
+  })
+})
+
+/** A box from `min` to `max`, as a part. */
+function box(min: number[], max: number[]): HistoryMesh {
+  const [x0, y0, z0] = min as [number, number, number]
+  const [x1, y1, z1] = max as [number, number, number]
+  const positions = [x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1]
+  const indices = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
+  return { name: 'box', slot: 1, positions, indices }
+}
+
+const at = (x: number, y: number): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1]
+
+describe('the eval bed (plainBed)', () => {
+  const square = { widthMm: 256, depthMm: 256, heightMm: 256 }
+  const none = () => []
+
+  it('takes a part on the bed and between the bed and the printable height as printing where it stands', () => {
+    const bed = plainBed(square, none)
+    expect(bed.printsOnBed([box([10, 10, 0], [50, 50, 20])], [...IDENTITY])).toBe(true)
+    expect(bed.printsOnBed([box([-5, 10, 0], [50, 50, 20])], [...IDENTITY])).toBe(false)
+    expect(bed.printsOnBed([box([10, 10, -1], [50, 50, 20])], [...IDENTITY])).toBe(false)
+    // taller than the printable height: it does not print where it stands, and landing moves it but cannot lower it
+    expect(bed.printsOnBed([box([10, 10, 0], [50, 50, 300])], [...IDENTITY])).toBe(false)
+    expect(bed.landOnBed([box([10, 10, 0], [50, 50, 300])], [...IDENTITY])).toEqual(at(98, 98))
+  })
+
+  it('lands a part in the middle of the bed, 5 mm clear of the edge', () => {
+    const bed = plainBed(square, none)
+    expect(bed.landOnBed([box([-20, -10, 0], [20, 10, 5])], [...IDENTITY])).toEqual(at(128, 128))
+    expect(bed.landOnBed([box([0, 0, 0], [250, 10, 5])], [...IDENTITY])).toBeNull()
+  })
+
+  it('on a round bed, lands a part in the middle of the circle and refuses a box whose corners leave it', () => {
+    const round = { widthMm: 200, depthMm: 200, heightMm: 200, round: true }
+    const bed = plainBed(round, none)
+    expect(bed.printsOnBed([box([0, 0, 0], [20, 20, 5])], [...IDENTITY])).toBe(false)
+    expect(bed.printsOnBed([box([90, 90, 0], [110, 110, 5])], [...IDENTITY])).toBe(true)
+    expect(bed.landOnBed([box([0, 0, 0], [20, 20, 5])], [...IDENTITY])).toEqual(at(90, 90))
+    // 150 mm square: its corners are 106 mm from the middle of a 100 mm circle
+    expect(bed.landOnBed([box([0, 0, 0], [150, 150, 5])], [...IDENTITY])).toBeNull()
+  })
+
+  it('has no spot for a part whose middle another design takes: the gap where the app would look for a free spot', () => {
+    const bed = plainBed(square, () => [{ parts: [box([108, 108, 0], [148, 148, 10])], transform: [...IDENTITY] }])
+    expect(bed.landOnBed([box([-10, -10, 0], [10, 10, 5])], [...IDENTITY])).toBeNull()
+  })
+})
+
+describe('the eval host lands bodies on the bed', () => {
+  const BED = { widthMm: 256, depthMm: 256, heightMm: 256 }
+  function landing() {
+    const host: DesignHost = headlessDesignHost(engine, { bed: (id) => plainBed(BED, () => host.list().filter((d) => d.id !== id && d.parts.length)) })
+    return { host, tools: tabToolset(host, createCardPlans(createPlanRegistry())) }
+  }
+  const rect = (design: string, w: number, h: number, center: [number, number], more: Record<string, unknown> = {}) => ({ design, shape: { type: 'rectangle', widthMm: w, heightMm: h }, placement: { center }, distance_mm: 5, ...more })
+  const landedOf = (out: unknown): string | undefined => (out as { output?: { landed?: string } }).output?.landed
+
+  it('lands a part again when an edit takes it past the edge, and says so only in that reply', async () => {
+    const { host, tools } = landing()
+    await call(tools, 'design.new', { name: 'Block' })
+    expect(landedOf(await call(tools, 'geom.extrude', rect('d1', 20, 20, [128, 128])))).toBeUndefined()
+    const joined = await call(tools, 'geom.extrude', rect('d1', 140, 20, [200, 128], { operation: 'join', part: 0 }))
+    expect(landedOf(joined)).toBe('Block did not fit on the bed where it stood, so it moved by (-66, 0) mm.')
+    expect(host.get('d1').transform).toEqual(at(-66, 0))
+    expect(host.get('d1').landed).toBeUndefined()
+    const listed = (await call(tools, 'design.list', {})) as { output: { designs: { landed?: string }[] } }
+    expect(listed.output.designs[0]!.landed).toBeUndefined()
+  })
+
+  it('leaves a part with no room where it was built, and an edit then leaves it parked', async () => {
+    const { host, tools } = landing()
+    await call(tools, 'design.new', { name: 'Long bar' })
+    const built = await call(tools, 'geom.extrude', rect('d1', 300, 20, [0, 0]))
+    expect(landedOf(built)).toBe('The part does not fit on the bed anywhere, so it stays where it was built, off the bed.')
+    expect(host.get('d1').transform).toEqual([...IDENTITY])
+    const edited = await call(tools, 'geom.extrude', rect('d1', 20, 20, [0, 10], { operation: 'join', part: 0 }))
+    expect(landedOf(edited)).toBe('Long bar is off the bed, so it stays where it is. Move it onto the bed to print it.')
+    expect(host.get('d1').transform).toEqual([...IDENTITY])
+  })
+
+  it('leaves a second design where it was built when the first takes the middle (the app would find a free spot)', async () => {
+    const { host, tools } = landing()
+    await call(tools, 'design.new', { name: 'First' })
+    await call(tools, 'geom.extrude', rect('d1', 40, 40, [128, 128]))
+    await call(tools, 'design.new', { name: 'Second' })
+    const second = await call(tools, 'geom.extrude', rect('d2', 20, 20, [0, 0]))
+    expect(landedOf(second)).toBe('The part does not fit on the bed anywhere, so it stays where it was built, off the bed.')
+    expect(host.get('d2').transform).toEqual([...IDENTITY])
+  })
+
+  it('puts the base back when every step is undone, without landing it', async () => {
+    const { host, tools } = landing()
+    const made = await host.create('Plate', [box([100, 100, 0], [120, 120, 5])])
+    expect(made.landed).toBeUndefined()
+    await call(tools, 'geom.extrude', rect(made.id, 140, 20, [200, 110]))
+    const moved = host.get(made.id).transform
+    expect(moved).not.toEqual([...IDENTITY])
+    const undone = await call(tools, 'design.undo', { design: made.id })
+    expect(landedOf(undone)).toBeUndefined()
+    expect(host.get(made.id).transform).toEqual(moved)
+    expect(host.get(made.id).history.steps).toHaveLength(0)
   })
 })
