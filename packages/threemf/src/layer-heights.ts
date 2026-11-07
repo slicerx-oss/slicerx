@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // An object's layer height profile (layer_height_profile) as other slicers' project files keep it: one line per object,
-// `object_id=N|z,h,z,h,...`, N counting the file's objects from 1, each pair a height above the object's bottom and the
-// layer height there in mm, the curve straight between pairs. The reader and writer the app and the MCP server share.
+// `object_id=N|z;h;z;h;...`, N counting the file's objects from 1, each pair a height above the object's bottom and the
+// layer height there in mm, the curve straight between pairs. Written with semicolons as those files are; read with
+// semicolons, commas or spaces between the numbers. The reader and writer the app and the MCP server share.
 
 /** Where a project keeps the profiles; the second is the older name some files still use. */
 export const LAYER_HEIGHTS_PART = 'Metadata/layer_heights_profile.txt'
@@ -40,7 +41,7 @@ export function profileLine(objectNo: number, points: readonly (readonly [number
   const pairs: [number, number][] = [[0, heightAt(points, bottomMm)]]
   for (const [z, h] of points) if (z - bottomMm > 1e-4 && z - bottomMm < height - 1e-4) pairs.push([z - bottomMm, h])
   pairs.push([height, heightAt(points, topMm)])
-  return `object_id=${objectNo}|${pairs.map(([z, h]) => `${f(z)},${f(h)}`).join(',')}`
+  return `object_id=${objectNo}|${pairs.map(([z, h]) => `${f(z)};${f(h)}`).join(';')}`
 }
 
 /** The file part for the lines, or null when there are none. */
@@ -59,7 +60,7 @@ export function readLayerHeights(text: string): Map<number, [number, number][]> 
     const bar = line.indexOf('|')
     const m = /^object_id=(\d+)$/.exec(bar < 0 ? '' : line.slice(0, bar).trim())
     if (!m) continue
-    const nums = line.slice(bar + 1).split(/[,\s]+/).filter((t) => t !== '').map(Number)
+    const nums = line.slice(bar + 1).split(/[;,\s]+/).filter((t) => t !== '').map(Number)
     const pairs: [number, number][] = []
     for (let i = 0; i + 1 < nums.length && pairs.length < MAX_PAIRS; i += 2) {
       const z = nums[i]!

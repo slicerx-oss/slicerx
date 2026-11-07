@@ -211,6 +211,12 @@ async function addProjectShown(
       madePlates.push({ id, ...(plate.plateNo ? { plateNo: plate.plateNo } : {}) })
     } else {
       madePlates.push({ id: get().activePlate, ...(plate.plateNo ? { plateNo: plate.plateNo } : {}) })
+      // The plate the project opens onto drops layer heights drawn for objects that are gone, as a new plate never
+      // takes them; the file's own come in below.
+      if (wasEmpty && get().plates.find((p) => p.id === get().activePlate)?.settings.layerProfile) {
+        const { setPlateLayerProfile } = await import('../plate/plates')
+        mine(() => setPlateLayerProfile(get().activePlate, null))
+      }
     }
     if (i === 0 && wasEmpty && !/^Plate \d+$/.test(plate.name)) {
       // The file's first plate is the one the project opens onto, so it takes the file's name as the others do.
@@ -357,20 +363,23 @@ async function addProjectShown(
   }
   if (fileProfiles.length) {
     // The file's own layer heights, kept inside what this printer prints.
-    const { layerLimits, plateProfileFromFile } = await import('../plate/layer-profile')
+    const { layerLimits, MAX_POINTS, plateProfileFromFile } = await import('../plate/layer-profile')
     const { setPlateLayerProfile } = await import('../plate/plates')
     const limits = layerLimits(resolveConfig(get().easy, get().overrides))
     let clamped = false
+    let dropped = false
     const mixed: string[] = []
     for (const { plateId, objects } of fileProfiles) {
       const got = plateProfileFromFile(objects, limits)
       if (!got) continue
       mine(() => setPlateLayerProfile(plateId, got.points))
       if (got.clamped) clamped = true
+      if (got.dropped) dropped = true
       if (got.from) mixed.push(got.from)
     }
     if (mixed.length) note = `${note ? `${note} ` : ''}Its objects have different layer height profiles, and layers are shared on a plate, so ${mixed.length === 1 ? 'the plate uses the one of' : 'each plate uses the one of its tallest object:'} ${mixed.join(', ')}${mixed.length === 1 ? ', the tallest' : ''}.`
     if (clamped) note = `${note ? `${note} ` : ''}Its layer height profile asks for layers this printer does not print, so those use the nearest it does (${limits.minMm} to ${limits.maxMm} mm).`
+    if (dropped) note = `${note ? `${note} ` : ''}Some points of its layer height profile were left out: unreadable or repeated ones, and past ${MAX_POINTS}, the ones that change the curve least.`
   }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
