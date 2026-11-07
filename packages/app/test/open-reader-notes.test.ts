@@ -4,7 +4,7 @@
 // geometry engine's own notes (paint in a newer facets JSON version it skipped, for example) and parts of a type this
 // version does not know, which are read as normal parts, as the engine and the command line read and slice them. The
 // TypeScript reader does the same. The part type the file names is never shown. With the engine built
-// (packages/geom/wasm/scripts/build.sh, or SX_GEOM_CORE_WASM) the part type cases also run on the real engine.
+// (packages/geom/wasm/scripts/build.sh, or SX_GEOM_CORE_WASM) the part type and newer paint cases also run on the real engine.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -25,6 +25,8 @@ import { wasmBuilt } from './geom-engine'
 
 const SKIPPED_PAINT = 'paint in a newer facets JSON version was skipped'
 const GEAR_NORMAL = "Gear is a part of a type this version doesn't know, so it was read as a normal part."
+/** The engine's note for paint saved in a newer format than it reads: a whole sentence, said as it is. */
+const NEWER_PAINT = 'Some paint in this file uses a newer format and was left out.'
 
 const vertices = [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]]
 const triangles = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [0, 4, 7], [0, 7, 3], [1, 2, 6], [1, 6, 5]]
@@ -103,6 +105,16 @@ describe('what the engine left out of a project, as the file is read', () => {
     expect(p.readerNote).toBe(`Not everything in this file was read: ${SKIPPED_PAINT}; a second thing was skipped.`)
   })
 
+  it('says an engine note that is a whole sentence as it is, with nothing before it', async () => {
+    engineAnswers(geomBox([NEWER_PAINT, NEWER_PAINT]))
+    expect((await readProject(plainBox(), bed)).readerNote).toBe(NEWER_PAINT)
+    // with a part of an unknown type, and with a note that is not a whole sentence
+    engineAnswers(geomBox([NEWER_PAINT], [part('Body'), part('Gear', 'lattice_part')]))
+    expect((await readProject(plainBox(), bed)).readerNote).toBe(`${NEWER_PAINT} ${GEAR_NORMAL}`)
+    engineAnswers(geomBox([NEWER_PAINT, SKIPPED_PAINT]))
+    expect((await readProject(plainBox(), bed)).readerNote).toBe(`Not everything in this file was read: ${SKIPPED_PAINT}. ${NEWER_PAINT}`)
+  })
+
   it('says nothing when the engine left nothing out', async () => {
     engineAnswers(geomBox([]))
     expect((await readProject(plainBox(), bed)).readerNote).toBeUndefined()
@@ -179,6 +191,13 @@ describe('what the engine left out of a project, as it opens', () => {
     expect(get().openNote?.wrap).toBe(true)
   })
 
+  it('shows the newer paint note on its own as one short sentence', async () => {
+    engineAnswers(geomBox([NEWER_PAINT]))
+    await openModelBytes(host, 'painted.3mf', buf(plainBox()), undefined, { fresh: true })
+    expect(get().openNote?.text).toBe(NEWER_PAINT)
+    expect(get().openNote?.wrap).toBe(true)
+  })
+
   it('shows nothing extra for a file read whole', async () => {
     engineAnswers(geomBox([]))
     await openModelBytes(host, 'plain.3mf', buf(plainBox()), undefined, { fresh: true })
@@ -226,5 +245,16 @@ describe.skipIf(!wasmBuilt(wasm))('what the real engine left out of a project', 
     const p = await readProject(volumesBracket(), bed)
     expect(p.plates[0]!.objects[0]!.parts.map((q) => q.name)).toEqual(['Body', 'Gear'])
     expect(p.readerNote).toBe(GEAR_NORMAL)
+  })
+
+  it('says paint saved in a newer format as one short sentence, alone and beside a part of an unknown type', async () => {
+    const facets = JSON.stringify([{ id: 1, mmSegmentationFacets: [{ triangle: 0, dividing: '0FEC' }], mmSegmentationFacetsVersion: 3, seamFacets: [{ triangle: 1, dividing: '8' }] }])
+    readProjectsWithGeom(true)
+    setGeomProvider({ call: async <T,>(op: string, r: unknown) => callEngine(engine!, op, r) as T })
+    const painted = await readProject(zip([{ name: '3D/3dmodel.model', data: MODEL }, { name: 'Metadata/Slic3r_facets_annotation.json', data: facets }]), bed)
+    expect(painted.readerNote).toBe(NEWER_PAINT)
+    readProjectsWithGeom(true)
+    const both = await readProject(zip([{ name: '3D/3dmodel.model', data: TWO_PARTS }, { name: 'Metadata/model_settings.config', data: SETTINGS }, { name: 'Metadata/Slic3r_facets_annotation.json', data: facets }]), bed)
+    expect(both.readerNote).toBe(`${NEWER_PAINT} ${GEAR_NORMAL}`)
   })
 })
