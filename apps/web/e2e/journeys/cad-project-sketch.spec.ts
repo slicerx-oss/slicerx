@@ -2,10 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Project into a sketch: with a sketch open on a box's top, the Project card's Face takes a click on a face and puts
 // its outline in the sketch as real curves, which extrude like drawn ones. The sketch keeps the projection, the
-// extrude names the sketch, and switching the projection to reference leaves no profile. The phone legs are in
-// phone-cad.spec.ts.
+// extrude names the sketch, and switching the projection to reference leaves no profile. Picked edges join one
+// projection until Done. The phone leg is in phone-project-sketch.spec.ts.
 import { journey as test, expect } from '../journey'
-import { facePick, height, pick, toolPanel } from '../cad-helpers'
+import { bounds, facePick, height, pick, toolPanel } from '../cad-helpers'
 import { shotBoth, sketchOnTop, studio } from './lib/cad'
 
 test.skip(({ isMobile }) => isMobile, 'The modeling tools run at desktop width; the phone legs are in phone-cad.spec.ts')
@@ -61,5 +61,34 @@ test.describe('project-sketch', () => {
     await shotBoth(page, info, 'project-reference-1440')
     await card.getByTestId('sketch-projection-p1-remove').click()
     await expect(row).toHaveCount(0)
+    // its curves went with it: nothing is left to extrude
+    await expect(panel.getByRole('button', { name: 'Extrude', exact: true })).toBeDisabled()
+    // the next projection gets a new id, never the removed one's
+    await card.getByTestId('sketch-project-body').click()
+    await pick(page, await facePick(page, id, [0, 0, 1]))
+    await expect(card.getByTestId('sketch-projection-p2')).toContainText('Outline of')
+    await expect(card.getByTestId('sketch-projection-p1')).toHaveCount(0)
+  })
+
+  test('picked edges join one projection until Done', async ({ page }, info) => {
+    await studio(page)
+    const id = await sketchOnTop(page)
+    const panel = toolPanel(page)
+    const card = panel.getByTestId('sketch-project')
+    const b = await bounds(page, id)
+    const top = b.max[2]
+    const mid = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]
+    await card.getByTestId('sketch-project-edges').click()
+    await expect(card.getByTestId('sketch-project-hint')).toContainText('Click edges')
+    // two edges of the top, the front one and the left one
+    await pick(page, await facePick(page, id, [0, 0, 1], [mid[0]!, b.min[1], top]))
+    const row = card.getByTestId('sketch-projection-p1')
+    await expect(row).toContainText('Edge of')
+    await pick(page, await facePick(page, id, [0, 0, 1], [b.min[0], mid[1]!, top]))
+    await expect(row).toContainText('2 edges of')
+    await card.getByTestId('sketch-project-done').click()
+    await expect(card.getByTestId('sketch-project-hint')).toHaveCount(0)
+    await expect(card.getByTestId('sketch-projection-p2')).toHaveCount(0)
+    await shotBoth(page, info, 'project-edges-1440')
   })
 })
