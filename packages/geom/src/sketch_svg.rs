@@ -7,7 +7,7 @@
 use crate::error::{Error, Result};
 use crate::fm::Fm;
 use crate::poly2d;
-use crate::sketch::{self, CLOSE_MM, Loop, Segment, SketchCheck};
+use crate::sketch::{self, CLOSE_MM, Loop, MAX_MM, Segment, SketchCheck};
 use crate::sketch_spline;
 use crate::svg::{self, Mat, Seg, Sub, apply, mul};
 use crate::vec3::V2;
@@ -374,6 +374,9 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
     }
     let own = svg::own_scale(svg)?;
     let s = opts.scale.unwrap_or(own);
+    if s > MAX_MM {
+        return Err(Error::invalid("scale", "at most 100000 mm per unit"));
+    }
     let defs = svg::scan_defs(svg);
     let mut warnings = Vec::new();
     let mut found: Vec<(Vec<Sub>, Mat, bool)> = Vec::new();
@@ -416,6 +419,7 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
             format!("the artwork has {pieces} path pieces, more than {MAX_PIECES}; simplify it first"),
         ));
     }
+    let out_of_range = || Error::mesh("svg", "the artwork's coordinates are out of range");
     let mut open = 0usize;
     let mut kept: Vec<(&Sub, Mat)> = Vec::new();
     let mut rings: Vec<Vec<V2>> = Vec::new();
@@ -430,6 +434,9 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
                 continue;
             }
             let ring = svg::flatten_sub(sub, m, tol);
+            if ring.iter().flatten().any(|v| !v.is_finite()) {
+                return Err(out_of_range());
+            }
             if ring.len() < 3 || poly2d::signed_area(&ring).abs() < 1e-9 {
                 continue;
             }
@@ -447,6 +454,9 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
     let (lo, hi) =
         svg::bounds(&rings).ok_or_else(|| Error::mesh("svg", "the artwork has no closed shapes"))?;
     let (w, h) = (hi[0] - lo[0], hi[1] - lo[1]);
+    if !(w.is_finite() && h.is_finite()) {
+        return Err(out_of_range());
+    }
     let f = if opts.scale.is_some() {
         1.0
     } else {
@@ -456,6 +466,16 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
             .filter(|f| f.is_finite() && *f > 0.0)
             .unwrap_or(1.0)
     };
+    if w * f > MAX_MM || h * f > MAX_MM {
+        return Err(Error::mesh(
+            "svg",
+            format!(
+                "the artwork is {:.0} x {:.0} mm, over the {MAX_MM:.0} mm a sketch takes",
+                w * f,
+                h * f
+            ),
+        ));
+    }
     let mid = [f64::midpoint(lo[0], hi[0]), f64::midpoint(lo[1], hi[1])];
     let place: Mat = [
         f,
@@ -664,6 +684,18 @@ mod tests {
         assert!(sketch_svg(&svg, &bad).is_err());
     }
 
+    fn finite(r: &SvgSketch) -> bool {
+        let p = |p: &Option<V2>| p.is_none_or(|p| p.iter().all(|v| v.is_finite()));
+        r.size_mm.iter().all(|v| v.is_finite())
+            && r.loops.iter().all(|l| {
+                p(&l.start)
+                    && p(&l.center)
+                    && l.segments
+                        .iter()
+                        .all(|s| p(&s.to) && p(&s.through) && s.points.iter().all(|q| p(&Some(*q))))
+            })
+    }
+
     #[test]
     fn a_curve_that_never_leaves_its_start_is_dropped() {
         let r = sketch_svg(
@@ -723,5 +755,41 @@ mod tests {
         let r = sketch_svg(&wrap(&format!(r#"<path d="{d}"/>"#)), &wave).unwrap();
         assert_eq!(r.counts.splines, 1_000);
         assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn numbers_out_of_range_are_refused_or_cut() {
+        // an overflowing number cuts its path short and leaves the rest whole
+        let r = sketch_svg(
+            &wrap(r#"<rect width="10" height="10"/><path d="M0 0 L1e999 0 L0 10 Z"/>"#),
+            &SvgSketchOptions::default(),
+        )
+        .unwrap();
+        assert!(finite(&r), "{r:?}");
+        assert_eq!(r.size_mm, [10.0, 10.0]);
+        assert!(
+            r.warnings.iter().any(|w| w.contains("cut short")),
+            "{:?}",
+            r.warnings
+        );
+        for (bad, says) in [
+            (wrap(r#"<path d="M0 0 H1e308 V1e308 Z"/>"#), "over the 100000 mm"),
+            (
+                r#"<svg width="1e308mm" viewBox="0 0 1e-300 1"><rect width="1" height="1"/></svg>"#
+                    .to_owned(),
+                "no usable size",
+            ),
+        ] {
+            let out = sketch_svg(&bad, &SvgSketchOptions::default());
+            assert!(
+                out.as_ref().is_err_and(|e| e.to_string().contains(says)),
+                "{bad}: {out:?}"
+            );
+        }
+        let huge = SvgSketchOptions {
+            scale: Some(1e308),
+            ..SvgSketchOptions::default()
+        };
+        assert!(sketch_svg(&wrap(r#"<rect width="10" height="10"/>"#), &huge).is_err());
     }
 }

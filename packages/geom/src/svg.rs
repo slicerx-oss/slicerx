@@ -254,7 +254,12 @@ impl Scanner<'_> {
                 self.i = save;
             }
         }
-        std::str::from_utf8(&self.b[start..self.i]).ok()?.parse().ok()
+        // an overflow such as 1e999 parses as inf; it cuts the path short like any bad number
+        std::str::from_utf8(&self.b[start..self.i])
+            .ok()?
+            .parse()
+            .ok()
+            .filter(|v: &f64| v.is_finite())
     }
 
     fn flag(&mut self) -> Option<bool> {
@@ -1135,10 +1140,17 @@ pub(crate) fn own_scale(svg: &str) -> Result<f64> {
             .collect();
         (n.len() == 4 && n[2] > 0.0).then(|| n[2])
     });
-    Ok(match (absolute_mm(root, "width"), view_w) {
+    let s = match (absolute_mm(root, "width"), view_w) {
         (Some(w), Some(vw)) => w / vw,
         _ => PX_MM,
-    })
+    };
+    if !(s.is_finite() && s > 0.0) {
+        return Err(Error::mesh(
+            "svg",
+            "the <svg> width and viewBox give no usable size",
+        ));
+    }
+    Ok(s)
 }
 
 fn paint(svg: &str, opts: &SvgOptions) -> Result<(Vec<Painted>, Vec<String>, f64)> {
