@@ -1925,6 +1925,26 @@
    "showWhen": "multicolor"
   },
   {
+   "key": "prime_tower_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Prime tower line width",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "multimaterial",
+   "invalidates": "paths",
+   "enabledWhen": [
+    {
+     "key": "enable_prime_tower",
+     "op": "eq",
+     "value": true
+    }
+   ],
+   "intent": "multicolor"
+  },
+  {
    "key": "prime_tower_max_speed",
    "section": "process",
    "type": "float",
@@ -3043,6 +3063,18 @@
    "invalidates": "perimeters",
    "auto": true,
    "intent": "quality"
+  },
+  {
+   "key": "initial_layer_infill_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Infill line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
   },
   {
    "key": "initial_layer_outer_wall_line_width",

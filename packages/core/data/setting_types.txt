@@ -294,6 +294,7 @@ inherits	process	string
 initial_layer_acceleration	process	floats
 initial_layer_fan_speed	filament	ints
 initial_layer_flow_ratio	process	float
+initial_layer_infill_line_width	process	float
 initial_layer_infill_speed	process	floats
 initial_layer_inner_wall_line_width	process	float
 initial_layer_internal_solid_infill_line_width	process	float
@@ -469,6 +470,7 @@ prime_tower_brim_width	process	float
 prime_tower_enable_framework	process	bool
 prime_tower_flat_ironing	process	bool
 prime_tower_infill_gap	process	percent
+prime_tower_line_width	process	float
 prime_tower_max_speed	process	float
 prime_tower_position_type	printer	string
 prime_tower_skip_points	process	bool

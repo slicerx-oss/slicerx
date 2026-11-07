@@ -381,7 +381,6 @@
   "impact_strength_z",
   "infill_instead_top_bottom_surfaces",
   "infill_rotate_step",
-  "initial_layer_infill_line_width",
   "ironing_support_layer",
   "is_support_multi_box",
   "layer_time_smoothing",

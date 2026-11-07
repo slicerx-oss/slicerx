@@ -1,6 +1,6 @@
 # Process: Multi material
 
-43 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+44 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `bottom_surface_filament_id`
 
@@ -174,6 +174,19 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Recommended range: 100 to no maximum
 - Used only when: Prime tower (`enable_prime_tower`) is on
 - Tier: Expert, multicolor, shown with two or more filaments
+- Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `prime_tower_line_width`
+
+**Prime tower line width**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Used only when: Prime tower (`enable_prime_tower`) is on
+- Tier: Hidden (profile key), multicolor
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

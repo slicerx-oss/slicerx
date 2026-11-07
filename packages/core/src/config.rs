@@ -1892,6 +1892,16 @@ impl PrintConfig {
             .unwrap_or_else(|| self.outer_wall_width())
     }
 
+    /// The first layer's infill line width, mm: `initial_layer_infill_line_width` when it is above 0 (mm, or a
+    /// percent of the nozzle diameter). The first layer's sparse and solid infill print at it, the rest of the first
+    /// layer at its other widths; None (left out, or 0) leaves the infill at those widths too.
+    pub fn initial_layer_infill_width(&self) -> Option<f64> {
+        self.raw
+            .get("initial_layer_infill_line_width")
+            .and_then(|v| float_or_percent(v, self.nozzle_diameter))
+            .filter(|w| w.is_finite() && *w > 0.0)
+    }
+
     /// Whether `initial_layer_line_width` is 0, which leaves the first layer's width unset.
     fn initial_layer_width_unset(&self) -> bool {
         self.raw.get("initial_layer_line_width").and_then(num) == Some(0.0)
@@ -1935,18 +1945,23 @@ impl PrintConfig {
     /// The settings for the first layer. With first layer widths per feature each feature prints its own there (a
     /// feature without one, the first layer's line width), and the lines are laid out for the first layer's own height,
     /// so each prints as wide as set. Without them every width is `initial_layer_line_width` when it is set; at 0
-    /// each feature keeps its own width, except the supports, which print at `line_width`.
+    /// each feature keeps its own width, except the supports, which print at `line_width`. Either way the sparse and
+    /// solid infill print at `initial_layer_infill_line_width` when it is set
+    /// ([`PrintConfig::initial_layer_infill_width`]), unless a first layer infill width of their own says otherwise.
     #[must_use]
     pub fn for_first_layer(&self) -> Self {
         if self.on_first_layer {
             return self.clone();
         }
+        let infill = self.initial_layer_infill_width();
         if self.has_first_layer_widths() {
             let f = self.first_layer_widths;
             let mut c = self.clone();
             c.line_width = self.first_layer_line_width();
             c.feature_widths = FeatureWidths {
                 initial_layer: None,
+                sparse_infill: f.sparse_infill.or(infill),
+                internal_solid_infill: f.internal_solid_infill.or(infill),
                 ..f
             };
             c.layer_height = self.initial_layer_print_height;
@@ -1959,6 +1974,10 @@ impl PrintConfig {
             if self.initial_layer_width_unset() {
                 c.feature_widths.support = None;
             }
+            if infill.is_some() {
+                c.feature_widths.sparse_infill = infill;
+                c.feature_widths.internal_solid_infill = infill;
+            }
             c.first_layer = true;
             return c;
         };
@@ -1966,6 +1985,8 @@ impl PrintConfig {
         c.line_width = w;
         c.feature_widths = FeatureWidths {
             initial_layer: Some(w),
+            sparse_infill: infill,
+            internal_solid_infill: infill,
             ..FeatureWidths::default()
         };
         c.first_layer_line = true;
