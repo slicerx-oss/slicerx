@@ -86,6 +86,8 @@ pub mod solids;
 pub mod split;
 #[cfg(feature = "svg")]
 pub mod svg;
+#[cfg(feature = "cad")]
+pub mod thicken;
 #[cfg(feature = "threads")]
 pub mod thread;
 pub mod vec3;

@@ -27,6 +27,10 @@ name = "sketch_spline"
 required-features = ["cad"]
 
 [[test]]
+name = "freeform"
+required-features = ["cad"]
+
+[[test]]
 name = "nest_bench"
 required-features = ["nest"]
 

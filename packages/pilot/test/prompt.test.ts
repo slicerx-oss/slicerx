@@ -128,16 +128,19 @@ describe('the scope rule for parts', () => {
   })
 
   it('names what is in scope in general terms', () => {
-    for (const s of ['outlines of lines, arcs, circles and splines', 'extruded or turned around one axis', 'lofted through sections or swept along a path', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
+    for (const s of ['outlines of lines, arcs, circles and splines', 'extruded or turned around one axis', 'lofted through sections (straight or smooth) or swept along a path', 'open sections thickened into shells', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
   })
 
   it('names the kinds of shape that are out of scope in general terms', () => {
-    for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted or organic', 'curving freely in two directions', 'fit the curves of a body', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
+    for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted forms that no series of sections describes', 'fit the curves of a body', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
     // lofts and sweeps have their own tools, so they are not turned down
     const out = SCOPE_LINE.slice(SCOPE_LINE.indexOf('Out of scope'), SCOPE_LINE.indexOf('For those'))
     expect(out).not.toMatch(/loft|swept|sweep|varies in shape/i)
     expect(systemPrompt()).toContain('geom.loft between profiles on several planes')
     expect(systemPrompt()).toContain('geom.sweep along a path')
+    // curved hulls and shells of open curves are built, not turned down
+    expect(systemPrompt()).toContain('(smooth for hulls, thicken for shells)')
+    expect(out).not.toMatch(/organic|curving freely/i)
   })
 
   it('turns such a request down before any build or size question, with a buildable version offered', () => {

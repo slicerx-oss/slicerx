@@ -62,6 +62,30 @@ describe('sweep as a design step', () => {
     expect(again.volumeMm3).toBeCloseTo(groove.volumeMm3, 1)
   }, 60_000)
 
+  it('sweeps an open profile into a shell as a new body and joined, and replays both from the saved file', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Fins' })).design
+    // a 10 mm line carried 20 mm up: a sheet 2 mm thick
+    const fin = await ok('slicerx_geom_sweep', { design: d, profile: { open: true, loops: [{ points: [[0, 0], [10, 0]] }] }, path: { points: [[0, 0, 0], [0, 0, 20]] }, thicken: { thicknessMm: 2, side: 'center' } })
+    expect(fin.volumeMm3).toBeCloseTo(400, 3)
+    // a half pipe of 6 mm radius joined on top of a plate, 1 mm thick outward
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 30, heightMm: 30 }, distance_mm: 5, name: 'Plate' })
+    const arc = Array.from({ length: 13 }, (_, i) => [6 * Math.cos(Math.PI + (Math.PI * i) / 12), 6 * Math.sin(Math.PI + (Math.PI * i) / 12)])
+    const pipe = await ok('slicerx_geom_sweep', { design: d, part: 1, operation: 'join', profile: { frame: level(5), open: true, loops: [{ points: arc }] }, path: { points: [[0, 0, 5], [0, 0, 15]] }, thicken: { thicknessMm: 1 } })
+    expect(pipe.parts[1]!.volumeMm3).toBeGreaterThan(4500)
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Sweep, 2 mm shell', 'Rectangle extrude 5 mm', 'Sweep, 1 mm shell'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(3)
+    expect(again.volumeMm3).toBeCloseTo(pipe.volumeMm3, 1)
+  }, 60_000)
+
   it('sweeps along a quarter arc drawn on a plane, close to the torus segment', async () => {
     const h = await connect({ geomEngine: engine })
     const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Elbow' })).output.design

@@ -89,6 +89,40 @@ describe('finished sketches in the design tools', () => {
     expect(p.path.loops).toEqual([{ start: [0, 0], segments: [{ type: 'line', to: [0, 20] }] }])
   })
 
+  it('stores the parsed loft and sweep options: smooth, closed, thicken, open profiles and landmarks', async () => {
+    const { add, run } = host()
+    const sq = (z: number, junk?: boolean) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1], ...(junk ? { junk } : {}) }, loops: [{ points: [[0, 0], [10, 0], [10, 10], [0, 10]], extra: 1 }], landmarks: [[0, 0], [10, 0], [10, 10]] })
+    const quarter = (deg: number) => ({ frame: { origin: [20 * Math.cos((deg * Math.PI) / 180), 20 * Math.sin((deg * Math.PI) / 180), 0], normal: [-Math.sin((deg * Math.PI) / 180), Math.cos((deg * Math.PI) / 180), 0] }, open: true, loops: [{ points: [[-3, 0], [0, -3], [3, 0]] }] })
+    await run('geom.loft', { design: 'd1', smooth: true, thicken: { thicknessMm: 1.5, note: 'x' }, profiles: [sq(0, true), sq(10)] })
+    await run('geom.loft', { design: 'd1', closed: true, thicken: { thicknessMm: 1, side: 'inward' }, profiles: [quarter(0), quarter(120), quarter(240)] })
+    await run('geom.sweep', { design: 'd1', profile: { open: true, loops: [{ points: [[0, 0], [10, 0]] }] }, path: { points: [[0, 0, 0], [0, 0, 20]] }, thicken: { thicknessMm: 2, side: 'center' } })
+    const a = add.mock.calls[0]![2] as Extract<StepParams, { op: 'sketch.loft' }>
+    const b = add.mock.calls[1]![2] as Extract<StepParams, { op: 'sketch.loft' }>
+    expect(a.smooth).toBe(true)
+    expect(a.closed).toBeUndefined()
+    expect(a.thicken).toEqual({ thicknessMm: 1.5 })
+    expect(a.profiles[0]!.landmarks).toEqual([[0, 0], [10, 0], [10, 10]])
+    expect(a.profiles[0]!.frame).not.toHaveProperty('junk')
+    expect(a.profiles[0]!.loops).toEqual([{ points: [[0, 0], [10, 0], [10, 10], [0, 10]] }])
+    expect(a.profiles[0]).not.toHaveProperty('open')
+    expect(b.closed).toBe(true)
+    expect(b.thicken).toEqual({ thicknessMm: 1, side: 'inward' })
+    expect(b.profiles.every((p) => p.open === true)).toBe(true)
+    const c = add.mock.calls[2]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(c.profile.open).toBe(true)
+    expect(c.thicken).toEqual({ thicknessMm: 2, side: 'center' })
+    // an open profile is one chain; a bad side or thickness is named by its field
+    await expect(run('geom.loft', { design: 'd1', thicken: { thicknessMm: 1 }, profiles: [{ open: true, loops: [{ points: [[0, 0], [1, 0]] }, { points: [[0, 1], [1, 1]] }] }, sq(10)] })).rejects.toThrow(/^profiles\.0\.loops: /)
+    await expect(run('geom.sweep', { design: 'd1', profile: { open: true, loops: [{ points: [[0, 0], [10, 0]] }] }, path: { points: [[0, 0, 0], [0, 0, 20]] }, thicken: { thicknessMm: 2, side: 'up' } })).rejects.toThrow(/^thicken\.side: /)
+    expect(add).toHaveBeenCalledTimes(3)
+    // up to 64 landmarks a profile
+    const many = (n: number, z: number) => ({ ...sq(z), landmarks: Array.from({ length: n }, (_, i) => [(i * 10) / 64, 0]) })
+    await run('geom.loft', { design: 'd1', profiles: [many(64, 0), many(64, 10)] })
+    expect((add.mock.calls[3]![2] as Extract<StepParams, { op: 'sketch.loft' }>).profiles[0]!.landmarks).toHaveLength(64)
+    await expect(run('geom.loft', { design: 'd1', profiles: [many(65, 0), many(65, 10)] })).rejects.toThrow(/^profiles\.0\.landmarks: /)
+    expect(add).toHaveBeenCalledTimes(4)
+  })
+
   it('says which sweep input is missing, doubled or needs a design', async () => {
     const { add, run } = host()
     await run('design.sketch', { loops: LOOPS })

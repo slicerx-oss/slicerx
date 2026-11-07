@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! a solid swept from one closed sketch profile along an open path
+//! a solid swept from one sketch profile along an open path: a closed profile, or an open one thickened into a shell
 // ring and path indices come from the rings and paths built here
 #![allow(clippy::indexing_slicing)]
 
@@ -9,8 +9,10 @@ use crate::error::{Error, Result};
 use crate::face::FaceFrame;
 use crate::fm::Fm;
 use crate::mesh::TriMesh;
+use crate::poly2d;
 use crate::sketch::{self, Loop};
 use crate::sketch_loft::{self, Profile, Section};
+use crate::thicken::{self, Thicken};
 use crate::vec3::{self, Frame, V2, V3};
 use serde::Deserialize;
 
@@ -39,13 +41,38 @@ pub struct Path {
 /// sweeps exact prisms and a flattened arc follows the arc. The profile does not need to touch the path; it is carried
 /// as it sits relative to the path's start.
 pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
+    sweep_with(profile, path, None)
+}
+
+/// The sweep, with its sides made a shell `thicken` thick and no caps when that is given. An open profile makes a
+/// surface, so it needs `thicken`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one pass from the profile and path to the mesh"
+)]
+pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> Result<TriMesh> {
+    if profile.open && thicken.is_none() {
+        return Err(Error::invalid(
+            "thicken",
+            "an open profile makes a surface; give thicken to make it a solid",
+        ));
+    }
     let (pts, t_start, t_end) = path_points(path)?;
     let frame = profile
         .frame
         .unwrap_or_else(|| FaceFrame::bed([0.0, 0.0]))
         .checked()?;
-    let mut flat =
-        sketch_loft::one_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?;
+    let mut flat = if profile.open {
+        let mut c =
+            sketch_loft::open_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?;
+        // an open chain winds the way it and the line across its ends go around, as a closed ring does
+        if poly2d::signed_area(&c) < 0.0 {
+            c.reverse();
+        }
+        c
+    } else {
+        sketch_loft::one_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?
+    };
     if flat.len().saturating_mul(pts.len()) > MAX_POINTS {
         return Err(Error::invalid(
             "path",
@@ -121,6 +148,11 @@ pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
         v: fv,
         w: fw,
     };
+    if let Some(t) = thicken {
+        let spans: Vec<usize> = (0..rings.len()).collect();
+        let surface = sketch_loft::build_rows(&rings, &spans, !profile.open, None, None, size)?;
+        return thicken::thicken(&surface, t);
+    }
     let count = rings.len();
     let sections: Vec<Section> = rings
         .into_iter()
@@ -403,6 +435,8 @@ mod tests {
         Profile {
             frame: Some(frame),
             loops: vec![l],
+            open: false,
+            landmarks: Vec::new(),
         }
     }
 
@@ -410,6 +444,8 @@ mod tests {
         Profile {
             frame: None,
             loops: vec![l],
+            open: false,
+            landmarks: Vec::new(),
         }
     }
 
@@ -699,11 +735,15 @@ mod tests {
         let holed = Profile {
             frame: None,
             loops: vec![square([0.0, 0.0], 10.0), square([0.0, 0.0], 4.0)],
+            open: false,
+            landmarks: Vec::new(),
         };
         assert_eq!(err(&holed, &up), "profile: a sweep profile has no holes yet");
         let two = Profile {
             frame: None,
             loops: vec![square([0.0, 0.0], 10.0), square([30.0, 0.0], 10.0)],
+            open: false,
+            landmarks: Vec::new(),
         };
         assert_eq!(
             err(&two, &up),

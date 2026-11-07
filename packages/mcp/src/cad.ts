@@ -675,23 +675,36 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   // A profile is checked against the same frame and loops as slicerx_geom_revolve, but its schema only points there:
   // spelling them out again would cost a small local model's context the size of a second revolve.
-  const profileShape = z.object({ frame: frameSchema.optional(), loops })
+  const chain = z.union([z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }), z.object({ points: z.array(vec2).min(2).max(4096) })])
+  // an open profile is one chain with two ends, as a sweep path is
+  const marks = z.array(vec2).max(64).optional()
+  const closedProfile = z.object({ frame: frameSchema.optional(), loops, open: z.literal(false).optional(), landmarks: marks })
+  const openProfile = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1), open: z.literal(true), landmarks: marks })
+  const profileShape = z.union([openProfile, closedProfile])
+  const shapeOf = (p: { open?: unknown }) => (p.open === true ? openProfile : closedProfile)
+  // checked in the tool (parsedAt), so each build turn carries only the short schema below
+  const thickenShape = z.object({ thicknessMm: z.number().positive().max(1000), side: z.enum(['outward', 'inward', 'center']).optional() })
+  const thicken = z.unknown().describe('{thicknessMm, side: outward|inward|center}: sides as a shell; open profiles need it')
+  const profileOut = (f: z.infer<typeof profileShape>, frame: unknown) => ({ ...(frame as object), loops: f.loops, ...(f.open ? { open: true } : {}), ...(f.landmarks?.length ? { landmarks: f.landmarks } : {}) })
   const loftProfile = z
-    .object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).min(1).max(256) })
+    .object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).min(1).max(256), open: z.boolean().optional(), landmarks: z.array(z.unknown()).optional() })
     .superRefine((p, ctx) => {
-      const r = profileShape.safeParse(p)
+      const r = shapeOf(p).safeParse(p)
       if (!r.success) for (const e of r.error.issues) ctx.addIssue({ code: 'custom', message: e.message, path: e.path })
     })
-    .describe('One closed loop on a plane: frame and loops as for slicerx_geom_revolve')
+    .describe('One loop on a plane, as for slicerx_geom_revolve; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Loft a solid through 2 to 64 closed profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane.',
+      'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane.',
     input: z.object({
       profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
+      smooth: z.boolean().optional().describe('Curved sides'),
+      closed: z.boolean().optional().describe('Last joins first'),
+      thicken: thicken.optional(),
       sketches: z.array(z.string().min(1).max(80)).min(2).max(64).optional().describe('With a design: finished sketch ids in loft order, instead of profiles'),
       operation,
       target: modelArg.optional().describe('The model to join to or cut from'),
@@ -702,37 +715,40 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     async run(i) {
       if (!i.profiles === !i.sketches) throw new ToolInputError(i.profiles ? 'sketches: give profiles or sketches, not both' : 'profiles: give 2 or more profiles, or finished sketch ids as sketches')
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Lofted'
+      const th = i.thicken === undefined ? undefined : parsedAt(thickenShape, i.thicken, 'thicken')
+      const loftOpts = { ...(i.smooth ? { smooth: true } : {}), ...(i.closed ? { closed: true } : {}), ...(th ? { thicken: th } : {}) }
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p) => profileShape.parse(p)).map((f) => ({ frame: frameOf(f.frame), loops: f.loops }))
-        const params: StepParams = plain({ op: 'sketch.loft', profiles, operation: i.operation, name: i.name })
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
+        const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
-      const profiles = i.profiles!.map((p) => profileShape.parse(p)).map((f) => ({ ...plane(f.frame), loops: f.loops }))
-      const out = await call('sketch.loft', { profiles, operation: i.operation, ...(await target(i.target, i.operation)) })
+      const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
+      const out = await call('sketch.loft', { profiles, ...loftOpts, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} through ${profiles.length} profiles`, output: out }
     },
   })
 
   // Kept small: a local model gets every build tool's schema on each build turn. The tool parses the profile and path
   // against the full schemas below, so the step and the app get the parsed loops, and a bad field is named by its path.
-  const chain = z.union([z.object({ start: vec2, segments: z.array(segment).min(1).max(512) }), z.object({ points: z.array(vec2).min(2).max(4096) })])
-  const sweepProfile = z.object({ frame: frameSchema.optional(), loops })
+  const sweepProfile = z.object({ frame: frameSchema.optional(), loops, open: z.literal(false).optional() })
+  const openSweepProfile = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1), open: z.literal(true) })
   const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Sweep a closed sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
+    description: 'Sweep a sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
     input: z.object({
-      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()) }).optional().describe('One closed loop and its frame, as for slicerx_geom_revolve'),
+      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe('One loop and its frame, as for slicerx_geom_revolve; open: an open chain'),
       path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]'),
       profile_sketch: z.string().optional(),
       path_sketch: z.string().optional(),
+      thicken: thicken.optional(),
       operation: z.enum(['new', 'join', 'cut']).default('new'),
       target: z.string().optional().describe('STL to join or cut'),
       design: z.string().optional(),
@@ -745,7 +761,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.path && !i.path.loops && !i.path.points) throw new ToolInputError('path: give the path as loops on a plane or as points')
       if (i.path?.loops && i.path.points) throw new ToolInputError('path: give loops or points, not both')
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Swept'
-      const prof = i.profile ? parsedAt(sweepProfile, i.profile, 'profile') : undefined
+      const th = i.thicken === undefined ? undefined : parsedAt(thickenShape, i.thicken, 'thicken')
+      const prof = i.profile ? parsedAt(i.profile.open === true ? openSweepProfile : sweepProfile, i.profile, 'profile') : undefined
       const pth = i.path ? parsedAt(sweepPath, i.path, 'path') : undefined
       const pf = prof?.frame
       const qf = pth?.frame
@@ -756,16 +773,16 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
         const k = i.profile_sketch ? finished(i.profile_sketch) : null
-        const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops! }
+        const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
         const j = i.path_sketch ? finished(i.path_sketch) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
-        const params: StepParams = plain({ op: 'sketch.sweep', profile, path, operation: i.operation, name: i.name })
+        const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
       const path = points ? { points } : { ...plane(qf), loops: pathLoops }
-      const out = await call('sketch.sweep', { profile: { ...plane(pf), loops: profileLoops }, path, operation: i.operation, ...(await target(i.target, i.operation)) })
+      const out = await call('sketch.sweep', { profile: { ...plane(pf), loops: profileLoops, ...(prof?.open ? { open: true } : {}) }, path, ...(th ? { thicken: th } : {}), operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} the profile along the path`, output: out }
     },
   })

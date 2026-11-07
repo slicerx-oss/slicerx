@@ -48,10 +48,14 @@ export type StepParams =
   | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number; faceKey?: number }
   | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
   | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
-  /** A solid through closed sketch profiles in order, each one loop on its own plane (the bed when frame is absent). */
-  | { op: 'sketch.loft'; profiles: LoftProfile[]; operation?: 'new' | 'join' | 'cut'; name?: string }
-  /** A solid swept from one closed sketch profile along an open path, the profile keeping its turn relative to the path. */
-  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; operation?: 'new' | 'join' | 'cut'; name?: string }
+  /**
+   * A solid through sketch profiles in order, each one loop on its own plane (the bed when frame is absent): smooth sides
+   * through them, the last joined back to the first when closed, and the sides made a shell with thicken (which open
+   * profiles need).
+   */
+  | { op: 'sketch.loft'; profiles: LoftProfile[]; smooth?: boolean; closed?: boolean; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
+  /** A solid swept from one sketch profile along an open path, the profile keeping its turn relative to the path; an open profile is thickened into a shell. */
+  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -77,10 +81,19 @@ export type StepParams =
 
 export type StepOp = StepParams['op']
 
-/** One section of a loft: closed sketch loops on a plane. */
+/** One section of a loft: one sketch loop on a plane, closed, or an open chain when open is set. */
 export interface LoftProfile {
   frame?: FaceFrame
   loops: SketchLoop[]
+  open?: boolean
+  /** Points on the profile that match the same points on every other profile, in order along it. */
+  landmarks?: Vec2[]
+}
+
+/** A surface made a shell this thick, to the side its outside faces, the other side or half each way. */
+export interface Thicken {
+  thicknessMm: number
+  side?: 'outward' | 'inward' | 'center'
 }
 
 /** The path of a sweep: one open chain of lines, arcs and splines on a plane (the bed when frame is absent), or points in space. */
@@ -607,9 +620,9 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
     case 'sketch.revolve':
       return `Sketch revolve ${n2(p.angleDeg ?? 360)}°`
     case 'sketch.loft':
-      return `${p.operation === 'cut' ? 'Loft cut' : 'Loft'}, ${p.profiles.length} profiles`
+      return `${p.operation === 'cut' ? 'Loft cut' : p.smooth ? 'Smooth loft' : 'Loft'}${p.closed ? ' ring' : ''}, ${p.profiles.length} profiles${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'sketch.sweep':
-      return p.operation === 'cut' ? 'Sweep cut' : 'Sweep'
+      return `${p.operation === 'cut' ? 'Sweep cut' : 'Sweep'}${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'subtract':
       return p.label
     case 'hollow':

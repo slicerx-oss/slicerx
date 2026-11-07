@@ -45,6 +45,8 @@ const vec2 = isVec(2)
 const vec3 = isVec(3)
 const obj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const frameOk = (f: unknown) => f === undefined || (obj(f) && vec3(f['origin']) && vec3(f['normal']) && vec3(f['u']) && vec3(f['v']))
+const profileOk = (f: Record<string, unknown>) => Array.isArray(f['loops']) && frameOk(f['frame']) && (f['open'] === undefined || typeof f['open'] === 'boolean') && (f['landmarks'] === undefined || (Array.isArray(f['landmarks']) && f['landmarks'].length <= 64 && f['landmarks'].every(vec2)))
+const thickenOk = (t: unknown) => t === undefined || (obj(t) && isNum(t['thicknessMm']) && (t['side'] === undefined || ['outward', 'inward', 'center'].includes(t['side'] as string)))
 const edgesOk = (e: unknown) =>
   Array.isArray(e) && e.length > 0 && e.length <= 1000 && e.every((x) => obj(x) && vec3(x['a']) && vec3(x['b']) && vec3(x['face']) && (x['keys'] === undefined || (Array.isArray(x['keys']) && x['keys'].length === 2 && x['keys'].every(keyOk))))
 
@@ -141,9 +143,9 @@ function paramsOk(p: Record<string, unknown>): boolean {
     case 'sketch.revolve':
       return Array.isArray(p['loops']) && constraintsOk(p['constraints']) && obj(p['axis']) && vec2(p['axis']['point']) && vec2(p['axis']['direction']) && frameOk(p['frame']) && (p['angleDeg'] === undefined || isNum(p['angleDeg']))
     case 'sketch.sweep':
-      return obj(p['profile']) && Array.isArray(p['profile']['loops']) && frameOk(p['profile']['frame']) && obj(p['path']) && frameOk(p['path']['frame']) && Array.isArray(p['path']['loops']) !== Array.isArray(p['path']['points']) && (p['path']['points'] === undefined || (p['path']['points'] as unknown[]).every((q) => Array.isArray(q) && q.length === 3 && q.every(isNum))) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
+      return obj(p['profile']) && profileOk(p['profile']) && thickenOk(p['thicken']) && obj(p['path']) && frameOk(p['path']['frame']) && Array.isArray(p['path']['loops']) !== Array.isArray(p['path']['points']) && (p['path']['points'] === undefined || (p['path']['points'] as unknown[]).every((q) => Array.isArray(q) && q.length === 3 && q.every(isNum))) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
     case 'sketch.loft':
-      return Array.isArray(p['profiles']) && p['profiles'].length >= 2 && p['profiles'].length <= 64 && p['profiles'].every((f: unknown) => obj(f) && Array.isArray(f['loops']) && frameOk(f['frame'])) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
+      return Array.isArray(p['profiles']) && p['profiles'].length >= 2 && p['profiles'].length <= 64 && p['profiles'].every((f: unknown) => obj(f) && profileOk(f)) && (p['smooth'] === undefined || typeof p['smooth'] === 'boolean') && (p['closed'] === undefined || typeof p['closed'] === 'boolean') && thickenOk(p['thicken']) && (p['operation'] === undefined || ['new', 'join', 'cut'].includes(p['operation'] as string))
     case 'subtract':
       return Array.isArray(p['solids']) && typeof p['label'] === 'string'
     case 'hollow':
