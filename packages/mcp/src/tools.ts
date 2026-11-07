@@ -369,7 +369,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const gcode = gcodeTool({
     name: 'printer.gcode',
-    description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission. A line that can move the head (a move, home, probe or leveling command, a start, filament or tool change, or any code or macro the hub does not know as safe) goes only while the printer is idle or finished, and only when the person approving says the plate is clear or the hub knows it is; otherwise the hub fails it with bad_state or bed_check. Heater, fan, message and report lines go at any time.',
+    description: 'Send one G-code line to a printer console, such as "G28" or "M106 S128". It can heat and move hardware, so it follows the start permission. A line that can move the head (a move, home, probe or leveling command, a start, filament or tool change, or any code or macro the hub does not know as safe) goes only while the printer is idle or finished, and only when the person approving says the plate is clear or the hub knows it is; otherwise the hub fails it with bad_state or bed_check. A line with a parenthesis counts as one that moves. Mode, speed, flow, dwell and wait lines (M82, M83, G90, G92 E0, M220, M221, G4, M190, M400) go only while no print runs; a dwell over 60 s or a factor outside 50 to 150 percent is refused. Heater, fan, message and report lines go at any time.',
     input: z.object({ printerId, line: z.string().min(1).max(200).regex(/^[^\r\n]+$/, 'One line only') }),
     lines: (i) => [i.line.trim()],
     title: (i) => `Send "${i.line.trim()}" to ${i.printerId}?`,
