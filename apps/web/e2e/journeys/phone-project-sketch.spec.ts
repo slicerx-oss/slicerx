@@ -5,6 +5,7 @@
 import { journey as test, expect } from '../journey'
 import { facePick, pick } from '../cad-helpers'
 import { phoneBox, phoneStudio, shotBoth, still } from './lib/cad'
+import { projectCardLaidOut } from './lib/project-card'
 
 test.skip(({ isMobile }) => !isMobile, 'Phone only')
 
@@ -32,5 +33,7 @@ test('Project on a phone: the card fits the sheet and a face outline lands in th
     expect(b.x + b.width).toBeLessThanOrEqual(vw)
   }
   await row.scrollIntoViewIfNeeded()
+  // the kinds share the row evenly, the two Real and Reference choices line up, and the name sits beside its choice
+  await projectCardLaidOut(card, row, false)
   await shotBoth(page, info, 'project-face-390')
 })

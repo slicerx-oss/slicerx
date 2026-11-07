@@ -10,7 +10,7 @@ import { BODY_GONE, featureParams, followProjections, historyOf, nextProjectionI
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
-import { addsTo, bodyOf, faceSource, followBodies, projectNow } from '../src/cad/project-sketch'
+import { addsTo, bodyOf, changeProjection, faceSource, followBodies, projectNow } from '../src/cad/project-sketch'
 import { finishSketch, sketchById, updateSketch } from '../src/cad/sketches'
 import { setGeomProvider } from '../src/geom/client'
 import { createHistory } from '../src/plate/history'
@@ -356,6 +356,31 @@ describe('projections in a saved project', () => {
   })
 })
 
+describe('projection counts in a hostile file', () => {
+  it('stay small whole numbers whatever the file says', () => {
+    const k: SketchItem = { kind: 'sketch', id: 'k1', name: 'Sketch 1', frame: BED, loops: [square(4)] }
+    const t0 = withHistory({ bodies: [], items: [k], marker: 1 }, 'c', { version: 1, base: [], steps: [{ id: 's1', part: 0, transform: I, params: extrudeOf([square(4)]), sketch: 'k1' }] })
+    for (const bad of [1e308, -3, 2.5, 'p9', 'NaN', 2e6, null, { n: 3 }]) {
+      const files = fileMap(t0, [['c', 7]])
+      const j = JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!)) as { items: Record<string, unknown>[] }
+      for (const it of j.items) {
+        if (it['kind'] === 'sketch') {
+          it['nextProjection'] = bad
+          it['loops'] = [...(it['loops'] as unknown[]), { ...square(1), projected: 'p99999999999' }, { ...square(1), projected: 'pNaN' }]
+        } else it['projected'] = ['p99999999999', ...Array.from({ length: 300 }, (_, i) => `p${i + 1}`)]
+      }
+      files.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify(j)))
+      const read = parseTimeline(files, new Set(['7']))!
+      const rk = read.items.find((i) => i.kind === 'sketch') as SketchItem
+      const n = rk.nextProjection ?? 0
+      expect(Number.isInteger(n) && n >= 0 && n <= 1_000_000, String(bad)).toBe(true)
+      // the first 256 ids a feature names count (p255 the highest of them), and nothing past the cap does
+      expect(n, String(bad)).toBe(255)
+      expect(nextProjectionId(rk), String(bad)).toBe('p256')
+    }
+  })
+})
+
 describe('the engine request for a projection', () => {
   // picked with the body turned a quarter about z and moved 10 mm along x; it stands 5 mm along y now
   const A = [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1]
@@ -397,6 +422,11 @@ describe('projecting from the panel', () => {
     expect(await projectNow(faceOf('b'), BED, s.id)).toEqual([square(10)])
     // a new sketch reads the model as it stands
     expect(await projectNow(faceOf('b'), BED)).toEqual([square(20)])
+    // the MCP path and replay give the panel's curves
+    const r = await host.project!(s.id, faceOf('b'), 'real')
+    expect(projectedOf(r.sketch.loops, 'p1')).toEqual([{ ...square(10), projected: 'p1' }])
+    await followBodies(loader, ['b'])
+    expect(projectedOf(sketchById(get().timeline, s.id)!.loops, 'p1')).toEqual([{ ...square(10), projected: 'p1' }])
   })
 
   it('starts a new edges projection for an edge of another body or part', () => {
@@ -427,6 +457,59 @@ describe('following, with other edits about', () => {
     const now = sketchById(get().timeline, s.id)!
     expect(now.loops[0]).toEqual(square(5))
     expect(projectedOf(now.loops, 'p1')).toEqual([{ ...square(16), projected: 'p1' }])
+  })
+
+  const midFollow = async (edit: (sketch: string) => Promise<void>) => {
+    set({ plate: [body('b', 10)] })
+    const host = appDesignHost(loader)
+    const s = finishSketch({ frame: BED, loops: [square(3)] })
+    await host.project!(s.id, faceOf('b'), 'real')
+    let release!: () => void
+    hold = new Promise((r) => (release = r))
+    set((st) => ({ plate: st.plate.map((e) => (e.id === 'b' ? { ...e, parts: [boxMesh(16, 16, 5)] } : e)) }))
+    const following = followBodies(loader, ['b'])
+    await edit(s.id)
+    hold = null
+    release()
+    await following
+    return { host, k: () => sketchById(get().timeline, s.id)! }
+  }
+
+  it('keeps a projection removed while a follow ran removed', async () => {
+    const { k } = await midFollow(async (id) => void (await changeProjection(loader, id, 'p1', { remove: true })))
+    expect(k().projections).toBeUndefined()
+    expect(projectedOf(k().loops, 'p1')).toEqual([])
+    expect(nextProjectionId(k())).toBe('p2')
+  })
+
+  it('keeps a switch to reference made while a follow ran, with the followed curves', async () => {
+    const { k } = await midFollow(async (id) => void (await changeProjection(loader, id, 'p1', { mode: 'reference' })))
+    expect(k().projections![0]!.mode).toBe('reference')
+    expect(projectedOf(k().loops, 'p1')).toEqual([{ ...square(16), projected: 'p1', construction: true }])
+  })
+
+  it('keeps a source changed while a follow ran, and leaves the follow’s curves out', async () => {
+    const other: ProjectSource = { kind: 'silhouette', body: 'b' }
+    const { k } = await midFollow(async (id) => {
+      const now = sketchById(get().timeline, id)!
+      await updateSketch(loader, id, bodyOf(withProjection(now, { ...now.projections![0]!, source: other }, [square(7)])))
+    })
+    expect(k().projections![0]!.source).toEqual(other)
+    expect(projectedOf(k().loops, 'p1')).toEqual([{ ...square(7), projected: 'p1' }])
+  })
+
+  it('clears a note once a later follow goes through', async () => {
+    set({ plate: [body('b', 10)] })
+    const host = appDesignHost(loader)
+    const s = finishSketch({ frame: BED, loops: [square(3)] })
+    await host.project!(s.id, faceOf('b'), 'real')
+    const k = sketchById(get().timeline, s.id)!
+    set((st) => ({ timeline: { ...st.timeline, items: st.timeline.items.map((i) => (i === k ? withProjection(k, { ...k.projections![0]!, lost: 'Not followed: Lid would have no solid left with this sketch.' }, null) : i)) } }))
+    set((st) => ({ plate: st.plate.map((e) => (e.id === 'b' ? { ...e, parts: [boxMesh(12, 12, 5)] } : e)) }))
+    await followBodies(loader, ['b'])
+    const after = sketchById(get().timeline, s.id)!
+    expect(after.projections![0]).not.toHaveProperty('lost')
+    expect(projectedOf(after.loops, 'p1')).toEqual([{ ...square(12), projected: 'p1' }])
   })
 
   it('says so on the projection when the body drawn on it cannot follow', async () => {
