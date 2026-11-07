@@ -12,7 +12,7 @@ import type { LlmClient, ToolHost } from '@slicerx/pilot'
 import { assessFit, createEvalEnv, createScriptedClient, noteApprovals, type EvalHosts, type ScriptStepData } from '@slicerx/pilot/evals'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/toolset'
 import { headlessDesignHost, plainBed } from './design-host'
-import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume } from './mesh-checks'
+import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume, type GapReport } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
 
 /** The tab's design tools (design.* and geom.*), the one way it builds a part: a reply that calls none built nothing. */
@@ -29,9 +29,12 @@ export function buildVolumeOf(machine: PilotMachine): BuildVolume {
 /** Thinnest wall a nozzle prints reliably: two lines. */
 export const wallLimitMm = (m: PilotMachine): number => Math.round(2 * m.nozzle * 1000) / 1000
 
-/** The modeled gap a print in place joint needs per side on this machine, from the fit rule (fit_check). */
-export function clearanceNeed(m: PilotMachine, gapMm: number): { moves: boolean; suggestedGapMm: number } {
-  const fit = assessFit({ gapMm, feature: 'print_in_place', direction: 'xy', layerHeight: m.nozzle / 2, lineWidth: m.nozzle * 1.05, nozzle: m.nozzle, material: m.material })
+/**
+ * The modeled gap a print in place joint needs on this machine, from the fit rule (fit_check): per side for parts side
+ * by side (xy), and in whole layers above the sag for one over the other (z).
+ */
+export function clearanceNeed(m: PilotMachine, gapMm: number, direction: 'xy' | 'z' = 'xy'): { moves: boolean; suggestedGapMm: number } {
+  const fit = assessFit({ gapMm, feature: 'print_in_place', direction, layerHeight: m.nozzle / 2, lineWidth: m.nozzle * 1.05, nozzle: m.nozzle, material: m.material })
   return { moves: fit.outcome === 'slides', suggestedGapMm: fit.suggestedGapMm }
 }
 
@@ -51,8 +54,26 @@ export interface CreativeScore {
   pass: boolean
 }
 
-/** Scores the parts a run produced against the prompt's expectations. `parsed` false fails the run on its own. */
-export function scoreParts(p: CreativePrompt, parsed: Check, parts: MeshPart[]): CreativeScore {
+/**
+ * The clearance score for a mechanism from the gaps the engine measured (movingGaps): every pair of bodies close enough
+ * to move must keep the fit rule's gap for its direction, and none may touch. No gaps measured: no engine.
+ */
+export function clearanceCheck(m: PilotMachine, gaps: GapReport | undefined): Check {
+  if (!gaps) return { pass: false, detail: 'no geometry engine to measure the gaps' }
+  if (!gaps.pairs) return { pass: false, detail: 'no bodies face each other, so nothing moves' }
+  const fused = gaps.gaps.filter((g) => g.kind === 'fused').length
+  if (fused) return { pass: false, detail: fused === 1 ? '1 pair touches or overlaps, so it prints as one piece' : `${fused} pairs touch or overlap, so they print as one piece` }
+  const judged = gaps.gaps.map((g) => ({ g, need: clearanceNeed(m, g.gapMm, g.kind === 'vertical' ? 'z' : 'xy') }))
+  const worst = judged.find((j) => !j.need.moves) ?? judged[0]!
+  const what = worst.g.kind === 'vertical' ? 'vertical gap' : 'side gap'
+  return { pass: judged.every((j) => j.need.moves), detail: `${worst.g.gapMm} mm ${what} over ${gaps.pairs} pair${gaps.pairs === 1 ? '' : 's'} (want ${worst.need.suggestedGapMm} mm or more)` }
+}
+
+/**
+ * Scores the parts a run produced against the prompt's expectations. `parsed` false fails the run on its own. `gaps`
+ * are the gaps the engine measured between the bodies (movingGaps), for a mechanism's clearance.
+ */
+export function scoreParts(p: CreativePrompt, parsed: Check, parts: MeshPart[], gaps?: GapReport): CreativeScore {
   if (!parsed.pass) return { parses: parsed, pass: false }
   const c = closure(parts)
   const watertight: Check = { pass: c.watertight, detail: c.watertight ? 'closed' : `open ${c.openEdges}, non-manifold ${c.nonManifoldEdges}, flipped ${c.flippedEdges}` }
@@ -66,14 +87,7 @@ export function scoreParts(p: CreativePrompt, parsed: Check, parts: MeshPart[]):
   const bedSize = bed.shape === 'circular' ? `${bed.diameter} round by ${bed.z}` : `${bed.x} by ${bed.y} by ${bed.z}`
   const bedCheck: Check = { pass: fit.fits, detail: `${fit.sizeMm.join(' by ')} mm on ${bedSize} mm` }
   const out: CreativeScore = { parses: parsed, watertight, bodies, minWall: wall, bedFit: bedCheck, pass: false }
-  if (p.mechanism) {
-    const g = movingGaps(parts)
-    if (g.minGapMm === null) out.clearance = { pass: false, detail: 'no bodies face each other, so nothing moves' }
-    else {
-      const need = clearanceNeed(p.machine, g.minGapMm)
-      out.clearance = { pass: need.moves, detail: `${g.minGapMm} mm over ${g.pairs} pair${g.pairs === 1 ? '' : 's'} (want ${need.suggestedGapMm} mm or more)` }
-    }
-  }
+  if (p.mechanism) out.clearance = clearanceCheck(p.machine, gaps)
   out.pass = [out.watertight, out.bodies, out.minWall, out.bedFit, out.clearance].every((x) => x === undefined || x.pass)
   return out
 }
@@ -170,6 +184,8 @@ export interface PromptRun {
   steps: ScriptStepData[]
   /** Why nothing was built, when no design tool was called. */
   noBuild?: NoBuild
+  /** For a mechanism with parts and an engine: the gaps between its bodies, as the engine's fit check measures them. */
+  gaps?: GapReport
   /** The model asked (in its reply, or with pilot.ask), and the eval gave it the default answer. */
   answered: boolean
   /** Why the recording no longer stands for what a live run would do (replay only). */
@@ -292,6 +308,14 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     answered,
   }
   if (noBuild) run.noBuild = noBuild
+  if (p.mechanism && parts.length && opts.geom) {
+    const geom = opts.geom
+    try {
+      run.gaps = await movingGaps(parts, (op, request) => geom.run(op, request))
+    } catch (e) {
+      error ??= `fit check: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
   if (stale) run.stale = stale
   if (error) run.error = error
   return run
