@@ -14,8 +14,15 @@ facts:
   - {text: "There is no universal clearance. It depends on part size, horizontal or vertical orientation, the shape of the interlocking parts, calibration, settings and the material.", src: [prusa_kb_modeling]}
   - {text: "Prusa says an Original Prusa is accurate to at least 0.2 mm, and that a good first value for parts that move, like a hinge, is at least 0.3 mm.", src: [prusa_kb_modeling]}
   - {text: "The Orca tolerance test prints holes at 0, 0.05, 0.1, 0.2, 0.3 and 0.4 mm clearance, so the user can find the fit on their own printer and spool.", src: ["orca_wiki:tolerance_calib"]}
+  # print-in-place clearance table, written by scripts/fit-table.ts from the fit rule; do not edit by hand
+  - {text: "Print in place gaps per side, 0.2 mm nozzle at 0.1 mm layers: PLA and ABS 0.3 mm side by side and 0.3 mm above or below; PETG and TPU 0.4 and 0.3 mm.", src: [slicerx_fit_rule]}
+  - {text: "Print in place gaps per side, 0.4 mm nozzle at 0.2 mm layers: PLA and ABS 0.3 mm side by side and 0.4 mm above or below; PETG 0.4 and 0.6 mm; TPU 0.4 and 0.4 mm.", src: [slicerx_fit_rule]}
+  - {text: "Print in place gaps per side, 0.6 mm nozzle at 0.3 mm layers: PLA and ABS 0.3 mm side by side and 0.6 mm above or below; PETG and TPU 0.4 and 0.6 mm.", src: [slicerx_fit_rule]}
+  - {text: "Print in place gaps per side, 0.8 mm nozzle at 0.4 mm layers: PLA and ABS 0.3 mm side by side and 0.8 mm above or below; PETG and TPU 0.4 and 0.8 mm.", src: [slicerx_fit_rule]}
+  # end of the clearance table
 pilot_actions:
   - "Never tell the user to make a hole smaller than its pin or shaft. A tighter fit means less clearance, not negative clearance."
   - "For moving parts start at 0.3 mm or more; for a tight or friction fit use less, and confirm with the tolerance test (workflow tolerance)."
   - "Say which way the clearance is measured (on the diameter or per side) whenever you give a number."
-src: [prusa_kb_modeling, snapmaker_blog_threads, "orca_wiki:tolerance_calib"]
+  - "For print in place parts (hinges, chains, flexi joints), start from the print in place gaps above for the nozzle and material; a gap above or below often needs more than a side gap, because the slicer rounds it to whole layers and the face printed over it sags."
+src: [prusa_kb_modeling, snapmaker_blog_threads, "orca_wiki:tolerance_calib", slicerx_fit_rule]
