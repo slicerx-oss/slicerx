@@ -22,6 +22,12 @@
 
 .sketch-copies { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .sketch-copies legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
+/* Import SVG after the solid card: the button at its natural width, the form below it once opened */
+.sketch-svg-import { display: grid; gap: var(--s-2); min-width: 0; }
+.sketch-svg-import > .sx-btn { justify-self: start; }
+/* on a desktop the panel's settings sit in cards, so the open form takes a dense card's frame and its fields line up
+   with the solid card's; a phone's sheet has no cards */
+:root:not([data-phone]) .sketch-svg-import > .sketch-svg { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); }
 /* scrolled into view as it opens: clear of the fade along the panel's bottom edge */
 .sketch-svg { scroll-margin-bottom: var(--s-4); }
 .cad-note { color: var(--fg); }
