@@ -182,8 +182,14 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     } else {
         orient(&mut sections, &along, &facing, open);
     }
-    // open chains joined end to end around a ring must meet the first the same way when they come back to it
-    if open && opts.closed && crossed(&sections[count - 1], &sections[0], facing[count - 1], facing[0]) {
+    // open chains joined end to end around a ring must meet the first the same way when they come back to it; two or
+    // more landmarks set every chain's way, so there the person has said how the ring closes
+    let set = marked && profiles[0].landmarks.len() >= 2;
+    if open
+        && opts.closed
+        && !set
+        && crossed(&sections[count - 1], &sections[0], facing[count - 1], facing[0])
+    {
         return Err(Error::geometry(
             "loft",
             format!(
@@ -692,8 +698,8 @@ fn toward(w: V3, along: V3) -> V3 {
     }
 }
 
-/// `v` turned by the least rotation that takes the unit `from` onto the unit `to`; as it is when they point opposite
-/// ways, which two neighboring planes facing along the loft never do.
+/// `v` turned by the least rotation that takes the unit `from` onto the unit `to`, or as it is when they point opposite
+/// ways (two planes whose normals face opposite ways about the loft), which no one rotation settles.
 fn turned(v: V3, from: V3, to: V3) -> V3 {
     let (w, c) = (vec3::cross(from, to), vec3::dot(from, to));
     if c <= -1.0 + 1e-9 {
