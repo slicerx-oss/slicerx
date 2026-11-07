@@ -388,7 +388,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
   const tipRef = useRef<HTMLDivElement>(null)
   const live = useRef({ enabled, resolve })
   live.current = { enabled, resolve }
-  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, dialog: null as HTMLElement | null, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: null as HTMLElement | null, clickPinned: false, wasClickPinned: false })
+  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, dialog: null as HTMLElement | null, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: null as HTMLElement | null, clickPinned: false, wasClickPinned: false, rest: null as { x: number; y: number; anchor: HTMLElement | null } | null })
 
   useEffect(() => {
     const s = state.current
@@ -458,6 +458,9 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       const a = anchorOf(e.target)
       s.hover = a
       if (!a) return leave()
+      // A control that slid under a pointer resting where it pressed (a press that removed the row it was on) is not
+      // the pointer coming to it: its tip waits until the pointer moves, so it never lands over the rows that moved up.
+      if (s.rest && a !== s.rest.anchor && e.clientX === s.rest.x && e.clientY === s.rest.y) return
       // A dialog opening under a resting pointer puts a control under it that the pointer never moved to, so a hover
       // inside a dialog that has just opened is ignored. A hover anywhere else is the pointer moving onto a control,
       // and dropping it would leave that control without its tip until the pointer left it and came back.
@@ -488,6 +491,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     const focusOut = () => leave()
     const down = (e: PointerEvent) => {
       intent.pointer()
+      s.rest = { x: e.clientX, y: e.clientY, anchor: anchorOf(e.target) }
       if (e.pointerType === 'touch') {
         // A touch has no hover: holding for half a second shows the tip above the finger until release.
         const a = anchorOf(e.target)
@@ -507,6 +511,8 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       hide()
     }
     const touchMove = (e: PointerEvent) => {
+      // The browser repeats a move at the same place when the page moves under a resting pointer; only a real move ends the rest.
+      if (s.rest && (e.clientX !== s.rest.x || e.clientY !== s.rest.y)) s.rest = null
       if (e.pointerType !== 'touch' || !s.pressAt || s.touchShown) return
       if (Math.hypot(e.clientX - s.pressAt.x, e.clientY - s.pressAt.y) > TIP_TIMING.touchSlop) window.clearTimeout(s.press)
     }
