@@ -343,7 +343,8 @@ const NAMED_GAPS = 3
 /** A touch or tight gap in plain words: "Lid and Tray touch on the top face of Tray, 0.0 mm; <needs> 0.6 mm or more". */
 export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
   const name = (b: number): string => fit.bodies[b]?.name ?? `body ${b + 1}`
-  const need = g.direction === 'z' ? fit.limits.verticalMm : fit.limits.sideMm
+  // the limit fitFacts held this gap to, for its direction
+  const need = g.limitMm
   const where = g.where ? ` ${g.where}` : g.kind === 'fused' ? '' : ` ${g.direction === 'z' ? 'above and below' : 'side by side'} at ${at(g.from)}`
   const what = g.kind === 'fused' ? `touch${where}, ${gapMm(0)}` : `are ${gapMm(g.gapMm)} apart${where}`
   return `${name(g.bodies[0])} and ${name(g.bodies[1])} ${what}; ${needs} ${mm(need)} or more`
