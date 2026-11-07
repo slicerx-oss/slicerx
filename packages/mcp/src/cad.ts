@@ -26,6 +26,8 @@ type V3 = [number, number, number]
 export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
+/** The most SVG text design.sketch_svg takes, as sent: under the app link's 64 KB of arguments, room left for the rest. */
+const SVG_SENT = 60_000
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -810,7 +812,16 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
     input: z.object({
-      svg: z.string().min(1).max(4_000_000).describe('The SVG file as text'),
+      svg: z
+        .string()
+        .min(1)
+        .max(SVG_SENT)
+        .superRefine((s, ctx) => {
+          // the app link carries 64 KB of arguments, quotes escaped
+          const sent = JSON.stringify(s).length
+          if (sent > SVG_SENT) ctx.addIssue({ code: 'custom', message: `the SVG is ${Math.ceil(sent / 1000)} KB as sent, over the ${SVG_SENT / 1000} KB the app link carries; simplify it in a vector editor (fewer points, no embedded images, fonts or metadata), or split it and import each part with its own center` })
+        })
+        .describe(`The SVG file as text, up to ${SVG_SENT / 1000} KB as sent (the app link's limit)`),
       frame: frameRef.optional(),
       scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
       fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
