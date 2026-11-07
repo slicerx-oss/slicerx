@@ -14607,7 +14607,13 @@ fn stretch_tops(tops: &[f64], fz: f64, config: &PrintConfig) -> Result<Vec<f64>>
         0.75 * config.nozzle_diameter
     }
     .max(lo);
-    let thick: Vec<f64> = tops.windows(2).map(|w| w[1] - w[0]).collect();
+    let thick: Vec<f64> = tops
+        .windows(2)
+        .map(|w| match w {
+            [a, b] => b - a,
+            _ => 0.0,
+        })
+        .collect();
     let target = last * fz - first;
     // A layer stays inside the limits, or where it was drawn when that is outside them.
     let at = |k: f64| -> Vec<f64> {
