@@ -300,8 +300,8 @@ jobs:
         run: cargo test --workspace --exclude slicerx-desktop
         timeout-minutes: 40
 
-  # The full Rust tests on macOS and Windows, which only a push to main runs (and Windows with the full-ci label, and
-  # both by hand with rust_parts). One job each was too long: the test step alone took 52 minutes on a slow hosted
+  # The full Rust tests on macOS and Windows, which a push to main runs, a pull request with the full-ci label runs,
+  # and both run by hand with rust_parts. One job each was too long: the test step alone took 52 minutes on a slow hosted
   # Windows runner and about as long on macOS. Each job is split in parts that run side by side. A part runs its share of
   # the tests, read from cargo metadata by scripts/ci/windows-rust-tests.mjs (part, then --of and the number of parts), so
   # a new test file needs no edit here. Part 1 also runs fmt, clippy and the sx-cloud build, which the tests of the
@@ -310,15 +310,15 @@ jobs:
   # limits so that a slow run fails its step and still saves the cache (a job cancelled by its own limit skips the save).
   # The number of parts is in three places: the matrix, --of, and the check in scripts/ci/rust-part-coverage.mjs.
   rust-macos-parts:
-    name: rust part (macos-latest, ${{ matrix.part }}/2)
+    name: rust part (macos-latest, ${{ matrix.part }}/3)
     needs: detect
-    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.rust_parts))
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || (github.event_name == 'workflow_dispatch' && inputs.rust_parts))
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
@@ -336,8 +336,8 @@ jobs:
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: matrix.part == 1
         run: cargo build -p sx-cloud
-      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 2
-        timeout-minutes: 45
+      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 3
+        timeout-minutes: 50
 
   rust-windows-parts:
     name: rust part (windows-latest, ${{ matrix.part }}/3)
@@ -375,7 +375,7 @@ jobs:
   rust-macos:
     name: rust (macos-latest)
     needs: [detect, rust-macos-parts]
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.rust_parts)) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || (github.event_name == 'workflow_dispatch' && inputs.rust_parts)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -384,6 +384,8 @@ jobs:
           PARTS: ${{ needs.rust-macos-parts.result }}
         run: |
           echo "detect: $DETECT, macOS parts: $PARTS"
+          # a pull request's second run for another label has no detect and skips the parts: that counts as passed
+          [ "$DETECT" = skipped ] && exit 0
           [ "$DETECT" = success ] || exit 1
           [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
 
