@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Picks in the sketch panel's Project card, end to end through the card: a finished sketch's sources are read where
 // that sketch is in the timeline; an edge on another body starts a projection of its own while the open one keeps
-// its edges; edges picked before the tool opened all land in one projection; and a projection removed while another
-// pick is still projecting stays removed.
+// its edges; edges picked before the tool opened all land in one projection; a projection removed while another
+// pick is still projecting stays removed; and an edge that answers after its projection was removed or ended neither
+// brings it back nor reopens it.
 import type { FaceFrame, ProjectSource, SketchLoop } from '@slicerx/cad-history'
 import type { PickEvent } from '@slicerx/viewport'
 import { act, createElement, useState } from 'react'
@@ -122,5 +123,52 @@ describe('picks in the Project card', () => {
     await settle()
     expect(state.list.map((p) => p.id)).toEqual(['p2'])
     expect(state.loops.every((l) => l.projected === 'p2')).toBe(true)
+  })
+
+  it('drops an edge that was adding to a projection removed while it projected, and the next edge starts a new one', async () => {
+    const card = mount({ list: [], loops: [], next: 0 })
+    await press(card, 'sketch-project-edges')
+    await act(async () => probeHandler()!(hit('a', 0)))
+    await settle()
+    expect(state.list.map((p) => p.id)).toEqual(['p1'])
+    let release!: () => void
+    wait = new Promise((r) => (release = r))
+    // a second edge of the same body adds to p1, and p1 goes while it is projecting
+    await act(async () => probeHandler()!(hit('a', 2)))
+    await press(card, 'sketch-projection-p1-remove')
+    wait = null
+    release()
+    await settle()
+    expect(state.list).toEqual([])
+    expect(state.loops).toEqual([])
+    expect(card.querySelector('[data-testid="sketch-project-done"]')).toBeNull()
+    await act(async () => probeHandler()!(hit('a', 4)))
+    await settle()
+    expect(state.list.map((p) => [p.id, p.source.kind === 'edges' ? p.source.edges.length : 0])).toEqual([['p2', 1]])
+  })
+
+  it('does not reopen an edges projection the person ended while its last edge was projecting', async () => {
+    const card = mount({ list: [], loops: [], next: 0 })
+    await press(card, 'sketch-project-edges')
+    await act(async () => probeHandler()!(hit('a', 0)))
+    await settle()
+    let release!: () => void
+    wait = new Promise((r) => (release = r))
+    await act(async () => probeHandler()!(hit('a', 2)))
+    // Edges off and on again starts a new projection while the edge for p1 is still projecting
+    await press(card, 'sketch-project-edges')
+    await press(card, 'sketch-project-edges')
+    wait = null
+    release()
+    await settle()
+    expect(state.list.map((p) => [p.id, p.source.kind === 'edges' ? p.source.edges.length : 0])).toEqual([['p1', 2]])
+    expect(card.querySelector('[data-testid="sketch-project-done"]')).toBeNull()
+    await act(async () => probeHandler()!(hit('a', 4)))
+    await settle()
+    expect(state.list.map((p) => [p.id, p.source.kind === 'edges' ? p.source.edges.length : 0])).toEqual([
+      ['p1', 2],
+      ['p2', 1],
+    ])
+    expect(card.querySelector('[data-testid="sketch-project-done"]')).not.toBeNull()
   })
 })
