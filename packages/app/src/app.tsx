@@ -21,6 +21,7 @@ import { HostContext, useHost } from './host'
 import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
 import { LazySlot, WorkspaceBoundary } from './shell/boundary'
+import { CommandBarSlot } from './shell/command-bar-slot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { bridgeConnector } from './link/connector'
 import { Status, ToastBridge } from './shell/overlays'
@@ -57,7 +58,6 @@ const ProjectGcodeDialog = lazy(() => import('./project/gcode-dialog').then((m) 
 const ProjectOpenDialog = lazy(() => import('./project/open-dialog').then((m) => ({ default: m.ProjectOpenDialog })))
 const ProjectsDialog = lazy(() => import('./project/projects-dialog').then((m) => ({ default: m.ProjectsDialog })))
 const CameraPlayer = lazy(() => import('./camera/player').then((m) => ({ default: m.CameraPlayer })))
-const CommandBar = lazy(() => import('./shell/command-bar').then((m) => ({ default: m.CommandBar })))
 const Studio = lazy(() => import('./workspaces/studio').then((m) => ({ default: m.Studio })))
 // The plate's fit check, wherever the person is (plate/fit-check.ts); its code stays out of the shell.
 const FitWatch = lazy(() => import('./plate/fit-check').then((m) => ({ default: m.FitWatch })))
@@ -459,20 +459,6 @@ function Shell() {
       ) : null}
     </>
   )
-}
-
-/** Cmd+K's palette, its ranking and its hub load as soon as the app has painted (so the palette is there by the time anyone opens it), then stay mounted. */
-function CommandBarSlot() {
-  const open = useApp((s) => s.commandOpen)
-  const [used, setUsed] = useState(false)
-  useEffect(() => {
-    setUsed(true)
-  }, [])
-  return used || open ? (
-    <LazySlot>
-      <CommandBar />
-    </LazySlot>
-  ) : null
 }
 
 function runShortcut(id: string): void {

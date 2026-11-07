@@ -5,16 +5,17 @@
 import type { PrinterInfo } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { CommandPalette, type PaletteGroup, type PaletteItem } from '@slicerx/ui'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { loadSettings, settingsIfLoaded, type SettingsApi } from '../adapters/load'
 import { getCommand, runCommand, useCommands } from '../commands/registry'
 import { useFleetPick, type FleetRow } from '../lib/queries'
 import { useFeatures } from '../features'
 import { orderWorkspaces, useLayout } from '../first-run/look'
 import { hostSlices, listedInMode, listedOnHost, titleInMode, useModelMode } from '../state/model-mode'
-import { get, pilotState, pushRecent, set, toast, useApp } from '../state/store'
+import { get, pilotState, pushRecent, toast, useApp } from '../state/store'
 
 import { ASK } from './command-bar-id'
+import { closeCommandBar, commandPlaceholder, dropCommandSubmit, queueCommandSubmit, setCommandQuery, takeCommandSubmit, useCommandQuery } from './command-draft'
 export { ASK } from './command-bar-id'
 
 /** The rows that are commands, for the footer's count: places, settings and the assistant row are not. */
@@ -52,8 +53,8 @@ export function CommandBar() {
       return title === c.title ? c : { ...c, title }
     })
   }, [registered, mode, workspace])
-  const [query, setQuery] = useState('')
-  const pendingSubmit = useRef(false)
+  // Typed into the stand-in palette while this code downloaded, or here: one draft either way.
+  const query = useCommandQuery()
   const { workspaces: available, ids } = useFeatures()
   const layout = useLayout()
   // Named the way the active look names its tabs, so a hint says Model where the tab says Model.
@@ -88,11 +89,7 @@ export function CommandBar() {
     return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet: { data: printers }, actions, pilotLabel, settingsApi }) ?? []
   }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, printers, actions, pilotLabel, settingsApi])
 
-  const close = useCallback(() => {
-    pendingSubmit.current = false
-    set({ commandOpen: false })
-    setQuery('')
-  }, [])
+  const close = closeCommandBar
 
   const select = useCallback((item: PaletteItem) => {
     const text = query.trim()
@@ -115,13 +112,15 @@ export function CommandBar() {
     })
   }, [query, close, printers, results, actions])
 
+  // An Enter that came before the list did runs the first match of the query once the list is there, and only once.
+  // Editing the query after that Enter drops it (command-draft.ts). With no match the bar stays open and says so.
+  const ready = results !== null && (settingsApi !== null || !hostSlices())
   useEffect(() => {
-    if (!open) pendingSubmit.current = false
-    if (!results || !pendingSubmit.current) return
-    pendingSubmit.current = false
+    if (!open) dropCommandSubmit()
+    if (!open || !ready || !takeCommandSubmit()) return
     const first = groups.flatMap((group) => group.items).find((item) => !item.disabled)
     if (first) select(first)
-  }, [open, results, groups, select])
+  }, [open, ready, groups, select])
 
   const count = shownCommands(groups)
 
@@ -130,13 +129,13 @@ export function CommandBar() {
       open={open}
       onClose={close}
       query={query}
-      onQueryChange={(value) => { pendingSubmit.current = false; setQuery(value) }}
+      onQueryChange={setCommandQuery}
       groups={groups}
-      placeholder={hostSlices() ? 'Type a command, a setting or a printer' : 'Type a command'}
-      empty={`No command matches "${query}"`}
-      footerRight={`${count} of ${all.length} commands`}
+      placeholder={commandPlaceholder()}
+      empty={ready ? `No command matches "${query}"` : 'Loading commands'}
+      footerRight={results ? `${count} of ${all.length} commands` : undefined}
       onSelect={select}
-      onSubmitEmpty={() => { if (!results) pendingSubmit.current = true }}
+      onSubmitEmpty={() => { if (!ready) queueCommandSubmit() }}
     />
   )
 }

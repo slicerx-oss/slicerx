@@ -64,7 +64,7 @@ export class WorkspaceBoundary extends Component<{ name: string; children: React
  * the part shows nothing and the app reloads or says so, while the workspace stays up. Other errors go on up as
  * before.
  */
-export class LazySlot extends Component<{ children: ReactNode }, State> {
+export class LazySlot extends Component<{ children: ReactNode; /** Shown while the part downloads. */ fallback?: ReactNode }, State> {
   override state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
@@ -79,6 +79,6 @@ export class LazySlot extends Component<{ children: ReactNode }, State> {
     const { error } = this.state
     if (error && !isChunkLoadError(error)) throw error
     if (error) return null
-    return <Suspense fallback={null}>{this.props.children}</Suspense>
+    return <Suspense fallback={this.props.fallback ?? null}>{this.props.children}</Suspense>
   }
 }
