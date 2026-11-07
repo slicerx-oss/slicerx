@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { isUnset, type CompareRow } from '@slicerx/settings'
 import { Button, Select, Switch, tipAttrs } from '@slicerx/ui'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast, useApp } from '../state/store'
 import { appName } from '../edition'
 import { comparePreset, CopyChanged, copyValue, parentFor, parentSide, stockFor, undoCopy, whole, type CompareSide, type CopyRecord } from './compare'
@@ -31,6 +31,11 @@ export function ComparePanel() {
   const [undo, setUndo] = useState<{ rec: CopyRecord; label: string }[]>([])
   // What the last copy did, on the status line in place of the count, until the next action of any kind.
   const [note, setNote] = useState<string | null>(null)
+  // The list's height before the first copy, kept as its least height until the next action of another kind: a row (or a
+  // whole group) that a copy removes leaves room at the list's end instead of shrinking the dialog body, which would pull
+  // its scroll position, and the picks, the bar and the rows with it, when the body is scrolled to its end.
+  const listRef = useRef<HTMLDivElement>(null)
+  const [hold, setHold] = useState<number | null>(null)
   const [parent, setParent] = useState<{ of: string; side: CompareSide | null; failed?: boolean } | null>(null)
   const a = list.find((p) => p.id === aId)
   const other = withId.startsWith('preset:') ? list.find((p) => p.id === withId.slice('preset:'.length)) : undefined
@@ -70,6 +75,7 @@ export function ComparePanel() {
     setA(id)
     setUndo([])
     setNote(null)
+    setHold(null)
     const next = list.find((p) => p.id === id)
     // A choice the new first preset cannot have (itself, or a parent it lacks) goes back to the placeholder.
     if (withId === `preset:${id}` || (withId === 'parent' && !next?.inherits)) setWith('')
@@ -80,6 +86,8 @@ export function ComparePanel() {
     // From a side that does not set it, copyValue drops the preset's own value, so it goes back to its stock settings:
     // the line says it cleared it, never that it copied a value.
     const clears = isUnset(r.b)
+    const h = listRef.current?.offsetHeight
+    if (h) setHold((cur) => Math.max(cur ?? 0, h))
     void copyValue(a.id, r.key, side.config, base).then((rec) => {
       if (!rec) return
       setUndo((u) => [...u, { rec, label: r.label }])
@@ -118,6 +126,7 @@ export function ComparePanel() {
             setWith('')
             setUndo([])
             setNote(null)
+            setHold(null)
           }}
         >
           {KINDS.map((k) => (
@@ -144,6 +153,7 @@ export function ComparePanel() {
         <Select id="cmp-b" data-testid="preset-compare-with" size="sm" face={withId === 'stock' ? 'Stock settings' : withId === 'parent' && inherits ? `Parent: ${inherits}` : (other?.name ?? 'Compare with')} wrap={{ className: 'cmp-pick', ...(withId === 'parent' && inherits ? tipAttrs({ title: inherits }) : other ? tipAttrs({ title: other.name }) : {}) }} value={withId} disabled={!a} onChange={(e) => {
             setWith(e.target.value)
             setNote(null)
+            setHold(null)
           }}>
           <option value="">Compare with</option>
           {inherits ? <option value="parent">Parent: {inherits}</option> : null}
@@ -177,6 +187,7 @@ export function ComparePanel() {
                     onChange={(on) => {
                       setAll(on)
                       setNote(null)
+                      setHold(null)
                     }}
                   />
                 </label>
@@ -185,7 +196,7 @@ export function ComparePanel() {
                 </Button>
               </span>
             </div>
-            {result.groups.length ? (
+            {result.groups.length || hold ? (
               <div className="cmp-head sx-small" aria-hidden="true">
                 <span className="cmp-head-label">Setting</span>
                 <span {...tipAttrs({ title: a.name })}>{a.name}</span>
@@ -193,8 +204,8 @@ export function ComparePanel() {
               </div>
             ) : null}
           </div>
-          {result.groups.length ? (
-            <div className="cmp-list" data-all={all ? 'true' : undefined}>
+          {result.groups.length || hold ? (
+            <div className="cmp-list" ref={listRef} data-all={all ? 'true' : undefined} style={hold ? { minHeight: hold } : undefined}>
               {result.groups.map((g) => (
                 <section key={g.group} className="cmp-group" data-testid="preset-compare-group" data-group={g.group} aria-label={g.label}>
                   <h5 className="cmp-group-h">{g.label}</h5>
