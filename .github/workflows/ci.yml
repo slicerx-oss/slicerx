@@ -392,6 +392,8 @@ jobs:
           PARTS: ${{ needs.rust-macos-parts.result }}
         run: |
           echo "detect: $DETECT, macOS parts: $PARTS"
+          # a pull request's second run for another label has no detect and skips the parts: that counts as passed
+          [ "$DETECT" = skipped ] && exit 0
           [ "$DETECT" = success ] || exit 1
           [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
 
