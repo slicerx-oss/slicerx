@@ -4,7 +4,7 @@
 // projection reads its source as the body stands at the sketch's place in the timeline, and follows it: whenever a
 // body replays, the projections from it are found again, and the bodies drawn on a sketch whose curves moved replay
 // in turn, in the same undo step as the edit that moved them.
-import { followProjections, historyOf, keyOfTriangle, nextProjectionId, point, resolveProjection, withProjection, withoutProjection, type HistoryMesh, type PartsAt, type ProjectMode, type ProjectSource, type SketchItem, type SketchLoop, type Timeline, type Vec3 } from '@slicerx/cad-history'
+import { followProjections, historyOf, keyOfTriangle, nextProjectionId, point, projectedOf, resolveProjection, withProjection, withoutProjection, type HistoryMesh, type PartsAt, type ProjectMode, type ProjectSource, type SketchItem, type SketchLoop, type Timeline, type Vec3 } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { geom, toGeom } from '../geom/client'
 import { pickEdge } from '../geom/cad'
@@ -31,7 +31,22 @@ export function partsAt(t: Timeline): PartsAt {
 
 /** A finished sketch as updateSketch takes it. */
 export function bodyOf(k: SketchItem): SketchBody {
-  return { frame: k.frame, loops: k.loops, constraints: k.constraints as SketchBody['constraints'], on: k.on, projections: k.projections ?? [] }
+  return { frame: k.frame, loops: k.loops, constraints: k.constraints as SketchBody['constraints'], on: k.on, projections: k.projections ?? [], nextProjection: k.nextProjection }
+}
+
+/**
+ * The sketch as it is now with the projections a follow found: each one still there takes the curves and note the
+ * follow gave it, in the mode it has now; the sketch's own loops and anything else changed meanwhile stay.
+ */
+function withFound(now: SketchItem, found: SketchItem): SketchItem {
+  let k = now
+  for (const p of found.projections ?? []) {
+    const cur = now.projections?.find((x) => x.id === p.id)
+    if (!cur || JSON.stringify(cur.source) !== JSON.stringify(p.source)) continue
+    const { lost: _l, ...plain } = cur
+    k = withProjection(k, { ...plain, ...(p.lost ? { lost: p.lost } : {}) }, p.lost ? null : projectedOf(found.loops, p.id))
+  }
+  return k
 }
 
 let running = false
@@ -54,10 +69,23 @@ export async function followBodies(host: Loader, bodies: Iterable<string>): Prom
       if (!t.items.some((i) => i.kind === 'sketch' && i.projections?.some((p) => only.has(p.source.body)))) continue
       const r = await followProjections(t, partsAt(t), call, only)
       for (const id of r.changed) {
-        const k = sketchById(r.timeline, id)
-        if (!k) continue
-        // a sketch that leaves a body with nothing keeps its old curves; the person sees the note on the projection
-        await updateSketch(host, id, bodyOf(k), { join: true }).catch(() => undefined)
+        const found = sketchById(r.timeline, id)
+        const now = sketchById(get().timeline, id)
+        if (!found || !now) continue
+        // the sketch as it is now, which edits made while the engine worked may have changed
+        const next = withFound(now, found)
+        try {
+          await updateSketch(host, id, bodyOf(next), { join: true })
+        } catch (e) {
+          // the bodies drawn on it cannot take the new curves: they stay as they were, and each projection that moved says why
+          const why = `Not followed: ${e instanceof Error ? e.message : String(e)}`
+          let noted = now
+          for (const p of found.projections ?? []) {
+            const was = now.projections?.find((x) => x.id === p.id)
+            if (was && JSON.stringify([p.lost, projectedOf(found.loops, p.id)]) !== JSON.stringify([was.lost, projectedOf(now.loops, p.id)])) noted = withProjection(noted, { ...was, lost: why.slice(0, 300) }, null)
+          }
+          if (noted !== now) await updateSketch(host, id, bodyOf(noted), { join: true }).catch(() => undefined)
+        }
       }
     }
   } finally {
@@ -65,27 +93,32 @@ export async function followBodies(host: Loader, bodies: Iterable<string>): Prom
   }
 }
 
-/** The curves `source` gives on `frame` from the body as it stands at the timeline's marker, for a sketch not finished yet. */
-export async function projectNow(source: ProjectSource, frame: SketchItem['frame']): Promise<SketchLoop[]> {
+/**
+ * The curves `source` gives on `frame`, from the body as it stands where the sketch is: at finished sketch `sketch`'s
+ * place in the timeline, or at the marker for a sketch not finished yet. The panel, the MCP tool and replay all read
+ * a source here, so a projection gives the same curves whichever made it. Throws why it gives none.
+ */
+export async function projectNow(source: ProjectSource, frame: SketchItem['frame'], sketch?: string): Promise<SketchLoop[]> {
   const t = get().timeline
-  const at = await partsAt(t)(source.body, t.marker)
-  if (!at) throw new Error('That body is no longer on the plate.')
+  const k = sketch !== undefined ? sketchById(t, sketch) : null
+  if (sketch !== undefined && !k) throw Object.assign(new Error(`No finished sketch ${sketch} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
+  const at = await partsAt(t)(source.body, k ? t.items.indexOf(k) : t.marker)
+  if (!at) throw Object.assign(new Error(`design: no body ${source.body} on the plate; design.list lists them`), { code: 'not_found' })
   const r = await resolveProjection(call, source, at.parts, at.transform, frame)
-  if ('lost' in r) throw new Error(r.lost)
+  if ('lost' in r) throw Object.assign(new Error(r.lost), { code: 'invalid_input' })
   return r.loops
 }
 
 /** Projects `source` into finished sketch `id`; the bodies drawn on it replay. Throws why the source gives no curves. */
 export async function addProjection(host: Loader, id: string, source: ProjectSource, mode: ProjectMode): Promise<{ sketch: SketchItem; projection: string; replayed: number }> {
-  const t = get().timeline
-  const k = sketchById(t, id)
+  const k0 = sketchById(get().timeline, id)
+  if (!k0) throw Object.assign(new Error(`No finished sketch ${id} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
+  const loops = await projectNow(source, k0.frame, id)
+  // the sketch as it is once the engine answered
+  const k = sketchById(get().timeline, id)
   if (!k) throw Object.assign(new Error(`No finished sketch ${id} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
-  const at = await partsAt(t)(source.body, t.items.indexOf(k))
-  if (!at) throw Object.assign(new Error(`design: no body ${source.body} on the plate; design.list lists them`), { code: 'not_found' })
-  const r = await resolveProjection(call, source, at.parts, at.transform, k.frame)
-  if ('lost' in r) throw Object.assign(new Error(r.lost), { code: 'invalid_input' })
   const pid = nextProjectionId(k)
-  const u = await updateSketch(host, id, bodyOf(withProjection(k, { id: pid, source, mode }, r.loops)))
+  const u = await updateSketch(host, id, bodyOf(withProjection(k, { id: pid, source, mode }, loops)))
   return { sketch: sketchById(get().timeline, id)!, projection: pid, replayed: u.replayed }
 }
 
@@ -118,6 +151,11 @@ export async function edgeSource(e: Pick<PlateEntry, 'id' | 'parts' | 'transform
   const r = await pickEdge({ mesh: toGeom(e.parts[part]!), transform: e.transform }, { triangle, at })
   if (to?.kind === 'edges' && to.body === e.id && to.part === part) return { ...to, edges: [...to.edges, r.edge] }
   return { kind: 'edges', body: e.id, part, transform: [...e.transform], edges: [r.edge] }
+}
+
+/** Whether a picked edge's source `next` adds to the open edges projection `open`: edges of the same body and part. */
+export function addsTo(open: ProjectSource | undefined, next: ProjectSource): boolean {
+  return open?.kind === 'edges' && next.kind === 'edges' && open.body === next.body && open.part === next.part
 }
 
 /** The whole body as a projection source. */

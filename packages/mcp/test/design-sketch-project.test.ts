@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// design.sketch_project: an agent projects edges, a face or a body's outline into a finished sketch and reads back
+// design.sketch_project projects edges, a face or a body's outline into a finished sketch and reads back
 // the curves; it switches a projection between reference and real, and removes one. The tool hands the host the
 // source as the history keeps it (world mm at the body's transform, the face's key). Only a host with a timeline (the
 // app) has finished sketches.
