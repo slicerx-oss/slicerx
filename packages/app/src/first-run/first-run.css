@@ -50,9 +50,9 @@
 .fr-radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--dim); }
 [data-on] > .fr-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
 
-/* The single primary action on each screen carries the gradient. */
-.fr .fr-primary[data-variant="primary"] { background: var(--grad); color: var(--on-grad); }
-.fr .fr-primary[data-variant="primary"]:hover { filter: brightness(1.06); }
+/* The single primary action on each screen carries the gradient, until it is disabled (the kit's disabled primary). */
+.fr .fr-primary[data-variant="primary"]:not(:disabled):not([aria-disabled="true"]) { background: var(--grad); color: var(--on-grad); }
+.fr .fr-primary[data-variant="primary"]:not(:disabled):not([aria-disabled="true"]):hover { filter: brightness(1.06); }
 
 /* Footer */
 .fr-foot { border-top: 1px solid var(--line-soft); background: var(--ink-1); padding: var(--s-3) var(--s-5); }
