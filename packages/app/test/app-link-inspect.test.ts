@@ -55,6 +55,17 @@ it('measures faces in world coordinates and permits readback while a step is bei
   expect(get().plate[0]?.history?.steps).toHaveLength(1)
 })
 
+it('reads the gaps of a body for print in place, with the plate profile, without changing it', async () => {
+  const design = await box()
+  const before = get().plate[0]
+  const result = (await runCall('geom.fit_check', { design })) as { summary: string; output: { pieces: number; gaps: unknown[]; limits: { side_mm: number; vertical_mm: number; layer_height_mm: number } } }
+  expect(result.output).toMatchObject({ pieces: 1, gaps: [], limits: { side_mm: 0.3, vertical_mm: 0.4 } })
+  expect(result.summary).toBe('1 piece; no gap under 0.3 mm side by side or 0.4 mm above or below')
+  expect(JSON.stringify(result)).not.toMatch(/positions|indices/)
+  expect(get().plate[0]).toBe(before)
+  await expect(runCall('geom.fit_check', { design, part: [3] })).rejects.toMatchObject({ code: 'invalid_input' })
+})
+
 it('refuses an impossible shell without changing the body or its steps', async () => {
   const design = await box()
   const before = get().plate[0]

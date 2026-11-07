@@ -33,6 +33,7 @@ const WORDS: Record<string, Words | null> = {
   'geom.boolean': { doing: 'Combining the bodies', done: 'Combined the bodies' },
   'geom.hole': { doing: 'Sizing the hole', done: 'Sized the hole', caption: 'Hole' },
   'geom.measure': { doing: 'Measuring', done: 'Measured' },
+  'geom.fit_check': { doing: 'Checking the gaps', done: 'Checked the gaps' },
   'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
   'design.check': { doing: 'Checking the part against its plan', done: 'Checked the part against its plan' },
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },

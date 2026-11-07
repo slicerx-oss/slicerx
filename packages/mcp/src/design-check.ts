@@ -41,6 +41,8 @@ export const partPlanSchema = z.object({
   holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),
   assumptions: z.array(text(200)).max(12),
   questions: z.array(text(200)).max(6),
+  /** Marks a print-in-place part: design.check then measures its pieces and the gaps between them. */
+  printInPlace: z.array(text(60)).min(2).max(30).optional().describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid, Tray)'),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 
@@ -79,7 +81,54 @@ export interface BodyFacts {
   minWallMm: number | null
   /** Why the wall was not measured, when that was on purpose: "part too dense" past the measuring budget. */
   minWallWhy?: string | undefined
+  /** The pieces and the gaps between them, read only for a print-in-place plan. */
+  fit?: FitFacts | undefined
+  /** Why the gaps were not measured, when the fit check failed. */
+  fitWhy?: string | undefined
 }
+
+type V3 = [number, number, number]
+
+/** The smallest gaps moving pieces keep, per side, from the fit rule for this printer and material. */
+export interface FitLimits {
+  /** Between side walls. */
+  sideMm: number
+  /** Between a face and the one printed over it. */
+  verticalMm: number
+  material: string
+  nozzleMm: number
+  layerHeightMm: number
+}
+
+/** A gap between two bodies, as the engine's fit check (fit.check) finds it. */
+export interface FitGap {
+  /** The two bodies, by index into FitFacts.bodies. */
+  bodies: [number, number]
+  /** fused: they touch or overlap; apart: a gap at least the limit, the closest of two pieces. */
+  kind: 'horizontal' | 'vertical' | 'fused' | 'apart'
+  gapMm: number
+  limitMm: number
+  from: V3
+  to: V3
+  /** Where a touch is, in words, such as "on the top face of Tray". */
+  where?: string | undefined
+  /** Which way the gap runs: xy between side walls, z above and below. */
+  direction: 'xy' | 'z'
+}
+
+/** The bodies of a design and the gaps between them. */
+export interface FitFacts {
+  limits: FitLimits
+  /** Each body, with the part it is in and the name it goes by. */
+  bodies: { part: number; name: string }[]
+  /** Bodies that touch print as one piece: how many separate pieces print. */
+  pieces: number
+  /** Touches and gaps under the limits, then the closest gap of each two pieces within NEAR_MM. */
+  gaps: FitGap[]
+}
+
+/** Pieces of a print-in-place part this far apart or more do not meet: it is a kit of parts, not one assembly. */
+export const NEAR_MM = 2
 
 const MM_PER_IN = 25.4
 /** Overall sizes pass within 0.2 mm or 1 percent, whichever is larger. */
@@ -263,6 +312,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   const wall = 2 * nozzle
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
   items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
+  if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
 
   return { pass: items.every((i) => i.pass), items }
 }
@@ -278,6 +328,87 @@ function openWords(why: string | undefined): string {
   const closable = [/open edge/.test(why) ? 'open edges' : null, /turned opposite ways/.test(why) ? 'edges between faces turned opposite ways' : null].filter((x): x is string => x !== null)
   if (closable.length === 0) return `open: ${why} (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little`
   return `open: ${why}; repair can close the ${closable.join(' and the ')}, but it leaves surfaces that touch without joining as they are, so rebuild that join so the shapes overlap a little`
+}
+
+/** A gap as a reply writes it: 0.0, 0.2, 0.25 mm. */
+export const gapMm = (v: number): string => {
+  const c = Math.round(v * 100)
+  return `${(c / 100).toFixed(c % 10 === 0 ? 1 : 2)} mm`
+}
+const listAnd = (names: readonly string[]): string => (names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`)
+const at = (p: V3): string => `(${p.map((c) => Math.round(c * 10) / 10).join(', ')})`
+/** Tight gaps a reply names one by one; the rest are counted. */
+const NAMED_GAPS = 3
+
+/** A touch or tight gap in plain words: "Lid and Tray touch on the top face of Tray, 0.0 mm; <needs> 0.6 mm or more". */
+export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
+  const name = (b: number): string => fit.bodies[b]?.name ?? `body ${b + 1}`
+  const need = g.direction === 'z' ? fit.limits.verticalMm : fit.limits.sideMm
+  const where = g.where ? ` ${g.where}` : g.kind === 'fused' ? '' : ` ${g.direction === 'z' ? 'above and below' : 'side by side'} at ${at(g.from)}`
+  const what = g.kind === 'fused' ? `touch${where}, ${gapMm(0)}` : `are ${gapMm(g.gapMm)} apart${where}`
+  return `${name(g.bodies[0])} and ${name(g.bodies[1])} ${what}; ${needs} ${mm(need)} or more`
+}
+
+/**
+ * The print-in-place items: pieces (as many separate bodies as the plan names, none fused or merged into another)
+ * and gaps (every gap between moving pieces at least the fit rule's limit, and every piece near another).
+ */
+export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[] {
+  const want = `${pieces.length} separate pieces (${pieces.join(', ')})`
+  const fit = body.fit
+  if (!fit) {
+    const got = `not measured${body.fitWhy ? ` (${body.fitWhy})` : ''}`
+    return [
+      { name: 'pieces', want, got, pass: false },
+      { name: 'gaps', want: 'the gaps between moving pieces measured', got, pass: false },
+    ]
+  }
+  const { limits } = fit
+  const name = (b: number): string => fit.bodies[b]?.name ?? `body ${b + 1}`
+  const pair = (g: FitGap): string => `${name(g.bodies[0])} and ${name(g.bodies[1])}`
+  const fused = fit.gaps.filter((g) => g.kind === 'fused')
+
+  // pieces: the plan's count, each a body of its own
+  let got: string
+  if (fit.pieces === pieces.length) got = `${fit.pieces} pieces`
+  else if (fit.pieces < pieces.length) {
+    const known = new Set(fit.bodies.map((b) => b.name.trim().toLowerCase()))
+    const merged = pieces.filter((p) => !known.has(p.trim().toLowerCase()))
+    const told = fused.map((g) => `${pair(g)} touch${g.where ? ` ${g.where}` : ''}, so they print as one piece; leave the planned gap between them`)
+    if (merged.length && fit.pieces === 1) told.push(`${listAnd([...merged, ...pieces.filter((p) => !merged.includes(p))])} are one piece; keep them as separate bodies`)
+    else if (merged.length) told.push(`${listAnd(merged)} ${merged.length === 1 ? 'is' : 'are'} not a body of its own; keep each piece as a separate body`)
+    got = `${fit.pieces} ${fit.pieces === 1 ? 'piece' : 'pieces'}${told.length ? `: ${told.join('; ')}` : `; keep each piece as a separate body`}`
+  } else {
+    const planned = new Set(pieces.map((p) => p.trim().toLowerCase()))
+    const extra = fit.bodies.map((b) => b.name).filter((n) => !planned.has(n.trim().toLowerCase()))
+    got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
+  }
+  const items: CheckItem[] = [{ name: 'pieces', want, got, pass: fit.pieces === pieces.length }]
+
+  // gaps: every touch and tight gap, then pieces that meet no other piece
+  const gapsWant = `at least ${mm(limits.sideMm)} side by side and ${mm(limits.verticalMm)} above or below between moving pieces (${limits.material.toUpperCase()}, ${mm(limits.nozzleMm)} nozzle, ${mm(limits.layerHeightMm)} layers)`
+  const tight = fit.gaps.filter((g) => g.kind !== 'apart')
+  const sentence = (g: FitGap): string => gapSentence(fit, g, 'this print-in-place plan needs')
+  if (tight.length) {
+    const more = tight.length - NAMED_GAPS
+    items.push({ name: 'gaps', want: gapsWant, got: `${tight.slice(0, NAMED_GAPS).map(sentence).join('; ')}${more > 0 ? `; and ${more} more ${more === 1 ? 'gap' : 'gaps'} under the limit` : ''}`, pass: false })
+    return items
+  }
+  if (fit.bodies.length < 2) {
+    items.push({ name: 'gaps', want: gapsWant, got: 'no gaps: the part is one piece', pass: false })
+    return items
+  }
+  // a piece no other comes near is not part of the assembly
+  const near = new Set<number>()
+  for (const g of fit.gaps) for (const b of g.bodies) near.add(b)
+  const alone = fit.bodies.map((_, b) => b).filter((b) => !near.has(b))
+  if (alone.length) {
+    items.push({ name: 'gaps', want: gapsWant, got: `${listAnd(alone.map(name))} ${alone.length === 1 ? 'is' : 'are'} ${NEAR_MM} mm or more from every other piece; print-in-place pieces print assembled, ${mm(limits.sideMm)} apart where they meet`, pass: false })
+    return items
+  }
+  const least = fit.gaps.reduce((a, g) => (g.gapMm < a.gapMm ? g : a))
+  items.push({ name: 'gaps', want: gapsWant, got: `smallest gap ${gapMm(least.gapMm)}, between ${pair(least)}`, pass: true })
+  return items
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */

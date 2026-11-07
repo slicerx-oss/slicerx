@@ -153,6 +153,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.shell': 'edit',
   'geom.info': 'read',
   'geom.measure': 'read',
+  'geom.fit_check': 'read',
   'geom.cut': 'edit',
   'geom.split': 'edit',
   'geom.mirror': 'edit',
@@ -574,10 +575,10 @@ let linkHost: { dispose(): void } | null = null
 /** Gives the design tools the plate's design host. */
 export async function useDesignHost(loader: Loader): Promise<void> {
   linkLoader = loader
-  const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans')])
-  // design.check reads the same plans as the mimir tab, and holds walls to the printer's nozzle now; a client never
-  // ties a plan the person made on the tab's card (no cardSide here)
-  const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }
+  const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }, { fitProfileFor }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans'), import('../plate/fit-profile')])
+  // design.check reads the same plans as the mimir tab, and holds walls and print-in-place gaps to the printer's nozzle,
+  // layer height and filament now; a client never ties a plan the person made on the tab's card (no cardSide here)
+  const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()) }
   // the host before this one can never land the designs it keeps waiting: they stop waiting
   linkHost?.dispose()
   const host = appDesignHost(loader)

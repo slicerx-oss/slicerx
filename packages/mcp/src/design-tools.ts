@@ -12,6 +12,7 @@ import { createPlanRegistry, designCheck, FIX_ROUNDS, nozzleOr, partPlanSchema, 
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
+import { fitLimits, type FitProfile } from './fit-facts'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -250,6 +251,8 @@ export interface DesignToolOptions {
   plans?: PlanRegistry | undefined
   /** The nozzle diameter in mm, for the thinnest wall; 0.4 when absent or not a positive finite number. */
   nozzleMm?: (() => number | undefined) | undefined
+  /** The layer height and material the part prints with, for the gaps of a print-in-place plan; half the nozzle and PLA when absent. */
+  fitProfile?: (() => FitProfile) | undefined
   /**
    * True on the side that owns the card plans (the mimir tab): design.check given a design ties an untied card plan
    * to it. Elsewhere (an MCP client over the app link) a design given for a card plan is checked but never tied.
@@ -505,11 +508,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const check = defineTool({
     name: 'design.check',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), and that its thinnest wall is at least twice the nozzle. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material). Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): overall size, named holes, a step or more tagged with each planned feature, closed body and thinnest wall. Returns pass and each item with what the plan wants and what the body has; fix the failed items once and check again. With stop in the result, stop building and tell the person what is off. Give design when it asks which. More: kb.search "design check".',
     input: z.object({
@@ -523,7 +526,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
       const { design: d, how } = builtFrom(entry, i.design)
       const nozzleMm = nozzleOr(opts.nozzleMm?.())
-      const body = await bodyFacts(designs, d)
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? fitLimits({ ...opts.fitProfile?.(), nozzleMm }) : undefined)
       const result = designCheck(entry.plan, body, nozzleMm)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`
@@ -544,11 +547,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   // the tab leaves this tool out.
   const plan = defineTool({
     name: 'design.put_plan',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and printInPlace, the names of the moving pieces, for a print-in-place part. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
     input: z.object({
       plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),

@@ -51,7 +51,7 @@ function noEngine(): never {
 
 /** The design tools and the CAD tools on `host`, with the files the caller has. */
 export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}, opts: DesignToolOptions = {}): PilotTool<never>[] {
-  return [...designTools(host, files.design ?? NO_DESIGN_FILES, opts), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
+  return [...designTools(host, files.design ?? NO_DESIGN_FILES, opts), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
 }
 
 /**
@@ -60,9 +60,9 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * an approved plan ties to it (withPlanTies), so design.check checks that design. The app's tab and the creative eval
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
  */
-export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; newPlanId?: () => string } = {}): PilotTool<never>[] {
+export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string } = {}): PilotTool<never>[] {
   const plan = card.planTool(opts.newPlanId ? { newId: opts.newPlanId } : {})
-  return card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, cardSide: true })))
+  return card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
 }
 
 export { appUnitInputs, type AppUnits } from './app-units'
