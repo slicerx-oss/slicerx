@@ -199,7 +199,7 @@ function fontDigest(data: string | undefined): string {
  * app's sentence() drops them. A field key ("lengthMm: ...", "wallMm: must be above 0 ...") stays as it is, lower
  * case, for the app to name or drop (sizeWords); any other reason starts with a capital.
  */
-function engineReason(err: unknown): string {
+export function engineReason(err: unknown): string {
   let why = (err instanceof Error ? err.message : String(err)).trim()
   for (let prev = ''; prev !== why; ) {
     prev = why

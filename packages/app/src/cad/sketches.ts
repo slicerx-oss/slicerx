@@ -3,13 +3,15 @@
 // Finished sketches: Finish sketch puts the sketch in the design timeline without making a solid, the way Fusion
 // does. A finished sketch opens again from the strip or the tree to be changed, extruded or revolved; a feature
 // made from it names it by id (record.ts sketchNext), and changing the sketch replays the bodies that use it.
-import { historyOf, stepId, withSketch, type FaceFrame, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
+import { historyOf, stepId, withSketch, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { useSyncExternalStore } from 'react'
 import { brandAccent } from '../edition'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
+import { withLast } from '../plate/history'
+import { followBodies } from './project-sketch'
 
 type Loader = { loadParts(name: string, parts: PlateEntry['parts']): Promise<MeshHandle> }
 
@@ -20,9 +22,11 @@ export interface SketchBody {
   constraints?: SketchConstraint[] | undefined
   /** the body whose face it was drawn on */
   on?: { body: string; part: number } | undefined
+  /** model geometry projected into it; their curves are the loops that name them. Absent keeps a sketch's own. */
+  projections?: Projection[] | undefined
 }
 
-const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}) })
+const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}) })
 
 /** Puts a finished sketch in the timeline at the marker and returns it. Undo takes it out again. */
 export function finishSketch(s: SketchBody): SketchItem {
@@ -48,26 +52,36 @@ export function usersOf(t: Timeline, id: string): string[] {
   return [...new Set(t.items.slice(0, t.marker).flatMap((i) => (i.kind === 'feature' && i.sketch === id ? [i.body] : [])))]
 }
 
-/** Changes a finished sketch; every body with a live feature on it replays. */
-export async function updateSketch(host: Loader, id: string, s: SketchBody): Promise<{ replayed: number }> {
+/**
+ * Changes a finished sketch; every body with a live feature on it replays, and the projections from those bodies
+ * follow. With `join`, the change is part of the last undo step (a projection following its source).
+ */
+export async function updateSketch(host: Loader, id: string, s: SketchBody, o: { join?: boolean } = {}): Promise<{ replayed: number }> {
   const t0 = get().timeline
   const old = sketchById(t0, id)
   if (!old) throw new Error('That sketch is no longer in the timeline.')
-  const { frame: _f, constraints: _c, ...keep } = old
+  const { frame: _f, constraints: _c, ...kept } = old
+  // given projections replace the sketch's; none given keeps them
+  const { projections: _p, ...bare } = kept
+  const keep = s.projections ? bare : kept
   const t: Timeline = { ...t0, items: t0.items.map((i) => (i === old ? { ...keep, ...body(s) } : i)) }
   const views = new Map<string, PlateEntry>()
   for (const b of usersOf(t, id)) {
     const entry = get().plate.find((e) => e.id === b)
     const h = historyOf(t, b)
-    if (!entry || !h) continue
+    // a body whose steps take nothing that changed (a projection made after them) stays as it is
+    if (!entry || !h || JSON.stringify(h.steps) === JSON.stringify(historyOf(t0, b)?.steps)) continue
     const r = await runReplay({ history: h })
     if (!r.parts.length) throw new Error(`${entry.name} would have no solid left with this sketch.`)
     const parts = r.parts.map(toPart)
     const handle = await host.loadParts(entry.name, parts)
     views.set(b, { ...entry, handle, parts, colors: colorsFor(parts.length, entry.colors, brandAccent()), history: { ...h, steps: withStatus(h.steps, r.status, r.found) } })
   }
-  set((st) => ({ timeline: t, plate: st.plate.map((e) => views.get(e.id) ?? e) }))
+  const commit = () => set((st) => ({ timeline: t, plate: st.plate.map((e) => views.get(e.id) ?? e) }))
+  if (o.join) withLast(commit)
+  else commit()
   if (views.size) markStale()
+  await followBodies(host, views.keys())
   return { replayed: views.size }
 }
 

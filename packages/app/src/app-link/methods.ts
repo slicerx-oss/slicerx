@@ -133,6 +133,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'design.sketch': 'edit',
   // SVG artwork as a finished sketch, the same way
   'design.sketch_svg': 'edit',
+  // model edges, a face or a body's outline projected into a finished sketch, and switching or removing one
+  'design.sketch_project': 'edit',
   'geom.faces': 'read',
   'geom.face_pick': 'read',
   'geom.edge_pick': 'read',

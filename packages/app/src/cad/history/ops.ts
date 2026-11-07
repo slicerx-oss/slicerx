@@ -22,6 +22,7 @@ import { opensDesign } from '../../workspaces/design/shelf-tools'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
 import { toolError } from '../op-preview'
 import { stepNumber } from './step-number'
+import { followBodies } from '../project-sketch'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -143,6 +144,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (!made && still?.objectId !== objectId) throw abortError()
     committed?.()
     markStale()
+    // sketches that project from this body find it again, and the bodies drawn on them follow
+    await followBodies(host, [objectId])
     return { status: r.status, moved: r.moved }
   } finally {
     if (running.get(objectId) === ac) running.delete(objectId)

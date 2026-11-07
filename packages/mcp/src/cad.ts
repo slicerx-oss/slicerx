@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, customHoleProblem, keyOfTriangle, stepName, type FaceFrame, type HoleSpec, type SketchConstraint, type SketchLoop, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, projectionsOut, stepName, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
@@ -880,6 +880,60 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const sketchProject = defineTool({
+    name: 'design.sketch_project',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      "Project model geometry onto a finished sketch's plane as sketch curves that follow it when the design changes: picked edges (from slicerx_geom_edge_pick, chained where they meet), a face's outline with its holes, or a body's whole outline seen along the sketch normal (kind silhouette). mode real (the default) makes them profile curves for slicerx_geom_extrude or slicerx_geom_revolve; reference keeps them as construction curves that make no profile. Extrudes and revolves made from the sketch before a projection never take it. With projection, switch one's mode or remove it. Returns every projection of the sketch with its curves, and why when a source is gone.",
+    input: z.object({
+      sketch: z.string().min(1).max(80).describe('A finished sketch id, from slicerx_design_sketch or slicerx_design_timeline'),
+      design: designArg.optional().describe('The body to project from'),
+      kind: z.enum(['edges', 'face', 'silhouette']).optional(),
+      part: partArg,
+      edges: z.array(edgeRef).min(1).max(256).optional(),
+      face: faceRef.optional(),
+      mode: z.enum(['reference', 'real']).optional().describe('real: profile curves (the default for a new projection); reference: construction curves'),
+      projection: z.string().min(1).max(16).optional().describe('A projection of the sketch (p1, p2 and on) to switch or remove'),
+      remove: z.boolean().optional(),
+    }),
+    async run(i) {
+      const host = deps.designs
+      if (!host?.project || !host.changeProjection) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      const words = (mode: ProjectMode) => (mode === 'real' ? 'real curves' : 'reference curves')
+      const out = (k: SketchItem, replayed: number, extra: Record<string, unknown>) => ({ sketch: k.id, name: k.name, ...extra, projections: projectionsOut(k), loops: k.loops.length, replayed })
+      const rebuilt = (n: number) => (n ? `; rebuilt ${n === 1 ? 'the body' : `${n} bodies`} drawn on it` : '')
+      if (i.projection !== undefined) {
+        if (i.kind || i.design || i.edges || i.face) throw new ToolInputError('projection: to change a projection give only its mode, or remove: true')
+        if (!i.remove === !i.mode) throw new ToolInputError(i.remove ? 'mode: give mode or remove, not both' : 'mode: give the mode to switch to, or remove: true')
+        const r = await host.changeProjection(i.sketch, i.projection, i.remove ? { remove: true } : { mode: i.mode! })
+        const what = i.remove ? `Removed ${i.projection} and its curves from ${r.sketch.name}` : `${i.projection} of ${r.sketch.name} is now ${words(i.mode!)}`
+        return { summary: `${what}${rebuilt(r.replayed)}`, output: out(r.sketch, r.replayed, i.remove ? {} : { projection: i.projection }) }
+      }
+      if (i.remove) throw new ToolInputError('projection: name the projection to remove')
+      if (!i.kind) throw new ToolInputError('kind: edges, face or silhouette')
+      if (!i.design) throw new ToolInputError('design: the body to project from')
+      if (i.kind !== 'edges' && i.edges) throw new ToolInputError(`edges: kind ${i.kind} takes no edges`)
+      if (i.kind !== 'face' && i.face) throw new ToolInputError(`face: kind ${i.kind} takes no face`)
+      const d = designOf(i.design)
+      let source: ProjectSource
+      if (i.kind === 'edges') {
+        if (!i.edges) throw new ToolInputError('edges: the edges to project, from slicerx_geom_edge_pick')
+        source = { kind: 'edges', body: d.id, part: i.part ?? partAt(d, i.edges[0]!.a), transform: [...d.transform], edges: plain(i.edges) }
+      } else if (i.kind === 'face') {
+        if (!i.face) throw new ToolInputError('face: the face to project: {"at":[x,y,z],"normal":[x,y,z]} or {"triangle":n}')
+        const f = pickIn(d, i.face)
+        source = { kind: 'face', body: d.id, part: f.part, transform: [...d.transform], face: { at: f.at, normal: f.normal, ...(f.key ? { key: f.key } : {}) } }
+      } else source = { kind: 'silhouette', body: d.id }
+      const mode = i.mode ?? 'real'
+      const r = await host.project(i.sketch, source, mode)
+      const curves = curveWords(r.sketch.loops.filter((l) => l.projected === r.projection))
+      const what = i.kind === 'edges' ? `${i.edges!.length === 1 ? 'an edge' : `${i.edges!.length} edges`}` : i.kind === 'face' ? 'the face outline' : 'the outline'
+      return { summary: `Projected ${what} of ${d.name} into ${r.sketch.name} as ${words(mode)}: ${curves}${rebuilt(r.replayed)}`, output: out(r.sketch, r.replayed, { projection: r.projection }) }
+    },
+  })
+
   const push = defineTool({
     name: 'geom.push_pull',
     version: '1.2.0',
@@ -1324,5 +1378,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }
