@@ -87,7 +87,7 @@ describe('loft as a design step', () => {
     expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
   }, 60_000)
 
-  it('lofts smooth sides, a ring and a thickened open shell as steps that replay, and stores the parsed profiles', async () => {
+  it('lofts smooth sides and a thickened open shell as steps that replay', async () => {
     const h = await connect({ geomEngine: engine })
     const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
       const r = await h.call(name, args)
@@ -120,5 +120,38 @@ describe('loft as a design step', () => {
     const mark = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)], landmarks: [[0, 0, 0]] }, { frame: level(10), loops: [square(10)] }] })
     expect(text(mark)).toMatch(/profiles\W+0\W+landmarks\W+0/)
     expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(2)
+  }, 60_000)
+
+  it('lofts a ring, joins a smooth loft, cuts a thickened one and lofts by landmarks, all replayed from the saved file', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const oct = (r: number) => ({ points: Array.from({ length: 8 }, (_, k) => [r * Math.cos((k * Math.PI) / 4), r * Math.sin((k * Math.PI) / 4)]) })
+    const around = (deg: number) => ({ origin: [20 * Math.cos((deg * Math.PI) / 180), 20 * Math.sin((deg * Math.PI) / 180), 0], normal: [-Math.sin((deg * Math.PI) / 180), Math.cos((deg * Math.PI) / 180), 0] })
+    const d = (await ok('slicerx_design_new', { name: 'Rings' })).design
+    // a ring of four octagons around the z axis: no ends, so its volume is all sides
+    const ring = await ok('slicerx_geom_loft', { design: d, closed: true, profiles: [0, 90, 180, 270].map((a) => ({ frame: around(a), loops: [oct(3)] })) })
+    expect(ring.volumeMm3).toBeGreaterThan(0)
+    const two = await h.call('slicerx_geom_loft', { design: d, closed: true, profiles: [{ loops: [square(10)] }, { frame: level(10), loops: [square(10)] }] })
+    expect(text(two)).toMatch(/a closed loft needs 3 or more profiles/)
+
+    // a 40 x 40 x 5 mm plate; a smooth post joined on it, then a thickened ring cut into the post
+    await ok('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 40, heightMm: 40 }, distance_mm: 5, name: 'Plate' })
+    const joined = await ok('slicerx_geom_loft', { design: d, part: 1, operation: 'join', smooth: true, profiles: [{ frame: level(5), loops: [oct(8)] }, { frame: level(15), loops: [oct(5)] }, { frame: level(25), loops: [oct(7)] }] })
+    const cut = await ok('slicerx_geom_loft', { design: d, part: 1, operation: 'cut', thicken: { thicknessMm: 1, side: 'center' }, profiles: [{ frame: level(10), loops: [oct(6)] }, { frame: level(20), loops: [oct(6)] }] })
+    expect(cut.parts[1]!.volumeMm3).toBeLessThan(joined.parts[1]!.volumeMm3)
+    // landmarks: two squares matched corner to corner, one listed from another corner and the other way around
+    const marked = await ok('slicerx_geom_loft', { design: d, profiles: [{ frame: level(30), loops: [square(20)], landmarks: [[-10, -10], [10, -10], [10, 10]] }, { frame: level(40), loops: [square(10)], landmarks: [[-5, -5], [5, -5], [5, 5]] }] })
+    expect(marked.parts[2]!.volumeMm3).toBeCloseTo((10 / 3) * (400 + 100 + 200), 3)
+
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Loft ring, 4 profiles', 'Rectangle extrude 5 mm', 'Smooth loft, 3 profiles', 'Loft cut, 2 profiles, 1 mm shell', 'Loft, 2 profiles'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(5)
+    expect(again.parts.map((p) => p.volumeMm3)).toEqual(marked.parts.map((p) => expect.closeTo(p.volumeMm3, 1)))
   }, 60_000)
 })

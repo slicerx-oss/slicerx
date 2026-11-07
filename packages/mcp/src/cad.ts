@@ -720,13 +720,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p) => profileShape.parse(p)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
-      const profiles = i.profiles!.map((p) => profileShape.parse(p)).map((f) => profileOut(f, plane(f.frame)))
+      const profiles = i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, plane(f.frame)))
       const out = await call('sketch.loft', { profiles, ...loftOpts, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} through ${profiles.length} profiles`, output: out }
     },
