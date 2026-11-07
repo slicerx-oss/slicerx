@@ -42,7 +42,7 @@ export const partPlanSchema = z.object({
   assumptions: z.array(text(200)).max(12),
   questions: z.array(text(200)).max(6),
   /** Marks a print-in-place part: design.check then measures its pieces and the gaps between them. */
-  printInPlace: z.array(text(60)).min(2).max(30).optional().describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid, Tray)'),
+  printInPlace: z.array(text(60)).min(2).max(30).optional().describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8)'),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 

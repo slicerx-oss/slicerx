@@ -819,6 +819,10 @@ describe('design.put_plan', () => {
     return { plans, run, set }
   }
 
+  it('gives printInPlace examples beyond a two-piece box', () => {
+    expect(partPlanSchema.shape.printInPlace.description).toContain('(such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8)')
+  })
+
   it('keeps a plan design.check then checks the built part against, tied to its design', async () => {
     // two designs open, neither named as the part: the tie picks the right one
     const { plans, run } = tools([boxDesign('d1', 'Other'), boxDesign('d2', 'Clip')])
