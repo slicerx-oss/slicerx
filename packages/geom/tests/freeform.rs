@@ -377,6 +377,10 @@ fn half_sections_close_on_a_flat_mirror_seam() {
     );
 }
 
+fn arc_at(frame: &Value, pts: &[[f64; 2]], marks: &[[f64; 2]]) -> Value {
+    json!({ "frame": frame, "open": true, "loops": [{ "points": pts }], "landmarks": marks })
+}
+
 #[test]
 fn sections_that_bow_opposite_ways_make_a_twisted_panel_not_a_bow_tie() {
     // both drawn left to right, the first bowing up, the second down
@@ -390,4 +394,76 @@ fn sections_that_bow_opposite_ways_make_a_twisted_panel_not_a_bow_tie() {
     solid(&m);
     let b = &m["bounds"];
     assert!(b["max"][0].as_f64().unwrap() > 10.0 && b["min"][0].as_f64().unwrap() < -10.0);
+    // the same with each end and the middle marked, and one profile drawn right to left
+    let back: Vec<[f64; 2]> = down.iter().rev().copied().collect();
+    let marked = run(
+        "sketch.loft",
+        &json!({ "profiles": [arc_at(&level(0.0), &up, &[[-10.0, 0.0], [0.0, 2.0], [10.0, 0.0]]), arc_at(&level(10.0), &back, &[[-10.0, 0.0], [0.0, -2.0], [10.0, 0.0]])], "thicken": thick }),
+    );
+    solid(&marked);
+    assert!(
+        (volume(&marked) - volume(&m)).abs() < volume(&m) * 0.02,
+        "{} {}",
+        volume(&marked),
+        volume(&m)
+    );
+    // only the middle marked: the chain drawn backward still runs end to end with its neighbor
+    let middle = run(
+        "sketch.loft",
+        &json!({ "profiles": [arc_at(&level(0.0), &up, &[[0.0, 2.0]]), arc_at(&level(10.0), &back, &[[0.0, -2.0]])], "thicken": thick }),
+    );
+    solid(&middle);
+}
+
+#[test]
+fn open_chain_landmarks_at_the_ends_count_as_the_ends() {
+    let u = half_circle(5.0, 24);
+    let thick = json!({ "thicknessMm": 0.5 });
+    // ends typed to two decimals are the ends
+    let near = |p: [f64; 2]| [p[0] + 0.004, p[1] - 0.003];
+    let m = run(
+        "sketch.loft",
+        &json!({ "profiles": [arc_at(&level(0.0), &u, &[near(u[0]), [0.0, -5.0], near(u[24])]), arc_at(&level(10.0), &u, &[u[0], [0.0, -5.0], u[24]])], "thicken": thick }),
+    );
+    solid(&m);
+    // one profile marks the start and the middle, the other the middle and a point past it: refused, never cut short
+    let q = u[18];
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0], [0.0, -5.0]]), arc_at(&level(10.0), &u, &[[0.0, -5.0], q])], "thicken": thick })
+        ),
+        "profiles: profile 2 and profile 1 mark different numbers of landmarks between their ends (2 and 1); mark the same points on every profile"
+    );
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [arc_at(&level(0.0), &u, &[[0.0, -5.0], q]), arc_at(&level(10.0), &u, &[u[0], [0.0, -5.0]])], "thicken": thick })
+        ),
+        "profiles: profile 2 and profile 1 mark different numbers of landmarks between their ends (1 and 2); mark the same points on every profile"
+    );
+}
+
+#[test]
+fn a_closed_profile_with_one_or_two_landmarks_lofts_upside_down() {
+    let square = |s: f64| json!({ "points": [[-s, -s], [s, -s], [s, s], [-s, s]] });
+    let down = json!({ "origin": [0, 0, 10], "normal": [0, 0, -1], "u": [1, 0, 0], "v": [0, -1, 0] });
+    for marks in [vec![[-10.0, -10.0]], vec![[-10.0, -10.0], [10.0, 10.0]]] {
+        let top: Vec<[f64; 2]> = marks.iter().map(|p| [p[0] / 2.0, -p[1] / 2.0]).collect();
+        let m = run(
+            "sketch.loft",
+            &json!({ "profiles": [
+                { "frame": level(0.0), "loops": [square(10.0)], "landmarks": marks },
+                { "frame": down, "loops": [square(5.0)], "landmarks": top },
+            ] }),
+        );
+        solid(&m);
+        let v = 10.0 / 3.0 * (400.0 + 100.0 + 200.0);
+        assert!(
+            (volume(&m) - v).abs() < 1e-6,
+            "{} landmarks: {}",
+            marks.len(),
+            volume(&m)
+        );
+    }
 }
