@@ -46,7 +46,7 @@ export { FILAMENT_LIBRARY_VENDOR, filamentsForPrinter, isCompatibleWithPrint, is
 export type { CompatPreset, OfferedFilament, PrinterContext } from './compat'
 export { lintGcode } from './gcode-lint'
 export type { LintFinding, LintLimits, LintSection, LintSeverity, LintTrust } from './gcode-lint'
-export { carryOver, filamentOverrideList, matchProjectPrinter, nozzleBound, projectOwnPrinterSettings, projectPrinterChanges, projectPrinterOffer, projectSettingChanges } from './project-open'
+export { carryOver, clampMachineLimits, filamentOverrideList, isMachineLimit, matchProjectPrinter, nozzleBound, projectOwnPrinterSettings, projectPrinterChanges, projectPrinterOffer, projectSettingChanges } from './project-open'
 export { withBambuMissingKeys } from './app-defaults'
 export { BED_TYPE_ENGINE, filePlateBedType, printerBedType, settingsBedType, sliceBedType } from './bed-type'
 export type { BedType } from './bed-type'
