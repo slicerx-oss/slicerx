@@ -5,7 +5,8 @@
 // card with the bed-clear question (docs/safety.md). Only the printer file reference is kept, never the G-code.
 import type { RemoteFile } from '@slicerx/contracts'
 import type { SendOptions } from '../send/options'
-import { get, set } from '../state/store'
+import { get, set, type AppState } from '../state/store'
+import { planFor } from '../plate/resume-tops'
 
 export interface QueueItem {
   id: string
@@ -22,6 +23,21 @@ export interface QueueItem {
   /** ISO time; absent means whenever the person starts it. */
   startAfter?: string
   addedAt: string
+  /** The plate it was sliced from and the resume plan that slice used (plate/resume-tops.ts planFor), to start it only while they hold. */
+  plate?: string
+  plan?: string | null
+}
+
+/** Why a queued plate does not start. */
+export const QUEUED_NOT_CURRENT = "This plate's resume plan changed after it was queued, so it did not start. Slice and send it again."
+
+/**
+ * QUEUED_NOT_CURRENT when the resume plan of the plate `item` was sliced from is not the one its slice used (one kept,
+ * cleared, replaced or voided since). An item queued with no plate passes only while no plan is kept.
+ */
+export function queuedBlock(s: AppState, item: Pick<QueueItem, 'plate' | 'plan'>): string | null {
+  if (item.plate === undefined) return s.resume ? QUEUED_NOT_CURRENT : null
+  return planFor(s, item.plate) !== (item.plan ?? null) ? QUEUED_NOT_CURRENT : null
 }
 
 export const QUEUE_LIMIT = 200

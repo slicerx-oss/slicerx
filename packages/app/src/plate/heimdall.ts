@@ -7,7 +7,7 @@ import type { Collision, CollisionFix } from '@slicerx/contracts'
 import type { StrikeMark } from '@slicerx/viewport'
 import type { AppState } from '../state/store'
 import { preflightProblem } from './engine-check'
-import { resumeVoid } from './resume-tops'
+import { resumeVoid, stampBlock } from './resume-tops'
 
 const NONE: Collision[] = []
 
@@ -89,6 +89,12 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
   if (s.resume) {
     const voided = resumeVoid(s as AppState)
     if (voided) return voided
+  }
+  // A current slice made for another plate, another resume plan or other inputs (one that landed after a plate switch,
+  // or a plan kept, cleared or replaced while it ran) is not this plate's G-code. A stale one says so on its own.
+  if (s.slice.status === 'done' && !s.slice.stale) {
+    const stamped = stampBlock(s as AppState, s.slice.stamp)
+    if (stamped) return stamped
   }
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {

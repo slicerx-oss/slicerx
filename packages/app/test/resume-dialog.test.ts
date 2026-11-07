@@ -14,7 +14,8 @@ import { engineErrorText } from '../src/lib/engine-errors'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { ResumeDialog } from '../src/plate/resume-dialog'
 import { closeResume, openResume } from '../src/plate/resume-state'
-import { sliceInputsKey, sliceState } from '../src/plate/resume-tops'
+import { RESUME_VOID, sliceInputsKey, sliceState } from '../src/plate/resume-tops'
+import { printBlock } from '../src/plate/heimdall'
 import { compose } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
 
@@ -271,18 +272,32 @@ describe('the resume dialog on a host with no engine of its own', () => {
     expect(c.sent.map((x) => x.local)).toEqual([true, undefined])
   })
 
-  it('drops a plan for this plate that no longer matches when the person slices to plan again', async () => {
-    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4, 0.6], plate: 'plate-1', inputs: 'before-an-edit' } })
+  it('keeps a plan for this plate that no longer matches while the person slices to plan again, so nothing prints until a new plan or a clear', async () => {
+    const old = { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4, 0.6], plate: 'plate-1', inputs: 'before-an-edit' }
+    set({ resume: old })
     const c = cloudOnlyHost(() => ENGINE)
     mount(c.host)
     await screen.findByText(SLICE_FIRST)
     expect(screen.getByTestId('resume-kept')).toBeTruthy()
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice plate' })))
-    // The slice the plan reads goes out (the void plan would have refused it), and the plan is gone.
+    // The slice the plan reads goes out and lands, whole, with the void plan still kept: Print and Export wait.
     await vi.waitFor(() => expect(c.sent).toHaveLength(2))
-    expect(get().resume).toBeNull()
     expect(c.sent[1]!.req.options).not.toHaveProperty('resumeFromLayer')
+    await vi.waitFor(() => expect(get().slice).toMatchObject({ status: 'done', result: { id: 'c2' } }))
+    expect(get().resume).toBe(old)
+    expect(printBlock(get())).toBe(RESUME_VOID)
     await vi.waitFor(() => expect(screen.queryByText(SLICE_FIRST)).toBeNull())
-    expect(screen.queryByTestId('resume-kept')).toBeNull()
+    // Closing the dialog with no new plan leaves it so.
+    act(() => closeResume())
+    expect(printBlock(get())).toBe(RESUME_VOID)
+    // A new plan replaces it, and its own slice is the one that prints.
+    act(() => openResume())
+    typeHeight('0.5')
+    await screen.findByText(/nozzle at/)
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice the rest' })))
+    await vi.waitFor(() => expect(get().slice).toMatchObject({ status: 'done', result: { id: 'c3' } }))
+    expect(c.sent[2]!.req.options).toMatchObject({ resumeFromLayer: 4 })
+    expect(get().resume).not.toBe(old)
+    expect(printBlock(get())).toBeNull()
   })
 })

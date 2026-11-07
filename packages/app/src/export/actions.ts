@@ -167,6 +167,8 @@ export async function saveProject(host: Host, opts: { as?: boolean } = {}): Prom
 }
 
 async function gcodeText(host: Host): Promise<string | null> {
+  // A slice made for another plate or resume plan is not this plate's G-code (stampBlock).
+  if (printBlock(get())) return null
   const slice = get().slice
   if (slice.status !== 'done') return null
   const out = await exportPlateGcode(host, slice.result.id)

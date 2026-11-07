@@ -83,14 +83,18 @@ it('reads what the plate really slices with: a calibration plate and a resume pl
   set({ calibration: {} })
   // A plan stored as Slice the rest stores it: for the shown plate as it is now.
   set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4] }) })
-  expect((await read()).output.mode).toBe('resume')
-  // The resume plan is the shown plate's; another plate reads its own.
-  expect((await read({ plate: 2 })).output.mode).toBe('fixed')
-  // A change to the plate after the plan (its own layer heights, set over the link) voids it, as it does for the slice.
+  expect((await read()).output).toMatchObject({ mode: 'resume', resume: { kept: true, plate: 1, holds: true } })
+  // The resume plan is the shown plate's; another plate reads its own, and where the plan is.
+  expect((await read({ plate: 2 })).output).toMatchObject({ mode: 'fixed', resume: { kept: true, plate: 1, holds: true } })
+  // A change to the plate after the plan (its own layer heights, set over the link) voids it: the plate does not slice
+  // until the plan is made again or cleared, and the read says so.
   await edit({ action: 'set', points: [[1, 0.16]] })
-  expect((await read()).output.mode).toBe('own')
+  const voided = await read()
+  expect(voided.output).toMatchObject({ mode: 'resume_void', resume: { kept: true, plate: 1, holds: false } })
+  expect(voided.summary).toMatch(/^Plate 1 slices with nothing: its resume plan no longer matches it/)
+  expect((await read({ plate: 2 })).output).toMatchObject({ mode: 'fixed', resume: { kept: true, plate: 1, holds: false } })
   set({ resume: null })
-  expect((await read()).output.mode).toBe('own')
+  expect((await read()).output).toMatchObject({ mode: 'own', resume: { kept: false, plate: null, holds: null } })
 })
 
 it('refuses an edit while a slice runs or the design is rolled back, and one made after another change', async () => {
