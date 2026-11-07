@@ -396,6 +396,8 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
     const dt1 = d1 !== 0 ? cs1 / Math.abs(d1) : Infinity
     const dt2 = d2 !== 0 ? cs2 / Math.abs(d2) : Infinity
     let hit = Infinity
+    // whether the nearest facet met so far faces the ray's way: the ray leaves the solid there, not along it
+    let leaves = true
     for (;;) {
       const c = (i2 * n1 + i1) * n0 + i0
       for (let q = start[c]!; q < start[c + 1]!; q++) {
@@ -404,7 +406,10 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
         tested[f] = t
         const d = rayHit(o0, o1, o2, d0, d1, d2, tri, f * 9)
         // a facet sharing an edge with this one is its neighbor on the same surface, never the far side of a wall
-        if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) hit = d
+        if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) {
+          hit = d
+          leaves = facing(tri, f * 9, d0, d1, d2) > GRAZE
+        }
       }
       const exit = Math.min(t0, t1, t2)
       // a hit inside the cells walked so far is the first; a cell past the best wall cannot beat it
@@ -423,9 +428,29 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
         t2 += dt2
       }
     }
-    if (hit < best) best = hit
+    // A ray that meets a facet from outside has crossed air, not material: the gap between two bodies, or a facet whose
+    // normal points out. A ray that grazes the facet runs along a face from a sliver at its edge. Neither is a wall.
+    if (leaves && hit < best) best = hit
   }
   return best
+}
+
+/** The cosine below which a ray grazes the facet it meets (about 84 degrees off its normal). */
+const GRAZE = 0.1
+
+/** The cosine between the facet's normal at `tri[at]` and a unit direction: above zero when the direction leaves the solid through it. */
+function facing(tri: Float64Array, at: number, d0: number, d1: number, d2: number): number {
+  const e10 = tri[at + 3]! - tri[at]!
+  const e11 = tri[at + 4]! - tri[at + 1]!
+  const e12 = tri[at + 5]! - tri[at + 2]!
+  const e20 = tri[at + 6]! - tri[at]!
+  const e21 = tri[at + 7]! - tri[at + 1]!
+  const e22 = tri[at + 8]! - tri[at + 2]!
+  const nx = e11 * e22 - e12 * e21
+  const ny = e12 * e20 - e10 * e22
+  const nz = e10 * e21 - e11 * e20
+  const l = Math.hypot(nx, ny, nz)
+  return l > 1e-12 ? (nx * d0 + ny * d1 + nz * d2) / l : 0
 }
 
 /** Where a ray meets the triangle at `tri[at]` (nine numbers), as its distance along the ray (Moller and Trumbore), or -1. */
