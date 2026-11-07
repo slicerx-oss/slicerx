@@ -14,7 +14,7 @@
 
 ### `enable_wrapping_detection`
 
-**Enable wrapping detection**
+**Check for filament wrapping every layer**
 
 Runs the wrapping detection G-code on every layer, on printers that can detect filament wrapping around the nozzle.
 
@@ -49,7 +49,7 @@ Runs the wrapping detection G-code on every layer, on printers that can detect f
 
 ### `fuzzy_skin_layers_between_ripple_offset`
 
-**Fuzzy skin layers between ripple offset**
+**Layers between fuzzy skin ripple shifts**
 
 - Type: integer
 - Default: 1
@@ -247,7 +247,7 @@ Object order on a layer: ending at the object nearest the bed's origin, or a cha
 
 ### `spiral_mode_max_xy_smoothing`
 
-**Spiral mode max xy smoothing**
+**Largest sideways shift when smoothing a vase**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm

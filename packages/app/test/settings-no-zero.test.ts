@@ -21,7 +21,7 @@ import { Field } from '../src/workspaces/prepare/expert-settings'
 /** Each setting, whether it holds one value per filament or extruder, and the message its 0 is refused with. */
 const NO_ZERO: { key: string; list: boolean; printer: boolean; message: string }[] = [
   { key: 'bridge_flow', list: false, printer: false, message: 'Bridge flow ratio is 0, outside 0.01 to 2.' },
-  { key: 'internal_bridge_flow', list: false, printer: false, message: 'Internal bridge flow is 0, outside 0.01 to 2.' },
+  { key: 'internal_bridge_flow', list: false, printer: false, message: 'Internal bridge flow ratio is 0, outside 0.01 to 2.' },
   { key: 'layer_height', list: false, printer: false, message: 'Layer height is 0; it must be at least 0.01 mm.' },
   { key: 'initial_layer_print_height', list: false, printer: false, message: 'First layer height is 0; it must be at least 0.01 mm.' },
   { key: 'filament_diameter', list: true, printer: false, message: 'Filament diameter is 0; it must be at least 0.01 mm.' },

@@ -41,7 +41,7 @@
 
 ### `bed_mesh_max`
 
-**Bed mesh max**
+**Bed mesh probe area, far corner**
 
 - Type: point [x, y]
 - Unit: mm
@@ -51,7 +51,7 @@
 
 ### `bed_mesh_min`
 
-**Bed mesh min**
+**Bed mesh probe area, near corner**
 
 - Type: point [x, y]
 - Unit: mm
@@ -93,7 +93,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `best_object_pos`
 
-**Best object pos**
+**Where arrange centers parts**
 
 - Type: point [x, y]
 - Default: [0.5,0.5]
@@ -213,7 +213,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `extruder_clearance_max_radius`
 
-**Extruder clearance radius**
+**Largest toolhead radius**
 
 - Type: number
 - Unit: mm
@@ -371,7 +371,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `machine_ptc_exist`
 
-**Has PTC heater**
+**Has chamber heater**
 
 - Type: boolean
 - Default: off

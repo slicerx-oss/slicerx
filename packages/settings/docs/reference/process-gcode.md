@@ -4,7 +4,7 @@
 
 ### `exclude_object`
 
-**Exclude object**
+**Cancel single objects while printing**
 
 - Type: boolean
 - Default: off
@@ -38,7 +38,7 @@ Puts N1, N2 and so on in front of every G-code command, for printers and hosts t
 
 ### `gcode_comments`
 
-**Gcode comments**
+**G-code comments**
 
 - Type: boolean
 - Default: off
@@ -48,7 +48,7 @@ Puts N1, N2 and so on in front of every G-code command, for printers and hosts t
 
 ### `gcode_label_objects`
 
-**Gcode label objects**
+**Label objects in G-code**
 
 - Type: boolean
 - Default: off
@@ -70,7 +70,7 @@ Your own notes about this process profile. They are written as comments at the t
 
 ### `post_process`
 
-**Post process**
+**Post-processing scripts**
 
 - Type: list of strings, one per extruder
 - Default: empty list

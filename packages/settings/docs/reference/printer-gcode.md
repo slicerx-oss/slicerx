@@ -4,7 +4,7 @@
 
 ### `before_layer_change_gcode`
 
-**Before layer change gcode**
+**Before layer change G-code**
 
 - Type: G-code text
 - Default: empty
@@ -24,7 +24,7 @@ G-code written each time the print moves to another feature, such as outer wall,
 
 ### `change_filament_gcode`
 
-**Change filament gcode**
+**Change filament G-code**
 
 - Type: G-code text
 - Default: empty
@@ -53,7 +53,7 @@ G-code written right after the printer selects a tool, at the start and at every
 
 ### `file_start_gcode`
 
-**File start gcode**
+**File start G-code**
 
 G-code at the very top of the file, before the header. Use it for lines a printer or host reads first.
 
@@ -64,7 +64,7 @@ G-code at the very top of the file, before the header. Use it for lines a printe
 
 ### `layer_change_gcode`
 
-**Layer change gcode**
+**Layer change G-code**
 
 - Type: G-code text
 - Default: empty
@@ -73,7 +73,7 @@ G-code at the very top of the file, before the header. Use it for lines a printe
 
 ### `machine_end_gcode`
 
-**Machine end gcode**
+**Machine end G-code**
 
 - Type: G-code text
 - Default: "M104 S0 ; turn off temperature\nG28 X0  ; home X axis\nM84     ; disable motors\n"
@@ -82,7 +82,7 @@ G-code at the very top of the file, before the header. Use it for lines a printe
 
 ### `machine_pause_gcode`
 
-**Machine pause gcode**
+**Machine pause G-code**
 
 - Type: G-code text
 - Default: empty
@@ -91,7 +91,7 @@ G-code at the very top of the file, before the header. Use it for lines a printe
 
 ### `machine_start_gcode`
 
-**Machine start gcode**
+**Machine start G-code**
 
 - Type: G-code text
 - Default: "G28 ; home all axes\nG1 Z5 F5000 ; lift nozzle\n"
@@ -100,7 +100,7 @@ G-code at the very top of the file, before the header. Use it for lines a printe
 
 ### `printing_by_object_gcode`
 
-**Printing by object gcode**
+**Print by object G-code**
 
 G-code run before each object after the first when printing by object, over the next object before the nozzle comes down. {current_object_idx} is the object's place in the plate list.
 
@@ -111,7 +111,7 @@ G-code run before each object after the first when printing by object, over the 
 
 ### `template_custom_gcode`
 
-**Template custom gcode**
+**Template custom G-code**
 
 - Type: G-code text
 - Default: empty
@@ -139,7 +139,7 @@ G-code run before each object after the first when printing by object, over the 
 
 ### `time_lapse_gcode`
 
-**Time lapse gcode**
+**Timelapse G-code**
 
 G-code for a timelapse frame on every layer. Most printers run it right after the layer change. Bambu Lab printers run it at the start of the layer, or on bed slingers once the walls of the first part with infill are done, and wrap it in the layer's object mask so skipped objects skip it too.
 
@@ -150,7 +150,7 @@ G-code for a timelapse frame on every layer. Most printers run it right after th
 
 ### `wrapping_detection_gcode`
 
-**Wrapping detection gcode**
+**Wrapping detection G-code**
 
 G-code for the printer's filament wrapping check, run on every layer before its first filament when wrapping detection is on.
 

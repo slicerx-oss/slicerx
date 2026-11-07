@@ -163,7 +163,7 @@ Layers whose sparse infill prints solid, to stiffen tall parts. List layer numbe
 
 ### `fill_multiline`
 
-**Fill multiline**
+**Parallel lines per infill line**
 
 - Type: integer
 - Default: 1
@@ -210,7 +210,7 @@ Shortens the gyroid's waves along the height at low densities (below about 30 %)
 
 ### `infill_anchor_max`
 
-**Infill anchor max**
+**Longest infill anchor**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Default: "20"
@@ -310,7 +310,7 @@ The tallest combined sparse infill layer, in mm or as a percent of the nozzle di
 
 ### `interface_shells`
 
-**Interface shells**
+**Separate solid shells between filaments**
 
 On parts printed in more than one filament, gives each filament region its own solid top and bottom shells where it meets another filament. Off lets the infill run across the border.
 
@@ -428,7 +428,7 @@ On parts printed in more than one filament, gives each filament region its own s
 
 ### `relative_bridge_angle`
 
-**Relative bridge angle**
+**Add bridge angle to the picked direction**
 
 - Type: boolean
 - Default: off
@@ -438,7 +438,7 @@ On parts printed in more than one filament, gives each filament region its own s
 
 ### `separated_infills`
 
-**Separated infills**
+**Print the infill of each region separately**
 
 - Type: boolean
 - Default: off

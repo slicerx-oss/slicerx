@@ -15,7 +15,7 @@
 
 ### `filament_change_length_nc`
 
-**Filament change length nc**
+**Filament change length on a nozzle change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -49,7 +49,7 @@
 
 ### `filament_loading_speed_start`
 
-**Filament loading speed start**
+**Filament loading speed at the start**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -60,7 +60,7 @@
 
 ### `filament_minimal_purge_on_wipe_tower`
 
-**Filament minimal purge on prime tower**
+**Smallest purge on the prime tower**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3
@@ -71,7 +71,7 @@
 
 ### `filament_multitool_ramming`
 
-**Filament multitool ramming**
+**Ramming before a tool change**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -80,7 +80,7 @@
 
 ### `filament_multitool_ramming_flow`
 
-**Filament multitool ramming flow**
+**Ramming flow before a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3/s
@@ -91,7 +91,7 @@
 
 ### `filament_multitool_ramming_volume`
 
-**Filament multitool ramming volume**
+**Ramming volume before a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3
@@ -113,7 +113,7 @@
 
 ### `filament_prime_volume_nc`
 
-**Filament prime volume nc**
+**Filament prime volume on a nozzle change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3
@@ -145,7 +145,7 @@
 
 ### `filament_ramming_travel_time_nc`
 
-**Filament ramming travel time nc**
+**Filament ramming travel time on a nozzle change**
 
 - Type: list of numbers, one per extruder
 - Unit: s
@@ -169,7 +169,7 @@
 
 ### `filament_ramming_volumetric_speed_nc`
 
-**Filament ramming volumetric speed nc**
+**Filament ramming speed on a nozzle change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3/s
@@ -181,7 +181,7 @@
 
 ### `filament_stamping_distance`
 
-**Filament stamping distance**
+**Push-in distance between cooling moves**
 
 - Type: list of numbers, one per extruder
 - Default: [0]
@@ -191,7 +191,7 @@
 
 ### `filament_stamping_loading_speed`
 
-**Filament stamping loading speed**
+**Push-in speed between cooling moves**
 
 - Type: list of numbers, one per extruder
 - Default: [0]
@@ -201,7 +201,7 @@
 
 ### `filament_toolchange_delay`
 
-**Filament toolchange delay**
+**Wait after unloading**
 
 - Type: list of numbers, one per extruder
 - Default: [0]
@@ -211,7 +211,7 @@
 
 ### `filament_tower_interface_pre_extrusion_dist`
 
-**Filament tower interface pre extrusion dist**
+**Prime tower pre-extrusion distance between materials**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -222,7 +222,7 @@
 
 ### `filament_tower_interface_pre_extrusion_length`
 
-**Filament tower interface pre extrusion length**
+**Prime tower pre-extrusion length between materials**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -233,7 +233,7 @@
 
 ### `filament_tower_interface_purge_volume`
 
-**Filament tower interface purge volume**
+**Prime tower purge length between materials**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -244,7 +244,7 @@
 
 ### `filament_tower_ironing_area`
 
-**Filament tower ironing area**
+**Prime tower ironing area between materials**
 
 - Type: list of numbers, one per extruder
 - Default: [4]
@@ -265,7 +265,7 @@
 
 ### `filament_unloading_speed_start`
 
-**Filament unloading speed start**
+**Filament unloading speed at the start**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
