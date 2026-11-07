@@ -34,7 +34,30 @@ const FLOAT_MM = 1e-6
  * tolerance: facets bend side walls, while a gap above or below lies between flat faces and the fit rule floors it to
  * whole layers, so 0.38 mm against 0.4 mm is one layer, which the face printed over it closes.
  */
-const credited = (measuredMm: number, direction: 'xy' | 'z'): number => measuredMm + (direction === 'xy' ? FIT_TOLERANCE_MM : FLOAT_MM)
+const credited = (measuredMm: number, direction: FitDirection): number => measuredMm + (direction === 'xy' ? FIT_TOLERANCE_MM : FLOAT_MM)
+
+// The rule design.check and geom.fit_check judge gaps by, in one place: which way a gap runs, the limit for that way,
+// and whether a measured gap clears it. Anything else that judges print-in-place gaps uses these too.
+
+/** Which way a gap runs: xy between side walls, z between a face and the one printed over it. */
+export type FitDirection = 'xy' | 'z'
+
+/** The limit a gap running this way is held to. */
+export const fitLimitFor = (l: FitLimits, direction: FitDirection): number => (direction === 'z' ? l.verticalMm : l.sideMm)
+
+/** Whether a measured gap clears its limit: a side gap within FIT_TOLERANCE_MM under it does, one above or below only at it. */
+export const clearsFitLimit = (gapMm: number, direction: FitDirection, l: FitLimits): boolean => credited(gapMm, direction) >= fitLimitFor(l, direction)
+
+/**
+ * Which way an engine gap runs: its side (horizontal) or vertical gap keeps its way; a touch or a pair apart runs z when
+ * one body rests on the other (`rests`) or its two points are further apart in height than across, else xy.
+ */
+export function fitDirection(kind: FitGap['kind'], from: readonly number[], to: readonly number[], rests = false): FitDirection {
+  if (kind === 'vertical') return 'z'
+  if (kind === 'horizontal') return 'xy'
+  const d = [to[0]! - from[0]!, to[1]! - from[1]!, to[2]! - from[2]!]
+  return rests || Math.abs(d[2]!) > Math.hypot(d[0]!, d[1]!) ? 'z' : 'xy'
+}
 
 /** What a gap of this size does when printed in place: fuses, binds or slides, by the fit rule. */
 export function fitVerdict(g: Pick<FitGap, 'kind' | 'gapMm' | 'direction'>, l: FitLimits): FitResult['outcome'] {
@@ -90,27 +113,23 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
   })
   const flatsOf = new Map<Mesh, { up: Flat[]; down: Flat[] }>()
   const facing = (m: Mesh) => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false) }).get(m)!
-  const limitOf = (direction: 'xy' | 'z'): number => (direction === 'z' ? limits.verticalMm : limits.sideMm)
   const all = r.gaps.map((g): FitGap => {
     const [a, b] = g.parts
     const ma = meshes[r.parts[a]?.item ?? 0]!
     const mb = meshes[r.parts[b]?.item ?? 0]!
     // the engine judged the gap against the bare limit; a side gap within the tolerance of it clears, one above and
     // below only at the limit itself
-    const d: V3 = [g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2]]
-    const way = g.kind === 'vertical' ? 'z' : 'xy'
-    const kind = g.kind !== 'fused' && g.kind !== 'apart' && credited(g.gapMm, way) >= limitOf(way) ? 'apart' : g.kind
+    const kind = g.kind !== 'fused' && g.kind !== 'apart' && clearsFitLimit(g.gapMm, fitDirection(g.kind, g.from, g.to), limits) ? 'apart' : g.kind
     // a touch, or a gap above and below, where one body's top face lies under the other's bottom face at the gap's own
     // points: the upper one is named first
     const flat = kind === 'fused' ? 0 : g.gapMm
     const rests = kind === 'fused' || kind === 'vertical'
     const lower = !rests ? null : restsOn(facing(ma).up, facing(mb).down, flat, g.from, g.to) ? a : restsOn(facing(mb).up, facing(ma).down, flat, g.to, g.from) ? b : null
-    // the engine's side or vertical gap keeps its way; a touch or a pair apart runs the way its two points do
-    const direction = g.kind === 'vertical' ? 'z' : g.kind === 'horizontal' ? 'xy' : lower !== null || Math.abs(d[2]) > Math.hypot(d[0], d[1]) ? 'z' : 'xy'
+    const direction = fitDirection(g.kind, g.from, g.to, lower !== null)
     const pair: [number, number] = lower === a ? [b, a] : [a, b]
     const ends = lower === a ? { from: g.to, to: g.from } : { from: g.from, to: g.to }
     const where = lower !== null ? `on the top face of ${bodies[lower]!.name}` : undefined
-    return { bodies: pair, kind, gapMm: g.gapMm, limitMm: limitOf(direction), ...ends, direction, ...(where ? { where } : {}) }
+    return { bodies: pair, kind, gapMm: g.gapMm, limitMm: fitLimitFor(limits, direction), ...ends, direction, ...(where ? { where } : {}) }
   })
   // two bodies with nothing under the limit keep one gap: their closest
   const tightPair = new Set(all.filter((g) => g.kind !== 'apart').map((g) => pairKey(g.bodies)))
