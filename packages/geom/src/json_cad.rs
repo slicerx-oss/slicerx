@@ -213,8 +213,17 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.mirror" => sketch_edit_op(req, "mirror"),
         #[cfg(feature = "cad")]
         "sketch.pattern" => sketch_edit_op(req, "pattern"),
+        #[cfg(feature = "cad")]
+        "sketch.svg" => sketch_svg_op(req),
         _ => return None,
     })
+}
+
+#[cfg(feature = "cad")]
+fn sketch_svg_op(req: &Value) -> Result<Value> {
+    let text: String = field(req, "svg")?;
+    let opts: crate::sketch_svg::SvgSketchOptions = field_or_default(req, "options")?;
+    to_value(&crate::sketch_svg::sketch_svg(&text, &opts)?)
 }
 
 fn boolean_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
