@@ -107,6 +107,58 @@ describe('design.check on a print-in-place plan', () => {
     expect(out.pass).toBe(true)
   })
 
+  it('a pin 0.35 mm from its socket all round fails above and below, though the side gap clears', async () => {
+    // a 3.7 mm pocket 5.65 mm deep in the arm, and a 3 mm pin from 0.7 mm up: 0.35 mm a side and 0.35 mm under the pin
+    const t = await harness()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(30, 20, 60, 60), distance_mm: 6, name: 'Arm' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(3.7, 60, 60), frame: top(6), distance_mm: 5.65, operation: 'cut' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(3, 60, 60), frame: top(0.7), distance_mm: 5.3, name: 'Pin' })
+    const { out } = await t.check(planOf(['Arm', 'Pin']))
+    expect(item(out, 'pieces')).toMatchObject({ got: '2 pieces', pass: true })
+    const gaps = item(out, 'gaps')
+    expect(gaps.pass).toBe(false)
+    expect(gaps.got).toMatch(/^Pin and Arm are 0\.35 mm apart .+; this print-in-place plan needs 0\.4 mm or more$/)
+    expect(gaps.got).not.toContain('side by side')
+  })
+
+  it('a round pin modeled at exactly 0.3 mm a side passes; at 0.25 mm it fails', async () => {
+    // the bore's facets sit inside its circle, so the measured gap is a little under 0.3 mm
+    const exact = await pinInArm(3.6, 3)
+    const fit = (await exact.check(planOf(['Arm', 'Pin'], { features: ['Arm', 'Bore', 'Pin'].map((name) => ({ name, sizes: { size: 6 } })) }))).out
+    expect(fit.body.fit!.gaps.find((g) => g.kind === 'apart')!.gapMm).toBeLessThan(0.3)
+    expect(item(fit, 'gaps')).toMatchObject({ got: 'smallest gap 0.3 mm, between Arm and Pin', pass: true })
+    expect(fit.pass).toBe(true)
+    const read = await exact.ok<{ gaps: { kind: string; limit_mm: number; verdict: string }[]; warnings: string[] }>('slicerx_geom_fit_check', { design: exact.design })
+    expect(read.warnings).toEqual([])
+    expect(read.gaps).toEqual([expect.objectContaining({ kind: 'apart', limit_mm: 0.3, verdict: 'slides' })])
+    const tight = await pinInArm(3.5, 3)
+    const gaps = item((await tight.check(planOf(['Arm', 'Pin']))).out, 'gaps')
+    expect(gaps.pass).toBe(false)
+    expect(gaps.got).toMatch(/^Arm and Pin are 0\.25 mm apart side by side at .+; this print-in-place plan needs 0\.3 mm or more$/)
+  })
+
+  it('a pin capped 0.2 mm over the arm has a side gap in the bore and a gap above and below under the cap', async () => {
+    // the cap rests over the arm's top face; the bore gap beside it is still a side gap, held to 0.3 mm
+    const t = await harness()
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(30, 20, 60, 60), distance_mm: 6, name: 'Arm' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(3.4, 60, 60), frame: top(6), distance_mm: 6, operation: 'cut' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(3, 60, 60), distance_mm: 7, name: 'Pin' })
+    await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(6, 60, 60), frame: top(6.2), distance_mm: 1, operation: 'join', part: 1 })
+    const r = await t.ok<{ gaps: { names: string[]; kind: string; direction: string; limit_mm: number; where?: string }[] }>('slicerx_geom_fit_check', { design: t.design })
+    const side = r.gaps.find((g) => g.kind === 'horizontal')!
+    expect(side).toMatchObject({ names: ['Arm', 'Pin'], direction: 'xy', limit_mm: 0.3 })
+    expect(side.where).toBeUndefined()
+    expect(r.gaps.find((g) => g.kind === 'vertical')).toMatchObject({ names: ['Pin', 'Arm'], direction: 'z', limit_mm: 0.4, where: 'on the top face of Arm' })
+  })
+
+  it('pieces fail when the plan names pieces the design does not have', async () => {
+    const t = await pinInArm(3.8, 3)
+    const { out } = await t.check(planOf(['Lid', 'Tray']))
+    expect(item(out, 'pieces')).toEqual({ name: 'pieces', want: '2 separate pieces (Lid, Tray)', got: '2 pieces, but Lid and Tray are not among them (the bodies are Arm and Pin); name each piece as the plan does', pass: false })
+    // names match without regard to case
+    expect(item((await t.check(planOf(['arm', 'PIN'], { planId: 'pip-2' }))).out, 'pieces')).toMatchObject({ got: '2 pieces', pass: true })
+  })
+
   it('a plan without printInPlace gets no pieces or gaps item, and the engine is not asked', async () => {
     const t = await pinInArm(3.4, 3)
     const { out } = await t.check(planOf(['Arm', 'Pin'], { printInPlace: undefined }))
@@ -142,6 +194,29 @@ describe('slicerx_geom_fit_check', () => {
     // PETG needs more: the same gap now binds against 0.4 mm side by side
     const petg = await t.ok<Fit>('slicerx_geom_fit_check', { design: t.design, material: 'PETG' })
     expect(petg.limits).toMatchObject({ side_mm: 0.4, vertical_mm: 0.6 })
+  })
+
+  it('refuses parts listed twice or out of range, and layer heights and materials it cannot use', async () => {
+    const t = await pinInArm(3.4, 3)
+    const refused = async (args: Record<string, unknown>, why: string) => {
+      const r = await t.h.call('slicerx_geom_fit_check', { design: t.design, ...args })
+      expect(r.isError, JSON.stringify(args)).toBe(true)
+      expect(text(r)).toContain(why)
+    }
+    await refused({ part: [] }, 'part')
+    await refused({ part: [0, 0] }, 'part: part 0 is listed twice')
+    await refused({ part: [-1] }, 'part')
+    await refused({ part: Array.from({ length: 65 }, (_, k) => k) }, 'part')
+    await refused({ layer_height_mm: 0.03 }, 'layer_height_mm')
+    await refused({ layer_height_mm: 0.9 }, 'layer_height_mm')
+    await refused({ material: 'x'.repeat(41) }, 'material')
+    await refused({ material: '   ' }, 'material')
+    await refused({ material: 'PLA; drop' }, 'material')
+    type Lim = { limits: { layer_height_mm: number; vertical_mm: number; material: string } }
+    expect((await t.ok<Lim>('slicerx_geom_fit_check', { design: t.design, layer_height_mm: 0.04 })).limits.layer_height_mm).toBe(0.04)
+    expect((await t.ok<Lim>('slicerx_geom_fit_check', { design: t.design, layer_height_mm: 0.8 })).limits.layer_height_mm).toBe(0.8)
+    expect((await t.ok<Lim>('slicerx_geom_fit_check', { design: t.design, layer_height_mm: 0.3 })).limits.vertical_mm).toBe(0.6)
+    expect((await t.ok<Lim>('slicerx_geom_fit_check', { design: t.design, material: 'PLA-CF', part: [1, 0] })).limits.material).toBe('PLA-CF')
   })
 
   it('refuses a part the design does not have', async () => {

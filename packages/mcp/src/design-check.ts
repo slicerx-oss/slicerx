@@ -98,8 +98,8 @@ export interface FitGap {
 /** The bodies of a design and the gaps between them. */
 export interface FitFacts {
   limits: FitLimits
-  /** Each body, with the part it is in and the name it goes by. */
-  bodies: { part: number; name: string }[]
+  /** Each body, with the part it is in, the name it goes by and its part's name. */
+  bodies: { part: number; name: string; partName?: string | undefined }[]
   /** Bodies that touch print as one piece: how many separate pieces print. */
   pieces: number
   /** Touches and gaps under the limits, then the closest gap of each two pieces within NEAR_MM. */
@@ -347,9 +347,11 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const pair = (g: FitGap): string => `${name(g.bodies[0])} and ${name(g.bodies[1])}`
   const fused = fit.gaps.filter((g) => g.kind === 'fused')
 
-  // pieces: the plan's count, each a body of its own
+  // pieces: the plan's count, each a body of its own, by the plan's names
+  const missing = unmatched(pieces, fit.bodies)
   let got: string
-  if (fit.pieces === pieces.length) got = `${fit.pieces} pieces`
+  if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
+  else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces`
   else if (fit.pieces < pieces.length) {
     const known = new Set(fit.bodies.map((b) => b.name.trim().toLowerCase()))
     const merged = pieces.filter((p) => !known.has(p.trim().toLowerCase()))
@@ -362,7 +364,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     const extra = fit.bodies.map((b) => b.name).filter((n) => !planned.has(n.trim().toLowerCase()))
     got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
   }
-  const items: CheckItem[] = [{ name: 'pieces', want, got, pass: fit.pieces === pieces.length }]
+  const items: CheckItem[] = [{ name: 'pieces', want, got, pass: fit.pieces === pieces.length && !missing.length }]
 
   // gaps: every touch and tight gap, then pieces that meet no other piece
   const gapsWant = `at least ${mm(limits.sideMm)} side by side and ${mm(limits.verticalMm)} above or below between moving pieces (${limits.material.toUpperCase()}, ${mm(limits.nozzleMm)} nozzle, ${mm(limits.layerHeightMm)} layers)`
@@ -388,6 +390,23 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const least = fit.gaps.reduce((a, g) => (g.gapMm < a.gapMm ? g : a))
   items.push({ name: 'gaps', want: gapsWant, got: `smallest gap ${gapMm(least.gapMm)}, between ${pair(least)}`, pass: true })
   return items
+}
+
+/**
+ * The plan's piece names no body answers to, one body per name: a body's own name ("Pin 2", "Pin (part 3)") first, then
+ * its part's name, without regard to case.
+ */
+function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): string[] {
+  const key = (v: string): string => v.trim().toLowerCase()
+  const free = new Set(bodies.map((_, b) => b))
+  const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): boolean => {
+    const b = [...free].find((k) => of(bodies[k]!) !== undefined && key(of(bodies[k]!)!) === key(p))
+    if (b === undefined) return false
+    free.delete(b)
+    return true
+  }
+  const left = pieces.filter((p) => !take(p, (b) => b.name))
+  return left.filter((p) => !take(p, (b) => b.partName))
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
