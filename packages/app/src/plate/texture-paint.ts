@@ -13,6 +13,7 @@ import { activeMeta } from './plates'
 import { history, inStep } from './history'
 import { commitStroke, type StrokeEdits } from './paint'
 import { appStore, get, markStale, set, toast, type PlateEntry } from '../state/store'
+import { onPartRebuilt, type PartRebuilt } from './rebuilt'
 
 /** What a textured model was read from: an OBJ with its sibling files by name, or a 3MF. */
 export type TextureSource =
@@ -53,13 +54,17 @@ export interface TexturePlan {
 const sources = new Map<string, TextureSource>()
 let stopWatching: (() => void) | null = null
 /**
- * The meshes and color paint a texture paint left on each object. When a part's mesh is swapped and its paint is still
- * exactly that (the crossing check rebuilds a part and keeps its paint by triangle number), the paint sits on the wrong
- * triangles, so the object is painted again from its texture. Paint that changed with the mesh (carried onto the new
- * triangles, or brushed) is left alone.
+ * The color paint a texture paint left on each part of an object, by reference. The crossing check rebuilds a part with
+ * new triangle numbers and says which (plate/rebuilt.ts); when that part's paint is still exactly the texture's, it
+ * now sits on the wrong triangles, so that part alone is painted again from the texture, in the rebuild's undo step.
+ * Paint carried onto the new triangles or brushed since is not the texture's any more and is left alone, and so is
+ * every other part.
  */
-const painted = new Map<string, { parts: readonly MeshPart[]; colors: readonly (Record<number, string> | undefined)[] }>()
+const painted = new Map<string, readonly (Record<number, string> | undefined)[]>()
+/** Rebuilt parts waiting to be painted again, by object: each part's new mesh and paint, and the revision after it. */
+const pending = new Map<string, { parts: Map<number, { mesh: MeshPart; color: Record<number, string> }>; revision: string; edit: (fn: () => void) => void }>()
 const repainting = new Map<string, Promise<void>>()
+let stopRebuilt: (() => void) | null = null
 
 function projectIds(s = get()): Set<string> {
   return new Set([...s.plate.map((e) => e.id), ...s.plates.flatMap((p) => p.objects.map((o) => o.id))])
@@ -73,6 +78,8 @@ function prune(): void {
   if (!sources.size) {
     stopWatching?.()
     stopWatching = null
+    stopRebuilt?.()
+    stopRebuilt = null
   }
 }
 
@@ -85,52 +92,69 @@ export function rememberTexture(objectId: string, source: TextureSource): void {
   sources.set(objectId, source)
   stopWatching ??= appStore.subscribe((s, p) => {
     if (s.plate !== p.plate || s.plates !== p.plates) prune()
-    if (s.plate !== p.plate) checkSwapped(s.plate)
   })
+  stopRebuilt ??= onPartRebuilt(partRebuiltUnderPaint)
   prune()
 }
 
-/** Notes the meshes and color paint a texture paint left on an object. */
+/** Notes the color paint a texture paint left on each part of an object. */
 function notePainted(e: PlateEntry): void {
-  painted.set(e.id, { parts: [...e.parts], colors: e.parts.map((_, i) => e.paint?.[i]?.color) })
+  painted.set(e.id, e.parts.map((_, i) => e.paint?.[i]?.color))
 }
 
-/** Paints an object again from its texture when a part's mesh changed under paint the texture left as it was. */
-function checkSwapped(plate: readonly PlateEntry[]): void {
-  for (const [id, was] of painted) {
-    if (repainting.has(id)) continue
-    const e = plate.find((x) => x.id === id)
-    if (!e) continue
-    const moved = e.parts.length !== was.parts.length || e.parts.some((p, i) => p !== was.parts[i])
-    if (!moved) continue
-    const stale = e.parts.some((p, i) => p !== was.parts[i] && was.colors[i] !== undefined && e.paint?.[i]?.color === was.colors[i])
-    if (!stale) {
-      // the paint moved with the mesh, or was changed since: not the texture's to redo
-      painted.delete(id)
-      continue
-    }
-    const run = repaint(id).finally(() => repainting.delete(id))
-    repainting.set(id, run)
-  }
+/** A part was rebuilt with new triangle numbers: paints it again when its paint is still the texture's own. */
+function partRebuiltUnderPaint(r: PartRebuilt): void {
+  const was = painted.get(r.objectId)
+  const e = get().plate.find((x) => x.id === r.objectId)
+  const color = e?.paint?.[r.part]?.color
+  const mesh = e?.parts[r.part]
+  // carried onto the new triangles, brushed since, or never painted: not the texture's to redo
+  if (!was || !e || !mesh || !color || color !== was[r.part]) return
+  const p = pending.get(r.objectId) ?? { parts: new Map(), revision: '', edit: r.edit }
+  p.parts.set(r.part, { mesh, color })
+  p.revision = history().state().revision
+  p.edit = r.edit
+  pending.set(r.objectId, p)
+  if (!repainting.has(r.objectId)) repainting.set(r.objectId, repaint(r.objectId).finally(() => repainting.delete(r.objectId)))
+}
+
+/** Whether nothing but the rebuilds moved since they were noted: the same revision, meshes and paint. */
+function stillAsRebuilt(id: string, p: NonNullable<ReturnType<typeof pending.get>>): boolean {
+  const e = get().plate.find((x) => x.id === id)
+  if (!e || history().state().revision !== p.revision) return false
+  for (const [i, r] of p.parts) if (e.parts[i] !== r.mesh || e.paint?.[i]?.color !== r.color) return false
+  return true
+}
+
+/** The plan cut down to some parts: their paint and own filament only. */
+function onlyParts(plan: TexturePlan, parts: ReadonlySet<number>): TexturePlan {
+  const slots: Record<number, number> = {}
+  for (const [k, v] of Object.entries(plan.slots)) if (parts.has(Number(k))) slots[Number(k)] = v
+  return { ...plan, edits: plan.edits.filter((x) => parts.has(x.partIndex)), slots }
 }
 
 async function repaint(id: string): Promise<void> {
-  const src = sources.get(id)
-  painted.delete(id)
-  if (!src) return
   try {
-    const filaments = filamentColors()
-    if (filaments.length < 2) return
-    for (let tries = 0; tries < 3; tries++) {
+    // a rebuild of another part while the engine paints adds that part and paints again; anything else stops it
+    for (let tries = 0; tries < 4; tries++) {
+      const p = pending.get(id)
+      const src = sources.get(id)
+      const filaments = filamentColors()
       const e = get().plate.find((x) => x.id === id)
-      if (!e) return
+      if (!p || !src || !e || filaments.length < 2 || !stillAsRebuilt(id, p)) break
+      const revision = p.revision
       const plan = await planTexturePaint(e, src, 'nearest', filaments)
-      if (!plan.reply.textured) return
-      if (applyTexturePlans([plan], undefined, { quiet: true }) !== null) return
+      if (p.revision !== revision) continue
+      if (!plan.reply.textured || !stillAsRebuilt(id, p) || !planCurrent(plan)) break
+      pending.delete(id)
+      const only = onlyParts(plan, new Set(p.parts.keys()))
+      applyTexturePlans([only], undefined, { quiet: true, inStep: p.edit })
+      return
     }
   } catch (e) {
-    console.warn('paint from texture after a mesh change', e)
+    console.warn('paint from texture after a rebuild', e)
   }
+  pending.delete(id)
 }
 
 /** Waits for the repaints a mesh change started (for tests and callers that read the paint next). */
@@ -308,14 +332,15 @@ export function planCurrent(plan: TexturePlan): boolean {
 
 /**
  * Applies plans as one undo step: the paint, each part's own filament and, from a palette, the filament colors (set
- * as the person's own, so Undo takes them back too). Says what it did in a toast with Undo, unless `quiet`. Applies
- * nothing and answers null when an object's meshes changed since its plan was made.
+ * as the person's own, so Undo takes them back too), or in the step `inStep` runs. Says what it did in a toast with
+ * Undo, unless `quiet`. Applies nothing and answers null when an object's meshes changed since its plan was made.
  */
-export function applyTexturePlans(plans: readonly TexturePlan[], palette?: readonly string[], opts: { quiet?: boolean } = {}): number[] | null {
+export function applyTexturePlans(plans: readonly TexturePlan[], palette?: readonly string[], opts: { quiet?: boolean; inStep?: (fn: () => void) => void } = {}): number[] | null {
   if (!plans.every(planCurrent)) return null
   const used = [...new Set(plans.flatMap((p) => p.reply.colors))].sort((a, b) => a - b)
   if (!texturePlansChange(plans, palette)) return []
-  inStep({}, () => {
+  const step = opts.inStep ?? ((fn: () => void) => inStep({}, fn))
+  step(() => {
     for (const plan of plans) for (const e of plan.edits) commitStroke(e)
     set((s) => ({
       plate: s.plate.map((e) => {
