@@ -56,6 +56,9 @@
 .cad-file { display: flex; align-items: center; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-2); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; overflow: hidden; }
 .cad-file:hover { border-color: var(--accent); color: var(--fg); }
 .cad-file:has(:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.cad-file-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cad-file[data-picked] .cad-file-name { color: var(--fg); }
+.cad-file-change { flex: none; margin-left: 10px; font-size: var(--fs-xs); color: var(--accent); }
 .cad-file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .cad-picks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
 .cad-picks li { display: flex; align-items: center; gap: 8px; }
