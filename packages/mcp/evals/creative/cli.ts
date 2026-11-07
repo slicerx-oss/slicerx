@@ -13,12 +13,12 @@
 // mimir runs with the desktop tab's options (run.ts CREATIVE_TAB, @slicerx/pilot tab-options.ts) and the tab's tools
 // (src/toolset.ts tabToolset): the design toolset on the eval's own design host, so a part is built feature by feature
 // as CAD history, with the tab's questions, sheets and plan cards. A reply that builds nothing is scored as asked (a
-// question to the person), declined (says it can't model or build it) or none. When it asks, in its reply or on a
-// question card, the eval answers once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that
-// off. A replay answers only for a recording captured with the answer, and marks a recorded question without one
-// stale. A recording from before the tab's tools (it called text_to_part or no tool) replays as stale too, until a
-// live run captures it again. The log rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other
-// mimir evals.
+// question to the person), declined (says it can't model or build it), stopped (its plan was approved or its question
+// answered, and it ended without building) or none. When it asks, in its reply or on a question card, the eval answers
+// once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that off. A replay answers only for a
+// recording captured with the answer, and marks a recorded question without one stale. A recording from before the
+// tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again. The log
+// rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
@@ -149,7 +149,7 @@ const passed = scores.filter((s) => s.score.pass).length
 const noBuild = (r: NoBuild): string[] => scores.filter((s) => s.noBuild === r).map((s) => s.id)
 const nothing = scores.filter((s) => s.noBuild).length
 const answeredIds = scores.filter((s) => s.answered).map((s) => s.id)
-const noBuildLine = nothing ? `${nothing} built nothing (${noBuild('asked').length} asked, ${noBuild('declined').length} declined, ${noBuild('none').length} none)` : ''
+const noBuildLine = nothing ? `${nothing} built nothing (${noBuild('asked').length} asked, ${noBuild('declined').length} declined, ${noBuild('stopped').length} stopped, ${noBuild('none').length} none)` : ''
 console.log(
   `\n${mode}: ${scores.length} scored, ${passed} passed${skipped.length ? `, ${skipped.length} skipped with no geometry engine` : ''}${mode === 'live' ? `, spent $${budget.spentUsd.toFixed(2)} of $${capUsd.toFixed(2)}${budget.cutOff ? ` ($${budget.estimatedUsd.toFixed(2)} of it the most ${budget.cutOff} cut-off repl${budget.cutOff === 1 ? 'y' : 'ies'} could cost)` : ''}` : ''}${budget.stopped ? ' (stopped at the cost cap)' : ''}`,
 )
@@ -185,7 +185,7 @@ if (flag('log') && scores.length) {
   const logMd = join(EVALS_DIR, 'LOG.md')
   // The same table the scenario runs log to (evals/LOG.md); Mean holds the pass rate here, as a percent.
   if (existsSync(logMd) && readFileSync(logMd, 'utf8').trim()) {
-    const notes = [line.change || 'creative prompts', `default answer ${defaultAnswer ? `on (${answeredIds.length} answered)` : 'off'}`, noBuildLine ? `${noBuildLine}: ${(['asked', 'declined', 'none'] as const).flatMap((r) => noBuild(r).map((id) => `${id} ${r}`)).join(', ')}` : '', stale.length ? `stale: ${stale.join(', ')}` : '']
+    const notes = [line.change || 'creative prompts', `default answer ${defaultAnswer ? `on (${answeredIds.length} answered)` : 'off'}`, noBuildLine ? `${noBuildLine}: ${(['asked', 'declined', 'stopped', 'none'] as const).flatMap((r) => noBuild(r).map((id) => `${id} ${r}`)).join(', ')}` : '', stale.length ? `stale: ${stale.join(', ')}` : '']
     appendFileSync(logMd, `| ${ts.slice(0, 16).replace('T', ' ')} | ${mode} | ${modelName} | ${line.scenarios} | 1 | ${line.value} | ${Math.round(line.pass_rate * 100)}% | ${line.tool_calls_per_task} | 0 | ${notes.filter(Boolean).join('; ')} |\n`)
   }
 }
