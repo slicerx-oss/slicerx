@@ -28,8 +28,8 @@ Errors are one plain sentence of the form `field: what is wrong`, ready to show 
 | `sketch.check` | Whether sketch loops close and do not cross, which are holes, and each problem with its loop and segment | `loops` |
 | `shape.extrude` | Extrude a rectangle, circle, slot, polygon, text, free sketch or SVG outline as a new body, joined to a target or cut from it | `frame`, `shape`, `placement`, `spec`, `target` |
 | `sketch.revolve` | Revolve sketch loops around an axis in their plane | `frame`, `loops`, `axis`, `angleDeg`, `operation`, `target` |
-| `sketch.sweep` | Sweep one closed profile along an open path (lines, arcs and splines on a plane, or points in space) without twisting about it, with straight sides between path points and flat ends | `profile` (`frame`, `loops`), `path` (`frame` and `loops`, or `points`), `operation`, `target` |
-| `sketch.loft` | Loft a solid through 2 to 64 closed profiles in order, each one loop on its own plane, with straight sides between them and flat ends | `profiles` (each `frame`, `loops`), `operation`, `target` |
+| `sketch.sweep` | Sweep one profile along an open path (lines, arcs and splines on a plane, or points in space) without twisting about it, with straight sides between path points and flat ends; an open profile is thickened into a shell | `profile` (`frame`, `loops`, `open`), `path` (`frame` and `loops`, or `points`), `thicken` (`thicknessMm`, `side`), `operation`, `target` |
+| `sketch.loft` | Loft a solid through 2 to 64 profiles in order, each one loop on its own plane: straight or smooth sides, flat ends or a closed ring, and open profiles thickened into a shell | `profiles` (each `frame`, `loops`, `open`, `landmarks`), `smooth`, `closed`, `thicken` (`thicknessMm`, `side`), `operation`, `target` |
 | `face.push` | Move a flat face along its normal: out adds material, in cuts | `mesh`, `triangle`, `at`, `distanceMm` |
 | `boolean` | Union, difference or intersection of closed meshes | `op`, `a`, `b` |
 | `edge.fillet`, `edge.chamfer` | Round or bevel straight edges between flat faces | `mesh`, `edges`, `radiusMm` or `distanceMm` |
