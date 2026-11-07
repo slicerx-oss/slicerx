@@ -586,7 +586,7 @@ jobs:
           export SLICERX_SX_GEOM_BIN="$GITHUB_WORKSPACE/target/brep/debug/sx-geom"
           export SX_LINK_BIN="$GITHUB_WORKSPACE/target/debug/sx-link"
           test="bash $GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
-          (cd packages/app && ${HEAVY:-} $test test/cad-exact-native.test.ts test/calibration-engine.test.ts test/phone-e2e.test.ts test/project-gcode.test.ts test/project-route-parity.test.ts test/script-review.test.ts)
+          (cd packages/app && ${HEAVY:-} $test test/cad-exact-native.test.ts test/calibration-engine.test.ts test/phone-e2e.test.ts test/project-gcode.test.ts test/project-route-parity.test.ts test/resume-engine-layers.test.ts test/script-review.test.ts)
           (cd packages/pair && ${HEAVY:-} $test test/hosted-relay.test.ts)
           (cd editions/slicerx/packages/cloud && ${HEAVY:-} $test test/service.integration.test.ts)
         env:
