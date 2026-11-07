@@ -1383,6 +1383,16 @@ mod tests {
         assert!(err(&h).contains("profile 4's landmarks run around the other way from profile 1's"));
     }
 
+    #[test]
+    fn a_span_through_repeated_points_stays_finite() {
+        let (a, b) = ([0.0, 0.0, 0.0], [5.0, 1.0, 10.0]);
+        for sp in [span(b, a, b, [9.0, 0.0, 20.0]), span(a, b, [3.0, 3.0, 12.0], b)] {
+            for t in [0.0, 0.25, 0.5, 1.0] {
+                assert!(bezier_at(&sp, t).iter().all(|c| c.is_finite()), "{sp:?}");
+            }
+        }
+    }
+
     /// Each landmark's point index in each ring.
     fn marks_at(rings: &[Vec<V2>], profiles: &[Profile]) -> Vec<Vec<usize>> {
         rings

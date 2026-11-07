@@ -286,10 +286,13 @@ fn a_hull_from_eight_stations_is_one_closed_shell() {
             json!({ "frame": frame, "open": true, "loops": [{ "points": pts }] })
         })
         .collect();
-    let m = run(
-        "sketch.loft",
-        &json!({ "profiles": profiles, "smooth": true, "thicken": { "thicknessMm": 1.2, "side": "outward" } }),
-    );
+    let shell = |mm: f64| {
+        run(
+            "sketch.loft",
+            &json!({ "profiles": profiles, "smooth": true, "thicken": { "thicknessMm": mm, "side": "outward" } }),
+        )
+    };
+    let m = shell(1.2);
     solid(&m);
     let b = &m["bounds"];
     assert!(b["min"][0].as_f64().unwrap().abs() < 1.5 && (b["max"][0].as_f64().unwrap() - 105.0).abs() < 1.5);
@@ -297,9 +300,14 @@ fn a_hull_from_eight_stations_is_one_closed_shell() {
         b["max"][2].as_f64().unwrap().abs() < 0.05,
         "the deck edge stays at z = 0"
     );
-    assert!(b["min"][2].as_f64().unwrap() < -8.5);
-    // a shell about 1.2 mm thick over the hull's skin
-    assert!(volume(&m) > 1000.0 && volume(&m) < 6000.0, "{}", volume(&m));
+    // outward wraps the skin: past the widest and deepest station by the thickness
+    assert!(b["max"][1].as_f64().unwrap() > 12.0 + 1.1, "{b}");
+    assert!(b["min"][2].as_f64().unwrap() < -8.5 - 1.1, "{b}");
+    // a shell 1.2 mm thick over the skin (its area from a hundredth of a millimeter shell): a little more than the area
+    // times the thickness, since outward grows the hull's round skin, and an inward shell would be less
+    let skin = volume(&shell(0.01)) / 0.01;
+    let per = volume(&m) / 1.2;
+    assert!(per > skin && per < skin * 1.1, "{per} vs {skin}");
 }
 
 /// A hull half-section across x with its landmarks (see the loft's own tests): deck center, keel, both bilge ends,
@@ -466,4 +474,221 @@ fn a_closed_profile_with_one_or_two_landmarks_lofts_upside_down() {
             volume(&m)
         );
     }
+}
+
+#[test]
+fn an_open_profile_sweeps_into_a_shell() {
+    let path = json!({ "points": [[0, 0, 0], [0, 0, 20]] });
+    let u = half_circle(5.0, 48);
+    let back: Vec<[f64; 2]> = u.iter().rev().copied().collect();
+    for pts in [&u, &back] {
+        for (side, ro, ri) in [("outward", 6.0, 5.0), ("inward", 5.0, 4.0)] {
+            let m = run(
+                "sketch.sweep",
+                &json!({ "profile": { "open": true, "loops": [{ "points": pts }] }, "path": path, "thicken": { "thicknessMm": 1, "side": side } }),
+            );
+            solid(&m);
+            let want = PI / 2.0 * (ro * ro - ri * ri) * 20.0;
+            assert!(
+                (volume(&m) - want).abs() < want * 0.01,
+                "{side}: {} vs {want}",
+                volume(&m)
+            );
+        }
+    }
+    // along a bent path too
+    let bent = json!({ "points": [[0, 0, 0], [0, 0, 20], [0, 10, 30]] });
+    solid(&run(
+        "sketch.sweep",
+        &json!({ "profile": { "open": true, "loops": [{ "points": u }] }, "path": bent, "thicken": { "thicknessMm": 1 } }),
+    ));
+    // a closed profile thickened is a tube
+    let tube = run(
+        "sketch.sweep",
+        &json!({ "profile": { "loops": [circle([0.0, 0.0], 10.0)] }, "path": path, "thicken": { "thicknessMm": 1 } }),
+    );
+    solid(&tube);
+    let want = PI * (36.0 - 25.0) * 20.0;
+    assert!((volume(&tube) - want).abs() < want * 0.01, "{}", volume(&tube));
+    assert_eq!(
+        fails(
+            "sketch.sweep",
+            &json!({ "profile": { "open": true, "loops": [{ "points": u }] }, "path": path })
+        ),
+        "thicken: an open profile makes a surface; give thicken to make it a solid"
+    );
+}
+
+#[test]
+fn closed_profiles_thickened_make_a_tube() {
+    let profiles = json!([
+        { "frame": level(0.0), "loops": [circle([0.0, 0.0], 20.0)] },
+        { "frame": level(10.0), "loops": [circle([0.0, 0.0], 20.0)] },
+    ]);
+    for (side, ro, ri) in [("outward", 11.0, 10.0), ("inward", 10.0, 9.0)] {
+        let m = run(
+            "sketch.loft",
+            &json!({ "profiles": profiles, "thicken": { "thicknessMm": 1, "side": side } }),
+        );
+        solid(&m);
+        let want = PI * (ro * ro - ri * ri) * 10.0;
+        assert!(
+            (volume(&m) - want).abs() < want * 0.01,
+            "{side}: {} vs {want}",
+            volume(&m)
+        );
+    }
+}
+
+/// `n` profiles on planes through the z axis, `r` mm out, each `loop_at(k)` on its own plane.
+fn around(n: u32, r: f64, turn_deg: f64, loop_at: impl Fn(u32) -> Value) -> Vec<Value> {
+    (0..n)
+        .map(|k| {
+            let a = (f64::from(k) * turn_deg).to_radians();
+            let frame = json!({
+                "origin": [r * a.m_cos(), r * a.m_sin(), 0.0],
+                "normal": [-a.m_sin(), a.m_cos(), 0.0],
+                "u": [a.m_cos(), a.m_sin(), 0.0],
+                "v": [0, 0, 1],
+            });
+            let mut p = loop_at(k);
+            p["frame"] = frame;
+            p
+        })
+        .collect()
+}
+
+#[test]
+fn rings_thickened_and_rings_of_open_chains() {
+    // a hollow torus: eight 6 mm circles around the z axis, 20 mm out, made a 1 mm shell outward
+    let circles = around(8, 20.0, 45.0, |_| json!({ "loops": [circle([0.0, 0.0], 6.0)] }));
+    let m = run(
+        "sketch.loft",
+        &json!({ "profiles": circles, "closed": true, "smooth": true, "thicken": { "thicknessMm": 1 } }),
+    );
+    assert_eq!(m["watertight"], true);
+    assert_eq!(m["shells"], 2, "an outer and an inner skin");
+    let want = 2.0 * PI * PI * 20.0 * (16.0 - 9.0);
+    assert!(
+        (volume(&m) - want).abs() < want * 0.03,
+        "{} vs {want}",
+        volume(&m)
+    );
+    // a trough around the axis: eight open half circles, 3 mm across, made a 1 mm shell
+    let u = half_circle(3.0, 24);
+    let troughs = around(
+        8,
+        20.0,
+        45.0,
+        |_| json!({ "open": true, "loops": [{ "points": u }] }),
+    );
+    let m = run(
+        "sketch.loft",
+        &json!({ "profiles": troughs, "closed": true, "smooth": true, "thicken": { "thicknessMm": 1 } }),
+    );
+    solid(&m);
+    // a half pipe 3 to 4 mm out, carried around a 20 mm circle
+    let want = PI / 2.0 * (16.0 - 9.0) * 2.0 * PI * 20.0;
+    assert!(
+        (volume(&m) - want).abs() < want * 0.03,
+        "{} vs {want}",
+        volume(&m)
+    );
+}
+
+#[test]
+fn smooth_lofts_say_what_is_wrong() {
+    let ring = |x: f64, z: f64, d: f64| json!({ "frame": level(z), "loops": [circle([x, 0.0], d)] });
+    // a smooth loft that comes back around onto its start runs into itself
+    let spiral = around(6, 20.0, 121.0, |_| json!({ "loops": [circle([0.0, 0.0], 6.0)] }));
+    assert_eq!(
+        fails("sketch.loft", &json!({ "profiles": spiral, "smooth": true })),
+        "loft: the lofted body runs into itself; space the profiles further apart or make them smaller"
+    );
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [ring(0.0, 0.0, 10.0), ring(20_000.0, 1.0, 10.0), ring(0.0, 2.0, 10.0)], "smooth": true })
+        ),
+        "loft: the smooth sides bend too sharply between profiles 1 and 2; space them more evenly or make the change between them smaller"
+    );
+    // 4000 points a ring and over 250 rows
+    let many = |x: f64, z: f64| {
+        let pts: Vec<[f64; 2]> = (0..4000)
+            .map(|i| {
+                let a = 2.0 * PI * f64::from(i) / 4000.0;
+                [x + 50.0 * a.m_cos(), 50.0 * a.m_sin()]
+            })
+            .collect();
+        json!({ "frame": level(z), "loops": [{ "points": pts }] })
+    };
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": [many(0.0, 0.0), many(1000.0, 10.0), many(0.0, 20.0)], "smooth": true })
+        ),
+        "profiles: the smooth loft would have more than 1000000 points; use fewer or simpler profiles"
+    );
+    // a ring that goes around twice runs into itself
+    let twice = around(6, 20.0, 121.0, |_| json!({ "loops": [circle([0.0, 0.0], 6.0)] }));
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": twice, "closed": true, "smooth": true })
+        ),
+        "loft: the lofted body runs into itself; space the profiles further apart or make them smaller"
+    );
+}
+
+#[test]
+fn smooth_through_two_or_three_profiles() {
+    let two = json!([
+        { "frame": level(0.0), "loops": [circle([0.0, 0.0], 20.0)] },
+        { "frame": level(10.0), "loops": [circle([3.0, 0.0], 10.0)] },
+    ]);
+    let ruled = run("sketch.loft", &json!({ "profiles": two }));
+    let smooth = run("sketch.loft", &json!({ "profiles": two, "smooth": true }));
+    solid(&smooth);
+    assert!(
+        (volume(&smooth) - volume(&ruled)).abs() < 1e-6,
+        "{} {}",
+        volume(&smooth),
+        volume(&ruled)
+    );
+    // the fewest a ring takes
+    let three = around(3, 20.0, 120.0, |_| json!({ "loops": [circle([0.0, 0.0], 6.0)] }));
+    let m = run(
+        "sketch.loft",
+        &json!({ "profiles": three, "closed": true, "smooth": true }),
+    );
+    solid(&m);
+    // fuller than straight sides between the three, short of the round torus the three sit on
+    let ruled = run("sketch.loft", &json!({ "profiles": three, "closed": true }));
+    let torus = 2.0 * PI * PI * 20.0 * 9.0;
+    assert!(
+        volume(&m) > volume(&ruled) && volume(&m) < torus,
+        "{} {} {torus}",
+        volume(&m),
+        volume(&ruled)
+    );
+}
+
+#[test]
+fn a_centered_shell_takes_twice_one_side() {
+    let u = half_circle(3.0, 48);
+    let err = fails(
+        "sketch.loft",
+        &json!({ "profiles": [open_at(0.0, &u), open_at(10.0, &u)], "thicken": { "thicknessMm": 8, "side": "center" } }),
+    );
+    let most: f64 = err
+        .split("takes at most ")
+        .nth(1)
+        .and_then(|s| s.split(' ').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap();
+    assert!(most > 5.8 && most <= 6.0, "{err}");
+    assert!(
+        err.contains("8 mm centered shell") && err.ends_with("thicken to one side"),
+        "{err}"
+    );
 }
