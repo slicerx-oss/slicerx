@@ -2860,6 +2860,84 @@ fn sleipnir_keeps_fixed_layers_where_colors_change() {
     assert!(z.len() >= 85, "{} layers", z.len());
 }
 
+/// A 12 mm box on filament 1 beside a 6 mm box on filament 2, with 0.1 mm tops above a 0.2 mm first layer, as a
+/// plate's own layer heights send them, and `config` on top of a brim-less 0.2 mm base.
+fn two_color_tops(config: Value, options: Value) -> SliceRun {
+    let tall = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 12.0]));
+    let short = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
+    let mut cfg = json!({"brim_width": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2});
+    if let (Some(base), Some(extra)) = (cfg.as_object_mut(), config.as_object()) {
+        base.extend(extra.clone());
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "mesh": "tall", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1]},
+            {"id": "b", "mesh": "short", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 140,100,0,1], "slotOverrides": {"box": 2}},
+        ]},
+        "config": cfg,
+        "options": options,
+    }))
+    .unwrap();
+    let load = move |id: &str| Ok(if id == "tall" { tall.clone() } else { short.clone() });
+    common::run_request(&req, &load).expect("the tops slice")
+}
+
+/// 0.2 mm, then 0.1 mm layers to 12 mm: the tops a plate's own layer heights give that plate.
+fn tenth_tops() -> Vec<f64> {
+    let mut tops = vec![0.2];
+    while tops.last().copied().unwrap_or(0.0) < 12.0 - 1e-9 {
+        let next: f64 = tops.last().copied().unwrap_or(0.0) + 0.1;
+        tops.push((next * 1e4).round() / 1e4);
+    }
+    tops
+}
+
+#[test]
+fn exact_tops_keep_their_layers_where_colors_change() {
+    // The plate of `sleipnir_keeps_fixed_layers_where_colors_change`, with its tops marked exact: layers set by hand
+    // are kept as given, 0.1 mm through the two-color band too, and no cost against fixed layers is reported.
+    let tops = tenth_tops();
+    let run = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    assert!(run.report.vary_layer_cost.is_none());
+    let z: Vec<f64> = run.report.layer_z.iter().map(|&v| f64::from(v)).collect();
+    assert_eq!(z.len(), tops.len(), "{z:?}");
+    for (got, want) in z.iter().zip(&tops) {
+        assert!((got - want).abs() < 1e-4, "layer at {got}, asked for {want}");
+    }
+    // Without the flag the same tops are sleipnir's and keep the fixed layers where both filaments print.
+    let banded = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops()}),
+    );
+    assert!(
+        banded.report.layer_z.len() < z.len(),
+        "{} against {}",
+        banded.report.layer_z.len(),
+        z.len()
+    );
+}
+
+#[test]
+fn exact_tops_stretch_with_a_z_shrinkage_compensation() {
+    // Every filament shrinks 0.5 percent in Z, so the plate is sliced 0.5 percent taller: tops drawn on the model
+    // stretch above the first layer so the last one lands on the scaled top, 12 / 0.995 mm.
+    let shrink = json!({"filament_shrinkage_compensation_z": ["99.5%", "99.5%"]});
+    let run = two_color_tops(
+        shrink,
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops(), "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    let z: Vec<f64> = run.report.layer_z.iter().map(|&v| f64::from(v)).collect();
+    assert_eq!(z.len(), tenth_tops().len());
+    let top = z.last().copied().unwrap_or(0.0);
+    assert!((top - 12.0 / 0.995).abs() < 1e-3, "top layer at {top}");
+    assert!((z[0] - 0.2).abs() < 1e-4, "first layer at {}", z[0]);
+}
+
 #[test]
 fn smart_layers_reach_the_top_of_a_shorter_two_color_object() {
     // A 2 mm box with a setting of its own beside a 1.05 mm block, each made of two halves on filaments 1 and 2.
