@@ -369,9 +369,18 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const fused = fit.gaps.filter((g) => g.kind === 'fused')
 
   // pieces: the plan's count, each a body of its own, by the plan's names
-  const missing = unmatched(pieces, fit.bodies)
+  const { missing, free } = unmatched(pieces, fit.bodies)
+  // bodies of one part (a mirrored leaf, an arrayed link) go by their part's name with a number, and no tool names a
+  // body on its own: with the count right, names left over are read as such bodies when every body left over is one
+  const bodiesIn = new Map<number, number>()
+  for (const b of fit.bodies) bodiesIn.set(b.part, (bodiesIn.get(b.part) ?? 0) + 1)
+  const shared = missing.length > 0 && free.length >= missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1)
+  const named = fit.pieces === pieces.length && (!missing.length || shared)
   let got: string
-  if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
+  if (fit.pieces === pieces.length && shared) {
+    const of = new Set(free.map((b) => fit.bodies[b]!.part)).size === 1 ? 'bodies of one part' : 'bodies of parts that hold several'
+    got = `${fit.pieces} pieces (${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} ${listAnd(free.map(name))}, ${of})`
+  } else if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
   else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces`
   else if (fit.pieces < pieces.length) {
     const known = new Set(fit.bodies.map((b) => b.name.trim().toLowerCase()))
@@ -385,7 +394,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     const extra = fit.bodies.map((b) => b.name).filter((n) => !planned.has(n.trim().toLowerCase()))
     got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
   }
-  const items: CheckItem[] = [{ name: 'pieces', want, got, pass: fit.pieces === pieces.length && !missing.length }]
+  const items: CheckItem[] = [{ name: 'pieces', want, got, pass: named }]
 
   // gaps: every touch and tight gap, then pieces that meet no other piece
   const gapsWant = `at least ${mm(limits.sideMm)} side by side and ${mm(limits.verticalMm)} above or below between moving pieces (${limits.material.toUpperCase()}, ${mm(limits.nozzleMm)} nozzle, ${mm(limits.layerHeightMm)} layers)`
@@ -415,9 +424,9 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
 
 /**
  * The plan's piece names no body answers to, one body per name: a body's own name ("Pin 2", "Pin (part 3)") first, then
- * its part's name, without regard to case.
+ * its part's name, without regard to case; and the bodies no name took.
  */
-function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): string[] {
+function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[] } {
   const key = (v: string): string => v.trim().toLowerCase()
   const free = new Set(bodies.map((_, b) => b))
   const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): boolean => {
@@ -427,7 +436,8 @@ function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): strin
     return true
   }
   const left = pieces.filter((p) => !take(p, (b) => b.name))
-  return left.filter((p) => !take(p, (b) => b.partName))
+  const missing = left.filter((p) => !take(p, (b) => b.partName))
+  return { missing, free: [...free] }
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */

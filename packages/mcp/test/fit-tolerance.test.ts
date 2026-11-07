@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The 0.02 mm a gap may read under its limit and still clear, at the edges: it is for side gaps only (round faces drawn
 // as facets), so a gap above or below is held to its bare limit, which the fit rule floors to whole layers. A touch
-// stays a touch. The engine's report is stubbed, so each gap is exactly the size the case names.
+// stays a touch. The engine's report is stubbed, so each gap is exactly the size the case names. Also the pieces item
+// for pieces that are bodies of one part (after geom.mirror or geom.array), which no tool can name one by one.
 import type { Design as HostDesign, DesignHost, HistoryMesh } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
 import { fitItems, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
@@ -87,3 +88,34 @@ describe('the fit tolerance', () => {
   })
 })
 
+describe('the pieces item for bodies of one part', () => {
+  const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2 })
+  const apart = (a: number, b: number): FitGap => ({ bodies: [a, b], kind: 'apart', gapMm: 0.4, limitMm: 0.3, from: [0, 0, 0], to: [0.4, 0, 0], direction: 'xy' })
+  const pieces = (fit: FitFacts, plan: string[]) => fitItems(plan, { fit } as BodyFacts).find((i) => i.name === 'pieces')!
+
+  it('passes a mirrored leaf: two pieces that are bodies of one part, as many as the plan names', () => {
+    const fit: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }], gaps: [apart(0, 1)] }
+    const got = pieces(fit, ['Left leaf', 'Right leaf'])
+    expect(got.pass).toBe(true)
+    expect(got.got).toBe('2 pieces (Left leaf and Right leaf are Leaf 1 and Leaf 2, bodies of one part)')
+  })
+
+  it('passes the names that match and reads the rest as bodies of one part', () => {
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 2), apart(1, 2)] }
+    const got = pieces(fit, ['Pin', 'Left leaf', 'Right leaf'])
+    expect(got.pass).toBe(true)
+    expect(got.got).toBe('3 pieces (Left leaf and Right leaf are Leaf 1 and Leaf 2, bodies of one part)')
+  })
+
+  it('still fails names no body has when each body is a part of its own, which can be renamed', () => {
+    const fit: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Arm', partName: 'Arm' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 1)] }
+    const got = pieces(fit, ['Lid', 'Tray'])
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain('name each piece as the plan does')
+  })
+
+  it('fails when one of the unnamed bodies is a part of its own', () => {
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Arm', partName: 'Arm' }], gaps: [apart(0, 2), apart(1, 2)] }
+    expect(pieces(fit, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(false)
+  })
+})
