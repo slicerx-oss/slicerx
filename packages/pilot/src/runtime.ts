@@ -534,8 +534,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
   // until a run starts a part with it; the run after that asks again.
   const confirmed = new Set<string>()
-  // Sessions whose last plan (design.plan) has pieces that print assembled and move: their sheets get the fit rule's gaps
-  const printInPlace = new Set<string>()
+  // Sessions whose approved plan (design.plan) has pieces that print assembled and move, until that part's building
+  // starts: their sheets get the fit rule's gaps. The value is whether the plan's part has started its design yet, so a
+  // second design.new (another part) ends it, as does the first body built, an approved plan without such pieces, or
+  // nothing at all for a plan the person did not approve.
+  const printInPlace = new Map<string, boolean>()
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
@@ -900,11 +903,6 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
-    if (tool.name === 'design.plan') {
-      const pieces = (input as { printInPlace?: unknown }).printInPlace
-      if (Array.isArray(pieces) && pieces.length >= 2) printInPlace.add(sessionId)
-      else printInPlace.delete(sessionId)
-    }
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       const design = (input as { design?: unknown } | null)?.design
       // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
@@ -916,6 +914,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
       else starting = true
     }
+    // the planned part is being built: a sheet from here on is another part's
+    if (startsPart(tool.name, input)) printInPlace.delete(sessionId)
     const project = opts.project?.()
     const ctx: ToolContext = {
       host: opts.host,
@@ -1034,6 +1034,17 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.display) result.display = out.display
     if (out.untrusted) result.untrusted = true
     emit(result)
+    if (tool.name === 'design.plan' && out.ok !== false && (out.output as { accepted?: unknown } | undefined)?.accepted !== false) {
+      // the plan as approved, with the person's edits when they made any
+      const edits = (out.output as { edits?: { printInPlace?: unknown } } | undefined)?.edits
+      const pieces = edits ? edits.printInPlace : (input as { printInPlace?: unknown }).printInPlace
+      if (Array.isArray(pieces) && pieces.length >= 2) printInPlace.set(sessionId, false)
+      else printInPlace.delete(sessionId)
+    }
+    if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
+      if (printInPlace.get(sessionId)) printInPlace.delete(sessionId)
+      else printInPlace.set(sessionId, true)
+    }
     // the part this chat prints is the design it started last
     if (tool.name === 'design.new' && out.ok !== false) {
       const made = out.output as { design?: unknown; name?: unknown; parts?: unknown } | undefined
