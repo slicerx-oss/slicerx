@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, storedTarget } from '@slicerx/mcp/toolset'
+import { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, storedTarget } from '@slicerx/mcp/toolset'
 import { geom } from '../geom/client'
 import { slotCount } from '../filament/slots'
 import { history, inStep } from '../plate/history'
@@ -14,7 +14,7 @@ import type { LinkClient } from './methods'
 
 type Region = { areaMm2: number; triangles: number; boundsMm: { min: number[]; max: number[] } }
 type States = { state: number; areaMm2: number; triangles: number; regionCount: number; regions: Region[] }[]
-type Preview = { client: string; object: string; plate: string; revision: string; layer: PaintLayerName; edits: StrokeEdits[]; result: Awaited<ReturnType<typeof regions>> }
+type Preview = { client: string; object: string; plate: string; revision: string; layer: PaintLayerName; edits: StrokeEdits[]; result: Awaited<ReturnType<typeof regions>>; texture?: { plan: import('../plate/texture-paint').TexturePlan; changed: boolean; palette?: string[] } }
 const previews = new Map<string, Preview>()
 let sequence = 0
 
@@ -94,6 +94,39 @@ export async function previewPaint(args: Record<string, unknown>, client: LinkCl
   return { summary: `Paint preview for ${e.name}; no changes applied`, output: { ...before, preview: id, changed: edits.length > 0, areaMm2, ...result } }
 }
 
+/** A preview of color paint from the object's texture (the one it was opened with this session). */
+export async function previewFromTexture(args: Record<string, unknown>, client: LinkClient) {
+  const parsed = appPaintFromTextureInput.safeParse(args)
+  if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
+  const tex = await import('../plate/texture-paint')
+  const before = stamp()
+  const e = target(parsed.data.object)
+  const src = tex.textureSourceOf(e.id)
+  if (!src) throw new LinkError('not_found', 'The object has no texture this session; open its OBJ together with the MTL and images, or its 3MF, in the app first')
+  const mode = parsed.data.mode
+  const filaments = tex.filamentColors()
+  if (mode === 'palette' && !tex.paletteAllowed()) throw new LinkError('refused', 'Picking filament colors needs two or more filaments, none set by hand or by the printer')
+  if (mode === 'nearest' && filaments.length < 2) throw new LinkError('refused', 'Set up two or more filaments first')
+  const plan = await tex.planTexturePaint(e, src, mode, mode === 'palette' ? filaments.map(() => '#808080') : filaments)
+  if (!plan.reply.textured) throw new LinkError('not_found', plan.reply.notes.join(' ') || 'The texture paints nothing on this object')
+  const paint: PaintData = { ...e.paint }
+  for (const edit of plan.edits) {
+    const texts = { ...(paint[edit.partIndex]?.color ?? {}) }
+    for (const { triangle, after } of edit.edits) { if (after) texts[triangle] = after; else delete texts[triangle] }
+    paint[edit.partIndex] = { ...paint[edit.partIndex], color: texts }
+  }
+  const result = await regions(e, 'color', paint)
+  unchanged(before)
+  const id = `paint-${Date.now().toString(36)}-${++sequence}`
+  const palette = mode === 'palette' ? plan.reply.palette : undefined
+  const changed = tex.texturePlansChange([plan], palette)
+  previews.set(id, { ...before, client: client.id, object: e.id, layer: 'color', edits: plan.edits, result, texture: { plan, changed, ...(palette ? { palette } : {}) } })
+  if (previews.size > 32) previews.delete(previews.keys().next().value!)
+  const filamentsUsed = plan.reply.slots.map((s) => ({ slot: s.slot, areaMm2: s.areaMm2, color: palette?.[s.slot - 1] ?? filaments[s.slot - 1] }))
+  const partSlots = Object.entries(plan.slots).map(([i, slot]) => ({ part: Number(i), name: e.parts[Number(i)]?.name ?? '', slot }))
+  return { summary: `Texture paint preview for ${e.name}: ${tex.paintedText(plan.reply.colors).replace('Painted from texture: ', '')}; no changes applied`, output: { ...before, preview: id, changed, filaments: filamentsUsed, ...(palette ? { palette } : {}), partSlots, notes: plan.reply.notes, ...result } }
+}
+
 export async function applyPaint(args: Record<string, unknown>, client: LinkClient) {
   const parsed = appPaintApplyInput.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
@@ -109,10 +142,12 @@ export async function applyPaint(args: Record<string, unknown>, client: LinkClie
     const family = allPlates(get()).flatMap((p) => p.objects).filter((p) => p.id === root || p.instanceOf === root)
     if (family.some((p) => p.locked)) throw new LinkError('refused', 'Unlock linked copies before painting fuzzy skin; its setting is shared')
   }
-  inStep({}, () => { for (const edit of pv.edits) commitStroke(edit) })
+  if (pv.texture) (await import('../plate/texture-paint')).applyTexturePlans([pv.texture.plan], pv.texture.palette)
+  else inStep({}, () => { for (const edit of pv.edits) commitStroke(edit) })
   previews.delete(parsed.data.preview)
-  if (pv.edits.length) toast(`${client.name} painted ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
-  return { summary: `Paint ${pv.edits.length ? 'applied to' : 'unchanged on'} ${e.name}`, output: { ...stamp(), ...pv.result, objectSettings: objectOverrides(get(), target(e.id)), changed: pv.edits.length > 0 } }
+  if (pv.edits.length && !pv.texture) toast(`${client.name} painted ${e.name}.`, 'info', { label: 'Undo', run: () => void history().undo() })
+  const changed = pv.texture ? pv.texture.changed : pv.edits.length > 0
+  return { summary: `Paint ${changed ? 'applied to' : 'unchanged on'} ${e.name}`, output: { ...stamp(), ...pv.result, objectSettings: objectOverrides(get(), target(e.id)), changed } }
 }
 
 export async function clearLayer(args: Record<string, unknown>, client: LinkClient) {

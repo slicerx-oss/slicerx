@@ -193,3 +193,56 @@ test('a dropped STEP with colored bodies opens on filaments of its colors', asyn
   await note.getByTestId('open-note-action').filter({ hasText: 'Use one filament' }).click()
   await expect.poll(slots).toEqual([1, 1, 1])
 })
+
+// Paint from a texture: an OBJ dropped with its MTL and PNG shows painted from its texture, the toast says how many
+// colors went to which filaments with an Undo, and the view shows the four colors on the cube.
+test('an OBJ dropped with its MTL and PNG is painted from its texture, with an Undo toast', async ({ page }) => {
+  test.slow()
+  const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'geom', 'tests', 'fixtures', 'texture')
+  const files = ['textured-cube.obj', 'textured-cube.mtl', 'quadrants.png'].map((name) => ({ name, data: [...readFileSync(join(fixtures, name))] }))
+  const red = { type: 'PLA', brand: '', color: '#e6141e' }
+  await setState(page, {
+    plate: [], selection: null, selectedIds: [], toast: null, openNote: null, printerSlots: [],
+    slotSetup: { 1: red, 2: { ...red, color: '#14c828' }, 3: { ...red, color: '#1428dc' }, 4: { ...red, color: '#f5f5f5' } },
+  })
+  await page.evaluate((files) => {
+    const dt = new DataTransfer()
+    for (const f of files) dt.items.add(new File([new Uint8Array(f.data)], f.name))
+    window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+  }, files)
+  await expect.poll(async () => (await store(page)).toast?.text ?? '', { timeout: 60_000 }).toBe('Painted from texture: 4 colors to filaments 1, 2, 3 and 4.')
+  const painted = (await page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { paint?: Record<number, { color?: Record<number, string> }> }[] } } }).__sx.getState().plate[0]?.paint?.[0]?.color)) ?? {}
+  expect(Object.keys(painted).length).toBeGreaterThan(0)
+
+  // Framed, the cube shows red, green and blue (white is the bed's color too): each covers more than 200 pixels of the
+  // canvas. The Slice tab slices the new plate and then shows its toolpaths, so each look asks for the solid models.
+  await page.evaluate(() => (window as unknown as { __vp: { zoomToSelection(o: { animate: boolean }): void } }).__vp.zoomToSelection({ animate: false }))
+  const canvas = page.locator('canvas').first()
+  await expect.poll(async () => {
+    await setState(page, { sliceLook: 'solid' })
+    await page.waitForTimeout(200)
+    const shot = (await canvas.screenshot()).toString('base64')
+    return page.evaluate(async (b64) => {
+      const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob())
+      const c = new OffscreenCanvas(bmp.width, bmp.height)
+      const g = c.getContext('2d')!
+      g.drawImage(bmp, 0, 0)
+      const px = g.getImageData(0, 0, bmp.width, bmp.height).data
+      const n = { red: 0, green: 0, blue: 0 }
+      for (let i = 0; i < px.length; i += 4) {
+        const [r, gr, b] = [px[i]!, px[i + 1]!, px[i + 2]!]
+        const max = Math.max(r, gr, b)
+        const min = Math.min(r, gr, b)
+        if (max < 60 || max - min < max * 0.45) continue
+        if (max === r && gr < r * 0.5 && b < r * 0.5) n.red++
+        else if (max === gr && r < gr * 0.6 && b < gr * 0.6) n.green++
+        else if (max === b && r < b * 0.5 && gr < b * 0.7) n.blue++
+      }
+      return Math.min(n.red, n.green, n.blue)
+    }, shot)
+  }, { timeout: 30_000 }).toBeGreaterThan(200)
+
+  // Undo in the toast takes the paint off and keeps the model.
+  await page.getByRole('button', { name: 'Undo' }).last().click()
+  await expect.poll(async () => { const s = await store(page); return [s.plate.length, (s.plate[0] as { paint?: unknown } | undefined)?.paint === undefined] }).toEqual([1, true])
+})

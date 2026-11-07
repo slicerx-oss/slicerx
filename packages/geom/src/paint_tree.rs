@@ -23,7 +23,7 @@ use crate::vec3::V3;
 pub type Leaf = ([V3; 3], u8);
 
 /// Deepest nesting read, so a broken text cannot run away.
-const MAX_DEPTH: u32 = 12;
+pub const MAX_DEPTH: u32 = 12;
 
 /// The highest state a paint text names (for color, filament 32). A higher one reads as unpainted.
 pub const MAX_STATE: u8 = 32;
@@ -198,6 +198,13 @@ pub enum Node {
         special: u8,
         kids: Vec<Node>,
     },
+}
+
+/// The corners of a split's children, in the stream's order (the layout `leaves` reads), for building a tree: `splits`
+/// 1 to 3 sides about the `special` corner (3 and 0 split in four).
+#[must_use]
+pub fn split_corners(v: [V3; 3], splits: u8, special: u8) -> Option<Vec<[V3; 3]>> {
+    kids_of(v, splits, special)
 }
 
 /// The corners of a split's children, in the stream's order (the layout `leaves` reads).

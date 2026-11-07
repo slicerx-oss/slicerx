@@ -1067,6 +1067,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .paint-slot { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; padding: 3px 8px 3px 5px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--ink-2); font-size: calc(12px * var(--text-scale)); }
 .paint-slot[aria-checked='true'] { border-color: var(--purple); box-shadow: 0 0 0 1px var(--purple) inset; }
 .paint-act { display: flex; gap: 6px; margin-top: 6px; }
+.paint-texture-preview { display: grid; gap: 4px; margin-top: 6px; }
+.paint-slot-area { cursor: default; font-variant-numeric: tabular-nums; }
 
 /* Object list rows */
 .obj-row { display: flex; align-items: center; gap: 4px; }

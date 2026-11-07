@@ -30,6 +30,13 @@ export function createTauriFiles(startEngine: (fileName: string) => void = () =>
       return refs
     },
     read: (ref) => (ref.path ? invoke<ArrayBuffer>('read_file', { id: Number(ref.id) }) : web.read(ref)),
+    // the shell checks the name and reads only a material or an image in the OBJ's own folder
+    readBeside: async (ref, name, maxBytes) => {
+      if (!ref.path) return null
+      // no bytes: no such file beside the OBJ, or one the shell may not read; the shell stops reading at `max`
+      const bytes = await invoke<ArrayBuffer>('read_beside', { id: Number(ref.id), name, ...(maxBytes !== undefined ? { max: Math.max(0, Math.floor(maxBytes)) } : {}) })
+      return bytes.byteLength ? bytes : null
+    },
     async save(suggestedName, data) {
       const bytes = new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data)
       // Header values take only Latin-1, so the name goes percent-encoded; the shell decodes it.

@@ -52,4 +52,4 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
 }
 
 export { appUnitInputs, type AppUnits } from './app-units'
-export { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, storedTarget } from './app-paint-input'
+export { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, appPaintFromTextureInput, storedTarget } from './app-paint-input'

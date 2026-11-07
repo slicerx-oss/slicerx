@@ -270,6 +270,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `export-menu` | Export, in the Add menu |
 | `objects-tools` | Tools, in the Add menu |
 | `objects-tool-<id>` | One tool in the Tools menu, by its shelf id (`objects-tool-cut`, `objects-tool-paint`) |
+| `paint-from-texture` | From texture in the paint panel: previews color paint from the selected object's texture, asking for the files when the object has none |
+| `paint-texture-preview` | The From texture preview: the filaments it paints with their areas, and any notes |
+| `paint-texture-apply` | Apply in that preview: paints the object as one Undo step |
+| `paint-texture-palette` | Pick filament colors from the texture, in that preview, when no filament color is set by hand or by the printer |
 | `slice-objects-add-menu` | The Add button's menu half |
 | `slice-object-expand` | The row's chevron: opens its tree of parts and volumes |
 | `slice-object-override-badge` | The badge for settings an object has of its own |

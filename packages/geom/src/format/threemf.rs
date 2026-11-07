@@ -66,6 +66,8 @@ impl Paint {
 pub struct Part {
     /// the mesh object's id in its model file
     pub id: u32,
+    /// that model file's path in the package
+    pub model: String,
     /// empty when the file names none
     pub name: String,
     /// the mesh object's own name in the model file
@@ -479,6 +481,7 @@ fn objects_of(
                         continue;
                     }
                     part.id = leaf.id;
+                    part.model.clone_from(&leaf.path);
                     part.range = Some((first, last));
                     part.chain.clone_from(&leaf.chain);
                     part.transformed = leaf.transformed;
@@ -489,6 +492,7 @@ fn objects_of(
             }
             let mut part = if last { mesh.take() } else { mesh.copy() };
             part.id = leaf.id;
+            part.model = leaf.path;
             part.chain = leaf.chain;
             part.transformed = leaf.transformed;
             if let Some(info) = own.and_then(|o| o.parts.get(&leaf.id)) {

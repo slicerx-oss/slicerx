@@ -190,6 +190,7 @@ fn main() {
             slicing::release,
             files::open_files,
             files::read_file,
+            files::read_beside,
             files::save_file,
             files::save_file_to,
             link::link_start,

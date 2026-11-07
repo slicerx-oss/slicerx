@@ -30,7 +30,10 @@ export function createWebFiles(): FileHost {
     const list = e.dataTransfer?.files
     if (!list || list.length === 0) return
     e.preventDefault()
-    const refs = [...list].filter((f) => /\.(stl|3mf|sx3mf|sxlock|obj|amf|step|stp|igs|iges|gcode|json)$/i.test(f.name)).map(remember)
+    // MTL and image files come along only with an OBJ, whose texture the app reads from them. Alone they are left to
+    // whatever they were dropped on (a chat box or a file field, say).
+    const withObj = [...list].some((f) => /\.obj$/i.test(f.name))
+    const refs = [...list].filter((f) => /\.(stl|3mf|sx3mf|sxlock|obj|amf|step|stp|igs|iges|gcode|json)$/i.test(f.name) || (withObj && /\.(mtl|png|jpe?g)$/i.test(f.name))).map(remember)
     if (refs.length) for (const l of listeners) l(refs, 'drop')
   })
 

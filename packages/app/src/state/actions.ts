@@ -39,7 +39,7 @@ export async function seedExamplePlate(host: Host): Promise<void> {
 /** Open (the default) starts a new project with the files; `fresh: false` is Add model, onto the plate as it is. */
 export async function openModelFiles(host: Host, opts: { fresh?: boolean } = {}): Promise<void> {
   // the picker opens before anything loads, while the click still counts as the person's
-  const refs = await host.files.open({ accept: ['.stl', '.3mf', '.sx3mf', '.sxlock', '.obj', '.amf', '.step', '.stp', '.igs', '.iges', '.json', '.gcode'], multiple: true })
+  const refs = await host.files.open({ accept: ['.stl', '.3mf', '.sx3mf', '.sxlock', '.obj', '.mtl', '.png', '.jpg', '.jpeg', '.amf', '.step', '.stp', '.igs', '.iges', '.json', '.gcode'], multiple: true })
   await addFileRefs(host, refs, { fresh: opts.fresh ?? true })
 }
 
