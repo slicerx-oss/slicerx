@@ -4,10 +4,10 @@
 // in a session log, which the read-back for clients serves, and the person's messages are kept beside it (the runtime
 // logs only its own events). With a model set up (mimir cloud, a key or a local model, as in Settings > mimir) the tab
 // runs it; with none, the scripted stub answers over the same tools, and the chat says so.
-import { DEFAULT_POLICY, type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
+import { type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
-import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, sliceFigures, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
+import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
@@ -98,9 +98,7 @@ function toolsFor(loader: Loader): PilotTool<never>[] {
 }
 
 /** Commands that slice, print or change slicer settings, which a host that only models leaves out of mimir's tools. */
-export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[] {
-  return commands.filter((c) => c.section !== 'slice' && c.section !== 'printers' && c.section !== 'settings' && c.id !== 'mode-slice' && !c.id.startsWith('layer-'))
-}
+export { modelingCommands }
 
 /**
  * The app's commands as mimir runs them: the same, except that a slice happens where mimir is, so the tab and its
@@ -207,24 +205,14 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
       geom: { run: (op: string, input: unknown, signal?: AbortSignal) => geom().call(op, input, signal) },
       projectExport: projectExportHost(host),
     },
-    // a part takes many feature steps
-    config: { ...parts.config, maxSteps: Math.max(parts.config.maxSteps, 40), maxToolCalls: Math.max(parts.config.maxToolCalls, 60) },
-    ...(slices ? {} : { scope: 'cad' as const }),
-    surface: 'tab',
-    policy: DEFAULT_POLICY,
-    commands: slices ? [...commands] : modelingCommands(commands),
-    kb: parts.kb,
-    planner: createCombinedPlanner(parts.kb),
+    // the limits a part needs, the scope, the commands, the brain pack's groups, the knowledge and the tools, made the
+    // same way for the creative eval (@slicerx/pilot tab-options.ts)
+    ...tabOptions({ slices, config: parts.config, kb: parts.kb, tools: parts.tools, commands, ...(parts.client ? { client: parts.client } : {}), ...(parts.share ? { share: parts.share } : {}), ...(parts.memory ? { memory: parts.memory } : {}), ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}) }),
     project: appProject(host),
-    tools: [...parts.tools],
     store: mimirLogs,
     // a turn that leaves toolsets out to stay under the provider's tool limit says so in the app log
     log: note,
     printRun: appPrintRun(host),
-    ...(parts.client ? { client: parts.client } : {}),
-    ...(parts.share ? { share: parts.share } : {}),
-    ...(parts.memory ? { memory: parts.memory } : {}),
-    ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}),
   }
 }
 
