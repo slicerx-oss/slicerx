@@ -18,8 +18,8 @@ export async function readSvgFile(f: File): Promise<{ name: string; text: string
 
 export function SvgFileField({ id, file, onFile, onError }: { id: string; file: { name: string } | null; onFile: (f: { name: string; text: string }) => void; onError: (message: string) => void }) {
   return (
-    <Field htmlFor={id} label="SVG file" hint={file ? file.name : undefined}>
-      <label className="cad-file">
+    <Field htmlFor={id} label="SVG file">
+      <label className="cad-file" data-picked={file ? '' : undefined}>
         <input
           id={id}
           type="file"
@@ -29,7 +29,8 @@ export function SvgFileField({ id, file, onFile, onError }: { id: string; file: 
             if (f) void readSvgFile(f).then(onFile, (err: unknown) => onError(err instanceof Error ? err.message : String(err)))
           }}
         />
-        <span>Choose an SVG</span>
+        <span className="cad-file-name">{file ? file.name : 'Choose an SVG'}</span>
+        {file ? <span className="cad-file-change">Change</span> : null}
       </label>
     </Field>
   )

@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The sketch panel's cards and the cursor pills: when the solid card folds and why, the view's mode pill words, the
 // live numbers each tool's pills show, and typing and Tab in the pills.
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { createElement, createRef } from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createElement, createRef, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CursorPills, nextPill, placePills, type CursorPillsHandle } from '../src/cad/cursor-pills'
 import { emptyDraft, fieldsFor, liveValues, typedPoint, type Draft } from '../src/cad/sketch-model'
 import { appState } from '../src/agent-bridge/page'
 import { Card, Num } from '../src/cad/panel-kit'
+import { SvgFileField } from '../src/cad/svg-file'
 import { get } from '../src/state/store'
 import { applyReason, lookAtSketch, profileState, provideSketchLook, setSketchMode, sketchMode, sketchModeText, solidCard, surfaceOf } from '../src/cad/sketch-mode'
 
@@ -296,5 +297,33 @@ describe('the phone keyboard', () => {
     expect(keyboardLift(844, { height: 508, offsetTop: 0 })).toBe(336)
     expect(keyboardLift(844, { height: 508, offsetTop: 40 })).toBe(296)
     expect(keyboardLift(844, { height: 900, offsetTop: 0 })).toBe(0)
+  })
+})
+
+describe('SVG file field', () => {
+  const ART = (w: number) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${w}"><path d="M0 0H${w}V${w}Z"/></svg>`
+  function Host() {
+    const [file, setFile] = useState<{ name: string } | null>(null)
+    return createElement(SvgFileField, { id: 'f', file, onFile: setFile, onError: () => undefined })
+  }
+  const pick = (input: HTMLInputElement, name: string, w: number) => fireEvent.change(input, { target: { files: [new File([ART(w)], name, { type: 'image/svg+xml' })] } })
+
+  it('shows the picked name in the field, offers Change, and a second file replaces the first', async () => {
+    const { container } = render(createElement(Host))
+    const field = container.querySelector('.cad-file')!
+    const input = container.querySelector<HTMLInputElement>('#f')!
+    expect(field.textContent).toBe('Choose an SVG')
+    pick(input, 'ring.svg', 40)
+    await waitFor(() => expect(field.textContent).toContain('ring.svg'))
+    expect(field.textContent).not.toContain('Choose an SVG')
+    expect(field.textContent).toContain('Change')
+    // the name is not repeated as a second line under the field
+    expect(container.textContent!.split('ring.svg').length - 1).toBe(1)
+    // the input keeps its label
+    expect(container.querySelector('label[for="f"]')?.textContent).toBe('SVG file')
+    pick(input, 'gear.svg', 60)
+    await waitFor(() => expect(field.textContent).toContain('gear.svg'))
+    expect(field.textContent).not.toContain('ring.svg')
+    expect(container.textContent!.split('gear.svg').length - 1).toBe(1)
   })
 })
