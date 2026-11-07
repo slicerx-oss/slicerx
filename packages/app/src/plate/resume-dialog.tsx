@@ -176,7 +176,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
             {plan ? <i className="rs-cut" style={{ bottom: `${Math.max(0, Math.min(100, (plan.printedHeightMm / Math.max(0.001, plateHeight(whole))) * 100))}%` }} /> : null}
           </div>
           <Icon name="arrow-right" size={16} />
-          <div className="rs-sil rs-rest">{remaining ? <Silhouette parts={remaining} /> : <span className="rs-empty">{working ? WORKING : busy ? 'Planning' : 'What is left'}</span>}</div>
+          <div className="rs-sil rs-rest">{remaining ? <Silhouette parts={remaining} /> : <span className="rs-empty">{busy ? 'Planning' : 'What is left'}</span>}</div>
         </div>
         <dl className="rs-facts">
           <div>
