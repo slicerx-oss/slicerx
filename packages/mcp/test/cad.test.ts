@@ -213,6 +213,20 @@ describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', 
     expect(JSON.stringify(tight.content)).toMatch(/the path bends too tightly for the profile/)
   })
 
+  it('sweeps an open profile into a surface and thickens it into a sheet', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    // a 10 mm line across the bed, carried 20 mm up: a 10 by 20 mm sheet, 2 mm thick
+    const profile = { open: true, loops: [{ points: [[0, 0], [10, 0]] }] }
+    const path = { points: [[0, 0, 0], [0, 0, 20]] }
+    const r = await h.call('slicerx_geom_sweep', { profile, path, thicken: { thicknessMm: 2, side: 'center' } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: MeshOut }>(r).output
+    expect(out.watertight).toBe(true)
+    expect(out.volumeMm3).toBeCloseTo(400, 3)
+    const bare = await h.call('slicerx_geom_sweep', { profile, path })
+    expect(JSON.stringify(bare.content)).toMatch(/thicken: an open profile makes a surface; give thicken to make it a solid/)
+  })
+
   it('revolves a profile and checks a sketch', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const ring = [{ points: [[5, 0], [10, 0], [10, 10], [5, 10]] }]
