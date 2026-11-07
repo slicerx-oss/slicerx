@@ -154,6 +154,27 @@ describe('the pieces item for bodies of one part', () => {
     expect(got.got).toContain('name each piece as the plan does')
   })
 
+  it('fails a piece merged into another while a third is mirrored: the mirrored part already answers its own name', () => {
+    // Pin joined into Arm, Base mirrored into two bodies: the count matches, but Base 2 is not the Pin
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Base 1', partName: 'Base' }, { part: 0, name: 'Base 2', partName: 'Base' }, { part: 1, name: 'Arm', partName: 'Arm' }], gaps: [apart(0, 2), apart(1, 2)] }
+    const got = pieces(fit, ['Base', 'Arm', 'Pin'])
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain('Pin is not among them')
+  })
+
+  it('fails two parts of several bodies when one part answers a name and its other body would stand in for another', () => {
+    // a fused leaf counts as one piece, so the count matches only with the second pin read as a leaf
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Pin 1', partName: 'Pin' }, { part: 1, name: 'Pin 2', partName: 'Pin' }], gaps: [apart(0, 2), apart(1, 3)] }
+    expect(pieces(fit, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(false)
+  })
+
+  it('passes two parts of several bodies, each body one of the names left over', () => {
+    const fit: FitFacts = { limits, pieces: 4, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Pin 1', partName: 'Pin' }, { part: 1, name: 'Pin 2', partName: 'Pin' }], gaps: [apart(0, 2), apart(1, 3)] }
+    const got = pieces(fit, ['Left leaf', 'Right leaf', 'Front pin', 'Back pin'])
+    expect(got.pass).toBe(true)
+    expect(got.got).toBe('4 pieces (Left leaf, Right leaf, Front pin and Back pin are Leaf 1, Leaf 2, Pin 1 and Pin 2, bodies of parts that hold several)')
+  })
+
   it('fails when one of the unnamed bodies is a part of its own', () => {
     const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Arm', partName: 'Arm' }], gaps: [apart(0, 2), apart(1, 2)] }
     expect(pieces(fit, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(false)
