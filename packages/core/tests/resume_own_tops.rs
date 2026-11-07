@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! A resume of a plate with its own layer heights, planned and sliced for real: the resume planner counts layers in
-//! the tops the slice prints (the plate's own, stretched by a Z shrinkage as the slice stretches them), so the last
-//! layer left on the bed ends at the measured height, within half a layer, and the resumed G-code starts on the next.
+//! A resume of a plate with its own layer heights, planned and sliced for real, as the app does it when it has no
+//! current slice: the job's layers come from the engine (the same request with no resume), the resume planner
+//! counts in them, and the resume sends them back as the job's (exact and sliced). The last layer left on the bed
+//! then ends at the measured height, within half a layer, and the resumed G-code starts on the next, also where a Z
+//! shrinkage stretches the plate and some layers sit at the printer's maximum layer height.
 
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -13,12 +15,10 @@ use sx_core::api::{self, Mesh, SliceRequest, SliceRun};
 use sx_geom::mesh::TriMesh;
 use sx_geom::resume::{ResumeRequest, plan};
 
-const MEASURED: f64 = 5.0;
-
-/// The corners and triangles of a 10 mm box on the bed.
-fn corners() -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+/// The corners and triangles of a 10 x 10 mm box `h` mm tall on the bed.
+fn corners(h: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
     let mut positions = Vec::new();
-    for z in [0.0, 10.0] {
+    for z in [0.0, h] {
         for (x, y) in [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)] {
             positions.push([x, y, z]);
         }
@@ -32,8 +32,8 @@ fn corners() -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
     (positions, triangles)
 }
 
-fn mesh() -> Mesh {
-    let (positions, triangles) = corners();
+fn mesh(h: f32) -> Mesh {
+    let (positions, triangles) = corners(h);
     Mesh {
         name: "box".into(),
         parts: vec![api::MeshPart {
@@ -52,25 +52,20 @@ fn mesh() -> Mesh {
     }
 }
 
-/// The plate's own tops: a 0.2 mm first layer, then 0.1 mm layers to the 10 mm top, on a `layer_height` of 0.2.
-fn own_tops() -> Vec<f64> {
+/// Tops of a 0.2 mm first layer, then `n` layers of each height in `runs`, kept to 0.1 micron.
+fn tops_of(runs: &[(f64, usize)]) -> Vec<f64> {
     let mut tops = vec![0.2];
-    while tops.last().copied().unwrap_or(0.0) < 10.0 - 1e-9 {
-        let next: f64 = tops.last().copied().unwrap_or(0.0) + 0.1;
-        tops.push((next * 1e4).round() / 1e4);
+    for &(h, n) in runs {
+        for _ in 0..n {
+            let next: f64 = tops.last().copied().unwrap_or(0.0) + h;
+            tops.push((next * 1e4).round() / 1e4);
+        }
     }
     tops
 }
 
-/// The tops stretched to a Z scale of `fz` as the app plans them: the first layer kept, the last on last x fz.
-fn stretched(tops: &[f64], fz: f64) -> Vec<f64> {
-    let (first, last) = (tops[0], tops[tops.len() - 1]);
-    let k = (last * fz - first) / (last - first);
-    tops.iter().map(|t| first + (t - first) * k).collect()
-}
-
-fn slice(config: &Value, options: &Value) -> SliceRun {
-    let m = Arc::new(mesh());
+fn slice(h: f32, config: &Value, options: &Value) -> SliceRun {
+    let m = Arc::new(mesh(h));
     let mut cfg = json!({"brim_width": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2, "min_layer_height": [0.08], "max_layer_height": [0.28]});
     if let (Some(base), Some(extra)) = (cfg.as_object_mut(), config.as_object()) {
         base.extend(extra.clone());
@@ -98,13 +93,14 @@ fn printed_zs(run: &SliceRun) -> Vec<f64> {
         .collect()
 }
 
-fn plan_layer(tops: Option<Vec<f64>>) -> (u32, f64) {
-    let (positions, triangles) = corners();
+/// The resume planner's layer for `measured` mm on a box `h` mm tall, counting in `tops` (even layers without).
+fn plan_layer(h: f32, measured: f64, tops: Option<Vec<f64>>) -> (u32, f64) {
+    let (positions, triangles) = corners(h);
     let box_mesh = TriMesh::from_f32(&positions, &triangles).unwrap();
     let p = plan(
         &box_mesh,
         &ResumeRequest {
-            measured_height_mm: Some(MEASURED),
+            measured_height_mm: Some(measured),
             layer_height_mm: 0.2,
             first_layer_height_mm: 0.2,
             layer_tops_mm: tops,
@@ -116,67 +112,108 @@ fn plan_layer(tops: Option<Vec<f64>>) -> (u32, f64) {
     (p.resume_layer, p.printed_height_mm)
 }
 
+/// Slices the job (the plate's own tops, exact), plans a resume at `measured` in its layers and slices the resume
+/// with them, exact and sliced. Returns the job's layers, the resume layer and the resumed run.
+fn resume_in_job_layers(h: f32, config: &Value, own: &[f64], measured: f64) -> (Vec<f64>, usize, SliceRun) {
+    let job = layer_z(&slice(
+        h,
+        config,
+        &json!({"flavor": "marlin2", "layerTopsMm": own, "layerTopsExact": true}),
+    ));
+    let (r, printed) = plan_layer(h, measured, Some(job.clone()));
+    let resumed = slice(
+        h,
+        config,
+        &json!({"flavor": "marlin2", "layerTopsMm": job, "layerTopsExact": true, "layerTopsSliced": true, "resumeFromLayer": r}),
+    );
+    let at = usize::try_from(r).unwrap();
+    let z = layer_z(&resumed);
+    assert!(
+        (z[at - 1] - printed).abs() < 1e-4,
+        "{config}: {} vs {printed}",
+        z[at - 1]
+    );
+    (job, at, resumed)
+}
+
+/// Every layer is the job's; the last on the bed ends within half its thickness of `measured`; the G-code prints the
+/// rest from the next.
+fn assert_lands(config: &Value, job: &[f64], at: usize, resumed: &SliceRun, measured: f64) {
+    let z = layer_z(resumed);
+    assert_eq!(z.len(), job.len(), "{config}");
+    for (i, (a, b)) in z.iter().zip(job).enumerate() {
+        assert!(
+            (a - b).abs() < 1e-4,
+            "{config}: layer {i} at {a}, the job had {b}"
+        );
+    }
+    let half = (z[at - 1] - z[at - 2]) / 2.0;
+    assert!(
+        (z[at - 1] - measured).abs() <= half + 1e-4,
+        "{config}: resume from layer {at}, the bed holds {} mm, measured {measured}",
+        z[at - 1]
+    );
+    let g = printed_zs(resumed);
+    assert_eq!(g.len(), z.len() - at, "{config}");
+    assert!(
+        (g[0] - z[at]).abs() < 1e-3,
+        "{config}: first Z {} vs {}",
+        g[0],
+        z[at]
+    );
+}
+
 #[test]
-fn a_resume_planned_in_the_plate_own_tops_slices_from_the_measured_height() {
-    // As planned and sliced with no current slice: the plan counts in the own tops (stretched for 99.5 percent), the
-    // slice sends the drawn tops, exact and unmarked, from that layer.
-    for (config, fz) in [
-        (json!({}), 1.0),
-        (
-            json!({"filament_shrinkage_compensation_z": ["99.5%"]}),
-            100.0 / 99.5,
-        ),
-    ] {
-        let tops = own_tops();
-        let (r, printed) = plan_layer(Some(stretched(&tops, fz)));
-        let at = usize::try_from(r).unwrap();
-        let resumed = slice(
-            &config,
-            &json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true, "resumeFromLayer": r}),
-        );
-        let z = layer_z(&resumed);
-        assert_eq!(z.len(), tops.len(), "{config}");
-        // The last layer left on the bed ends at the measured height, within half a 0.1 mm layer, where the plan said.
-        assert!(
-            (z[at - 1] - MEASURED).abs() <= 0.05 + 1e-4,
-            "{config}: resume from layer {r}, the bed holds {} mm",
-            z[at - 1]
-        );
-        assert!(
-            (z[at - 1] - printed).abs() < 1e-4,
-            "{config}: {} vs {printed}",
-            z[at - 1]
-        );
-        // The G-code starts on the next layer and prints the rest.
-        let g = printed_zs(&resumed);
-        assert_eq!(g.len(), z.len() - at, "{config}");
-        assert!(
-            (g[0] - z[at]).abs() < 1e-3,
-            "{config}: first Z {} vs {}",
-            g[0],
-            z[at]
-        );
-        assert!(
-            g[0] > MEASURED && g[0] - MEASURED <= 0.1 + 0.05,
-            "{config}: first Z {}",
-            g[0]
-        );
+fn a_resume_planned_in_the_job_layers_slices_from_the_measured_height() {
+    // 0.1 mm layers drawn on a 0.2 mm layer height, as drawn and stretched for 99.5 percent.
+    let own = tops_of(&[(0.1, 98)]);
+    for config in [json!({}), json!({"filament_shrinkage_compensation_z": ["99.5%"]})] {
+        let (job, at, resumed) = resume_in_job_layers(10.0, &config, &own, 5.0);
+        assert_lands(&config, &job, at, &resumed, 5.0);
     }
 }
 
 #[test]
+fn a_resume_lands_on_the_measured_height_where_layers_sit_at_the_maximum() {
+    // 0.28 mm layers (the printer's maximum) to 20.08 mm, then 0.1 mm to the 40 mm top, 99 percent in Z. The engine
+    // keeps the layers at the maximum and stretches the thin ones, so a part measured at 20.08 mm resumes on layer 73.
+    let mut own = tops_of(&[(0.28, 71), (0.1, 198)]);
+    own.push(40.0);
+    assert!((own[71] - 20.08).abs() < 1e-6);
+    let config = json!({"filament_shrinkage_compensation_z": ["99%"]});
+    let (job, at, resumed) = resume_in_job_layers(40.0, &config, &own, 20.08);
+    assert!(
+        job.windows(2)
+            .take(71)
+            .all(|w| matches!(w, [a, b] if ((b - a) - 0.28).abs() < 1e-4)),
+        "layers at the maximum stretched"
+    );
+    assert_eq!(at, 72);
+    assert_lands(&config, &job, at, &resumed, 20.08);
+    // Counting in the drawn tops stretched evenly by 1 / 0.99, as the app did before, picks a layer whose top in the
+    // job is more than half a layer under the measured height: the restart would print inside the part.
+    let (first, last) = (own[0], own[own.len() - 1]);
+    let k = (last / 0.99 - first) / (last - first);
+    let even: Vec<f64> = own.iter().map(|t| first + (t - first) * k).collect();
+    let (r, _) = plan_layer(40.0, 20.08, Some(even));
+    let wrong = job[usize::try_from(r).unwrap() - 1];
+    assert!(20.08 - wrong > 0.14, "the even stretch lands at {wrong}");
+}
+
+#[test]
 fn a_resume_planned_in_even_layers_lands_far_from_the_measured_height() {
-    // The plan before the fix, in even 0.2 mm layers, picks layer 25: in the plate's own tops that is 2.6 mm up.
-    let tops = own_tops();
-    let (r, _) = plan_layer(None);
+    // A plan in even 0.2 mm layers picks layer 25: in the plate's own 0.1 mm tops that is 2.6 mm up.
+    let own = tops_of(&[(0.1, 98)]);
+    let (r, _) = plan_layer(10.0, 5.0, None);
     assert_eq!(r, 25);
     let resumed = slice(
+        10.0,
         &json!({}),
-        &json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true, "resumeFromLayer": r}),
+        &json!({"flavor": "marlin2", "layerTopsMm": own, "layerTopsExact": true, "resumeFromLayer": r}),
     );
     let z = layer_z(&resumed);
     assert!(
-        (z[usize::try_from(r).unwrap() - 1] - MEASURED).abs() > 2.0,
+        (z[usize::try_from(r).unwrap() - 1] - 5.0).abs() > 2.0,
         "{}",
         z[24]
     );
