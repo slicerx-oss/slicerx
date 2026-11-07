@@ -133,7 +133,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(own && layerTopsMm === own ? { layerTopsExact: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,
