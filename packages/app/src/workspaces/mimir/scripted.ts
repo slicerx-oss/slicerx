@@ -4,7 +4,8 @@
 // a model. Each message picks the script whose words it matches; the script streams text and makes real tool calls,
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
 import { assistantText } from '@slicerx/contracts'
-import { DEFAULT_CONFIG, RUNTIME_NOTES, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
+import { mimirTabTools } from '@slicerx/mcp/toolset'
+import { DEFAULT_CONFIG, RUNTIME_NOTES, createPilot, createScriptedClient, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
 import { planTool } from './plan-tool'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
@@ -76,13 +77,12 @@ export const NO_APPROVALS: ApprovalHost = {
 } as unknown as ApprovalHost
 const NO_LLM = {} as LlmTransport
 
-/** The tab's own tools: questions, lookups and sheets, then the given design tools. */
+/**
+ * The tab's own tools: questions, lookups, sheets and the card's design.plan, then the given design tools, without the
+ * design toolset's design.put_plan (@slicerx/mcp tab-tools.ts, which the creative eval uses too).
+ */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), planTool()]
-  // the tab's own tools win, and the design toolset's design.put_plan (a client plan kept with no card, for MCP
-  // clients) stays out: plans here are made on the card
-  const names = new Set([...own.map((t) => t.name), 'design.put_plan'])
-  return [...own, ...extra.filter((t) => !names.has(t.name))]
+  return mimirTabTools(planTool(), extra)
 }
 
 /** The scripted stub's huginn and muninn: the stub, never a real model's id. */
