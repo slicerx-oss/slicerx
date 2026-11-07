@@ -2,18 +2,18 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T18:12:39.205Z",
+ "capturedAt": "2026-11-07T19:33:51.850Z",
  "steps": [
   {
-   "text": "Before I build, here are the sizes I'd use. Outer length, outer width and wire width are my estimates, not measured from anything, so please check them.",
+   "text": "I'll start with the link dimensions. The sizes below are my guesses, since you haven't given any.",
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Oval chain link (8 links)",
+      "title": "Oval chain link, 8 links",
       "views": [
-       "top",
        "front",
+       "top",
        "iso"
       ],
       "part": [
@@ -21,24 +21,28 @@
         "plane": "xy",
         "points": [
          [
-          -6,
-          -9
-         ],
-         [
           6,
           -9
          ],
          [
-          12.36,
-          -6.36
+          10.5,
+          -7.79
+         ],
+         [
+          13.79,
+          -4.5
          ],
          [
           15,
           0
          ],
          [
-          12.36,
-          6.36
+          13.79,
+          4.5
+         ],
+         [
+          10.5,
+          7.79
          ],
          [
           6,
@@ -49,16 +53,28 @@
           9
          ],
          [
-          -12.36,
-          6.36
+          -10.5,
+          7.79
+         ],
+         [
+          -13.79,
+          4.5
          ],
          [
           -15,
           0
          ],
          [
-          -12.36,
-          -6.36
+          -13.79,
+          -4.5
+         ],
+         [
+          -10.5,
+          -7.79
+         ],
+         [
+          -6,
+          -9
          ]
         ],
         "from": 0,
@@ -67,54 +83,43 @@
       ],
       "dims": [
        {
+        "key": "link_count",
+        "label": "Number of links",
+        "value": 8,
+        "unit": "mm",
+        "source": "asked",
+        "min": 8,
+        "max": 8
+       },
+       {
         "key": "outer_length",
-        "label": "Outer length (end to end)",
+        "label": "Outer length of one link",
         "value": 30,
         "unit": "mm",
-        "min": 30,
-        "max": 30,
         "source": "guess",
-        "note": "Estimate for a small oval link"
+        "note": "Oval, long axis"
        },
        {
         "key": "outer_width",
-        "label": "Outer width",
+        "label": "Outer width of one link",
         "value": 18,
         "unit": "mm",
-        "min": 18,
-        "max": 18,
-        "source": "guess",
-        "note": "Estimate; ends are round"
+        "source": "guess"
        },
        {
-        "key": "wire_width",
-        "label": "Wire width (ring wall)",
+        "key": "wire_thickness",
+        "label": "Wire thickness (ring cross-section)",
         "value": 3,
         "unit": "mm",
-        "min": 3,
-        "max": 3,
-        "source": "guess",
-        "note": "Three 0.4 mm nozzle passes or more"
+        "source": "guess"
        },
        {
-        "key": "link_thickness",
-        "label": "Link thickness (Z)",
-        "value": 3,
-        "unit": "mm",
-        "min": 3,
-        "max": 3,
-        "source": "guess",
-        "note": "Height of each link on the bed"
-       },
-       {
-        "key": "link_pitch",
-        "label": "Pitch between link centers",
+        "key": "pitch",
+        "label": "Center-to-center spacing of links",
         "value": 24,
         "unit": "mm",
-        "min": 24,
-        "max": 24,
         "source": "guess",
-        "note": "Sets how far each link overlaps the next"
+        "note": "Must be less than the inner length so each end passes through the next link's hole"
        }
       ]
      }
@@ -122,21 +127,17 @@
    ]
   },
   {
-   "text": "The sizes are confirmed. Before I build, one design question needs your answer, because it changes the geometry.",
+   "text": "The sizes are confirmed. Before I build, there is a geometry problem with \"all links flat\".",
    "calls": [
     {
      "name": "pilot.ask",
      "args": {
-      "title": "Chain orientation",
-      "question": "Two linked rings cannot both lie flat on the bed and still pass through each other. Which way should the links print?",
+      "title": "Link orientation",
+      "question": "Two links that lie flat in the same plane cannot hook together. Alternate links must stand on edge, perpendicular to the others. Which layout do you want?",
       "choices": [
        {
         "id": "alternate",
-        "label": "Alternate links stand on edge (truly linked)"
-       },
-       {
-        "id": "stacked",
-        "label": "All flat, ends stacked at a small Z gap"
+        "label": "Alternate flat and on edge"
        },
        {
         "id": "nothing",
@@ -148,32 +149,7 @@
    ]
   },
   {
-   "calls": [
-    {
-     "name": "pilot.ask",
-     "args": {
-      "title": "Chain orientation",
-      "question": "Two linked rings cannot both lie flat and still pass through each other. Which way should the links print?",
-      "choices": [
-       {
-        "id": "alternate",
-        "label": "Alternate links stand on edge"
-       },
-       {
-        "id": "stacked",
-        "label": "All flat, ends stacked at a Z gap"
-       },
-       {
-        "id": "nothing",
-        "label": "Nothing for now"
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "I did not build the chain yet, because the request as written can't be met. The sizes are confirmed: outer length 30 mm, outer width 18 mm, wire 3 mm, link thickness 3 mm, 24 mm pitch.\n\nTwo oval rings that lie flat on the bed in the same plane cannot pass through each other, so a chain that prints fully flat will not come off the bed linked. Real linked links need alternate links to stand on edge, and that is not flat printing.\n\nWhich do you want?\n- **Linked, with alternate links standing on edge.** This meets \"comes off already linked\" but not \"prints flat\". I would need to work out how the standing links clear the flat ones on the bed, which is more design work.\n- **Flat, all eight links lying side by side with ends overlapping at a small Z gap.** This prints flat, but the links are not truly linked; they can be pulled apart.\n\nTell me which one and I'll build it."
+   "text": "I stopped before building the chain, because the default layout would not link on the bed.\n\nConfirmed sizes (guesses, since you gave none): links 30 mm long and 18 mm wide, 3 mm wire, 24 mm pitch, 8 links.\n\n**The problem:** For two links to hook, the flat link's wire has to pass through the standing link's hole. With everything touching the bed, the standing link's hole starts about 3 mm up, which is exactly where the flat link's wire sits. They collide, or they only touch and do not hook. That is why I could not give you a layout that prints flat and comes off the bed linked.\n\nOptions:\n1. Print the chain as separate links laid out on the bed, then snap them together by hand.\n2. Print the standing links on supports, so the flat links can pass through their holes. This works but needs cleanup.\n3. Print one flat chain with a slightly larger gap between links, and accept that the links are separate rather than hooked when they come off.\n\nWhich would you like, or should I try a version with a different size?"
   }
  ],
  "defaultAnswer": true,
