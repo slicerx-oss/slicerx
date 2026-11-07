@@ -1435,13 +1435,33 @@ impl SliceSession {
         ranges: &[HeightRange],
     ) -> Result<Self> {
         // Filament shrinkage compensation scales every object (about its own center, from the bed).
+        let shrink = crate::compensate::shrinkage(plate, config);
         let shrunk: Plate;
-        let plate = match crate::compensate::shrinkage(plate, config) {
+        let plate = match shrink {
             Some(f) => {
                 shrunk = crate::compensate::scale_plate(plate, f);
                 &shrunk
             }
             None => plate,
+        };
+        // Exact tops (a plate's own layer heights) were drawn on the model before it was scaled: above the first
+        // layer they stretch evenly so the last one lands where the scaled model puts it, as the model's top does.
+        let stretched: Vec<f64>;
+        let tops = match (tops, shrink) {
+            (Some(t), Some([_, _, fz]))
+                if config.layer_tops_exact && (fz - 1.0).abs() > 1e-12 && t.len() > 1 =>
+            {
+                let first = t.first().copied().unwrap_or(0.0);
+                let last = t.last().copied().unwrap_or(first);
+                let k = if last > first {
+                    (last * fz - first) / (last - first)
+                } else {
+                    1.0
+                };
+                stretched = t.iter().map(|&z| first + (z - first) * k).collect();
+                Some(stretched.as_slice())
+            }
+            _ => tops,
         };
         let shared: Plate;
         let plate = match shared_first_layer(plate, config) {
@@ -14579,7 +14599,8 @@ fn plan_changes(config: &PrintConfig, tools: u8, order: &[Vec<u8>]) -> (u32, f64
 /// one filament repeats that layer's tool changes and purges, so wherever a fixed layer of
 /// `layer_height` prints two or more filaments the plan keeps the fixed layers, and it varies the
 /// layer height only where each layer prints one filament. Returns the plan to slice and what it
-/// still costs against fixed layers (`None` with fixed layers or one filament).
+/// still costs against fixed layers (`None` with fixed layers or one filament). Exact tops
+/// (`layerTopsExact`, layer heights set by hand) are kept as given.
 fn keep_color_bands(
     config: &PrintConfig,
     plan: LayerPlan,
@@ -14592,7 +14613,7 @@ fn keep_color_bands(
         .collect();
     slots.sort_unstable();
     slots.dedup();
-    if !plan.custom || slots.len() < 2 {
+    if !plan.custom || config.layer_tops_exact || slots.len() < 2 {
         return Ok((plan, None));
     }
     let tools = slots.last().copied().unwrap_or(1);
