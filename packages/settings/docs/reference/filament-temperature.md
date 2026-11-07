@@ -203,7 +203,7 @@
 
 ### `nozzle_temperature_initial_layer`
 
-**Hotend temperature for the first layer**
+**Nozzle temperature for the first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C

@@ -126,7 +126,7 @@
 
 ### `fan_max_speed`
 
-**Part fan maximum**
+**Part fan maximum speed**
 
 - Type: list of numbers, one per extruder
 - Unit: %
@@ -138,7 +138,7 @@
 
 ### `fan_min_speed`
 
-**Part fan minimum**
+**Part fan minimum speed**
 
 - Type: list of numbers, one per extruder
 - Unit: %
