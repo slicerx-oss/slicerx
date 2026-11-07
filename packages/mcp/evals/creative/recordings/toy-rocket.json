@@ -2,156 +2,466 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T16:27:04.072Z",
+ "capturedAt": "2026-11-07T18:16:37.871Z",
  "steps": [
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "pilot.sheet",
      "args": {
-      "name": "Toy rocket",
-      "solids": [
+      "title": "Toy rocket: three fins, pointed nose",
+      "views": [
+       "front",
+       "side",
+       "iso"
+      ],
+      "part": [
        {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         0,
-         8
+        "plane": "xz",
+        "points": [
+         [
+          -20,
+          8
+         ],
+         [
+          20,
+          8
+         ],
+         [
+          20,
+          110
+         ],
+         [
+          -20,
+          110
+         ]
         ],
-        "diameterMm": 40,
-        "heightMm": 102,
-        "axis": "z"
+        "from": -20,
+        "to": 20
+       },
+       {
+        "plane": "xz",
+        "points": [
+         [
+          -20,
+          110
+         ],
+         [
+          20,
+          110
+         ],
+         [
+          0,
+          150
+         ]
+        ],
+        "from": -20,
+        "to": 20
+       },
+       {
+        "plane": "xz",
+        "points": [
+         [
+          18,
+          0
+         ],
+         [
+          40,
+          0
+         ],
+         [
+          40,
+          4
+         ],
+         [
+          20,
+          30
+         ],
+         [
+          18,
+          30
+         ]
+        ],
+        "from": -2,
+        "to": 2
        }
       ],
-      "profiles": [
+      "dims": [
        {
-        "atMm": [
-         0,
-         0,
-         110
-        ],
-        "heightMm": 40,
-        "draftDeg": 26.5,
-        "loops": [
-         {
-          "type": "circle",
-          "center": [
-           0,
-           0
-          ],
-          "diameterMm": 40
-         }
-        ]
+        "key": "total_height",
+        "label": "Total height, bed to nose tip",
+        "value": 150,
+        "unit": "mm",
+        "source": "asked",
+        "note": "From your request"
        },
        {
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "heightMm": 40,
-        "loops": [
-         {
-          "points": [
-           [
-            2,
-            10
-           ],
-           [
-            -2,
-            10
-           ],
-           [
-            -2,
-            30
-           ],
-           [
-            2,
-            30
-           ]
-          ]
-         }
-        ]
+        "key": "fin_count",
+        "label": "Fins",
+        "value": 3,
+        "unit": "deg",
+        "source": "asked",
+        "note": "Three fins at 120 degrees; unit field only, read as a count"
        },
        {
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "heightMm": 40,
-        "loops": [
-         {
-          "points": [
-           [
-            -9.66,
-            -3.27
-           ],
-           [
-            -7.66,
-            -6.73
-           ],
-           [
-            -24.98,
-            -16.73
-           ],
-           [
-            -26.98,
-            -13.27
-           ]
-          ]
-         }
-        ]
+        "key": "body_diameter",
+        "label": "Body diameter",
+        "value": 40,
+        "unit": "mm",
+        "source": "guess"
        },
        {
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "heightMm": 40,
-        "loops": [
-         {
-          "points": [
-           [
-            7.66,
-            -6.73
-           ],
-           [
-            9.66,
-            -3.27
-           ],
-           [
-            26.98,
-            -13.27
-           ],
-           [
-            24.98,
-            -16.73
-           ]
-          ]
-         }
-        ]
+        "key": "nose_height",
+        "label": "Pointed nose height",
+        "value": 40,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Cone, tip to body top"
+       },
+       {
+        "key": "base_clearance",
+        "label": "Body lift above bed",
+        "value": 8,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Body floats above the bed; the fins carry it"
+       },
+       {
+        "key": "fin_height",
+        "label": "Fin height on body",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess"
+       },
+       {
+        "key": "fin_span",
+        "label": "Fin span beyond body wall",
+        "value": 20,
+        "unit": "mm",
+        "source": "guess"
+       },
+       {
+        "key": "fin_thickness",
+        "label": "Fin thickness",
+        "value": 4,
+        "unit": "mm",
+        "source": "guess"
        }
-      ],
-      "holes": []
-     }
-    },
-    {
-     "name": "settings.get",
-     "args": {
-      "keys": [
-       "layer_height",
-       "wall_loops",
-       "sparse_infill_density",
-       "support_enable"
       ]
      }
     }
    ]
   },
   {
-   "text": "I modeled the toy rocket as \"Toy rocket\" on a new plate. It is 54 x 50 x 150 mm, watertight, and about 150 cm3 solid (roughly 187 g of PLA before infill).\n\nThe body is a 40 mm diameter cylinder, with the bottom 8 mm above the bed so it rests on the three fins. The fins are 4 mm thick and reach 30 mm from the centre, spaced 120 degrees apart. The nose is a 40 mm base cone drafted to a point at 150 mm.\n\nI haven't sliced or queued it. The fins are straight rectangles, so the trailing edges are square rather than swept. If you want the rocket printed, I can slice it on your A1 mini (the selected printer) with PLA and then ask you to approve the send."
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Toy rocket",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Body tube",
+        "kind": "extrude",
+        "sizes": {
+         "diameter": 40,
+         "length": 102,
+         "lift": 8
+        }
+       },
+       {
+        "name": "Pointed nose cone",
+        "kind": "revolve",
+        "sizes": {
+         "base_diameter": 40,
+         "height": 40,
+         "tip_z": 150
+        }
+       },
+       {
+        "name": "Fin",
+        "kind": "extrude",
+        "sizes": {
+         "height": 30,
+         "span": 20,
+         "thickness": 4
+        }
+       },
+       {
+        "name": "Fin array",
+        "kind": "array",
+        "sizes": {
+         "count": 3
+        }
+       }
+      ],
+      "overall": {
+       "x": 80,
+       "y": 80,
+       "z": 150
+      },
+      "holes": [],
+      "assumptions": [
+       "Fins start at the bed (z=0) and carry the body, which sits 8 mm above the bed",
+       "Fins sit at 120 degrees around the body",
+       "Nose is a cone, not a curved ogive",
+       "Solid, no holes, no internal cavity",
+       "Overall width is the fin tip span (fin edge 40 mm from axis)"
+      ],
+      "questions": [
+       "Do you want the nose and fins as separate parts or one fused body?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Toy rocket"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "placeholder",
+      "distance_mm": 1,
+      "extent": "oneSide",
+      "operation": "new"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 102,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Body tube",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        8
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 40
+      }
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360,
+      "operation": "new",
+      "name": "Pointed nose cone",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
+       {
+        "segments": [
+         {
+          "type": "line",
+          "to": [
+           20,
+           110
+          ]
+         },
+         {
+          "type": "line",
+          "to": [
+           0,
+           150
+          ]
+         },
+         {
+          "type": "line",
+          "to": [
+           0,
+           110
+          ]
+         }
+        ],
+        "start": [
+         0,
+         110
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "distance_mm": 2,
+      "extent": "symmetric",
+      "operation": "new",
+      "name": "Fin",
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           18,
+           0
+          ],
+          [
+           40,
+           0
+          ],
+          [
+           40,
+           4
+          ],
+          [
+           20,
+           30
+          ],
+          [
+           18,
+           30
+          ]
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.array",
+     "args": {
+      "design": "d1",
+      "part": 2,
+      "merge": true,
+      "spec": {
+       "kind": "circular",
+       "count": 3,
+       "center": [
+        0,
+        0,
+        0
+       ],
+       "axis": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "d1",
+      "op": "union",
+      "part": 2,
+      "with_parts": [
+       0,
+       1
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The rocket is built in the project as \"Toy rocket\" (design d1): a 40 mm body tube lifted 8 mm off the bed, a 40 mm pointed cone nose, and three 4 mm fins at 120 degrees that touch the bed and carry the body. The total height is 150 mm, as you asked, and it fits the A1 mini. Body diameter, nose height, lift, fin height, fin span and fin thickness were my guesses, shown on the sheet and confirmed as they were.\n\nThe plan check did not fully pass, and I have not changed the part to force it:\n- **Overall size:** the plan said 80 x 80 x 150 mm, which was my estimate. The part measures 61.7 x 71.3 x 150 mm, which follows from the confirmed fin span.\n- **Feature count:** 5 against 4 planned, because the fin join added one step.\n- **Minimum wall:** 0 mm, caused by the sharp nose tip. A cone tip is zero-thickness by nature.\n\nThe rocket is watertight and matches the confirmed sizes. To clear the wall check, I can cut a small flat on the nose tip (for example 2 mm across), which makes it slightly blunt. Otherwise, the rocket is ready as it stands. Tell me which you want, and whether you want to refine any size in Model before slicing for the A1 mini."
   }
- ]
+ ],
+ "defaultAnswer": true,
+ "tabTools": true
 }
