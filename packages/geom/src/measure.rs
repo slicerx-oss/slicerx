@@ -1075,6 +1075,7 @@ mod tests {
     }
 
     /// a 90 x 120 x 4 plate with a 1.5 mm round on one long top edge
+    #[cfg(feature = "cad")]
     fn plate_with_fillet() -> TriMesh {
         let m = build::box_mesh([0.0; 3], [90.0, 120.0, 4.0]);
         let at = [89.9, 60.0, 4.0];
@@ -1088,6 +1089,7 @@ mod tests {
             .mesh
     }
 
+    #[cfg(feature = "cad")]
     #[test]
     fn flat_face_stops_at_a_tangent_fillet() {
         let m = plate_with_fillet();
