@@ -6,7 +6,7 @@
 import type { PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/mimir/scripted'
-import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, planTool, samePlan, shownPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
+import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, PlanInputSchema, planOfChoices, planTool, samePlan, shownPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
 import { SCRIPTS } from '../src/workspaces/mimir/scripts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
@@ -49,6 +49,13 @@ describe('design.plan', () => {
     expect(t).toBeDefined()
     expect(t.permission).toBe('read')
     expect(planTool().name).toBe('design.plan')
+  })
+
+  it('asks for the moving pieces of a part that prints assembled by name in printInPlace', () => {
+    const t = planTool()
+    expect(t.description).toContain('what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace.')
+    // printInPlace is a field of the plan the description names
+    expect(Object.keys(PlanInputSchema.shape)).toContain('printInPlace')
   })
 
   it('a plan with no features is refused', async () => {
