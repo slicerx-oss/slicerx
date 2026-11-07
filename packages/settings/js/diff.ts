@@ -30,7 +30,8 @@ export function formatValue(def: SettingDef | undefined, v: SettingValue | undef
   if (v === undefined) return 'not set'
   const unit = def?.unit && def.type !== 'floatOrPercent' && def.type !== 'floatsOrPercents' ? UNIT_TEXT[def.unit] : ''
   if (typeof v === 'boolean') return v ? 'on' : 'off'
-  if (typeof v === 'number') return String(v) + (def?.unit === '%' ? '%' : unit)
+  // A count of one reads in the singular: `1 layer`, `2 layers`.
+  if (typeof v === 'number') return String(v) + (def?.unit === '%' ? '%' : v === 1 && unit === ' layers' ? ' layer' : unit)
   if (typeof v === 'string') {
     const t = enumText(def, v)
     return t === '' ? 'empty' : t.length > 60 ? t.slice(0, 57) + '...' : t
