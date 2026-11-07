@@ -4,27 +4,17 @@
 // app runs on the plate) over every part as the design holds it, with the limits from the fit rule (the fit_check
 // skill's assessFit) for the printer's nozzle, layer height and material. design.check and geom.fit_check read it.
 import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
-import { assessFit, type FitResult } from '@slicerx/pilot'
+import { assessFit, lineWidthFor, printInPlaceClearance, type ClearanceProfile, type FitResult } from '@slicerx/pilot'
 import { NEAR_MM, nozzleOr, type FitFacts, type FitGap, type FitLimits } from './design-check'
 
 type V3 = [number, number, number]
 
 /** What the fit rule needs about the print, each optional: the nozzle (0.4 mm), layer height (half the nozzle) and material (PLA). */
-export interface FitProfile {
-  nozzleMm?: number | undefined
-  layerHeightMm?: number | undefined
-  material?: string | undefined
-}
-
-const lineWidth = (nozzle: number): number => Math.round(nozzle * 1.05 * 100) / 100
+export type FitProfile = ClearanceProfile
 
 /** The smallest print-in-place gaps for a profile: the gap the fit rule suggests, side by side and above or below. */
 export function fitLimits(p: FitProfile = {}): FitLimits {
-  const nozzleMm = nozzleOr(p.nozzleMm)
-  const layerHeightMm = typeof p.layerHeightMm === 'number' && Number.isFinite(p.layerHeightMm) && p.layerHeightMm > 0 ? p.layerHeightMm : nozzleMm / 2
-  const material = p.material?.trim() || 'pla'
-  const base = { gapMm: 0, feature: 'print_in_place' as const, layerHeight: layerHeightMm, lineWidth: lineWidth(nozzleMm), nozzle: nozzleMm, material }
-  return { sideMm: assessFit({ ...base, direction: 'xy' }).suggestedGapMm, verticalMm: assessFit({ ...base, direction: 'z' }).suggestedGapMm, material, nozzleMm, layerHeightMm }
+  return printInPlaceClearance({ ...p, nozzleMm: nozzleOr(p.nozzleMm) })
 }
 
 /**
@@ -42,7 +32,7 @@ const credited = (measuredMm: number): number => measuredMm + FIT_TOLERANCE_MM
 /** What a gap of this size does when printed in place: fuses, binds or slides, by the fit rule. */
 export function fitVerdict(g: Pick<FitGap, 'kind' | 'gapMm' | 'direction'>, l: FitLimits): FitResult['outcome'] {
   if (g.kind === 'fused') return 'fuses'
-  return assessFit({ gapMm: Math.min(5, credited(g.gapMm)), feature: 'print_in_place', direction: g.direction, layerHeight: l.layerHeightMm, lineWidth: lineWidth(l.nozzleMm), nozzle: l.nozzleMm, material: l.material }).outcome
+  return assessFit({ gapMm: Math.min(5, credited(g.gapMm)), feature: 'print_in_place', direction: g.direction, layerHeight: l.layerHeightMm, lineWidth: lineWidthFor(l.nozzleMm), nozzle: l.nozzleMm, material: l.material }).outcome
 }
 
 interface EngineGap {

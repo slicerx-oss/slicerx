@@ -102,6 +102,13 @@ sources:
     url: https://github.com/slicerx-oss/slicerx/blob/main/packages/mcp/src/design-tools.ts
     retrieved: 2026-11-08
     note: "Starting a design and its editable history, the plan card, and the plan check's tolerances, design choice and one fix round."
+  - id: slicerx_fit_rule
+    title: "SlicerX fit rule (the fit_check skill)"
+    publisher: SlicerX
+    type: app_source
+    url: https://github.com/slicerx-oss/slicerx/blob/main/packages/pilot/skills/fit_check/index.ts
+    retrieved: 2026-11-07
+    note: "Each face grows about 0.05 mm into a gap (more for PETG and TPU); print in place joints move from 0.15 mm of gap left after printing; a gap above or below rounds down to whole layers and the face over it sags about one layer."
   - id: snapmaker_blog_threads
     title: "Guide to Designing and 3D Printing Threads"
     publisher: Snapmaker
