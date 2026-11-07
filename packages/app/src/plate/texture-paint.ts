@@ -43,10 +43,20 @@ export interface TexturePlan {
   /** The filament colors the plan maps to, slot 1 first. */
   filaments: string[]
   reply: TextureReply
+  /** The object's parts the plan was made for: its edits are by triangle of these meshes. */
+  parts: readonly MeshPart[]
 }
 
 const sources = new Map<string, TextureSource>()
 let stopWatching: (() => void) | null = null
+/**
+ * The meshes and color paint a texture paint left on each object. When a part's mesh is swapped and its paint is still
+ * exactly that (the crossing check rebuilds a part and keeps its paint by triangle number), the paint sits on the wrong
+ * triangles, so the object is painted again from its texture. Paint that changed with the mesh (carried onto the new
+ * triangles, or brushed) is left alone.
+ */
+const painted = new Map<string, { parts: readonly MeshPart[]; colors: readonly (Record<number, string> | undefined)[] }>()
+const repainting = new Map<string, Promise<void>>()
 
 function projectIds(s = get()): Set<string> {
   return new Set([...s.plate.map((e) => e.id), ...s.plates.flatMap((p) => p.objects.map((o) => o.id))])
@@ -56,6 +66,7 @@ function projectIds(s = get()): Set<string> {
 function prune(): void {
   const ids = projectIds()
   for (const id of [...sources.keys()]) if (!ids.has(id)) sources.delete(id)
+  for (const id of [...painted.keys()]) if (!sources.has(id)) painted.delete(id)
   if (!sources.size) {
     stopWatching?.()
     stopWatching = null
@@ -71,8 +82,57 @@ export function rememberTexture(objectId: string, source: TextureSource): void {
   sources.set(objectId, source)
   stopWatching ??= appStore.subscribe((s, p) => {
     if (s.plate !== p.plate || s.plates !== p.plates) prune()
+    if (s.plate !== p.plate) checkSwapped(s.plate)
   })
   prune()
+}
+
+/** Notes the meshes and color paint a texture paint left on an object. */
+function notePainted(e: PlateEntry): void {
+  painted.set(e.id, { parts: [...e.parts], colors: e.parts.map((_, i) => e.paint?.[i]?.color) })
+}
+
+/** Paints an object again from its texture when a part's mesh changed under paint the texture left as it was. */
+function checkSwapped(plate: readonly PlateEntry[]): void {
+  for (const [id, was] of painted) {
+    if (repainting.has(id)) continue
+    const e = plate.find((x) => x.id === id)
+    if (!e) continue
+    const moved = e.parts.length !== was.parts.length || e.parts.some((p, i) => p !== was.parts[i])
+    if (!moved) continue
+    const stale = e.parts.some((p, i) => p !== was.parts[i] && was.colors[i] !== undefined && e.paint?.[i]?.color === was.colors[i])
+    if (!stale) {
+      // the paint moved with the mesh, or was changed since: not the texture's to redo
+      painted.delete(id)
+      continue
+    }
+    const run = repaint(id).finally(() => repainting.delete(id))
+    repainting.set(id, run)
+  }
+}
+
+async function repaint(id: string): Promise<void> {
+  const src = sources.get(id)
+  painted.delete(id)
+  if (!src) return
+  try {
+    const filaments = filamentColors()
+    if (filaments.length < 2) return
+    for (let tries = 0; tries < 3; tries++) {
+      const e = get().plate.find((x) => x.id === id)
+      if (!e) return
+      const plan = await planTexturePaint(e, src, 'nearest', filaments)
+      if (!plan.reply.textured) return
+      if (applyTexturePlans([plan], undefined, { quiet: true }) !== null) return
+    }
+  } catch (e) {
+    console.warn('paint from texture after a mesh change', e)
+  }
+}
+
+/** Waits for the repaints a mesh change started (for tests and callers that read the paint next). */
+export async function textureRepaints(): Promise<void> {
+  while (repainting.size) await Promise.all([...repainting.values()])
 }
 
 export function forgetTexture(objectId: string): void {
@@ -183,6 +243,7 @@ function sourceRequest(src: TextureSource): Record<string, unknown> {
  * part name, so parts that share a name keep every filament as paint and their own filament stays as it is.
  */
 export async function planTexturePaint(entry: Pick<PlateEntry, 'id' | 'parts' | 'paint' | 'transform'>, src: TextureSource, mode: TextureMode = 'nearest', filaments = filamentColors()): Promise<TexturePlan> {
+  const at = { parts: entry.parts }
   const parts = entry.parts.map((p: MeshPart) => ({ positions: p.positions, indices: p.indices }))
   const count = new Map<string, number>()
   for (const p of entry.parts) count.set(p.name, (count.get(p.name) ?? 0) + 1)
@@ -190,7 +251,7 @@ export async function planTexturePaint(entry: Pick<PlateEntry, 'id' | 'parts' | 
   const reply = await geom().call<TextureReply>('paint.texture', { source: sourceRequest(src), parts, filaments, mode, scale: scaleOf(entry.transform), ...(paintEvery.length ? { paintEvery } : {}) })
   const edits: StrokeEdits[] = []
   const slots: Record<number, number> = {}
-  if (!reply.textured) return { objectId: entry.id, edits, slots, filaments, reply }
+  if (!reply.textured) return { objectId: entry.id, edits, slots, filaments, reply, ...at }
   const meta = activeMeta()
   reply.parts.forEach((r, i) => {
     const part = entry.parts[i]
@@ -203,7 +264,7 @@ export async function planTexturePaint(entry: Pick<PlateEntry, 'id' | 'parts' | 
     if (changed.length) edits.push({ objectId: entry.id, partIndex: i, layer: 'color', edits: changed })
     if (!paintEvery.includes(i)) slots[i] = fileSlotFor(meta, r.slot)
   })
-  return { objectId: entry.id, edits, slots, filaments, reply }
+  return { objectId: entry.id, edits, slots, filaments, reply, ...at }
 }
 
 /** The part filament overrides a plan leaves on its object, by part name. */
@@ -236,11 +297,19 @@ export function texturePlansChange(plans: readonly TexturePlan[], palette?: read
   return palette.some((c, i) => now[i]?.color.toLowerCase() !== c.toLowerCase())
 }
 
+/** Whether an object still has the meshes a plan was made for (its edits are by their triangle numbers). */
+export function planCurrent(plan: TexturePlan): boolean {
+  const e = get().plate.find((x) => x.id === plan.objectId)
+  return !!e && e.parts === plan.parts
+}
+
 /**
  * Applies plans as one undo step: the paint, each part's own filament and, from a palette, the filament colors (set
- * as the person's own, so Undo takes them back too). Says what it did in a toast with Undo.
+ * as the person's own, so Undo takes them back too). Says what it did in a toast with Undo, unless `quiet`. Applies
+ * nothing and answers null when an object's meshes changed since its plan was made.
  */
-export function applyTexturePlans(plans: readonly TexturePlan[], palette?: readonly string[]): number[] {
+export function applyTexturePlans(plans: readonly TexturePlan[], palette?: readonly string[], opts: { quiet?: boolean } = {}): number[] | null {
+  if (!plans.every(planCurrent)) return null
   const used = [...new Set(plans.flatMap((p) => p.reply.colors))].sort((a, b) => a - b)
   if (!texturePlansChange(plans, palette)) return []
   inStep({}, () => {
@@ -256,8 +325,13 @@ export function applyTexturePlans(plans: readonly TexturePlan[], palette?: reado
       ...(palette?.length ? { slotSetup: paletteSetup(s, palette) } : {}),
     }))
   })
+  const s = get()
+  for (const plan of plans) {
+    const e = s.plate.find((x) => x.id === plan.objectId)
+    if (e) notePainted(e)
+  }
   markStale()
-  toast(`${paintedText(used)}.`, 'info', { label: 'Undo', run: () => void history().undo() })
+  if (!opts.quiet) toast(`${paintedText(used)}.`, 'info', { label: 'Undo', run: () => void history().undo() })
   return used
 }
 
@@ -279,6 +353,15 @@ export async function paintOpenedFromTexture(objectIds: readonly string[], src: 
   try {
     const plans: TexturePlan[] = []
     for (const e of entries) plans.push(await planTexturePaint(e, src, 'nearest', filaments))
+    // a part rebuilt while the engine painted (the crossing check) is painted again on its new mesh
+    for (let tries = 0; tries < 3 && !plans.every(planCurrent); tries++) {
+      for (let k = 0; k < plans.length; k++) {
+        if (planCurrent(plans[k]!)) continue
+        const now = get().plate.find((x) => x.id === plans[k]!.objectId)
+        if (now) plans[k] = await planTexturePaint(now, src, 'nearest', filaments)
+      }
+    }
+    const kept = plans.filter(planCurrent)
     const notes = [...new Set(plans.flatMap((p) => p.reply.notes))]
     if (!plans.some((p) => p.reply.textured)) {
       // nothing there to paint from: the file is not kept
@@ -286,7 +369,7 @@ export async function paintOpenedFromTexture(objectIds: readonly string[], src: 
       if (notes.length) toast(`${src.name}: ${notes.join(' ')}`, 'warn')
       return null
     }
-    const used = applyTexturePlans(plans)
+    const used = applyTexturePlans(kept) ?? []
     if (notes.length) toast(`${paintedText(used)}. ${notes.join(' ')}`, 'warn', { label: 'Undo', run: () => void history().undo() })
     return used
   } catch (e) {
