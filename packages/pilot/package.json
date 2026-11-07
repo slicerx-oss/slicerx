@@ -26,6 +26,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "kb:build": "tsx scripts/build-kb.ts",
+    "fit:table": "tsx scripts/fit-table.ts",
     "parts:build": "tsx scripts/build-parts.ts",
     "eval": "tsx evals/cli.ts"
   },
