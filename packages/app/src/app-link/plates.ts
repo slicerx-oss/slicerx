@@ -70,7 +70,9 @@ export async function editPlate<K extends keyof typeof appPlateInputs>(action: K
       case 'rename': renamePlate(id!, (input as { name: string }).name); break
       case 'settings': {
         const i = input as ReturnType<typeof appPlateInputs.settings.parse>
-        setPlateSettings(id!, settings(i.settings), i.replace)
+        // Replacing the plate's settings leaves its own layer heights alone: those have their own tools.
+        const own = i.replace ? allPlates(get()).find((p) => p.id === id)?.settings.layerProfile : undefined
+        setPlateSettings(id!, { ...settings(i.settings), ...(own ? { layerProfile: own } : {}) }, i.replace)
         break
       }
       case 'remove': removePlate(id!); break

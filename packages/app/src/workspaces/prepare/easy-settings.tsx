@@ -3,7 +3,7 @@
 // Easy mode: five controls that write Orca keys through @slicerx/settings.
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue, SpeedPreset, SupportMode } from '@slicerx/contracts'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { goalEdits, goalEditsTip } from '../../lib/goal-edits'
@@ -18,6 +18,9 @@ import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import './goal-tiles.css'
+
+// The layer height editor loads when it opens, so the startup shell stays small.
+const LayerProfileEditor = lazy(() => import('./layer-profile-editor').then((m) => ({ default: m.LayerProfileEditor })))
 
 const GOAL_OPTIONS = [
   { value: 'draft', label: 'Draft', icon: 'preset-draft', testId: 'slice-goal-draft' },
@@ -123,17 +126,22 @@ export function EasySettingsPanel() {
   // The selection's own layer height is a fixed one: sleipnir plans the plate's layers. Until it has one, it prints
   // on the plate's layers, sleipnir's included.
   const layerOwn = scoped && keys.layer.some((k) => view.own.has(k))
-  const sleipnirShown = vary && !layerOwn
-  const chosen = chosenFrom(scoped ? false : vary, Number(cfg.layer_height))
+  // The plate's own layer heights (the layer height editor) replace sleipnir and the fixed height on this plate.
+  const ownProfile = useApp((s) => Boolean(s.plates.find((p) => p.id === s.activePlate)?.settings.layerProfile?.length)) && !scoped
+  const [editorOpen, setEditorOpen] = useState(false)
+  const sleipnirShown = vary && !layerOwn && !ownProfile
+  const chosen = ownProfile ? null : chosenFrom(scoped ? false : vary, Number(cfg.layer_height))
   const layerMixed = scoped && mixedIn(keys.layer)
   const sleipnirTip = OPTION_TIPS['smart_layer.sleipnir']
   const choose = (c: LayerChoice) => {
     setPickerOpen(false)
+    // A fixed height or sleipnir puts the plate back on it: its own layer heights go.
+    if (ownProfile) void import('../../plate/plates').then((m) => m.setPlateLayerProfile(get().activePlate, null))
     pick(choicePatch(c), keys.layer)
   }
   // On a multi-color plate, varying the layer height can add filament changes. The engine reports the cost of the last slice (negative when it saves).
   const cost = useApp((s) => (s.slice.status === 'done' && !s.slice.stale ? s.slice.result.varyLayerCost : undefined))
-  const costNote = vary && cost && (cost.extraToolChanges > 0 || cost.extraPurgeG > 0) ? `Adds ${cost.extraToolChanges} filament changes and ${cost.extraPurgeG.toFixed(1)} g of purge.` : null
+  const costNote = (vary || ownProfile) && cost && (cost.extraToolChanges > 0 || cost.extraPurgeG > 0) ? `Adds ${cost.extraToolChanges} filament changes and ${cost.extraPurgeG.toFixed(1)} g of purge.` : null
   // A control the person has not moved shows what the maker's preset does.
   const fromCfg: SupportMode = cfg['enable_support'] ? (String(cfg['support_type']) === 'tree(manual)' ? 'painted' : 'auto') : 'off'
   const supports: SupportMode = scoped ? fromCfg : !profile || touched.includes('supports') ? (easy.supports === 'everywhere' ? 'auto' : easy.supports) : fromCfg
@@ -203,7 +211,7 @@ export function EasySettingsPanel() {
             {...(sleipnirShown ? tipAttrs(sleipnirTip) : {})}
             onClick={() => setPickerOpen(!pickerOpen)}
           >
-            {layerMixed ? 'Mixed' : sleipnirShown ? <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span> : `${layer} mm`}
+            {layerMixed ? 'Mixed' : ownProfile ? <span data-testid="easy-layer-custom">Custom</span> : sleipnirShown ? <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span> : `${layer} mm`}
           </button>
           <Menu open={pickerOpen} onClose={() => setPickerOpen(false)} label="Layer height">
             {FIXED_HEIGHTS.map((h) => (
@@ -219,11 +227,29 @@ export function EasySettingsPanel() {
                   <br />
                   <small>{SLEIPNIR_LINE}</small>
                 </MenuItem>
+                <MenuSeparator />
+                <MenuItem
+                  checked={ownProfile}
+                  data-testid="easy-layer-edit"
+                  onClick={() => {
+                    setPickerOpen(false)
+                    setEditorOpen(true)
+                  }}
+                >
+                  Edit layer heights
+                  <br />
+                  <small>Change the layer height at different heights on this plate</small>
+                </MenuItem>
               </>
             )}
           </Menu>
         </MenuAnchor>
       </div>
+      {editorOpen ? (
+        <Suspense fallback={null}>
+          <LayerProfileEditor onClose={() => setEditorOpen(false)} />
+        </Suspense>
+      ) : null}
       {conflict ? (
         <div className="support-line" role="status" data-testid="tower-layer-conflict">
           <Icon name="alert" />

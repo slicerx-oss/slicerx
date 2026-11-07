@@ -1427,8 +1427,31 @@ impl SliceSession {
         }
     }
 
-    /// The plate sliced with `config` ([`Self::build`]).
+    /// The plate sliced with `config` ([`Self::build`]). Exact tops drawn on the model (a plate's own layer heights,
+    /// not a sliced job's) stretch above the first layer with a Z shrinkage compensation, so the last one lands where
+    /// the scaled model's top does ([`stretch_tops`]); the slice warns when that takes a layer past the printer's limits.
     fn build_plate(
+        plate: &Plate,
+        config: &PrintConfig,
+        tops: Option<&[f64]>,
+        ranges: &[HeightRange],
+    ) -> Result<Self> {
+        let fz = crate::compensate::shrinkage(plate, config).map_or(1.0, |[_, _, fz]| fz);
+        match tops {
+            Some(t) if config.layer_tops_exact && !config.layer_tops_sliced && (fz - 1.0).abs() > 1e-12 => {
+                let (stretched, warning) = stretch_tops(t, fz, config);
+                let mut session = Self::build_scaled(plate, config, Some(stretched.as_slice()), ranges)?;
+                if let Some(w) = warning {
+                    session.push_warning(w);
+                }
+                Ok(session)
+            }
+            _ => Self::build_scaled(plate, config, tops, ranges),
+        }
+    }
+
+    /// [`Self::build_plate`] on tops as they are to be sliced.
+    fn build_scaled(
         plate: &Plate,
         config: &PrintConfig,
         tops: Option<&[f64]>,
@@ -14575,11 +14598,136 @@ fn plan_changes(config: &PrintConfig, tools: u8, order: &[Vec<u8>]) -> (u32, f64
     (n, g)
 }
 
+/// The thinnest and thickest layer the printer prints: the largest `min_layer_height` (0.07 mm when 0) and the
+/// smallest `max_layer_height` (three quarters of that extruder's nozzle when 0) over its extruders, as the app
+/// draws a plate's own layer heights inside them.
+fn layer_limits(config: &PrintConfig) -> (f64, f64) {
+    let list = |key: &str| -> Vec<f64> {
+        match config.raw.get(key) {
+            Some(serde_json::Value::Array(a)) => a.iter().map(|v| number(v).unwrap_or(0.0)).collect(),
+            Some(v) => vec![number(v).unwrap_or(0.0)],
+            None => Vec::new(),
+        }
+    };
+    let (mins, maxs, nozzles) = (
+        list("min_layer_height"),
+        list("max_layer_height"),
+        list("nozzle_diameter"),
+    );
+    let n = mins.len().max(maxs.len()).max(nozzles.len()).max(1);
+    let at = |v: &[f64], i: usize| v.get(i).or_else(|| v.first()).copied().unwrap_or(0.0);
+    let (mut lo, mut hi) = (0.0_f64, f64::INFINITY);
+    for i in 0..n {
+        let nozzle = match at(&nozzles, i) {
+            d if d > 0.0 => d,
+            _ => config.nozzle_diameter,
+        };
+        let min = at(&mins, i);
+        let max = at(&maxs, i);
+        lo = lo.max(if min > 0.0 { min } else { 0.07 });
+        hi = hi.min(if max > 0.0 { max } else { 0.75 * nozzle });
+    }
+    (lo, hi.max(lo))
+}
+
+/// A config value as a number: a number, or a string holding one (`"0.28"`).
+fn number(v: &serde_json::Value) -> Option<f64> {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// Exact layer tops drawn on a model that a Z shrinkage compensation scales by `fz`: the first layer keeps its height
+/// and the layers above it stretch by one factor so the last top lands on `last * fz`. Each stays inside the printer's
+/// limits ([`layer_limits`]) unless it was drawn outside them; layers at a limit stay there and the others take up
+/// the difference. When the limits leave too little room, every layer stretches evenly, as before they were kept in
+/// the limits, and the warning names the limit the stretch passes.
+fn stretch_tops(tops: &[f64], fz: f64, config: &PrintConfig) -> (Vec<f64>, Option<SliceWarning>) {
+    let (Some(&first), Some(&last)) = (tops.first(), tops.last()) else {
+        return (tops.to_vec(), None);
+    };
+    if tops.len() < 2 || last <= first {
+        return (tops.to_vec(), None);
+    }
+    let (lo, hi) = layer_limits(config);
+    let thick: Vec<f64> = tops
+        .windows(2)
+        .map(|w| match w {
+            [a, b] => b - a,
+            _ => 0.0,
+        })
+        .collect();
+    let target = last * fz - first;
+    // A layer stays inside the limits, or where it was drawn when that is outside them.
+    let at = |k: f64| -> Vec<f64> {
+        thick
+            .iter()
+            .map(|&t| (t * k).clamp(lo.min(t), hi.max(t)))
+            .collect()
+    };
+    let total = |k: f64| at(k).iter().sum::<f64>();
+    let thinnest = thick.iter().copied().fold(f64::INFINITY, f64::min).max(1e-6);
+    let (mut a, mut b) = (0.0_f64, 2.0 * fz.max(1.0) * hi / thinnest);
+    let fits = total(a) <= target + 1e-9 && total(b) >= target - 1e-9;
+    let (layers, warning) = if fits {
+        for _ in 0..200 {
+            let m = f64::midpoint(a, b);
+            if total(m) < target {
+                a = m;
+            } else {
+                b = m;
+            }
+        }
+        (at(b), None)
+    } else {
+        let sum: f64 = thick.iter().sum();
+        let k = target / sum;
+        let even: Vec<f64> = thick.iter().map(|&t| t * k).collect();
+        let (key, limit, worst) = if fz > 1.0 {
+            (
+                "max_layer_height",
+                hi,
+                even.iter().copied().fold(0.0_f64, f64::max),
+            )
+        } else {
+            (
+                "min_layer_height",
+                lo,
+                even.iter().copied().fold(f64::INFINITY, f64::min),
+            )
+        };
+        let message = format!(
+            "The Z shrinkage compensation (filament_shrinkage_compensation_z) stretches this plate's own layer heights past {key} {limit} mm, to {worst:.4} mm: there is no room left inside the limits"
+        );
+        let w = SliceWarning {
+            code: WarningCode::UnsupportedSetting,
+            message,
+            layer: None,
+        };
+        (even, Some(w))
+    };
+    let mut out = Vec::with_capacity(tops.len());
+    let mut z = first;
+    out.push(first);
+    for t in layers {
+        z += t;
+        out.push(z);
+    }
+    // The sum lands on the scaled top to rounding; the last top is put exactly there.
+    if let Some(end) = out.last_mut() {
+        *end = last * fz;
+    }
+    (out, warning)
+}
+
 /// sleipnir on a multi-color plate (`layerTopsMm`). A thin layer that prints more than
 /// one filament repeats that layer's tool changes and purges, so wherever a fixed layer of
 /// `layer_height` prints two or more filaments the plan keeps the fixed layers, and it varies the
 /// layer height only where each layer prints one filament. Returns the plan to slice and what it
-/// still costs against fixed layers (`None` with fixed layers or one filament).
+/// still costs against fixed layers (`None` with fixed layers or one filament). Exact tops
+/// (`layerTopsExact`, layer heights set by hand) are kept as given.
 fn keep_color_bands(
     config: &PrintConfig,
     plan: LayerPlan,
@@ -14592,7 +14740,7 @@ fn keep_color_bands(
         .collect();
     slots.sort_unstable();
     slots.dedup();
-    if !plan.custom || slots.len() < 2 {
+    if !plan.custom || config.layer_tops_exact || slots.len() < 2 {
         return Ok((plan, None));
     }
     let tools = slots.last().copied().unwrap_or(1);

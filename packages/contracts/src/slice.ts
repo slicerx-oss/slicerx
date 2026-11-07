@@ -219,6 +219,18 @@ export interface SliceOptions {
    */
   layerTopsMm?: number[]
   /**
+   * With layerTopsMm: the tops are exact, a plate's own layer heights set by hand or a sliced job's layers for a
+   * resume. A multi-color plate keeps them (sleipnir's tops give way to fixed layers wherever two or more filaments
+   * print). Unless layerTopsSliced, a Z shrinkage compensation stretches them above the first layer, inside the
+   * printer's layer height limits.
+   */
+  layerTopsExact?: boolean
+  /**
+   * With layerTopsExact: the tops are a sliced job's own layers (its layerZ, sent back for a resume), already
+   * stretched by any Z shrinkage compensation, so the engine keeps them exactly as given.
+   */
+  layerTopsSliced?: boolean
+  /**
    * Resume a print at this layer (0-based). The plate is sliced whole and G-code is written only from
    * this layer, after a start sequence that heats, homes X and Y but not Z, and draws no purge line.
    * The preview still holds every layer. 0 means a normal print; past the last layer is an error.

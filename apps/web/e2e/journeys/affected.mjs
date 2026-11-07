@@ -45,6 +45,8 @@ export const journeys = [
   { paths: ['packages/app/src/state/slice-plate.ts'], journeys: ['slicing-preview', 'tower', 'tower-plates'] },
   // slicing and the result
   { paths: ['packages/app/src/workspaces/preview/', 'packages/app/src/workspaces/slice-progress.tsx', 'packages/app/src/state/auto-slice', 'packages/core/web/', 'packages/core/wasm/'], journeys: slicing },
+  // a plate's own layer heights: the editor, the picker it opens from and the profile it slices with
+  { paths: ['packages/app/src/workspaces/prepare/layer-profile-', 'packages/app/src/plate/layer-profile.ts', 'packages/app/src/workspaces/prepare/easy-settings.tsx'], journeys: ['layer-profile', 'phone-layer-profile', ...settings] },
   { paths: ['packages/app/src/workspaces/prepare/', 'packages/app/src/presets/', 'packages/app/src/filament/', 'packages/app/src/adapters/', 'packages/app/src/calibration/', 'packages/settings/', 'packages/profiles/'], journeys: settings },
   // printers, the bridge and the phone's live view
   { paths: ['packages/app/src/send/', 'packages/app/src/link/', 'packages/app/src/connected-apps/', 'packages/app/src/camera/', 'packages/app/src/queue/', 'packages/app/src/inventory/', 'packages/app/src/features/fleet/', 'packages/connect/link-client/', 'packages/connect/mock-printers/', 'packages/connect/link/'], journeys: bridge },

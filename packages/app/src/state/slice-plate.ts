@@ -101,12 +101,17 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
     const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
     // A slice canceled while its plan runs goes no further; the plan stops unless the next slice takes it over.
-    const planned = smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
+    // The plate's own layer heights (the layer height editor) replace sleipnir's plan and the fixed layer height.
+    const profile = !s.calibration[s.activePlate] && meta?.settings.layerProfile?.length ? meta.settings.layerProfile : null
+    const own = profile ? (await import('../plate/layer-profile')).plateProfileTops(profile, toPrint, config) : null
+    const planned = !own && smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
     abort.signal.throwIfAborted()
-    // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
-    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : planned
+    // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan. Those tops are the
+    // layers the job printed, so they go as exact and as sliced: the engine keeps them as given, not stretched again
+    // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job.
+    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (own ?? planned)
     // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
-    const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : null
+    const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : own && layerTopsMm === own ? smartLayerWarning(s, "This plate's own layer heights") : null
     // A project's settings by height: range keys by object, and with no other plan, the layer heights by height the
     // engine plans the plate's layers from.
     const { heightRangesOf } = await import('../plate/layer-ranges')
@@ -130,7 +135,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === s.resume?.layerTopsMm) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === s.resume?.layerTopsMm ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,

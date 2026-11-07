@@ -238,6 +238,17 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-slice` | Slice, the main action with Auto slice off, and Slice again beside Print |
 | `slice-output-menu` | The menu half of the main action |
 | `slice-output-export-gcode`, `slice-output-export-3mf` | Export G-code and Export plate 3MF in that menu |
+| `easy-layer-edit` | Edit layer heights, in the layer height picker's menu: opens the layer height editor, checked when the plate has layer heights of its own |
+| `easy-layer-custom` | Custom, the layer height picker's value when the plate has layer heights of its own |
+| `layer-profile-editor` | The layer height editor dialog |
+| `lp-graph` | Its graph of layer height against height on the plate |
+| `lp-area` | The graph's plot area: a press adds a point there |
+| `lp-point` | A point handle on the graph, with `data-picked` on the picked one and `data-points` (the count) on a handle that draws several close points |
+| `lp-z`, `lp-h` | The picked point's height and layer height in mm |
+| `lp-remove` | Remove point: removes the picked point |
+| `lp-from-sleipnir`, `lp-flat` | Start over from sleipnir's plan, or from a flat line at the plate's layer height |
+| `lp-summary` | The line under the fields: the layer count, the thinnest and thickest layer, and the printer's range |
+| `lp-apply` | Apply, the dialog's primary: off until something changed |
 
 ## Slice: objects and Export
 

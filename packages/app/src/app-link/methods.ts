@@ -42,6 +42,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'plate.list': 'read',
   'brim.get': 'read',
   'brim.edit': 'edit',
+  'layers.profile.get': 'read',
+  'layers.profile.edit': 'edit',
   // Moving, turning and scaling objects on the shown plate, each one undo step; the person sees who did it.
   'project.move': 'edit',
   'project.rotate': 'edit',
@@ -368,6 +370,8 @@ function bedShape() {
 const HANDLERS: Record<string, Handler> = {
   'brim.get': async (args) => (await import('./brim')).readBrim(args),
   'brim.edit': async (args, client) => (await import('./brim')).editBrim(args, client.name),
+  'layers.profile.get': async (args) => (await import('./layer-profile')).readLayerProfile(args),
+  'layers.profile.edit': async (args, client) => (await import('./layer-profile')).editLayerProfile(args, client.name),
   'app.info': () => {
     const s = get()
     const edition = currentEdition()

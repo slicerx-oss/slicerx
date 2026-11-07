@@ -2860,6 +2860,364 @@ fn sleipnir_keeps_fixed_layers_where_colors_change() {
     assert!(z.len() >= 85, "{} layers", z.len());
 }
 
+/// A 12 mm box on filament 1 beside a 6 mm box on filament 2, with 0.1 mm tops above a 0.2 mm first layer, as a
+/// plate's own layer heights send them, and `config` on top of a brim-less 0.2 mm base.
+fn two_color_try(config: Value, options: Value) -> sx_core::Result<SliceRun> {
+    let tall = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 12.0]));
+    let short = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
+    let mut cfg = json!({"brim_width": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2});
+    if let (Some(base), Some(extra)) = (cfg.as_object_mut(), config.as_object()) {
+        base.extend(extra.clone());
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "mesh": "tall", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1]},
+            {"id": "b", "mesh": "short", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 140,100,0,1], "slotOverrides": {"box": 2}},
+        ]},
+        "config": cfg,
+        "options": options,
+    }))
+    .unwrap();
+    let load = move |id: &str| Ok(if id == "tall" { tall.clone() } else { short.clone() });
+    common::run_request(&req, &load)
+}
+
+/// [`two_color_try`], which must slice.
+fn two_color_tops(config: Value, options: Value) -> SliceRun {
+    two_color_try(config, options).expect("the tops slice")
+}
+
+/// 0.2 mm, then 0.1 mm layers to 12 mm: the tops a plate's own layer heights give that plate.
+fn tenth_tops() -> Vec<f64> {
+    let mut tops = vec![0.2];
+    while tops.last().copied().unwrap_or(0.0) < 12.0 - 1e-9 {
+        let next: f64 = tops.last().copied().unwrap_or(0.0) + 0.1;
+        tops.push((next * 1e4).round() / 1e4);
+    }
+    tops
+}
+
+#[test]
+fn exact_tops_keep_their_layers_where_colors_change() {
+    // The plate of `sleipnir_keeps_fixed_layers_where_colors_change`, with its tops marked exact: layers set by hand
+    // are kept as given, 0.1 mm through the two-color band too, and no cost against fixed layers is reported.
+    let tops = tenth_tops();
+    let run = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    assert!(run.report.vary_layer_cost.is_none());
+    let z: Vec<f64> = run.report.layer_z.iter().map(|&v| f64::from(v)).collect();
+    assert_eq!(z.len(), tops.len(), "{z:?}");
+    for (got, want) in z.iter().zip(&tops) {
+        assert!((got - want).abs() < 1e-4, "layer at {got}, asked for {want}");
+    }
+    // Without the flag the same tops are sleipnir's and keep the fixed layers where both filaments print.
+    let banded = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops()}),
+    );
+    assert!(
+        banded.report.layer_z.len() < z.len(),
+        "{} against {}",
+        banded.report.layer_z.len(),
+        z.len()
+    );
+}
+
+/// The layer tops a run sliced, mm.
+fn layer_z(run: &SliceRun) -> Vec<f64> {
+    run.report.layer_z.iter().map(|&v| f64::from(v)).collect()
+}
+
+/// Every filament shrinks 0.5 percent in Z.
+fn shrink() -> Value {
+    json!({"filament_shrinkage_compensation_z": ["99.5%", "99.5%"]})
+}
+
+#[test]
+fn exact_tops_stretch_evenly_with_a_z_shrinkage_compensation() {
+    // The plate is sliced 0.5 percent taller: above the first layer every drawn layer stretches by one factor, so
+    // the last top lands on the scaled top, 12 / 0.995 mm.
+    let tops = tenth_tops();
+    let run = two_color_tops(
+        shrink(),
+        json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    let z = layer_z(&run);
+    assert_eq!(z.len(), tops.len());
+    let k = (12.0 / 0.995 - 0.2) / (12.0 - 0.2);
+    for (i, (got, drawn)) in z.iter().zip(&tops).enumerate() {
+        let want = 0.2 + (drawn - 0.2) * k;
+        assert!(
+            (got - want).abs() < 1e-4,
+            "layer {i} at {got}, an even stretch puts it at {want}"
+        );
+    }
+    for (i, w) in z.windows(2).enumerate() {
+        assert!(
+            (w[1] - w[0] - 0.1 * k).abs() < 1e-3,
+            "layer {} is {} thick",
+            i + 1,
+            w[1] - w[0]
+        );
+    }
+}
+
+#[test]
+fn a_z_shrinkage_stretch_keeps_layers_inside_the_printer_limits() {
+    // 2 percent in Z on a 0.4 mm nozzle whose layers stop at 0.28 mm: layers drawn at 0.28 stay there and the
+    // 0.155 mm layers above them take up the rest, so the last top still lands on 12 / 0.98 mm.
+    let mut tops = vec![0.2];
+    for _ in 0..20 {
+        let next: f64 = tops.last().copied().unwrap_or(0.0) + 0.28;
+        tops.push((next * 1e4).round() / 1e4);
+    }
+    for _ in 0..40 {
+        let next: f64 = tops.last().copied().unwrap_or(0.0) + 0.155;
+        tops.push((next * 1e4).round() / 1e4);
+    }
+    assert!((tops.last().copied().unwrap_or(0.0) - 12.0).abs() < 1e-9);
+    let config = json!({"filament_shrinkage_compensation_z": ["98%", "98%"], "max_layer_height": [0.28], "nozzle_diameter": [0.4]});
+    let run = two_color_tops(
+        config,
+        json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    let z = layer_z(&run);
+    let thick: Vec<f64> = z.windows(2).map(|w| w[1] - w[0]).collect();
+    assert!(thick.iter().all(|&t| t <= 0.28 + 1e-6), "{thick:?}");
+    assert!(
+        thick.iter().take(20).all(|&t| (t - 0.28).abs() < 1e-4),
+        "{thick:?}"
+    );
+    assert!(thick.iter().skip(20).all(|&t| t > 0.155 * 1.0204), "{thick:?}");
+    assert!((z.last().copied().unwrap_or(0.0) - 12.0 / 0.98).abs() < 1e-3);
+}
+
+#[test]
+fn tops_without_the_flag_and_the_flag_without_tops_slice_as_before() {
+    // Tops sent without the flag do not stretch: the plate scaled by its Z shrinkage is still refused.
+    let refused = two_color_try(
+        shrink(),
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops()}),
+    );
+    let err = refused.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(
+        err.contains("layerTopsMm") && err.contains("below the model top"),
+        "{err}"
+    );
+    // The flag without tops changes nothing: sleipnir plans and keeps its color bands, as without it.
+    let smart = json!({"smart_layer": "quality"});
+    let plain = two_color_tops(smart.clone(), json!({"flavor": "marlin2"}));
+    let flagged = two_color_tops(smart, json!({"flavor": "marlin2", "layerTopsExact": true}));
+    assert_eq!(layer_z(&plain), layer_z(&flagged));
+    assert!(plain.report.vary_layer_cost.is_some());
+    assert_eq!(plain.report.vary_layer_cost, flagged.report.vary_layer_cost);
+    assert_eq!(text(&plain), text(&flagged));
+}
+
+/// Tops of `first`, then `n` layers of each height in `runs`, kept to 0.1 micron.
+fn tops_of(first: f64, runs: &[(f64, usize)]) -> Vec<f64> {
+    let mut tops = vec![first];
+    for &(h, n) in runs {
+        for _ in 0..n {
+            let next: f64 = tops.last().copied().unwrap_or(0.0) + h;
+            tops.push((next * 1e4).round() / 1e4);
+        }
+    }
+    tops
+}
+
+/// The thickness of each layer above the first.
+fn thicknesses(z: &[f64]) -> Vec<f64> {
+    z.windows(2).map(|w| w[1] - w[0]).collect()
+}
+
+/// The run's warnings that name `key`.
+fn warns_of(run: &SliceRun, key: &str) -> Vec<String> {
+    run.report
+        .warnings
+        .iter()
+        .map(|w| w.message.clone())
+        .filter(|m| m.contains(key))
+        .collect()
+}
+
+#[test]
+fn a_resume_from_the_plate_own_tops_stretches_as_the_job_did() {
+    // A resume with no stored job layers (the slice was not current) sends the plate's own tops, drawn on the model:
+    // they stretch with the Z shrinkage as the job's did, at layer 48 and at layer 0.
+    let job = two_color_tops(
+        shrink(),
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops(), "layerTopsExact": true}),
+    );
+    let z = layer_z(&job);
+    for from in [48, 0] {
+        let resumed = two_color_tops(
+            shrink(),
+            json!({"flavor": "marlin2", "layerTopsMm": tenth_tops(), "layerTopsExact": true, "resumeFromLayer": from}),
+        );
+        assert_valid(&resumed);
+        let again = layer_z(&resumed);
+        assert_eq!(again.len(), z.len(), "from {from}");
+        for (i, (a, b)) in again.iter().zip(&z).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-4,
+                "from {from}: layer {i} at {a}, the job had {b}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_stretch_with_no_room_inside_the_limits_still_slices_and_says_so() {
+    // Every layer drawn at the 0.28 mm maximum, 2 percent in Z: there is no room, so the layers stretch evenly past
+    // it, as before, and the slice names max_layer_height.
+    let config = json!({"filament_shrinkage_compensation_z": ["98%", "98%"], "max_layer_height": [0.28], "nozzle_diameter": [0.4]});
+    let full = tops_of(0.2, &[(0.28, 43)]);
+    let run = two_color_tops(
+        config.clone(),
+        json!({"flavor": "marlin2", "layerTopsMm": full, "layerTopsExact": true}),
+    );
+    assert_valid(&run);
+    let warned = warns_of(&run, "max_layer_height");
+    assert_eq!(warned.len(), 1, "{:?}", run.report.warnings);
+    assert!(
+        warned[0].contains("filament_shrinkage_compensation_z"),
+        "{}",
+        warned[0]
+    );
+    let k = (12.24 / 0.98 - 0.2) / 12.04;
+    for t in thicknesses(&layer_z(&run)) {
+        assert!((t - 0.28 * k).abs() < 1e-3, "{t}");
+    }
+    // With room, the same plate keeps every layer at or under 0.28 mm and says nothing.
+    let room = tops_of(0.2, &[(0.28, 20), (0.2, 31)]);
+    let run = two_color_tops(
+        config,
+        json!({"flavor": "marlin2", "layerTopsMm": room, "layerTopsExact": true}),
+    );
+    assert!(
+        warns_of(&run, "max_layer_height").is_empty(),
+        "{:?}",
+        run.report.warnings
+    );
+    assert!(thicknesses(&layer_z(&run)).iter().all(|&t| t <= 0.28 + 1e-6));
+}
+
+#[test]
+fn the_stretch_limits_fall_back_as_the_printer_reads_them() {
+    // No max_layer_height: three quarters of the 0.4 mm nozzle, 0.3 mm. Layers drawn at 0.3 stay there.
+    let config = json!({"filament_shrinkage_compensation_z": ["98%", "98%"], "nozzle_diameter": [0.4]});
+    let run = two_color_tops(
+        config,
+        json!({"flavor": "marlin2", "layerTopsMm": tops_of(0.2, &[(0.3, 20), (0.145, 40)]), "layerTopsExact": true}),
+    );
+    let t = thicknesses(&layer_z(&run));
+    assert!(t.iter().all(|&h| h <= 0.3 + 1e-6), "{t:?}");
+    assert!(t.iter().take(20).all(|&h| (h - 0.3).abs() < 1e-4), "{t:?}");
+    // 2 percent the other way and no min_layer_height: layers drawn at 0.07 mm stay there, the rest shrink.
+    let grow = json!({"filament_shrinkage_compensation_z": ["102%", "102%"]});
+    let run = two_color_tops(
+        grow.clone(),
+        json!({"flavor": "marlin2", "layerTopsMm": tops_of(0.2, &[(0.07, 20), (0.26, 40)]), "layerTopsExact": true}),
+    );
+    let z = layer_z(&run);
+    let t = thicknesses(&z);
+    assert!(t.iter().all(|&h| h >= 0.07 - 1e-6), "{t:?}");
+    assert!(t.iter().take(20).all(|&h| (h - 0.07).abs() < 1e-4), "{t:?}");
+    assert!((z.last().copied().unwrap_or(0.0) - 12.0 / 1.02).abs() < 1e-3);
+    assert!(warns_of(&run, "min_layer_height").is_empty());
+    // Every layer at the 0.07 mm floor: no room, so they shrink past it and the slice names min_layer_height.
+    let run = two_color_tops(
+        grow,
+        json!({"flavor": "marlin2", "layerTopsMm": tops_of(0.2, &[(0.07, 169)]), "layerTopsExact": true}),
+    );
+    assert_eq!(
+        warns_of(&run, "min_layer_height").len(),
+        1,
+        "{:?}",
+        run.report.warnings
+    );
+}
+
+#[test]
+fn the_stretch_keeps_the_strictest_extruder_limits_and_layers_drawn_past_them() {
+    // Two extruders, one with a 0.42 mm maximum and one with 0.28: layers drawn at 0.28 stay there, as the
+    // stricter extruder asks; a layer drawn at 0.32, already past it, stays where it was drawn.
+    let config = json!({"filament_shrinkage_compensation_z": ["98%", "98%"], "max_layer_height": [0.42, 0.28], "nozzle_diameter": [0.4, 0.4]});
+    let tops = tops_of(0.2, &[(0.32, 1), (0.28, 19), (0.154, 40)]);
+    assert!((tops.last().copied().unwrap_or(0.0) - 12.0).abs() < 1e-9);
+    let run = two_color_tops(
+        config,
+        json!({"flavor": "marlin2", "layerTopsMm": tops, "layerTopsExact": true}),
+    );
+    let t = thicknesses(&layer_z(&run));
+    assert!((t[0] - 0.32).abs() < 1e-4, "{t:?}");
+    assert!(
+        t.iter().skip(1).take(19).all(|&h| (h - 0.28).abs() < 1e-4),
+        "{t:?}"
+    );
+    assert!(
+        t.iter().skip(20).all(|&h| h > 0.154 / 0.98 && h <= 0.28 + 1e-6),
+        "{t:?}"
+    );
+}
+
+#[test]
+fn a_resume_keeps_the_layers_of_a_job_sliced_with_exact_tops() {
+    // The job printed 0.1 mm layers through the two-color band; a resume from its layers at 5 mm must slice the same
+    // layers, so layer 48 is still at 5 mm and not inside the fixed layers banding would give. With a Z shrinkage
+    // the job's layers are already stretched and are not stretched again.
+    for config in [json!({}), shrink()] {
+        let job = two_color_tops(
+            config.clone(),
+            json!({"flavor": "marlin2", "layerTopsMm": tenth_tops(), "layerTopsExact": true}),
+        );
+        let z = layer_z(&job);
+        let at = z.iter().position(|&v| v > 5.0 - 1e-3).unwrap_or(0);
+        let resumed = two_color_tops(
+            config.clone(),
+            json!({"flavor": "marlin2", "layerTopsMm": z, "layerTopsExact": true, "layerTopsSliced": true, "resumeFromLayer": at}),
+        );
+        assert_valid(&resumed);
+        let again = layer_z(&resumed);
+        assert_eq!(again.len(), z.len(), "{config}");
+        for (i, (a, b)) in again.iter().zip(&z).enumerate() {
+            assert!(
+                (a - b).abs() < 1e-4,
+                "{config}: layer {i} at {a}, the job had {b}"
+            );
+        }
+        assert!(
+            (again[at] - z[at]).abs() < 1e-4 && (z[at] - 5.0).abs() < 0.11,
+            "{config}: layer {at} at {}",
+            again[at]
+        );
+    }
+    // Sent without the flag, the same tops are banded again: layer 48 would be somewhere else.
+    let job = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": tenth_tops(), "layerTopsExact": true}),
+    );
+    let z = layer_z(&job);
+    let banded = two_color_tops(
+        json!({}),
+        json!({"flavor": "marlin2", "layerTopsMm": z, "resumeFromLayer": 48}),
+    );
+    let bz = layer_z(&banded);
+    assert!(bz.len() < z.len());
+    assert!(
+        (bz[48] - z[48]).abs() > 0.5,
+        "banded layer 48 at {}, the job had {}",
+        bz[48],
+        z[48]
+    );
+}
+
 #[test]
 fn smart_layers_reach_the_top_of_a_shorter_two_color_object() {
     // A 2 mm box with a setting of its own beside a 1.05 mm block, each made of two halves on filaments 1 and 2.

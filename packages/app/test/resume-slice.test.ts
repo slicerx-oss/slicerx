@@ -27,6 +27,10 @@ describe('slice with a resume plan', () => {
     await slicePlate(host)
     expect(requests[0]!.options).toMatchObject({ resumeFromLayer: 2, layerTopsMm: tops })
     expect(requests[0]!.options?.resumeZ).toBeUndefined()
+    // They are the layers the job printed: sent as exact and as sliced, so a multi-color plate is not banded again,
+    // a Z shrinkage does not stretch them twice, and layer 2 stays where the job had it.
+    expect(requests[0]!.options?.layerTopsExact).toBe(true)
+    expect(requests[0]!.options?.layerTopsSliced).toBe(true)
   })
 
   it('declares the nozzle height when asked, and adds nothing without a plan', async () => {

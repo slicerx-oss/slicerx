@@ -532,6 +532,12 @@ pub struct PrintConfig {
     /// Custom G-code came from somewhere other than the person's own settings
     /// (a project, a shared preset, a library file or a tool call).
     pub untrusted_gcode: bool,
+    /// The request's `layerTopsMm` are exact (`layerTopsExact`, a plate's own layer heights): no fixed layers are kept
+    /// where colors change, and they follow the plate's Z shrinkage compensation.
+    pub layer_tops_exact: bool,
+    /// The exact tops are a sliced job's own layers (`layerTopsSliced`, a resume's), already stretched by any Z
+    /// shrinkage compensation, so they are kept as given. Exact tops without it were drawn on the model and stretch.
+    pub layer_tops_sliced: bool,
     /// Custom G-code keys linted as trusted even when `untrusted_gcode` is set: the caller checked their text
     /// is the printer maker's stock text.
     pub trusted_gcode_keys: Vec<String>,
@@ -697,6 +703,8 @@ impl PrintConfig {
             now: None,
             limits: crate::gcode_lint::Limits::default(),
             untrusted_gcode: true,
+            layer_tops_exact: false,
+            layer_tops_sliced: false,
             trusted_gcode_keys: Vec::new(),
             z_hop: 0.0,
             retract_lift_above: 0.0,

@@ -50,11 +50,14 @@ export function switchPlate(id: string): void {
   )
 }
 
-/** Adds an empty plate after the others and shows it, or with `show` false leaves the shown plate as it is. Returns its id. */
+/**
+ * Adds an empty plate after the others and shows it, or with `show` false leaves the shown plate as it is. Returns its
+ * id. The new plate takes the settings but never the layer heights made for another plate's objects.
+ */
 export function addPlate(settings: PlateSettings = activeMeta()?.settings ?? {}, show = true): string {
   const s = get()
   const id = newId()
-  set({ plates: [...s.plates, { id, name: nextName(s.plates), objects: [], settings: { ...settings } }] })
+  set({ plates: [...s.plates, { id, name: nextName(s.plates), objects: [], settings: newPlateSettings(settings) }] })
   if (show) switchPlate(id)
   return id
 }
@@ -125,6 +128,24 @@ export function renamePlate(id: string, name: string): void {
 /** Merges `patch` into a plate's settings, or with `replace` makes it the whole of them (to drop a key). */
 export function setPlateSettings(id: string, patch: Partial<PlateSettings>, replace = false): void {
   set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, settings: replace ? { ...patch } : { ...p.settings, ...patch } } : p)) }))
+  if (id === get().activePlate) markStale()
+}
+
+/** The settings a new plate takes from another: all of them but its own layer heights, made for that plate's objects. */
+export function newPlateSettings(settings: PlateSettings): PlateSettings {
+  const { layerProfile: _own, ...rest } = settings
+  return rest
+}
+
+/** Sets a plate's own layer heights (plate/layer-profile.ts), or with null clears them, so the plate slices as before. */
+export function setPlateLayerProfile(id: string, points: [number, number][] | null): void {
+  set((s) => ({
+    plates: s.plates.map((p) => {
+      if (p.id !== id) return p
+      const { layerProfile: _old, ...rest } = p.settings
+      return { ...p, settings: points?.length ? { ...rest, layerProfile: points.map(([z, h]) => [z, h] as [number, number]) } : rest }
+    }),
+  }))
   if (id === get().activePlate) markStale()
 }
 

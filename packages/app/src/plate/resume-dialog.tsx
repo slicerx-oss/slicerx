@@ -14,19 +14,11 @@ import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
 import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
+import { jobLayerTops, resumePlanTops } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
 type By = 'height' | 'layer'
-
-/** The failed job's layer tops: the last slice's layers when it is still current, else nothing (even layers). */
-function lastLayerTops(): number[] | undefined {
-  const s = get()
-  if (s.resume?.layerTopsMm?.length) return s.resume.layerTopsMm
-  if (s.slice.status !== 'done') return undefined
-  const z = (s.slice.result as { layerZ?: ArrayLike<number> }).layerZ
-  return z && z.length ? Array.from(z) : undefined
-}
 
 function Body({ printerName, startLayer }: { printerName?: string | undefined; startLayer?: number | undefined }) {
   const host = useHost()
@@ -59,7 +51,9 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     abort.current = ac
     const t = setTimeout(() => {
       setBusy(true)
-      const tops = lastLayerTops()
+      // The job's layers, or the ones the resumed slice will print (a plate's own layer heights), never even layers
+      // when the plate has its own.
+      const tops = resumePlanTops(get())
       planResume(parts, { ...(by === 'height' ? { measuredHeightMm: value } : { failedLayer: value }), layerHeightMm, firstLayerHeightMm, ...(tops ? { layerTopsMm: tops } : {}), includeRemainingMesh: true }, ac.signal)
         .then((p) => {
           if (!ac.signal.aborted) setPlan(p)
@@ -82,7 +76,8 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
 
   const go = () => {
     if (!plan) return
-    const tops = lastLayerTops()
+    // Only the job's own layers are stored: the slice sends them back as sliced. The plate's own tops go as they are.
+    const tops = jobLayerTops(get())
     set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), ...(tops ? { layerTopsMm: tops } : {}) } })
     markStale()
     closeResume()

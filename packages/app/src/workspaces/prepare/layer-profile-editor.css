@@ -1,0 +1,31 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The layer height editor: graph at the left, the picked point's fields at the right; stacked on a phone. */
+.lp-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: var(--s-5, 20px); align-items: start; }
+.lp-body[data-phone] { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.lp-hint { grid-column: 1 / -1; margin: 0; }
+.lp-graph { min-width: 0; }
+.lp-graph svg { display: block; width: 100%; height: auto; max-height: 60vh; touch-action: none; user-select: none; }
+.lp-body[data-phone] .lp-graph svg { max-height: 44vh; }
+.lp-area { fill: var(--field-bg); stroke: var(--line); stroke-width: 1; cursor: crosshair; }
+.lp-first { fill: var(--line-soft); pointer-events: none; }
+.lp-grid { stroke: var(--line-soft); stroke-width: 1; pointer-events: none; }
+.lp-tick, .lp-axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.lp-axis { fill: var(--dim, var(--muted)); }
+.lp-curve { fill: none; stroke: var(--accent); stroke-width: 2; pointer-events: none; }
+.lp-hit { fill: transparent; cursor: grab; }
+.lp-point { fill: var(--surface-dialog); stroke: var(--accent); stroke-width: 2; cursor: grab; }
+.lp-point[data-picked] { fill: var(--accent); }
+.lp-point:focus-visible { outline: none; }
+/* The keyboard focus ring drawn round the point as an SVG circle: an accent line 2 px wide at any graph size, the
+   width of the focus ring token. The point's own outline is off; this circle replaces it. */
+.lp-focus { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; visibility: hidden; }
+.lp-point:focus-visible + .lp-focus { visibility: visible; }
+.lp-side { display: flex; flex-direction: column; gap: 12px; }
+.lp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lp-label { font-size: var(--fs-md); }
+.lp-num { width: var(--w-ctl, 96px); }
+.lp-num input { font-variant-numeric: tabular-nums; }
+.lp-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lp-summary { margin: 0; font-variant-numeric: tabular-nums; }
+.lp-wait { margin: 0; padding: 32px 0; text-align: center; }

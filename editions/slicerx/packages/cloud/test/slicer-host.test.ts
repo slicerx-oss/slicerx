@@ -192,6 +192,8 @@ describe('what a cloud slice sends', () => {
     ['printerId', 'bambu-a1'],
     ['heightRanges', [{ zFromMm: 1, zToMm: 2, settings: { nozzle_temperature: 230 } }]],
     ['layerTopsMm', [0.2, 0.4, 0.56]],
+    ['layerTopsExact', true],
+    ['layerTopsSliced', true],
     ['resumeFromLayer', 12],
     ['resumeZ', { mode: 'declare', zMm: 2.4 }],
     ['machineLimits', { nozzleMaxC: 300, bedMaxC: 110 }],

@@ -44,6 +44,7 @@ import { appPreviewGcodeTools } from './app-preview-gcode'
 import { appUnitTools } from './app-units'
 import { appPickFilterTools } from './app-pick-filter'
 import { appBrimTools } from './app-brim'
+import { appLayerProfileTools } from './app-layer-profile'
 import { mimirAskTools } from './mimir-ask'
 import { appPartTools } from './app-parts'
 import { appVolumeTools } from './app-volumes'
@@ -234,6 +235,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
     ...appPickFilterTools(appLink, productName()),
     ...appViewportTools(appLink, productName()),
     ...appBrimTools(appLink, productName()),
+    ...appLayerProfileTools(appLink, productName()),
     ...appPreviewTools(appLink, productName()),
     ...appPreviewMarkerTools(appLink, productName()),
     ...appPreviewPlaybackTools(appLink, productName()),

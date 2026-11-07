@@ -69,6 +69,10 @@ required-features = ["import"]
 name = "threemf_geom"
 required-features = ["import"]
 
+[[test]]
+name = "resume_own_tops"
+required-features = ["import"]
+
 [[bench]]
 name = "slice"
 harness = false

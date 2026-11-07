@@ -15,6 +15,7 @@ import { areaOrigin, areaSize } from '../plate/bed-origin'
 import { bounds } from '../plate/transform'
 import { ProjectReadError, unzipEntries } from './unzip'
 import { MARKS_PART, readLayerMarks, type FileMark } from '@slicerx/threemf/layer-marks'
+import { LAYER_HEIGHTS_PARTS, readLayerHeights } from '@slicerx/threemf/layer-heights'
 import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
@@ -56,6 +57,11 @@ export interface ImportedObject {
   source?: { modelId?: string; creatorId?: string }
   /** Settings by height from Metadata/layer_config_ranges.xml, as the file has them. Untrusted: take them through plate/layer-ranges.ts. */
   layerRanges?: import('../plate/layer-ranges').LayerRange[]
+  /**
+   * The object's layer_height_profile (Metadata/layer_heights_profile.txt): [height from its bottom, layer height] in mm
+   * as the file has them. Untrusted: take it through plate/layer-profile.ts, which keeps it inside the printer's limits.
+   */
+  layerProfile?: [number, number][]
   /** The object's id in 3D/3dmodel.model, which kept dimensions refer to. */
   fileId: string
 }
@@ -919,6 +925,19 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     }
   }
   if (plates.every((p) => p.objects.length === 0)) throw new ProjectReadError('The 3MF has nothing to print.')
+  // Each object's layer height profile, objects numbered from 1 in the order the build first places them, as for the
+  // height ranges below.
+  const profilesPart = LAYER_HEIGHTS_PARTS.map((n) => files.get(n)).find((b) => b !== undefined)
+  if (profilesPart) {
+    const profiles = readLayerHeights(dec.decode(profilesPart))
+    const order = [...new Set(items.map((i) => i.objectId))]
+    for (const pl of plates) {
+      for (const o of pl.objects) {
+        const own = profiles.get(order.indexOf(o.fileId) + 1)
+        if (own?.length) o.layerProfile = own
+      }
+    }
+  }
   // Settings by height, by object (Orca and Bambu Studio's height range modifiers).
   const rangesText = files.get('Metadata/layer_config_ranges.xml')
   if (rangesText) {
