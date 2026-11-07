@@ -231,8 +231,8 @@ export function appDesignHost(loader: Loader): DesignHost {
     if (!r.parts.length) throw new Error('The design has no body yet.')
     const parts = r.parts.map(toPart)
     const handle = await loader.loadParts(name, parts)
-    const { transform: onPlate, moved } = landing(id, parts, transform)
-    const entry: PlateEntry = { id, name, handle, parts, colors: [brandAccent()], transform: onPlate, history }
+    const { transform: landedAt, moved } = landing(id, parts, transform)
+    const entry: PlateEntry = { id, name, handle, parts, colors: [brandAccent()], transform: landedAt, history }
     guard?.()
     set((s) => ({ plate: [...s.plate, entry], selection: id, selectedIds: [id] }))
     takeSketches(id, moved && 'dxMm' in moved ? moved : undefined)
