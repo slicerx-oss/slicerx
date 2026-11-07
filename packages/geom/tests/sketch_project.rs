@@ -249,3 +249,198 @@ fn a_moved_body_projects_where_it_stands() {
         "{hole}"
     );
 }
+
+/// the plate with its -x side keyed as its +x side, so the top meets that key in two places
+fn plate_with_twin_sides() -> (Value, u64, u64) {
+    let mut mesh = plate();
+    let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
+    let right = key_of(&mesh, [1.0, 0.0, 0.0], 40.0);
+    let table = mesh["faces"]["table"].as_array().unwrap().clone();
+    let left = table
+        .iter()
+        .position(|s| s["kind"] == "plane" && s["normal"] == json!([-1.0, 0.0, 0.0]))
+        .unwrap();
+    mesh["faces"]["keys"][left] = json!(right);
+    (mesh, top, right)
+}
+
+fn first_point(l: &Value) -> (f64, f64) {
+    (l["start"][0].as_f64().unwrap(), l["start"][1].as_f64().unwrap())
+}
+
+#[test]
+fn a_face_picked_before_its_body_moved_projects_where_it_stands_now() {
+    let mesh = plate();
+    let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
+    let now = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -30.0, 10.0, 0.0, 1.0,
+    ];
+    // the point and normal arrive in the part's own frame; the part stands at `now`
+    let out = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh, "transform": now }], "frame": plane_at(0.0),
+                 "source": { "kind": "face", "face": { "at": [20, 2, 10], "normal": [0, 0, 1], "key": top } } }),
+    );
+    let loops = out["loops"].as_array().unwrap();
+    let hole = loops.iter().find(|l| l["type"] == "circle").unwrap();
+    assert!(
+        (hole["center"][0].as_f64().unwrap() + 10.0).abs() < 0.01,
+        "{hole}"
+    );
+    assert!(
+        (hole["center"][1].as_f64().unwrap() - 30.0).abs() < 0.01,
+        "{hole}"
+    );
+    let outer = loops.iter().find(|l| l["type"] != "circle").unwrap();
+    let xs: Vec<f64> = std::iter::once(first_point(outer).0)
+        .chain(
+            outer["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["to"][0].as_f64().unwrap()),
+        )
+        .collect();
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    assert!((lo + 30.0).abs() < 1e-6 && (hi - 10.0).abs() < 1e-6, "{outer}");
+    // without the key the point still finds it, in the part's frame
+    let plain = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh, "transform": now }], "frame": plane_at(0.0),
+                 "source": { "kind": "face", "face": { "at": [20, 2, 10], "normal": [0, 0, 1] } } }),
+    );
+    assert_eq!(plain["loops"], out["loops"]);
+}
+
+#[test]
+fn an_edge_picked_before_its_body_moved_projects_where_it_stands_now() {
+    let mesh = plate();
+    let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
+    let front = key_of(&mesh, [0.0, -1.0, 0.0], 0.0);
+    let now = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -30.0, 10.0, 0.0, 1.0,
+    ];
+    let edge = json!({ "a": [0, 0, 10], "b": [40, 0, 10], "face": [0, 0, 1], "keys": [top, front] });
+    let out = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh, "transform": now }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [edge] } }),
+    );
+    let l = &out["loops"][0];
+    assert_eq!(kinds(l), ["line"]);
+    let (x0, y0) = first_point(l);
+    let to = &l["segments"][0]["to"];
+    let mut xs = [x0, to[0].as_f64().unwrap()];
+    xs.sort_by(f64::total_cmp);
+    assert!((xs[0] + 30.0).abs() < 1e-9 && (xs[1] - 10.0).abs() < 1e-9, "{l}");
+    assert!(
+        (y0 - 10.0).abs() < 1e-9 && (to[1].as_f64().unwrap() - 10.0).abs() < 1e-9,
+        "{l}"
+    );
+}
+
+#[test]
+fn a_round_edge_without_keys_is_its_circle() {
+    let mesh = plate();
+    let rim = json!({ "a": [25, 20, 10], "b": [25, 20, 10], "face": [0, 0, 1], "center": [20, 20, 10] });
+    let out = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [rim] } }),
+    );
+    let l = &out["loops"][0];
+    assert_eq!(l["type"], "circle", "{out}");
+    assert!((l["diameterMm"].as_f64().unwrap() - 10.0).abs() < 0.01, "{l}");
+}
+
+#[test]
+fn an_edge_without_keys_whose_end_left_the_mesh_is_gone() {
+    let mesh = plate();
+    let edge = json!({ "a": [0, 0, 10], "b": [55, 0, 10], "face": [0, 0, 1] });
+    let e = err(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [edge] } }),
+    );
+    assert!(e.contains("edge this projected is gone"), "{e}");
+    let off = json!({ "a": [70, 0, 10], "b": [40, 0, 10], "face": [0, 0, 1] });
+    let e = err(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [off] } }),
+    );
+    assert!(e.contains("edge this projected is gone"), "{e}");
+}
+
+#[test]
+fn keys_that_no_longer_meet_say_the_edge_is_gone() {
+    let mesh = plate();
+    let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
+    let bottom = key_of(&mesh, [0.0, 0.0, -1.0], 0.0);
+    let edge = json!({ "a": [0, 0, 10], "b": [40, 0, 10], "face": [0, 0, 1], "keys": [top, bottom] });
+    let e = err(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [edge] } }),
+    );
+    assert!(e.contains("edge this projected is gone"), "{e}");
+}
+
+#[test]
+fn faces_that_meet_twice_take_the_run_the_edge_sat_on() {
+    let (mesh, top, side) = plate_with_twin_sides();
+    // the edge along x = 40, the second of the two places the faces meet
+    let edge = json!({ "a": [40, 0, 10], "b": [40, 40, 10], "face": [0, 0, 1], "keys": [top, side] });
+    let out = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [edge] } }),
+    );
+    let loops = out["loops"].as_array().unwrap();
+    assert_eq!(loops.len(), 1, "{out}");
+    let (x0, _) = first_point(&loops[0]);
+    assert!((x0 - 40.0).abs() < 1e-9, "{out}");
+    assert!(
+        (loops[0]["segments"][0]["to"][0].as_f64().unwrap() - 40.0).abs() < 1e-9,
+        "{out}"
+    );
+    // saved in neither place: it was split
+    let between = json!({ "a": [20, 10, 10], "b": [20, 30, 10], "face": [0, 0, 1], "keys": [top, side] });
+    let e = err(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(0.0), "source": { "kind": "edges", "edges": [between] } }),
+    );
+    assert!(e.contains("was split"), "{e}");
+}
+
+#[test]
+fn a_face_key_found_on_two_faces_was_split() {
+    let (mesh, _, side) = plate_with_twin_sides();
+    let e = err(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": plane_at(100.0),
+                 "source": { "kind": "face", "face": { "at": [40, 20, 5], "normal": [1, 0, 0], "key": side } } }),
+    );
+    assert!(e.contains("face this projected was split"), "{e}");
+}
+
+#[test]
+fn a_hole_rim_seen_at_a_tilt_is_a_smooth_ellipse() {
+    let mesh = plate();
+    let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
+    let table = mesh["faces"]["table"].as_array().unwrap();
+    let wall = table.iter().position(|s| s["kind"] == "cylinder").unwrap();
+    let wall = mesh["faces"]["keys"][wall].as_u64().unwrap();
+    let rim = json!({ "a": [25, 20, 10], "b": [25, 20, 10], "face": [0, 0, 1], "center": [20, 20, 10], "keys": [top, wall] });
+    // a plane tipped 60 degrees about x: the 10 mm circle is seen as an ellipse 10 by 5
+    let (s, c) = (3f64.sqrt() / 2.0, 0.5);
+    let tilted = json!({ "origin": [0, 0, 0], "normal": [0, -s, c], "u": [1, 0, 0], "v": [0, c, s] });
+    let out = run(
+        "sketch.project",
+        &json!({ "parts": [{ "mesh": mesh }], "frame": tilted, "source": { "kind": "edges", "edges": [rim] } }),
+    );
+    let loops = out["loops"].as_array().unwrap();
+    assert_eq!(loops.len(), 1, "{out}");
+    assert_ne!(loops[0]["type"], "circle", "{out}");
+    let k = kinds(&loops[0]);
+    assert!(k.iter().any(|t| t == "spline"), "{k:?}");
+    assert!(k.iter().all(|t| t != "line"), "{k:?}");
+    let a = area(&out["loops"]);
+    let want = PI * 5.0 * 2.5;
+    assert!((a - want).abs() < want * 0.01, "{a} vs {want}");
+}
