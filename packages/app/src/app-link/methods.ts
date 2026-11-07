@@ -130,6 +130,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'design.roll': 'edit',
   // a finished sketch put in the timeline, for an extrude or revolve to name
   'design.sketch': 'edit',
+  // SVG artwork as a finished sketch, the same way
+  'design.sketch_svg': 'edit',
   'geom.faces': 'read',
   'geom.face_pick': 'read',
   'geom.edge_pick': 'read',

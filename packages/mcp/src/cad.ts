@@ -800,6 +800,49 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const sketchSvg = defineTool({
+    name: 'design.sketch_svg',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
+    input: z.object({
+      svg: z.string().min(1).max(4_000_000).describe('The SVG file as text'),
+      frame: frameRef.optional(),
+      scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
+      fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
+      fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
+      center: vec2.optional().describe('Where the middle of the artwork lands, sketch mm; the origin when absent (on the bed, its corner)'),
+      tolerance_mm: z.number().positive().max(1).optional().describe('How far a spline may stray from a curve of the artwork; 0.01 when absent'),
+    }),
+    async run(i) {
+      const host = deps.designs
+      if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center: i.center, toleranceMm: i.tolerance_mm })
+      const req = { svg: i.svg, options }
+      const out = deps.files.engine ? await call('sketch.svg', req) : await engine('sketch.svg', req)
+      const loopsIn = out['loops'] as Loops
+      const check = (out['check'] ?? {}) as { ok?: boolean; areaMm2?: number; loops?: { index: number; role: string; areaMm2: number; lengthMm: number }[]; issues?: { kind: string; message: string }[] }
+      const issues = check.issues ?? []
+      // a curve too dense to draw never reaches the timeline
+      const dense = issues.filter((x) => x.kind === 'tooDense')
+      if (dense.length) throw new ToolInputError(`svg: ${dense.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
+      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }))
+      const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
+      const size = out['sizeMm'] as [number, number]
+      const holes = (check.loops ?? []).filter((l) => l.role === 'hole').length
+      const n = (v: number, one: string) => `${v} ${one}${v === 1 ? '' : 's'}`
+      const curves = [n(counts.lines, 'line'), n(counts.arcs, 'arc'), n(counts.splines, 'spline'), n(counts.circles, 'circle')].filter((t) => !t.startsWith('0 ')).join(', ')
+      const warnings = (out['warnings'] ?? []) as string[]
+      const head = `${k.name} is in the timeline: ${n(k.loops.length, 'loop')}${holes ? ` (${n(holes, 'hole')})` : ''}, ${curves}, ${size.map((v) => Math.round(v * 100) / 100).join(' x ')} mm`
+      const tail = [check.ok === false ? `${n(issues.length, 'problem')} to fix before it makes a solid: ${issues.map((x) => x.message).join(' ')}` : '', ...warnings.map((w) => `${w[0]!.toUpperCase()}${w.slice(1)}.`)].filter(Boolean)
+      return {
+        summary: tail.length ? `${head}. ${tail.join(' ')}` : head,
+        output: { id: k.id, name: k.name, loops: k.loops, counts, sizeMm: size, mmPerUnit: out['mmPerUnit'], check: { ok: check.ok, areaMm2: check.areaMm2, loops: check.loops, issues }, warnings },
+      }
+    },
+  })
+
   const push = defineTool({
     name: 'geom.push_pull',
     version: '1.2.0',
@@ -1244,5 +1287,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }
