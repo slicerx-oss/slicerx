@@ -29,6 +29,7 @@ Errors are one plain sentence of the form `field: what is wrong`, ready to show 
 | `shape.extrude` | Extrude a rectangle, circle, slot, polygon, text, free sketch or SVG outline as a new body, joined to a target or cut from it | `frame`, `shape`, `placement`, `spec`, `target` |
 | `sketch.revolve` | Revolve sketch loops around an axis in their plane | `frame`, `loops`, `axis`, `angleDeg`, `operation`, `target` |
 | `sketch.sweep` | Sweep one profile along an open path (lines, arcs and splines on a plane, or points in space) without twisting about it, with straight sides between path points and flat ends; an open profile is thickened into a shell | `profile` (`frame`, `loops`, `open`), `path` (`frame` and `loops`, or `points`), `thicken` (`thicknessMm`, `side`), `operation`, `target` |
+| `sketch.project` | Edges, a face's outline or a body's outline projected onto a sketch plane as lines, arcs, splines and circles | `parts`, `frame`, `source` |
 | `sketch.loft` | Loft a solid through 2 to 64 profiles in order, each one loop on its own plane: straight or smooth sides, flat ends or a closed ring, and open profiles thickened into a shell | `profiles` (each `frame`, `loops`, `open`, `landmarks`), `smooth`, `closed`, `thicken` (`thicknessMm`, `side`), `operation`, `target` |
 | `face.push` | Move a flat face along its normal: out adds material, in cuts | `mesh`, `triangle`, `at`, `distanceMm` |
 | `boolean` | Union, difference or intersection of closed meshes | `op`, `a`, `b` |
