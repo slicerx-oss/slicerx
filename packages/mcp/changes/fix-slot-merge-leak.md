@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_slice_file` 1.11.0 and `slicerx_estimate_file` 1.8.0 with `project_settings` and a `machine:` profile give each filament of a project its own preset's values. A setting one filament's preset leaves out now slices at its default, as that filament does on its own, instead of taking another filament's value. On the A1, the PLA filament of a PLA and TPU project took TPU's 30 C cool plate temperature and 200 to 250 C range, so it flushed at 250 C; it now keeps 35 C, 190 to 240 C and flushes at 240 C, and the TPU filament keeps its own fan lead time and change length instead of PLA's.
