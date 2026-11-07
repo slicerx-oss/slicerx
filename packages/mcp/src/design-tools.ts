@@ -155,6 +155,13 @@ export function soup(parts: readonly Pick<HistoryMesh, 'positions' | 'indices'>[
 export const slug = (s: string): string => s.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'design'
 const r3 = (v: number): number => Math.round(v * 1000) / 1000
 
+/** The reader's notes as the app's open note says them: a whole sentence as it is, the rest after "Not everything in the file was read:". */
+function notesLine(notes: readonly string[]): string {
+  const whole = notes.filter((n) => /^[A-Z].*[.!?]$/s.test(n))
+  const rest = notes.filter((n) => !whole.includes(n)).map((n) => n.replace(/[.;\s]+$/, ''))
+  return [...(rest.length ? [`Not everything in the file was read: ${rest.join('; ')}.`] : []), ...whole].join(' ')
+}
+
 /** What a client reads back after every change: the parts with their sizes and volumes, and the last step. */
 export function designSummary(d: Design): Record<string, unknown> {
   const parts = d.parts.map((p, i) => {
@@ -267,7 +274,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'read',
     description:
@@ -278,7 +285,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (!found.length) throw new ToolInputError(`${i.path} has no printed parts to open`)
       const opened = []
       for (const f of found) opened.push({ ...designSummary(await designs.create(f.name, f.history?.base ?? f.base, f.history, f.transform)), fromHistory: f.history !== undefined, ...(f.skipped.length ? { leftOut: f.skipped } : {}) })
-      return { summary: `Opened ${plural(opened.length, 'design')}${notes.length ? `. Not everything in the file was read: ${notes.join('; ')}` : ''}`, output: { designs: opened, ...(notes.length ? { notes } : {}) } }
+      return { summary: `Opened ${plural(opened.length, 'design')}${notes.length ? `. ${notesLine(notes)}` : ''}`, output: { designs: opened, ...(notes.length ? { notes } : {}) } }
     },
   })
 
