@@ -121,8 +121,19 @@ describe("a plate's own layer heights", () => {
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options?.layerTopsMm).toEqual([0.2, 0.4, 0.6, 0.8])
-    // The job's own layers, sent as exact so the engine keeps them as the job printed them.
+    // The job's own layers, sent as exact and sliced so the engine keeps them as the job printed them.
     expect(requests[0]!.options?.layerTopsExact).toBe(true)
+    expect(requests[0]!.options?.layerTopsSliced).toBe(true)
+  })
+
+  it('resumed with no stored job layers, slice at the plate own tops, which stretch as in the job', async () => {
+    // The resume dialog stores no tops when the slice is not current (a reopened project, the fleet menu).
+    setPlateLayerProfile('plate-1', PROFILE)
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 } } })
+    const { host, requests } = engine()
+    await slicePlate(host)
+    expect(requests[0]!.options).toMatchObject({ resumeFromLayer: 2, layerTopsMm: expected(), layerTopsExact: true })
+    expect(requests[0]!.options).not.toHaveProperty('layerTopsSliced')
   })
 
   it('are not used on a calibration plate, which keeps its own bands', async () => {
