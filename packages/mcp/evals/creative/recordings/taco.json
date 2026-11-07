@@ -748,7 +748,7 @@
    ]
   },
   {
-   "text": "The taco is designed and sliced, but I have not sent it to the printer because you only asked for a model.\n\n**What's built:** a U-shaped taco shell 100 mm long, 60 mm wide and 30 mm tall, with a 3 mm wall. Inside it sit a lettuce layer (90 x 44 x 6 mm) and a meat layer (80 x 36 x 8 mm) on the bed. The layers are separate bodies, so they will print as separate pieces. The width, height and wall are my guesses, which you confirmed; only the 100 mm length came from you.\n\n**Slice on the P1S (PLA, 0.4 mm, 0.20 mm layers):** about 57 minutes, 26.3 g, $0.66 of filament.\n\n**Next step:** tell me to send it to the P1S and I'll queue plate 1 for your approval. Or tell me if you want the filling in a different shape or colour (for example, lettuce green and meat brown on the AMS) before printing."
+   "text": "The taco is designed and sliced, but I have not sent it to the printer because you only asked for a model.\n\n**What's built:** a U-shaped taco shell 100 mm long, 60 mm wide and 30 mm tall, with a 3 mm wall. Inside it sit a lettuce layer (90 x 44 x 6 mm) and a meat layer (80 x 36 x 8 mm) on the bed. The layers are separate bodies, so they will print as separate pieces. The width, height and wall are my guesses, which you confirmed; only the 100 mm length came from you.\n\n**Slice on the P1S (PLA, 0.4 mm, 0.20 mm layers):** about 57 minutes, 26.3 g, $0.66 of filament.\n\n**Next step:** tell me to send it to the P1S and I'll queue plate 1 for your approval. Or tell me if you want the filling in a different shape or color (for example, lettuce green and meat brown on the AMS) before printing."
   }
  ],
  "defaultAnswer": true,
