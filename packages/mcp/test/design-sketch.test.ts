@@ -115,6 +115,12 @@ describe('finished sketches in the design tools', () => {
     await expect(run('geom.loft', { design: 'd1', thicken: { thicknessMm: 1 }, profiles: [{ open: true, loops: [{ points: [[0, 0], [1, 0]] }, { points: [[0, 1], [1, 1]] }] }, sq(10)] })).rejects.toThrow(/^profiles\.0\.loops: /)
     await expect(run('geom.sweep', { design: 'd1', profile: { open: true, loops: [{ points: [[0, 0], [10, 0]] }] }, path: { points: [[0, 0, 0], [0, 0, 20]] }, thicken: { thicknessMm: 2, side: 'up' } })).rejects.toThrow(/^thicken\.side: /)
     expect(add).toHaveBeenCalledTimes(3)
+    // up to 64 landmarks a profile
+    const many = (n: number, z: number) => ({ ...sq(z), landmarks: Array.from({ length: n }, (_, i) => [(i * 10) / 64, 0]) })
+    await run('geom.loft', { design: 'd1', profiles: [many(64, 0), many(64, 10)] })
+    expect((add.mock.calls[3]![2] as Extract<StepParams, { op: 'sketch.loft' }>).profiles[0]!.landmarks).toHaveLength(64)
+    await expect(run('geom.loft', { design: 'd1', profiles: [many(65, 0), many(65, 10)] })).rejects.toThrow(/^profiles\.0\.landmarks: /)
+    expect(add).toHaveBeenCalledTimes(4)
   })
 
   it('says which sweep input is missing, doubled or needs a design', async () => {

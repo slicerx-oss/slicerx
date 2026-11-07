@@ -143,7 +143,7 @@ describe('loft as a design step', () => {
     const joined = await ok('slicerx_geom_loft', { design: d, part: 1, operation: 'join', smooth: true, profiles: [{ frame: level(5), loops: [oct(8)] }, { frame: level(15), loops: [oct(5)] }, { frame: level(25), loops: [oct(7)] }] })
     const cut = await ok('slicerx_geom_loft', { design: d, part: 1, operation: 'cut', thicken: { thicknessMm: 1, side: 'center' }, profiles: [{ frame: level(10), loops: [oct(6)] }, { frame: level(20), loops: [oct(6)] }] })
     expect(cut.parts[1]!.volumeMm3).toBeLessThan(joined.parts[1]!.volumeMm3)
-    // landmarks: two squares matched corner to corner, one listed from another corner and the other way around
+    // landmarks: two squares matched corner to corner, three corners marked on each
     const marked = await ok('slicerx_geom_loft', { design: d, profiles: [{ frame: level(30), loops: [square(20)], landmarks: [[-10, -10], [10, -10], [10, 10]] }, { frame: level(40), loops: [square(10)], landmarks: [[-5, -5], [5, -5], [5, 5]] }] })
     expect(marked.parts[2]!.volumeMm3).toBeCloseTo((10 / 3) * (400 + 100 + 200), 3)
 
