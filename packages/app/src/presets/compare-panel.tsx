@@ -29,6 +29,8 @@ export function ComparePanel() {
   const [withId, setWith] = useState('')
   const [all, setAll] = useState(false)
   const [undo, setUndo] = useState<{ rec: CopyRecord; label: string }[]>([])
+  // What the last copy did, on the status line in place of the count, until the next action of any kind.
+  const [note, setNote] = useState<string | null>(null)
   const [parent, setParent] = useState<{ of: string; side: CompareSide | null; failed?: boolean } | null>(null)
   const a = list.find((p) => p.id === aId)
   const other = withId.startsWith('preset:') ? list.find((p) => p.id === withId.slice('preset:'.length)) : undefined
@@ -67,18 +69,25 @@ export function ComparePanel() {
   const pickA = (id: string) => {
     setA(id)
     setUndo([])
+    setNote(null)
     const next = list.find((p) => p.id === id)
     // A choice the new first preset cannot have (itself, or a parent it lacks) goes back to the placeholder.
     if (withId === `preset:${id}` || (withId === 'parent' && !next?.inherits)) setWith('')
   }
   const copy = (r: CompareRow) => {
     if (!a || !base || !side) return
-    void copyValue(a.id, r.key, side.config, base).then((rec) => rec && setUndo((u) => [...u, { rec, label: r.label }]), reportPresetError)
+    const name = a.name
+    void copyValue(a.id, r.key, side.config, base).then((rec) => {
+      if (!rec) return
+      setUndo((u) => [...u, { rec, label: r.label }])
+      setNote(`Copied ${r.label} to ${name}`)
+    }, reportPresetError)
   }
   const undoLast = () => {
     const last = undo[undo.length - 1]
     if (!last) return
     setUndo((u) => u.slice(0, -1))
+    setNote(null)
     // Only the copied setting goes back, and only while it still holds the copied value: a later change stays.
     void undoCopy(last.rec).catch((e: unknown) => (e instanceof CopyChanged ? toast(`${last.label} in ${last.rec.name} changed after that copy, so it was not put back.`, 'info') : reportPresetError(e)))
   }
@@ -98,12 +107,14 @@ export function ComparePanel() {
           id="cmp-kind"
           data-testid="preset-compare-kind"
           size="sm"
+          face={KIND_LABEL[kind]}
           value={kind}
           onChange={(e) => {
             setKind(e.target.value as PresetKind)
             setA('')
             setWith('')
             setUndo([])
+            setNote(null)
           }}
         >
           {KINDS.map((k) => (
@@ -127,7 +138,10 @@ export function ComparePanel() {
         <label className="sr-only" htmlFor="cmp-b">
           Compare with
         </label>
-        <Select id="cmp-b" data-testid="preset-compare-with" size="sm" face={withId === 'stock' ? 'Stock settings' : withId === 'parent' && inherits ? `Parent: ${inherits}` : (other?.name ?? 'Compare with')} wrap={{ className: 'cmp-pick', ...(withId === 'parent' && inherits ? tipAttrs({ title: inherits }) : other ? tipAttrs({ title: other.name }) : {}) }} value={withId} disabled={!a} onChange={(e) => setWith(e.target.value)}>
+        <Select id="cmp-b" data-testid="preset-compare-with" size="sm" face={withId === 'stock' ? 'Stock settings' : withId === 'parent' && inherits ? `Parent: ${inherits}` : (other?.name ?? 'Compare with')} wrap={{ className: 'cmp-pick', ...(withId === 'parent' && inherits ? tipAttrs({ title: inherits }) : other ? tipAttrs({ title: other.name }) : {}) }} value={withId} disabled={!a} onChange={(e) => {
+            setWith(e.target.value)
+            setNote(null)
+          }}>
           <option value="">Compare with</option>
           {inherits ? <option value="parent">Parent: {inherits}</option> : null}
           {a ? <option value="stock">Stock settings</option> : null}
@@ -142,27 +156,42 @@ export function ComparePanel() {
       </div>
       {result && a && side ? (
         <>
-          <div className="cmp-bar">
-            <p className="sx-small" role="status">
-              {count === 0 ? 'No settings differ' : `${count} ${count === 1 ? 'setting differs' : 'settings differ'}`}
-            </p>
-            <span className="cmp-tools">
-              <label className="sx-small" htmlFor="cmp-all">
-                Show all
-              </label>
-              <Switch id="cmp-all" testId="preset-compare-all" checked={all} onChange={setAll} />
-              <Button size="sm" variant="ghost" icon="undo" data-testid="preset-compare-undo" disabled={undo.length === 0} onClick={undoLast}>
-                Undo
-              </Button>
-            </span>
-          </div>
-          {result.groups.length ? (
-            <div className="cmp-list">
+          {/* The count (or what a copy did) and the column header stay at the top while the rows scroll under them. */}
+          <div className="cmp-top">
+            <div className="cmp-bar">
+              {/* One line, always: the rows and the controls beside it never move when its text changes. */}
+              <p className="sx-small cmp-status" role="status" {...(note ? tipAttrs({ title: note }) : {})}>
+                {note ?? (count === 0 ? 'No settings differ' : `${count} ${count === 1 ? 'setting differs' : 'settings differ'}`)}
+              </p>
+              <span className="cmp-tools">
+                {/* The words are part of the switch: pressing them, or the gap, toggles it. */}
+                <label className="cmp-all sx-small">
+                  <span>Show all</span>
+                  <Switch
+                    id="cmp-all"
+                    testId="preset-compare-all"
+                    checked={all}
+                    onChange={(on) => {
+                      setAll(on)
+                      setNote(null)
+                    }}
+                  />
+                </label>
+                <Button size="sm" variant="ghost" icon="undo" data-testid="preset-compare-undo" disabled={undo.length === 0} onClick={undoLast}>
+                  Undo
+                </Button>
+              </span>
+            </div>
+            {result.groups.length ? (
               <div className="cmp-head sx-small" aria-hidden="true">
                 <span className="cmp-head-label">Setting</span>
                 <span {...tipAttrs({ title: a.name })}>{a.name}</span>
                 <span {...tipAttrs({ title: side.name })}>{side.name}</span>
               </div>
+            ) : null}
+          </div>
+          {result.groups.length ? (
+            <div className="cmp-list">
               {result.groups.map((g) => (
                 <section key={g.group} className="cmp-group" data-testid="preset-compare-group" data-group={g.group} aria-label={g.label}>
                   <h5 className="cmp-group-h">{g.label}</h5>
@@ -188,7 +217,7 @@ export function ComparePanel() {
                           <td>{r.aText}</td>
                           <td>{r.bText}</td>
                           <td className="cmp-act">
-                            {r.differs ? <Button size="sm" variant="ghost" icon="arrow-left" data-testid="preset-compare-copy" aria-label={`Use the ${side.name} value of ${r.label} in ${a.name}`} tip={{ title: `Use this value in ${a.name}` }} onClick={() => copy(r)} /> : null}
+                            {r.differs ? <Button size="sm" variant="ghost" icon="arrow-left" data-testid="preset-compare-copy" aria-label={`Use the ${side.name} value of ${r.label} in ${a.name}`} tip={{ title: `Use this value in ${a.name}` }} data-tip-avoid="tr" onClick={() => copy(r)} /> : null}
                           </td>
                         </tr>
                       ))}
