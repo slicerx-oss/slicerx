@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Locator, type Page } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
+import { openPalette, searchPalette } from '../palette'
 import { pressable, reducedMotion, steady } from '../canvas-press'
 import { addMenu, panesSettled, plateReady, prepareContext, preparePage, setPartFilament, sliceCount, sliced, tab, viewSized } from '../fixtures'
 import { expect, journey as test } from '../journey'
@@ -628,10 +629,8 @@ test('the estimate, the summary, the playback bar and the send sheet show one pr
   await expect(page.locator('[data-section="estimate"] .est-time')).toHaveText(worded(timeS))
 
   // Send sheet.
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('Print the plate on')
-  const item = page.locator('.sx-palette-item', { hasText: 'Print the plate on' }).first()
-  await expect(item).toBeVisible()
+  await openPalette(page)
+  const item = await searchPalette(page, 'Print the plate on')
   await item.click()
   const sheet = page.locator('dialog.print-sheet[open]')
   // The sheet's summary of what will print (bcdbb995 replaced its Estimate group) carries the same time.
@@ -1662,9 +1661,9 @@ test.describe('layer pins', () => {
       await startSlice(page)
       const fs = await import('node:fs')
       const exportGcode = async () => {
-        await page.keyboard.press('ControlOrMeta+k')
-        await page.keyboard.type('Export G-code')
-        const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])
+        await openPalette(page)
+        const row = await searchPalette(page, 'Export G-code', /^Export G-code/)
+        const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30_000 }), row.click()])
         return fs.readFileSync(await download.path(), 'utf8')
       }
       const before = await exportGcode()
@@ -1688,9 +1687,7 @@ test.describe('layer pins', () => {
       await page.getByRole('menuitem', { name: 'Remove color change' }).click()
       await expect(change).toHaveCount(0)
       await expect.poll(async () => (await state(page)).slice.stale).toBe(true)
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.keyboard.type('Export G-code')
-      await page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()
+      await command(page, 'Export G-code', { wanted: /^Export G-code/ })
       await expect(page.getByText('The plate changed after this slice. Slice it again first.').first()).toBeVisible()
     } finally {
       await patch(page, { slotSetup: {} })
@@ -1805,11 +1802,9 @@ async function exportedGcode(page: Page): Promise<string> {
 /** The same through the command bar. */
 async function exportedFromPalette(page: Page): Promise<string> {
   await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
-  await page.keyboard.press('ControlOrMeta+k')
-  // The command bar loads on its first use: keys typed before it is open go to the page instead.
-  await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
-  await page.keyboard.type('Export G-code')
-  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])
+  await openPalette(page)
+  const row = await searchPalette(page, 'Export G-code', /^Export G-code/)
+  const [download] = await Promise.all([page.waitForEvent('download'), row.click()])
   return readFileSync(await download.path(), 'utf8')
 }
 
@@ -1957,9 +1952,7 @@ test.describe('the G-code a slice writes', () => {
     await calm(page)
     await keep(page, ...CALIBRATION_KEEPS)
     const open = async () => {
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.keyboard.type('Calibration')
-      await page.locator('.sx-palette-item', { hasText: 'Calibration: temperature' }).first().click()
+      await command(page, 'Calibration', { wanted: 'Calibration: temperature' })
       const d = page.getByRole('dialog', { name: 'Calibration' })
       // The list shows the tests this spool needs; the line and input shaping tests are under Show every test.
       const all = d.getByRole('checkbox', { name: 'Show every test' })
@@ -2001,9 +1994,7 @@ test.describe('the G-code a slice writes', () => {
     await calm(page)
     await keep(page, ...CALIBRATION_KEEPS)
     try {
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.keyboard.type('Calibration')
-      await page.locator('.sx-palette-item', { hasText: 'Calibration: temperature' }).first().click()
+      await command(page, 'Calibration', { wanted: 'Calibration: temperature' })
       const dialog = page.getByRole('dialog', { name: 'Calibration' })
       await dialog.getByRole('radio', { name: /Shrinkage/ }).click()
       await dialog.getByRole('button', { name: 'Add to a new plate' }).click()
@@ -2034,9 +2025,7 @@ test.describe('the G-code a slice writes', () => {
       await row.getByTestId('slice-object-expand').click()
       await row.getByTestId('slice-object-part').first().click()
       await expect(page.getByTestId('slice-scope-label')).toContainText(await row.getByTestId('slice-object-part').first().innerText())
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.locator('.sx-palette-input').fill('sparse infill density')
-      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      await command(page, 'sparse infill density', { wanted: 'now' })
       const density = page.locator('[data-testid="slice-setting-row"][data-key="sparse_infill_density"]')
       await expect(density).toHaveAttribute('data-source', 'plate')
       await density.getByRole('textbox').fill('100')
@@ -2193,9 +2182,7 @@ test.describe('the G-code a slice writes', () => {
     await liveLayered(page)
     try {
       // The brim type is painted; the tool appears with it.
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.locator('.sx-palette-input').fill('brim type')
-      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      await command(page, 'brim type', { wanted: 'now' })
       await expect(page.locator('#expert-panel')).toBeVisible()
       await page.locator('#expert-panel').getByLabel('Brim type').selectOption('painted')
       await page.locator('.obj-name', { hasText: 'Layered X' }).click()

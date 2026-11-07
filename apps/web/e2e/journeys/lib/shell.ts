@@ -6,6 +6,7 @@
 import { type Page } from '@playwright/test'
 import { closeSheet, COLD_START_MS, expect, goTab, openSheet, sliceCount, sliced, tab } from '../../fixtures'
 import { journey } from '../../journey'
+import { command } from '../../palette'
 
 export { expect }
 
@@ -30,16 +31,8 @@ export const test = journey.extend<object, { app: Page }>({
 
 type Sx = { setState(p: unknown): void }
 
-/** Runs a command from Cmd+K by its title. The keys go again if the first press found the page not listening yet. */
-export async function command(page: Page, title: string): Promise<void> {
-  const palette = page.getByRole('dialog', { name: 'Commands' })
-  await expect(async () => {
-    if (!(await palette.isVisible())) await page.keyboard.press('ControlOrMeta+k')
-    await expect(palette).toBeVisible({ timeout: 3000 })
-  }).toPass({ timeout: 20_000 })
-  await page.keyboard.type(title)
-  await page.locator('.sx-palette-item', { hasText: title }).first().click()
-}
+/** Runs a command from Cmd+K by its title (palette.ts). */
+export { command }
 
 /** Sets store state, as a script reaches it through the debug hook. */
 export function setState(page: Page, patch: Record<string, unknown>): Promise<void> {

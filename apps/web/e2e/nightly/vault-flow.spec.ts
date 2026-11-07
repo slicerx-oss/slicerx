@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
+import { openPalette } from '../palette'
 
 const url = process.env['SX_E2E_SUPABASE_URL'] ?? ''
 const anon = process.env['SX_E2E_ANON_KEY'] ?? ''
@@ -258,8 +259,7 @@ test('another member finds it, gets only the sealed file, and cannot export it',
   const before = (await state()).id
   await sheet.getByRole('button', { name: /^Open in / }).click()
   await expect.poll(async () => (await state()).vault, { timeout: 60_000 }).toBe(true)
-  await page.keyboard.press('ControlOrMeta+k')
-  await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
+  await openPalette(page)
   await page.keyboard.type('Export the plate as STL')
   await expect(page.locator('.sx-palette-item:not([aria-disabled="true"])', { hasText: 'Export the plate as STL' })).toHaveCount(0)
   await page.keyboard.press('Escape')
