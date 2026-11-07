@@ -12,7 +12,7 @@ import { clearanceProfileOf, gapRows } from '../skills/fit_check/clearance'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 
-// a stand-in for the tab's design.plan: approved at once
+// a stand-in for the tab's design.plan: approved at once, except a part named Declined, which the person answers Not yet
 const plan = defineTool({
   name: 'design.plan',
   version: '1.0.0',
@@ -20,15 +20,30 @@ const plan = defineTool({
   permission: 'read',
   description: 'test',
   input: z.object({ part: z.string(), printInPlace: z.array(z.string()).min(2).optional() }),
-  async run() {
-    return { summary: 'Approved' }
+  async run(i) {
+    if (i.part === 'Declined') return { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: { planId: 'p', accepted: false } }
+    return { summary: 'Approved', output: { planId: 'p', accepted: true } }
   },
 }) as PilotTool<never>
+
+// stand-ins for the tools that start a design and build a body of it
+const stub = (name: string) =>
+  defineTool({
+    name,
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'test',
+    input: z.object({}).passthrough(),
+    async run() {
+      return { summary: 'Done', output: { design: 'd1' } }
+    },
+  }) as PilotTool<never>
 
 const SHEET = { name: 'pilot.sheet', args: { title: 'Hinge', dims: [{ key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] } }
 
 async function sheets(steps: ScriptStep[], context?: PilotContext): Promise<PilotDim[][]> {
-  const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), plan] })
+  const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), stub('geom.extrude')] })
   const shown: PilotDim[][] = []
   for await (const e of p.run('s', 'A print-in-place hinge', context ? { context } : {}) as AsyncIterable<PilotEvent>) {
     if (e.type === 'sheet') {
@@ -65,6 +80,25 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(mine!.map((d) => [d.key, d.value])).toEqual([['width', 40], ['clearance', 0.5], ['clearance_vertical', 0.4]])
     const [plain] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Box' } }] }, { calls: [SHEET] }, { text: 'Done.' }])
     expect(plain!.map((d) => d.key)).toEqual(['width'])
+  })
+
+  it('belong to the planned part: a later part with no plan gets none', async () => {
+    const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+    const spacer = { name: 'pilot.sheet', args: { title: 'Spacer', dims: [{ key: 'height', label: 'Height', value: 20, unit: 'mm', source: 'asked' }] } }
+    // the hinge is built after its sheet, then a spacer is asked for: it skips the plan
+    const built = await sheets([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf' } }] }, { calls: [spacer] }, { text: 'Done.' }])
+    expect(built.map((dims) => dims.map((d) => d.key))).toEqual([['width', 'clearance', 'clearance_vertical'], ['height']])
+    // the person moved on before the hinge was built: the spacer's own design starts, then its sheet
+    const moved = await sheets([{ calls: [hinge] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [spacer] }, { text: 'Done.' }])
+    expect(moved.map((dims) => dims.map((d) => d.key))).toEqual([['width', 'clearance', 'clearance_vertical'], ['height']])
+    // a later plan without printInPlace takes them away
+    const replanned = await sheets([{ calls: [hinge] }, { calls: [{ name: 'design.plan', args: { part: 'Box' } }] }, { calls: [SHEET] }, { text: 'Done.' }])
+    expect(replanned.map((dims) => dims.map((d) => d.key))).toEqual([['width']])
+  })
+
+  it('are not added after a plan the person did not approve', async () => {
+    const [dims] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Declined', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Done.' }])
+    expect(dims!.map((d) => d.key)).toEqual(['width'])
   })
 
   it('come from the fit rule profile of the run', () => {
