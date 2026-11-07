@@ -18,7 +18,7 @@ export function fitLimits(p: FitProfile = {}): FitLimits {
 }
 
 /**
- * How much a gap measured on the mesh may read under the modeled one. A round face is drawn as flat facets inside its
+ * How much a side gap measured on the mesh may read under the modeled one. A round face is drawn as flat facets inside its
  * circle, so a pin's corner faces a bore's facet a little closer than the two circles are: the engine draws curves to
  * within 0.005 mm (sketch arcs) to 0.02 mm (a cylinder body of up to about 9 mm radius), and adding up a model's
  * coordinates leaves float error. A gap modeled at exactly the limit reads 0.28 to 0.3 mm against 0.3 mm. A tenth of
@@ -26,13 +26,21 @@ export function fitLimits(p: FitProfile = {}): FitLimits {
  */
 export const FIT_TOLERANCE_MM = 0.02
 
-/** The gap the fit rule judges for a measured one: the tolerance is applied here only, for the check and the verdict alike. */
-const credited = (measuredMm: number): number => measuredMm + FIT_TOLERANCE_MM
+/** Float error in a measured gap above or below, which the fit rule allows for too. */
+const FLOAT_MM = 1e-6
+
+/**
+ * The gap the check judges for a measured one, as the verdict does. Only a side gap gets the
+ * tolerance: facets bend side walls, while a gap above or below lies between flat faces and the fit rule floors it to
+ * whole layers, so 0.38 mm against 0.4 mm is one layer, which the face printed over it closes.
+ */
+const credited = (measuredMm: number, direction: 'xy' | 'z'): number => measuredMm + (direction === 'xy' ? FIT_TOLERANCE_MM : FLOAT_MM)
 
 /** What a gap of this size does when printed in place: fuses, binds or slides, by the fit rule. */
 export function fitVerdict(g: Pick<FitGap, 'kind' | 'gapMm' | 'direction'>, l: FitLimits): FitResult['outcome'] {
   if (g.kind === 'fused') return 'fuses'
-  return assessFit({ gapMm: Math.min(5, credited(g.gapMm)), feature: 'print_in_place', direction: g.direction, layerHeight: l.layerHeightMm, lineWidth: lineWidthFor(l.nozzleMm), nozzle: l.nozzleMm, material: l.material }).outcome
+  // the fit rule allows for float error above and below itself
+  return assessFit({ gapMm: Math.min(5, g.direction === 'z' ? g.gapMm : credited(g.gapMm, 'xy')), feature: 'print_in_place', direction: g.direction, layerHeight: l.layerHeightMm, lineWidth: lineWidthFor(l.nozzleMm), nozzle: l.nozzleMm, material: l.material }).outcome
 }
 
 interface EngineGap {
@@ -87,9 +95,11 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
     const [a, b] = g.parts
     const ma = meshes[r.parts[a]?.item ?? 0]!
     const mb = meshes[r.parts[b]?.item ?? 0]!
-    // the engine judged the gap against the bare limit; within the tolerance of it, the gap clears
+    // the engine judged the gap against the bare limit; a side gap within the tolerance of it clears, one above and
+    // below only at the limit itself
     const d: V3 = [g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2]]
-    const kind = g.kind !== 'fused' && g.kind !== 'apart' && credited(g.gapMm) >= limitOf(g.kind === 'vertical' ? 'z' : 'xy') ? 'apart' : g.kind
+    const way = g.kind === 'vertical' ? 'z' : 'xy'
+    const kind = g.kind !== 'fused' && g.kind !== 'apart' && credited(g.gapMm, way) >= limitOf(way) ? 'apart' : g.kind
     // a touch, or a gap above and below, where one body's top face lies under the other's bottom face at the gap's own
     // points: the upper one is named first
     const flat = kind === 'fused' ? 0 : g.gapMm
