@@ -130,6 +130,17 @@ describe("a project slice keeps the file's printer settings, as the app's projec
     expect(below!.config['machine_max_acceleration_x']).toEqual(accel.map((v) => v / 2))
   })
 
+  it("holds a machine limit the file lists as changed to the printer's, and keeps a lower listed one", async () => {
+    await profiles.prepare(['machine:bambu-p1s'])
+    const base = await openProject(readProjectFile(project('listed-base.3mf', {})), profiles, ['machine:bambu-p1s'], 0.4)
+    const accel = base!.config['machine_max_acceleration_x'] as number[]
+    const list = ['layer_height;machine_max_acceleration_x', '', '', '']
+    const above = await openProject(readProjectFile(project('listed-above.3mf', { different_settings_to_system: list, machine_max_acceleration_x: accel.map((v) => String(v * 2)) })), profiles, ['machine:bambu-p1s'], 0.4)
+    expect(above!.config['machine_max_acceleration_x']).toEqual(accel)
+    const below = await openProject(readProjectFile(project('listed-below.3mf', { different_settings_to_system: list, machine_max_acceleration_x: accel.map((v) => String(v / 2)) })), profiles, ['machine:bambu-p1s'], 0.4)
+    expect(below!.config['machine_max_acceleration_x']).toEqual(accel.map((v) => v / 2))
+  })
+
   it("leaves them behind on another printer the slice names, as before", async () => {
     await profiles.prepare(['machine:bambu-a1'])
     const own = await openProject(readProjectFile(project('a1-base.3mf', {})), profiles, ['machine:bambu-a1'], 0.4)

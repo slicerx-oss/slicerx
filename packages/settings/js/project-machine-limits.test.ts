@@ -42,6 +42,42 @@ describe("a project's machine limits on its own printer", () => {
   })
 })
 
+describe("a project's machine limits on every route of the open", () => {
+  const RAISED = ['30000', '30000']
+  const LOWER = ['5000', '4000']
+  const listed = (v: string[]) => ({ nozzle_diameter: ['0.4'], machine_max_acceleration_x: v, different_settings_to_system: ['machine_max_acceleration_x', '', ''] })
+  const unlisted = (v: string[]) => ({ nozzle_diameter: ['0.4'], machine_max_acceleration_x: v })
+  const accel = (file: Record<string, unknown>, match: Parameters<typeof projectPrinterChanges>[1], cfg: PrintConfig = current, profile?: PrintConfig) =>
+    projectPrinterChanges(file, match, cfg, 0.4, profile).values['machine_max_acceleration_x']
+
+  it('on its own printer, listed as changed: held above the profile, kept below', () => {
+    expect(accel(listed(RAISED), MATCH)).toEqual([20000, 10000])
+    expect(accel(listed(LOWER), MATCH)).toEqual([5000, 4000])
+  })
+
+  it('on its own printer, from a file with no list of changes: held above the profile, kept below', () => {
+    expect(accel(unlisted(RAISED), MATCH)).toEqual([20000, 10000])
+    expect(accel(unlisted(LOWER), MATCH)).toEqual([5000, 4000])
+  })
+
+  // These routes take no printer settings from the file at all, so the printer's own limit stands either way.
+  for (const [route, match] of [
+    ['a printer with no profile', { kind: 'unknown' as const, name: 'Workshop Printer', nozzle: 0.4 }],
+    ['no printer named', null],
+    ['a nozzle the profile has no variant for', { ...MATCH, asked: 0.6 }],
+  ] as const) {
+    it(`on ${route}: the printer's own, listed or not`, () => {
+      for (const file of [listed(RAISED), unlisted(RAISED), listed(LOWER)]) expect(accel(file, match)).toBeUndefined()
+    })
+  }
+
+  it("holds them to the printer's profile, not to a higher limit the plate's own settings carry", () => {
+    const raisedByHand = { ...current, machine_max_acceleration_x: [40000, 40000] } as unknown as PrintConfig
+    expect(accel(listed(RAISED), MATCH, raisedByHand, current)).toEqual([20000, 10000])
+    expect(accel(unlisted(RAISED), MATCH, raisedByHand, current)).toEqual([20000, 10000])
+  })
+})
+
 describe('clampMachineLimits', () => {
   it("holds every entry to the profile's, and an entry past the profile's list to its lowest", () => {
     expect(clampMachineLimits({ machine_max_acceleration_x: [30000, 30000, 30000] }, PROFILE)).toEqual({ machine_max_acceleration_x: [20000, 10000, 10000] })
