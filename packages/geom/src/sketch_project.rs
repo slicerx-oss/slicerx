@@ -520,12 +520,50 @@ fn segment(kind: &str, to: V2) -> Segment {
     }
 }
 
-/// pieces as sketch segments: four or more lines that bend smoothly become one spline through their points
-fn segments(start: V2, pieces: &[(Piece, usize)]) -> Vec<Segment> {
+/// the end (exclusive) of a smooth run from piece `i` with three or more arcs in a row, and the lines that lead in
+/// and out of it smoothly: points off no one circle, such as a round seen at a tilt
+fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
+    // the join after piece k turns no more than a facet does
+    let smooth = |k: usize| {
+        let e = pieces[k].1;
+        e > 0 && e + 1 < p.len() && turn_deg(p[e - 1], p[e], p[e + 1]).abs() < SMOOTH_DEG
+    };
+    let is_arc = |k: usize| matches!(pieces[k].0, Piece::Arc(..));
+    let mut j = i;
+    while j + 1 < pieces.len() && !is_arc(j) && smooth(j) {
+        j += 1;
+    }
+    let first = j;
+    while j < pieces.len() && is_arc(j) && (j == first || smooth(j - 1)) {
+        j += 1;
+    }
+    if j - first < 3 {
+        return None;
+    }
+    while j < pieces.len() && !is_arc(j) && smooth(j - 1) {
+        j += 1;
+    }
+    Some(j)
+}
+
+/// pieces as sketch segments: four or more lines that bend smoothly become one spline through their points, and so
+/// does a smooth run of arcs off different circles
+fn segments(p: &[V2], pieces: &[(Piece, usize)]) -> Vec<Segment> {
     let mut out = Vec::new();
-    let mut from = start;
+    let mut from = p[0];
     let mut i = 0;
     while i < pieces.len() {
+        if let Some(j) = bent_run(p, pieces, i) {
+            let s = if i == 0 { 0 } else { pieces[i - 1].1 };
+            let e = pieces[j - 1].1;
+            out.push(Segment {
+                points: p[s + 1..e].to_vec(),
+                ..segment("spline", p[e])
+            });
+            from = p[e];
+            i = j;
+            continue;
+        }
         if let (Piece::Arc(through, to), _) = pieces[i] {
             out.push(Segment {
                 through: Some(through),
@@ -618,7 +656,7 @@ pub fn fit(pts: &[V2], closed: bool) -> Option<Loop> {
     let start = p[0];
     Some(Loop {
         start: Some(start),
-        segments: segments(start, &pieces(&p)),
+        segments: segments(&p, &pieces(&p)),
         ..Loop::default()
     })
 }
