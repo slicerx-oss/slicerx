@@ -238,7 +238,7 @@ export function EasySettingsPanel() {
                 >
                   Edit layer heights
                   <br />
-                  <small>Set the layer height by height on this plate</small>
+                  <small>Change the layer height at different heights on this plate</small>
                 </MenuItem>
               </>
             )}
