@@ -1,0 +1,11 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:24:27.961Z",
+ "steps": [
+  {
+   "text": "A hull's curved planking bends in two directions at once, and the tools can't model that freely curving surface. I can build the closest version instead. Which would you like?\n\n1. **Stacked flat sections:** the hull is built as flat slices, each with its own rib profile, stacked along the 120 mm length. You get the stepped curve of the hull and visible ribs, with planking shown as grooves on each slice.\n2. **Turned outline:** a rounded hull body around the length axis, with ribs as rings and planking as horizontal grooves. It reads as a hull from the side, but the plank lines run straight around rather than curving with the hull.\n3. **Flat plaque:** a hull-section profile extruded 120 mm long, with ribs as raised frames on the inside face and plank lines engraved on the outside. It's the simplest to print and works well as a diorama backdrop.\n4. **Simplified hull:** a smooth 120 mm hull shell with the ribs as internal frames, leaving the detailed planking for later in Model.\n5. Nothing for now.\n\nTell me the number you want, and I'll ask for the sizes next."
+  }
+ ]
+}

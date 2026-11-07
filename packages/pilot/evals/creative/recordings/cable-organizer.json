@@ -1,0 +1,129 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:24:50.424Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Desk cable organizer, 5 slots, 100 mm",
+      "solids": [
+       {
+        "type": "box",
+        "atMm": [
+         0,
+         0,
+         15
+        ],
+        "sizeMm": [
+         100,
+         30,
+         3
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         0,
+         30,
+         0
+        ],
+        "sizeMm": [
+         100,
+         3,
+         18
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         6,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         23,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         40,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         57,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         74,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         91,
+         0,
+         18
+        ],
+        "sizeMm": [
+         3,
+         30,
+         20
+        ]
+       }
+      ],
+      "profiles": [],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "text": "I added the desk cable organizer to the project. It is 100 x 33 x 38 mm and uses about 25 cm3 of material, or roughly 31 g of PLA if solid. It has five 14 mm wide cable slots, formed by six 3 mm ribs that stand 20 mm tall over a 3 mm base.\n\nThe edge mount is a 3 mm lip that hangs 15 mm down the desk's front face. It relies on friction and fit alone, so it may slide on a glossy or thick desk edge. If your desk edge is thicker or you want a firmer grip, I can add an underhook or make the lip taller.\n\nI have not sliced or queued it. Tell me when you want it sliced for the P1S, and I'll set up the plate and send it for your approval."
+  }
+ ]
+}

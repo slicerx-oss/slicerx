@@ -1,0 +1,1040 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:21:07.131Z",
+ "steps": [
+  {
+   "text": "I'll model the box, lid and hinge knuckles as one part, then check the result.",
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box with print-in-place hinge",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         39,
+         23
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         0,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         46,
+         39,
+         23
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         46,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         16,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 28
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         37,
+         26.5
+        ],
+        "sizeMm": [
+         28,
+         3,
+         1.5
+        ]
+       },
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 3,
+        "heightMm": 60
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            0,
+            0
+           ],
+           [
+            60,
+            0
+           ],
+           [
+            60,
+            40
+           ],
+           [
+            0,
+            40
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            2,
+            2
+           ],
+           [
+            2,
+            38
+           ],
+           [
+            58,
+            38
+           ],
+           [
+            58,
+            2
+           ]
+          ]
+         }
+        ],
+        "heightMm": 20,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            37.5
+           ],
+           [
+            2.5,
+            37.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            35.5
+           ],
+           [
+            55.5,
+            35.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box with print-in-place hinge",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         0,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3.5
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         46,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         46,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3.5
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         16,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 28
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         37,
+         26.5
+        ],
+        "sizeMm": [
+         28,
+         3,
+         1.5
+        ]
+       },
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 3,
+        "heightMm": 60
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            0,
+            0
+           ],
+           [
+            60,
+            0
+           ],
+           [
+            60,
+            40
+           ],
+           [
+            0,
+            40
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            2,
+            2
+           ],
+           [
+            2,
+            38
+           ],
+           [
+            58,
+            38
+           ],
+           [
+            58,
+            2
+           ]
+          ]
+         }
+        ],
+        "heightMm": 20,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            35.5
+           ],
+           [
+            2.5,
+            35.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            33.5
+           ],
+           [
+            55.5,
+            33.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box with print-in-place hinge",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         0,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3.5
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         46,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 14
+       },
+       {
+        "type": "box",
+        "atMm": [
+         46,
+         38,
+         20
+        ],
+        "sizeMm": [
+         14,
+         2,
+         3.5
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         16,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 28
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         37,
+         26.5
+        ],
+        "sizeMm": [
+         28,
+         3,
+         1.5
+        ]
+       },
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            0,
+            0
+           ],
+           [
+            60,
+            0
+           ],
+           [
+            60,
+            40
+           ],
+           [
+            0,
+            40
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            2,
+            2
+           ],
+           [
+            2,
+            38
+           ],
+           [
+            58,
+            38
+           ],
+           [
+            58,
+            2
+           ]
+          ]
+         }
+        ],
+        "heightMm": 20,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            35.5
+           ],
+           [
+            2.5,
+            35.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            33.5
+           ],
+           [
+            55.5,
+            33.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box body test",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            0,
+            0
+           ],
+           [
+            60,
+            0
+           ],
+           [
+            60,
+            40
+           ],
+           [
+            0,
+            40
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            2,
+            2
+           ],
+           [
+            2,
+            38
+           ],
+           [
+            58,
+            38
+           ],
+           [
+            58,
+            2
+           ]
+          ]
+         }
+        ],
+        "heightMm": 20,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box lid test",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         16,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 28
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         37,
+         26.5
+        ],
+        "sizeMm": [
+         28,
+         3,
+         1.5
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            35.5
+           ],
+           [
+            2.5,
+            35.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            33.5
+           ],
+           [
+            55.5,
+            33.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box lid test",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            35.5
+           ],
+           [
+            2.5,
+            35.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            33.5
+           ],
+           [
+            55.5,
+            33.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "SD card box lid test",
+      "material": "PETG",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         28
+        ],
+        "sizeMm": [
+         60,
+         40,
+         2
+        ]
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         16,
+         39,
+         23.5
+        ],
+        "axis": "x",
+        "diameterMm": 6,
+        "heightMm": 28
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         37,
+         25
+        ],
+        "sizeMm": [
+         28,
+         3,
+         3
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            2.5,
+            2.5
+           ],
+           [
+            57.5,
+            2.5
+           ],
+           [
+            57.5,
+            35.5
+           ],
+           [
+            2.5,
+            35.5
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            4.5,
+            4.5
+           ],
+           [
+            4.5,
+            33.5
+           ],
+           [
+            55.5,
+            33.5
+           ],
+           [
+            55.5,
+            4.5
+           ]
+          ]
+         }
+        ],
+        "heightMm": 10,
+        "atMm": [
+         0,
+         0,
+         18
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "text": "I could not build the print-in-place hinge. The geometry engine rejected every version that joined the hinge knuckles to the box and lid, with intersecting faces, so no complete box with a working hinge exists yet.\n\nThree test pieces from my attempts are now on the plate: a 60 x 40 x 20 mm body shell, a 60 x 40 x 12 mm lid with its inner lip, and a 60 x 42 x 12 mm lid with one hinge knuckle. None of them is a finished part, so please delete them in Model before slicing.\n\nTwo ways forward:\n1. A 60 x 40 x 30 mm box with a friction-fit lid and no hinge. I can build this in one pass and it will print reliably in PETG.\n2. A two-part hinge with a separate pin, printed as loose pieces to assemble. This is less clean, but it avoids the fused-knuckle problem.\n\nNothing has been sliced or sent to a printer. Which option do you want?"
+  }
+ ]
+}

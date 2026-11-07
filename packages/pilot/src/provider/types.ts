@@ -67,7 +67,8 @@ export type LlmEvent =
   | { type: 'reasoning'; delta: string }
   | { type: 'tool_call'; call: LlmToolCall }
   | { type: 'citation'; url: string; title: string }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
+  /** `webSearches`: the hosted web searches the reply ran, when the provider reports them. */
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; webSearches?: number }
   | { type: 'done'; stop: LlmStop; raw?: unknown[] }
   /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
   | { type: 'error'; message: string; retryable: boolean; code?: string }

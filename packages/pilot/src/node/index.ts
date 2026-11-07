@@ -11,8 +11,13 @@ import type { GeomHost } from '../hosts'
 import { scrub, summarize } from '../session'
 
 const KEYCHAIN = { service: 'slicerx-openai-api-key', account: 'slicerx' }
+/** The variables the anthropic route reads its key from, first set wins; the same names the desktop transport reads. */
+export const ANTHROPIC_KEY_ENV = ['SLICERX_ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY'] as const
+/** The Messages API version the desktop and browser transports send. */
+const ANTHROPIC_VERSION = '2023-06-01'
 const ALLOWED_HOSTS: Record<string, (u: URL) => boolean> = {
   openai: (u) => u.protocol === 'https:' && u.hostname === 'api.openai.com',
+  anthropic: (u) => u.protocol === 'https:' && u.hostname === 'api.anthropic.com' && u.port === '',
   'openai-compatible': (u) => u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost'),
 }
 
@@ -26,18 +31,30 @@ function keychainKey(): Promise<string | null> {
 }
 
 /**
- * Reads the key at request time: SLICERX_OPENAI_API_KEY, OPENAI_API_KEY, then
- * the macOS Keychain. The value lives only in this call's scope; it is never
- * cached, logged or put in an error.
+ * Reads the key at request time. openai: SLICERX_OPENAI_API_KEY, OPENAI_API_KEY, then
+ * the macOS Keychain. anthropic: the ANTHROPIC_KEY_ENV variables only. The value lives
+ * only in this call's scope; it is never cached, logged or put in an error.
  */
 async function readKey(provider: string): Promise<string | null> {
   if (provider === 'openai-compatible') return 'local'
+  // a value with spaces or control characters inside (two pasted lines) counts as missing, so no header error can quote it
+  if (provider === 'anthropic') return ANTHROPIC_KEY_ENV.map((n) => process.env[n]?.trim()).find((v) => v && /^[!-~]+$/.test(v)) ?? null
   if (provider !== 'openai') return null
   return process.env['SLICERX_OPENAI_API_KEY'] || process.env['OPENAI_API_KEY'] || (await keychainKey())
 }
 
-function redact(s: string): string {
-  return s.replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-...').replace(/Bearer\s+\S+/gi, 'Bearer ...')
+/** `key` is the value that was sent, so an error body that quotes it back loses it too. */
+function redact(s: string, key: string | null): string {
+  return (key ? s.split(key).join('[key]') : s).replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-...').replace(/Bearer\s+\S+/gi, 'Bearer ...')
+}
+
+/** Headers the transport sets itself; a request that brings one is refused. */
+const OWN_HEADERS = new Set(['authorization', 'proxy-authorization', 'x-api-key', 'anthropic-version'])
+
+/** Says where the key goes and nothing else: no value, no request. */
+function missingKey(provider: string): string {
+  if (provider === 'anthropic') return `No API key for anthropic: set ${ANTHROPIC_KEY_ENV[1]} (or ${ANTHROPIC_KEY_ENV[0]})`
+  return `No API key for ${provider}: set OPENAI_API_KEY or add the Keychain item ${KEYCHAIN.service}`
 }
 
 export class TransportError extends Error {
@@ -63,13 +80,23 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): LlmTranspo
       const url = new URL(req.url)
       const allowed = ALLOWED_HOSTS[req.provider]
       if (!allowed?.(url)) throw new TransportError(0, `Refusing to send a ${req.provider} request to ${url.host}`)
-      if (Object.keys(req.headers).some((h) => h.toLowerCase() === 'authorization')) throw new TransportError(0, 'Requests must not carry their own authorization header')
+      if (Object.keys(req.headers).some((h) => OWN_HEADERS.has(h.toLowerCase()))) throw new TransportError(0, 'Requests must not carry their own authorization header')
       const key = await readKey(req.provider)
-      if (!key) throw new TransportError(401, `No API key for ${req.provider}: set OPENAI_API_KEY or add the Keychain item ${KEYCHAIN.service}`)
+      if (!key) throw new TransportError(401, missingKey(req.provider))
       opts.onRequest?.(req)
-      const init: RequestInit = { method: req.method, headers: { ...req.headers, authorization: `Bearer ${key}` }, body: req.body }
+      const auth = req.provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION } : { authorization: `Bearer ${key}` }
+      // never follow a redirect: fetch keeps a custom key header on a cross-origin one, so the key could leave the allowed host
+      const init: RequestInit = { method: req.method, headers: { ...req.headers, ...auth }, body: req.body, redirect: 'error' }
       if (signal) init.signal = signal
-      const res = await fetch(req.url, init)
+      const secret = req.provider === 'openai-compatible' ? null : key
+      let res: Response
+      try {
+        res = await fetch(req.url, init)
+      } catch (e) {
+        if (signal?.aborted) throw e
+        const cause = e instanceof Error && e.cause instanceof Error ? `: ${e.cause.message}` : ''
+        throw new TransportError(0, `${req.provider} request failed: ${redact(`${e instanceof Error ? e.message : String(e)}${cause}`, secret).slice(0, 300)}`)
+      }
       if (!res.ok || !res.body) {
         let msg = res.statusText
         try {
@@ -78,7 +105,7 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): LlmTranspo
         } catch {
           // Non-JSON error bodies keep the status text.
         }
-        throw new TransportError(res.status, `${req.provider} ${res.status}: ${redact(msg).slice(0, 300)}`)
+        throw new TransportError(res.status, `${req.provider} ${res.status}: ${redact(msg, secret).slice(0, 300)}`)
       }
       const reader = res.body.getReader()
       for (;;) {

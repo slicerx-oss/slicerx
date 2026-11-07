@@ -1,0 +1,157 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:27:04.072Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Toy rocket",
+      "solids": [
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         8
+        ],
+        "diameterMm": 40,
+        "heightMm": 102,
+        "axis": "z"
+       }
+      ],
+      "profiles": [
+       {
+        "atMm": [
+         0,
+         0,
+         110
+        ],
+        "heightMm": 40,
+        "draftDeg": 26.5,
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 40
+         }
+        ]
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "heightMm": 40,
+        "loops": [
+         {
+          "points": [
+           [
+            2,
+            10
+           ],
+           [
+            -2,
+            10
+           ],
+           [
+            -2,
+            30
+           ],
+           [
+            2,
+            30
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "heightMm": 40,
+        "loops": [
+         {
+          "points": [
+           [
+            -9.66,
+            -3.27
+           ],
+           [
+            -7.66,
+            -6.73
+           ],
+           [
+            -24.98,
+            -16.73
+           ],
+           [
+            -26.98,
+            -13.27
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "heightMm": 40,
+        "loops": [
+         {
+          "points": [
+           [
+            7.66,
+            -6.73
+           ],
+           [
+            9.66,
+            -3.27
+           ],
+           [
+            26.98,
+            -13.27
+           ],
+           [
+            24.98,
+            -16.73
+           ]
+          ]
+         }
+        ]
+       }
+      ],
+      "holes": []
+     }
+    },
+    {
+     "name": "settings.get",
+     "args": {
+      "keys": [
+       "layer_height",
+       "wall_loops",
+       "sparse_infill_density",
+       "support_enable"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "I modeled the toy rocket as \"Toy rocket\" on a new plate. It is 54 x 50 x 150 mm, watertight, and about 150 cm3 solid (roughly 187 g of PLA before infill).\n\nThe body is a 40 mm diameter cylinder, with the bottom 8 mm above the bed so it rests on the three fins. The fins are 4 mm thick and reach 30 mm from the centre, spaced 120 degrees apart. The nose is a 40 mm base cone drafted to a point at 150 mm.\n\nI haven't sliced or queued it. The fins are straight rectangles, so the trailing edges are square rather than swept. If you want the rocket printed, I can slice it on your A1 mini (the selected printer) with PLA and then ask you to approve the send."
+  }
+ ]
+}

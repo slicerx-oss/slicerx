@@ -1,0 +1,11 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:23:52.986Z",
+ "steps": [
+  {
+   "text": "I haven't built anything yet, so nothing is in the project. To design the sun, planets and ring, I need the tooth count or module you want, since a 70 mm ring at 10 mm thick fixes the size, and the tooth count sets the gear ratio. What tooth count should the sun and ring use?"
+  }
+ ]
+}

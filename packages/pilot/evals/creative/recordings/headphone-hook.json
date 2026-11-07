@@ -1,0 +1,235 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:27:32.085Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Under desk headphone hook",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         50,
+         30,
+         4
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         8,
+         4
+        ],
+        "sizeMm": [
+         14,
+         14,
+         24
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "atMm": [
+         0,
+         0,
+         22
+        ],
+        "heightMm": 10,
+        "loops": [
+         {
+          "start": [
+           23,
+           9
+          ],
+          "segments": [
+           {
+            "type": "line",
+            "to": [
+             46,
+             9
+            ]
+           },
+           {
+            "type": "arc",
+            "to": [
+             46,
+             21
+            ],
+            "through": [
+             52,
+             15
+            ]
+           },
+           {
+            "type": "line",
+            "to": [
+             23,
+             21
+            ]
+           },
+           {
+            "type": "line",
+            "to": [
+             23,
+             9
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ],
+      "holes": [
+       {
+        "part": 0,
+        "diameterMm": 4,
+        "atMm": [
+         8,
+         4,
+         0
+        ],
+        "axis": "z",
+        "countersinkMm": 8
+       },
+       {
+        "part": 0,
+        "diameterMm": 4,
+        "atMm": [
+         42,
+         4,
+         0
+        ],
+        "axis": "z",
+        "countersinkMm": 8
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Under desk headphone hook",
+      "solids": [
+       {
+        "type": "plate",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "sizeMm": [
+         50,
+         30,
+         4
+        ]
+       },
+       {
+        "type": "box",
+        "atMm": [
+         16,
+         8,
+         4
+        ],
+        "sizeMm": [
+         14,
+         14,
+         24
+        ]
+       }
+      ],
+      "profiles": [
+       {
+        "atMm": [
+         0,
+         0,
+         22
+        ],
+        "heightMm": 10,
+        "loops": [
+         {
+          "start": [
+           23,
+           9
+          ],
+          "segments": [
+           {
+            "type": "line",
+            "to": [
+             46,
+             9
+            ]
+           },
+           {
+            "type": "arc",
+            "to": [
+             46,
+             21
+            ],
+            "through": [
+             52,
+             15
+            ]
+           },
+           {
+            "type": "line",
+            "to": [
+             23,
+             21
+            ]
+           },
+           {
+            "type": "line",
+            "to": [
+             23,
+             9
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ],
+      "holes": [
+       {
+        "diameterMm": 4,
+        "atMm": [
+         8,
+         4,
+         0
+        ],
+        "axis": "z"
+       },
+       {
+        "diameterMm": 4,
+        "atMm": [
+         42,
+         4,
+         0
+        ],
+        "axis": "z"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "I built the headphone hook as a 52 x 30 x 32 mm part with two 4 mm screw holes through a 50 x 30 x 4 mm base. The base sits flat on the desk underside, a 14 mm post hangs down, and a 12 mm wide rounded arm with a 6 mm end radius extends from the post for the headband.\n\nThe countersinks did not build, because this tool would not cut them. The holes are straight, so you will need to add the countersinks in Model (8 mm head, on the top face of the base), or I can try a different build. The sizes are my defaults, since you did not give any: a 4 mm hole suits an M4 or #8 wood screw, and the arm's 22 mm overhang may want supports when printed.\n\nI have not sliced or queued it. Say the word and I will pick the P1S and PLA, slice it, and send it to the printer for your approval."
+  }
+ ]
+}

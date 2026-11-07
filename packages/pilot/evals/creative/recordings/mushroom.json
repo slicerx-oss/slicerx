@@ -1,0 +1,168 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:24:15.053Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Toadstool mushroom",
+      "solids": [
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         0
+        ],
+        "diameterMm": 22,
+        "heightMm": 37,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         36
+        ],
+        "diameterMm": 55.8,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         38
+        ],
+        "diameterMm": 55.6,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         40
+        ],
+        "diameterMm": 54.8,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         42
+        ],
+        "diameterMm": 53.6,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         44
+        ],
+        "diameterMm": 52,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         46
+        ],
+        "diameterMm": 49.8,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         48
+        ],
+        "diameterMm": 47.2,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         50
+        ],
+        "diameterMm": 43.8,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         52
+        ],
+        "diameterMm": 39,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         54
+        ],
+        "diameterMm": 32.4,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         56
+        ],
+        "diameterMm": 27.2,
+        "heightMm": 2,
+        "axis": "z"
+       },
+       {
+        "type": "cylinder",
+        "atMm": [
+         0,
+         0,
+         58
+        ],
+        "diameterMm": 16,
+        "heightMm": 2,
+        "axis": "z"
+       }
+      ],
+      "profiles": [],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "text": "I modeled the toadstool on a new plate: 55.8 x 55.8 x 60 mm, one watertight piece, flat on the bottom.\n\nThe stem is a 22 mm diameter cylinder, 37 mm tall, and the cap is a dome built from 12 stacked 2 mm discs, so it reads as a smooth dome but has faint steps. The cap is about 56 mm wide, with its flat underside at 36 mm. The solid volume is about 52.8 cm3, roughly 65 g if printed solid.\n\nI haven't sliced or queued it. If you want it printed on the A1 mini in PLA, say so and I'll set the target, slice, and send it for your approval. The cap's underside overhangs, so supports may be needed."
+  }
+ ]
+}

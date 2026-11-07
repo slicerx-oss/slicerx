@@ -1,0 +1,405 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:28:39.790Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Snowflake tree ornament",
+      "solids": [],
+      "holes": [],
+      "profiles": [
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            1,
+            -1.73
+           ],
+           [
+            20.05,
+            9.27
+           ],
+           [
+            22.05,
+            5.8
+           ],
+           [
+            24.65,
+            7.3
+           ],
+           [
+            22.65,
+            10.77
+           ],
+           [
+            35.64,
+            18.27
+           ],
+           [
+            33.64,
+            21.73
+           ],
+           [
+            20.65,
+            14.23
+           ],
+           [
+            18.65,
+            17.7
+           ],
+           [
+            16.05,
+            16.2
+           ],
+           [
+            18.05,
+            12.73
+           ],
+           [
+            -1,
+            1.73
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            2,
+            0
+           ],
+           [
+            2,
+            22
+           ],
+           [
+            6,
+            22
+           ],
+           [
+            6,
+            25
+           ],
+           [
+            2,
+            25
+           ],
+           [
+            2,
+            40
+           ],
+           [
+            -2,
+            40
+           ],
+           [
+            -2,
+            25
+           ],
+           [
+            -6,
+            25
+           ],
+           [
+            -6,
+            22
+           ],
+           [
+            -2,
+            22
+           ],
+           [
+            -2,
+            0
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            -1,
+            -1.73
+           ],
+           [
+            -20.05,
+            9.27
+           ],
+           [
+            -22.05,
+            5.8
+           ],
+           [
+            -24.65,
+            7.3
+           ],
+           [
+            -22.65,
+            10.77
+           ],
+           [
+            -35.64,
+            18.27
+           ],
+           [
+            -33.64,
+            21.73
+           ],
+           [
+            -20.65,
+            14.23
+           ],
+           [
+            -18.65,
+            17.7
+           ],
+           [
+            -16.05,
+            16.2
+           ],
+           [
+            -18.05,
+            12.73
+           ],
+           [
+            1,
+            1.73
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            -1,
+            1.73
+           ],
+           [
+            -20.05,
+            -9.27
+           ],
+           [
+            -22.05,
+            -5.8
+           ],
+           [
+            -24.65,
+            -7.3
+           ],
+           [
+            -22.65,
+            -10.77
+           ],
+           [
+            -35.64,
+            -18.27
+           ],
+           [
+            -33.64,
+            -21.73
+           ],
+           [
+            -20.65,
+            -14.23
+           ],
+           [
+            -18.65,
+            -17.7
+           ],
+           [
+            -16.05,
+            -16.2
+           ],
+           [
+            -18.05,
+            -12.73
+           ],
+           [
+            1,
+            -1.73
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            -2,
+            0
+           ],
+           [
+            -2,
+            -22
+           ],
+           [
+            -6,
+            -22
+           ],
+           [
+            -6,
+            -25
+           ],
+           [
+            -2,
+            -25
+           ],
+           [
+            -2,
+            -40
+           ],
+           [
+            2,
+            -40
+           ],
+           [
+            2,
+            -25
+           ],
+           [
+            6,
+            -25
+           ],
+           [
+            6,
+            -22
+           ],
+           [
+            2,
+            -22
+           ],
+           [
+            2,
+            0
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "points": [
+           [
+            1,
+            1.73
+           ],
+           [
+            20.05,
+            -9.27
+           ],
+           [
+            22.05,
+            -5.8
+           ],
+           [
+            24.65,
+            -7.3
+           ],
+           [
+            22.65,
+            -10.77
+           ],
+           [
+            35.64,
+            -18.27
+           ],
+           [
+            33.64,
+            -21.73
+           ],
+           [
+            20.65,
+            -14.23
+           ],
+           [
+            18.65,
+            -17.7
+           ],
+           [
+            16.05,
+            -16.2
+           ],
+           [
+            18.05,
+            -12.73
+           ],
+           [
+            -1,
+            -1.73
+           ]
+          ]
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 12
+         }
+        ]
+       },
+       {
+        "heightMm": 3,
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           44
+          ],
+          "diameterMm": 9
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           44
+          ],
+          "diameterMm": 3
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "name": "project.info",
+     "args": {}
+    }
+   ]
+  },
+  {
+   "text": "I built the ornament on a new plate as a single 3 mm watertight body. The six arms reach 40 mm from centre, so tip to tip is 80 mm (the arms at 90 and 270 degrees), and the string loop sits above the top arm. The loop adds about 8.5 mm, so the full footprint is 71.3 x 88.5 mm. The arms are 4 mm wide with a small crossbar on each, and the loop has a 3 mm hole.\n\nIt isn't sliced yet. Next I can set the A1 mini with your PLA and slice it, then queue it if you want it printed (queue and start need your approval). If the ornament should stay within 80 mm overall, I can shorten the top arm and move the loop."
+  }
+ ]
+}

@@ -1,0 +1,155 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:26:04.056Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Spinner ring 19 mm ID",
+      "solids": [],
+      "profiles": [
+       {
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 23
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 19
+         }
+        ],
+        "heightMm": 8,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 27
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 19
+         }
+        ],
+        "heightMm": 3,
+        "atMm": [
+         0,
+         0,
+         2.5
+        ]
+       },
+       {
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 30
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 23.6
+         }
+        ],
+        "heightMm": 2.2,
+        "atMm": [
+         0,
+         0,
+         0
+        ]
+       },
+       {
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 30
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 27.6
+         }
+        ],
+        "heightMm": 3.6,
+        "atMm": [
+         0,
+         0,
+         2.2
+        ]
+       },
+       {
+        "loops": [
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 30
+         },
+         {
+          "type": "circle",
+          "center": [
+           0,
+           0
+          ],
+          "diameterMm": 23.6
+         }
+        ],
+        "heightMm": 2.2,
+        "atMm": [
+         0,
+         0,
+         5.8
+        ]
+       }
+      ],
+      "holes": []
+     }
+    }
+   ]
+  },
+  {
+   "text": "I added the spinner ring to the project as \"Spinner ring 19 mm ID\" on a new plate. It is 30 mm across and 8 mm tall, weighs about 3.8 g if solid, and has a 19 mm bore.\n\nI chose the other dimensions myself, so please check them:\n- **Core:** 23 mm outside diameter, with a 3 mm collar at mid-height (27 mm across).\n- **Band:** 30 mm outside diameter. Its top and bottom lips wrap the core, and its middle wall clears the collar.\n- **Clearance:** 0.3 mm everywhere the parts move, which should be enough for the P1S with a 0.4 mm nozzle.\n\nThe model is two separate solids that do not touch. I have not sliced it yet. Tell me if you want a different band width or bore, or say the word and I'll slice it for the P1S. Printing needs your approval."
+  }
+ ]
+}

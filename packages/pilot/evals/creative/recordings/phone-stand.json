@@ -1,0 +1,11 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:24:53.531Z",
+ "steps": [
+  {
+   "text": "Before I model it, I need your phone's size. The slot width depends on the phone's thickness with its case, and the stand's width depends on its width. Which phone is it, and do you use a case? If you don't know the exact numbers, a case-on or case-off choice is enough, and I'll use typical dimensions for that model."
+  }
+ ]
+}

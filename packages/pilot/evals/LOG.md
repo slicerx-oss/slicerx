@@ -16,3 +16,4 @@ One row per eval run. `results.jsonl` has the per scenario scores.
 | 2026-09-30 12:29 | live | gpt-6-sol | setup-start,setup-brand-question,setup-ambiguous-model,setup-nozzle-check,setup-unknown-model,setup-full-approved,setup-test-denied,setup-unreachable,setup-secret-in-chat,setup-look-approved,setup-slicing-only | 1 | 99.9 | 100% | 1.8 | 0 | printer_setup on @slicerx/printer-catalog, printer_test and printer_add on the widened contract |
 | 2026-09-30 12:32 | live | gpt-6-sol | skill | 1 | 93.4 | 81% | 2.6 | 0 | skill scenarios, first live run |
 | 2026-09-30 14:07 | live | gpt-6-sol | make-model-logo | 1 | 95.4 | 100% | 4 | 0 | make_model logo smoke run |
+| 2026-11-07 16:28 | live | claude-haiku-5-5 | creative | 1 | 30 | 30% | 1.2 | 0 | creative prompts |

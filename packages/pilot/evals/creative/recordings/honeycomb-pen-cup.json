@@ -1,0 +1,916 @@
+{
+ "status": "recorded",
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-07T16:26:44.086Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Hex pen cup",
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            37.693,
+            0
+           ],
+           [
+            18.846,
+            32.641
+           ],
+           [
+            -18.846,
+            32.641
+           ],
+           [
+            -37.693,
+            0
+           ],
+           [
+            -18.846,
+            -32.641
+           ],
+           [
+            18.846,
+            -32.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 100
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 2
+       }
+      ],
+      "solids": [],
+      "holes": [
+       {
+        "atMm": [
+         -10,
+         0,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         0,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         0,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         0,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         0,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         0,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -10,
+         0,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         0,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         0,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         0,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         0,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         0,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -10,
+         0,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         0,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         0,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         0,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         0,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         0,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         0,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       }
+      ],
+      "material": "PLA"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Hex pen cup honeycomb",
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            37.693,
+            0
+           ],
+           [
+            18.846,
+            32.641
+           ],
+           [
+            -18.846,
+            32.641
+           ],
+           [
+            -37.693,
+            0
+           ],
+           [
+            -18.846,
+            -32.641
+           ],
+           [
+            18.846,
+            -32.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 100
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 2
+       }
+      ],
+      "solids": [],
+      "holes": [
+       {
+        "atMm": [
+         -10,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -10,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -10,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         0,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         10,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -15,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         -5,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         5,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         15,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       }
+      ],
+      "material": "PLA"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "project.info",
+     "args": {}
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "text_to_part",
+     "args": {
+      "name": "Hex pen cup honeycomb v3",
+      "profiles": [
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         },
+         {
+          "points": [
+           [
+            37.693,
+            0
+           ],
+           [
+            18.846,
+            32.641
+           ],
+           [
+            -18.846,
+            32.641
+           ],
+           [
+            -37.693,
+            0
+           ],
+           [
+            -18.846,
+            -32.641
+           ],
+           [
+            18.846,
+            -32.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 100
+       },
+       {
+        "loops": [
+         {
+          "points": [
+           [
+            40,
+            0
+           ],
+           [
+            20,
+            34.641
+           ],
+           [
+            -20,
+            34.641
+           ],
+           [
+            -40,
+            0
+           ],
+           [
+            -20,
+            -34.641
+           ],
+           [
+            20,
+            -34.641
+           ]
+          ]
+         }
+        ],
+        "heightMm": 2
+       }
+      ],
+      "solids": [],
+      "holes": [
+       {
+        "atMm": [
+         30,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         40,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         50,
+         34.641,
+         24
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         25,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         35,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         45,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         55,
+         34.641,
+         32
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         30,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         40,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         50,
+         34.641,
+         40
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         25,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         35,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         45,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         55,
+         34.641,
+         48
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         30,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         40,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         50,
+         34.641,
+         56
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         25,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         35,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         45,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       },
+       {
+        "atMm": [
+         55,
+         34.641,
+         64
+        ],
+        "diameterMm": 7,
+        "axis": "y"
+       }
+      ],
+      "material": "PLA"
+     }
+    }
+   ]
+  },
+  {
+   "text": "I built the hex cup as an 80 mm across-corners hexagon, 100 mm tall, with 2 mm walls and a 2 mm floor. The honeycomb cuts did not go through. The tool reported \"holes not cut\" on all 21 holes in each attempt, so the walls are solid right now.\n\nI made three versions while trying to place the holes, so the project has three objects. The first two (\"Hex pen cup\" and \"Hex pen cup honeycomb\") have no holes. The third, \"Hex pen cup honeycomb v3\", has the same body and the intended hole layout, but it is not cut either. Please delete the first two in Model.\n\nThe honeycomb is also not a true hex pattern. The tools can only cut round holes along the X, Y or Z axis. The two flat walls facing front and back are the only ones a straight hole can reach, and the four angled walls would need a different cut. Your options:\n\n1. Cut the honeycomb by hand in Model. Hexagonal through-cuts on all six walls are a boolean subtract, which takes a few minutes.\n2. Accept round holes on the two front and back flats only, about 21 holes in a staggered grid. I would need to find a way to make the holes cut, which I have not managed yet.\n\nNothing has been sliced or sent to the printer. Which do you want?"
+  }
+ ]
+}
