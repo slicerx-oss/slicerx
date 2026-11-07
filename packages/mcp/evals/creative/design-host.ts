@@ -17,7 +17,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { appendStep, bakeMesh, HISTORY_VERSION, IDENTITY, landEdit, landNew, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { appendStep, bakeMesh, HISTORY_VERSION, IDENTITY, landEdit, landNew, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -58,7 +58,9 @@ function boundsOf(parts: readonly HistoryMesh[], t: Mat4): Box | null {
  * The eval's bed as the landing rule reads it, as the app's arrange does with nothing printed around a part and no
  * excluded areas: a part prints where it stands when its footprint is on the bed and it stands between the bed and
  * the printable height; one that does not goes to the middle of the bed when it fits there LAND_EDGE_MM from the edge
- * and clear of `others` (the other designs' bodies, as placed). Otherwise it has no spot here.
+ * and clear of `others` (the other designs' bodies, as placed). Otherwise it has no spot here, where the app's arrange
+ * would look for the first free spot. On a round bed this checks the part's bounding box against the circle, where the
+ * app checks how far its outline reaches, so a long part near the rim can count as off the bed here and on it there.
  */
 export function plainBed(bed: Bed, others: () => readonly { parts: readonly HistoryMesh[]; transform: Mat4 }[]): BedLanding<HistoryMesh[]> {
   return {
@@ -113,42 +115,62 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
 
   const run = (history: History) => replayHistory(engine, { history })
 
-  /** Lands the body `d` now has, as the app's plate does: its first body, or one an edit took off the bed. */
-  function land(d: Design, before: { parts: HistoryMesh[]; transform: Mat4 }): void {
-    if (!opts.bed || !d.parts.length) return
+  /**
+   * Lands the body design `d` now has, as the app's plate does: its first body, or one an edit took off the bed. Every
+   * step undone back to a base the design started from only puts the base back, as in the app. Returns what happened,
+   * for the reply of the call that did it.
+   */
+  function land(d: Design, before: { parts: HistoryMesh[]; transform: Mat4 }): Landed | undefined {
+    if (!opts.bed || !d.parts.length) return undefined
+    if (!d.history.steps.length && before.parts.length) return undefined
     const bed = opts.bed(d.id)
     if (!before.parts.length) {
       const l = landNew(d.parts, d.transform, bed)
       d.transform = l.transform
-      if (l.moved) d.landed = l.moved
-      return
+      return l.moved
     }
     const r = landEdit(before, d.parts, bed)
     if (r.to) d.transform = r.to
-    if (r.landed) d.landed = r.landed
+    return r.landed
   }
 
-  function keep(d: Design, history: History, r: Awaited<ReturnType<typeof replayHistory>>): void {
-    const before = { parts: d.parts, transform: d.transform }
+  /** Keeps a replay on the stored design `s` and lands it; what the landing did. */
+  function keep(s: Design, history: History, r: Awaited<ReturnType<typeof replayHistory>>): Landed | undefined {
+    const before = { parts: s.parts, transform: s.transform }
     // a step that broke keeps its sentence, as the app shows it
-    Object.assign(d, { history: { ...history, steps: history.steps.map((s, i) => withBroken(s, r.status[i])) }, parts: r.parts, status: r.status, madeBy: r.madeBy ?? {} })
-    land(d, before)
-    register(d.id)
-    opts.changed?.(d)
+    Object.assign(s, { history: { ...history, steps: history.steps.map((st, i) => withBroken(st, r.status[i])) }, parts: r.parts, status: r.status, madeBy: r.madeBy ?? {} })
+    const landed = land(s, before)
+    register(s.id)
+    opts.changed?.(s)
+    return landed
+  }
+
+  // The stored designs never hold `landed`: as in the app, where every read builds the design again from the plate,
+  // the note is only in the reply of the call that moved the part. A caller gets copies (get, list), and a call that
+  // changes a design changes the stored one and then the caller's copy, with this call's landing on the copy alone.
+  const stored = (d: Design): Design => all.get(d.id) ?? d
+  const copy = (s: Design, landed?: Landed): Design => {
+    const { landed: _l, ...rest } = s
+    return { ...rest, ...(landed ? { landed } : {}) }
+  }
+  function give(d: Design, s: Design, landed: Landed | undefined): void {
+    Object.assign(d, s)
+    if (landed) d.landed = landed
+    else delete d.landed
   }
 
   async function addStep(d: Design, part: number, params: StepParams, label: string | undefined, o: { sketch?: string; expectedRevision?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
     guard(d.id, o?.expectedRevision)
-    // `landed` is only ever this call's news
-    delete d.landed
-    const step: Step = { id: nextStepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(o?.sketch ? { sketch: o.sketch } : {}) }
+    const s = stored(d)
+    const step: Step = { id: nextStepId(), part, transform: [...s.transform], params, ...(label ? { label } : {}), ...(o?.sketch ? { sketch: o.sketch } : {}) }
     const history = appendStep(d.history, step)
     const r = await run(history)
     const st = r.status[r.status.length - 1]
     if (st?.state !== 'done') throw new Error(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`)
     guard(d.id, o?.expectedRevision)
-    keep(d, history, r)
-    d.redo = []
+    const landed = keep(s, history, r)
+    s.redo = []
+    give(d, s, landed)
     // a receipt is the design as this step left it, which a later step does not change
     const committed = receipt ? structuredClone(d) : d
     return { step: committed.history.steps.at(-1)!, revision: current(d.id), design: committed }
@@ -163,29 +185,29 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     get(id) {
       const d = all.get(id)
       if (!d) throw Object.assign(new Error(`design: no design ${id}; design.list lists them`), { code: 'not_found' })
-      return d
+      return copy(d)
     },
-    list: () => [...all.values()],
+    list: () => [...all.values()].map((d) => copy(d)),
     async create(name, base, history, transform: Mat4 = [...IDENTITY], options) {
       if (history?.exact || options?.exact) noExact()
       const id = `d${++designs}`
-      const d: Design = { id, name, history: history ?? { version: HISTORY_VERSION, base, steps: [] }, transform, parts: [], status: [], madeBy: {}, redo: [] }
-      all.set(id, d)
-      if (d.history.steps.length) {
-        await host.replay(d)
+      const s: Design = { id, name, history: history ?? { version: HISTORY_VERSION, base, steps: [] }, transform, parts: [], status: [], madeBy: {}, redo: [] }
+      all.set(id, s)
+      if (s.history.steps.length) {
+        const landed = keep(s, s.history, await run(s.history))
         // as in the app: a history that builds no body opens nothing
-        if (!d.parts.length) {
+        if (!s.parts.length) {
           all.delete(id)
           revisions.delete(id)
           throw new Error('The design has no body yet.')
         }
-      } else {
-        d.parts = base
-        land(d, { parts: [], transform })
-        register(id)
-        opts.changed?.(d)
+        return copy(s, landed)
       }
-      return d
+      s.parts = base
+      const landed = land(s, { parts: [], transform })
+      register(id)
+      opts.changed?.(s)
+      return copy(s, landed)
     },
     async add(d, part, params, label, o) {
       return (await addStep(d, part, params, label, o, false)).step
@@ -193,10 +215,12 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     addWithReceipt: (d, part, params, label, o) => addStep(d, part, params, label, o, true),
     async replay(d, o) {
       guard(d.id, o?.expectedRevision)
-      delete d.landed
+      const s = stored(d)
+      // what the caller changed: its steps (edited, undone, put back) and what undo keeps to redo
+      s.redo = d.redo
       const r = await run(d.history)
       guard(d.id, o?.expectedRevision)
-      keep(d, d.history, r)
+      give(d, s, keep(s, d.history, r))
     },
     sketch(id) {
       const k = timeline.items.find((i) => i.kind === 'sketch' && i.id === id)
