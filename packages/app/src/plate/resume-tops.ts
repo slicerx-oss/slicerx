@@ -5,7 +5,7 @@
 // engine works them out from the plate as the job sliced it, so the plan never counts in layers of its own making.
 import type { Host } from '@slicerx/contracts'
 import { INPUTS } from '../state/slice-inputs'
-import { fullPlate, get, type AppState } from '../state/store'
+import { fullPlate, get, markStale, set, type AppState } from '../state/store'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
 export function sliceState(s: AppState): AppState {
@@ -19,8 +19,36 @@ function hash(text: string): string {
   return (h >>> 0).toString(16).padStart(8, '0')
 }
 
-/** The slice inputs (state/slice-inputs.ts) the key reads; layer marks and the resume plan itself do not move layers. */
-const KEY_INPUTS = INPUTS.filter((k) => k !== 'layerMarks' && k !== 'resume' && k !== 'plates' && k !== 'plate' && k !== 'calibration')
+/**
+ * The slice inputs (state/slice-inputs.ts INPUTS) the key leaves out, and why. Every other input is in it, through
+ * `keyOf` below. A new slice input is in the key unless it is listed here.
+ */
+export const KEY_LEAVES_OUT: Readonly<Partial<Record<(typeof INPUTS)[number], string>>> = {
+  layerMarks: 'pauses, color changes and G-code at a height do not move layers',
+  resume: 'the plan itself, which the key is checked against',
+  plates: "only the shown plate's own settings move its layers; they are in the key",
+  plate: "taken as the slice sees it (a history step open for editing slices the whole part), each object's layer inputs only",
+  calibration: "only the shown plate's calibration moves its layers; it is in the key",
+}
+const KEY_INPUTS = INPUTS.filter((k) => !(k in KEY_LEAVES_OUT))
+
+/** What of an object moves layers: its mesh, placement, filaments, paint, volumes, settings and ears; not its name, thumbnail or lock. */
+const objectKey = (e: AppState['plate'][number]): unknown[] => [e.id, e.handle.hash, e.parts.map((p) => [p.name, p.slot]), e.transform, e.printable ?? true, e.slotOverrides ?? null, e.paint ?? null, e.volumes ?? null, e.partSettings ?? null, e.brimPoints ?? null, e.layerRanges ?? null]
+
+/** A user preset by what it sets: not its name or when it was saved or tuned. */
+function presetKey(p: Record<string, unknown>): Record<string, unknown> {
+  const { name: _n, createdAt: _c, updatedAt: _u, tuned, ...rest } = p
+  const t = tuned as { results?: Record<string, Record<string, unknown>> } | undefined
+  if (!t?.results) return tuned === undefined ? rest : { ...rest, tuned }
+  return { ...rest, tuned: { ...t, results: Object.fromEntries(Object.entries(t.results).map(([r, { at: _at, ...v }]) => [r, v])) } }
+}
+
+/** An input as the key reads it: the printer's slots by filament (not what is left on a spool or its tag), presets by their values (not when they were saved). */
+function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState): unknown {
+  if (k === 'printerSlots') return s.printerSlots.map((slot) => [slot.id, slot.material ?? null, slot.color ?? null])
+  if (k === 'userPresets') return s.userPresets.map((p) => presetKey(p as unknown as Record<string, unknown>))
+  return s[k] ?? null
+}
 
 /** JSON with mesh arrays as their lengths (the handle hash names their content) and the shipped G-code left out. */
 const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${(v as { length?: number }).length ?? 0}` : key === 'shippedGcode' ? undefined : v)
@@ -28,19 +56,19 @@ const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${
 let last: { refs: unknown[]; key: string } | null = null
 
 /**
- * What the shown plate's layers come from, as one key: every slice input (state/slice-inputs.ts INPUTS) a slice of
- * this plate reads, but layer marks and the resume plan: the plate's objects as the slice sees them (a history step
- * open for editing slices the whole part), this plate's own settings and calibration, the profile and its layer, the
- * Easy choices, overrides, object settings, filament slots and the printer's, flush, the prime tower, user presets,
- * nozzles, extruders and the bed. Equal keys mean a slice would plan the same layers. The last key is kept while
- * none of these change, so asking often costs nothing.
+ * What the shown plate's layers come from, as one key: the slice inputs (state/slice-inputs.ts INPUTS) that move
+ * layers, but not the ones KEY_LEAVES_OUT names: each object's layer inputs as the slice sees the plate, this plate's
+ * own settings and calibration, the profile and its layer, the Easy choices, overrides, object settings, filament slots,
+ * the printer's slots by filament, flush, the prime tower, user presets by their values, nozzles, extruders and the
+ * bed. A spool reload (new grams left or a new tag), a rename, a lock or a thumbnail leaves it as it was. Equal keys
+ * mean a slice would plan the same layers. The last key is kept while none of these change.
  */
 export function sliceInputsKey(s: AppState): string {
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const refs: unknown[] = [s.plate, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k])]
   if (last && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) return last.key
-  const objects = fullPlate(s)
-  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => s[k] ?? null)], lean))
+  const objects = fullPlate(s).map(objectKey)
+  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s))], lean))
   last = { refs, key }
   return key
 }
@@ -100,9 +128,25 @@ export async function resumeLayers(host: Host, signal: AbortSignal): Promise<Res
   const { plateLayerZ } = await import('../state/slice-plate')
   try {
     const tops = await plateLayerZ(host, signal)
-    return signal.aborted || get().activePlate !== plate ? null : { plate, inputs, tops }
+    // Layers for the plate as it was when the run began: an edit during the run (a refused project setting dropped,
+    // say) leaves them for no one.
+    return signal.aborted || get().activePlate !== plate || sliceInputsKey(get()) !== inputs ? null : { plate, inputs, tops }
   } catch (e) {
     if (signal.aborted || get().activePlate !== plate) return null
     throw e
   }
+}
+
+/** Why Print and Export wait while a resume plan is kept that no longer matches the shown plate (activeResume). */
+export const RESUME_VOID = 'The resume plan no longer matches this plate. Plan it again, or choose Print everything again.'
+
+/** RESUME_VOID while a resume plan is kept that does not hold for the shown plate as it is; else null. */
+export function resumeVoid(s: AppState): string | null {
+  return s.resume && !activeResume(s) ? RESUME_VOID : null
+}
+
+/** Print everything again: drops the resume plan, so the next slice, Print and Export are of the whole plate. */
+export function printEverythingAgain(): void {
+  set({ resume: null })
+  markStale()
 }

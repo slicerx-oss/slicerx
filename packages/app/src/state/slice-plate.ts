@@ -58,7 +58,7 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
 /** Said when a resume plan was made for another plate, or before an edit to this one: the slice prints the whole plate. */
 export const STALE_RESUME: SliceWarning = {
   code: 'manual_step',
-  message: 'The resume plan was made for another plate or before a change to this one, so this slice prints the whole plate. Plan it again with Print the rest from this height.',
+  message: 'The resume plan was made for another plate or before a change to this one, so this slice is of the whole plate and Print and Export wait. Plan it again with Print the rest from this height, or choose Print everything again.',
 }
 
 /**
