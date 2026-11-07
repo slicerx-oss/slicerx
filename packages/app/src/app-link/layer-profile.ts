@@ -11,7 +11,7 @@ import { toolStore } from '../plate/tools'
 import { plateSliceConfig } from '../state/slice-plate'
 import { get, toast } from '../state/store'
 import { LinkError } from './methods-error'
-import { storedResumeTops } from '../plate/resume-tops'
+import { planFor, resumeState, storedResumeTops } from '../plate/resume-tops'
 
 function plateOf(ref: number | string | undefined) {
   const s = get()
@@ -35,14 +35,18 @@ function read(ref: number | string | undefined) {
   const profile = meta.settings.layerProfile ?? null
   const sleipnir = String(config['smart_layer'] ?? 'off') !== 'off'
   const tops = profile && top > 0 ? profileTops(cleanProfile(profile, limits)?.points ?? [], top, limits) : null
-  const mode = s.calibration[id] ? 'calibration' : id === s.activePlate && storedResumeTops(s) ? 'resume' : profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
+  // A plan kept for this plate that no longer holds: the plate does not slice until it is planned again or cleared.
+  const plan = planFor(s, id)
+  const mode = s.calibration[id] ? 'calibration' : plan?.startsWith('void:') ? 'resume_void' : id === s.activePlate && storedResumeTops(s) ? 'resume' : profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
   const kept = profile && (mode === 'calibration' || mode === 'resume') ? ', and its own layer heights wait until that ends' : ''
-  const words = { calibration: `the calibration's layer heights${kept}`, resume: `the layers of the print it resumes${kept}`, own: `its own layer heights${tops ? `, ${tops.length} layers` : ''}`, sleipnir: 'sleipnir (adaptive layers)', fixed: `a fixed ${Number(config['layer_height'])} mm layer height` }[mode]
+  const words = { resume_void: 'nothing: its resume plan no longer matches it, so it does not slice until the plan is made again or Print everything again clears it', calibration: `the calibration's layer heights${kept}`, resume: `the layers of the print it resumes${kept}`, own: `its own layer heights${tops ? `, ${tops.length} layers` : ''}`, sleipnir: 'sleipnir (adaptive layers)', fixed: `a fixed ${Number(config['layer_height'])} mm layer height` }[mode]
   return {
     summary: `Plate ${number} slices with ${words}.`,
     output: {
       plate: { number, id, name: meta.name, shown: id === s.activePlate },
       mode,
+      // The kept resume plan, for whichever plate it is: its plate and whether it still holds.
+      resume: resumeState(s),
       profile: profile ? profile.map(([z, h]) => [z, h]) : null,
       limits: { min_mm: limits.minMm, max_mm: limits.maxMm, first_layer_mm: limits.firstMm },
       top_mm: Math.round(top * 1e4) / 1e4,

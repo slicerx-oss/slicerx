@@ -13,6 +13,7 @@ import { effectiveSlot, mapSlot } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
 import { activeMeta } from '../../plate/plates'
+import { planFor } from '../../plate/resume-tops'
 import type { Mat4 } from '../../plate/transform'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../../state/store'
 
@@ -75,6 +76,9 @@ export function fingerprintInputs(s: AppState = get(), plate?: number) {
     overrides: s.overrides,
     profiles: { process: s.activePresets.process ?? null, filament: s.activePresets.filament ?? null },
     slots,
+    // The resume plan kept for this plate, by id, and whether it holds: keeping, clearing, replacing or voiding one
+    // makes a slice from before it stale, so printer.queue never sends it into the part on the bed.
+    resume: meta ? planFor(s, meta.id) : null,
   }
 }
 

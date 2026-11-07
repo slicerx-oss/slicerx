@@ -29,6 +29,7 @@ import type { SlotSetup } from '../filament/slots'
 import type { UserPreset, PresetKind } from '../presets/store'
 import type { SyncChange, Tombstone } from '../presets/sync'
 import type { LayerMark } from '../plate/layer-marks'
+import type { SliceStamp } from '../plate/resume-tops'
 import type { Dimension } from '../geom/cad'
 import type { History, Timeline } from '@slicerx/cad-history'
 import type { Spool } from '../inventory/spools'
@@ -225,7 +226,8 @@ export type SliceState =
   | { status: 'idle' }
   /** `last` is the slice before this one: the screen keeps showing it, as stale, until this one lands. */
   | { status: 'running'; progress: SliceProgress | null; startedAt: number; last?: SliceResult }
-  | { status: 'done'; result: SliceResult; stale: boolean }
+  /** `stamp` is what the slice was made for (plate/resume-tops.ts sliceStamp); Print and Export check it (printBlock). */
+  | { status: 'done'; result: SliceResult; stale: boolean; stamp?: SliceStamp }
   /** `code` names a refusal the panels act on: resume_void offers to plan the resume again or clear it. */
   | { status: 'error'; message: string; code?: 'resume_void' }
 

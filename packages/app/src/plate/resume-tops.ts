@@ -6,6 +6,7 @@
 import type { Host } from '@slicerx/contracts'
 import { INPUTS } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
+import { cancelSlice } from '../state/actions'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
 export function sliceState(s: AppState): AppState {
@@ -86,7 +87,8 @@ export const KEY_SLOT_MATCH = ['slotMatch', 'fileSlotTypes', 'fileSlotVendors', 
 /** JSON with mesh arrays as their lengths (the handle hash names their content) and the shipped G-code left out. */
 const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${(v as { length?: number }).length ?? 0}` : key === 'shippedGcode' ? undefined : v)
 
-let last: { refs: unknown[]; key: string } | null = null
+/** The last key per shown plate, kept while none of its inputs change (a plate's key is also read while another shows). */
+const last = new Map<string, { refs: unknown[]; key: string }>()
 
 /**
  * What the shown plate's layers come from, as one key: the slice inputs (state/slice-inputs.ts INPUTS) that move
@@ -99,14 +101,69 @@ let last: { refs: unknown[]; key: string } | null = null
 export function sliceInputsKey(s: AppState): string {
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const refs: unknown[] = [s.plate, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k]), ...KEY_SLOT_MATCH.map((k) => s[k])]
-  if (last && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) return last.key
+  const prev = last.get(s.activePlate)
+  if (prev && prev.refs.length === refs.length && prev.refs.every((r, i) => r === refs[i])) return prev.key
   const entries = fullPlate(s)
-  const ids = new Set(entries.map((e) => e.id))
+  // The settings a slice reads for an object: its own, and its source's for an instance (object-settings.ts sourceId).
+  const ids = new Set(entries.flatMap((e) => [e.id, e.instanceOf ?? e.id]))
   const objects = entries.map(objectKey)
   const slots = KEY_SLOT_MATCH.map((k) => (k === 'printerModel' ? (s.printerModel?.id ?? null) : s[k]))
   const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s, ids)), slots], lean))
-  last = { refs, key }
+  if (last.size > 16) last.clear()
+  last.set(s.activePlate, { refs, key })
   return key
+}
+
+/** The key of plate `plateId` as it is in `s`, whether or not it is the one shown (sliceInputsKey). */
+export function plateInputsKey(s: AppState, plateId: string): string {
+  if (plateId === s.activePlate) return sliceInputsKey(s)
+  const meta = s.plates.find((p) => p.id === plateId)
+  return sliceInputsKey({ ...s, activePlate: plateId, plate: meta?.objects ?? [], historyEdit: null })
+}
+
+/** One resume plan, as an id: the same plan stored again is the same id; a new plan or a changed one is another. */
+export function planId(r: NonNullable<AppState['resume']>): string {
+  return hash(JSON.stringify([r.plate ?? null, r.inputs ?? null, r.plan, r.declareZ ?? false, r.layerTopsMm ?? null]))
+}
+
+/**
+ * The resume plan plate `plateId` holds in `s`: null with none kept for it, the plan's id while it holds, and
+ * `void:` and the id once the plate changed since. Every slice is stamped with this as it starts, and nothing it made
+ * prints, exports or queues once this reads otherwise.
+ */
+export function planFor(s: AppState, plateId: string): string | null {
+  const r = s.resume
+  if (!r || r.plate !== plateId) return null
+  return r.inputs !== undefined && r.inputs === plateInputsKey(s, plateId) ? planId(r) : `void:${planId(r)}`
+}
+
+/** What a slice was made for: its plate, the resume plan it used (planFor) and the plate's slice inputs key. */
+export interface SliceStamp {
+  plate: string
+  plan: string | null
+  inputs: string
+}
+
+/** The stamp of a slice of the shown plate starting now. */
+export function sliceStamp(s: AppState): SliceStamp {
+  return { plate: s.activePlate, plan: planFor(s, s.activePlate), inputs: sliceInputsKey(s) }
+}
+
+/** Why a slice no longer sends, exports or queues: its plate, its resume plan or the plate's inputs changed since. */
+export const SLICE_NOT_CURRENT = 'This slice was made for another plate, resume plan or setup, so it does not print or export. Slice the plate again.'
+
+/**
+ * SLICE_NOT_CURRENT when the slice stamped `stamp` is not of the shown plate as it is: another plate, another resume
+ * plan (kept, cleared, replaced or voided since), or, where a resume plan is in play, other inputs. A slice with no
+ * plan either side keeps the app's own stale rule for edits (a slot report from the printer does not hold it back). A
+ * slice with no stamp passes only while no plan is kept, so a slice from before a plan never prints into the part.
+ */
+export function stampBlock(s: AppState, stamp: SliceStamp | undefined): string | null {
+  if (!stamp) return s.resume ? SLICE_NOT_CURRENT : null
+  if (stamp.plate !== s.activePlate) return SLICE_NOT_CURRENT
+  const plan = planFor(s, stamp.plate)
+  if (stamp.plan !== plan) return SLICE_NOT_CURRENT
+  return plan !== null && stamp.inputs !== sliceInputsKey(s) ? SLICE_NOT_CURRENT : null
 }
 
 /**
@@ -191,6 +248,17 @@ function resumePlate(s: AppState): number | null {
   return i >= 0 ? i + 1 : null
 }
 
+/**
+ * The kept resume plan as a client reads it: whether one is kept, its plate (1 based; null when that plate is gone) and
+ * whether it still holds for that plate as it is (false: the plate does not slice until it is planned again or cleared).
+ */
+export function resumeState(s: AppState): { kept: boolean; plate: number | null; holds: boolean | null } {
+  const r = s.resume
+  if (!r) return { kept: false, plate: null, holds: null }
+  const plan = r.plate ? planFor(s, r.plate) : null
+  return { kept: true, plate: resumePlate(s), holds: plan !== null && !plan.startsWith('void:') }
+}
+
 /** The plate a kept resume plan was made for (1 based) while another plate is shown: that plate prints freely. */
 export function resumeElsewhere(s: AppState): number | null {
   return s.resume && s.resume.plate !== s.activePlate ? resumePlate(s) : null
@@ -206,8 +274,17 @@ export function exportAllBlock(s: AppState): string | null {
   return `A resume plan is kept${n ? ` for plate ${n}` : ''}. Print that plate on its own, or choose Print everything again first.`
 }
 
+/**
+ * Keeps resume plan `r` (null clears it). A slice running for the plan before is canceled quietly, since what it makes
+ * would print the old plan; the slice on screen goes stale.
+ */
+export function setResume(r: AppState['resume']): void {
+  cancelSlice({ quiet: true })
+  set({ resume: r })
+  markStale()
+}
+
 /** Print everything again: drops the resume plan, so the next slice, Print and Export are of the whole plate. */
 export function printEverythingAgain(): void {
-  set({ resume: null })
-  markStale()
+  setResume(null)
 }

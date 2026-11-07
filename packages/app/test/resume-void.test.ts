@@ -19,7 +19,7 @@ import { printBlock } from '../src/plate/heimdall'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { ResumeDialog } from '../src/plate/resume-dialog'
 import { closeResume, openResume, useResumeAsk } from '../src/plate/resume-state'
-import { activeResume, exportAllBlock, printEverythingAgain, RESUME_VOID, resumeElsewhere, resumeFor, resumeVoid, sliceInputsKey } from '../src/plate/resume-tops'
+import { activeResume, exportAllBlock, printEverythingAgain, RESUME_VOID, resumeElsewhere, resumeFor, resumeVoid, SLICE_NOT_CURRENT, sliceInputsKey } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
 import { exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -132,8 +132,11 @@ describe('Print and Export with a resume plan that no longer matches', () => {
     expect(get().toast).toMatchObject({ text: RESUME_VOID, tone: 'error' })
     expect(get().printSheet).toBeNull()
     expect(e.exported).toEqual([])
-    // Planned again for the plate as it is now: Print and Export go.
+    // Planned again for the plate as it is now: the slice on screen is from before that plan, so it does not go; the
+    // plan's own slice does.
     plan()
+    expect(printBlock(get())).toBe(SLICE_NOT_CURRENT)
+    await slicePlate(e.host)
     expect(printBlock(get())).toBeNull()
     // Cleared with Print everything again: they go, for the whole plate.
     edit()
