@@ -114,25 +114,16 @@ pub fn format_value(def: Option<&SettingDef>, v: Option<&Value>) -> String {
         })
         .and_then(|d| d.unit.as_deref())
         .map_or("", unit_text);
+    // A count of one reads in the singular: `1 layer`, `2 layers`.
+    let unit_for = |one: bool| match def.and_then(|d| d.unit.as_deref()) {
+        Some("%") => "%",
+        _ if one && unit == " layers" => " layer",
+        _ => unit,
+    };
     match v {
         Value::Bool(b) => if *b { "on" } else { "off" }.into(),
-        Value::Int(i) => format!(
-            "{i}{}",
-            if def.and_then(|d| d.unit.as_deref()) == Some("%") {
-                "%"
-            } else {
-                unit
-            }
-        ),
-        Value::Float(f) => format!(
-            "{}{}",
-            show(*f),
-            if def.and_then(|d| d.unit.as_deref()) == Some("%") {
-                "%"
-            } else {
-                unit
-            }
-        ),
+        Value::Int(i) => format!("{i}{}", unit_for(*i == 1)),
+        Value::Float(f) => format!("{}{}", show(*f), unit_for((*f - 1.0).abs() < f64::EPSILON)),
         Value::Str(s) => {
             if s.is_empty() {
                 "empty".into()

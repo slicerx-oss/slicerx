@@ -27,6 +27,19 @@ describe('compareConfigs', () => {
     for (const r of rows) expect(r.label).not.toMatch(/_/)
   })
 
+  it('writes a count of layers in the singular for one: 1 layer, 2 layers, 0 layers', () => {
+    const text = (n: number, m: number) => {
+      const c = compareConfigs(cfg({ ...process(), raft_layers: n }), cfg({ ...process(), raft_layers: m }), { section: 'process' })
+      const r = c.groups.flatMap((g) => g.rows).find((x) => x.key === 'raft_layers')!
+      return [r.aText, r.bText]
+    }
+    expect(text(1, 2)).toEqual(['1 layer', '2 layers'])
+    expect(text(0, 1)).toEqual(['0 layers', '1 layer'])
+    // A per-slot list that repeats one value reads as that value, in the singular too.
+    const listed = compareConfigs(cfg({ ...process(), raft_layers: [1, 1] }), cfg({ ...process(), raft_layers: 3 }), { section: 'process' })
+    expect(listed.groups.flatMap((g) => g.rows).find((x) => x.key === 'raft_layers')!.aText).toBe('1 layer')
+  })
+
   it('shows every setting of the kind with all, the matching ones marked as the same', () => {
     const a = { ...filament(), nozzle_temperature: [215] }
     const b = { ...filament(), nozzle_temperature: [230] }

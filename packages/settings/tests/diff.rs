@@ -137,6 +137,16 @@ fn formats_values() {
 }
 
 #[test]
+fn one_layer_reads_in_the_singular() {
+    let raft = || setting_def("raft_layers");
+    assert_eq!(format_value(raft(), Some(&Value::Int(1))), "1 layer");
+    assert_eq!(format_value(raft(), Some(&Value::Int(2))), "2 layers");
+    assert_eq!(format_value(raft(), Some(&Value::Int(0))), "0 layers");
+    assert_eq!(format_value(raft(), Some(&Value::Float(1.0))), "1 layer");
+    assert_eq!(format_value(raft(), Some(&Value::Ints(vec![1, 1]))), "1 layer");
+}
+
+#[test]
 fn enum_values_read_as_their_labels() {
     let text = |key: &str, v: Value| format_value(setting_def(key), Some(&v));
     assert_eq!(
