@@ -56,7 +56,7 @@ the gate's script.
 ## Rust test parts
 
 A push to main runs the whole Rust test suite on macOS and Windows, and a pull request labeled `full-ci` runs it on
-Windows. Each system is a set of parts that run side by side (`rust-macos-parts`: 2, `rust-windows-parts`: 3), and the
+Windows. Each system is a set of parts that run side by side (`rust-macos-parts`: 3, `rust-windows-parts`: 3), and the
 jobs named `rust (macos-latest)` and `rust (windows-latest)` gather them: they fail when any part failed, timed out or
 never ran, and they keep the names `required-checks.txt` lists. A part runs `node scripts/ci/windows-rust-tests.mjs
 <part> --of <parts>`. The script reads cargo metadata, so a new sx-core test file is picked up with no list to edit:

@@ -195,7 +195,7 @@ test('the command line prints the plan and names a target with no weight', () =>
     assert.deepEqual(JSON.parse(main.stdout), commands(withTargets(['firmware', 'requests', 'determinism', 'brand_new']), 'main'))
     const all = run('--of', '2', '--partition')
     assert.equal(all.status, 0, all.stderr)
-    assert.match(all.stdout, /^part 1 of 2: weight \d+ s, \d+ items\n {2}rest 700/)
+    assert.match(all.stdout, /^part 1 of 2: weight \d+ s, \d+ items\n {2}rest 1400/)
     assert.match(all.stdout, /\npart 2 of 2: weight \d+ s/)
     assert.notEqual(run('3', '--of', '2', '--plan').status, 0)
     assert.notEqual(run('typo', '--plan').status, 0)
