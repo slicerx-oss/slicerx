@@ -10,6 +10,9 @@
 // (CAP_USD 1.50 by default, stopping at 1.40), or when the most it could cost would take the spend past the cap.
 // A reply cut off before its usage arrived is charged that most. --record saves each live reply as that prompt's
 // recording.
+// A full live run of every prompt takes about 30 minutes. On a shared build machine, run it under the heavy lock with a
+// hold limit of 2400 seconds, so a shorter limit on the machine does not stop it partway:
+//   SX_HEAVY_MAX_HOLD=2400 scripts/ci/heavy.sh pnpm --filter @slicerx/mcp eval:creative --mode live ...
 // mimir runs with the desktop tab's options (run.ts CREATIVE_TAB, @slicerx/pilot tab-options.ts) and the tab's tools
 // (src/toolset.ts tabToolset): the design toolset on the eval's own design host, so a part is built feature by feature
 // as CAD history, with the tab's questions, sheets and plan cards. A reply that builds nothing is scored as asked (a
