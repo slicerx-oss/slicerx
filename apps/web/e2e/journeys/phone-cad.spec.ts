@@ -148,6 +148,32 @@ test('a finger draws a rectangle, a line and a circle with sizes typed in the bo
   await shot(page, test.info(), 'phone-drawn.png')
 })
 
+test('Import SVG on a phone: the form fits the sheet and the loops land on the plane', async ({ page }, info) => {
+  await sketchOnPlane(page)
+  const sheet = page.getByRole('complementary', { name: 'Tool and transform' })
+  const open = sheet.getByTestId('sketch-svg-open')
+  await open.scrollIntoViewIfNeeded()
+  await open.tap()
+  const form = sheet.getByTestId('sketch-svg')
+  await form.locator('#sk-svg-file').setInputFiles({ name: 'ring.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40mm"><path fill-rule="evenodd" d="M0 0H40V40H0Z M20 12A8 8 0 1 0 20 28A8 8 0 1 0 20 12Z"/></svg>') })
+  await form.locator('#sk-svg-value').fill('20')
+  const add = form.getByTestId('sketch-svg-add')
+  await add.scrollIntoViewIfNeeded()
+  const vw = page.viewportSize()!.width
+  for (const el of [form, add]) {
+    const b = (await el.boundingBox())!
+    expect(b.x).toBeGreaterThanOrEqual(0)
+    expect(b.x + b.width).toBeLessThanOrEqual(vw)
+  }
+  await shot(page, info, 'svg-sketch-form-390-dark.png')
+  await page.evaluate(() => document.documentElement.style.setProperty('color-scheme', 'light'))
+  await shot(page, info, 'svg-sketch-form-390-light.png')
+  await page.evaluate(() => document.documentElement.style.removeProperty('color-scheme'))
+  await add.tap()
+  await expect.poll(async () => (await loops(page)).length).toBe(2)
+  expect(size((await loops(page))[0])).toEqual([20, 20])
+})
+
 test('a box on the shape stays clear of the undo group and the other floating controls', async ({ page }) => {
   test.slow()
   await sketchOnPlane(page)
