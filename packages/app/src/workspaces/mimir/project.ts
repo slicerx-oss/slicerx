@@ -9,7 +9,7 @@ import { resolveSlots } from '../../filament/slots'
 import { arrange, landOnBed, placedOnBed } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
-import { allPlates, projectBase } from '../../plate/plates'
+import { allPlates, newPlateSettings, projectBase } from '../../plate/plates'
 import { bounds, centerOnBed, decompose, dropToBed, identity, modelOrigin, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
 import { GCODE_TEXT_KEYS, trustOptions } from '../../state/actions'
 import { plateObjects, plateSliceConfig } from '../../state/slice-plate'
@@ -131,7 +131,7 @@ function landFamily(plate: PlateMeta, family: string, bed: Bed): number {
 function newPlate(plates: readonly PlateMeta[], settings: PlateMeta['settings']): PlateMeta {
   let n = plates.length + 1
   while (plates.some((p) => p.name === `Plate ${n}`)) n++
-  return { id: `plate-${Date.now().toString(36)}m${(++seq).toString(36)}`, name: `Plate ${n}`, objects: [], settings: { ...settings } }
+  return { id: `plate-${Date.now().toString(36)}m${(++seq).toString(36)}`, name: `Plate ${n}`, objects: [], settings: newPlateSettings(settings) }
 }
 
 /**
