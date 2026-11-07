@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A client lofts through closed profiles on their own planes: a new body from a square to a circle, a tapered post
-// joined to a base, each a step that replays from the saved 3MF, and the input the loft refuses.
+// A client lofts through profiles on their own planes: a new body from a square to a circle, a tapered post joined to
+// a base, smooth sides and a thickened open shell, each a step that replays from the saved 3MF, and the input the loft
+// refuses.
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -84,5 +85,40 @@ describe('loft as a design step', () => {
     expect(noNormal.isError).toBe(true)
     expect(text(noNormal)).toMatch(/profiles\W+1\W+frame\W+normal/)
     expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
+  }, 60_000)
+
+  it('lofts smooth sides, a ring and a thickened open shell as steps that replay, and stores the parsed profiles', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    // eight-sided rings keep the recorded replies small
+    const circle = (x: number, d: number) => ({ points: Array.from({ length: 8 }, (_, k) => [x + (d / 2) * Math.cos((k * Math.PI) / 4), (d / 2) * Math.sin((k * Math.PI) / 4)]) })
+    const d = (await ok('slicerx_design_new', { name: 'Freeform' })).design
+    // a bent tube: smooth through three circles, so it bulges past the middle one's own reach
+    const bent = await ok('slicerx_geom_loft', { design: d, smooth: true, profiles: [{ loops: [circle(0, 10)] }, { frame: level(10), loops: [circle(8, 10)] }, { frame: level(20), loops: [circle(0, 10)] }] })
+    expect(bent.sizeMm[2]).toBeCloseTo(20, 3)
+    // a half pipe from open arcs, thickened 1.5 mm outward
+    const arc = (r: number) => Array.from({ length: 13 }, (_, i) => [r * Math.cos(Math.PI + (Math.PI * i) / 12), r * Math.sin(Math.PI + (Math.PI * i) / 12)])
+    const pipe = await ok('slicerx_geom_loft', { design: d, thicken: { thicknessMm: 1.5 }, profiles: [{ frame: { origin: [40, 0, 0], normal: [0, 0, 1] }, open: true, loops: [{ points: arc(6) }] }, { frame: { origin: [40, 0, 20], normal: [0, 0, 1] }, open: true, loops: [{ points: arc(6) }] }] })
+    expect(pipe.parts).toHaveLength(2)
+    expect(pipe.parts[1]!.volumeMm3 / ((Math.PI / 2) * (7.5 * 7.5 - 36) * 20)).toBeCloseTo(1, 1)
+
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Smooth loft, 3 profiles', 'Loft, 2 profiles, 1.5 mm shell'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.volumeMm3).toBeCloseTo(pipe.volumeMm3, 1)
+
+    // an open profile alone makes no solid, and a bad thickness names its field
+    const bare = await h.call('slicerx_geom_loft', { design: d, profiles: [{ open: true, loops: [{ points: arc(6) }] }, { frame: level(10), open: true, loops: [{ points: arc(6) }] }] })
+    expect(text(bare)).toMatch(/thicken: open profiles make a surface; give thicken to make it a solid/)
+    const thin = await h.call('slicerx_geom_loft', { design: d, thicken: { thicknessMm: 0 }, profiles: [{ loops: [square(10)] }, { frame: level(10), loops: [square(10)] }] })
+    expect(text(thin)).toMatch(/thicken\W+thicknessMm/)
+    const mark = await h.call('slicerx_geom_loft', { design: d, profiles: [{ loops: [square(10)], landmarks: [[0, 0, 0]] }, { frame: level(10), loops: [square(10)] }] })
+    expect(text(mark)).toMatch(/profiles\W+0\W+landmarks\W+0/)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(2)
   }, 60_000)
 })
