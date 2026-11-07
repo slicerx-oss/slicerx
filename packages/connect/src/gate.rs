@@ -457,21 +457,66 @@ mod tests {
             "EXCLUDE_OBJECT NAME=a",
             "RESUME",
             "SET_KINEMATIC_POSITION Z=0",
+            // Parentheses are no comment to Klipper: "(G28" runs as G28. Any "(" or ")" fails closed.
+            "(G28",
+            "(G28 X)",
+            "(G28)",
+            "(G1 Z-5 A)",
+            "(G1 Z-5)",
+            "(G1 X5",
+            "(G29",
+            "( G1 Z-50",
+            "( G1 X0 Y0 Z-50",
+            "( x ) G29",
+            "(PRINT_START",
+            "M117 (",
+            "M104 S200 (hot)",
+            "(only a comment)",
+            // Text the guard cannot read as one command, a checksum with more after it.
+            "N10",
+            "*71",
+            "M104 S200*G28",
+            "M104 S200 * 5 G28",
+            // G92 reads its parameters by letter, not by word: anything but E moves the frame.
+            "G92 E0Z0",
+            "G92 E0Z50",
+            "G92E0X5",
+            "G92 E0 Y1",
+            "G92 E0.5Z10",
+            "G92 E0 Z0",
+            "G92 EZ0",
+            "G92 E0X0Y0",
+            "G92 E0#Z",
+            // A tool is picked on M109 on some firmware, which runs the tool change macros.
+            "M109 S210",
+            "M109 S200 T1",
+            // A host action through a message line can resume a paused print.
+            "M118 A1 action:resume",
+            "M118 //action:cancel",
+            "RESPOND TYPE=command MSG=action:resume",
+            "respond type=command msg=Action:Cancel",
+            "M117 action:resume",
+            // An M600 with any parameter other than B parks or unloads where it says: motion, not the plain swap.
+            "M600 X0 Y0 Z0",
+            "M600 Z-50",
+            "M600 E-500 U500 L500",
+            // Relative positioning.
+            "G91",
         ] {
+            assert_eq!(line_rule(line), LineRule::Motion, "{line}");
             assert!(moves_axes(line), "{line}");
         }
     }
 
+    // Heater and fan targets, messages and reports go at any time, a running print included.
     #[test]
-    fn a_line_that_cannot_move_the_head_passes_however_it_is_written() {
+    fn a_heater_fan_message_or_report_line_goes_at_any_time() {
         for line in [
             "M104 S200",
             "m104 s0",
-            "M109 S210",
+            "M104 S200 T0",
             "M140 S60",
-            "M190 S60",
             "M141 S40",
-            "M191 S40",
             "M106 S128",
             "M107",
             "M117 Printing",
@@ -482,33 +527,75 @@ mod tests {
             "M115",
             "M119",
             "M155 S2",
-            "M73 P10",
-            "M82",
-            "M83",
-            "M220 S100",
-            "M221 S100",
             "M300 S440 P200",
-            "M400",
             "M503",
             "N5 M104 S0",
             "N 5 M106",
-            "G4 P100",
-            "G4 S1",
-            "G90",
-            "G21",
-            "G92 E0",
-            "g92 e0",
+            "N10 M104 S200*71",
             "; a comment",
-            "(only a comment)",
+            "   ; M600",
             "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=200",
             "TURN_OFF_HEATERS",
             "SET_FAN_SPEED FAN=aux SPEED=0.5",
-            "TEMPERATURE_WAIT SENSOR=extruder MINIMUM=200",
             "RESPOND MSG=hi",
             "STATUS",
             "QUERY_ENDSTOPS",
             "GET_POSITION",
         ] {
+            assert_eq!(line_rule(line), LineRule::AnyTime, "{line}");
+            assert!(!moves_axes(line), "{line}");
+        }
+    }
+
+    // Lines that cannot move the head but change how a running print goes (extrusion and positioning
+    // modes, the E frame, speed and flow factors, waits): only while no print runs.
+    #[test]
+    fn a_line_that_changes_a_running_print_waits_for_no_print() {
+        for line in [
+            "M73 P10",
+            "M82",
+            "M83",
+            "M110 N0",
+            "M220 S100",
+            "M220 S50",
+            "M221 S150",
+            "M190 S60",
+            "M191 S40",
+            "M400",
+            "G4 P100",
+            "G4 S1",
+            "G4 S60",
+            "G4 P60000",
+            "G90",
+            "G21",
+            "G92 E0",
+            "g92 e0",
+            "G92 E0   ",
+            "G92 E-1.5",
+            "TEMPERATURE_WAIT SENSOR=extruder MINIMUM=200",
+        ] {
+            assert_eq!(line_rule(line), LineRule::NoPrint, "{line}");
+            assert!(!moves_axes(line), "{line}");
+        }
+    }
+
+    // A dwell longer than a minute, or a speed or flow factor outside 50 to 150 percent, is never sent raw.
+    #[test]
+    fn a_long_dwell_or_a_wild_factor_is_refused() {
+        for line in [
+            "G4 S61",
+            "G4 P60001",
+            "G4 S1 P1",
+            "G4 X1",
+            "M220 S1000",
+            "M220 S49",
+            "M221 S1000",
+            "M221 S10",
+            "M220",
+            "M220 B",
+            "M221 S100 T1",
+        ] {
+            assert!(matches!(line_rule(line), LineRule::Refused(_)), "{line}");
             assert!(!moves_axes(line), "{line}");
         }
     }
@@ -523,6 +610,7 @@ mod tests {
             "N 5 M600",
             "M0600 ; swap",
             "n10m600",
+            "M600 B3",
         ] {
             assert!(changes_filament(line), "{line}");
             assert!(moves_axes(line), "{line}");
@@ -535,6 +623,12 @@ mod tests {
             "LOAD_FILAMENT",
             "; M600",
             "M117 M600",
+            "M600 X0 Y0 Z0",
+            "M600 Z-50",
+            "M600 E-500 U500 L500",
+            "M600 (park)",
+            "(M600",
+            "M600 B1 X0",
         ] {
             assert!(!changes_filament(line), "{line}");
         }
@@ -571,11 +665,16 @@ mod tests {
             "(home first) G28",
             "G28*71",
             "G28 W",
+            // Klipper reads no comment in parentheses, so a line with one homes as far as the guard knows.
+            "(G28",
+            "(G28 X)",
+            "(G28)",
+            "(G1 Z-5 A)",
         ] {
             assert!(homes_axes(line), "{line}");
         }
         for line in [
-            "G29", "G280", "G2", "G1 Z5", "M28", "; G28", "(G28)", "M117 G28", "G92 Z0", "", "N28", "G",
+            "G29", "G280", "G2", "G1 Z5", "M28", "; G28", "M117 G28", "G92 Z0", "", "N28", "G",
             "N5 M28",
         ] {
             assert!(!homes_axes(line), "{line}");
