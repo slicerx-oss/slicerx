@@ -622,10 +622,14 @@ pub struct RequestOptions {
     pub layer_tops_mm: Option<Vec<f64>>,
     /// With `layerTopsMm`: the tops are exact, a plate's own layer heights set by hand or a sliced job's own layers
     /// for a resume. Layers keep them on a multi-color plate too, where sleipnir's tops give way to fixed layers
-    /// wherever two or more filaments print. Without `resumeFromLayer`, a Z shrinkage compensation stretches them
-    /// above the first layer, inside the printer's layer height limits; a resume's tops are already stretched.
+    /// wherever two or more filaments print. A Z shrinkage compensation stretches them above the first layer, inside
+    /// the printer's layer height limits, unless `layerTopsSliced` says they are a sliced job's layers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_tops_exact: Option<bool>,
+    /// With `layerTopsExact`: the tops are a sliced job's own layers (its `layerZ`, sent back for a resume), already
+    /// stretched by any Z shrinkage compensation, so they are kept exactly as given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_tops_sliced: Option<bool>,
     /// Resume a print at this layer (0-based). The plate is sliced whole and
     /// G-code is written only from this layer, after a start sequence that
     /// heats, homes X and Y but not Z, and draws no purge line. The preview
@@ -1893,7 +1897,7 @@ pub fn request_config_report(
     config.untrusted_gcode = !req.options.trusted_gcode.unwrap_or(false);
     config.layer_tops_exact =
         req.options.layer_tops_exact.unwrap_or(false) && req.options.layer_tops_mm.is_some();
-    config.layer_tops_stretch = config.layer_tops_exact && req.options.resume_from_layer.is_none();
+    config.layer_tops_sliced = config.layer_tops_exact && req.options.layer_tops_sliced.unwrap_or(false);
     config
         .trusted_gcode_keys
         .clone_from(&req.options.stock_gcode_keys);
@@ -3224,7 +3228,8 @@ pub const REQUEST_SCHEMA: &str = r#"{
           }
         },
         "layerTopsMm": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 1, "description": "sleipnir: top of every layer in mm, ascending, first entry is the first layer's top" },
-        "layerTopsExact": { "type": "boolean", "description": "with layerTopsMm: the tops are exact (a plate's own layer heights, or a sliced job's layers for a resume), kept on multi-color plates (no fixed layers where colors change); without resumeFromLayer a Z shrinkage compensation stretches them inside the printer's layer height limits" },
+        "layerTopsExact": { "type": "boolean", "description": "with layerTopsMm: the tops are exact (a plate's own layer heights, or a sliced job's layers for a resume), kept on multi-color plates (no fixed layers where colors change); unless layerTopsSliced, a Z shrinkage compensation stretches them inside the printer's layer height limits" },
+        "layerTopsSliced": { "type": "boolean", "description": "with layerTopsExact: the tops are a sliced job's own layers (its layerZ, for a resume), already stretched by any Z shrinkage compensation, and are kept as given" },
         "plateName": { "type": "string", "description": "For filename_format: {plate_name}" },
         "plateNumber": { "type": "integer", "minimum": 1, "description": "For filename_format: {plate_number}, from 1" },
         "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" },
