@@ -6,6 +6,7 @@
 import { expect } from '@playwright/test'
 import { test } from '../browser-launch'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
+import { command, openPalette, searchPalette, submitPalette } from '../palette'
 import { cellsIn, GL_SLOW, middleOf, recordFrames, sharpest } from '../frames'
 
 /**
@@ -77,18 +78,16 @@ test('a model sliced while setup is open shows its toolpaths in place after setu
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
   // With setup still open: open a model through the command bar.
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('Open a model file')
-  const chooser = await expectFileDialog(page, () => page.keyboard.press('Enter'), 30_000)
+  await openPalette(page)
+  const open = await searchPalette(page, 'Open a model file')
+  const chooser = await expectFileDialog(page, () => submitPalette(page, open), 30_000)
   await chooser.setFiles({ name: 'cube.stl', mimeType: 'model/stl', buffer: cubeStl() })
   // Open starts a new project, and an opened project waits for Slice plate: nothing slices when the open ends.
   await expect
     .poll(() => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState(); return !!s && s.plate.some((o) => /cube/i.test(o.name)) && !s.plateLoading && s.sliceHeld && s.slice.status === 'idle' }), { timeout: 60_000 })
     .toBe(true)
   // Still behind setup, slice it through the command bar, as a person would with the footer's Slice plate covered.
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('Slice the plate')
-  await page.keyboard.press('Enter')
+  await command(page, 'Slice the plate', { via: 'enter' })
   await expect
     .poll(() => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState(); return !!s && s.plate.some((o) => /cube/i.test(o.name)) && s.slice.status === 'done' && !s.slice.stale && s.preview !== null }), { timeout: 120_000 })
     .toBe(true)

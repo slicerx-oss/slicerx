@@ -6,6 +6,7 @@
 // still current and untouched uses it, and one that changed the plate or the result slices again.
 import { test, type Locator, type Page } from '@playwright/test'
 import { closeSheet, expect, goTab, sliceCount, sliced, viewSized } from '../../fixtures'
+import { command } from '../../palette'
 import { examplePlate, setFlags } from './model'
 
 export interface Mark {
@@ -315,24 +316,8 @@ export async function boxOnPlate(page: Page): Promise<void> {
   await expect.poll(async () => (await state(page)).plate.length).toBe(1)
 }
 
-/**
- * Runs a command from Cmd+K by its title. When the palette does not open for the key, it says what had the focus and
- * what else was open, and presses the key once more.
- */
-export async function command(page: Page, title: string): Promise<void> {
-  const palette = page.getByRole('dialog', { name: 'Commands' })
-  await page.keyboard.press('ControlOrMeta+k')
-  try {
-    await expect(palette).toBeVisible({ timeout: 5_000 })
-  } catch {
-    const seen = await page.evaluate(() => ({ focus: document.activeElement?.outerHTML.slice(0, 160), open: [...document.querySelectorAll('dialog[open], [role=dialog], [role=menu]')].map((d) => d.getAttribute('aria-label') ?? d.className), toasts: document.querySelectorAll('[data-testid="toast"]').length }))
-    test.info().annotations.push({ type: 'palette did not open', description: JSON.stringify(seen) })
-    if (!(await palette.isVisible())) await page.keyboard.press('ControlOrMeta+k')
-    await expect(palette, JSON.stringify(seen)).toBeVisible()
-  }
-  await page.keyboard.type(title)
-  await page.locator('.sx-palette-item', { hasText: title }).first().click()
-}
+/** Runs a command from Cmd+K by its title (palette.ts). */
+export { command }
 
 /** The Layered X plate of the first load, sliced and showing its toolpaths, with the slice kept the way `sliceBox` keeps the box's. */
 export async function sliceLayered(page: Page, mode: 'simple' | 'advanced' = 'advanced'): Promise<void> {

@@ -5,6 +5,7 @@
 // whatever the camera shows. Everything after the pick goes through the tool panels.
 import { type Page } from '@playwright/test'
 import { expect, openTransform, plateReady } from './fixtures'
+import { command } from './palette'
 
 export type V3 = [number, number, number]
 
@@ -31,13 +32,8 @@ export async function openStudio(page: Page, prefs: Record<string, unknown> = {}
   await plateReady(page)
 }
 
-/** Runs a command from Cmd+K by its title. */
-export async function command(page: Page, title: string): Promise<void> {
-  await page.keyboard.press('ControlOrMeta+k')
-  await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
-  await page.keyboard.type(title)
-  await page.locator('.sx-palette-item', { hasText: title }).first().click()
-}
+/** Runs a command from Cmd+K by its title (palette.ts). */
+export { command }
 
 /** Empties the plate, then adds a 20 mm box through Cmd+K. Returns its id. */
 export async function freshBox(page: Page): Promise<string> {

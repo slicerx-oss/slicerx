@@ -15,6 +15,7 @@ import type { Page } from '@playwright/test'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
+import { openPalette } from '../palette'
 import { plateReady, sliceCount, sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
 import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
@@ -251,8 +252,7 @@ test('a read client reads the window and switches workspace and tab, an edit cli
       await expect(about).toBeHidden()
 
       // The person is typing in the command bar: a client may not close it until the query is gone.
-      await page.keyboard.press('ControlOrMeta+k')
-      await expect(palette).toBeVisible()
+      await openPalette(page)
       await page.keyboard.type('slice')
       expect(await editor.call('app_ui_select', { close: 'command' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
       await expect(palette).toBeVisible()
@@ -882,9 +882,7 @@ test('clients edit and reset live print settings, the panel reads them back, and
       const initial = await call('app_settings', { keys: ['layer_height', 'wall_loops'] })
       await call('project_set_overrides', { changes: { layer_height: 0.24, wall_loops: 4 } })
       expect((await call('app_settings', { keys: ['layer_height', 'wall_loops'] })).effective).toEqual({ layer_height: 0.24, wall_loops: 4 })
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.locator('.sx-palette-input').fill('layer height')
-      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      await command(page, 'layer height', { wanted: 'now' })
       const row = page.getByRole('textbox', { name: 'Layer heightmm', exact: true })
       await expect(row).toHaveValue('0.24')
       await row.fill('0.28')
@@ -1294,9 +1292,7 @@ test('clients edit brim ears through MCP and the native CLI, read them back, und
         expect(ears).toEqual(i === 0 ? [] : outputs[i - 1]!.objects[0]!.ears)
       }
       await edit({ action: 'generate', diameter_mm: 10 })
-      await page.keyboard.press('ControlOrMeta+k')
-      await page.locator('.sx-palette-input').fill('brim type')
-      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      await command(page, 'brim type', { wanted: 'now' })
       wasType = await brimType.inputValue()
       // Mouse ears print an object's ears where it has some, so the read reports them enabled too.
       await brimType.selectOption('brim_ears')
