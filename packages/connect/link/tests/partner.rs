@@ -740,3 +740,21 @@ async fn turning_approve_off_for_a_partner_phone_clears_it_on_its_push_token() {
     own_phone_asks(&mut own, "cancel").await;
     assert_eq!(partner_approval_pushes(&mut posts, 5000).await, 1);
 }
+
+#[tokio::test]
+async fn a_partner_phone_gets_no_approval_push_for_a_card_a_partner_raised() {
+    let (_s, mut posts, mut phone, mut own, _key, _mocks) = partner_push_setup(true).await;
+    // The partner phone asks to pause: it may never approve that card, so no partner phone is asked to.
+    let card = phone
+        .call("jobs.control", json!({ "printerId": "bay-4", "action": "pause" }))
+        .await;
+    assert_eq!(card["ok"], true, "{card}");
+    assert_eq!(
+        partner_approval_pushes(&mut posts, 1500).await,
+        0,
+        "a partner phone was asked to approve what a partner app raised"
+    );
+    // Our phone asks to stop it: that card it may approve, and it hears of it.
+    own_phone_asks(&mut own, "cancel").await;
+    assert_eq!(partner_approval_pushes(&mut posts, 5000).await, 1);
+}
