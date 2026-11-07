@@ -88,6 +88,11 @@ button { cursor: pointer; }
 .sx-btn[data-icon-only][data-size="lg"] { width: var(--h-lg); }
 .sx-btn[data-full] { width: 100%; }
 .sx-btn:disabled, .sx-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; filter: none; }
+/* a disabled primary gives up its accent for the recessive look the other disabled buttons have (a faint fill and line)
+   with a dim label (4.5:1 in dark, about 3:1 in light, where the label would otherwise match an enabled quiet button), at full opacity, so it never reads as an enabled button, and hover or the gradient
+   of a first-run footer do not bring it back */
+.sx-btn[data-variant="primary"]:is(:disabled, [aria-disabled="true"]), .sx-btn[data-variant="primary"]:is(:disabled, [aria-disabled="true"]):hover { opacity: 1; background: color-mix(in srgb, var(--ink-3) 40%, transparent); border-color: color-mix(in srgb, var(--line) 50%, transparent); color: color-mix(in srgb, var(--field-dim) 88%, var(--ink-3)); }
+:root[data-scheme="light"] .sx-btn[data-variant="primary"]:is(:disabled, [aria-disabled="true"]), :root[data-scheme="light"] .sx-btn[data-variant="primary"]:is(:disabled, [aria-disabled="true"]):hover { color: color-mix(in srgb, var(--field-dim) 75%, transparent); }
 .sx-btn[aria-pressed="true"] { color: var(--fg); background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 0 0 0 1px var(--accent-ring); border-color: transparent; }
 .sx-linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font: var(--fw-semibold) var(--fs-md) var(--f-body); display: inline-flex; align-items: center; gap: 6px; }
 .sx-linkbtn:hover { color: var(--fg); }
