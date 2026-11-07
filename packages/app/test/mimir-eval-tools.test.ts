@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The creative eval (@slicerx/mcp evals/creative) offers mimir the tools the mimir tab offers: for the same edition and
-// whether the host slices, the same tool names in the same groups, as the tab builds them here and as the eval builds
-// them on its own design host.
+// whether the host slices, the same tool names in the same order and groups, as the tab builds them here and as the
+// eval builds them on its own design host. The app's commands are registered as at startup and given to the eval too,
+// so the app.* tools are compared as well.
 import type { Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { creativeEnv, CREATIVE_TAB } from '@slicerx/mcp/evals/creative'
 import { createScriptedClient, toolGroupOf } from '@slicerx/pilot'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { builtinCommands } from '../src/commands/builtin'
+import { listCommands, registerCommands } from '../src/commands/registry'
+import { setupCommands } from '../src/first-run/look'
 import { setHostSlices } from '../src/state/model-mode'
 import { get, set } from '../src/state/store'
 import { resetTabMimir, tabMimir, tabState } from '../src/workspaces/mimir/session'
@@ -28,6 +32,17 @@ const grouped = (tools: readonly Parameters<typeof toolGroupOf>[0][]): string[] 
 
 describe('the creative eval offers the mimir tab its tools', () => {
   const was = { pilot: get().pilot }
+  let off: () => void = () => undefined
+  beforeAll(() => {
+    // the commands the app registers at startup (app.tsx): the built-in ones over the default tabs, and the setup ones
+    const workspaces = [
+      { id: 'prepare', label: 'Slice' },
+      { id: 'library', label: 'My models' },
+      { id: 'printers', label: 'Printers' },
+    ]
+    off = registerCommands([...builtinCommands(host, workspaces), ...setupCommands()])
+  })
+  afterAll(() => off())
   beforeEach(() => resetTabMimir())
   afterEach(() => {
     resetTabMimir()
@@ -42,9 +57,10 @@ describe('the creative eval offers the mimir tab its tools', () => {
         set({ pilot: { mode: 'unset' } })
         const pilot = await tabMimir(host, edition)
         const tab = tabState().tools
-        const env = creativeEnv({ id: 'tools', title: 'Tools', prompt: 'x', machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }, bodies: [1, 1] }, createScriptedClient([{ text: 'ok' }], { chunk: false }), {}, { slices, edition })
+        const env = creativeEnv({ id: 'tools', title: 'Tools', prompt: 'x', machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }, bodies: [1, 1] }, createScriptedClient([{ text: 'ok' }], { chunk: false }), {}, { slices, edition, commands: listCommands() })
         const offered = env.pilot.tools()
-        expect(offered.map((t) => t.name).sort()).toEqual([...tab].sort())
+        expect(tab.some((n) => n.startsWith('app.'))).toBe(true)
+        expect(offered.map((t) => t.name)).toEqual(tab)
         expect(tab).toContain('design.new')
         expect(tab).toContain('design.plan')
         expect(tab).not.toContain('text_to_part')

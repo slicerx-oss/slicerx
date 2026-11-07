@@ -69,8 +69,9 @@ describe('a recorded reply that builds with the design tools', () => {
         // the tab builds nothing before the person confirms the sizes on a sheet
         { calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] },
         { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] },
-        { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 100, heightMm: 30 }, distance_mm: 20 } }] },
-        { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 96, heightMm: 26 }, placement: { center: [0, 0] }, frame: { origin: [0, 0, 20], normal: [0, 0, 1] }, distance_mm: 18, operation: 'cut' } }] },
+        // built on the bed, so it stays where it was built and the cut lands on it
+        { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 100, heightMm: 30 }, placement: { center: [60, 20] }, distance_mm: 20 } }] },
+        { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 96, heightMm: 26 }, placement: { center: [60, 20] }, frame: { origin: [0, 0, 20], normal: [0, 0, 1] }, distance_mm: 18, operation: 'cut' } }] },
         { text: 'Built a 100 by 30 by 20 mm tray with 2 mm walls.' },
       ],
     }),
