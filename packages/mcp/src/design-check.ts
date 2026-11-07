@@ -114,6 +114,8 @@ export interface FitGap {
   where?: string | undefined
   /** Which way the gap runs: xy between side walls, z above and below. */
   direction: 'xy' | 'z'
+  /** A gap above or below whose ends both lie on flat faces (a top face under a bottom face): no facet allowance. */
+  flat?: true | undefined
 }
 
 /** The bodies of a design and the gaps between them. */
