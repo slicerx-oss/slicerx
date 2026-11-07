@@ -280,7 +280,7 @@ export function LayerProfileEditor({ onClose }: { onClose: () => void }) {
                       onFocus={() => !members.includes(picked) && setPicked(members[0]!)}
                       onKeyDown={(e) => onKey(e, members)}
                     />
-                    {/* the keyboard focus ring, round like the point: the focus token's 2 px accent line, 2 px out */}
+                    {/* the keyboard focus ring, round like the point and just outside it; it must follow the point directly */}
                     <circle className="lp-focus" cx={hx} cy={hy} r={dot + 4} aria-hidden="true" />
                   </g>
                 )

@@ -17,8 +17,9 @@
 .lp-point { fill: var(--surface-dialog); stroke: var(--accent); stroke-width: 2; cursor: grab; }
 .lp-point[data-picked] { fill: var(--accent); }
 .lp-point:focus-visible { outline: none; }
-/* The focus ring of --focus-ring (a 2px accent line) drawn round the point, --focus-offset clear of its edge. */
-.lp-focus { fill: none; stroke: var(--accent); stroke-width: 2; pointer-events: none; visibility: hidden; }
+/* The keyboard focus ring drawn round the point as an SVG circle: an accent line 2 px wide at any graph size, the
+   width of the focus ring token. The point's own outline is off; this circle replaces it. */
+.lp-focus { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; visibility: hidden; }
 .lp-point:focus-visible + .lp-focus { visibility: visible; }
 .lp-side { display: flex; flex-direction: column; gap: 12px; }
 .lp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
