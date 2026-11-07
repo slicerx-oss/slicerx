@@ -10,6 +10,7 @@ export const layerProfileEditInput = z.object({
   plate: plate.optional(),
   action: z.enum(['set', 'reset']).describe('set: make points the plate profile; reset: clear it so the plate slices with sleipnir or its fixed layer height again'),
   points: z.array(point).min(1).max(200).optional().describe('For set: [height above the bed mm, layer height mm] pairs; sorted by height, straight between points and flat past the ends'),
+  revision: z.string().min(1).max(100).optional().describe('The revision app_layer_profile read; when given, an edit after another change to the project is refused with busy'),
 }).strict().superRefine((i, ctx) => {
   if (i.action === 'set' && !i.points) ctx.addIssue({ code: 'custom', message: 'points is required for set', path: ['points'] })
   if (i.action === 'reset' && i.points) ctx.addIssue({ code: 'custom', message: 'points is not used by reset', path: ['points'] })
