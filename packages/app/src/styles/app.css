@@ -1035,24 +1035,32 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .cmp { container: cmp / inline-size; --cmp-cols: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 28px; }
 .cmp-picks { flex-wrap: wrap; }
 .cmp-picks > .cmp-pick { flex: 1 1 160px; }
+/* The Kind select sizes itself to its longest option in its own font, and its face is drawn at the body size: the select
+   gets that size too (a phone's settings sheet keeps its 16 px), so no kind's name is cut whatever the platform's font
+   metrics. It never shrinks below that. */
+.cmp-picks > .sx-selectwrap:not(.cmp-pick) { flex: none; }
+.cmp-picks > .sx-selectwrap > .sx-select[data-face] { font-size: var(--fs-body); }
 /* The count and the column header stay at the top of whichever box scrolls the rows (the dialog body, or on a desktop
    the list's own box under them), on the dialog's surface made opaque so the rows pass under without showing through. */
-.cmp-top { position: sticky; top: calc(-1 * var(--s-2)); z-index: 1; display: grid; gap: 8px; padding-top: 4px; background: var(--surface-card); background: rgb(from var(--surface-dialog) r g b / 1); }
+.cmp-top { position: sticky; top: calc(-1 * var(--s-2)); z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 4px; background: var(--surface-card); background: rgb(from var(--surface-dialog) r g b / 1); }
 /* It sticks at the body's edge, over the body's top padding, so no row shows in a strip above it. A phone's settings
    sheet is the plain page color, so the bar takes that. */
 :root[data-phone] .cmp-top { top: calc(-1 * var(--s-4)); background: var(--ink-1); }
-.cmp-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-/* One line whatever it says (the count, or what a copy did), cut short with an ellipsis, so nothing beside or under it moves. */
+.cmp-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+/* One line whatever it says (the count, or what a copy did), cut short with an ellipsis, so nothing beside or under it moves.
+   The bar's one column has a floor of zero, so a long line never widens the bar, the header or the section past the dialog;
+   the whole text is the line's tip and what a screen reader hears. */
 .cmp-bar > .cmp-status { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cmp-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 /* Show all: the words and the switch are one control; the label's box fills the gap between them. */
 .cmp-all { display: inline-flex; align-items: center; gap: 8px; min-height: var(--h-sm); color: var(--muted); cursor: pointer; }
 .cmp-list { display: grid; gap: 12px; }
-/* At desktop width the list scrolls inside itself, under the picks and the bar: it takes what the dialog has left (the
-   dialog keeps one height), with a floor for a short window. On a phone the dialog body is the one scroll box (UI spec 9).
+/* At desktop width the list scrolls inside itself, under the picks and the bar: scrolled to it, the bar sticks at the top
+   of the dialog body and the list fills the rest of the body (the dialog keeps one height; 210 px is the dialog's title
+   and footer, the bar and the header), with a floor for a short window. On a phone the dialog body is the one scroll box (UI spec 9).
    The header keeps the list's scrollbar lane (scrollbar-gutter on a clipped box), so its columns line up with the rows'. */
 @media (min-width: 701px) {
-  .cmp-list { max-height: max(180px, calc(var(--set-h) - 300px)); overflow-y: auto; align-content: start; scrollbar-gutter: stable; }
+  .cmp-list { max-height: max(180px, calc(var(--set-h) - 210px)); overflow-y: auto; align-content: start; scrollbar-gutter: stable; }
   .cmp-head { overflow: hidden; scrollbar-gutter: stable; }
 }
 .cmp-head { display: grid; grid-template-columns: var(--cmp-cols); gap: 8px; padding: 0 8px 4px; border-bottom: 1px solid var(--line-soft); color: var(--muted); font-weight: var(--fw-semibold); }
@@ -1070,6 +1078,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .cmp-table th { font-weight: var(--fw-medium); color: var(--fg); display: grid; gap: 4px; }
 .cmp-table td { color: var(--muted); }
 .cmp-table tr[data-differs='true'] td { color: var(--fg); }
+/* Show all marks the rows that differ with a bar at the row's start (a shape, not only the brighter values) and the
+   words ", differs" in the row header for a screen reader. Listing only what differs needs no mark. */
+.cmp-list[data-all] .cmp-table tr[data-differs='true'] { box-shadow: inset 3px 0 0 var(--accent); }
+.cmp-list[data-all] .cmp-table tr[data-differs='true'] th { font-weight: var(--fw-semibold); }
+/* The bar follows the rounded corners of the group's box at its first and last rows. */
+.cmp-list[data-all] .cmp-table tr:first-child { border-top-left-radius: 9px; }
+.cmp-list[data-all] .cmp-table tr:last-child { border-bottom-left-radius: 9px; }
 .cmp-note { color: var(--dim); font-size: var(--fs-xs); font-weight: var(--fw-regular, 400); }
 .cmp-act { display: flex; justify-content: flex-end; }
 /* Hit areas past the drawn controls (UI spec 2 and 9): the copy arrow (28 px) and the Show all switch (36 x 20) reach 44 x 44

@@ -7,7 +7,7 @@
 // scrolls inside itself, and a copy says what it did without moving anything.
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './lib/shell'
-import { compareDraftFine, DRAFT, openPresets, seedPresets, shutSettings } from './lib/preset-compare'
+import { compareDraftFine, compareLongFine, DRAFT, LONG, openPresets, seedPresets, shutSettings } from './lib/preset-compare'
 
 type Box = { x: number; y: number; width: number; height: number }
 const box = async (l: Locator): Promise<Box> => (await l.boundingBox())!
@@ -167,7 +167,7 @@ test.describe('Compare presets', () => {
     await expect(raft).not.toContainText('1 layers')
   })
 
-  test('the Kind select reads at the size of the selects beside it', async () => {
+  test('the Kind select reads at the size of the selects beside it, and shows each kind whole at every width', async ({ page, isMobile }) => {
     // What each select shows: its face when it has one, else its own text.
     const shown = (sel: string) =>
       dialog.locator(sel).evaluate((el) => {
@@ -179,7 +179,25 @@ test.describe('Compare presets', () => {
     expect(kind).toEqual(await shown('#cmp-a'))
     expect(kind).toEqual(await shown('#cmp-b'))
     expect(parseFloat(kind.size)).toBeLessThanOrEqual(14)
-    await expect(dialog.locator('#cmp-kind').locator('xpath=..').locator('.sx-select-face')).toHaveText('Process')
+    const face = dialog.locator('#cmp-kind').locator('xpath=..').locator('.sx-select-face > span')
+    await expect(face).toHaveText('Process')
+    // The select sizes itself to its longest option in its own font; with that font at least the face's size (the same on
+    // a desktop, 16 px on a phone), no kind's name is cut on any platform, whatever its font metrics.
+    expect(parseFloat(await dialog.locator('#cmp-kind').evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(parseFloat(kind.size))
+    const vp = page.viewportSize()!
+    try {
+      for (const size of isMobile ? [vp] : [vp, { width: 960, height: 600 }]) {
+        await page.setViewportSize(size)
+        for (const [value, label] of [['filament', 'Filament'], ['printer', 'Printer'], ['process', 'Process']] as const) {
+          await dialog.locator('#cmp-kind').selectOption(value)
+          await expect(face).toHaveText(label)
+          const fit = await face.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
+          expect(fit.scroll, `${label} at ${size.width}`).toBeLessThanOrEqual(fit.client)
+        }
+      }
+    } finally {
+      await page.setViewportSize(vp)
+    }
   })
 
   test('at desktop width the list scrolls inside itself and shows a real share of the rows', async ({ page, isMobile }) => {
@@ -219,5 +237,86 @@ test.describe('Compare presets', () => {
     await dialog.getByTestId('preset-compare-all').click()
     await dialog.getByTestId('preset-compare-undo').click()
     await expect(status).toHaveText('7 settings differ')
+  })
+
+  test('a copy into a preset with a long name keeps the line inside the section: Undo, Show all and the header stay put', async ({ page }) => {
+    await compareLongFine(dialog)
+    const section = dialog.locator('section.cmp')
+    const status = dialog.getByRole('status')
+    const undo = dialog.getByTestId('preset-compare-undo')
+    const watch = ['[data-testid=preset-compare-all]', '[data-testid=preset-compare-undo]', '.cmp-head', '.cmp-status'] as const
+    const rects = () => Promise.all(watch.map(async (s) => box(dialog.locator(s).first())))
+    const copy = dialog.locator('[data-testid="preset-compare-row"][data-key="layer_height"]').getByTestId('preset-compare-copy')
+    await copy.scrollIntoViewIfNeeded()
+    const before = await rects()
+    await copy.click()
+    const said = `Copied Layer height to ${LONG}`
+    await expect(status).toHaveText(said)
+    // Cut short with an ellipsis inside the section; the whole line is its text (read out as it is) and its tip.
+    const s = await box(section)
+    for (const el of [status, undo, dialog.getByTestId('preset-compare-all'), dialog.locator('.cmp-head')]) {
+      const b = await box(el)
+      expect(b.x).toBeGreaterThanOrEqual(s.x - 0.5)
+      expect(b.x + b.width).toBeLessThanOrEqual(s.x + s.width + 0.5)
+    }
+    const cut = await status.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, overflow: getComputedStyle(el).textOverflow }))
+    expect(cut.scroll).toBeGreaterThan(cut.client)
+    expect(cut.overflow).toBe('ellipsis')
+    await expect(status).toHaveAttribute('data-tip-title', said)
+    await expect(undo).toBeEnabled()
+    // Nothing scrolls sideways, and the header lines up with the rows under it.
+    const wide = await page.locator('dialog.settings-dialog .sx-dialog-body').evaluate((b) => b.scrollWidth - b.clientWidth)
+    expect(wide).toBeLessThanOrEqual(0)
+    const head = await box(dialog.locator('.cmp-head'))
+    const list = await box(dialog.locator('.cmp-list'))
+    expect(Math.abs(head.x + head.width - (list.x + list.width))).toBeLessThanOrEqual(1)
+    // Static: the switch, Undo, the header and the line itself are where they were before the press.
+    const after = await rects()
+    for (let i = 0; i < watch.length; i++) expect(after[i], watch[i]).toEqual(before[i])
+    await undo.click()
+  })
+
+  test('Show all marks the rows that differ, in words and a shape as well as color', async () => {
+    await dialog.getByTestId('preset-compare-all').click()
+    const rows = dialog.getByTestId('preset-compare-row')
+    await expect(rows.nth(40)).toBeAttached()
+    const differs = dialog.locator('[data-testid="preset-compare-row"][data-differs="true"]')
+    await expect(differs).toHaveCount(7)
+    const alike = dialog.locator('[data-testid="preset-compare-row"]:not([data-differs])').first()
+    // The row header says so to a screen reader.
+    await expect(differs.first().getByRole('rowheader')).toHaveAccessibleName(/, differs$/)
+    await expect(alike.getByRole('rowheader')).not.toHaveAccessibleName(/differs/)
+    // A bar at the row's start that the alike rows do not have.
+    const mark = (l: Locator) => l.evaluate((el) => getComputedStyle(el).boxShadow)
+    expect(await mark(differs.first())).toMatch(/inset/)
+    expect(await mark(alike)).toBe('none')
+    // Only Show all marks them: with only the differing rows listed, every row would carry it.
+    await dialog.getByTestId('preset-compare-all').click()
+    await expect(rows).toHaveCount(7)
+    expect(await mark(rows.first())).toBe('none')
+  })
+
+  test('at a 960 by 600 window the list shows a usable share of the rows', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'On a phone the dialog body is the one scroll box.')
+    const vp = page.viewportSize()!
+    try {
+      await page.setViewportSize({ width: 960, height: 600 })
+      await dialog.getByTestId('preset-compare-all').click()
+      const list = dialog.locator('.cmp-list')
+      // Bring the section's bar to the top of the dialog body, as a person scrolling to the list does.
+      const body = page.locator('dialog.settings-dialog .sx-dialog-body')
+      await body.evaluate((b) => {
+        const t = b.querySelector('.cmp-top')!
+        b.scrollTop += t.getBoundingClientRect().top - b.getBoundingClientRect().top
+      })
+      const m = await list.evaluate((el) => ({ client: el.clientHeight }))
+      // About nine rows, where it had five.
+      expect(m.client).toBeGreaterThanOrEqual(340)
+      const foot = await box(page.locator('dialog.settings-dialog .sx-dialog-foot'))
+      const listBox = await box(list)
+      expect(listBox.y + listBox.height).toBeLessThanOrEqual(foot.y)
+    } finally {
+      await page.setViewportSize(vp)
+    }
   })
 })

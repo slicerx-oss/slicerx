@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { CompareRow } from '@slicerx/settings'
+import { isUnset, type CompareRow } from '@slicerx/settings'
 import { Button, Select, Switch, tipAttrs } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { toast, useApp } from '../state/store'
@@ -77,10 +77,13 @@ export function ComparePanel() {
   const copy = (r: CompareRow) => {
     if (!a || !base || !side) return
     const name = a.name
+    // From a side that does not set it, copyValue drops the preset's own value, so it goes back to its stock settings:
+    // the line says it cleared it, never that it copied a value.
+    const clears = isUnset(r.b)
     void copyValue(a.id, r.key, side.config, base).then((rec) => {
       if (!rec) return
       setUndo((u) => [...u, { rec, label: r.label }])
-      setNote(`Copied ${r.label} to ${name}`)
+      setNote(clears ? `Cleared ${r.label} in ${name}` : `Copied ${r.label} to ${name}`)
     }, reportPresetError)
   }
   const undoLast = () => {
@@ -191,7 +194,7 @@ export function ComparePanel() {
             ) : null}
           </div>
           {result.groups.length ? (
-            <div className="cmp-list">
+            <div className="cmp-list" data-all={all ? 'true' : undefined}>
               {result.groups.map((g) => (
                 <section key={g.group} className="cmp-group" data-testid="preset-compare-group" data-group={g.group} aria-label={g.label}>
                   <h5 className="cmp-group-h">{g.label}</h5>
@@ -211,13 +214,21 @@ export function ComparePanel() {
                             {/* Labels only: the key stays in data-key on the row, for tests and integrators. */}
                             <span className="cmp-label">
                               {r.label}
+                              {/* Show all marks the rows that differ: a bar at the row's start, and these words for a screen reader. */}
+                              {all && r.differs ? <span className="sr-only">, differs</span> : null}
                             </span>
                             {r.lines ? <small className="cmp-note">{linesText(r.lines, a.name, side.name)}</small> : null}
                           </th>
                           <td>{r.aText}</td>
                           <td>{r.bText}</td>
                           <td className="cmp-act">
-                            {r.differs ? <Button size="sm" variant="ghost" icon="arrow-left" data-testid="preset-compare-copy" aria-label={`Use the ${side.name} value of ${r.label} in ${a.name}`} tip={{ title: `Use this value in ${a.name}` }} data-tip-avoid="tr" onClick={() => copy(r)} /> : null}
+                            {r.differs ? (
+                              isUnset(r.b) ? (
+                                <Button size="sm" variant="ghost" icon="arrow-left" data-testid="preset-compare-copy" aria-label={`Clear ${r.label} in ${a.name}`} tip={{ title: `Clear this setting in ${a.name}` }} data-tip-avoid="tr" onClick={() => copy(r)} />
+                              ) : (
+                                <Button size="sm" variant="ghost" icon="arrow-left" data-testid="preset-compare-copy" aria-label={`Use the ${side.name} value of ${r.label} in ${a.name}`} tip={{ title: `Use this value in ${a.name}` }} data-tip-avoid="tr" onClick={() => copy(r)} />
+                              )
+                            ) : null}
                           </td>
                         </tr>
                       ))}
