@@ -245,6 +245,31 @@ export function offsetSketch(source: { loops: SketchLoop[] } | { polygons: Polyg
   return geom().call<{ polygons: Polygon[]; areaMm2: number }>('sketch.offset', { ...source, distanceMm, join }, signal)
 }
 
+export interface SvgSketchOptions {
+  /** mm per SVG unit; the file's own size when absent, and the fits are ignored when set. */
+  scale?: number
+  fitWidthMm?: number
+  fitHeightMm?: number
+  /** Where the middle of the artwork lands, sketch mm. The origin when absent. */
+  center?: Vec2
+  toleranceMm?: number
+}
+
+export interface SvgSketch {
+  loops: SketchLoop[]
+  counts: { lines: number; arcs: number; splines: number; circles: number }
+  sizeMm: Vec2
+  mmPerUnit: number
+  /** sketch.check of the loops: holes, area and any crossings. */
+  check: SketchCheck
+  warnings: string[]
+}
+
+/** SVG artwork as sketch loops to edit: lines, arcs, circles and splines, holes kept. */
+export function sketchFromSvg(svg: string, options: SvgSketchOptions = {}, signal?: AbortSignal) {
+  return geom().call<SvgSketch>('sketch.svg', { svg, options }, signal)
+}
+
 // Push and pull
 
 export interface PushRequest {

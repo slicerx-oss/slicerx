@@ -165,6 +165,11 @@ export function appDesignHost(loader: Loader): DesignHost {
       return k
     },
 
+    bed() {
+      const { widthMm, depthMm } = get().bed
+      return { widthMm, depthMm }
+    },
+
     async settleSketch(s) {
       const drawn = fromLoops(s.loops)
       if (!drawn) throw Object.assign(new Error('The loops could not be read as lines, arcs, splines and circles.'), { code: 'invalid_input' })

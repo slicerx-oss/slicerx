@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type Mat = [f64; 6];
+pub(crate) type Mat = [f64; 6];
 type Rgb = [u8; 3];
 type Region = Vec<Vec<V2>>;
 
@@ -82,7 +82,7 @@ pub struct SvgModel {
     pub warnings: Vec<String>,
 }
 
-fn mul(a: &Mat, b: &Mat) -> Mat {
+pub(crate) fn mul(a: &Mat, b: &Mat) -> Mat {
     [
         a[0] * b[0] + a[2] * b[1],
         a[1] * b[0] + a[3] * b[1],
@@ -93,7 +93,7 @@ fn mul(a: &Mat, b: &Mat) -> Mat {
     ]
 }
 
-fn apply(m: &Mat, p: V2) -> V2 {
+pub(crate) fn apply(m: &Mat, p: V2) -> V2 {
     [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]]
 }
 
@@ -254,7 +254,12 @@ impl Scanner<'_> {
                 self.i = save;
             }
         }
-        std::str::from_utf8(&self.b[start..self.i]).ok()?.parse().ok()
+        // an overflow such as 1e999 parses as inf; it cuts the path short like any bad number
+        std::str::from_utf8(&self.b[start..self.i])
+            .ok()?
+            .parse()
+            .ok()
+            .filter(|v: &f64| v.is_finite())
     }
 
     fn flag(&mut self) -> Option<bool> {
@@ -294,13 +299,39 @@ fn vec_angle(u: V2, v: V2) -> f64 {
     (u[0] * v[1] - u[1] * v[0]).m_atan2(u[0] * v[0] + u[1] * v[1])
 }
 
-fn arc_to_cubics(p0: V2, rx: f64, ry: f64, phi_deg: f64, large: bool, sweep: bool, p1: V2) -> Vec<[V2; 3]> {
-    if dist(p0, p1) < 1e-12 {
-        return Vec::new();
+/// an svg arc as an ellipse: center, radii (grown when too small to reach), start angle and sweep in radians
+pub(crate) struct Ellipse {
+    pub(crate) c: V2,
+    pub(crate) rx: f64,
+    pub(crate) ry: f64,
+    sin: f64,
+    cos: f64,
+    pub(crate) theta: f64,
+    pub(crate) delta: f64,
+}
+
+impl Ellipse {
+    pub(crate) fn point(&self, x: f64, y: f64) -> V2 {
+        [
+            self.c[0] + self.cos * self.rx * x - self.sin * self.ry * y,
+            self.c[1] + self.sin * self.rx * x + self.cos * self.ry * y,
+        ]
     }
+}
+
+/// None when either radius is 0, where the arc is a line
+pub(crate) fn ellipse(
+    p0: V2,
+    rx: f64,
+    ry: f64,
+    phi_deg: f64,
+    large: bool,
+    sweep: bool,
+    p1: V2,
+) -> Option<Ellipse> {
     let (mut rx, mut ry) = (rx.abs(), ry.abs());
     if rx < 1e-12 || ry < 1e-12 {
-        return vec![[p0, p1, p1]];
+        return None;
     }
     let (sin, cos) = phi_deg.to_radians().m_sin_cos();
     let (dx, dy) = ((p0[0] - p1[0]) / 2.0, (p0[1] - p1[1]) / 2.0);
@@ -332,47 +363,104 @@ fn arc_to_cubics(p0: V2, rx: f64, ry: f64, phi_deg: f64, large: bool, sweep: boo
     } else if sweep && delta < 0.0 {
         delta += std::f64::consts::TAU;
     }
-    let n = ((delta.abs() / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
-    let step = delta / n as f64;
-    let k = 4.0 / 3.0 * (step / 4.0).m_tan();
-    let map = |x: f64, y: f64| {
-        [
-            c[0] + cos * rx * x - sin * ry * y,
-            c[1] + sin * rx * x + cos * ry * y,
-        ]
+    Some(Ellipse {
+        c,
+        rx,
+        ry,
+        sin,
+        cos,
+        theta,
+        delta,
+    })
+}
+
+pub(crate) fn arc_to_cubics(
+    p0: V2,
+    rx: f64,
+    ry: f64,
+    phi_deg: f64,
+    large: bool,
+    sweep: bool,
+    p1: V2,
+) -> Vec<[V2; 3]> {
+    if dist(p0, p1) < 1e-12 {
+        return Vec::new();
+    }
+    let Some(e) = ellipse(p0, rx, ry, phi_deg, large, sweep, p1) else {
+        return vec![[p0, p1, p1]];
     };
+    let n = ((e.delta.abs() / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
+    let step = e.delta / n as f64;
+    let k = 4.0 / 3.0 * (step / 4.0).m_tan();
     (0..n)
         .map(|i| {
-            let (a1, a2) = (theta + step * i as f64, theta + step * (i + 1) as f64);
+            let (a1, a2) = (e.theta + step * i as f64, e.theta + step * (i + 1) as f64);
             let (s1, c1) = a1.m_sin_cos();
             let (s2, c2) = a2.m_sin_cos();
             [
-                map(c1 - k * s1, s1 + k * c1),
-                map(c2 + k * s2, s2 - k * c2),
-                map(c2, s2),
+                e.point(c1 - k * s1, s1 + k * c1),
+                e.point(c2 + k * s2, s2 - k * c2),
+                e.point(c2, s2),
             ]
         })
         .collect()
 }
 
-fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
+/// one piece of a path in its own units, from where the one before ended
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Seg {
+    Line(V2),
+    /// both controls, then the end
+    Cubic(V2, V2, V2),
+    Arc {
+        rx: f64,
+        ry: f64,
+        rot: f64,
+        large: bool,
+        sweep: bool,
+        to: V2,
+    },
+}
+
+impl Seg {
+    pub(crate) fn to(self) -> V2 {
+        match self {
+            Self::Line(to) | Self::Cubic(_, _, to) | Self::Arc { to, .. } => to,
+        }
+    }
+}
+
+/// a subpath; `closed` when z ended it
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Sub {
+    pub(crate) start: V2,
+    pub(crate) segs: Vec<Seg>,
+    #[cfg_attr(not(feature = "cad"), allow(dead_code, reason = "only the sketch reads it"))]
+    pub(crate) closed: bool,
+}
+
+impl Sub {
+    fn at(start: V2) -> Self {
+        Self {
+            start,
+            segs: Vec::new(),
+            closed: false,
+        }
+    }
+}
+
+/// the subpaths of path data, and false when it was cut short at a bad command or number
+pub(crate) fn parse_path(d: &str) -> (Vec<Sub>, bool) {
     let mut sc = Scanner {
         b: d.as_bytes(),
         i: 0,
     };
-    let mut rings: Vec<Vec<V2>> = Vec::new();
-    let mut ring: Vec<V2> = Vec::new();
+    let mut subs: Vec<Sub> = Vec::new();
+    let mut open: Option<Sub> = None;
     let (mut cur, mut start) = ([0.0, 0.0], [0.0, 0.0]);
     let (mut c_ctrl, mut q_ctrl): (Option<V2>, Option<V2>) = (None, None);
     let mut cmd = b' ';
     let mut ok = true;
-    let finish = |ring: &mut Vec<V2>, rings: &mut Vec<Vec<V2>>| {
-        if ring.len() >= 3 {
-            rings.push(std::mem::take(ring));
-        } else {
-            ring.clear();
-        }
-    };
     macro_rules! num {
         () => {
             match sc.number() {
@@ -400,19 +488,19 @@ fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
         }
         let rel = cmd.is_ascii_lowercase();
         let base = if rel { cur } else { [0.0, 0.0] };
-        match cmd.to_ascii_uppercase() {
+        let seg = match cmd.to_ascii_uppercase() {
             b'M' => {
-                finish(&mut ring, &mut rings);
+                subs.extend(open.take());
                 let (x, y) = (num!(), num!());
                 cur = [base[0] + x, base[1] + y];
                 start = cur;
-                ring.push(apply(m, cur));
+                open = Some(Sub::at(cur));
                 (c_ctrl, q_ctrl) = (None, None);
                 cmd = if rel { b'l' } else { b'L' };
+                continue;
             }
             b'L' | b'H' | b'V' => {
-                let up = cmd.to_ascii_uppercase();
-                let next = match up {
+                let next = match cmd.to_ascii_uppercase() {
                     b'L' => {
                         let (x, y) = (num!(), num!());
                         [base[0] + x, base[1] + y]
@@ -420,9 +508,8 @@ fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
                     b'H' => [if rel { cur[0] } else { 0.0 } + num!(), cur[1]],
                     _ => [cur[0], if rel { cur[1] } else { 0.0 } + num!()],
                 };
-                cur = next;
-                ring.push(apply(m, cur));
                 (c_ctrl, q_ctrl) = (None, None);
+                Seg::Line(next)
             }
             b'C' | b'S' | b'Q' | b'T' => {
                 let up = cmd.to_ascii_uppercase();
@@ -465,16 +552,7 @@ fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
                         c_ctrl = None;
                     }
                 }
-                let start_pt = apply(m, cur);
-                if ring.is_empty() {
-                    ring.push(start_pt);
-                }
-                flatten_cubic(
-                    [start_pt, apply(m, c1), apply(m, c2), apply(m, end)],
-                    tol,
-                    &mut ring,
-                );
-                cur = end;
+                Seg::Cubic(c1, c2, end)
             }
             b'A' => {
                 let (rx, ry, rot) = (num!(), num!(), num!());
@@ -483,30 +561,78 @@ fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
                     break;
                 };
                 let (x, y) = (num!(), num!());
-                let end = [base[0] + x, base[1] + y];
-                if ring.is_empty() {
-                    ring.push(apply(m, cur));
-                }
-                for [c1, c2, e] in arc_to_cubics(cur, rx, ry, rot, large, sweep, end) {
-                    let s = *ring.last().unwrap_or(&apply(m, cur));
-                    flatten_cubic([s, apply(m, c1), apply(m, c2), apply(m, e)], tol, &mut ring);
-                }
-                cur = end;
                 (c_ctrl, q_ctrl) = (None, None);
+                Seg::Arc {
+                    rx,
+                    ry,
+                    rot,
+                    large,
+                    sweep,
+                    to: [base[0] + x, base[1] + y],
+                }
             }
             b'Z' => {
-                finish(&mut ring, &mut rings);
+                if let Some(mut s) = open.take() {
+                    s.closed = true;
+                    subs.push(s);
+                }
                 cur = start;
                 (c_ctrl, q_ctrl) = (None, None);
-                ring.push(apply(m, cur));
+                continue;
             }
             _ => {
                 ok = false;
                 break;
             }
-        }
+        };
+        // drawing on after z starts again from the subpath's start
+        open.get_or_insert_with(|| Sub::at(cur)).segs.push(seg);
+        cur = seg.to();
     }
-    finish(&mut ring, &mut rings);
+    subs.extend(open);
+    (subs, ok)
+}
+
+/// a subpath as points within `tol`, not repeating its start at the end
+pub(crate) fn flatten_sub(sub: &Sub, m: &Mat, tol: f64) -> Vec<V2> {
+    let mut ring = vec![apply(m, sub.start)];
+    let mut cur = sub.start;
+    for &seg in &sub.segs {
+        match seg {
+            Seg::Line(to) => ring.push(apply(m, to)),
+            Seg::Cubic(c1, c2, to) => {
+                flatten_cubic(
+                    [apply(m, cur), apply(m, c1), apply(m, c2), apply(m, to)],
+                    tol,
+                    &mut ring,
+                );
+            }
+            Seg::Arc {
+                rx,
+                ry,
+                rot,
+                large,
+                sweep,
+                to,
+            } => {
+                for [c1, c2, e] in arc_to_cubics(cur, rx, ry, rot, large, sweep, to) {
+                    let s = *ring.last().unwrap_or(&apply(m, cur));
+                    flatten_cubic([s, apply(m, c1), apply(m, c2), apply(m, e)], tol, &mut ring);
+                }
+            }
+        }
+        cur = seg.to();
+    }
+    ring
+}
+
+fn flatten_path(d: &str, m: &Mat, tol: f64) -> (Vec<Vec<V2>>, bool) {
+    let (subs, ok) = parse_path(d);
+    let rings = subs
+        .iter()
+        .map(|s| flatten_sub(s, m, tol))
+        .filter(|r| r.len() >= 3)
+        .collect();
     (rings, ok)
 }
 
@@ -550,7 +676,7 @@ fn difference(a: &Region, b: &Region) -> Region {
     resolve(all, FillRule::Positive)
 }
 
-fn bounds(r: &Region) -> Option<(V2, V2)> {
+pub(crate) fn bounds(r: &Region) -> Option<(V2, V2)> {
     let mut it = r.iter().flatten().copied();
     let first = it.next()?;
     Some(it.fold((first, first), |(lo, hi), p| {
@@ -582,11 +708,13 @@ fn area(r: &Region) -> f64 {
 // document walk
 
 #[derive(Clone)]
-struct Style {
-    fill: Option<Rgb>,
+pub(crate) struct Style {
+    pub(crate) fill: Option<Rgb>,
+    #[cfg_attr(not(feature = "cad"), allow(dead_code, reason = "only the sketch reads it"))]
+    pub(crate) stroke: bool,
     evenodd: bool,
-    m: Mat,
-    clips: Vec<Rc<Region>>,
+    pub(crate) m: Mat,
+    pub(crate) clips: Vec<Rc<Region>>,
 }
 
 struct ClipShape {
@@ -597,7 +725,7 @@ struct ClipShape {
 }
 
 #[derive(Default)]
-struct Defs {
+pub(crate) struct Defs {
     clips: HashMap<String, Vec<ClipShape>>,
     gradients: HashMap<String, Rgb>,
 }
@@ -613,7 +741,7 @@ fn stop_color(attrs: &str) -> Option<Rgb> {
     prop(attrs, "stop-color").and_then(parse_color)
 }
 
-fn scan_defs(xml: &str) -> Defs {
+pub(crate) fn scan_defs(xml: &str) -> Defs {
     let mut defs = Defs::default();
     let mut clip: Option<(String, Vec<Mat>)> = None;
     let mut grad: Option<String> = None;
@@ -702,7 +830,7 @@ fn absolute_mm(attrs: &str, key: &str) -> Option<f64> {
     )
 }
 
-fn shape_path(tag: &str, attrs: &str) -> Option<String> {
+pub(crate) fn shape_path(tag: &str, attrs: &str) -> Option<String> {
     let n = |k: &str| num_attr(attrs, k).unwrap_or(0.0);
     match tag {
         "path" => attr(attrs, "d").map(str::to_owned),
@@ -777,29 +905,31 @@ struct Painted {
     region: Region,
 }
 
-fn walk(
+pub(crate) fn warn(what: &str, warnings: &mut Vec<String>) {
+    if !warnings.iter().any(|w| w == what) {
+        warnings.push(what.to_owned());
+    }
+}
+
+/// every visible shape in document order, with the style it inherits; `each` gets its tag and attributes
+pub(crate) fn shapes(
     xml: &str,
     defs: &Defs,
     base: &Mat,
-    opts: &SvgOptions,
+    fill: Rgb,
+    tol: f64,
     warnings: &mut Vec<String>,
-) -> Result<Vec<Painted>> {
-    let default_fill = parse_color(&opts.default_color)
-        .ok_or_else(|| Error::invalid("defaultColor", "must be a #rrggbb color"))?;
+    mut each: impl FnMut(&str, &str, &Style, &mut Vec<String>),
+) {
     let root = Style {
-        fill: Some(default_fill),
+        fill: Some(fill),
+        stroke: false,
         evenodd: false,
         m: *base,
         clips: Vec::new(),
     };
     let mut stack = vec![root.clone()];
     let mut skip_depth = 0usize;
-    let mut out = Vec::new();
-    let warn = |what: &str, warnings: &mut Vec<String>| {
-        if !warnings.iter().any(|w| w == what) {
-            warnings.push(what.to_owned());
-        }
-    };
     for ev in events(xml) {
         match ev {
             Ev::Start { name, attrs, empty } => {
@@ -874,6 +1004,9 @@ fn walk(
                 if let Some(r) = prop(attrs, "fill-rule") {
                     style.evenodd = r.trim() == "evenodd";
                 }
+                if let Some(k) = prop(attrs, "stroke") {
+                    style.stroke = !matches!(k.trim(), "none" | "transparent");
+                }
                 let hidden = attr(attrs, "display") == Some("none")
                     || prop(attrs, "visibility") == Some("hidden")
                     || prop(attrs, "opacity").and_then(|o| o.parse::<f64>().ok()) == Some(0.0)
@@ -891,7 +1024,7 @@ fn walk(
                         let mut region: Region = Vec::new();
                         for s in shapes {
                             if let Some(d) = shape_path(&s.tag, &s.attrs) {
-                                let (rings, _) = flatten_path(&d, &mul(&style.m, &s.m), opts.tolerance_mm);
+                                let (rings, _) = flatten_path(&d, &mul(&style.m, &s.m), tol);
                                 let rule = if s.evenodd {
                                     FillRule::EvenOdd
                                 } else {
@@ -904,24 +1037,7 @@ fn walk(
                     }
                 }
                 if is_shape(name) {
-                    if let (Some(color), Some(d)) = (style.fill, shape_path(name, attrs)) {
-                        let (rings, ok) = flatten_path(&d, &style.m, opts.tolerance_mm);
-                        if !ok {
-                            warn("malformed path data was cut short", warnings);
-                        }
-                        let rule = if style.evenodd {
-                            FillRule::EvenOdd
-                        } else {
-                            FillRule::NonZero
-                        };
-                        let mut region = resolve(rings, rule);
-                        for clip in &style.clips {
-                            region = intersect(&region, clip);
-                        }
-                        if !region.is_empty() {
-                            out.push(Painted { color, region });
-                        }
-                    }
+                    each(name, attrs, &style, warnings);
                 }
                 if !empty {
                     stack.push(style);
@@ -937,6 +1053,47 @@ fn walk(
             Ev::Text(_) => {}
         }
     }
+}
+
+fn walk(
+    xml: &str,
+    defs: &Defs,
+    base: &Mat,
+    opts: &SvgOptions,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<Painted>> {
+    let default_fill = parse_color(&opts.default_color)
+        .ok_or_else(|| Error::invalid("defaultColor", "must be a #rrggbb color"))?;
+    let mut out = Vec::new();
+    shapes(
+        xml,
+        defs,
+        base,
+        default_fill,
+        opts.tolerance_mm,
+        warnings,
+        |name, attrs, style, warnings| {
+            let (Some(color), Some(d)) = (style.fill, shape_path(name, attrs)) else {
+                return;
+            };
+            let (rings, ok) = flatten_path(&d, &style.m, opts.tolerance_mm);
+            if !ok {
+                warn("malformed path data was cut short", warnings);
+            }
+            let rule = if style.evenodd {
+                FillRule::EvenOdd
+            } else {
+                FillRule::NonZero
+            };
+            let mut region = resolve(rings, rule);
+            for clip in &style.clips {
+                region = intersect(&region, clip);
+            }
+            if !region.is_empty() {
+                out.push(Painted { color, region });
+            }
+        },
+    );
     Ok(out)
 }
 
@@ -966,6 +1123,36 @@ fn translate(r: &mut Region, d: V2) {
     }
 }
 
+/// mm per user unit: the root's width over its viewBox, else 96 units to the inch
+pub(crate) fn own_scale(svg: &str) -> Result<f64> {
+    let root = events(svg)
+        .find_map(|e| match e {
+            Ev::Start {
+                name: "svg", attrs, ..
+            } => Some(attrs),
+            _ => None,
+        })
+        .ok_or_else(|| Error::mesh("svg", "no <svg> element"))?;
+    let view_w = attr(root, "viewBox").and_then(|v| {
+        let n: Vec<f64> = v
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter_map(|t| t.parse().ok())
+            .collect();
+        (n.len() == 4 && n[2] > 0.0).then(|| n[2])
+    });
+    let s = match (absolute_mm(root, "width"), view_w) {
+        (Some(w), Some(vw)) => w / vw,
+        _ => PX_MM,
+    };
+    if !(s.is_finite() && s > 0.0) {
+        return Err(Error::mesh(
+            "svg",
+            "the <svg> width and viewBox give no usable size",
+        ));
+    }
+    Ok(s)
+}
+
 fn paint(svg: &str, opts: &SvgOptions) -> Result<(Vec<Painted>, Vec<String>, f64)> {
     for (what, v) in [("heightMm", opts.height_mm), ("toleranceMm", opts.tolerance_mm)] {
         if !(v.is_finite() && v > 0.0) {
@@ -982,25 +1169,7 @@ fn paint(svg: &str, opts: &SvgOptions) -> Result<(Vec<Painted>, Vec<String>, f64
     if opts.scale.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
         return Err(Error::invalid("scale", "must be above 0"));
     }
-    let root = events(svg)
-        .find_map(|e| match e {
-            Ev::Start {
-                name: "svg", attrs, ..
-            } => Some(attrs),
-            _ => None,
-        })
-        .ok_or_else(|| Error::mesh("svg", "no <svg> element"))?;
-    let view_w = attr(root, "viewBox").and_then(|v| {
-        let n: Vec<f64> = v
-            .split(|c: char| c == ',' || c.is_whitespace())
-            .filter_map(|t| t.parse().ok())
-            .collect();
-        (n.len() == 4 && n[2] > 0.0).then(|| n[2])
-    });
-    let own = match (absolute_mm(root, "width"), view_w) {
-        (Some(w), Some(vw)) => w / vw,
-        _ => PX_MM,
-    };
+    let own = own_scale(svg)?;
     let defs = scan_defs(svg);
     let run = |s: f64| -> Result<(Vec<Painted>, Vec<String>)> {
         let mut warnings = Vec::new();

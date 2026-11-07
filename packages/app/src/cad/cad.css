@@ -22,6 +22,8 @@
 
 .sketch-copies { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .sketch-copies legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
+/* scrolled into view as it opens: clear of the fade along the panel's bottom edge */
+.sketch-svg { scroll-margin-bottom: var(--s-4); }
 .cad-note { color: var(--fg); }
 .cad-note .sx-ic { color: var(--orange); }
 .cad-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }

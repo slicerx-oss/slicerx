@@ -9,7 +9,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, command, facePick, freshBox, height, openStudio, pick, sketchAt, steps, toolPanel } from '../cad-helpers'
 import {
-  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, inputOf, labels, looking, loops, r2, rect, screenAt, shot, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
+  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, inputOf, labels, looking, loops, r2, rect, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
   type V2, type W,
 } from './lib/cad'
 
@@ -2328,3 +2328,65 @@ cold.describe('the slow 3D view notice', () => {
   })
 })
 
+
+// ---- sketch-svg
+// Import SVG in the sketch: the closed paths of a file land on the bed as loops to edit, sized and centered by the
+// form, the hole kept, and they extrude like a drawn sketch.
+test.describe('sketch-svg', () => {
+  // a 40 unit square with a round hole of 16 across, one path, as a vector editor writes it
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40mm"><path fill-rule="evenodd" d="M0 0H40V40H0Z M20 12A8 8 0 1 0 20 28A8 8 0 1 0 20 12Z"/></svg>'
+  const volume = (page: Page) =>
+    page.evaluate(() => {
+      const sx = (window as unknown as { __sx: { getState(): { plate: { parts: { positions: ArrayLike<number>; indices: ArrayLike<number> }[] }[] } } }).__sx
+      let v = 0
+      for (const p of sx.getState().plate[0]?.parts ?? []) {
+        const at = (i: number) => [p.positions[3 * i]!, p.positions[3 * i + 1]!, p.positions[3 * i + 2]!]
+        for (let t = 0; t < p.indices.length; t += 3) {
+          const [a, b, c] = [at(p.indices[t]!), at(p.indices[t + 1]!), at(p.indices[t + 2]!)]
+          v += (a[0]! * (b[1]! * c[2]! - b[2]! * c[1]!) - a[1]! * (b[0]! * c[2]! - b[2]! * c[0]!) + a[2]! * (b[0]! * c[1]! - b[1]! * c[0]!)) / 6
+        }
+      }
+      return Math.round(Math.abs(v))
+    })
+
+  test('an SVG imported to the bed and fit to a width extrudes with its hole', async ({ page }, info) => {
+    const panel = await bedSketch(page)
+    const bed = await page.evaluate(() => (window as unknown as { __sx: { getState(): { bed: { widthMm: number; depthMm: number } } } }).__sx.getState().bed)
+    await panel.getByTestId('sketch-svg-open').click()
+    const form = panel.getByTestId('sketch-svg')
+    await expect(form).toBeVisible()
+    // the button names the form; no caption under it says Import SVG again
+    await expect(form).toHaveAccessibleName('Import SVG')
+    await expect(form.getByText('Import SVG')).toHaveCount(0)
+    // nothing to add before a file is chosen
+    await expect(form.getByTestId('sketch-svg-add')).toBeDisabled()
+    await form.locator('#sk-svg-file').setInputFiles({ name: 'ring.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(SVG) })
+    await expect(form).toContainText('ring.svg')
+    await form.getByRole('radiogroup', { name: 'SVG size' }).getByRole('radio', { name: 'Width' }).click()
+    await form.locator('#sk-svg-value').fill('30')
+    // the whole form is in the panel's view, Add to sketch included
+    await expect(form.getByTestId('sketch-svg-add')).toBeInViewport({ ratio: 1 })
+    // its middle lands on the middle of the bed unless moved
+    await expect(form.locator('#sk-svg-x')).toHaveValue(String(Math.round(bed.widthMm / 2)))
+    await shotBoth(page, info, 'svg-sketch-form-1440')
+    await form.getByTestId('sketch-svg-add').click()
+    await expect.poll(async () => (await loops(page)).length).toBe(2)
+    const [outer, hole] = await loops(page)
+    expect(size(outer)).toEqual([30, 30])
+    expect(hole).toMatchObject({ type: 'circle', center: [Math.round(bed.widthMm / 2), Math.round(bed.depthMm / 2)], diameterMm: 12 })
+    const note = page.getByTestId('toast').filter({ hasText: 'Added ring: 2 loops (1 hole), 4 lines, 1 circle, 30 x 30 mm.' })
+    await expect(note).toBeVisible()
+    // its text keeps 16 px inside the card's border
+    const gap = await note.evaluate((el) => el.getBoundingClientRect().right - el.querySelector('.sx-toast-text')!.getBoundingClientRect().right)
+    expect(gap).toBeGreaterThanOrEqual(16)
+    await shotBoth(page, info, 'svg-sketch-added-1440')
+
+    await panel.locator('#sk-dist').fill('4')
+    await panel.getByRole('button', { name: 'Extrude', exact: true }).click()
+    await expect.poll(() => extents(page), { timeout: 30_000 }).toEqual([4, 30, 30])
+    // the hole went through: a 30 mm square 4 mm thick less a 12 mm round hole
+    await expect.poll(() => volume(page)).toBeGreaterThan(3600 - 453 - 3)
+    expect(await volume(page)).toBeLessThan(3600 - 453 + 3)
+    await shotBoth(page, info, 'svg-sketch-extruded-1440')
+  })
+})

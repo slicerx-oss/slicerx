@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Sketch mode. Pick the bed or a flat face, draw lines, rectangles, circles and three point arcs on
-// it with snaps and typed sizes, fix what sketch.check reports, then extrude or revolve. The panel has
-// two cards: drawing (tools, grid and snap, what shows) and the solid, which stays folded with the
-// reason until the sketch has a closed profile. The live numbers sit beside the cursor in the view
-// (cursor-pills.tsx). The camera stays free; Look at the sketch, among the view's camera buttons,
-// turns it square on. Constraints go through the engine's solver (sketch-constraints.ts), and the
-// drawing card says how defined the sketch is. Finishing records the sketch as a step of the
-// object's history, where it opens again in this panel to be changed.
+// it with snaps and typed sizes (or bring in an SVG's paths as loops to edit), fix what sketch.check
+// reports, then extrude or revolve. The panel has two cards: drawing (tools, grid and snap, what
+// shows) and the solid, which stays folded with the reason until the sketch has a closed profile. The
+// live numbers sit beside the cursor in the view (cursor-pills.tsx). The camera stays free; Look at
+// the sketch, among the view's camera buttons, turns it square on. Constraints go through the engine's
+// solver (sketch-constraints.ts), and the drawing card says how defined the sketch is. Finishing
+// records the sketch as a step of the object's history, where it opens again in this panel to be
+// changed.
 //
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
@@ -27,6 +28,8 @@ import { keyboardLift } from '../shell/phone-keyboard'
 import { claimPhoneSketchSlot, usePhoneSketchSlot } from '../workspaces/design/phone-slot'
 import { touchWords } from './touch-words'
 import { FAMILIES, familyName, familyOf, SketchVariants, VARIANTS, type Family } from './sketch-variants'
+import { SvgFileField } from './svg-file'
+import { svgSketchNote, svgToSketch, type SvgSize } from './svg-sketch'
 import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
@@ -470,6 +473,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [offset, setOffset] = useDraft('offset', '1')
   const [corner, setCorner] = useDraft('corner', '2')
   const [cornerKind, setCornerKind] = useDraft<'fillet' | 'chamfer'>('cornerKind', 'fillet')
+  // Import SVG: the file, how it is sized, and where its middle lands (the middle of the plane to start)
+  const [svgOpen, setSvgOpen] = useDraft('svgOpen', false)
+  const [svgFile, setSvgFile] = useDraft<{ name: string; text: string } | null>('svgFile', null)
+  const [svgForm, setSvgForm] = useDraft<{ size: SvgSize; value: string; x: string; y: string }>('svgForm', () => ({ size: 'width', value: '50', x: String(Math.round((plane.min[0] + plane.max[0]) / 2)), y: String(Math.round((plane.min[1] + plane.max[1]) / 2)) }))
+  const [svgBusy, setSvgBusy] = useState(false)
+  const svgRef = useRef<HTMLFieldSetElement | null>(null)
+  useEffect(() => {
+    if (svgOpen) svgRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [svgOpen, svgFile])
   const [copies, setCopies] = useDraft<{ kind: 'line' | 'circle'; count: string; dx: string; dy: string; angle: string }>('copies', { kind: 'line', count: '3', dx: '10', dy: '0', angle: '360' })
   // Mirror waits for its line, a round pattern for its center
   const [pending, setPending] = useState<{ kind: 'mirror' | 'round'; e: number } | null>(null)
@@ -1498,6 +1510,27 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
   }
 
+  /** Adds the SVG's closed paths to the sketch as loops to edit; Finish sketch or Extrude records them as any drawing. */
+  const doSvg = async () => {
+    // Enter in a field while an import runs would add the artwork twice
+    if (svgBusy) return
+    if (!svgFile) return setNote('Choose an SVG file first.')
+    setNote(null)
+    setSvgBusy(true)
+    try {
+      const r = await svgToSketch(svgFile.text, { size: svgForm.size, value: num(svgForm.value), center: [num(svgForm.x), num(svgForm.y)] })
+      const added = fromLoops(r.loops)
+      if (!added) throw new Error('The artwork could not be shown as sketch loops.')
+      setSketch((s) => [...s, ...added])
+      const said = svgSketchNote(svgFile.name, r)
+      toast(said.text, said.warn ? 'warn' : 'ok')
+    } catch (e) {
+      setNote(errorText(e))
+    } finally {
+      setSvgBusy(false)
+    }
+  }
+
   /** Rounds or bevels the picked line's corners, or every corner of its loop, with the engine's sketch corner ops. */
   const doCorners = async (whole: boolean) => {
     if (!selected) return
@@ -1796,7 +1829,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             </div>
           </div>
         </div>
+        <Button size="sm" className="tp-pill" icon="svg-face" aria-pressed={svgOpen} data-testid="sketch-svg-open" data-tip-title="Import SVG" data-tip-body="Adds the closed paths of an SVG file to this sketch as lines, arcs, circles and splines to edit, dimension and extrude." onClick={() => setSvgOpen(!svgOpen)}>
+          Import SVG
+        </Button>
       </div>
+      {svgOpen ? (
+        // the button above names it, so no caption repeats it; it scrolls into view as it opens
+        <fieldset ref={svgRef} className="sketch-copies sketch-svg" aria-label="Import SVG" data-testid="sketch-svg">
+          <SvgFileField id="sk-svg-file" file={svgFile} onFile={(f) => (setSvgFile(f), setNote(null))} onError={setNote} />
+          <Choice id="sk-svg-size" label="Size" ariaLabel="SVG size" value={svgForm.size} onChange={(size) => setSvgForm({ ...svgForm, size, value: size === 'scale' ? '100' : svgForm.size === 'scale' ? '50' : svgForm.value })} options={SVG_SIZES} />
+          <Num id="sk-svg-value" label={SVG_SIZE_LABELS[svgForm.size]} unit={svgForm.size === 'scale' ? '%' : 'mm'} value={svgForm.value} onChange={(value) => setSvgForm({ ...svgForm, value })} onEnter={() => void doSvg()} />
+          <Num id="sk-svg-x" label="Center X" unit="mm" value={svgForm.x} onChange={(x) => setSvgForm({ ...svgForm, x })} onEnter={() => void doSvg()} />
+          <Num id="sk-svg-y" label="Center Y" unit="mm" value={svgForm.y} onChange={(y) => setSvgForm({ ...svgForm, y })} onEnter={() => void doSvg()} />
+          <Button full disabled={!svgFile || svgBusy} data-testid="sketch-svg-add" data-tip-title="Add to sketch" data-tip-body="Holes stay holes. Open lines with no fill, text and images are left out." onClick={() => void doSvg()}>
+            Add to sketch
+          </Button>
+        </fieldset>
+      ) : null}
     </>
   )
   // what Select picked and what to do with it: in the drawing card on a desktop, after the check's messages on a phone
@@ -2056,6 +2105,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     </Shell>
   )
 }
+
+const SVG_SIZES: ChoiceOption<SvgSize>[] = [
+  { value: 'width', label: 'Width' },
+  { value: 'height', label: 'Height' },
+  { value: 'scale', label: 'Scale' },
+]
+const SVG_SIZE_LABELS: Record<SvgSize, string> = { width: 'Width', height: 'Height', scale: 'Scale' }
 
 /**
  * The drawing tools' two rows: in the panel, or on a phone in Model's bar along the bottom of the view

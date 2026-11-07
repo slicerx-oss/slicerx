@@ -77,6 +77,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("sketch.fillet", "cad"),
     ("sketch.chamfer", "cad"),
     ("sketch.solve", "cad"),
+    ("sketch.svg", "cad"),
     ("hole.find", "holes"),
     ("hole.apply", "holes"),
     ("thread.find", "threads"),
@@ -1797,5 +1798,20 @@ mod tests {
         assert!(parts.iter().all(|p| p["watertight"] == true));
         assert_eq!(out["slotColors"], json!(["#ff0000", "#0000ff"]));
         assert!(call("extrude.svg", &json!({ "svg": "<svg/>" }).to_string()).is_err());
+    }
+
+    #[cfg(feature = "cad")]
+    #[test]
+    fn sketch_svg_returns_loops_and_their_check() {
+        let svg = "<svg viewBox=\"0 0 50 50\" width=\"50mm\"><rect width=\"20\" height=\"10\"/></svg>";
+        let out = run(
+            "sketch.svg",
+            &json!({ "svg": svg, "options": { "fitWidthMm": 40, "center": [5, 5] } }),
+        );
+        assert_eq!(out["loops"][0]["start"], json!([-15.0, 15.0]));
+        assert_eq!(out["counts"]["lines"], 4);
+        assert_eq!(out["sizeMm"], json!([40.0, 20.0]));
+        assert_eq!(out["check"]["ok"], true);
+        assert!(call("sketch.svg", &json!({ "svg": "<svg/>" }).to_string()).is_err());
     }
 }

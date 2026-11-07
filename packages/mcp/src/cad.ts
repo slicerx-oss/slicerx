@@ -26,6 +26,11 @@ type V3 = [number, number, number]
 export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
+/** What the app link takes: the UTF-8 bytes of a call's arguments as compact JSON (sx-link app_link.rs, MAX_ARGS). */
+const LINK_ARGS = 64 * 1024
+/** design.sketch_svg's arguments may come to this many bytes; 512 are kept back for numbers the link may write longer. */
+const SVG_ARGS = LINK_ARGS - 512
+const kb = (bytes: number) => `${Math.round((bytes / 1024) * 10) / 10} KB`
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -400,12 +405,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
-  // a spline the engine cannot draw (repeated points, too sharp a bend, too many points) never reaches the timeline
+  // the check issues of a spline the engine cannot draw (repeated points, too sharp a bend, too many points)
+  // a sketch past the point budget is named on the loop that tips it, which need not be a spline
+  const undrawable = (issues: unknown, l: Loops) => (Array.isArray(issues) ? (issues as { loop: number; kind: string; message: string }[]) : []).filter((x) => x.kind === 'tooDense' || (['zeroLength', 'tooSmall'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {}))))
+
+  // a spline the engine cannot draw never reaches the timeline
   const splinesDraw = async (l: Loops): Promise<void> => {
     if (!splines(l)) return
     const out = await engine('sketch.check', { loops: l })
-    // a sketch past the point budget is named on the loop that tips it, which need not be a spline
-    const bad = (Array.isArray(out['issues']) ? (out['issues'] as { loop: number; kind: string; message: string }[]) : []).filter((x) => x.kind === 'tooDense' || (['zeroLength', 'tooSmall'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {}))))
+    const bad = undrawable(out['issues'], l)
     if (bad.length) throw new ToolInputError(`loops: ${bad.map((x) => x.message).join(' ')}`)
   }
 
@@ -797,6 +805,61 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
       return { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
+    },
+  })
+
+  const sketchSvg = defineTool({
+    name: 'design.sketch_svg',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
+    input: z
+      .object({
+        svg: z
+          .string()
+          .min(1)
+          .describe(`The SVG file as text. With the other fields it may come to ${kb(SVG_ARGS)} (${SVG_ARGS} bytes of UTF-8 JSON, quotes escaped), the most the app link carries`),
+        frame: frameRef.optional(),
+        scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
+        fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
+        fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
+        center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
+        tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
+      })
+      .superRefine((args, ctx) => {
+        // the link counts the bytes of every field as it sends them, so non-Latin text counts 2 to 4 a character
+        const sent = new TextEncoder().encode(JSON.stringify(args)).length
+        if (sent > SVG_ARGS) ctx.addIssue({ code: 'custom', path: ['svg'], message: `This SVG comes to ${kb(sent)} once sent to the app, and the app link takes ${kb(SVG_ARGS)}. Simplify it in a vector editor (fewer points, no embedded images, fonts, metadata or long text), or split it and import each part with its own center.` })
+      }),
+    async run(i) {
+      const host = deps.designs
+      if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      // the middle of the plane, as the sketch panel starts it
+      const bed = i.frame ? undefined : host.bed?.()
+      const center = i.center ?? (bed ? [bed.widthMm / 2, bed.depthMm / 2] : [0, 0])
+      const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center, toleranceMm: i.tolerance_mm })
+      const req = { svg: i.svg, options }
+      const out = deps.files.engine ? await call('sketch.svg', req) : await engine('sketch.svg', req)
+      const loopsIn = out['loops'] as Loops
+      const check = (out['check'] ?? {}) as { ok?: boolean; areaMm2?: number; loops?: { index: number; role: string; areaMm2: number; lengthMm: number }[]; issues?: { kind: string; message: string }[] }
+      const issues = check.issues ?? []
+      // a spline that cannot be drawn never reaches the timeline, as for design.sketch
+      const bad = undrawable(issues, loopsIn)
+      if (bad.length) throw new ToolInputError(`svg: ${bad.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
+      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }))
+      const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
+      const size = out['sizeMm'] as [number, number]
+      const holes = (check.loops ?? []).filter((l) => l.role === 'hole').length
+      const n = (v: number, one: string) => `${v} ${one}${v === 1 ? '' : 's'}`
+      const curves = [n(counts.lines, 'line'), n(counts.arcs, 'arc'), n(counts.splines, 'spline'), n(counts.circles, 'circle')].filter((t) => !t.startsWith('0 ')).join(', ')
+      const warnings = (out['warnings'] ?? []) as string[]
+      const head = `${k.name} is in the timeline: ${n(k.loops.length, 'loop')}${holes ? ` (${n(holes, 'hole')})` : ''}, ${curves}, ${size.map((v) => Math.round(v * 100) / 100).join(' x ')} mm`
+      const tail = [check.ok === false ? `${n(issues.length, 'problem')} to fix before it makes a solid: ${issues.map((x) => x.message).join(' ')}` : '', ...warnings.map((w) => `${w[0]!.toUpperCase()}${w.slice(1)}.`)].filter(Boolean)
+      return {
+        summary: tail.length ? `${head}. ${tail.join(' ')}` : head,
+        output: { id: k.id, name: k.name, loops: k.loops, counts, sizeMm: size, mmPerUnit: out['mmPerUnit'], check: { ok: check.ok, areaMm2: check.areaMm2, loops: check.loops, issues }, warnings },
+      }
     },
   })
 
@@ -1244,5 +1307,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, extrude, revolve, loft, sweep, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }
