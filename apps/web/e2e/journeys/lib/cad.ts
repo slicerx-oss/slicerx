@@ -83,6 +83,26 @@ export async function designTab(page: Page): Promise<void> {
   await page.locator('.sx-tab[data-mode="design"]').click()
 }
 
+/** Switches the app to dark or light the way Settings does (data-scheme on the root), and waits until it shows. */
+export async function setScheme(page: Page, scheme: 'dark' | 'light'): Promise<void> {
+  await page.evaluate((s) => (window as unknown as Win).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+  await expect(page.locator('html')).toHaveAttribute('data-scheme', scheme)
+  // the colors fade between schemes; a picture taken mid-fade mixes the two
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a instanceof CSSTransition && a.playState === 'running').length)).toBe(0)
+}
+
+/** Saves a picture in dark and in light, `<name>-dark.png` and `<name>-light.png`, leaving the app dark. */
+export async function shotBoth(page: Page, info: TestInfo, name: string): Promise<void> {
+  if (!process.env['SX_SHOTS']) return
+  // a pointer resting on a control opens its tooltip during the fade; park it on the frame
+  await page.mouse.move(2, 2)
+  await setScheme(page, 'dark')
+  await shot(page, info, `${name}-dark.png`)
+  await setScheme(page, 'light')
+  await shot(page, info, `${name}-light.png`)
+  await setScheme(page, 'dark')
+}
+
 /** Saves a picture only when SX_SHOTS asks for them, so a normal run attaches and writes nothing. */
 export async function shot(page: Page, info: TestInfo, name: string, clip?: { x: number; y: number; width: number; height: number }): Promise<void> {
   if (!process.env['SX_SHOTS']) return
