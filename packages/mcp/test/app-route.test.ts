@@ -294,5 +294,19 @@ describe('finished sketches over the app link', () => {
     const e = await off.run('design.sketch', { loops }).catch((x: unknown) => x)
     expect((e as Error).message).toMatch(/turn on the app link/)
   })
+
+  it('projects into a finished sketch in the app, and says it needs the app here', async () => {
+    const call = vi.fn(async () => ({ summary: 'Projected the outline of Box into Sketch 1 as reference curves: 4 lines', output: { sketch: 'sk1', projection: 'p1', projections: [{ id: 'p1', kind: 'silhouette' }] } }))
+    const { run } = routed(call as AppLinkCaller['call'])
+    const input = { sketch: 'sk1', design: 'd1', kind: 'silhouette' }
+    const out = await run('design.sketch_project', input)
+    expect(call).toHaveBeenCalledWith('design.sketch_project', input)
+    expect(out.output).toMatchObject({ sketch: 'sk1', projection: 'p1', in: 'app' })
+    const off = routed(vi.fn(async () => {
+      throw Object.assign(new Error('app_closed'), { code: 'app_closed' })
+    }) as AppLinkCaller['call'])
+    const e = await off.run('design.sketch_project', input).catch((x: unknown) => x)
+    expect((e as Error).message).toMatch(/turn on the app link/)
+  })
 })
 

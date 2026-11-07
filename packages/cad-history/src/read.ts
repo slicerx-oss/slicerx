@@ -5,6 +5,7 @@
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
+import type { Projection, ProjectSource } from './project'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
@@ -282,7 +283,7 @@ function designObjects(j: Record<string, unknown>, all = false): Record<string, 
       continue
     }
     if (it['kind'] !== 'feature' || typeof it['body'] !== 'string' || !obj(it['params'])) return null
-    const { kind: _k, body, sketch, ...step } = it
+    const { kind: _k, body, sketch, projected: _p, ...step } = it
     let params = it['params']
     if (sketch !== undefined) {
       const k = typeof sketch === 'string' ? sketches.get(sketch) : undefined
@@ -290,7 +291,9 @@ function designObjects(j: Record<string, unknown>, all = false): Record<string, 
         bad.add(body as string)
         continue
       }
-      const loops = k['loops']
+      // a feature takes the projections it was made with, never one projected later
+      const taken = Array.isArray(it['projected']) ? (it['projected'] as unknown[]) : []
+      const loops = Array.isArray(k['loops']) ? (k['loops'] as unknown[]).filter((l) => !obj(l) || l['projected'] === undefined || taken.includes(l['projected'])) : k['loops']
       const frame = k['frame'] === undefined ? {} : { frame: k['frame'] }
       const cons = k['constraints'] === undefined ? {} : { constraints: k['constraints'] }
       if (params['op'] === 'shape.extrude') params = { ...params, ...frame, shape: { type: 'sketch', loops, ...cons } }
@@ -319,6 +322,29 @@ function requireExactHistories(j: unknown, objectIds: ReadonlySet<string>, read:
     if (!obj(b) || b['exact'] === undefined || typeof b['object'] !== 'string' || !objectIds.has(b['object'])) continue
     if (b['exact'] !== true || !read.get(b['object'])?.exact) throw new Error(`The required exact history of object ${b['object']} could not be read. The project was not opened as a mesh.`)
   }
+}
+
+const isMat4 = isVec(16)
+const isEdge = (e: unknown): boolean => obj(e) && vec3(e['a']) && vec3(e['b']) && vec3(e['face']) && (e['center'] === undefined || vec3(e['center'])) && (e['keys'] === undefined || (Array.isArray(e['keys']) && e['keys'].length === 2 && e['keys'].every(isNum)))
+
+// a sketch's projections; a malformed one is dropped, and its curves stay as the sketch's own
+function projectionsOf(v: unknown): Pick<SketchItem, 'projections'> {
+  if (!Array.isArray(v)) return {}
+  const out: Projection[] = []
+  for (const p of v.slice(0, 256)) {
+    if (!obj(p) || typeof p['id'] !== 'string' || (p['mode'] !== 'reference' && p['mode'] !== 'real') || !obj(p['source'])) continue
+    const s = p['source']
+    if (typeof s['body'] !== 'string') continue
+    const placed = Number.isInteger(s['part']) && (s['part'] as number) >= 0 && isMat4(s['transform'])
+    const f = s['face']
+    const ok =
+      s['kind'] === 'silhouette' ||
+      (s['kind'] === 'edges' && placed && Array.isArray(s['edges']) && s['edges'].length > 0 && s['edges'].length <= 256 && s['edges'].every(isEdge)) ||
+      (s['kind'] === 'face' && placed && obj(f) && vec3(f['at']) && vec3(f['normal']) && (f['key'] === undefined || isNum(f['key'])))
+    if (!ok) continue
+    out.push({ id: p['id'], source: s as unknown as ProjectSource, mode: p['mode'], ...(typeof p['lost'] === 'string' ? { lost: p['lost'].slice(0, 300) } : {}) })
+  }
+  return out.length ? { projections: out } : {}
 }
 
 // the body a sketch sits on; anything malformed is dropped, the sketch kept
@@ -369,7 +395,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     if (!obj(it)) return
     if (it['kind'] === 'sketch') {
       const name = typeof it['name'] === 'string' && it['name'].trim() ? it['name'].trim().slice(0, 100) : 'Sketch'
-      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']) }
+      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']), ...projectionsOf(it['projections']) }
       items.push(k)
     } else {
       const step = histories.get(it['body'] as string)?.steps.find((s) => s.id === it['id'])

@@ -4,6 +4,7 @@
 // files; the app keeps them as plate objects, so a step made through the host is the same history step a person's
 // edit makes. The modeling tools take a host and never know which one they run on.
 import type { SketchItem } from './design'
+import type { ProjectMode, ProjectSource } from './project'
 import type { History, HistoryMesh, Mat4, Step, StepParams, StepStatus } from './model'
 import type { FaceFrame, SketchConstraint, SketchLoop } from './types'
 
@@ -63,4 +64,8 @@ export interface DesignHost {
   bed?(): { widthMm: number; depthMm: number }
   /** Solves loops with their constraints as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch turns driven. */
   settleSketch?(s: { loops: SketchLoop[]; constraints: SketchConstraint[] }): Promise<{ loops: SketchLoop[]; constraints: SketchConstraint[]; status: 'ok' | 'redundant' | 'conflict' | 'failed'; dof: number }>
+  /** Projects model geometry into a finished sketch (project.ts); the bodies drawn on it replay. Throws why the source gives no curves. */
+  project?(sketch: string, source: ProjectSource, mode: ProjectMode): Promise<{ sketch: SketchItem; projection: string; replayed: number }>
+  /** Switches a projection between reference and real, or takes it out with its curves; the bodies drawn on the sketch replay. */
+  changeProjection?(sketch: string, projection: string, change: { mode: ProjectMode } | { remove: true }): Promise<{ sketch: SketchItem; replayed: number }>
 }

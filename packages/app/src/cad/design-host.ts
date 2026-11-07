@@ -20,6 +20,7 @@ import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
 import { exactSolids } from './history/exact-flag'
 import { finishSketch, sketchById } from './sketches'
+import { addProjection, changeProjection } from './project-sketch'
 import { settle } from './sketch-dimension'
 import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
@@ -168,6 +169,14 @@ export function appDesignHost(loader: Loader): DesignHost {
     bed() {
       const { widthMm, depthMm } = get().bed
       return { widthMm, depthMm }
+    },
+
+    project(sketch, source, mode) {
+      return addProjection(loader, sketch, source, mode)
+    },
+
+    changeProjection(sketch, projection, change) {
+      return changeProjection(loader, sketch, projection, change)
     },
 
     async settleSketch(s) {

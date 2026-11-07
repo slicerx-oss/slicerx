@@ -11,6 +11,7 @@ export const HISTORY_FILE_VERSION = 2
 export const DESIGN_FILE_VERSION = 3
 import type { Timeline } from './design'
 import type { History, HistoryMesh, PaintTexts, PrimitiveSpec } from './model'
+import { BODY_GONE } from './project'
 
 /** A part of the project's zip, as the app's writer takes it. */
 export interface ZipEntry {
@@ -103,11 +104,13 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
       if (!store) return
       const p = it.params
       items.push({ ...it, body: String(fileIds.get(it.body)), ...(p.op === 'parts.add' ? { params: { ...p, parts: store(p.parts) } } : {}) })
-    } else if (it.on) {
+    } else {
+      // a projection names its body by file id; one from a body not saved is lost, and its curves stay
+      const s = it.projections ? { ...it, projections: it.projections.map((p) => (fileIds.has(p.source.body) ? { ...p, source: { ...p.source, body: String(fileIds.get(p.source.body)) } } : { ...p, lost: p.lost ?? BODY_GONE })) } : it
       // a sketch keeps the body it sits on only while that body is saved
-      const { on, ...k } = it
-      items.push(fileIds.has(on.body) ? { ...it, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
-    } else items.push(it)
+      const { on, ...k } = s
+      items.push(!on ? s : fileIds.has(on.body) ? { ...s, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
+    }
     if (i < d.marker) marker = items.length
   })
   return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: DESIGN_FILE_VERSION, bodies, items, marker }) }, ...files]
