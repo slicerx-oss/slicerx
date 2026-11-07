@@ -2360,8 +2360,17 @@ test.describe('sketch-svg', () => {
     await expect(form.getByText('Import SVG')).toHaveCount(0)
     // nothing to add before a file is chosen
     await expect(form.getByTestId('sketch-svg-add')).toBeDisabled()
+    // the field reads Choose an SVG until a file is picked, then shows the file's name with Change; the name is not repeated under it
+    const field = form.locator('.cad-file')
+    await expect(field).toHaveText('Choose an SVG')
+    await form.locator('#sk-svg-file').setInputFiles({ name: 'draft.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(SVG) })
+    await expect(field).toHaveText('draft.svgChange')
+    await expect(form.getByText('draft.svg')).toHaveCount(1)
+    // picking another file replaces the name
     await form.locator('#sk-svg-file').setInputFiles({ name: 'ring.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(SVG) })
-    await expect(form).toContainText('ring.svg')
+    await expect(field).toHaveText('ring.svgChange')
+    await expect(form.getByText('draft.svg')).toHaveCount(0)
+    await expect(form.getByText('ring.svg')).toHaveCount(1)
     await form.getByRole('radiogroup', { name: 'SVG size' }).getByRole('radio', { name: 'Width' }).click()
     await form.locator('#sk-svg-value').fill('30')
     // the whole form is in the panel's view, Add to sketch included
