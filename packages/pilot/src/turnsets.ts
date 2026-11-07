@@ -35,7 +35,7 @@ const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.me
  * Editing a part already built: open it, go through its steps and sketches, pick its faces and edges, and step back
  * and forth. Every other design tool is here too, so a design tool is never in no set.
  */
-const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces'])
+const EDIT: ReadonlySet<string> = new Set(['design.undo', 'design.redo', 'design.open', 'design.list', 'design.save', 'design.timeline', 'design.steps', 'design.edit_step', 'design.roll', 'design.sketch', 'design.sketch_svg', 'geom.info', 'geom.sketch_edit', 'geom.sketch_solve', 'geom.sketch_check', 'geom.face_pick', 'geom.edge_pick', 'geom.faces'])
 
 /**
  * Sending a sliced plate: which printer and spools, the printers' list and state, and the send. In app as well as

@@ -21,6 +21,7 @@ const WORDS: Record<string, Words | null> = {
   'design.plan': null,
   'design.new': { doing: 'Starting the design', done: 'Started the design' },
   'design.sketch': { doing: 'Drawing the sketch', done: 'Drew the sketch' },
+  'design.sketch_svg': { doing: 'Tracing the SVG into a sketch', done: 'Traced the SVG into a sketch' },
   'geom.extrude': { doing: 'Extruding the sketch', done: 'Extruded the sketch', caption: 'Extrude, Z', camera: 'iso' },
   'geom.revolve': { doing: 'Revolving the profile', done: 'Revolved the profile', caption: 'Revolve', camera: 'iso' },
   'geom.loft': { doing: 'Lofting through the profiles', done: 'Lofted through the profiles', caption: 'Loft', camera: 'iso' },
