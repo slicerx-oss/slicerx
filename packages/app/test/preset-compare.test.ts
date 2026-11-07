@@ -248,6 +248,36 @@ describe('Compare presets panel', () => {
     expect(text()).not.toMatch(/^Copied/)
   })
 
+  it('writes a setting only one side has as not set, and a copy from that side says it cleared the value', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const name = 'PETG Translucent Galaxy Black'
+    set({ userPresets: [preset('a', 'filament', { filament_wipe: [true], nozzle_temperature: [240] }, { name }), preset('b', 'filament', { nozzle_temperature: [210] }, { name: 'Generic PLA' })] })
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root.render(createElement(ComparePanel)))
+    pick('cmp-kind', 'filament')
+    pick('cmp-a', 'a')
+    pick('cmp-b', 'preset:b')
+    await flush()
+    const row = (key: string) => host.querySelector<HTMLElement>(`[data-testid="preset-compare-row"][data-key="${key}"]`)
+    const cells = (key: string) => [...row(key)!.querySelectorAll('td')].slice(0, 2).map((td) => td.textContent)
+    // The side that does not set it reads as the settings panel writes it, never a blank cell.
+    expect(cells('filament_wipe')).toEqual(['on', 'not set'])
+    const copy = row('filament_wipe')!.querySelector<HTMLButtonElement>('[data-testid="preset-compare-copy"]')!
+    expect(copy.getAttribute('aria-label')).toBe(`Clear Filament wipe in ${name}`)
+    await act(async () => copy.click())
+    await flush()
+    // The copy drops the preset's own value, so it goes back to its stock settings: the line says it cleared it.
+    expect('filament_wipe' in get().userPresets.find((p) => p.id === 'a')!.values).toBe(false)
+    expect(row('filament_wipe')).toBeNull()
+    expect(host.querySelector('[role="status"]')!.textContent).toBe(`Cleared Filament wipe in ${name}`)
+    // A side with a value still copies.
+    await act(async () => row('nozzle_temperature')!.querySelector<HTMLButtonElement>('[data-testid="preset-compare-copy"]')!.click())
+    await flush()
+    expect(host.querySelector('[role="status"]')!.textContent).toBe(`Copied Nozzle temperature to ${name}`)
+  })
+
   it('says when the parent does not ship with the app', async () => {
     set({ userPresets: [preset('a', 'filament', { nozzle_temperature: [231] }, { name: 'Odd PLA', inherits: 'No Such PLA @Nowhere' })] })
     host = document.createElement('div')
