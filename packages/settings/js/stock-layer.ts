@@ -139,14 +139,11 @@ const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
 /** Filament keys that override the printer's extruder value only when set. */
 export const FILAMENT_OVERRIDE_KEYS: ReadonlySet<string> = new Set(['filament_retraction_length', 'filament_z_hop', 'filament_z_hop_types', 'filament_retract_lift_above', 'filament_retract_lift_below', 'filament_retract_lift_enforce', 'filament_retraction_speed', 'filament_deretraction_speed', 'filament_retract_restart_extra', 'filament_retraction_minimum_travel', 'filament_wipe_distance', 'filament_retract_when_changing_layer', 'filament_wipe', 'filament_retract_before_wipe', 'filament_long_retractions_when_cut', 'filament_retraction_distances_when_cut', 'filament_travel_slope'])
 
-const NO_LEND: ReadonlySet<string> = new Set(['filament_diameter', 'filament_extruder_variant'])
-const tpuOnly = (p: Record<string, SettingValue>): boolean => {
-  const v = p['filament_extruder_variant']
-  const list = Array.isArray(v) ? v : v === undefined ? [] : [v]
-  return list.length > 0 && list.every((x) => String(x).endsWith(TPU285))
-}
-
-/** One value per slot for every key a slot's filament sets, so a three-color print has three entries. */
+/**
+ * One value per slot for every key a slot's filament sets, so a three-color print has three entries. Each slot's entry
+ * is its own preset's value; where its preset leaves the key out, the key's schema default, which is what the slot
+ * slices with when it prints alone. A slot never takes another slot's value.
+ */
 export function perSlot(parts: readonly Record<string, SettingValue>[]): Record<string, SettingValue> {
   if (parts.length === 1) return { ...parts[0]! }
   const out: Record<string, SettingValue> = {}
@@ -161,11 +158,9 @@ export function perSlot(parts: readonly Record<string, SettingValue>[]): Record<
       out[key] = parts.map((p) => (key in p ? (first(p[key]) ?? 'nil') : 'nil')) as SettingValue
       continue
     }
-    // A preset written only for the TPU285 hotend (2.85 mm TPU on the H3C) never lends its diameter or variant to a
-    // slot that sets none: that slot is a 1.75 mm filament for the standard hotends.
-    const lender = parts.find((p) => key in p && !(NO_LEND.has(key) && tpuOnly(p)))
-    const fallback = lender ? first(lender[key]) : first(settingDefault(key))
-    out[key] = parts.map((p) => (key in p ? first(p[key]) : fallback)) as SettingValue
+    // A key the schema defaults to an empty list (compatible_printers) has no entry to repeat; an empty one stands in.
+    const fallback = first(settingDefault(key)) ?? ''
+    out[key] = parts.map((p) => first(p[key]) ?? fallback) as SettingValue
   }
   return out
 }
