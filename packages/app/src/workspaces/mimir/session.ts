@@ -18,6 +18,7 @@ import { useEdition } from '../../edition'
 import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { useHost } from '../../host'
+import { fitProfileFor } from '../../plate/fit-profile'
 import { guardedPrinters } from '../../plate/guard'
 import { sendLedger } from '../../plate/send-ledger'
 import { needsSlice } from '../../plate/resume-tops'
@@ -109,13 +110,13 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 export function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
-  // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
+  // positive size) and print-in-place gaps to that nozzle, the layer height and the filament. The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
   // is left out of the tab. The creative eval makes its tools with the same tabToolset (@slicerx/mcp toolset.ts).
   if (tools.length === 0) {
     tabHost?.dispose()
     tabHost = appDesignHost(loader)
-    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle), fitProfile: () => fitProfileFor(get()) })
   }
   return tools
 }

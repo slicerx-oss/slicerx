@@ -197,7 +197,7 @@ describe('the mimir tab on a local model', () => {
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {
     const tools = async (message: string, before?: string) => read(await turn(LOCAL, message, before)).tools.map((t) => t.name)
     const build = await tools('A 30 mm cube with a fillet')
-    expect(build).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__revolve', 'geom__loft', 'geom__sweep', 'geom__hole', 'pilot__sheet', 'pilot__tools']))
+    expect(build).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__revolve', 'geom__loft', 'geom__sweep', 'geom__hole', 'geom__fit_check', 'pilot__sheet', 'pilot__tools']))
     // projecting edges into a sketch edits a part already built; a new part never starts with it
     expect(build).not.toContain('design__sketch_project')
     expect(await tools('Make the base thicker', 'A 30 mm cube with a fillet')).toContain('design__sketch_project')

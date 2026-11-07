@@ -127,7 +127,7 @@ export function createFitCheck() {
     version: '1.0.0',
     permission: 'read',
     description:
-      'Check whether a designed gap will fuse, bind, press fit or slide at the layer height, line width and material, and suggest the gap to model instead. For part to part clearance (a lid that should slide, a pin that should press in) and print in place joints (hinges, chains). The gap is the air between the two faces per side, in mm, in XY (side walls) or Z (a face printed over another). Uses the tolerance calibration and dimensional accuracy knowledge. Read only; gaps cannot be measured from the mesh on this host, so the user supplies them.',
+      'Check whether a designed gap will fuse, bind, press fit or slide at the layer height, line width and material, and suggest the gap to model instead. For part to part clearance (a lid that should slide, a pin that should press in) and print in place joints (hinges, chains). The gap is the air between the two faces per side, in mm, in XY (side walls) or Z (a face printed over another). Uses the tolerance calibration and dimensional accuracy knowledge. Read only; this takes a gap you give. geom.fit_check measures the gaps of a built design.',
     input: z.object({
       gapMm: z.number().min(0).max(5).describe('Modeled air gap per side, mm'),
       feature: z.enum(['slide', 'press', 'print_in_place']).describe('slide: should move freely; press: should grip; print_in_place: a hinge, chain or joint printed assembled'),
