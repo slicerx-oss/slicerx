@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { DISMISSED_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { DISMISSED_LINE, MOVING_PARTS_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 
@@ -202,5 +202,29 @@ describe('the skill playbooks in the prompt', () => {
     expect(p).not.toContain('compare_setups')
     expect(p).toContain('- queue_control:')
     expect(playbooks([skill('text_to_part', 'slice')])).toBe('')
+  })
+})
+
+describe('the line for parts that move', () => {
+  const all = (): boolean => true
+  it('is one line, in the cloud prompt only, after the check line', () => {
+    expect(MOVING_PARTS_LINE).not.toContain('\n')
+    expect(MOVING_PARTS_LINE).toContain("design.plan's printInPlace")
+    expect(MOVING_PARTS_LINE).toContain('above and below')
+    for (const scope of ['full', 'cad'] as const) {
+      const cloud = systemPrompt(scope, all, '', { cloud: true })
+      const local = systemPrompt(scope, all)
+      expect(cloud.split(MOVING_PARTS_LINE)).toHaveLength(2)
+      expect(cloud.indexOf(MOVING_PARTS_LINE)).toBeGreaterThan(cloud.indexOf('- After the last feature of a planned part, call design.check'))
+      // the local prompt is the cloud one without the line, to the byte
+      expect(local).not.toContain(MOVING_PARTS_LINE)
+      expect(cloud.replace(`\n${MOVING_PARTS_LINE}`, '')).toBe(local)
+      expect(systemPrompt(scope, all, '', { cloud: false })).toBe(local)
+    }
+  })
+
+  it('is left out without design.plan or design.check', () => {
+    expect(systemPrompt('full', (n) => n !== 'design.check', '', { cloud: true })).not.toContain(MOVING_PARTS_LINE)
+    expect(systemPrompt('full', (n) => n !== 'design.plan', '', { cloud: true })).not.toContain(MOVING_PARTS_LINE)
   })
 })
