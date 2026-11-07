@@ -166,6 +166,27 @@ describe("a project's machine limits on its own printer", () => {
     expect.soft(cfg['machine_max_jerk_x']).toEqual(jerk)
   })
 
+  it("slice at the printer's limit where the file lists a higher one as changed, and at a lower listed one", async () => {
+    const base = await sliced(project(P1S))
+    clearProject()
+    const accel = base['machine_max_acceleration_x'] as number[]
+    const list = ['layer_height;machine_max_acceleration_x', '', '']
+    const above = await sliced(project({ ...P1S, different_settings_to_system: list, machine_max_acceleration_x: accel.map((v) => String(v * 2)) }))
+    expect(above['machine_max_acceleration_x']).toEqual(accel)
+    clearProject()
+    const below = await sliced(project({ ...P1S, different_settings_to_system: list, machine_max_acceleration_x: accel.map((v) => String(v / 2)) }))
+    expect(below['machine_max_acceleration_x']).toEqual(accel.map((v) => v / 2))
+  })
+
+  it("slice at the printer profile's limit, not a higher one the plate's own settings had", async () => {
+    const base = await sliced(project(P1S))
+    clearProject()
+    const accel = base['machine_max_acceleration_x'] as number[]
+    set({ overrides: { machine_max_acceleration_x: accel.map((v) => v * 4) } })
+    const cfg = await sliced(project({ ...P1S, machine_max_acceleration_x: accel.map((v) => String(v * 2)) }))
+    expect(cfg['machine_max_acceleration_x']).toEqual(accel)
+  })
+
   it('slice at a lower limit the file has', async () => {
     const base = await sliced(project(P1S))
     clearProject()
