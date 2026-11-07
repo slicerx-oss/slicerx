@@ -24,6 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
+import { sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -83,8 +84,10 @@ export async function plateSliceRequest(
   signal.throwIfAborted()
   // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan. Those tops are the
   // layers the job printed, so they go as exact and as sliced: the engine keeps them as given, not stretched again
-  // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job.
-  const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (own ?? planned)
+  // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job. Stored tops
+  // hold only for the plate they were planned on, as it was then (storedResumeTops).
+  const stored = storedResumeTops(s)
+  const layerTopsMm = stored ?? own ?? planned
   // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
   const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : own && layerTopsMm === own ? smartLayerWarning(s, "This plate's own layer heights") : null
   // A project's settings by height: range keys by object, and with no other plan, the layer heights by height the
@@ -108,32 +111,44 @@ export async function plateSliceRequest(
       objects,
     },
     config,
-    options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === s.resume?.layerTopsMm) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === s.resume?.layerTopsMm ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+    options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === stored) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === stored ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
   }
   return { request, toPrint, config, replaces, skippedTools }
 }
 
 /**
- * The layers the shown plate prints, from the engine: the request slicePlate sends with no resume, sliced without
- * G-code or a preview, and its layerZ. One source for every layer plan (the plate's own layer heights, sleipnir, height
- * ranges, objects' own heights, a Z shrinkage over every filament the plate uses, painted ones included, and the
- * printer's layer limits). Throws what a slice would refuse; an abort stops it.
+ * The layers the shown plate prints, from the engine: the request slicePlate sends with no resume, sliced on this
+ * device without G-code or a preview (never a cloud slice: it is read, not printed), and its layerZ. One source for
+ * every layer plan (the plate's own layer heights, sleipnir, height ranges, objects' own heights, a Z shrinkage over
+ * every filament the plate uses, painted ones included, and the printer's layer limits). A setting an opened project
+ * brought that the engine refuses is dropped and the slice runs again, as slicePlate does; other refusals throw in the
+ * words a slice shows. An abort stops it.
  */
 export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<number[]> {
   await (await import('./profile-sync')).profileReady()
-  signal.throwIfAborted()
-  const at = get()
-  const s: AppState = { ...at, plate: at.historyEdit ? fullPlate(at) : at.plate, resume: null }
-  if (!s.plate.some((p) => p.printable !== false)) throw new Error('Nothing on this plate prints')
-  const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), resolveConfig(s.easy, s.overrides))
-  if (conflict) throw new Error(conflict)
-  const { request } = await plateSliceRequest(host, s, signal)
-  const sliced = await host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal })
-  try {
+  for (;;) {
     signal.throwIfAborted()
-    return Array.from(sliced.layerZ)
-  } finally {
-    host.slicer.release?.(sliced.id)
+    const s: AppState = { ...sliceState(get()), resume: null }
+    if (!s.plate.some((p) => p.printable !== false)) throw new Error('Nothing on this plate prints')
+    const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), resolveConfig(s.easy, s.overrides))
+    if (conflict) throw new Error(conflict)
+    const { request } = await plateSliceRequest(host, s, signal)
+    let sliced
+    try {
+      sliced = await host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal, local: true })
+    } catch (e) {
+      if (signal.aborted) throw e
+      const raw = e instanceof Error ? e.message : String(e)
+      // Each round drops one key the file brought, so this ends.
+      if (await dropRefusedProjectSetting(raw)) continue
+      throw new Error(engineErrorText(raw))
+    }
+    try {
+      signal.throwIfAborted()
+      return Array.from(sliced.layerZ)
+    } finally {
+      host.slicer.release?.(sliced.id)
+    }
   }
 }
 

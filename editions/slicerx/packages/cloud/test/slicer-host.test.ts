@@ -64,6 +64,21 @@ const hitOn = (id: string) => ({
 })
 
 describe('cloud slicing through the app slicer', () => {
+  it('slices on this device a slice asked for locally, with cloud slicing on: no upload, no job, no quota', async () => {
+    const { svc, slicer, sliced } = setup()
+    const body = await slicer.loadParts('Body', [part('Body')])
+    const before = svc.calls.length
+    const req: SliceRequest = { plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never, options: { emitGcode: false, emitPreview: false } }
+    // The fake local engine refuses every slice, so reaching it shows where the slice went.
+    await expect(slicer.slice(req, { local: true })).rejects.toThrow('the local engine was not meant to slice')
+    expect(sliced).toEqual([req])
+    expect(svc.calls.slice(before)).toEqual([])
+    expect(svc.requests).toEqual([])
+    // Without the flag the same request is a cloud job.
+    await slicer.slice(req)
+    expect(svc.requests).toHaveLength(1)
+  })
+
   it("keeps the service's warnings as written: any code, and the fields beyond code, message and layer", async () => {
     const { svc, slicer } = setup()
     const body = await slicer.loadParts('Body', [part('Body')])

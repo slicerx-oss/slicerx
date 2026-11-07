@@ -12,9 +12,9 @@ import { planResume, type ResumePlan } from '../geom/resume'
 import { useHost } from '../host'
 import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
-import { markStale, set, showSliced, useApp } from '../state/store'
+import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { resumeLayers, type ResumeLayers } from './resume-tops'
+import { jobLayerTops, resumeLayers, sliceInputsKey, sliceState, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
@@ -33,8 +33,14 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const plates = useApp((s) => s.plates)
   const objectSettings = useApp((s) => s.objectSettings)
   const calibration = useApp((s) => s.calibration)
+  const slotSetup = useApp((s) => s.slotSetup)
+  const profile = useApp((s) => s.profile)
+  const historyEdit = useApp((s) => s.historyEdit)
   const storedTops = useApp((s) => s.resume?.layerTopsMm)
-  const doneSlice = useApp((s) => (s.slice.status === 'done' ? s.slice.result : null))
+  const doneSlice = useApp((s) => (s.slice.status === 'done' && !s.slice.stale ? s.slice.result : null))
+  // What the plate's layers come from: the job's layers hold while this stays the same.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key reads these through the store
+  const inputs = useMemo(() => sliceInputsKey(sliceState(get())), [plate, activePlate, plates, objectSettings, calibration, easy, overrides, slotSetup, profile, historyEdit])
   const cfg = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
   const layerHeightMm = Number(cfg['layer_height']) || 0.2
   const firstLayerHeightMm = Number(cfg['initial_layer_print_height']) || layerHeightMm
@@ -49,26 +55,36 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const [layers, setLayers] = useState<ResumeLayers | null>(null)
   const [layersError, setLayersError] = useState<string | null>(null)
   const abort = useRef<AbortController | null>(null)
+  // The engine's layers for the inputs they were worked out for, kept while those stay the same.
+  const engineLayers = useRef<ResumeLayers | null>(null)
   const parts = useMemo(() => plate.filter((p) => p.printable !== false).flatMap((p) => p.parts.map((part) => ({ mesh: toGeom(part), transform: p.transform }))), [plate])
   const value = by === 'height' ? Number(height.replace(',', '.')) : Number(layer)
   const valid = by === 'height' ? Number.isFinite(value) && value > 0 : Number.isInteger(value) && value >= 1
 
-  // The job's layers, worked out again whenever the plate or its settings change. Closing the dialog or showing
-  // another plate drops a run still going, and its answer with it.
+  // The job's layers: the app's when it has them, else the engine's, worked out again only when the plate or its slice
+  // inputs change. The same layers keep the plan as it is, so a slice landing in the background changes nothing on
+  // screen. Closing the dialog or showing another plate drops a run still going, and its answer with it.
   useEffect(() => {
-    setLayers(null)
+    const holds = (l: ResumeLayers | null): l is ResumeLayers => l !== null && l.plate === activePlate && l.inputs === inputs
+    const keep = (next: ResumeLayers) => setLayers((prev) => (holds(prev) && sameTops(prev.tops, next.tops) ? prev : next))
     setLayersError(null)
+    const job = jobLayerTops(get())
+    if (job) return keep({ plate: activePlate, inputs, tops: job })
+    if (holds(engineLayers.current)) return keep(engineLayers.current)
+    setLayers(null)
     if (parts.length === 0) return
     const ac = new AbortController()
     resumeLayers(host, ac.signal)
       .then((l) => {
-        if (!ac.signal.aborted && l) setLayers(l)
+        if (ac.signal.aborted || !l) return
+        engineLayers.current = l
+        keep(l)
       })
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setLayersError(e instanceof Error ? e.message : String(e))
       })
     return () => ac.abort()
-  }, [host, parts, activePlate, plates, objectSettings, calibration, easy, overrides, storedTops, doneSlice])
+  }, [host, parts.length, activePlate, inputs, storedTops, doneSlice])
 
   const working = parts.length > 0 && !layers && !layersError
   const layersReady = layers !== null && layers.plate === activePlate ? layers : null
@@ -108,7 +124,8 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const go = () => {
     if (!plan) return
     // The layers the plan counted in are the job's, so the slice sends them back as sliced and prints the same ones.
-    set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops } })
+    // They hold for this plate as it is now: a plate switch or an edit leaves them out of the next slice.
+    set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops, plate: activePlate, inputs: sliceInputsKey(sliceState(get())) } })
     markStale()
     closeResume()
     showSliced()
@@ -215,6 +232,11 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
       </div>
     </div>
   )
+}
+
+/** Whether two lists of layer tops are the same layers, to the engine's float precision. */
+function sameTops(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((t, i) => Math.abs(t - b[i]!) < 1e-6)
 }
 
 function plateHeight(parts: readonly { positions: Float32Array }[]): number {
