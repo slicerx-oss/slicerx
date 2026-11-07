@@ -3,7 +3,7 @@
 // Cloud slicing through the app's slicer: models the app loads reach the upload, and a cloud slice carries everything
 // a local slice gets (options, per-object settings, volumes, brim ears), against the in-memory service stand-in.
 import { describe, expect, it } from 'vitest'
-import { type MeshHandle, type MeshPart, readPreview, type SliceOptions, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
+import { isNoLocalEngine, type MeshHandle, type MeshPart, NO_LOCAL_ENGINE, readPreview, type SliceOptions, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
 import { createCloudClient } from '../src/client'
 import { sha256Hex } from '../src/hash'
 import { cloudRoutedSlicer, createCloudSlicer, encodeParts, lineStarts } from '../src/slicer-host'
@@ -64,6 +64,18 @@ const hitOn = (id: string) => ({
 })
 
 describe('cloud slicing through the app slicer', () => {
+  it('turns down a local slice on the cloud slicer itself (a host with no engine of its own) before asking the service anything', async () => {
+    const { svc, cloud } = setup()
+    const body = await cloud.loadParts('Body', [part('Body')])
+    const before = svc.calls.length
+    const req: SliceRequest = { plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never, options: { emitGcode: false, emitPreview: false } }
+    const err = await cloud.slice(req, { local: true }).then(() => null, (e: unknown) => e)
+    expect(isNoLocalEngine(err)).toBe(true)
+    expect((err as Error).message).toBe(NO_LOCAL_ENGINE)
+    expect(svc.calls.slice(before)).toEqual([])
+    expect(svc.requests).toEqual([])
+  })
+
   it('slices on this device a slice asked for locally, with cloud slicing on: no upload, no job, no quota', async () => {
     const { svc, slicer, sliced } = setup()
     const body = await slicer.loadParts('Body', [part('Body')])
@@ -74,9 +86,12 @@ describe('cloud slicing through the app slicer', () => {
     expect(sliced).toEqual([req])
     expect(svc.calls.slice(before)).toEqual([])
     expect(svc.requests).toEqual([])
-    // Without the flag the same request is a cloud job.
+    // Without the flag, or with it false, the same request is a cloud job.
     await slicer.slice(req)
     expect(svc.requests).toHaveLength(1)
+    await slicer.slice(req, { local: false })
+    expect(svc.requests).toHaveLength(2)
+    expect(sliced).toEqual([req])
   })
 
   it("keeps the service's warnings as written: any code, and the fields beyond code, message and layer", async () => {

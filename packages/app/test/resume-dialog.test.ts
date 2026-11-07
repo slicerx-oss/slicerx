@@ -6,7 +6,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Host, SliceRequest, SliceResult } from '@slicerx/contracts'
+import { noLocalEngine, SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest, type SliceResult } from '@slicerx/contracts'
 import { EditionContext, NEUTRAL } from '../src/edition'
 import { setGeomProvider } from '../src/geom/client'
 import { HostContext } from '../src/host'
@@ -148,6 +148,22 @@ describe('the resume dialog with no current slice', () => {
     expect(planned.length).toBe(calls)
   })
 
+  it('works the layers out again after an edit while it is open, and drops the answer of a run the edit overtook', async () => {
+    const h = heldHost()
+    mount(h.host)
+    await vi.waitFor(() => expect(h.requests).toHaveLength(1))
+    // An edit while the first run is out: that run is dropped and a second one starts for the plate as it is now.
+    act(() => set({ overrides: { layer_height: 0.12 } }))
+    await vi.waitFor(() => expect(h.requests).toHaveLength(2))
+    expect(h.requests[1]!.req.config['layer_height']).toBe(0.12)
+    await act(async () => h.answer())
+    await act(async () => h.answer())
+    typeHeight('0.5')
+    await screen.findByText(/nozzle at/)
+    expect(h.requests).toHaveLength(2)
+    expect(screen.queryByText(WORKING)).toBeNull()
+  })
+
   it("shows an engine refusal in a slice's words, and plans nothing", async () => {
     const h = heldHost()
     mount(h.host)
@@ -159,5 +175,99 @@ describe('the resume dialog with no current slice', () => {
     expect(engineErrorText(raw)).not.toBe(raw)
     expect(screen.queryByText(WORKING)).toBeNull()
     expect(screen.getByRole('button', { name: 'Slice the rest' })).toHaveProperty('disabled', true)
+  })
+})
+
+/** A one-layer SXPV preview, enough for a slice to land. */
+function rawPreview(): ArrayBuffer {
+  const raw = new ArrayBuffer(SXPV_HEADER_BYTES + 2 * 4 + 8 + SXPV_SEGMENT_BYTES)
+  const dv = new DataView(raw)
+  dv.setUint32(0, SXPV_MAGIC, true)
+  dv.setUint16(4, SXPV_VERSION, true)
+  dv.setUint32(8, 1, true)
+  dv.setUint32(12, 1, true)
+  dv.setUint32(20, 4, true)
+  dv.setFloat32(24, 0.2, true)
+  let o = SXPV_HEADER_BYTES
+  dv.setUint32(o, 0, true)
+  dv.setUint32(o + 4, 1, true)
+  o += 8
+  dv.setFloat32(o, 0.2, true)
+  dv.setFloat32(o + 4, 1, true)
+  o += 8
+  dv.setFloat32(o + 8, 10, true)
+  dv.setFloat32(o + 16, 0.2, true)
+  dv.setUint16(o + 20, 400, true)
+  dv.setUint16(o + 22, 200, true)
+  return raw
+}
+
+/**
+ * A host that slices only in the cloud, as the phone's does: it turns down a slice asked for on this device, and its
+ * slices the person starts answer with `answer` (the layers, or an error such as a used-up quota).
+ */
+function cloudOnlyHost(answer: () => number[] | Error) {
+  const sent: { req: SliceRequest; local: boolean | undefined }[] = []
+  const host = {
+    kind: 'web',
+    capabilities: { threads: 1 },
+    slicer: {
+      loadModel: async () => box.handle,
+      release: () => undefined,
+      getPreview: async () => rawPreview(),
+      slice: async (req: SliceRequest, o?: { local?: boolean }) => {
+        sent.push({ req, local: o?.local })
+        if (o?.local) throw noLocalEngine()
+        const a = answer()
+        if (a instanceof Error) throw a
+        return { id: `c${sent.length}`, layerZ: Float32Array.from(a), warnings: [], stats: { timeS: 1, filamentMm: [1], filamentG: [1], cost: 0, toolChanges: 0 } } as unknown as SliceResult
+      },
+    },
+  } as unknown as Host
+  return { host, sent }
+}
+
+const SLICE_FIRST = /Slice the plate first\. This device slices in the cloud/
+
+describe('the resume dialog on a host with no engine of its own', () => {
+  it('asks for a slice instead of sending a cloud job, then plans in that slice', async () => {
+    const c = cloudOnlyHost(() => ENGINE)
+    mount(c.host)
+    await screen.findByText(SLICE_FIRST)
+    // One local ask, turned down; nothing went out as a cloud job.
+    expect(c.sent.map((x) => x.local)).toEqual([true])
+    expect(screen.queryByText(WORKING)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Slice the rest' })).toHaveProperty('disabled', true)
+    // The person slices: a normal slice of the plate, then the plan counts in its layers.
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice plate' })))
+    await vi.waitFor(() => expect(c.sent).toHaveLength(2))
+    expect(c.sent[1]!.local).toBeUndefined()
+    expect(c.sent[1]!.req.options).toMatchObject({ emitGcode: true })
+    await vi.waitFor(() => expect(screen.queryByText(SLICE_FIRST)).toBeNull())
+    typeHeight('0.5')
+    await screen.findByText(/nozzle at/)
+    expect(planned.at(-1)!.layerTopsMm).toEqual(Array.from(Float32Array.from(ENGINE)))
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice the rest' })))
+    expect(get().resume!.layerTopsMm).toEqual(planned.at(-1)!.layerTopsMm)
+    // The resume itself is a slice the person asked for: it goes as one, with the layers marked as the job's.
+    await vi.waitFor(() => expect(c.sent).toHaveLength(3))
+    await vi.waitFor(() => expect(get().slice).toMatchObject({ status: 'done', result: { id: 'c3' } }))
+    expect(c.sent[2]!.local).toBeUndefined()
+    expect(c.sent[2]!.req.options).toMatchObject({ layerTopsSliced: true, resumeFromLayer: 4 })
+  })
+
+  it('says why when that slice fails, such as a used-up cloud quota, and lets the person try again', async () => {
+    const quota = 'This account has used all 5 cloud slices for the last 24 hours. Slice on this device instead.'
+    const c = cloudOnlyHost(() => new Error(quota))
+    mount(c.host)
+    await screen.findByText(SLICE_FIRST)
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice plate' })))
+    expect((await screen.findByRole('alert')).textContent).toBe(quota)
+    expect(screen.getByRole('button', { name: 'Slice plate' })).toHaveProperty('disabled', false)
+    expect(screen.getByText(SLICE_FIRST)).toBeTruthy()
+    expect(screen.queryByText(WORKING)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Slice the rest' })).toHaveProperty('disabled', true)
+    expect(c.sent.map((x) => x.local)).toEqual([true, undefined])
   })
 })

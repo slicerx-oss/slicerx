@@ -3,6 +3,7 @@
 // Print the rest from this height. After a stop with
 // the part still on the bed: the measured height or the printer's layer number, the plan from
 // sx-geom (packages/app/src/geom/resume.ts), a silhouette of what is left, and the slice from there.
+import { isNoLocalEngine } from '@slicerx/contracts'
 import { Button, Dialog, Field, Icon, Input, SwitchRow } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { resolveConfig } from '../adapters/settings'
@@ -14,7 +15,7 @@ import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
 import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { jobLayerTops, resumeLayers, sliceInputsKey, sliceState, type ResumeLayers } from './resume-tops'
+import { jobLayerTops, resumeFor, resumeLayers, sliceInputsKey, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
@@ -22,6 +23,11 @@ type By = 'height' | 'layer'
 
 /** Shown while the engine works out the job's layers, when the app has none (a reopened project, a printer's resume). */
 const WORKING = 'Working out the layers...'
+/**
+ * A host that slices only in the cloud has no engine to work the layers out on this device, and a cloud job for them
+ * would spend one of the day's cloud slices unasked. The person slices the plate instead, as they slice anything.
+ */
+const SLICE_FIRST = 'Slice the plate first. This device slices in the cloud, and the plan counts in the layers of that slice.'
 
 function Body({ printerName, startLayer }: { printerName?: string | undefined; startLayer?: number | undefined }) {
   const host = useHost()
@@ -30,17 +36,10 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const overrides = useApp((s) => s.overrides)
   const active = useApp((s) => s.resume)
   const activePlate = useApp((s) => s.activePlate)
-  const plates = useApp((s) => s.plates)
-  const objectSettings = useApp((s) => s.objectSettings)
-  const calibration = useApp((s) => s.calibration)
-  const slotSetup = useApp((s) => s.slotSetup)
-  const profile = useApp((s) => s.profile)
-  const historyEdit = useApp((s) => s.historyEdit)
   const storedTops = useApp((s) => s.resume?.layerTopsMm)
   const doneSlice = useApp((s) => (s.slice.status === 'done' && !s.slice.stale ? s.slice.result : null))
-  // What the plate's layers come from: the job's layers hold while this stays the same.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the key reads these through the store
-  const inputs = useMemo(() => sliceInputsKey(sliceState(get())), [plate, activePlate, plates, objectSettings, calibration, easy, overrides, slotSetup, profile, historyEdit])
+  // What the plate's layers come from (every slice input that moves them): the job's layers hold while it stays the same.
+  const inputs = useApp(sliceInputsKey)
   const cfg = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
   const layerHeightMm = Number(cfg['layer_height']) || 0.2
   const firstLayerHeightMm = Number(cfg['initial_layer_print_height']) || layerHeightMm
@@ -54,6 +53,11 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   // The job's layers the plan counts in, for the plate they came from: the app's, or the engine's when the app has none.
   const [layers, setLayers] = useState<ResumeLayers | null>(null)
   const [layersError, setLayersError] = useState<string | null>(null)
+  // No engine on this device: the layers wait for a slice the person starts here (Slice plate).
+  const [needsSlice, setNeedsSlice] = useState(false)
+  const [asked, setAsked] = useState(false)
+  const sliceRunning = useApp((s) => s.slice.status === 'running')
+  const sliceError = useApp((s) => (s.slice.status === 'error' ? s.slice.message : null))
   const abort = useRef<AbortController | null>(null)
   // The engine's layers for the inputs they were worked out for, kept while those stay the same.
   const engineLayers = useRef<ResumeLayers | null>(null)
@@ -68,6 +72,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     const holds = (l: ResumeLayers | null): l is ResumeLayers => l !== null && l.plate === activePlate && l.inputs === inputs
     const keep = (next: ResumeLayers) => setLayers((prev) => (holds(prev) && sameTops(prev.tops, next.tops) ? prev : next))
     setLayersError(null)
+    setNeedsSlice(false)
     const job = jobLayerTops(get())
     if (job) return keep({ plate: activePlate, inputs, tops: job })
     if (holds(engineLayers.current)) return keep(engineLayers.current)
@@ -81,12 +86,20 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
         keep(l)
       })
       .catch((e: unknown) => {
-        if (!ac.signal.aborted) setLayersError(e instanceof Error ? e.message : String(e))
+        if (ac.signal.aborted) return
+        if (isNoLocalEngine(e)) setNeedsSlice(true)
+        else setLayersError(e instanceof Error ? e.message : String(e))
       })
     return () => ac.abort()
   }, [host, parts.length, activePlate, inputs, storedTops, doneSlice])
 
-  const working = parts.length > 0 && !layers && !layersError
+  const working = parts.length > 0 && !layers && !layersError && !needsSlice
+  // The slice asked for here, when it fails (a used-up cloud quota, say), says why where the plan would be.
+  const firstError = needsSlice && asked && !sliceRunning ? sliceError : null
+  const sliceFirst = () => {
+    setAsked(true)
+    void slicePlate(host)
+  }
   const layersReady = layers !== null && layers.plate === activePlate ? layers : null
 
   // The plan follows the input, a moment after typing stops, in the job's layers.
@@ -125,7 +138,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     if (!plan) return
     // The layers the plan counted in are the job's, so the slice sends them back as sliced and prints the same ones.
     // They hold for this plate as it is now: a plate switch or an edit leaves them out of the next slice.
-    set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops, plate: activePlate, inputs: sliceInputsKey(sliceState(get())) } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops }) })
     markStale()
     closeResume()
     showSliced()
@@ -181,9 +194,18 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
           <Input id="rs-layer" mono inputMode="numeric" placeholder="157" value={layer} onChange={(e) => setLayer(e.target.value)} autoFocus />
         </Field>
       )}
-      {layersError || error ? (
+      {needsSlice ? (
+        <div className="rs-first" role="status">
+          <Icon name="slice" size={15} />
+          <span>{sliceRunning ? 'Slicing the plate...' : SLICE_FIRST}</span>
+          <Button size="sm" icon="slice" busy={sliceRunning} disabled={sliceRunning} onClick={sliceFirst}>
+            Slice plate
+          </Button>
+        </div>
+      ) : null}
+      {layersError || firstError || error ? (
         <p className="app-err" role="alert">
-          {layersError ?? error}
+          {layersError ?? firstError ?? error}
         </p>
       ) : null}
       <div className="rs-plan" data-state={busy || working ? 'busy' : plan ? 'ready' : 'idle'} aria-live="polite">
@@ -198,7 +220,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
         <dl className="rs-facts">
           <div>
             <dt>Printed</dt>
-            <dd>{plan ? `${plan.printedHeightMm.toFixed(2)} mm, ${plan.resumeLayer} of ${plan.layerCount} layers` : working ? WORKING : busy ? 'Planning' : 'Enter a height or a layer'}</dd>
+            <dd>{plan ? `${plan.printedHeightMm.toFixed(2)} mm, ${plan.resumeLayer} of ${plan.layerCount} layers` : working ? WORKING : needsSlice ? 'After the slice' : busy ? 'Planning' : 'Enter a height or a layer'}</dd>
           </div>
           <div>
             <dt>Resumes at</dt>
