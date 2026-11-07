@@ -40,6 +40,10 @@
 .sx-split > .sx-btn.sx-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .sx-split > .sx-btn.sx-split-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding: 0; width: var(--h-md); }
 .sx-split > .sx-split-menu[data-variant="primary"] { box-shadow: inset 1px 0 0 color-mix(in srgb, var(--on-grad) 22%, transparent); }
+/* a split primary whose main half waits keeps its menu half pressable (Export beside a Print that waits for a slice) as
+   an enabled default button, no more prominent than that, so the two halves never read as one enabled button */
+.sx-split:has(> .sx-split-main:is(:disabled, [aria-disabled="true"])) > .sx-split-menu[data-variant="primary"] { background: var(--ink-3); border-color: var(--line); color: var(--fg); box-shadow: inset 1px 0 0 var(--line); }
+.sx-split:has(> .sx-split-main:is(:disabled, [aria-disabled="true"])) > .sx-split-menu[data-variant="primary"]:hover { background: var(--ink-4); }
 .sx-split > button:focus-visible { position: relative; z-index: 1; }
 .sx-split > .sx-split-menu[data-size="lg"] { width: 40px; }
 .sx-split > .sx-split-menu[data-size="sm"] { width: var(--h-sm); }
