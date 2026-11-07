@@ -94,6 +94,8 @@ pub(crate) fn object_room_around(cfg: &PrintConfig, brim: f64, hull: &[[f64; 2]]
 /// by-object check (`packages/settings/js/by-object.ts`), the MCP server and the engine's arrange count an object's
 /// support pad by. The slice decides support from its layers; the tests below write this rule's answers to the golden
 /// file and check it is never looser than the slice.
+// Only arrange (the import feature) and the tests read it.
+#[cfg(any(feature = "import", test))]
 pub(crate) mod support {
     use super::support_runs;
     use crate::config::PrintConfig;

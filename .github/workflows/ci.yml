@@ -295,6 +295,9 @@ jobs:
         run: cargo fmt --all --check
       - if: env.DUP != 'true'
         run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
+      # The browser build compiles sx-core without its default features, which the line above never lints.
+      - if: env.DUP != 'true'
+        run: cargo clippy -p sx-core --no-default-features -- -D warnings
       # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
       # rust-tests below; main runs them all here when its commit was not tested in the queue.
       - if: env.DUP != 'true' && env.FULL_TESTS != 'true'
