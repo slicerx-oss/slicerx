@@ -555,7 +555,7 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
         s.pairings.retain(|x| x.pairing_id != pairing_id);
         let owner = if kind == PeerKind::Phone { owner } else { None };
         s.pairings.push(RemotePairing {
-            pairing_id,
+            pairing_id: pairing_id.clone(),
             kind,
             peer,
             rights,
@@ -567,29 +567,40 @@ fn put_pairing(b: &Arc<Bridge>, p: &Value, owner: Option<String>) -> Result<Valu
         });
     }
     Remote::persist(b);
+    follow_push_approve(b, &pairing_id, rights.approve);
     b.remote.send(Cmd::Pairings);
     Ok(json!({ "saved": true }))
 }
 
 /// Takes away any right a saved pairing has that `rights` does not give it. Adds none.
-fn narrow_rights(b: &Bridge, pairing_id: &str, rights: Rights) {
+fn narrow_rights(b: &Arc<Bridge>, pairing_id: &str, rights: Rights) {
     let changed = {
         let mut s = lock(&b.remote.saved);
         s.pairings
             .iter_mut()
             .find(|x| x.pairing_id == pairing_id)
-            .is_some_and(|x| {
+            .and_then(|x| {
                 let next = Rights {
                     request: x.rights.request && rights.request,
                     approve: x.rights.approve && rights.approve,
                 };
                 let changed = next != x.rights;
                 x.rights = next;
-                changed
+                changed.then_some(next.approve)
             })
     };
-    if changed {
+    if let Some(approve) = changed {
         Remote::persist(b);
+        follow_push_approve(b, pairing_id, approve);
+    }
+}
+
+/// A partner phone's push token follows its pairing's approve right, so it gets approval alerts only
+/// while it may approve, and again once the right comes back.
+fn follow_push_approve(b: &Arc<Bridge>, pairing_id: &str, approve: bool) {
+    if crate::push::follow_approve(b, pairing_id, approve) {
+        let b = b.clone();
+        tokio::spawn(async move { crate::hub_rpc::save(&b).await });
     }
 }
 
