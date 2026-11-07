@@ -221,11 +221,20 @@ test.describe('Compare presets', () => {
     const watch = ['#cmp-kind', '#cmp-a', '#cmp-b', '[data-testid=preset-compare-all]', '[data-testid=preset-compare-undo]', '.cmp-head', '[data-testid=preset-compare-group]'] as const
     const rects = () => Promise.all(watch.map(async (s) => box(dialog.locator(s).first())))
     const raft = dialog.locator('[data-testid="preset-compare-row"][data-key="raft_layers"]')
-    // In view first, so the press itself scrolls nothing.
+    // In view first, so the press itself scrolls nothing, with the dialog body scrolled to its end: Raft layers is the only
+    // row of its group, so the copy takes a whole group out of the list, and a body that got shorter would pull its scroll
+    // position and everything in it.
     await raft.getByTestId('preset-compare-copy').scrollIntoViewIfNeeded()
+    await page.locator('dialog.settings-dialog .sx-dialog-body').evaluate((b) => (b.scrollTop = b.scrollHeight))
+    await expect(raft.getByTestId('preset-compare-copy')).toBeInViewport()
+    // The dialog itself never scrolls: only its body does. A dialog that could be scrolled (bringing a control into view
+    // once did it) and was put back by the next layout moved every control by that much after a copy.
+    const shell = page.locator('dialog.settings-dialog')
+    expect(await shell.evaluate((d) => ((d.scrollTop = 70), d.scrollTop))).toBe(0)
     const before = await rects()
     await raft.getByTestId('preset-compare-copy').click()
     await expect(status).toHaveText(`Copied Raft layers to ${DRAFT}`)
+    await expect(dialog.locator('[data-testid=preset-compare-group][data-group=adhesion]')).toHaveCount(0)
     expect(await dialog.getByRole('status').count()).toBe(1)
     await expect(status).not.toContainText('raft_layers')
     const after = await rects()
@@ -237,6 +246,55 @@ test.describe('Compare presets', () => {
     await dialog.getByTestId('preset-compare-all').click()
     await dialog.getByTestId('preset-compare-undo').click()
     await expect(status).toHaveText('7 settings differ')
+  })
+
+  test('the room a copy leaves in the list stays until the next action of another kind', async () => {
+    const list = dialog.locator('.cmp-list')
+    const minH = () => list.evaluate((el) => (el as HTMLElement).style.minHeight)
+    const copyRaft = async () => {
+      const arrow = dialog.locator('[data-testid="preset-compare-row"][data-key="raft_layers"]').getByTestId('preset-compare-copy')
+      await arrow.scrollIntoViewIfNeeded()
+      const h = await list.evaluate((el) => (el as HTMLElement).offsetHeight)
+      await arrow.click()
+      await expect(dialog.getByRole('status')).toHaveText(`Copied Raft layers to ${DRAFT}`)
+      // The list keeps its height; the room sits under the last group, so nothing reads as a gap between groups.
+      expect(await list.evaluate((el) => (el as HTMLElement).offsetHeight)).toBe(h)
+      const last = await dialog.getByTestId('preset-compare-group').last().boundingBox()
+      const l = (await list.boundingBox())!
+      expect(last!.y + last!.height).toBeLessThan(l.y + l.height)
+      expect(await minH()).toBe(`${h}px`)
+    }
+    const undoIt = async () => {
+      await dialog.getByTestId('preset-compare-undo').click()
+      await expect(dialog.getByRole('status')).toHaveText('7 settings differ')
+    }
+    // Undo keeps it (the row comes back into the room); Show all clears it.
+    await copyRaft()
+    await undoIt()
+    expect(await minH()).not.toBe('')
+    await dialog.getByTestId('preset-compare-all').click()
+    expect(await minH()).toBe('')
+    await dialog.getByTestId('preset-compare-all').click()
+    // Compare with clears it.
+    await copyRaft()
+    await undoIt()
+    await dialog.locator('#cmp-b').selectOption('stock')
+    await dialog.locator('#cmp-b').selectOption('preset:e2e-cmp-fine')
+    expect(await minH()).toBe('')
+    // Picking the preset clears it.
+    await copyRaft()
+    await undoIt()
+    await dialog.locator('#cmp-a').selectOption('e2e-cmp-fine')
+    await dialog.locator('#cmp-a').selectOption('e2e-cmp-draft')
+    await dialog.locator('#cmp-b').selectOption('preset:e2e-cmp-fine')
+    expect(await minH()).toBe('')
+    // So does the Kind.
+    await copyRaft()
+    await undoIt()
+    await dialog.locator('#cmp-kind').selectOption('filament')
+    await dialog.locator('#cmp-kind').selectOption('process')
+    await compareDraftFine(dialog)
+    expect(await minH()).toBe('')
   })
 
   test('a copy into a preset with a long name keeps the line inside the section: Undo, Show all and the header stay put', async ({ page }) => {

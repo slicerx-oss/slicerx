@@ -660,7 +660,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
    short window the dialog fits the window: the header and the footer stay put and only the body scrolls, with its
    scrollbar lane kept so a long section and a short one start at the same x */
 .settings-dialog { --set-h: min(720px, calc(100dvh - 2 * var(--gutter))); }
-.settings-dialog[open] { display: flex; flex-direction: column; height: var(--set-h); overflow: hidden; }
+/* clip, not hidden: screen-reader-only labels deep in the body are placed against the dialog, below its bottom edge, which
+   made a hidden-overflow dialog scrollable. Bringing a control into view (a find, a focus move, a test's scroll) could
+   then scroll the whole dialog, title included, and the next layout put it back, moving every control. A clipped box
+   never scrolls. */
+.settings-dialog[open] { display: flex; flex-direction: column; height: var(--set-h); overflow: clip; }
 /* One right edge for the dialog: the 24 px content gutter, and the header and footer keep the body's scrollbar lane
    (scrollbar-gutter on a clipped box), so the close button and the footer end where the rows' controls end. */
 .settings-dialog .sx-dialog-h, .settings-dialog .sx-dialog-foot { flex: none; overflow: hidden; scrollbar-gutter: stable; }
@@ -1054,7 +1058,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .cmp-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 /* Show all: the words and the switch are one control; the label's box fills the gap between them. */
 .cmp-all { display: inline-flex; align-items: center; gap: 8px; min-height: var(--h-sm); color: var(--muted); cursor: pointer; }
-.cmp-list { display: grid; gap: 12px; }
+/* Groups sit at the top: room a copy leaves (the list keeps its height until the next action) stays at the end. */
+.cmp-list { display: grid; gap: 12px; align-content: start; }
 /* At desktop width the list scrolls inside itself, under the picks and the bar: scrolled to it, the bar sticks at the top
    of the dialog body and the list fills the rest of the body (the dialog keeps one height; 210 px is the dialog's title
    and footer, the bar and the header), with a floor for a short window. On a phone the dialog body is the one scroll box (UI spec 9).
