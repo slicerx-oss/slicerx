@@ -420,8 +420,8 @@ pub(crate) struct Chain {
 }
 
 /// The points along one open chain of a sketch (a sweep path): its segments flattened as a closed loop's are, from the
-/// start to the last end, which is not joined back to the start. `points` is an open polyline here. A circle has no
-/// ends, so it is refused.
+/// start to the last end, which is not joined back to the start. `points` is an open polyline here. A circle and a
+/// closed spline have no ends, so they are refused.
 pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issue> {
     if lp.kind.as_deref() == Some("circle") {
         return Err(issue(
@@ -430,6 +430,15 @@ pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issu
             IssueKind::Open,
             format!("Loop {} is a circle, which has no ends.", l + 1),
             lp.center,
+        ));
+    }
+    if lp.kind.as_deref() == Some("spline") {
+        return Err(issue(
+            l,
+            None,
+            IssueKind::Open,
+            format!("Loop {} is a closed spline, which has no ends.", l + 1),
+            lp.points.first().copied(),
         ));
     }
     let r = flatten_as(l, lp, false)?;
@@ -453,6 +462,30 @@ pub(crate) fn open_chain(l: usize, lp: &Loop) -> std::result::Result<Chain, Issu
         }
         if let Some(&Prim::Arc { to, center, sweep }) = r.prims.last() {
             end_dir = along(to, center, sweep);
+        }
+        // a spline at either end leaves and arrives along its curve, not its first or last chord
+        let spans = |k: usize| {
+            let sg = &lp.segments[k];
+            let from = if k == 0 {
+                lp.start
+            } else {
+                r.prims.get(k - 1).map(|p| p.to())
+            };
+            let mut through: Vec<V2> = from.into_iter().collect();
+            through.extend(&sg.points);
+            through.extend(sg.to);
+            sketch_spline::spans(&through, false)
+        };
+        if lp.segments.first().is_some_and(|sg| sg.kind == "spline")
+            && let Some(b) = spans(0).first()
+        {
+            start_dir = sketch_spline::start_dir(b);
+        }
+        let last = lp.segments.len().saturating_sub(1);
+        if lp.segments.last().is_some_and(|sg| sg.kind == "spline")
+            && let Some(b) = spans(last).last()
+        {
+            end_dir = sketch_spline::end_dir(b);
         }
     }
     Ok(Chain {

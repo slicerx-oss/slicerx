@@ -136,6 +136,16 @@ pub fn flatten(b: &[V2; 4], n: usize) -> Vec<V2> {
         .collect()
 }
 
+/// the unit direction the span leaves its start in
+pub fn start_dir(b: &[V2; 4]) -> V2 {
+    let d = [sub(b[1], b[0]), sub(b[2], b[0]), sub(b[3], b[0])]
+        .into_iter()
+        .find(|d| len(*d) > 1e-12)
+        .unwrap_or([1.0, 0.0]);
+    let l = len(d);
+    [d[0] / l, d[1] / l]
+}
+
 /// the unit direction the span leaves its end in
 pub fn end_dir(b: &[V2; 4]) -> V2 {
     let d = [sub(b[3], b[2]), sub(b[3], b[1]), sub(b[3], b[0])]
