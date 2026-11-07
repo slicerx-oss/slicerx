@@ -13,6 +13,8 @@ paths = [
   '''^packages/pair/test/vectors\.json$''',
   '''^packages/app/test/(bug-reports|agent-install|pilot-connect)\.test\.ts$''',
   '''^packages/edition-config/test/config\.test\.ts$''',
+  # made-up keys in the eval transport test (a gitleaks:allow marker covers its line, but the merge queue re-creates the commit the ignore entry names)
+  '''^packages/pilot/test/node-transport\.test\.ts$''',
   '''^supabase/seed/store\.sql$''',
   # generated base64 geometry (scripts/vault-starters.ts --demo-meshes), no keys
   '''^packages/app/src/lib/demo-meshes\.ts$''',
