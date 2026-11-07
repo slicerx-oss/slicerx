@@ -3,6 +3,9 @@
 // A built part checked against its plan: first the comparison on fixture bodies (the size tolerance, each named
 // hole, the feature count, a closed body, the thinnest wall for the nozzle, an inch plan), then slicerx_design_check
 // on real designs, whose facts are read from the body the steps made.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { designNamed, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -290,6 +293,19 @@ describe('minWall', () => {
     let t = 0
     expect(minWall([m], { maxFacets: 1_000_000, maxMs: 1000 }, () => (t += 60_000))).toEqual({ mm: null, why: 'part too dense' })
     expect(designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4).pass).toBe(false)
+  })
+
+  it('a gap between two bodies of one part is not a wall, even across a facet turned the wrong way', () => {
+    // two 10 mm blocks 0.3 mm apart in one part; one facet of the left block's face at the gap points back in
+    const left = boxTris([0, 0, 0], [10, 10, 10])
+    left[10] = [left[10]![0], left[10]![2], left[10]![1]]
+    expect(minWall([meshOf([...left, ...boxTris([10.3, 0, 0], [20.3, 10, 10])])])).toEqual({ mm: 10 })
+  })
+
+  it('a sliver at the end of a knuckle bore does not read the bore as a 0.27 mm wall', () => {
+    // a lid with knuckles around a 3.8 mm bore, as a build left it: its thinnest wall is the knuckle around the bore
+    const lid = JSON.parse(gunzipSync(readFileSync(join(__dirname, 'fixtures', 'knuckle-lid.json.gz'))).toString('utf8')) as { positions: number[]; indices: number[] }
+    expect(minWall([lid]).mm).toBeCloseTo(1.102, 3)
   })
 })
 
