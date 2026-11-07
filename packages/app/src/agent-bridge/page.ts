@@ -10,6 +10,7 @@ import { resolveSlots } from '../filament/slots'
 import { spoolParts } from '../filament/pick'
 import { activeMeta, allPlates } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
+import { resumeState } from '../plate/resume-tops'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
 import { openTiming, viewTiming } from '../lib/open-timing'
@@ -48,7 +49,8 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
     case 'running':
       return { status: 'running', ...auto, startedAt: new Date(sl.startedAt).toISOString(), ...(sl.progress ? { progress: sl.progress } : {}) }
     case 'error':
-      return { status: 'error', ...auto, message: sl.message }
+      // `code` names a refusal an agent acts on: resume_void (the kept resume plan no longer matches the plate).
+      return { status: 'error', ...auto, message: sl.message, ...(sl.code ? { code: sl.code } : {}) }
     case 'done': {
       const r = sl.result
       const grams = r.stats.filamentG.reduce((a, b) => a + b, 0)
@@ -129,6 +131,8 @@ export function appState(s: AppState): Record<string, unknown> {
     // Each slot with its label ("A1"), whether the printer has a spool in it and how many parts on this plate print with it.
     filament: resolveSlots(s).map((r) => ({ slot: r.index, label: r.label, used: r.used, inUse: inUse.get(r.index)?.parts ?? 0, loaded: Boolean(s.printerSlots[r.index - 1]?.material || s.printerSlots[r.index - 1]?.color), type: r.type, brand: r.brand, color: r.color, source: r.source })),
     slicing: sliceSummary(s),
+    // The kept resume plan: its plate and whether it still holds (a plate whose plan does not hold does not slice).
+    resume: resumeState(s),
     // The print settings panel: the open tab, its sections and whether each is open, the pins, and the changes.
     settings: settingsView(s),
     setupOpen: s.setup !== null,

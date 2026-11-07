@@ -15,7 +15,7 @@ import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
 import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { activeResume, jobLayerTops, printEverythingAgain, resumeFor, resumeElsewhere, resumeLayers, resumeVoid, sliceInputsKey, type ResumeLayers } from './resume-tops'
+import { activeResume, jobLayerTops, printEverythingAgain, resumeFor, resumeElsewhere, resumeLayers, resumeVoid, setResume, sliceInputsKey, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
@@ -102,9 +102,8 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const firstError = needsSlice && asked && !sliceRunning ? sliceError : null
   const sliceFirst = () => {
     setAsked(true)
-    // Planning again: a plan kept for this plate that no longer matches it would refuse the slice the plan reads.
-    if (resumeVoid(get())) set({ resume: null })
-    void slicePlate(host)
+    // Planning again: the void plan stays kept (so Print and Export wait) while this slice reads the plate's layers.
+    void slicePlate(host, { planning: true })
   }
   const layersReady = layers !== null && layers.plate === activePlate ? layers : null
 
@@ -144,8 +143,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     if (!plan) return
     // The layers the plan counted in are the job's, so the slice sends them back as sliced and prints the same ones.
     // They hold for this plate as it is now: a plate switch or an edit leaves them out of the next slice.
-    set({ resume: resumeFor(get(), { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops }) })
-    markStale()
+    setResume(resumeFor(get(), { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), layerTopsMm: plan.tops }))
     closeResume()
     showSliced()
     void slicePlate(host)

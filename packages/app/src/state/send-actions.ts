@@ -210,10 +210,20 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     .catch(() => {})
   const plainSha = project ? await sha256Hex(data) : sha256
   const result = s.result
+  const stamp = s.stamp
   let picked = await choice
   for (;;) {
     if (!picked) {
       toast('Nothing was sent')
+      return
+    }
+    // The sheet stayed open while the plate could change: the slice must still be this plate's, for its resume plan
+    // as it is now (a plan kept, cleared or voided meanwhile, or another plate shown), when the file goes.
+    const now = get()
+    const late = now.slice.status !== 'done' || now.slice.result.id !== result.id || now.slice.stale ? STALE_SLICE : printBlock(now)
+    if (late) {
+      set({ printSheet: null })
+      toast(late, 'error')
       return
     }
     const outcome = await sendPicked(picked)
@@ -324,7 +334,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
         void rememberStartedUse(printer, file.name)
       } else if (picked.queue) {
         const { addToQueue, queueId } = await import('../queue/queue')
-        addToQueue({ id: queueId(), printerId: printer.id, printerName: printer.name, plateName, remote, sha256: file.sha256, layers: result.layerCount, timeS: result.stats.timeS, grams, options: opts, ...(picked.queue.startAfter ? { startAfter: picked.queue.startAfter } : {}), addedAt: new Date().toISOString() })
+        addToQueue({ ...(stamp ? { plate: stamp.plate, plan: stamp.plan } : {}), id: queueId(), printerId: printer.id, printerName: printer.name, plateName, remote, sha256: file.sha256, layers: result.layerCount, timeS: result.stats.timeS, grams, options: opts, ...(picked.queue.startAfter ? { startAfter: picked.queue.startAfter } : {}), addedAt: new Date().toISOString() })
         toast(`${plateName} is queued for ${printer.name}. It has not started.`, 'ok')
       } else {
         toast(`${file.name} is on ${printer.name}. It has not started.`, 'ok')
@@ -391,7 +401,13 @@ export async function startQueued(host: Host, item: QueueItem): Promise<void> {
 async function startQueuedNow(host: Host, item: QueueItem): Promise<void> {
   const conn = connected(host)
   if (!conn) return
-  const { removeFromQueue } = await import('../queue/queue')
+  const { queuedBlock, removeFromQueue } = await import('../queue/queue')
+  // A plate sliced under another resume plan (or none) than its plate keeps now does not start into the part on the bed.
+  const before = queuedBlock(get(), item)
+  if (before) {
+    toast(before, 'error')
+    return
+  }
   const status = await conn.printers.status(item.printerId).catch(() => null)
   if (status && status.state !== 'idle' && status.state !== 'finished') {
     toast(`${item.printerName} is busy. Start it when the printer is free.`, 'warn')
@@ -418,6 +434,12 @@ async function startQueuedNow(host: Host, item: QueueItem): Promise<void> {
   try {
     const token = await askApproval(conn.approvals, request, { confirm: 'The bed is clear and the right build plate is on it', go: 'Bed is clear, start print' })
     if (!token) return
+    // The approval card stayed open while the plan could change.
+    const late = queuedBlock(get(), item)
+    if (late) {
+      toast(late, 'error')
+      return
+    }
     await conn.printers.start({ ...item.remote, sha256: item.remote.sha256 ?? item.sha256 }, options, token)
     removeFromQueue(item.id)
     toast(`${item.plateName} started on ${item.printerName}`, 'ok')

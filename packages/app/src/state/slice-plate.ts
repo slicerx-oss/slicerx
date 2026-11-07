@@ -24,7 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
-import { activeResume, RESUME_VOID, resumeVoid, sliceState, storedResumeTops } from '../plate/resume-tops'
+import { activeResume, planFor, RESUME_VOID, resumeVoid, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -157,7 +157,7 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
 }
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
-export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Promise<void> {
+export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean } = {}): Promise<void> {
   // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
   if (!hostSlices()) return
   const timed = sliceStarted(opts.auto === true)
@@ -181,8 +181,10 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   }
   // A resume plan kept for this plate that no longer matches it: a slice of the whole plate would print into the part
   // still on the bed, so nothing slices until the plan is made again or cleared. Every slice comes through here (the
-  // Slice button, auto slice, Export all plates, mimir and the print queue).
-  if (resumeVoid(at)) {
+  // Slice button, auto slice, Export all plates, mimir and the print queue). `planning` is the resume dialog's own
+  // slice, run to read the layers a new plan counts in: it slices the whole plate while the void plan stays kept, so
+  // Print and Export still wait (printBlock) until a new plan is stored or the person chooses Print everything again.
+  if (resumeVoid(at) && !opts.planning) {
     set({ slice: { status: 'error', message: RESUME_VOID, code: 'resume_void' }, preview: null })
     return
   }
@@ -193,6 +195,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     set({ slice: { status: 'error', message: conflict }, preview: null })
     return
   }
+  // What this slice is for: the plate, the resume plan it uses and the plate's inputs. It lands only for the same plate
+  // and plan, and Print and Export check it against the plate as it is then.
+  const stamp = sliceStamp(at)
   const abort = beginSlice()
   // The last slice stays on screen, stale, until this one lands: the panels and the preview never empty in between.
   const before = shownSlice(get().slice)
@@ -226,15 +231,17 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     sliceStage(timed, 'preview', { previewBytes: raw.byteLength })
     const preview = readPreview(raw)
     sliceStage(timed, 'parsed')
-    // The plan stopped matching while this slice ran (an edit with no new slice yet): it is not sendable.
-    if (resumeVoid(get())) {
+    // Another plate shown, or this plate's resume plan kept, cleared, replaced or voided while it ran: what it made is
+    // not this plate's G-code. A plate switch already put the shown plate's own slice on screen.
+    const now = get()
+    if (now.activePlate !== stamp.plate || planFor(now, stamp.plate) !== stamp.plan) {
       host.slicer.release?.(result.id)
-      set({ slice: { status: 'error', message: RESUME_VOID, code: 'resume_void' }, preview: null })
+      if (now.activePlate === stamp.plate) set(resumeVoid(now) ? { slice: { status: 'error', message: RESUME_VOID, code: 'resume_void' }, preview: null } : { slice: { status: 'idle' }, preview: null })
       return
     }
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
-    set({ slice: { status: 'done', result, stale: false }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    set({ slice: { status: 'done', result, stale: false, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
     sliceStage(timed, 'shown')
     markOpenStage('sliced')
   } catch (e) {
