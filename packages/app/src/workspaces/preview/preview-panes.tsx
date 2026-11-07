@@ -13,6 +13,7 @@ import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
 import { RolledBack } from '../prepare/rolled-back'
 import { rolledBackNote } from '../../plate/timeline'
+import { activeResume } from '../../plate/resume-tops'
 import { slotLabel } from '../../filament/rail'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse } from '../../state/actions'
@@ -83,7 +84,8 @@ export function PreviewLeft() {
   const host = useHost()
   const slice = useApp((s) => s.slice)
   const preview = useApp((s) => s.preview)
-  const resume = useApp((s) => s.resume)
+  // Only a resume plan that still holds for this plate as it is (the slice prints the whole plate otherwise).
+  const resume = useApp(activeResume)
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const config = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])

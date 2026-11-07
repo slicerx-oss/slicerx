@@ -4,7 +4,7 @@
 // slices (actions.ts slicePlate), so the startup shell stays small.
 import { engineErrorText } from '../lib/engine-errors'
 import type { Host, LayerGcode, PlateObject, PrintConfig, SliceRequest, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import { readPreview } from '@slicerx/contracts'
+import { isNoLocalEngine, readPreview } from '@slicerx/contracts'
 import { scriptKeyValues } from '@slicerx/settings/script-keys'
 import { resolveConfig } from '../adapters/config'
 import { noteSliceTiming, plateTriangles } from './slice-estimate'
@@ -24,7 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
-import { sliceState, storedResumeTops } from '../plate/resume-tops'
+import { activeResume, sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -55,6 +55,12 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
   return toPrint.map((p, i) => objectToMachine({ id: p.id, name: p.name, mesh: handles[i]!.id, transform: p.transform, ...overridesOf(meta, p), ...(p.volumes?.length ? { volumes: requestVolumes(p) } : {}), ...(Object.keys(objectOverrides(s, p)).length ? { settings: objectOverrides(s, p) } : {}), ...(Object.keys(partOverridesOf(entries, p)).length ? { partSettings: partOverridesOf(entries, p) } : {}), ...(p.brimPoints?.length ? { brimPoints: p.brimPoints } : {}) }, origin))
 }
 
+/** Said when a resume plan was made for another plate, or before an edit to this one: the slice prints the whole plate. */
+export const STALE_RESUME: SliceWarning = {
+  code: 'manual_step',
+  message: 'The resume plan was made for another plate or before a change to this one, so this slice prints the whole plate. Plan it again with Print the rest from this height.',
+}
+
 /**
  * The request a plate slices with, and what the slice notes beside it: the objects, the resolved settings and the layer
  * plan (a resume's stored tops, the plate's own layer heights, sleipnir's plan or height ranges), with the resume's
@@ -65,7 +71,7 @@ export async function plateSliceRequest(
   s: AppState,
   signal: AbortSignal,
   onObjects?: () => void,
-): Promise<{ request: SliceRequest; toPrint: PlateEntry[]; config: PrintConfig; replaces: SliceWarning | null; skippedTools: SliceWarning[] }> {
+): Promise<{ request: SliceRequest; toPrint: PlateEntry[]; config: PrintConfig; replaces: SliceWarning | null; skippedTools: SliceWarning[]; staleResume: SliceWarning | null }> {
   // The plate's own print sequence (Bambu Studio and Orca set it per plate).
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const config = plateSliceConfig(s, meta)
@@ -86,6 +92,8 @@ export async function plateSliceRequest(
   // layers the job printed, so they go as exact and as sliced: the engine keeps them as given, not stretched again
   // for a Z shrinkage. A resume with no stored tops slices the plate's own, which stretch as in the job. Stored tops
   // hold only for the plate they were planned on, as it was then (storedResumeTops).
+  // A resume plan holds as one: its layers, the layer it starts from and the height it declares, or none of them.
+  const resume = activeResume(s)
   const stored = storedResumeTops(s)
   const layerTopsMm = stored ?? own ?? planned
   // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
@@ -111,9 +119,9 @@ export async function plateSliceRequest(
       objects,
     },
     config,
-    options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === stored) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === stored ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+    options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === stored) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === stored ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(resume ? resumeSliceOptions(resume.plan, resume.declareZ) : {}) },
   }
-  return { request, toPrint, config, replaces, skippedTools }
+  return { request, toPrint, config, replaces, skippedTools, staleResume: s.resume && !resume ? STALE_RESUME : null }
 }
 
 /**
@@ -122,7 +130,8 @@ export async function plateSliceRequest(
  * every layer plan (the plate's own layer heights, sleipnir, height ranges, objects' own heights, a Z shrinkage over
  * every filament the plate uses, painted ones included, and the printer's layer limits). A setting an opened project
  * brought that the engine refuses is dropped and the slice runs again, as slicePlate does; other refusals throw in the
- * words a slice shows. An abort stops it.
+ * words a slice shows. A host with no engine on this device turns it down (isNoLocalEngine), and that error reaches
+ * the caller as it is. An abort stops it.
  */
 export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<number[]> {
   await (await import('./profile-sync')).profileReady()
@@ -137,7 +146,8 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
     try {
       sliced = await host.slicer.slice({ ...request, options: { ...request.options, emitGcode: false, emitPreview: false } }, { signal, local: true })
     } catch (e) {
-      if (signal.aborted) throw e
+      // A host that slices only in the cloud turns the local slice down: the caller asks for a slice instead.
+      if (signal.aborted || isNoLocalEngine(e)) throw e
       const raw = e instanceof Error ? e.message : String(e)
       // Each round drops one key the file brought, so this ends.
       if (await dropRefusedProjectSetting(raw)) continue
@@ -188,7 +198,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
   let again = false
   try {
-    const { request, toPrint, config, replaces, skippedTools } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
+    const { request, toPrint, config, replaces, skippedTools, staleResume } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
     const sliceWith = async () =>
       host.slicer.slice(request, {
         signal: abort.signal,
@@ -208,7 +218,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const placed = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
-    const notes = [...(replaces ? [replaces] : []), ...skippedTools].filter((n) => !placed.warnings.some((w) => w.message === n.message))
+    const notes = [...(staleResume ? [staleResume] : []), ...(replaces ? [replaces] : []), ...skippedTools].filter((n) => !placed.warnings.some((w) => w.message === n.message))
     const result = notes.length ? { ...placed, warnings: [...placed.warnings, ...notes] } : placed
     const raw = await host.slicer.getPreview(result.id)
     if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')

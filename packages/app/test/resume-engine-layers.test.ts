@@ -18,12 +18,12 @@ import { setGeomProvider, toGeom } from '../src/geom/client'
 import { planResume } from '../src/geom/resume'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { setPlateLayerProfile } from '../src/plate/plates'
-import { jobLayerTops, resumeLayers, sliceInputsKey, sliceState } from '../src/plate/resume-tops'
+import { jobLayerTops, resumeFor, resumeLayers, sliceInputsKey } from '../src/plate/resume-tops'
 import { forgetLayerPlans } from '../src/plate/smart-layer'
 import { compose } from '../src/plate/transform'
 import { slicePlate } from '../src/state/actions'
 import { engineErrorText } from '../src/lib/engine-errors'
-import { plateLayerZ } from '../src/state/slice-plate'
+import { plateLayerZ, plateSliceRequest, STALE_RESUME } from '../src/state/slice-plate'
 import { get, set, type PlateEntry, type PaintData } from '../src/state/store'
 import { binBuilt, GEOM_BUILD, SX_BUILD } from './binaries'
 
@@ -109,7 +109,7 @@ async function resumeAt(engine: ReturnType<typeof engineHost>, part: MeshPart, m
   expect(layers.tops).toEqual(job)
   // The plan in those layers, stored as the dialog's Slice the rest stores it, and sliced.
   const plan = await planResume([{ mesh: toGeom(part), transform: get().plate[0]!.transform }], { measuredHeightMm: measured, layerHeightMm: 0.2, firstLayerHeightMm: 0.2, layerTopsMm: layers.tops, includeRemainingMesh: false })
-  set({ slice: { status: 'idle' }, resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, layerTopsMm: layers.tops } })
+  set({ slice: { status: 'idle' }, resume: resumeFor(get(), { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, layerTopsMm: layers.tops }) })
   await slicePlate(host)
   const sent = requests.at(-1)!.options!
   expect(sent).toMatchObject({ resumeFromLayer: plan.resumeLayer, layerTopsExact: true, layerTopsSliced: true })
@@ -238,7 +238,7 @@ describe('the job layers a resume waits for', () => {
   })
 
   it("uses the job's layers without the engine when the app has them", async () => {
-    set({ resume: { plan: { resumeLayer: 3, printedHeightMm: 0.6 }, layerTopsMm: [0.2, 0.4, 0.6, 0.8] } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 3, printedHeightMm: 0.6 }, layerTopsMm: [0.2, 0.4, 0.6, 0.8] }) })
     const h = heldHost()
     expect(await resumeLayers(h.host, new AbortController().signal)).toMatchObject({ plate: 'plate-1', tops: [0.2, 0.4, 0.6, 0.8] })
     expect(h.calls()).toBe(0)
@@ -310,45 +310,125 @@ describe('the job layers a resume waits for', () => {
   })
 })
 
-describe("a stored resume's layers", () => {
+describe('a stored resume plan', () => {
   const TOPS = [0.2, 0.4, 0.6, 0.8, 1]
-  /** Stores a plan with TOPS for the shown plate as it is, as Slice the rest does. */
-  const store = () => set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS, plate: get().activePlate, inputs: sliceInputsKey(sliceState(get())) } })
-  /** The options the next slice sends. */
-  async function sent(): Promise<Record<string, unknown>> {
+  /** Stores a plan with TOPS, declaring the height, for the shown plate as it is, as Slice the rest does. */
+  const store = () => set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, declareZ: true, layerTopsMm: TOPS }) })
+  /** The options the next slice sends, and the note it adds about the plan. */
+  async function sent(): Promise<{ opts: Record<string, unknown>; note: string | null }> {
     const e = { requests: [] as SliceRequest[] }
     const host = { kind: 'desktop', capabilities: { threads: 1 }, slicer: { loadModel: async () => ({ id: 'm' }), release: () => undefined, slice: async (r: SliceRequest) => (e.requests.push(r), Promise.reject(new Error('stop'))) } } as unknown as Host
+    const { staleResume } = await plateSliceRequest(host, get(), new AbortController().signal)
     await slicePlate(host)
-    return (e.requests[0]?.options ?? {}) as Record<string, unknown>
+    return { opts: (e.requests[0]?.options ?? {}) as Record<string, unknown>, note: staleResume?.message ?? null }
+  }
+  /** Nothing of the plan goes out: not its layers, not the layer it starts from, not the height it declares. */
+  const none = (opts: Record<string, unknown>) => {
+    for (const k of ['layerTopsMm', 'layerTopsSliced', 'resumeFromLayer', 'resumeZ']) expect(opts, k).not.toHaveProperty(k)
   }
 
   beforeEach(() => {
     onePlate(1, {})
   })
 
-  it('hold for the plate they were planned on, as it was', async () => {
+  it('holds as one for the plate it was planned on, as it was', async () => {
     store()
     expect(jobLayerTops(get())).toEqual(TOPS)
-    expect(await sent()).toMatchObject({ layerTopsMm: TOPS, layerTopsExact: true, layerTopsSliced: true, resumeFromLayer: 2 })
+    const { opts, note } = await sent()
+    expect(opts).toMatchObject({ layerTopsMm: TOPS, layerTopsExact: true, layerTopsSliced: true, resumeFromLayer: 2, resumeZ: { mode: 'declare', zMm: 0.4 } })
+    expect(note).toBeNull()
   })
 
-  it('are left out after a switch to another plate', async () => {
+  it('holds for none of it after a switch to another plate, and says to plan it again', async () => {
     store()
     set({ activePlate: 'plate-2' })
     expect(jobLayerTops(get())).toBeUndefined()
-    const opts = await sent()
-    expect(opts).not.toHaveProperty('layerTopsMm')
-    expect(opts).not.toHaveProperty('layerTopsSliced')
+    const { opts, note } = await sent()
+    none(opts)
+    expect(note).toBe(STALE_RESUME.message)
+    // Back on its plate, unchanged, it holds again.
+    set({ activePlate: 'plate-1' })
+    expect((await sent()).opts).toMatchObject({ resumeFromLayer: 2 })
   })
 
-  it('are left out after an edit to the plate or its settings', async () => {
+  it('holds for none of it after an edit to the plate or its settings', async () => {
     store()
     set({ overrides: { ...get().overrides, layer_height: 0.12 } })
     expect(jobLayerTops(get())).toBeUndefined()
-    expect(await sent()).not.toHaveProperty('layerTopsSliced')
+    let r = await sent()
+    none(r.opts)
+    expect(r.note).toBe(STALE_RESUME.message)
     store()
     set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [120, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
     expect(jobLayerTops(get())).toBeUndefined()
-    expect(await sent()).not.toHaveProperty('layerTopsSliced')
+    r = await sent()
+    none(r.opts)
+    expect(r.note).toBe(STALE_RESUME.message)
+  })
+
+  it('holds for none of it when it does not say which plate and inputs it was made for', async () => {
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS } })
+    expect(jobLayerTops(get())).toBeUndefined()
+    none((await sent()).opts)
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS, plate: 'plate-1' } })
+    none((await sent()).opts)
+  })
+})
+
+describe('the slice inputs key', () => {
+  beforeEach(() => {
+    onePlate(1, {})
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }] })
+  })
+  const entry = (patch: Record<string, unknown>) => set({ plate: get().plate.map((e) => ({ ...e, ...patch })) })
+  const meta = (patch: Record<string, unknown>) => set({ plates: get().plates.map((p) => (p.id === 'plate-1' ? { ...p, settings: { ...p.settings, ...patch } } : p)) })
+  const grow = (k: string, extra: Record<string, unknown>) => set({ [k]: { ...((get() as unknown as Record<string, object>)[k] ?? {}), ...extra } } as never)
+
+  // Each changes only that input; each must change the key, so a stored plan stops holding.
+  const changes: [string, () => void][] = [
+    ['mesh (handle hash)', () => entry({ handle: { ...get().plate[0]!.handle, hash: 'other' } })],
+    ['placement', () => entry({ transform: compose({ position: [101, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })],
+    ['paint', () => entry({ paint: { 0: { color: { 0: '8' } } } })],
+    ['volumes', () => entry({ volumes: [{ id: 'v', name: 'v', role: 'modifier' }] })],
+    ['part settings', () => entry({ partSettings: { Body: { wall_loops: 3 } } })],
+    ['slot overrides', () => entry({ slotOverrides: { Body: 2 } })],
+    ['printable', () => entry({ printable: false })],
+    ['height ranges from a project', () => entry({ layerRanges: [{ fromMm: 0, toMm: 1, settings: { layer_height: 0.1 } }] })],
+    ['object settings', () => set({ objectSettings: { a: { layer_height: 0.12 } } })],
+    ['the plate own layer heights', () => meta({ layerProfile: [[0, 0.1]] })],
+    ['plate settings', () => meta({ sequence: 'by-object' })],
+    ['calibration', () => set({ calibration: { 'plate-1': { ranges: [] } } } as never)],
+    ['printer', () => set({ printerId: 'another' } as never)],
+    ['profile nozzle', () => set({ profile: { ...(get().profile ?? {}), nozzle: 0.6 } } as never)],
+    ['Easy vary layer height', () => set({ easy: { ...get().easy, varyLayerHeight: !get().easy.varyLayerHeight } })],
+    ['overrides', () => set({ overrides: { ...get().overrides, layer_height: 0.12 } })],
+    ['filament slots', () => set({ slotSetup: { 2: { type: 'PETG', brand: '', color: '#000' } } } as never)],
+    ["the printer's slots", () => grow('printerSlots', { x: 1 })],
+    ['flush', () => grow('flush', { x: 1 })],
+    ['prime tower', () => grow('tower', { x: 1 })],
+    ['user presets', () => set({ userPresets: [...((get() as unknown as { userPresets: unknown[] }).userPresets ?? []), { id: 'u' }] } as never)],
+    ['printer nozzles', () => grow('printerNozzles', { x: [0.6] })],
+    ['printer extruders', () => grow('printerExtruders', { x: 2 })],
+    ['bed', () => set({ bed: { ...get().bed, widthMm: 300 } })],
+    ['a history step open for editing that hides a part', () => set({ historyEdit: { stepId: 's', objectId: 'gone', original: { ...get().plate[0]!, id: 'gone' } } } as never)],
+  ]
+  for (const [name, change] of changes) {
+    it(`changes with ${name}`, () => {
+      const before = sliceInputsKey(get())
+      change()
+      expect(sliceInputsKey(get())).not.toBe(before)
+    })
+  }
+
+  it('stays the same for state a slice does not read, a copy with the same content, and a trip to another plate and back', () => {
+    const before = sliceInputsKey(get())
+    set({ slice: { status: 'done', result: { id: 'r', layerZ: Float32Array.from([0.2]), warnings: [] }, stale: false }, layerMarks: { 'plate-1': [] } } as never)
+    expect(sliceInputsKey(get())).toBe(before)
+    set({ overrides: { ...get().overrides }, easy: { ...get().easy }, plate: get().plate.map((e) => ({ ...e })) })
+    expect(sliceInputsKey(get())).toBe(before)
+    set({ activePlate: 'plate-2' })
+    expect(sliceInputsKey(get())).not.toBe(before)
+    set({ activePlate: 'plate-1' })
+    expect(sliceInputsKey(get())).toBe(before)
   })
 })

@@ -11,6 +11,7 @@ import { toolStore } from '../plate/tools'
 import { plateSliceConfig } from '../state/slice-plate'
 import { get, toast } from '../state/store'
 import { LinkError } from './methods-error'
+import { storedResumeTops } from '../plate/resume-tops'
 
 function plateOf(ref: number | string | undefined) {
   const s = get()
@@ -22,8 +23,8 @@ function plateOf(ref: number | string | undefined) {
 
 /**
  * The plate's profile and what it slices with, read back, in the slice's order: a calibration plate keeps its bands and
- * a resume plan its layers (on the shown plate), whatever profile the plate has; then its own layer heights, sleipnir,
- * or the fixed layer height.
+ * a resume plan its layers (on the shown plate, while the plan holds for it as it is: storedResumeTops), whatever profile
+ * the plate has; then its own layer heights, sleipnir, or the fixed layer height.
  */
 function read(ref: number | string | undefined) {
   const s = get()
@@ -34,7 +35,7 @@ function read(ref: number | string | undefined) {
   const profile = meta.settings.layerProfile ?? null
   const sleipnir = String(config['smart_layer'] ?? 'off') !== 'off'
   const tops = profile && top > 0 ? profileTops(cleanProfile(profile, limits)?.points ?? [], top, limits) : null
-  const mode = s.calibration[id] ? 'calibration' : id === s.activePlate && s.resume?.layerTopsMm?.length ? 'resume' : profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
+  const mode = s.calibration[id] ? 'calibration' : id === s.activePlate && storedResumeTops(s) ? 'resume' : profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
   const kept = profile && (mode === 'calibration' || mode === 'resume') ? ', and its own layer heights wait until that ends' : ''
   const words = { calibration: `the calibration's layer heights${kept}`, resume: `the layers of the print it resumes${kept}`, own: `its own layer heights${tops ? `, ${tops.length} layers` : ''}`, sleipnir: 'sleipnir (adaptive layers)', fixed: `a fixed ${Number(config['layer_height'])} mm layer height` }[mode]
   return {

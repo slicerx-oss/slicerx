@@ -6,6 +6,7 @@
 // G-code file sized from the settings. The app uses the real client
 // when one is configured (see host/index.ts).
 import {
+  noLocalEngine,
   SLICE_STAGES,
   type GcodeExport,
   type GcodeTarget,
@@ -97,7 +98,9 @@ export function createCloudStub(opts: CloudStubOptions = {}): SlicerHost {
       const size = [0, 1, 2].map((a) => Math.max(0, (max[a] ?? 0) - (min[a] ?? 0))) as [number, number, number]
       return handle(name, triangles, size)
     },
-    async slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult> {
+    async slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal; local?: boolean }): Promise<SliceResult> {
+      // A stand-in for the cloud: like it, it turns down a slice asked for on this device.
+      if (o?.local) throw noLocalEngine()
       const started = performance.now()
       const signal = o?.signal
       await wait(queueMs, signal)

@@ -4,7 +4,7 @@
 // Bambu Studio or Orca holds its own build positions, and an STL can sit anywhere, so a
 // transform built from a size alone pushed models off the bed. Without one the cloud
 // slicer centers the real mesh and sets it down.
-import { EASY_GOALS, type PrinterInfo, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
+import { EASY_GOALS, isNoLocalEngine, type PrinterInfo, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
 import { estimateOf, phoneCloudError, runCloudSlice, type PhoneModel } from './slice-job'
 import { boxStl } from './stl'
 import { createCloudStub } from './stub'
@@ -235,5 +235,17 @@ describe('the printer the cloud checks the plate with', () => {
     const out = await runCloudSlice(cloud, { model: model('Lantern.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla', plate: 2 }, () => undefined)
     expect(out.collisions).toEqual([hit])
     expect(out.collisionPlate).toEqual(plate)
+  })
+})
+
+describe('a slice asked for on this device', () => {
+  it('is turned down: the phone has no engine of its own, so nothing is sliced or sent', async () => {
+    const stub = createCloudStub({ stageMs: 0, queueMs: 0 })
+    const box = await stub.loadModel(boxStl([20, 20, 10]), 'Box.stl')
+    const req = { plate: { objects: [{ id: 'a', name: 'Box', mesh: box.id, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1] }] }, config: {} } as unknown as SliceRequest
+    const err = await stub.slice(req, { local: true }).then(() => null, (e: unknown) => e)
+    expect(isNoLocalEngine(err)).toBe(true)
+    // The same request without it slices as before.
+    expect((await stub.slice(req)).layerZ.length).toBeGreaterThan(0)
   })
 })

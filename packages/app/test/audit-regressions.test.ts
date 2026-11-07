@@ -23,6 +23,7 @@ import { clearProject } from '../src/project/new'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
+import { resumeFor } from '../src/plate/resume-tops'
 
 const initial = get()
 const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -86,7 +87,7 @@ describe('slices that no longer match the plate', () => {
   })
 
   it('INT-003: a new project drops the previous resume plan', () => {
-    set({ resume: { plan: { resumeLayer: 10, printedHeightMm: 2 }, layerTopsMm: [0.2, 0.4] } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 10, printedHeightMm: 2 }, layerTopsMm: [0.2, 0.4] }) })
     clearProject()
     expect(get().resume).toBeNull()
   })
@@ -97,7 +98,7 @@ describe('slices that no longer match the plate', () => {
     set({ autoSlice: true, autoSliceBySize: false, slice: { status: 'done', result, stale: false } })
     const stop = startAutoSlice(host, 0)
     try {
-      set({ resume: { plan: { resumeLayer: 10, printedHeightMm: 2 } } })
+      set({ resume: resumeFor(get(), { plan: { resumeLayer: 10, printedHeightMm: 2 } }) })
       const s = get().slice
       expect(s.status === 'done' && s.stale).toBe(true)
       await vi.waitFor(() => expect(slice).toHaveBeenCalledTimes(1))
