@@ -95,6 +95,8 @@ describe("a plate's own layer heights", () => {
     expect(Number((tops![1]! - tops![0]!).toFixed(4))).toBe(0.08)
     expect(tops![tops!.length - 1]).toBeGreaterThanOrEqual(4)
     expect(plans).toBe(0)
+    // Marked exact, so a multi-color plate keeps them as drawn.
+    expect(requests[0]!.options?.layerTopsExact).toBe(true)
   })
 
   it('replace a fixed layer height too', async () => {
@@ -118,6 +120,7 @@ describe("a plate's own layer heights", () => {
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options?.layerTopsMm).toEqual([0.2, 0.4, 0.6, 0.8])
+    expect(requests[0]!.options).not.toHaveProperty('layerTopsExact')
   })
 
   it('are not used on a calibration plate, which keeps its own bands', async () => {
