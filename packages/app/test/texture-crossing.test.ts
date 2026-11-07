@@ -9,7 +9,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { Host, MeshPart } from '@slicerx/contracts'
 import { decodeTree, leavesOf } from '@slicerx/viewport'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
-import { history } from '../src/plate/history'
+import { history, inStep } from '../src/plate/history'
+import { commitStroke } from '../src/plate/paint'
 import { forgetTexture, paintOpenedFromTexture, textureRepaints, type TextureSource } from '../src/plate/texture-paint'
 import { checkCrossings, type CrossingRunner, type Quiet } from '../src/state/import-auto'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -31,22 +32,33 @@ const rebuilt = {
 const RED = '#e6141e'
 const GREEN = '#14c828'
 
-/** The same two boxes as an OBJ, box A in a red material and box B in a green one. */
+/** Box C, a part of its own: box A moved 50 mm along x. */
+const boxC = { positions: before.positions.slice(0, 24).map((v, k) => (k % 3 === 0 ? v + 50 : v)), indices: before.indices.slice(0, 36) }
+
+/** The same two boxes as an OBJ, box A in a red material and box B in a green one, and box C in green too. */
 function source(): TextureSource {
-  const p = before.positions
+  const p = [...before.positions, ...boxC.positions]
   const v = Array.from({ length: p.length / 3 }, (_, i) => `v ${p[i * 3]} ${p[i * 3 + 1]} ${p[i * 3 + 2]}`)
   const f = (from: number) => Array.from({ length: 12 }, (_, t) => `f ${before.indices.slice((from + t) * 3, (from + t) * 3 + 3).map((i) => i + 1).join(' ')}`)
-  const obj = ['mtllib boxes.mtl', ...v, 'usemtl red', ...f(0), 'usemtl green', ...f(12), ''].join('\n')
+  const c = Array.from({ length: 12 }, (_, t) => `f ${boxC.indices.slice(t * 3, t * 3 + 3).map((i) => i + 17).join(' ')}`)
+  const obj = ['mtllib boxes.mtl', ...v, 'usemtl red', ...f(0), 'usemtl green', ...f(12), ...c, ''].join('\n')
   const mtl = 'newmtl red\nKd 0.902 0.078 0.118\nnewmtl green\nKd 0.078 0.784 0.157\n'
   const enc = new TextEncoder()
   return { kind: 'obj', name: 'boxes.obj', obj: enc.encode(obj), files: { 'boxes.mtl': enc.encode(mtl) } }
 }
 
 const part = (): MeshPart => ({ name: 'boxes', slot: 1, positions: new Float32Array(before.positions), indices: new Uint32Array(before.indices) })
-const entry = (p: MeshPart): PlateEntry => ({ id: 'o', name: 'o', handle: { id: 'o#0', hash: 'o', name: 'o', triangles: 24, bboxMm: [30, 30, 30], openEdges: 0, parts: [{ name: 'boxes', slot: 1, triangles: 24 }] }, parts: [p], colors: ['#fff'], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as PlateEntry
-const host = { slicer: { loadParts: async (name: string) => ({ id: `${name}#1`, name, parts: [{ name: 'boxes', slot: 1, triangles: 36 }], triangles: 36, bboxMm: [30, 30, 30], hash: name, openEdges: 0 }), release: () => undefined } } as unknown as Host
+const partC = (): MeshPart => ({ name: 'c', slot: 1, positions: new Float32Array(boxC.positions), indices: new Uint32Array(boxC.indices) })
+const entry = (...parts: MeshPart[]): PlateEntry => ({ id: 'o', name: 'o', handle: { id: 'o#0', hash: 'o', name: 'o', triangles: 24, bboxMm: [30, 30, 30], openEdges: 0, parts: parts.map((p) => ({ name: p.name, slot: p.slot, triangles: p.indices.length / 3 })) }, parts, colors: ['#fff'], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as PlateEntry
+const host = { slicer: { loadParts: async (name: string, parts: MeshPart[]) => ({ id: `${name}#1`, name, parts: parts.map((p) => ({ name: p.name, slot: p.slot, triangles: p.indices.length / 3 })), triangles: 36, bboxMm: [30, 30, 30], hash: name, openEdges: 0 }), release: () => undefined } } as unknown as Host
 const quiet: Quiet = { wait: async () => undefined, onBusy: () => () => undefined }
-const cross: CrossingRunner = async () => ({ crossing: true, mesh: rebuilt })
+// only the crossing boxes cross; box C does not
+const cross: CrossingRunner = async (p) => (p.name === 'boxes' ? { crossing: true, mesh: rebuilt } : { crossing: false })
+// the open's undo step, as addAutoImport hands it to the crossing check
+const openStep = () => {
+  const token = {}
+  return (fn: () => void) => inStep(token, fn)
+}
 
 function plain(v: unknown): unknown {
   if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>)
@@ -59,17 +71,21 @@ function plain(v: unknown): unknown {
  * Every face of the object's mesh in the filament of its box: B's faces are the ones reaching past 20 mm, the rest are
  * A's (the rebuilt mesh keeps no face inside both). Answers the faces in the wrong filament.
  */
+function triangleOf(p: MeshPart, t: number): [V3, V3, V3] {
+  const corner = (k: number): V3 => {
+    const i = p.indices[t * 3 + k]! * 3
+    return [p.positions[i]!, p.positions[i + 1]!, p.positions[i + 2]!]
+  }
+  return [corner(0), corner(1), corner(2)]
+}
+
 function wrongFaces(e: PlateEntry): string[] {
   const p = e.parts[0]!
   const own = e.slotOverrides?.[p.name] ?? p.slot
   const texts = e.paint?.[0]?.color ?? {}
   const wrong: string[] = []
   for (let t = 0; t < p.indices.length / 3; t++) {
-    const corner = (k: number): V3 => {
-      const i = p.indices[t * 3 + k]! * 3
-      return [p.positions[i]!, p.positions[i + 1]!, p.positions[i + 2]!]
-    }
-    const tri = [corner(0), corner(1), corner(2)] as [V3, V3, V3]
+    const tri = triangleOf(p, t)
     const mid = [0, 1, 2].map((k) => (tri[0][k]! + tri[1][k]! + tri[2][k]!) / 3)
     const want = mid.some((c) => c > 20 + 1e-6) ? 2 : 1
     const text = texts[t]
@@ -100,14 +116,81 @@ describe.skipIf(!liveEngine)('paint from a texture and the crossing rebuild', ()
     expect(wrongFaces(get().plate[0]!)).toEqual([])
   })
 
-  it('paints the rebuilt mesh again when the rebuild lands after the texture paint', async () => {
-    set({ plate: [entry(part())] })
+  it('paints the rebuilt mesh again when the rebuild lands after the texture paint, in the rebuild\'s undo step', async () => {
+    const old = part()
+    set({ plate: [entry(old)] })
     await paintOpenedFromTexture(['o'], source())
-    expect(await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, undefined, quiet)).toEqual({ fixed: 1, left: 0 })
+    const painted = get().plate[0]!.paint
+    const steps = history().state().undo
+    expect(await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, openStep(), quiet)).toEqual({ fixed: 1, left: 0 })
     await textureRepaints()
     const o = get().plate[0]!
     expect(o.parts[0]!.indices.length).toBe(rebuilt.indices.length)
     expect(wrongFaces(o)).toEqual([])
+    // one Undo takes the rebuild and its repaint back together: the old mesh with the texture's paint on it
+    expect(history().state().undo).toBe(steps + 1)
+    history().undo()
+    expect(get().plate[0]!.parts[0]).toBe(old)
+    expect(get().plate[0]!.paint).toEqual(painted)
+  })
+
+  it('leaves paint brushed after the texture paint alone when the rebuild lands', async () => {
+    set({ plate: [entry(part())] })
+    await paintOpenedFromTexture(['o'], source())
+    commitStroke({ objectId: 'o', partIndex: 0, layer: 'color', edits: [{ triangle: 2, after: '4' }] })
+    const steps = history().state().undo
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, openStep(), quiet)
+    // the stroke is the person's: the paint stays as the rebuild left it (kept by number, or carried onto the new
+    // triangles), the stroke's own filament 1 with it, and nothing is painted again
+    const left = get().plate[0]!.paint
+    await textureRepaints()
+    const p = get().plate[0]!
+    expect(p.paint).toBe(left)
+    expect(Object.entries(p.paint![0]!.color!).some(([t, text]) => leavesOf(triangleOf(p.parts[0]!, Number(t)), decodeTree(text)!).some((l) => l.state === 1))).toBe(true)
+    expect(history().state().undo).toBe(steps + 1)
+  })
+
+  it('paints only the rebuilt part again: a stroke and the own filament on another part stay', async () => {
+    set({ plate: [entry(part(), partC())] })
+    await paintOpenedFromTexture(['o'], source())
+    // the person brushes box C and gives it filament 1 of its own
+    commitStroke({ objectId: 'o', partIndex: 1, layer: 'color', edits: [{ triangle: 0, after: '4' }] })
+    set((s) => ({ plate: s.plate.map((e) => ({ ...e, slotOverrides: { ...e.slotOverrides, c: 1 } })) }))
+    const c = get().plate[0]!.paint?.[1]
+    await checkCrossings(host, 'boxes.obj', [{ id: 'o', perShell: false }], cross, openStep(), quiet)
+    await textureRepaints()
+    const o = get().plate[0]!
+    expect(wrongFaces(o)).toEqual([])
+    expect(o.paint?.[1]).toBe(c)
+    expect(o.paint?.[1]?.color?.[0]).toBe('4')
+    expect(o.slotOverrides?.['c']).toBe(1)
+  })
+
+  it('does not paint again when a tool rebakes the parts on purpose and keeps or clears their paint', async () => {
+    set({ plate: [entry(part(), partC())] })
+    await paintOpenedFromTexture(['o'], source())
+    // as Raise text does on a turned object: every part rebaked in the turn, same triangle order, the paint of the part
+    // that gets the text (box C) cleared and the boxes' paint kept as it is
+    const turn = (p: MeshPart): MeshPart => {
+      const positions = new Float32Array(p.positions.length)
+      for (let k = 0; k < p.positions.length; k += 3) {
+        positions[k] = -p.positions[k + 1]!
+        positions[k + 1] = p.positions[k]!
+        positions[k + 2] = p.positions[k + 2]!
+      }
+      return { ...p, positions }
+    }
+    inStep({}, () =>
+      set((s) => ({
+        plate: s.plate.map((e) => ({ ...e, parts: e.parts.map(turn), paint: { 0: e.paint![0]! } })),
+      })),
+    )
+    const after = get().plate[0]!
+    const steps = history().state().undo
+    await textureRepaints()
+    expect(get().plate[0]).toBe(after)
+    expect(get().plate[0]!.paint?.[1]).toBeUndefined()
+    expect(history().state().undo).toBe(steps)
   })
 
   it('paints the rebuilt mesh when the rebuild lands while the engine paints', async () => {
