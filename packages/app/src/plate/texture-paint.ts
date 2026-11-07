@@ -75,6 +75,7 @@ function prune(): void {
   const ids = projectIds()
   for (const id of [...sources.keys()]) if (!ids.has(id)) sources.delete(id)
   for (const id of [...painted.keys()]) if (!sources.has(id)) painted.delete(id)
+  for (const id of [...pending.keys()]) if (!sources.has(id)) pending.delete(id)
   if (!sources.size) {
     stopWatching?.()
     stopWatching = null
@@ -92,6 +93,7 @@ export function rememberTexture(objectId: string, source: TextureSource): void {
   sources.set(objectId, source)
   stopWatching ??= appStore.subscribe((s, p) => {
     if (s.plate !== p.plate || s.plates !== p.plates) prune()
+    if (s.plate !== p.plate) resumeShown(s.plate)
   })
   stopRebuilt ??= onPartRebuilt(partRebuiltUnderPaint)
   prune()
@@ -158,6 +160,8 @@ async function repaint(id: string): Promise<void> {
     // Another rebuild of the object, or any change to its other meshes, while the engine paints: plan again. A change
     // to a rebuilt part itself (its rebuild undone, a stroke on it, the object gone) stops it.
     for (let tries = 0; tries < 4; tries++) {
+      // on a plate that is not shown: waits there and goes on when the plate is shown again
+      if (elsewhere(id)) return
       const p = pending.get(id)
       const src = sources.get(id)
       const filaments = filamentColors()
@@ -165,6 +169,7 @@ async function repaint(id: string): Promise<void> {
       if (!p || !src || !e || filaments.length < 2 || !stillAsRebuilt(id, p)) break
       const asked = [...p.parts.keys()].join()
       const plan = await planTexturePaint(e, src, 'nearest', filaments)
+      if (elsewhere(id)) return
       if ([...p.parts.keys()].join() !== asked) continue
       if (!plan.reply.textured || !stillAsRebuilt(id, p)) break
       if (!planCurrent(plan)) continue
@@ -180,6 +185,19 @@ async function repaint(id: string): Promise<void> {
     console.warn('paint from texture after a rebuild', e)
   }
   pending.delete(id)
+}
+
+/** Whether an object is in the project but on a plate that is not shown. */
+function elsewhere(id: string): boolean {
+  return !get().plate.some((x) => x.id === id) && projectIds().has(id)
+}
+
+/** Starts the repaints waiting for objects that were on another plate and are shown again. */
+function resumeShown(plate: readonly PlateEntry[]): void {
+  for (const id of pending.keys()) {
+    if (repainting.has(id) || !plate.some((x) => x.id === id)) continue
+    repainting.set(id, repaint(id).finally(() => repainting.delete(id)))
+  }
 }
 
 /** Waits for the repaints a mesh change started (for tests and callers that read the paint next). */
