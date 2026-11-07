@@ -128,6 +128,10 @@ enum Piece {
 /// a cubic as a line when straight, an arc when round, else a spline through samples of it
 #[allow(clippy::cast_precision_loss, reason = "sample counts are small")]
 fn cubic(p: [V2; 4], tol: f64) -> Piece {
+    // the curve stays inside its control polygon, so a short one is within tol of its chord
+    if dist(p[0], p[1]) + dist(p[1], p[2]) + dist(p[2], p[3]) <= tol {
+        return Piece::Line;
+    }
     let chord = sub2(p[3], p[0]);
     let len = chord[0].m_hypot(chord[1]);
     if len > MIN_MM {
@@ -629,5 +633,16 @@ mod tests {
             ..SvgSketchOptions::default()
         };
         assert!(sketch_svg(&svg, &bad).is_err());
+    }
+
+    #[test]
+    fn a_curve_that_never_leaves_its_start_is_dropped() {
+        let r = sketch_svg(
+            &wrap(r#"<path d="M10 10 H50 c0,0 0,0 0,0 V50 s0 0 0 0 H10 Z"/>"#),
+            &SvgSketchOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(kinds(&r.loops[0]), ["line", "line", "line", "line"]);
+        assert!(r.check.ok, "{:?}", r.check.issues);
     }
 }
