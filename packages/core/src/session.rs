@@ -10109,10 +10109,21 @@ impl SliceSession {
                                 cfg.top_surface_width(),
                                 cfg.support_width(),
                             ]),
+                            // The infill prints at `initial_layer_infill_line_width` when it is set.
                             (true, false) => {
-                                Some([cfg.outer_wall_width(), cfg.inner_wall_width(), lw, lw, lw, lw])
+                                let infill = cfg.initial_layer_infill_width().unwrap_or(lw);
+                                Some([
+                                    cfg.outer_wall_width(),
+                                    cfg.inner_wall_width(),
+                                    infill,
+                                    infill,
+                                    lw,
+                                    lw,
+                                ])
                             }
-                            (true, true) => None,
+                            (true, true) => cfg
+                                .initial_layer_infill_width()
+                                .map(|infill| [lw, lw, infill, infill, lw, lw]),
                         }
                     })
                     .flatten()

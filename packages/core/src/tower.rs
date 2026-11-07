@@ -397,6 +397,26 @@ pub(crate) fn type1(cfg: &PrintConfig) -> bool {
         || cfg.raw.get("wipe_tower_type").and_then(|v| v.as_str()) == Some("type1")
 }
 
+/// The bead width of the tower's wall, mm: 1.25 times the nozzle.
+fn wall_width(cfg: &PrintConfig) -> f64 {
+    cfg.nozzle_diameter * 1.25
+}
+
+/// The bead width of a type 1 tower's purge rows, mm: `prime_tower_line_width` when it is above 0 (mm, or a percent
+/// of the nozzle diameter), else the wall bead ([`wall_width`]). The rows of a type 2 tower keep their own widths
+/// (`wipe_tower_extra_flow`), so there it is the wall bead.
+pub(crate) fn row_width(cfg: &PrintConfig) -> f64 {
+    let wall = wall_width(cfg);
+    if !type1(cfg) {
+        return wall;
+    }
+    cfg.raw
+        .get("prime_tower_line_width")
+        .and_then(|v| crate::config::float_or_percent(v, cfg.nozzle_diameter))
+        .filter(|w| w.is_finite() && *w > 0.0)
+        .unwrap_or(wall)
+}
+
 /// True when a type 1 tower is sized square instead of `prime_tower_width` wide: Orca's rib wall
 /// (`wipe_tower_wall_type` rib, its default), which we build as a plain outline round a square of
 /// purge rows (`PartPlate::estimate_wipe_tower_size`: the rib tower is as wide as it is deep).
@@ -873,9 +893,14 @@ impl Tower {
         [self.x, self.y]
     }
 
-    /// A purge row's volume per mm at height `h`, mm2: the wall bead's times [`Self::row_flow`].
+    /// A purge row's volume per mm at height `h`, mm2: a type 1 tower's row bead ([`row_width`]), else the wall
+    /// bead's times [`Self::row_flow`].
     fn row_area(&self, h: f64) -> f64 {
-        self.row_flow * bead(self.wall_w, h)
+        if self.type1 {
+            bead(self.wipe_w, h)
+        } else {
+            self.row_flow * bead(self.wall_w, h)
+        }
     }
 
     /// The same tower with another width and rotation (its depth stays the rows it was made for).
@@ -917,18 +942,18 @@ impl Tower {
         if !on || (tools < 2 && !crate::timelapse::smooth_tower(cfg)) {
             return None;
         }
-        let nozzle = cfg.nozzle_diameter;
-        let wall_w = nozzle * 1.25;
+        let wall_w = wall_width(cfg);
         // WipeTower2: the purge rows are `wipe_tower_extra_flow` wider and that much further apart,
         // times `wipe_tower_extra_spacing`.
         let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
         let extra_spacing = (cfg.raw_number("wipe_tower_extra_spacing", 100.0) / 100.0).clamp(0.5, 5.0);
-        // Type 1 (Bambu Lab) rows are wall-width beads `prime_tower_infill_gap` apart (`WipeTower`
-        // `m_extra_spacing`); type 2 rows are wider beads (`WipeTower2`).
+        // Type 1 (Bambu Lab) rows are `prime_tower_line_width` beads (the wall's width when it is not set)
+        // `prime_tower_infill_gap` apart (`WipeTower` `m_extra_spacing`); type 2 rows are wider beads (`WipeTower2`).
         let (wipe_w, spacing) = if type1(cfg) {
+            let row_w = row_width(cfg);
             (
-                wall_w,
-                wall_w
+                row_w,
+                row_w
                     * cfg
                         .raw_number("prime_tower_infill_gap", 150.0)
                         .clamp(100.0, 300.0)
@@ -1597,11 +1622,11 @@ impl Tower {
                 .ceil()
                 .max(if lead_row { 0.0 } else { 1.0 })
         };
-        let dense = self.type1 && (first || contact) && !lead_row && self.spacing > self.wall_w + 1e-9;
+        let dense = self.type1 && (first || contact) && !lead_row && self.spacing > self.wipe_w + 1e-9;
         let (printed, step) = if dense {
             (
-                (n * self.spacing / self.wall_w + 1e-9).floor().max(1.0),
-                self.wall_w,
+                (n * self.spacing / self.wipe_w + 1e-9).floor().max(1.0),
+                self.wipe_w,
             )
         } else {
             (n, self.spacing)
@@ -2330,8 +2355,9 @@ fn plan_rows_with(
     top: usize,
     saved: Option<&Tower>,
 ) -> f64 {
-    let nozzle = cfg.nozzle_diameter;
-    let wall_w = nozzle * 1.25;
+    let wall_w = wall_width(cfg);
+    // A purge row's bead: `prime_tower_line_width` on a type 1 tower, else the wall's.
+    let row_w = row_width(cfg);
     let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
     let row_flow = if type1(cfg) { 1.0 } else { extra_flow };
     let row_len = width.max(5.0) - 4.0 * wall_w;
@@ -2360,16 +2386,16 @@ fn plan_rows_with(
                     };
                 }
                 first_change = false;
-                let mut r = (v / (row_len * row_flow * bead(wall_w, h))).ceil().max(1.0);
+                let mut r = (v / (row_len * row_flow * bead(row_w, h))).ceil().max(1.0);
                 if on_box {
                     // Rows on the box turn out to the wall's inner edge in a cycle, as the print lays them.
                     let (len, out) = p.ram_line.map_or((0.0, false), |_| ram_lead(cfg, p, width, h));
-                    let area = row_flow * bead(wall_w, h);
+                    let area = row_flow * bead(row_w, h);
                     r = semm_count(v - len * area, row_len, area, wall_w, len > 0.0, out);
                 } else if p.ram_line.is_some() {
                     // The wipe first finishes the ramming's last row, then lays its own.
-                    let lead = ram_lead(cfg, p, width, h).0 * row_flow * bead(wall_w, h);
-                    r = ((v - lead).max(0.0) / (row_len * row_flow * bead(wall_w, h)))
+                    let lead = ram_lead(cfg, p, width, h).0 * row_flow * bead(row_w, h);
+                    r = ((v - lead).max(0.0) / (row_len * row_flow * bead(row_w, h)))
                         .ceil()
                         .max(if lead > 0.0 { 0.0 } else { 1.0 });
                 }
@@ -2574,7 +2600,7 @@ pub(crate) fn wall_filament(cfg: &PrintConfig, orders: &[Vec<u8>], top: usize) -
 
 /// Orca's rib tower size, width and depth in mm (`WipeTower::plan_tower_new` with `wipe_tower_wall_type` rib,
 /// then `update_all_layer_depth`), or None for any other tower. Each tool change purges `prime_volume` in rows
-/// of wall-width beads across the tower; the deepest layer's rows at `prime_tower_width`, plus a bead, give an
+/// of row beads ([`row_width`]) across the tower; the deepest layer's rows at `prime_tower_width`, plus a bead, give an
 /// area that a square `prime_tower_infill_gap` times as large replaces, rounded up to whole beads. The depth is
 /// then the deepest layer's rows at that width, `prime_tower_infill_gap` apart, plus a bead. `orders`,
 /// `thickness` and `top` as [`plan_rows`].
@@ -2588,7 +2614,9 @@ pub(crate) fn rib_size(
     if !square(cfg) {
         return None;
     }
-    let pw = cfg.nozzle_diameter * 1.25;
+    let pw = wall_width(cfg);
+    // The purge rows' bead (`prime_tower_line_width`, else the wall's).
+    let rw = row_width(cfg);
     let gap = (cfg.raw_number("prime_tower_infill_gap", 150.0) / 100.0).max(0.01);
     let width = cfg.raw_number("prime_tower_width", 35.0).max(5.0);
     // The depth the layer that purges most takes at tower width `w` (Orca `plan_toolchange`, the blocks of
@@ -2607,10 +2635,10 @@ pub(crate) fn rib_size(
             for &t in order {
                 if cur != 0 && t != cur {
                     let p = change_purge(cfg, tools, cur, t);
-                    let length = p.wipe / bead(pw, h);
-                    let mut d = (length / line).ceil() * pw;
+                    let length = p.wipe / bead(rw, h);
+                    let mut d = (length / line).ceil() * rw;
                     if p.ram > 0.0 {
-                        d += ram_rows(cfg, p, w, h) * pw;
+                        d += ram_rows(cfg, p, w, h) * rw;
                     }
                     add_to(&mut by_block, block_of(cfg, t), d);
                 }
@@ -2663,7 +2691,7 @@ fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
     let row_len = (width - 2.0 * w).max(1.0);
     let lines = (p.ram / (row_len * bead(w, h))).ceil().max(1.0);
     let spacing = if type1(cfg) {
-        wall_w
+        row_width(cfg)
             * cfg
                 .raw_number("prime_tower_infill_gap", 150.0)
                 .clamp(100.0, 300.0)

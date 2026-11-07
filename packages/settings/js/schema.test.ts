@@ -37,6 +37,8 @@ describe('schema', () => {
     'brim_loop_rounding',
     'skirt_brim_edge',
     'initial_layer_flow_ratio',
+    'prime_tower_line_width',
+    'initial_layer_infill_line_width',
     'initial_layer_outer_wall_line_width',
     'initial_layer_inner_wall_line_width',
     'initial_layer_sparse_infill_line_width',
