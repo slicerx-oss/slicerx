@@ -119,6 +119,7 @@
 **Layer time below which the fan speeds up**
 
 - Type: list of numbers, one per extruder
+- Unit: s
 - Default: [60]
 - Recommended range: 0 to 1000
 - Changing it redoes: G-code only
@@ -309,6 +310,7 @@ How much a wall must overhang before the overhang fan speed applies. Bridges and
 **Minimum layer time**
 
 - Type: list of numbers, one per extruder
+- Unit: s
 - Default: [5]
 - Recommended range: 0 to 60
 - Orca limits: 0 to 1000
