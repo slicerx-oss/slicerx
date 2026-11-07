@@ -1,0 +1,3 @@
+### Fixed
+
+- Range messages from `slicerx_validate_config`, `slicerx_project_set_overrides` and the other tools that take overrides no longer print `inf` or `-inf` for a setting with only one limit. An `out_of_range` error now reads `Layer height is 0; it must be at least 0.01 mm.`, or `... it must be at most 300 mm.` for a setting with only an upper limit, where it read `Layer height is 0, outside 0.01 to inf mm.` An `outside_recommended_range` warning with one side open reads `below the usual minimum of ...` or `above the usual maximum of ...`, and an `outside_guardrails` warning reads `below the least Pilot allows (...)` or `above the most Pilot allows (...)`. Settings with both limits keep the `outside LO to HI` wording.

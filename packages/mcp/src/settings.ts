@@ -170,6 +170,13 @@ function rawTypeIssue(def: SettingDef, v: unknown): SettingIssue | undefined {
  * knowledge/settings.yaml, keys that have no effect, fan order, and the nozzle
  * temperature against the filament's knowledge entry. Fixes are suggestions only.
  */
+// The range a guardrail allows, leaving out a side with no limit.
+function guardrailMessage(key: string, n: unknown, lo: number | undefined, hi: number | undefined, unit: string): string {
+  if (lo !== undefined && hi !== undefined) return `${key} is ${String(n)}, outside the range Pilot allows (${lo} to ${hi}${unit}).`
+  if (lo !== undefined) return `${key} is ${String(n)}, below the least Pilot allows (${lo}${unit}).`
+  return `${key} is ${String(n)}, above the most Pilot allows (${hi}${unit}).`
+}
+
 export function validateConfig(store: DataStore, config: Record<string, unknown>, opts: { nozzleDiameter?: number; filament?: string } = {}): SettingIssue[] {
   const issues: SettingIssue[] = []
   const typed: Record<string, SettingValue> = {}
@@ -199,7 +206,7 @@ export function validateConfig(store: DataStore, config: Record<string, unknown>
     const b = store.catalogEntry(key)?.bounds
     if (b && !rangeKeys.has(key)) {
       const bad = (Array.isArray(value) ? value : [value]).find((n) => typeof n === 'number' && ((b.min !== undefined && n < b.min) || (b.max !== undefined && n > b.max)))
-      if (bad !== undefined) issues.push({ code: 'outside_guardrails', severity: 'warning', keys: [key], message: `${key} is ${String(bad)}, outside the range Pilot allows (${b.min ?? '-inf'} to ${b.max ?? 'inf'}${def?.unit ? ` ${def.unit}` : ''}).` })
+      if (bad !== undefined) issues.push({ code: 'outside_guardrails', severity: 'warning', keys: [key], message: guardrailMessage(key, bad, b.min, b.max, def?.unit ? ` ${def.unit}` : '') })
     }
     for (const c of def?.enabledWhen ?? []) {
       if (conditionHolds(checked, store, c) === false) {

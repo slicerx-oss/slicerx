@@ -85,7 +85,7 @@ export function checkValues(config: Readonly<Record<string, SettingValue>>): Set
             code: 'out_of_range',
             severity: 'error',
             keys: [key],
-            message: `${def.label} is ${bad}, outside ${hardLo ?? '-inf'} to ${hardHi ?? 'inf'}${unit}.`,
+            message: rangeMessage(def.label, bad, hardLo, hardHi, unit),
             ...(typeof v === 'number' ? { fix: { key, value: fixed } } : {}),
           })
           continue
@@ -96,13 +96,27 @@ export function checkValues(config: Readonly<Record<string, SettingValue>>): Set
             code: 'outside_recommended_range',
             severity: 'warning',
             keys: [key],
-            message: `${def.label} is ${soft}, outside the usual ${def.min ?? '-inf'} to ${def.max ?? 'inf'}${unit}.`,
+            message: usualRangeMessage(def.label, soft, def.min, def.max, unit),
           })
         }
       }
     }
   }
   return issues
+}
+
+// Range messages for the hard limits and the usual range. A side with no limit is left out of the
+// sentence, so nobody reads "inf".
+export function rangeMessage(label: string, n: number, lo: number | undefined, hi: number | undefined, unit: string): string {
+  if (lo !== undefined && hi !== undefined) return `${label} is ${n}, outside ${lo} to ${hi}${unit}.`
+  if (lo !== undefined) return `${label} is ${n}; it must be at least ${lo}${unit}.`
+  return `${label} is ${n}; it must be at most ${hi}${unit}.`
+}
+
+export function usualRangeMessage(label: string, n: number, lo: number | undefined, hi: number | undefined, unit: string): string {
+  if (lo !== undefined && hi !== undefined) return `${label} is ${n}, outside the usual ${lo} to ${hi}${unit}.`
+  if (lo !== undefined) return `${label} is ${n}, below the usual minimum of ${lo}${unit}.`
+  return `${label} is ${n}, above the usual maximum of ${hi}${unit}.`
 }
 
 const SPEED_WIDTH: [string, string][] = [

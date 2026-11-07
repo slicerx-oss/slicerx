@@ -22,15 +22,15 @@ import { Field } from '../src/workspaces/prepare/expert-settings'
 const NO_ZERO: { key: string; list: boolean; printer: boolean; message: string }[] = [
   { key: 'bridge_flow', list: false, printer: false, message: 'Bridge flow ratio is 0, outside 0.01 to 2.' },
   { key: 'internal_bridge_flow', list: false, printer: false, message: 'Internal bridge flow is 0, outside 0.01 to 2.' },
-  { key: 'layer_height', list: false, printer: false, message: 'Layer height is 0, outside 0.01 to inf mm.' },
-  { key: 'initial_layer_print_height', list: false, printer: false, message: 'First layer height is 0, outside 0.01 to inf mm.' },
-  { key: 'filament_diameter', list: true, printer: false, message: 'Filament diameter is 0, outside 0.01 to inf mm.' },
+  { key: 'layer_height', list: false, printer: false, message: 'Layer height is 0; it must be at least 0.01 mm.' },
+  { key: 'initial_layer_print_height', list: false, printer: false, message: 'First layer height is 0; it must be at least 0.01 mm.' },
+  { key: 'filament_diameter', list: true, printer: false, message: 'Filament diameter is 0; it must be at least 0.01 mm.' },
   { key: 'filament_flow_ratio', list: true, printer: false, message: 'Flow ratio is 0, outside 0.01 to 2.' },
   { key: 'nozzle_diameter', list: true, printer: true, message: 'Nozzle diameter is 0, outside 0.01 to 100 mm.' },
-  { key: 'nozzle_height', list: false, printer: true, message: 'Nozzle height is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_height_to_lid', list: false, printer: true, message: 'Extruder clearance height to lid is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_height_to_rod', list: false, printer: true, message: 'Extruder clearance height to rod is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_radius', list: false, printer: true, message: 'Extruder clearance radius is 0, outside 0.01 to inf mm.' },
+  { key: 'nozzle_height', list: false, printer: true, message: 'Nozzle height is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_height_to_lid', list: false, printer: true, message: 'Extruder clearance height to lid is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_height_to_rod', list: false, printer: true, message: 'Extruder clearance height to rod is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_radius', list: false, printer: true, message: 'Extruder clearance radius is 0; it must be at least 0.01 mm.' },
 ]
 
 let root: Root | null = null
