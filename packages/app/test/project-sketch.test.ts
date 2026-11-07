@@ -6,7 +6,7 @@
 // the same undo step; a source that is gone keeps its curves and says why; projections save and open with the
 // project; and an agent projects, switches and removes through the MCP tool on the app's host, reading back each time.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { BODY_GONE, featureParams, followProjections, historyOf, nextProjectionId, projectRequest, withHistory, parseTimeline, projectedOf, timelineFiles, withBodyIds, withProjection, withoutProjection, type FaceFrame, type FeatureItem, type HistoryMesh, type ProjectSource, type SketchItem, type SketchLoop, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { BODY_GONE, featureParams, followProjections, historyOf, MAX_PROJECTION, nextProjectionId, TOO_MANY_PROJECTIONS, projectRequest, withHistory, parseTimeline, projectedOf, timelineFiles, withBodyIds, withProjection, withoutProjection, type FaceFrame, type FeatureItem, type HistoryMesh, type ProjectSource, type SketchItem, type SketchLoop, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
@@ -378,6 +378,48 @@ describe('projection counts in a hostile file', () => {
       expect(n, String(bad)).toBe(255)
       expect(nextProjectionId(rk), String(bad)).toBe('p256')
     }
+  })
+
+  // a sketch whose saved count and projected loops say `count` and `ids`, read back from a file
+  const readBack = (count: unknown, ids: string[]): SketchItem => {
+    const k: SketchItem = { kind: 'sketch', id: 'k1', name: 'Sketch 1', frame: BED, loops: [square(4)] }
+    const t0 = withHistory({ bodies: [], items: [k], marker: 1 }, 'c', { version: 1, base: [], steps: [{ id: 's1', part: 0, transform: I, params: extrudeOf([square(4)]), sketch: 'k1' }] })
+    const files = fileMap(t0, [['c', 7]])
+    const j = JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!)) as { items: Record<string, unknown>[] }
+    const sk = j.items.find((i) => i['kind'] === 'sketch')!
+    sk['nextProjection'] = count
+    sk['loops'] = [...(sk['loops'] as unknown[]), ...ids.map((id) => ({ ...square(1), projected: id }))]
+    files.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify(j)))
+    return parseTimeline(files, new Set(['7']))!.items.find((i) => i.kind === 'sketch') as SketchItem
+  }
+
+  it('count ids up to the cap, never past it, and refuse a projection once every id is used', () => {
+    expect(MAX_PROJECTION).toBe(1_000_000)
+    // ids at or past the cap, p0 and eight digits count for nothing; leading zeros count as the number
+    for (const [ids, next] of [
+      [['p999998'], 'p999999'],
+      [['p1000000'], 'p1'],
+      [['p1000001'], 'p1'],
+      [['p0'], 'p1'],
+      [['p01'], 'p2'],
+      [['p0000007'], 'p8'],
+      [['p00000001'], 'p1'],
+    ] as [string[], string][]) {
+      const rk = readBack(undefined, ids)
+      const id = nextProjectionId(rk)
+      expect(id, ids.join()).toBe(next)
+      expect([...(rk.projections ?? []).map((p) => p.id), ...rk.loops.map((l) => l.projected)], ids.join()).not.toContain(id)
+    }
+    // a saved count at the cap is not read; one under it is
+    expect(readBack(MAX_PROJECTION, []).nextProjection).toBeUndefined()
+    expect(readBack(MAX_PROJECTION - 1, []).nextProjection).toBe(MAX_PROJECTION - 1)
+    // the last id is handed out once, then the sketch refuses
+    let k = readBack(MAX_PROJECTION - 2, ['p1000000', 'p1000001'])
+    expect(nextProjectionId(k)).toBe('p999999')
+    k = withProjection(k, { id: 'p999999', source: { kind: 'silhouette', body: '7' }, mode: 'real' }, [square(2)])
+    expect(k.nextProjection).toBe(MAX_PROJECTION - 1)
+    expect(() => nextProjectionId(k)).toThrow(TOO_MANY_PROJECTIONS)
+    expect(() => nextProjectionId(readBack(MAX_PROJECTION - 1, ['p1000001']))).toThrow(TOO_MANY_PROJECTIONS)
   })
 })
 

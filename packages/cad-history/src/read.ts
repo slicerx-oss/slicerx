@@ -5,7 +5,7 @@
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
-import type { Projection, ProjectSource } from './project'
+import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
@@ -347,8 +347,6 @@ function projectionsOf(v: unknown): Pick<SketchItem, 'projections'> {
   return out.length ? { projections: out } : {}
 }
 
-const MAX_PROJECTION = 1_000_000
-
 /**
  * How many projection ids each sketch has handed out: its saved count, or the highest id its projections, its loops or
  * the features on it name, so an id a file dropped or never counted is not handed out again.
@@ -356,8 +354,8 @@ const MAX_PROJECTION = 1_000_000
 function projectionCounts(items: readonly unknown[]): Map<string, number> {
   const out = new Map<string, number>()
   const see = (sketch: unknown, id: unknown) => {
-    const n = typeof id === 'number' ? id : Number(/^p(\d+)$/.exec(typeof id === 'string' ? id : '')?.[1] ?? 0)
-    if (typeof sketch === 'string' && Number.isInteger(n) && n > 0 && n <= MAX_PROJECTION) out.set(sketch, Math.max(out.get(sketch) ?? 0, n))
+    const n = typeof id === 'number' ? id : idNumber(id)
+    if (typeof sketch === 'string' && Number.isInteger(n) && n > 0 && n < MAX_PROJECTION) out.set(sketch, Math.max(out.get(sketch) ?? 0, n))
   }
   for (const it of items) {
     if (!obj(it)) continue
