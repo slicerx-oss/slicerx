@@ -24,7 +24,7 @@ const check = (issues: { loop: number; kind: string; message: string }[] = []) =
 })
 const reply = (over: Record<string, unknown> = {}) => ({ loops: LOOPS, counts: { lines: 4, arcs: 0, splines: 0, circles: 1 }, sizeMm: [40, 40], mmPerUnit: 1, check: check(), warnings: [], ...over })
 
-function host(answer: Record<string, unknown> = reply(), withSketches = true) {
+function host(answer: Record<string, unknown> = reply(), withSketches = true, bed?: { widthMm: number; depthMm: number }) {
   const d: Design = { id: 'd1', name: 'Plate', history: { version: 1, base: [], steps: [] }, transform: I, parts: [], status: [], madeBy: {}, redo: [] }
   const sketches: SketchItem[] = []
   const engine = vi.fn(async (_op: string, _req: unknown) => answer)
@@ -39,6 +39,7 @@ function host(answer: Record<string, unknown> = reply(), withSketches = true) {
     list: () => [d],
     add,
     call: engine as DesignHost['call'],
+    ...(bed ? { bed: () => bed } : {}),
     ...(withSketches
       ? {
           sketch: (id: string) => {
@@ -103,6 +104,22 @@ describe('design.sketch_svg', () => {
     const out = await lines.run('design.sketch_svg', { svg: SVG })
     expect(lines.sketches).toHaveLength(1)
     expect(out.summary).toMatch(/1 problem to fix before it makes a solid: Loop 1 has the same point twice in a row\./)
+  })
+
+  it("puts the artwork's middle at the middle of the plane when no center is given, as the panel does", async () => {
+    const onBed = host(reply(), true, { widthMm: 256, depthMm: 220 })
+    await onBed.run('design.sketch_svg', { svg: SVG, fit_width_mm: 40 })
+    expect(onBed.engine).toHaveBeenLastCalledWith('sketch.svg', { svg: SVG, options: { fitWidthMm: 40, center: [128, 110] } })
+    // on a plane or face the middle is the frame's origin
+    await onBed.run('design.sketch_svg', { svg: SVG, frame: { origin: [0, 0, 5], normal: [0, 0, 1] } })
+    expect(onBed.engine).toHaveBeenLastCalledWith('sketch.svg', { svg: SVG, options: { center: [0, 0] } })
+    // a center given wins
+    await onBed.run('design.sketch_svg', { svg: SVG, center: [10, 20] })
+    expect(onBed.engine).toHaveBeenLastCalledWith('sketch.svg', { svg: SVG, options: { center: [10, 20] } })
+    // a host that knows no bed keeps the origin
+    const bare = host()
+    await bare.run('design.sketch_svg', { svg: SVG })
+    expect(bare.engine).toHaveBeenLastCalledWith('sketch.svg', { svg: SVG, options: { center: [0, 0] } })
   })
 
   it('needs the app timeline, and checks its input', async () => {
