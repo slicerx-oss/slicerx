@@ -802,4 +802,31 @@ fn open_chains_turn_with_their_planes() {
         err.starts_with("thicken: a 1 mm outward shell runs into itself"),
         "{err}"
     );
+    // one landmark on each elbow chain, at its start: the second takes its way from the first as the planes turn, drawn
+    // either way, and the elbow comes out as it does unmarked
+    let marked_elbow = |second: &[[f64; 2]], mark: [f64; 2]| {
+        let mut p = around(
+            2,
+            20.0,
+            120.0,
+            |_| json!({ "open": true, "loops": [{ "points": u }], "landmarks": [u[0]] }),
+        );
+        p[1]["loops"][0]["points"] = json!(second);
+        p[1]["landmarks"] = json!([mark]);
+        json!({ "profiles": p, "thicken": thick })
+    };
+    for second in [&u, &back] {
+        let m = run("sketch.loft", &marked_elbow(second, u[0]));
+        assert!(
+            (volume(&m) - volume(&a)).abs() < volume(&a) * 1e-6,
+            "{} {}",
+            volume(&m),
+            volume(&a)
+        );
+    }
+    // its start against the second's end, both drawn the same way
+    assert_eq!(
+        fails("sketch.loft", &marked_elbow(&u, u[24])),
+        "profiles: profile 2's landmark 1 is at its end and profile 1's is at its start; mark the same points on every profile"
+    );
 }
