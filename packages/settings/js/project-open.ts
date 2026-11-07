@@ -227,9 +227,9 @@ const HELD_KEYS: ReadonlySet<string> = new Set([
  * and choice of the printer the file holds, listed as changed or not, its identity (model, variant, structure,
  * presets), its extruder colors and its arrange spot, as `sx project-settings` reads them. Its G-code goes through the
  * G-code review instead, and free text, areas and the settings above (`HELD_KEYS`, `HELD_GROUPS`) stay the profile's,
- * so no check reads a looser machine than ours.
+ * so no check reads a looser machine than ours. Its machine limits are held to `profile`'s (`clampMachineLimits`).
  */
-export function projectOwnPrinterSettings(settings: Record<string, unknown>): Record<string, SettingValue> {
+export function projectOwnPrinterSettings(settings: Record<string, unknown>, profile: Readonly<Record<string, SettingValue | undefined>>): Record<string, SettingValue> {
   const imported = importFlat(selectVariants(settings)).config as Record<string, SettingValue>
   const out: Record<string, SettingValue> = {}
   for (const [key, value] of Object.entries(imported)) {
@@ -241,6 +241,37 @@ export function projectOwnPrinterSettings(settings: Record<string, unknown>): Re
     if (!identityText && (fits ? !fits(value) : !PLAIN_TYPES.has(def.type))) continue
     if (value === NIL || (Array.isArray(value) && (value as unknown[]).includes(NIL))) continue
     out[key] = value
+  }
+  return clampMachineLimits(out, profile)
+}
+
+/** The printer's machine limits: the most its axes and extruder may move, accelerate and jerk, in every mode. */
+export const isMachineLimit = (key: string): boolean => key.startsWith('machine_max_')
+
+/**
+ * `values` with every machine limit (`isMachineLimit`) held to the printer's own (`profile`, the settings of the
+ * printer the project opens on), entry by entry, so normal and silent modes and each extruder's entry alike: a project
+ * file may lower a limit, never raise it, since the firmware gets these limits and the checks read the machine from
+ * them. An entry at or below 0, or not a number, takes the profile's. An entry past the end of the profile's list takes
+ * the profile's lowest. A limit the profile has no number for is left out, so the printer's own stands.
+ */
+export function clampMachineLimits(values: Record<string, SettingValue>, profile: Readonly<Record<string, SettingValue | undefined>>): Record<string, SettingValue> {
+  const out: Record<string, SettingValue> = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (!isMachineLimit(key)) {
+      out[key] = value
+      continue
+    }
+    const own = profile[key]
+    const limits = (Array.isArray(own) ? own : own === undefined ? [] : [own]).map(Number)
+    if (!limits.length || !limits.every(Number.isFinite)) continue
+    const lowest = Math.min(...limits)
+    const held = (v: unknown, i: number): number => {
+      const limit = i < limits.length ? limits[i]! : lowest
+      const n = typeof v === 'number' || typeof v === 'string' ? Number(v) : NaN
+      return Number.isFinite(n) && n > 0 ? Math.min(n, limit) : limit
+    }
+    out[key] = Array.isArray(value) ? (value as unknown[]).map(held) : held(value, 0)
   }
   return out
 }
@@ -306,6 +337,6 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
   const settingsOnly = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
   // The file's printer settings, listed or not, on the printer it was made for; a project for another nozzle keeps to
   // what the file lists, as before.
-  const printer = match.asked ? {} : projectOwnPrinterSettings(settings)
+  const printer = match.asked ? {} : projectOwnPrinterSettings(settings, now)
   return { values: { ...printer, ...settingsOnly }, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined, printerKeys: Object.keys(printer) }
 }
