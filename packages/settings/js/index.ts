@@ -8,6 +8,7 @@ export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unava
 export { diffConfigs, firstStage, formatValue, sameValue, toSettingsPlan } from './diff'
 export { SETTING_GROUP_ORDER, compareConfigs, settingGroupLabel, settingGroupRank } from './compare'
 export type { CompareGroup, CompareOptions, CompareRow, ConfigComparison } from './compare'
+export { isUnset } from './diff'
 export { isVisible, settingsForTier, isEnabled, failedConditions, disabledKeys, scalarOf, numberOf, widthOf } from './config'
 export type { VisibilityContext, UserTier } from './config'
 export { coerce, toOrca, isVectorType } from './value'
