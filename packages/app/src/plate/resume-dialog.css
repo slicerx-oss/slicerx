@@ -24,6 +24,9 @@
 .rs-facts dt { color: var(--muted); }
 .rs-facts dd { margin: 0; font-family: var(--f-mono); }
 .rs-warn { grid-column: 1 / -1; margin: 0; display: flex; gap: 6px; align-items: flex-start; color: var(--orange); font-size: var(--fs-sm); }
+.rs-first { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; padding: 8px 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--cyan) 10%, var(--ink-2)); color: var(--fg); font-size: var(--fs-md); }
+.rs-first .sx-ic { color: var(--cyan); }
+.rs-first > span { flex: 1 1 220px; }
 .rs-act { display: flex; justify-content: flex-end; gap: var(--s-2); }
 @media (max-width: 720px) {
   .rs-by, .rs-plan { grid-template-columns: minmax(0, 1fr); }

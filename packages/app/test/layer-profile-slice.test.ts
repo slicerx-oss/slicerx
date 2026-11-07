@@ -14,6 +14,7 @@ import { compose } from '../src/plate/transform'
 import { slicePlate } from '../src/state/actions'
 import { plateSliceConfig } from '../src/state/slice-plate'
 import { get, set } from '../src/state/store'
+import { resumeFor } from '../src/plate/resume-tops'
 
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 12, bboxMm: [10, 10, 4], openEdges: 0, parts: [{ name: 'Body', slot: 1, triangles: 12 }] }
 const entry = (extra: Record<string, unknown> = {}) => ({ id: 'a', name: 'tuned', handle, parts: [{ ...boxMesh(10, 10, 4), name: 'Body', slot: 1 }], colors: [], transform: compose({ position: [50, 50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }), ...extra }) as never
@@ -117,7 +118,7 @@ describe("a plate's own layer heights", () => {
 
   it('give way to a resume plan, which restarts the failed job at its own layers', async () => {
     setPlateLayerProfile('plate-1', PROFILE)
-    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4, 0.6, 0.8] } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4, 0.6, 0.8] }) })
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options?.layerTopsMm).toEqual([0.2, 0.4, 0.6, 0.8])
@@ -129,7 +130,7 @@ describe("a plate's own layer heights", () => {
   it('resumed with no stored job layers, slice at the plate own tops, which stretch as in the job', async () => {
     // The resume dialog stores no tops when the slice is not current (a reopened project, the fleet menu).
     setPlateLayerProfile('plate-1', PROFILE)
-    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 } } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 } }) })
     const { host, requests } = engine()
     await slicePlate(host)
     expect(requests[0]!.options).toMatchObject({ resumeFromLayer: 2, layerTopsMm: expected(), layerTopsExact: true })

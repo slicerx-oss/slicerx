@@ -29,6 +29,21 @@ export type GcodeFlavor =
 /** The highest plate number a cloud slice may name in `SliceOptions.plates`. */
 export const MAX_CLOUD_PLATE_NUMBER = 1000
 
+/** Why a host with no engine on this device turns down a local slice (SlicerHost.slice `local`). */
+export const NO_LOCAL_ENGINE = 'This device has no slicing engine of its own; it slices in the cloud.'
+
+/** The error a host with no engine on this device rejects a local slice with. */
+export function noLocalEngine(): Error {
+  const e = new Error(NO_LOCAL_ENGINE)
+  e.name = 'NoLocalEngine'
+  return e
+}
+
+/** Whether `e` is that refusal, also after it crossed a worker or a process as a plain message. */
+export function isNoLocalEngine(e: unknown): boolean {
+  return e instanceof Error && (e.name === 'NoLocalEngine' || e.message === NO_LOCAL_ENGINE)
+}
+
 export const SLICE_STAGES = ['layers', 'contours', 'perimeters', 'surfaces', 'infill', 'paths', 'gcode', 'preview'] as const
 export type SliceStage = (typeof SLICE_STAGES)[number]
 
@@ -721,8 +736,9 @@ export interface SlicerHost {
   loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle>
   /**
    * `local`: slice on this device's engine even where slices otherwise go to a cloud service (cloudRoutedSlicer), for a
-   * slice the app reads itself and never prints, such as the layers a resume plans with. A host with only one engine
-   * ignores it.
+   * slice the app reads itself and never prints, such as the layers a resume plans with. A host with a local engine
+   * only ignores it. A host with no engine on this device (it slices only in the cloud) rejects it with
+   * noLocalEngine() and sends nothing, so such a slice never becomes a cloud job.
    */
   slice(req: SliceRequest, opts?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal; local?: boolean }): Promise<SliceResult>
   /**

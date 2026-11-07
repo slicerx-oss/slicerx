@@ -6,6 +6,7 @@ import { clearProject } from '../src/project/new'
 import { INPUTS, startAutoSlice } from '../src/state/auto-slice'
 import { slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
+import { resumeFor } from '../src/plate/resume-tops'
 
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 1, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name: 'a', slot: 1, triangles: 1 }] }
 const entry = { id: 'a', name: 'a', handle, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] } as never
@@ -22,7 +23,7 @@ beforeEach(() => set({ plate: [entry], resume: null, slice: { status: 'idle' }, 
 describe('slice with a resume plan', () => {
   it('slices from the plan\'s layer and keeps the failed job\'s layer tops', async () => {
     const tops = [0.2, 0.4, 0.7, 1.0]
-    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: tops } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: tops }) })
     const { host, requests } = capture()
     await slicePlate(host)
     expect(requests[0]!.options).toMatchObject({ resumeFromLayer: 2, layerTopsMm: tops })
@@ -34,7 +35,7 @@ describe('slice with a resume plan', () => {
   })
 
   it('declares the nozzle height when asked, and adds nothing without a plan', async () => {
-    set({ resume: { plan: { resumeLayer: 3, printedHeightMm: 0.6 }, declareZ: true } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 3, printedHeightMm: 0.6 }, declareZ: true }) })
     const a = capture()
     await slicePlate(a.host)
     expect(a.requests[0]!.options).toMatchObject({ resumeFromLayer: 3, resumeZ: { mode: 'declare', zMm: 0.6 } })
@@ -48,7 +49,7 @@ describe('slice with a resume plan', () => {
 
 describe('a resume plan ends with its project', () => {
   it('slices a new project from layer 1', async () => {
-    set({ resume: { plan: { resumeLayer: 5, printedHeightMm: 1.2 }, declareZ: true, layerTopsMm: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2] } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 5, printedHeightMm: 1.2 }, declareZ: true, layerTopsMm: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2] }) })
     clearProject()
     expect(get().resume).toBeNull()
     set({ plate: [entry] })
@@ -63,7 +64,7 @@ describe('a resume plan ends with its project', () => {
     expect(INPUTS).toContain('resume')
     set({ autoSlice: true, slice: { status: 'done' } as never })
     const stop = startAutoSlice(capture().host, 60_000)
-    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 } } })
+    set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 } }) })
     stop()
     expect(get().slice).toMatchObject({ status: 'done', stale: true })
   })

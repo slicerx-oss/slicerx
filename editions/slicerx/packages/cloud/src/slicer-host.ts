@@ -14,6 +14,7 @@ import {
   type GcodeTarget,
   type MeshHandle,
   type MeshPart,
+  noLocalEngine,
   SLICE_STAGES,
   type SliceProgress,
   type SliceRequest,
@@ -258,7 +259,9 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       return handle
     },
 
-    async slice(req: SliceRequest, o = {}): Promise<SliceResult> {
+    async slice(req: SliceRequest, o: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal; local?: boolean } = {}): Promise<SliceResult> {
+      // This slicer is the cloud: a slice asked for on this device is turned down before anything is asked or sent.
+      if (o.local) throw noLocalEngine()
       // Every mesh the plate names: each object's own and its volumes'.
       const meshes: Record<string, Uint8Array> = {}
       const need = (id: string, what: string) => {

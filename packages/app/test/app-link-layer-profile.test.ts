@@ -10,6 +10,7 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { toolStore } from '../src/plate/tools'
 import { compose } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
+import { resumeFor } from '../src/plate/resume-tops'
 
 const entry = (id: string): PlateEntry => ({
   id, name: 'Box', handle: { id, hash: id, name: id, triangles: 12, bboxMm: [10, 10, 10], openEdges: 0, parts: [] } as MeshHandle,
@@ -79,10 +80,15 @@ it('reads what the plate really slices with: a calibration plate and a resume pl
   const cal = await read()
   expect(cal.output).toMatchObject({ mode: 'calibration', profile: [[1, 0.12]] })
   expect(cal.summary).toBe("Plate 1 slices with the calibration's layer heights, and its own layer heights wait until that ends.")
-  set({ calibration: {}, resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4] } as never })
+  set({ calibration: {} })
+  // A plan stored as Slice the rest stores it: for the shown plate as it is now.
+  set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4] }) })
   expect((await read()).output.mode).toBe('resume')
   // The resume plan is the shown plate's; another plate reads its own.
   expect((await read({ plate: 2 })).output.mode).toBe('fixed')
+  // A change to the plate after the plan (its own layer heights, set over the link) voids it, as it does for the slice.
+  await edit({ action: 'set', points: [[1, 0.16]] })
+  expect((await read()).output.mode).toBe('own')
   set({ resume: null })
   expect((await read()).output.mode).toBe('own')
 })
