@@ -7,7 +7,8 @@
 // from each facet inward to the far side, through a grid of the facets, within a budget).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
-import type { BodyFacts } from './design-check'
+import type { BodyFacts, FitLimits } from './design-check'
+import { fitFacts } from './fit-facts'
 
 type V3 = [number, number, number]
 type Mesh = Pick<HistoryMesh, 'positions' | 'indices'>
@@ -21,8 +22,8 @@ const len = (a: V3): number => Math.hypot(a[0], a[1], a[2])
 const vertex = (m: Mesh, i: number): V3 => [m.positions[i * 3] ?? 0, m.positions[i * 3 + 1] ?? 0, m.positions[i * 3 + 2] ?? 0]
 const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3] ?? 0), vertex(m, m.indices[t * 3 + 1] ?? 0), vertex(m, m.indices[t * 3 + 2] ?? 0)]
 
-/** The facts about the design's body now. */
-export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFacts> {
+/** The facts about the design's body now; with `fit`, the limits of a print-in-place plan, its pieces and gaps too. */
+export async function bodyFacts(host: DesignHost, d: HostDesign, fit?: FitLimits): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
   // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
   // whatever their indices
@@ -54,6 +55,13 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
   }
   const wall = minWall(world)
   const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
+  let gaps: Pick<BodyFacts, 'fit' | 'fitWhy'> = {}
+  if (fit)
+    try {
+      gaps = { fit: await fitFacts(host, d, fit) }
+    } catch (e) {
+      gaps = { fitWhy: e instanceof Error ? e.message : String(e) }
+    }
   return {
     size: bounds(world),
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
@@ -66,6 +74,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
     minWallMm: wall.mm,
     ...(wall.why ? { minWallWhy: wall.why } : {}),
+    ...gaps,
   }
 }
 

@@ -158,6 +158,8 @@ describe('the set a request picks', () => {
     // projecting a face or edges into a sketch needs a part already built, so it is an edit, beside the sketch tools
     // and edge picks it needs, and never a new part's step
     expect(turnSetsOf({ name: 'design.sketch_project' })).toEqual(new Set(['edit']))
+    // a print-in-place part is checked for its gaps while it is built
+    expect(turnSetsOf({ name: 'geom.fit_check' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.mirror' })).toEqual(new Set(['shape']))
     expect(turnSetsOf({ name: 'design.timeline' })).toEqual(new Set(['edit']))
     // a design tool no list names yet still lands in a set

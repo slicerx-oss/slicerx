@@ -22,7 +22,7 @@ describe('design tools over the app link', () => {
     for (const n of APP_DESIGN_TOOLS) expect(names, n).toContain(n)
     expect(APP_DESIGN_TOOLS.has('design.open')).toBe(false)
     expect(APP_DESIGN_TOOLS.has('design.save')).toBe(false)
-    for (const name of ['geom.shell', 'geom.info', 'geom.measure']) expect(APP_DESIGN_TOOLS.has(name)).toBe(true)
+    for (const name of ['geom.shell', 'geom.info', 'geom.measure', 'geom.fit_check']) expect(APP_DESIGN_TOOLS.has(name)).toBe(true)
   })
 
   it('run in the app while it answers, and say so on the first reply only', async () => {
