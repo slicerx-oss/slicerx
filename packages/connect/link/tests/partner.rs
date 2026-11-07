@@ -621,3 +621,122 @@ async fn turning_approve_off_stops_cards_and_questions_on_a_live_session() {
     let r = phone.call("approvals.list", json!({})).await;
     assert_eq!(r["r"], json!([]), "{r}");
 }
+
+/// The partner phone's push registration as clients read it back (`push.status`).
+async fn partner_push(agent: &mut Ws, id: u64) -> Value {
+    let st = call(agent, id, "push.status", json!({})).await;
+    st["result"]["registrations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["partner"] == "Example Phone")
+        .cloned()
+        .unwrap_or_else(|| panic!("no partner registration: {st}"))
+}
+
+/// A hub with a printing printer, our own phone and a partner phone that registered its push token
+/// while it had `approve`.
+async fn partner_push_setup(
+    approve: bool,
+) -> (
+    Setup,
+    tokio::sync::mpsc::UnboundedReceiver<(String, Value)>,
+    Device,
+    Device,
+    [u8; 32],
+    common::Mocks,
+) {
+    let (expo, posts) = fake_expo().await;
+    let mut s = setup(&expo).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let cfg = json!({ "id": "bay-4", "name": "Bay 4", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker"), "pollMs": 50 });
+    let r = call(&mut s.app, 44, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "bay-4", "{r}");
+    mocks.set_state("moonraker", "printing").await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let key: [u8; 32] = rand_bytes();
+    put(&mut s.app, &key, 36, Some("Example Phone"), approve).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let reg = phone
+        .call("push.registerPartner", json!({ "provider": "expo", "token": "ExponentPushToken[partnerpartner36]", "platform": "android", "prefs": serde_json::from_str::<Value>(PREFS).unwrap() }))
+        .await;
+    assert_eq!(reg["ok"], true, "{reg}");
+    let own_key: [u8; 32] = rand_bytes();
+    put(&mut s.app, &own_key, 37, None, true).await;
+    let own = Device::open(&s.relay, &own_key).await.expect("a session");
+    (s, posts, phone, own, key, mocks)
+}
+
+/// Our phone asks to stop the print: a card waits for a person, and phones that may approve hear of it.
+async fn own_phone_asks(own: &mut Device, action: &str) {
+    let card = own
+        .call("jobs.control", json!({ "printerId": "bay-4", "action": action }))
+        .await;
+    assert_eq!(card["ok"], true, "{card}");
+}
+
+/// The approval pushes that reach the partner phone within `ms`.
+async fn partner_approval_pushes(
+    posts: &mut tokio::sync::mpsc::UnboundedReceiver<(String, Value)>,
+    ms: u64,
+) -> usize {
+    let end = tokio::time::Instant::now() + Duration::from_millis(ms);
+    let mut n = 0;
+    while let Ok(Some((_, body))) = tokio::time::timeout_at(end, posts.recv()).await {
+        if body[0]["to"] == "ExponentPushToken[partnerpartner36]" && body[0]["data"]["kind"] == "approval" {
+            n += 1;
+        }
+    }
+    n
+}
+
+#[tokio::test]
+async fn turning_approve_on_for_a_partner_phone_brings_its_approval_pushes() {
+    let (mut s, mut posts, _phone, mut own, key, _mocks) = partner_push_setup(false).await;
+    assert_eq!(partner_push(&mut s.agent, 60).await["mayApprove"], false);
+    own_phone_asks(&mut own, "pause").await;
+    assert_eq!(
+        partner_approval_pushes(&mut posts, 1500).await,
+        0,
+        "a phone that may not approve got an approval push"
+    );
+
+    // The person turns approve on in Devices; the app hands the hub the pairing again.
+    put(&mut s.app, &key, 36, Some("Example Phone"), true).await;
+    let reg = partner_push(&mut s.agent, 61).await;
+    assert_eq!(
+        reg["mayApprove"], true,
+        "the push token kept the old right: {reg}"
+    );
+    own_phone_asks(&mut own, "cancel").await;
+    assert_eq!(
+        partner_approval_pushes(&mut posts, 5000).await,
+        1,
+        "no approval push after approve came on"
+    );
+}
+
+#[tokio::test]
+async fn turning_approve_off_for_a_partner_phone_clears_it_on_its_push_token() {
+    let (mut s, mut posts, _phone, mut own, key, _mocks) = partner_push_setup(true).await;
+    assert_eq!(partner_push(&mut s.agent, 60).await["mayApprove"], true);
+
+    put(&mut s.app, &key, 36, Some("Example Phone"), false).await;
+    let reg = partner_push(&mut s.agent, 61).await;
+    assert_eq!(
+        reg["mayApprove"], false,
+        "the push token kept the old right: {reg}"
+    );
+    own_phone_asks(&mut own, "pause").await;
+    assert_eq!(
+        partner_approval_pushes(&mut posts, 1500).await,
+        0,
+        "a phone that may not approve got an approval push"
+    );
+
+    // And back on: the same token gets approval pushes again.
+    put(&mut s.app, &key, 36, Some("Example Phone"), true).await;
+    assert_eq!(partner_push(&mut s.agent, 62).await["mayApprove"], true);
+    own_phone_asks(&mut own, "cancel").await;
+    assert_eq!(partner_approval_pushes(&mut posts, 5000).await, 1);
+}
