@@ -26,7 +26,7 @@ const EVERY_TURN: ReadonlySet<string> = new Set([TURN_SET_TOOL, 'pilot.ask', 'lo
  * Building a new part: the sheet and plan, the solids, the common features, and reading the part back. These are the
  * steps the prompt names for a new part; the rest of the design tools are in shape and edit.
  */
-const BUILD: ReadonlySet<string> = new Set(['pilot.sheet', 'pilot.sheet_bind', 'design.new', 'design.plan', 'design.check', 'design.undo', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'geom.hole', 'geom.fillet', 'geom.chamfer', 'geom.shell', 'geom.boolean', 'geom.info'])
+const BUILD: ReadonlySet<string> = new Set(['pilot.sheet', 'pilot.sheet_bind', 'design.new', 'design.plan', 'design.check', 'design.undo', 'geom.extrude', 'geom.revolve', 'geom.loft', 'geom.sweep', 'design.sketch_project', 'geom.hole', 'geom.fillet', 'geom.chamfer', 'geom.shell', 'geom.boolean', 'geom.info'])
 
 /** Shaping a part further: join, cut, pattern, split, mark and fix it, and measure it. */
 const SHAPE: ReadonlySet<string> = new Set(['design.undo', 'geom.info', 'geom.measure', 'geom.push_pull', 'geom.mirror', 'geom.array', 'geom.split', 'geom.subtract', 'geom.emboss', 'geom.cut', 'geom.hollow', 'geom.repair', 'geom.build', 'geom.boolean'])

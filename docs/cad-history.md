@@ -92,6 +92,17 @@ A mesh push preserves the source keys of the moved cap and extensions of adjacen
 - Moving the marker (`cad/history/rollback.ts`, the timeline strip, or `design.roll` over the app link and MCP) replays each body to it. A body made after the marker leaves the plate and the slice until the marker passes it again; while rolled back, Slice, Print and Export say so ("The timeline is rolled back to step N. Slicing uses this state.") with Move to the end. Undo puts the marker back. A project saved rolled back keeps the hidden bodies and opens rolled back.
 - The app saves version 3 files; `design.timeline` (MCP, app link) reads the timeline.
 
+## Projections
+
+A finished sketch can hold model geometry projected onto its plane (`project.ts`, `cad/project-sketch.ts`, the sketch panel's Project card and `design.sketch_project`): picked edges, a face's outline with its holes, or a body's outline seen along the sketch normal.
+
+- The curves are plain loops after the sketch's own, each naming its projection (`projected`), so features, replay and the engine read them as any loops. A real projection's loops close profiles; a reference one's are construction and make no profile. New projections are real; either can switch, or go, later.
+- A feature drawn on the sketch takes the projections that were there when it was made (`FeatureItem.projected`) and no later one, so projecting into a sketch never changes a solid already made from it. A projection a feature takes keeps following its source, and the feature with it. Saving a step drawn on the sketch keeps the projections it does not take as the sketch has them.
+- `SketchItem.projections` keeps each source in the references steps use: edges as `EdgeRef` with their faces' keys, a face as its point, normal and key, both in world mm with the body's transform when picked; an outline names only its body.
+- A projection reads its body as it stands at the sketch's place in the timeline, so a later step never feeds back into the sketch. When a body replays, the projections from it are found again (`followProjections`); a sketch whose curves moved changes, and the bodies drawn on it replay, in the same undo step as the edit that moved them.
+- A source that is gone (its face or edge missing or split, or the body off the plate) keeps its curves where they were and says why on the projection; nothing nearby stands in for it. It follows again once the source is back.
+- A new sketch with projections goes into the timeline before the solid made from it, so the sources stay on the sketch item and never in a step. Saved files name each source's body by its 3MF object id.
+
 ## Storage
 
 - `Metadata/slicerx_history.json`, written only when an object has history: `{version: 2, objects: [{object, base, ended?, steps}]}`, `object` the 3MF object id as in slicerx_dimensions.json. Version 2 adds face keys to steps (below); version 1 files open the same way, and their steps get keys on their first replay. A file with a higher version opens without its histories and a message says a newer SlicerX saved it (SlicerX 0.1 ignores version 2 files silently: it predates the message). Version 3 is the design: `{version: 3, bodies: [{object, base, ended?}], items, marker}`, items as in the timeline with `body` the 3MF object id; each body's history is read as a version 2 object made from it, and a feature whose sketch is missing drops that body's history only. Objects that are missing are ignored; a project without the part opens as before; other slicers ignore it.

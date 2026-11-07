@@ -115,14 +115,17 @@ export interface DimLook {
   expr?: string
 }
 
-/** A loop closes when its last segment ends within 0.001 mm of start. A construction loop is kept for constraints and never makes a profile. */
+/**
+ * A loop closes when its last segment ends within 0.001 mm of start. A construction loop is kept for constraints and
+ * never makes a profile. A projected loop came from model geometry (project.ts) and follows it; it names its projection.
+ */
 export type SketchLoop = (
   | { start: Vec2; segments: SketchSegment[] }
   | { type: 'circle'; center: Vec2; diameterMm: number }
   | { points: Vec2[] }
   /** A closed smooth curve through `points`, 3 or more. */
   | { type: 'spline'; points: Vec2[] }
-) & { construction?: true }
+) & { construction?: true; projected?: string }
 
 /** A face that moved, as face.push reports it (world). Pass it to evaluateDimensions. */
 export interface MovedFace {

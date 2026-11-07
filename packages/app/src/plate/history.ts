@@ -67,6 +67,16 @@ export function inStep<T>(token: object, fn: () => T): T {
   }
 }
 
+/**
+ * Runs edits as part of the last undo step: what the app does after an edit because of it (a projection following
+ * the body it came from) undoes with that edit.
+ */
+export function withLast<T>(fn: () => T): T {
+  const token = lastStep ?? {}
+  lastStep = token
+  return inStep(token, fn)
+}
+
 export function createHistory(store = appStore, limit = 100): History {
   const epoch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   let revision = 0

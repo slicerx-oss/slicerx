@@ -5,6 +5,7 @@
 // sketch by id instead of holding a copy. An object's own history is a view of it, filtered by body, so replay
 // and the app's per-object tools work unchanged.
 import type { History, HistoryMesh, Step, StepParams } from './model'
+import { BODY_GONE, type Projection } from './project'
 import type { FaceFrame, SketchLoop } from './types'
 
 /** A sketch on a plane: the bed when frame is absent. Constraints ride as the solver keeps them (sketch.solve). */
@@ -17,6 +18,8 @@ export interface SketchItem {
   constraints?: unknown[]
   /** the body whose face the sketch was drawn on, and its part: Join and Cut default to it */
   on?: { body: string; part: number }
+  /** model geometry projected into it (project.ts); their curves are the loops that name them */
+  projections?: Projection[]
 }
 
 type Extrude = Extract<StepParams, { op: 'shape.extrude' }>
@@ -31,6 +34,8 @@ export interface FeatureItem extends Omit<Step, 'params'> {
   body: string
   sketch?: string
   params: StepParams | SketchUse
+  /** The sketch's projections this feature takes: the ones there when it was made. One projected later never changes it. */
+  projected?: string[]
 }
 
 export type Item = SketchItem | FeatureItem
@@ -68,6 +73,8 @@ function split(s: Step, body: string, name: string, items: readonly Item[] = [])
   const loops = p.op === 'shape.extrude' ? p.shape.loops : p.loops
   const constraints = p.op === 'shape.extrude' ? p.shape.constraints : p.constraints
   const sketch: SketchItem = { kind: 'sketch', id, name, ...(p.frame ? { frame: p.frame } : {}), loops, ...(constraints ? { constraints } : {}) }
+  // the projections the step was made with; it takes those and no later one
+  const taken = [...new Set(loops.flatMap((l) => (l.projected !== undefined ? [l.projected] : [])))]
   let use: SketchUse
   if (p.op === 'shape.extrude') {
     const { frame: _f, shape: _s, ...rest } = p
@@ -76,7 +83,32 @@ function split(s: Step, body: string, name: string, items: readonly Item[] = [])
     const { frame: _f, loops: _l, constraints: _c, ...rest } = p
     use = rest
   }
-  return [sketch, { ...s, kind: 'feature', body, sketch: id, params: use }]
+  return [sketch, { ...s, kind: 'feature', body, sketch: id, params: use, ...(taken.length ? { projected: taken } : {}) }]
+}
+
+/**
+ * A sketch's loops after a step drawn on it saved `loops`: its own from the step, and each projection's from the step
+ * when the step takes it, else as the sketch has them.
+ */
+function mergedLoops(k: SketchItem, loops: readonly SketchLoop[]): SketchLoop[] {
+  const ids = (list: readonly SketchLoop[]) => list.flatMap((l) => (l.projected !== undefined ? [l.projected] : []))
+  const taken = new Set(ids(loops))
+  return [...loops.filter((l) => l.projected === undefined), ...[...new Set([...ids(k.loops), ...taken])].flatMap((id) => (taken.has(id) ? loops : k.loops).filter((l) => l.projected === id))]
+}
+
+/** A new sketch made from a step's loops: curves a projection put there stay as plain loops, as the step has no source for them. */
+function untagged(k: SketchItem): SketchItem {
+  if (!k.loops.some((l) => l.projected !== undefined)) return k
+  return { ...k, loops: k.loops.map((l) => {
+    const { projected: _p, ...rest } = l as SketchLoop & { projected?: string }
+    return rest as SketchLoop
+  }) }
+}
+
+/** A new sketch and the feature made from it: projected curves stay as plain loops, and the feature takes them as such. */
+function fresh([k, f]: [SketchItem, FeatureItem]): Item[] {
+  const { projected: _p, ...plain } = f
+  return [untagged(k), plain]
 }
 
 /** A step as a feature on `body`; with a sketch id, its plane and loops are left to that sketch. */
@@ -121,6 +153,11 @@ export function timelineOf(objects: readonly { id: string; history: History }[])
   return { bodies, items, marker: items.length }
 }
 
+/** A sketch's loops as a feature takes them: its own, and the projected ones of the projections it was made with. */
+export function takenLoops(loops: readonly SketchLoop[], projected: readonly string[] | undefined): SketchLoop[] {
+  return loops.filter((l) => l.projected === undefined || (projected?.includes(l.projected) ?? false))
+}
+
 /** A feature's params with its sketch put back in, as the engine and replay take them. Null when the sketch is gone. */
 export function featureParams(f: FeatureItem, sketches: ReadonlyMap<string, SketchItem>): StepParams | null {
   if (!f.sketch) return f.params as StepParams
@@ -128,8 +165,9 @@ export function featureParams(f: FeatureItem, sketches: ReadonlyMap<string, Sket
   if (!k) return null
   const frame = k.frame ? { frame: k.frame } : {}
   const p = f.params as SketchUse
-  if (p.op === 'shape.extrude') return { ...p, ...frame, shape: { type: 'sketch', loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } } as Extrude
-  return { ...p, ...frame, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } as Revolve
+  const loops = takenLoops(k.loops, f.projected)
+  if (p.op === 'shape.extrude') return { ...p, ...frame, shape: { type: 'sketch', loops, ...(k.constraints ? { constraints: k.constraints } : {}) } } as Extrude
+  return { ...p, ...frame, loops, ...(k.constraints ? { constraints: k.constraints } : {}) } as Revolve
 }
 
 /** A body's history as its object keeps it: the live features on it, in timeline order, with their sketches in. */
@@ -193,9 +231,9 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
           if (own !== undefined) {
             const old = items[own] as SketchItem
             const { frame: _f, constraints: _c, ...keep } = old
-            items[own] = { ...keep, loops: k.loops, ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
+            items[own] = { ...keep, loops: mergedLoops(old, k.loops), ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
             items.push({ ...f, sketch: old.id })
-          } else items.push({ ...k, name: nextName(items) }, f)
+          } else items.push(...fresh([{ ...k, name: nextName(items) }, f]))
         } else items.push({ ...s, kind: 'feature', body })
         place.set(s.id, items.length - 1)
       }
@@ -224,10 +262,10 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
     if (on >= 0) {
       const [k] = split(s, body, '', items)
       const { frame: _f, constraints: _c, ...keep } = items[on] as SketchItem
-      items[on] = { ...keep, loops: k.loops, ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
+      items[on] = { ...keep, loops: mergedLoops(items[on] as SketchItem, k.loops), ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
       if (at <= on) at = on + 1
     }
-    const add: Item[] = on >= 0 ? [featureOf(s, body, s.sketch)] : isSketch(s.params) ? split(s, body, nextName(items), items) : [{ ...s, kind: 'feature', body }]
+    const add: Item[] = on >= 0 ? [featureOf(s, body, s.sketch)] : isSketch(s.params) ? fresh(split(s, body, nextName(items), items)) : [{ ...s, kind: 'feature', body }]
     items.splice(at, 0, ...add)
     for (const [id, p] of place) if (p >= at) place.set(id, p + add.length)
     place.set(s.id, at + add.length - 1)
@@ -315,8 +353,13 @@ export function withBodyIds(t: Timeline, id: (old: string) => string | undefined
   for (const b of t.bodies) if (id(b.id) === undefined) out = withoutBody(out, b.id)
   return {
     bodies: out.bodies.map((b) => ({ ...b, id: id(b.id)! })),
-    items: out.items.map((i) => {
-      if (i.kind === 'feature') return { ...i, body: id(i.body)! }
+    items: out.items.map((it) => {
+      if (it.kind === 'feature') return { ...it, body: id(it.body)! }
+      // a projection from a body with no new id is lost; its curves stay
+      const i = it.projections ? { ...it, projections: it.projections.map((p) => {
+        const b = id(p.source.body)
+        return b === undefined ? { ...p, lost: p.lost ?? BODY_GONE } : { ...p, source: { ...p.source, body: b } }
+      }) } : it
       if (!i.on) return i
       const body = id(i.on.body)
       const { on: _on, ...k } = i
@@ -334,7 +377,7 @@ export function timelineSummary(t: Timeline): { marker: number; end: number; bod
     bodies: t.bodies.map((b) => b.id),
     items: t.items.map((i) =>
       i.kind === 'sketch'
-        ? { kind: 'sketch', id: i.id, name: i.name, loops: i.loops.length }
+        ? { kind: 'sketch', id: i.id, name: i.name, loops: i.loops.length, ...(i.projections?.length ? { projections: i.projections.length } : {}) }
         : { kind: 'feature', id: i.id, body: i.body, op: i.params.op, ...(i.sketch ? { sketch: i.sketch } : {}), ...(i.label ? { label: i.label } : {}), ...(i.suppressed ? { suppressed: true } : {}) },
     ),
   }
