@@ -49,6 +49,7 @@ fn unit_text(u: &str) -> &'static str {
         "g/cm3" => " g/cm3",
         "deg" => " deg",
         "money/kg" => " per kg",
+        "mm2" => " mm2",
         "mm3" => " mm3",
         "layers" => " layers",
         "Hz" => " Hz",

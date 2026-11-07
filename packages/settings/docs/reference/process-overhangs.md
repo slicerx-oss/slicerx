@@ -142,7 +142,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `make_overhang_printable_hole_size`
 
-**Hole area filled under overhangs**
+**Largest hole filled under overhangs**
 
 - Type: number
 - Default: 0
@@ -268,6 +268,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 **Wave overhang flow**
 
 - Type: number
+- Unit: mm2
 - Default: 0.16
 - Recommended range: 0.02 to 1.5
 - Tier: Expert, effects
@@ -314,6 +315,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 **Wave overhang minimum new area**
 
 - Type: number
+- Unit: mm2
 - Default: 0.01
 - Recommended range: 0 to no maximum
 - Tier: Expert, effects
