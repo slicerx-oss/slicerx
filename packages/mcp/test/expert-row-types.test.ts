@@ -23,7 +23,7 @@ describe('Expert row value types from a client', () => {
     const set = await h.call('slicerx_project_set_overrides', { changes: SENT })
     expect(set.isError, text(set)).toBeFalsy()
     expect(data<Shown>(await h.call('slicerx_project_show')).output.overrides).toMatchObject(HELD)
-    for (const [key, bad, says] of [['slowdown_for_curled_perimeters', 'maybe', 'expected a bools value'], ['small_perimeter_speed', 'fast', 'expected a floatsOrPercents value'], ['small_perimeter_speed', '-5%', 'outside 1 to inf mm/s']] as const) {
+    for (const [key, bad, says] of [['slowdown_for_curled_perimeters', 'maybe', 'expected a bools value'], ['small_perimeter_speed', 'fast', 'expected a floatsOrPercents value'], ['small_perimeter_speed', '-5%', 'it must be at least 1 mm/s']] as const) {
       const r = await h.call('slicerx_project_set_overrides', { changes: { [key]: bad } })
       expect(r.isError, `${key} = ${bad}`).toBe(true)
       expect(text(r)).toContain(says)
