@@ -55,7 +55,7 @@ test('a complete layout has no problems and the workflow matches the splits', ()
     const { problems, lines } = check({ root, metadata, weights, workflow })
     assert.deepEqual(problems, [])
     assert.equal(lines.length, SPLITS.length + 1)
-    assert.match(lines[0], /^macOS, 2 parts: sx-core 6 files, \d \+ \d, everything else in part 1$/)
+    assert.match(lines[0], /^macOS, 3 parts: sx-core 6 files, \d \+ \d \+ \d, everything else in part 1$/)
     assert.match(lines.at(-1), /^sx-cli: 3 test files/)
   } finally {
     cleanup(root)
@@ -88,11 +88,11 @@ test('a workflow with the wrong number of parts, the wrong --of or a second save
   const { root, metadata } = makeRepo()
   try {
     const bad = workflow
-      .replace('part: [1, 2]', 'part: [1, 2, 3]')
-      .replace('windows-rust-tests.mjs ${{ matrix.part }} --of 3', 'windows-rust-tests.mjs ${{ matrix.part }} --of 2')
+      .replace('part: [1, 2, 3]', 'part: [1, 2]')
+      .replace('windows-rust-tests.mjs ${{ matrix.part }} --of 3\n        timeout-minutes: 40', 'windows-rust-tests.mjs ${{ matrix.part }} --of 2\n        timeout-minutes: 40')
       .replace('save-if: ${{ matrix.part == 1 }}', 'save-if: true')
     const { problems } = check({ root, metadata, weights, workflow: bad })
-    assert.ok(problems.some((p) => /rust-macos-parts: the matrix has parts \[1, 2, 3\], the split has 2/.test(p)), problems.join('\n'))
+    assert.ok(problems.some((p) => /rust-macos-parts: the matrix has parts \[1, 2\], the split has 3/.test(p)), problems.join('\n'))
     assert.ok(problems.some((p) => /rust-windows-parts: the test step must pass --of 3 once \(found 2\)/.test(p)), problems.join('\n'))
     assert.ok(problems.some((p) => /rust-macos-parts: only part 1 may save the cache/.test(p)), problems.join('\n'))
     const missing = check({ root, metadata, weights, workflow: workflow.replace('  rust-windows-parts:\n', '  rust-windows-partz:\n') })

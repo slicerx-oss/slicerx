@@ -310,15 +310,15 @@ jobs:
   # limits so that a slow run fails its step and still saves the cache (a job cancelled by its own limit skips the save).
   # The number of parts is in three places: the matrix, --of, and the check in scripts/ci/rust-part-coverage.mjs.
   rust-macos-parts:
-    name: rust part (macos-latest, ${{ matrix.part }}/2)
+    name: rust part (macos-latest, ${{ matrix.part }}/3)
     needs: detect
     if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || (github.event_name == 'workflow_dispatch' && inputs.rust_parts))
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
@@ -336,8 +336,8 @@ jobs:
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: matrix.part == 1
         run: cargo build -p sx-cloud
-      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 2
-        timeout-minutes: 45
+      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 3
+        timeout-minutes: 50
 
   rust-windows-parts:
     name: rust part (windows-latest, ${{ matrix.part }}/3)
