@@ -37,7 +37,8 @@ function keychainKey(): Promise<string | null> {
  */
 async function readKey(provider: string): Promise<string | null> {
   if (provider === 'openai-compatible') return 'local'
-  if (provider === 'anthropic') return ANTHROPIC_KEY_ENV.map((n) => process.env[n]?.trim()).find((v) => v) ?? null
+  // a value with spaces or control characters inside (two pasted lines) counts as missing, so no header error can quote it
+  if (provider === 'anthropic') return ANTHROPIC_KEY_ENV.map((n) => process.env[n]?.trim()).find((v) => v && /^[!-~]+$/.test(v)) ?? null
   if (provider !== 'openai') return null
   return process.env['SLICERX_OPENAI_API_KEY'] || process.env['OPENAI_API_KEY'] || (await keychainKey())
 }
@@ -84,9 +85,18 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): LlmTranspo
       if (!key) throw new TransportError(401, missingKey(req.provider))
       opts.onRequest?.(req)
       const auth = req.provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION } : { authorization: `Bearer ${key}` }
-      const init: RequestInit = { method: req.method, headers: { ...req.headers, ...auth }, body: req.body }
+      // never follow a redirect: fetch keeps a custom key header on a cross-origin one, so the key could leave the allowed host
+      const init: RequestInit = { method: req.method, headers: { ...req.headers, ...auth }, body: req.body, redirect: 'error' }
       if (signal) init.signal = signal
-      const res = await fetch(req.url, init)
+      const secret = req.provider === 'openai-compatible' ? null : key
+      let res: Response
+      try {
+        res = await fetch(req.url, init)
+      } catch (e) {
+        if (signal?.aborted) throw e
+        const cause = e instanceof Error && e.cause instanceof Error ? `: ${e.cause.message}` : ''
+        throw new TransportError(0, `${req.provider} request failed: ${redact(`${e instanceof Error ? e.message : String(e)}${cause}`, secret).slice(0, 300)}`)
+      }
       if (!res.ok || !res.body) {
         let msg = res.statusText
         try {
@@ -95,7 +105,7 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): LlmTranspo
         } catch {
           // Non-JSON error bodies keep the status text.
         }
-        throw new TransportError(res.status, `${req.provider} ${res.status}: ${redact(msg, req.provider === 'openai-compatible' ? null : key).slice(0, 300)}`)
+        throw new TransportError(res.status, `${req.provider} ${res.status}: ${redact(msg, secret).slice(0, 300)}`)
       }
       const reader = res.body.getReader()
       for (;;) {
