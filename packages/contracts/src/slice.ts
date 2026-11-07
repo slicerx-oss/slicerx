@@ -719,7 +719,12 @@ export interface GcodeExport {
 export interface SlicerHost {
   loadModel(data: ArrayBuffer, fileName: string): Promise<MeshHandle>
   loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle>
-  slice(req: SliceRequest, opts?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult>
+  /**
+   * `local`: slice on this device's engine even where slices otherwise go to a cloud service (cloudRoutedSlicer), for a
+   * slice the app reads itself and never prints, such as the layers a resume plans with. A host with only one engine
+   * ignores it.
+   */
+  slice(req: SliceRequest, opts?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal; local?: boolean }): Promise<SliceResult>
   /**
    * heimdall's check of a by-object plate before a slice (PlateCheck), off the page's thread. An abort lets the answer
    * go; a check still waiting for the engine when a newer one comes is skipped. Optional: without it (the web and the

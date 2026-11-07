@@ -538,8 +538,12 @@ export interface AppState {
   calibrationOpen: boolean
   /** The filament slot the calibration dialog opens for (from its card), or null for the first. */
   calibrationSlot: number | null
-  /** Print the rest from this height: set by the rescue screen, read by the next slice. The failed job's layer tops keep the layer numbers the same. */
-  resume: { plan: { resumeLayer: number; printedHeightMm: number }; declareZ?: boolean; layerTopsMm?: number[] } | null
+  /**
+   * Print the rest from this height: set by the rescue screen, read by the next slice. The failed job's layer tops keep
+   * the layer numbers the same; they hold for the plate they were planned on (`plate`) while its slice inputs stay as
+   * they were (`inputs`, sliceInputsKey in plate/resume-tops.ts), and are left out after a plate switch or an edit.
+   */
+  resume: { plan: { resumeLayer: number; printedHeightMm: number }; declareZ?: boolean; layerTopsMm?: number[]; plate?: string; inputs?: string } | null
   /** norn, edit from Preview: the clicked toolpath, and the slice before a change made there (time, grams and its paths, for the comparison). */
   norn: NornState
   /** The projects dialog: unsaved work offered back after a crash, or the recent projects. */

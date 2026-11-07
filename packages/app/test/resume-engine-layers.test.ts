@@ -18,10 +18,12 @@ import { setGeomProvider, toGeom } from '../src/geom/client'
 import { planResume } from '../src/geom/resume'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { setPlateLayerProfile } from '../src/plate/plates'
-import { resumeLayers } from '../src/plate/resume-tops'
+import { jobLayerTops, resumeLayers, sliceInputsKey, sliceState } from '../src/plate/resume-tops'
 import { forgetLayerPlans } from '../src/plate/smart-layer'
 import { compose } from '../src/plate/transform'
 import { slicePlate } from '../src/state/actions'
+import { engineErrorText } from '../src/lib/engine-errors'
+import { plateLayerZ } from '../src/state/slice-plate'
 import { get, set, type PlateEntry, type PaintData } from '../src/state/store'
 import { binBuilt, GEOM_BUILD, SX_BUILD } from './binaries'
 
@@ -44,7 +46,7 @@ function stl(p: MeshPart): Buffer {
 }
 
 /** A host whose slices run sx on the request the app sends, with the meshes it loaded. */
-function engineHost(): { host: Host; requests: SliceRequest[]; addMesh: (id: string, bytes: Buffer) => void } {
+function engineHost(kind: 'desktop' | 'web' = 'desktop', threads = 1): { host: Host; requests: SliceRequest[]; addMesh: (id: string, bytes: Buffer) => void } {
   const files = new Map<string, string>()
   const requests: SliceRequest[] = []
   const own = mkdtempSync(join(dir, 'host-'))
@@ -76,7 +78,7 @@ function engineHost(): { host: Host; requests: SliceRequest[]; addMesh: (id: str
     },
     release: () => undefined,
   }
-  return { host: { kind: 'desktop', capabilities: { threads: 1 }, slicer } as unknown as Host, requests, addMesh }
+  return { host: { kind, capabilities: { threads }, slicer } as unknown as Host, requests, addMesh }
 }
 
 const LIMITS = { layer_height: 0.2, initial_layer_print_height: 0.2, min_layer_height: [0.08], max_layer_height: [0.28], brim_width: 0 }
@@ -143,6 +145,21 @@ describe.skipIf(!built)('a resume with no current slice, real engine', () => {
     expect(z[at - 1]).toBeCloseTo(20.08, 4)
   }, 120_000)
 
+  it('gives the same layers through the web pool, which slices in shards', async () => {
+    const part = onePlate(40, { filament_shrinkage_compensation_z: ['99%'] })
+    setPlateLayerProfile('plate-1', [[0, 0.28], [19.9, 0.28], [20.2, 0.1], [40, 0.1]])
+    const web = engineHost('web', 4)
+    const { job } = await resumeAt(web, part, 20.08)
+    // The layer run keeps the slice's shards, and its layers are the ones a single run on the desktop gives.
+    expect(web.requests[0]!.options).toMatchObject({ shards: 4, emitGcode: false })
+    const desk = engineHost()
+    desk.addMesh('box', stl(part))
+    set({ resume: null, slice: { status: 'idle' } })
+    const one = await resumeLayers(desk.host, new AbortController().signal)
+    expect(desk.requests[0]!.options).toMatchObject({ shards: 1 })
+    expect(one!.tops).toEqual(job)
+  }, 120_000)
+
   it("plans a sleipnir plate in the engine's layers", async () => {
     const part = onePlate(20, { smart_layer_min_height: 0.08, smart_layer_max_height: 0.28 })
     set({ easy: { ...get().easy, varyLayerHeight: true } })
@@ -171,17 +188,19 @@ describe.skipIf(!built)('a resume with no current slice, real engine', () => {
 
 describe('the job layers a resume waits for', () => {
   /** A host whose slice answers when the test says, with these layers. */
-  function heldHost(): { host: Host; release: () => void; calls: () => number } {
+  function heldHost(): { host: Host; release: () => void; calls: () => number; local: (boolean | undefined)[] } {
     let go = () => undefined as void
     let calls = 0
+    const local: (boolean | undefined)[] = []
     const host = {
       kind: 'desktop',
       capabilities: { threads: 1 },
       slicer: {
         loadModel: async () => ({ id: 'm', hash: 'm', name: 'm', triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }),
         release: () => undefined,
-        slice: (_r: SliceRequest, o?: { signal?: AbortSignal }) => {
+        slice: (_r: SliceRequest, o?: { signal?: AbortSignal; local?: boolean }) => {
           calls++
+          local.push(o?.local)
           return new Promise<SliceResult>((res, rej) => {
             o?.signal?.addEventListener('abort', () => rej(new DOMException('Slice canceled', 'AbortError')))
             go = () => res({ id: 'r', layerZ: Float32Array.from([0.2, 0.4]), warnings: [] } as unknown as SliceResult)
@@ -189,7 +208,28 @@ describe('the job layers a resume waits for', () => {
         },
       },
     } as unknown as Host
-    return { host, release: () => go(), calls: () => calls }
+    return { host, release: () => go(), calls: () => calls, local }
+  }
+
+  /** A host whose slices answer in turn: an Error rejects with its message, an array is the layers. */
+  function scriptedHost(answers: (Error | number[])[]): { host: Host; requests: SliceRequest[] } {
+    const requests: SliceRequest[] = []
+    const host = {
+      kind: 'desktop',
+      capabilities: { threads: 1 },
+      slicer: {
+        loadModel: async () => ({ id: 'm', hash: 'm', name: 'm', triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }),
+        release: () => undefined,
+        slice: async (r: SliceRequest) => {
+          requests.push(r)
+          const a = answers.shift()
+          if (!a) throw new Error('stop')
+          if (a instanceof Error) throw a
+          return { id: `r${requests.length}`, layerZ: Float32Array.from(a), warnings: [] } as unknown as SliceResult
+        },
+      },
+    } as unknown as Host
+    return { host, requests }
   }
   const started = (h: { calls: () => number }) => vi.waitFor(() => expect(h.calls()).toBe(1))
 
@@ -200,7 +240,7 @@ describe('the job layers a resume waits for', () => {
   it("uses the job's layers without the engine when the app has them", async () => {
     set({ resume: { plan: { resumeLayer: 3, printedHeightMm: 0.6 }, layerTopsMm: [0.2, 0.4, 0.6, 0.8] } })
     const h = heldHost()
-    expect(await resumeLayers(h.host, new AbortController().signal)).toEqual({ plate: 'plate-1', tops: [0.2, 0.4, 0.6, 0.8] })
+    expect(await resumeLayers(h.host, new AbortController().signal)).toMatchObject({ plate: 'plate-1', tops: [0.2, 0.4, 0.6, 0.8] })
     expect(h.calls()).toBe(0)
   })
 
@@ -225,6 +265,8 @@ describe('the job layers a resume waits for', () => {
     h.release()
     const l = await p
     expect(l?.plate).toBe('plate-1')
+    // On this device: never a cloud slice, which would spend the account's cloud slices on a layer probe.
+    expect(h.local).toEqual([true])
     expect(l?.tops[0]).toBeCloseTo(0.2, 6)
     expect(l?.tops[1]).toBeCloseTo(0.4, 6)
   })
@@ -245,5 +287,68 @@ describe('the job layers a resume waits for', () => {
     set({ activePlate: 'plate-2' })
     h.release()
     expect(await p).toBeNull()
+  })
+
+  it('drops a setting the opened project brought that the engine refuses, and slices again', async () => {
+    set({ overrides: { ...get().overrides, raft_first_layer_expansion: -1 }, projectSettings: { source: 'the opened project', keys: ['raft_first_layer_expansion'] } })
+    const e = scriptedHost([new Error('config key raft_first_layer_expansion: -1 is outside 0 to 100'), [0.2, 0.4, 0.6]])
+    const tops = await plateLayerZ(e.host, new AbortController().signal)
+    expect(tops.map((t) => Math.round(t * 10) / 10)).toEqual([0.2, 0.4, 0.6])
+    expect(e.requests).toHaveLength(2)
+    expect(e.requests[0]!.config).toHaveProperty('raft_first_layer_expansion', -1)
+    expect(e.requests[1]!.config['raft_first_layer_expansion']).not.toBe(-1)
+    expect(get().overrides).not.toHaveProperty('raft_first_layer_expansion')
+    expect(get().projectSettings?.keys).toEqual([])
+  })
+
+  it("throws any other refusal in a slice's words", async () => {
+    const raw = 'blocked by the safety preflight: the start G-code heats past the printer limit'
+    const e = scriptedHost([new Error(raw)])
+    await expect(plateLayerZ(e.host, new AbortController().signal)).rejects.toThrow(engineErrorText(raw))
+    expect(engineErrorText(raw)).not.toBe(raw)
+    expect(e.requests).toHaveLength(1)
+  })
+})
+
+describe("a stored resume's layers", () => {
+  const TOPS = [0.2, 0.4, 0.6, 0.8, 1]
+  /** Stores a plan with TOPS for the shown plate as it is, as Slice the rest does. */
+  const store = () => set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS, plate: get().activePlate, inputs: sliceInputsKey(sliceState(get())) } })
+  /** The options the next slice sends. */
+  async function sent(): Promise<Record<string, unknown>> {
+    const e = { requests: [] as SliceRequest[] }
+    const host = { kind: 'desktop', capabilities: { threads: 1 }, slicer: { loadModel: async () => ({ id: 'm' }), release: () => undefined, slice: async (r: SliceRequest) => (e.requests.push(r), Promise.reject(new Error('stop'))) } } as unknown as Host
+    await slicePlate(host)
+    return (e.requests[0]?.options ?? {}) as Record<string, unknown>
+  }
+
+  beforeEach(() => {
+    onePlate(1, {})
+  })
+
+  it('hold for the plate they were planned on, as it was', async () => {
+    store()
+    expect(jobLayerTops(get())).toEqual(TOPS)
+    expect(await sent()).toMatchObject({ layerTopsMm: TOPS, layerTopsExact: true, layerTopsSliced: true, resumeFromLayer: 2 })
+  })
+
+  it('are left out after a switch to another plate', async () => {
+    store()
+    set({ activePlate: 'plate-2' })
+    expect(jobLayerTops(get())).toBeUndefined()
+    const opts = await sent()
+    expect(opts).not.toHaveProperty('layerTopsMm')
+    expect(opts).not.toHaveProperty('layerTopsSliced')
+  })
+
+  it('are left out after an edit to the plate or its settings', async () => {
+    store()
+    set({ overrides: { ...get().overrides, layer_height: 0.12 } })
+    expect(jobLayerTops(get())).toBeUndefined()
+    expect(await sent()).not.toHaveProperty('layerTopsSliced')
+    store()
+    set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [120, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
+    expect(jobLayerTops(get())).toBeUndefined()
+    expect(await sent()).not.toHaveProperty('layerTopsSliced')
   })
 })
