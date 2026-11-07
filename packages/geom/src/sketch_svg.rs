@@ -792,4 +792,142 @@ mod tests {
         };
         assert!(sketch_svg(&wrap(r#"<rect width="10" height="10"/>"#), &huge).is_err());
     }
+
+    fn circle4(r: f64) -> String {
+        let k = 0.552_284_749_8 * r;
+        wrap(&format!(
+            "<path d=\"M{r} 0 C{r} {k} {k} {r} 0 {r} C-{k} {r} -{r} {k} -{r} 0 C-{r} -{k} -{k} -{r} 0 -{r} C{k} -{r} {r} -{k} {r} 0 Z\"/>"
+        ))
+    }
+
+    #[test]
+    fn round_and_straight_cubics_become_arcs_and_lines() {
+        // a circle written as four cubics, as editors save one
+        let small = sketch_svg(&circle4(5.0), &SvgSketchOptions::default()).unwrap();
+        assert_eq!(small.loops[0].kind.as_deref(), Some("circle"));
+        assert!((small.loops[0].diameter_mm.unwrap() - 10.0).abs() <= 0.01);
+        // at 50 the four cubics stray past half the default tolerance, so splines; a looser one makes it a circle
+        let big = sketch_svg(&circle4(50.0), &SvgSketchOptions::default()).unwrap();
+        assert_eq!(kinds(&big.loops[0]), ["spline"; 4]);
+        let loose = SvgSketchOptions {
+            tolerance_mm: 0.1,
+            ..SvgSketchOptions::default()
+        };
+        let big = sketch_svg(&circle4(50.0), &loose).unwrap();
+        assert_eq!(big.loops[0].kind.as_deref(), Some("circle"));
+        assert!((big.loops[0].diameter_mm.unwrap() - 100.0).abs() <= 0.1);
+        // controls on the chord make a line; one past its end does not
+        let straight = sketch_svg(
+            &wrap(r#"<path d="M0 0 C10 0 20 0 30 0 V10 H0 Z"/>"#),
+            &SvgSketchOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(kinds(&straight.loops[0]), ["line", "line", "line", "line"]);
+        let over = sketch_svg(
+            &wrap(r#"<path d="M0 0 C10 0 45 0 30 0 V10 H0 Z"/>"#),
+            &SvgSketchOptions::default(),
+        )
+        .unwrap();
+        assert_ne!(kinds(&over.loops[0])[0], "line");
+    }
+
+    #[test]
+    fn only_arcs_round_one_center_make_a_circle() {
+        // a stadium: two half circles at different centers, with and without lines between
+        for (d, lines) in [
+            ("M20 10 H60 A10 10 0 0 1 60 30 H20 A10 10 0 0 1 20 10 Z", 2),
+            ("M20 10 A10 10 0 0 1 20 30 A15 15 0 0 1 20 10 Z", 0),
+        ] {
+            let r = sketch_svg(
+                &wrap(&format!(r#"<path d="{d}"/>"#)),
+                &SvgSketchOptions::default(),
+            )
+            .unwrap();
+            assert_eq!(r.counts.circles, 0, "{d}");
+            assert_eq!((r.counts.lines, r.counts.arcs), (lines, 2), "{d}");
+        }
+        let rounded = sketch_svg(
+            &wrap(r#"<rect x="10" y="10" width="40" height="20" rx="5"/>"#),
+            &SvgSketchOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(rounded.counts.circles, 0);
+        assert_eq!((rounded.counts.lines, rounded.counts.arcs), (4, 4));
+        // three quarters of a circle with the large flag, a quarter without; the middle lands on the far side
+        let mut thrus = Vec::new();
+        for (large, sweep, want) in [
+            (1, 1, 10.0 + 10.0 / 2f64.sqrt()),
+            (1, 0, 10.0 + 10.0 / 2f64.sqrt()),
+            (0, 1, 10.0 - 10.0 / 2f64.sqrt()),
+        ] {
+            let r = sketch_svg(
+                &wrap(&format!(r#"<path d="M30 20 A10 10 0 {large} {sweep} 20 10 Z"/>"#)),
+                &SvgSketchOptions::default(),
+            )
+            .unwrap();
+            let l = &r.loops[0];
+            let (s, arc) = (l.start.unwrap(), &l.segments[0]);
+            assert_eq!(arc.kind, "arc");
+            let (e, t) = (arc.to.unwrap(), arc.through.unwrap());
+            let mid = [f64::midpoint(s[0], e[0]), f64::midpoint(s[1], e[1])];
+            assert!(
+                (dist(t, mid) - want).abs() < 1e-6,
+                "{large} {sweep}: {}",
+                dist(t, mid)
+            );
+            thrus.push(t);
+        }
+        assert!(dist(thrus[0], thrus[1]) > 1.0);
+    }
+
+    #[test]
+    fn hostile_files_are_refused_or_read_whole() {
+        let none = SvgSketchOptions::default();
+        for bad in [
+            String::new(),
+            "not svg at all".to_owned(),
+            "<svg/>".to_owned(),
+            wrap("<path/>"),
+            wrap(r#"<path d=""/>"#),
+            wrap(r#"<path d="M5 5"/>"#),
+            wrap(r#"<rect width="10" height="10" fill="none"/>"#),
+        ] {
+            assert!(sketch_svg(&bad, &none).is_err(), "{bad}");
+        }
+        // a zero or negative viewBox falls back to the default size
+        for vb in ["0 0 0 0", "0 0 -10 10"] {
+            let r = sketch_svg(
+                &format!(r#"<svg viewBox="{vb}" width="10mm"><rect width="10" height="10"/></svg>"#),
+                &none,
+            )
+            .unwrap();
+            assert!(finite(&r) && r.size_mm[0] > 0.0, "{r:?}");
+        }
+        // deep nesting walks without recursion
+        let deep = wrap(&format!(
+            "{}<rect width=\"10\" height=\"10\"/>{}",
+            "<g>".repeat(5_000),
+            "</g>".repeat(5_000)
+        ));
+        assert_eq!(sketch_svg(&deep, &none).unwrap().loops.len(), 1);
+        // the warnings that say what was cut or ignored
+        let r = sketch_svg(
+            &wrap(r#"<clipPath id="c"><rect width="5" height="5"/></clipPath><rect width="10" height="10" clip-path="url(#c)"/><path d="M20 20 H30 V30 Z L x"/>"#),
+            &none,
+        )
+        .unwrap();
+        assert!(
+            r.warnings.iter().any(|w| w.contains("clip paths")),
+            "{:?}",
+            r.warnings
+        );
+        assert!(
+            r.warnings.iter().any(|w| w.contains("cut short")),
+            "{:?}",
+            r.warnings
+        );
+        // a filled polyline closes
+        let poly = sketch_svg(&wrap(r#"<polyline points="0 0 10 0 10 10" fill="red"/>"#), &none).unwrap();
+        assert_eq!(kinds(&poly.loops[0]), ["line", "line", "line"]);
+    }
 }
