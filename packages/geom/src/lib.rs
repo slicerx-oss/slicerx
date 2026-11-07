@@ -89,6 +89,8 @@ pub mod sketch_spline;
 pub mod sketch_svg;
 #[cfg(feature = "cad")]
 pub mod sketch_sweep;
+#[cfg(feature = "trace")]
+pub mod sketch_trace;
 pub mod solids;
 pub mod split;
 #[cfg(feature = "svg")]
