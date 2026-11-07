@@ -861,7 +861,7 @@ fn approvals_list(b: &Bridge, p: &RemotePairing) -> Value {
 /// shown. A partner phone never approves what a partner app raised, through any partner key or any
 /// partner phone, decided by the raiser's role the hub recorded and never by a name. With no raiser on
 /// record it approves nothing: the rule fails closed.
-fn phone_may_approve(partner_phone: bool, raiser: Option<&crate::rpc::CardRaiser>) -> bool {
+pub(crate) fn phone_may_approve(partner_phone: bool, raiser: Option<&crate::rpc::CardRaiser>) -> bool {
     !partner_phone || raiser.is_some_and(|r| r.role != crate::rpc::RaiserRole::Partner)
 }
 
