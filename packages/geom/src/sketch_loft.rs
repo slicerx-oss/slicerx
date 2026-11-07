@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! a solid lofted through sketch profiles, each on its own plane: ruled or smooth sides, open or round as a ring,
+//! a solid lofted through sketch profiles, each on its own plane: ruled or smooth sides, open or closed into a ring,
 //! and open profiles thickened into a shell
 // ring and vertex indices are taken modulo the ring length or come from the rings built here
 #![allow(clippy::indexing_slicing)]
@@ -76,7 +76,7 @@ pub fn loft(profiles: &[Profile]) -> Result<TriMesh> {
     loft_with(profiles, &Options::default())
 }
 
-/// The loft through `profiles` as `opts` asks: smooth sides through the profiles, the last joined round to the first,
+/// The loft through `profiles` as `opts` asks: smooth sides through the profiles, the last joined back to the first,
 /// or the sides thickened into a shell (which open profiles need).
 #[allow(
     clippy::too_many_lines,
@@ -166,7 +166,7 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
         })
         .collect();
     // Every ring winds counterclockwise about the way the loft goes from it. An open chain winds the way it and the
-    // line across its ends go round; a straight one is turned to run the way its neighbor runs. Landmarked rings keep
+    // line across its ends go around; a straight one is turned to run the way its neighbor runs. Landmarked rings keep
     // their matched points, so they turn all together or not at all.
     if marked {
         same_way(&mut sections, &along, open)?;
@@ -255,7 +255,7 @@ fn orient(sections: &mut [Section], along: &[V3], open: bool) {
     }
 }
 
-/// Whether an open chain and the line across its ends go round counterclockwise, or None for a straight chain.
+/// Whether an open chain and the line across its ends go around counterclockwise, or None for a straight chain.
 fn chain_winds(flat: &[V2]) -> Option<bool> {
     let a = poly2d::signed_area(flat);
     let span = flat
@@ -283,7 +283,7 @@ fn same_way(sections: &mut [Section], along: &[V3], open: bool) -> Result<()> {
                 return Err(Error::invalid(
                     "profiles",
                     format!(
-                        "profile {}'s landmarks run round the other way from profile {}'s; list them in the same order on every profile",
+                        "profile {}'s landmarks run around the other way from profile {}'s; list them in the same order on every profile",
                         k + 1,
                         first + 1
                     ),
@@ -322,7 +322,7 @@ fn landmarked(profiles: &[Profile]) -> Result<bool> {
     Ok(first > 0)
 }
 
-/// Where `p` lies along the polyline `pts` (closed round when `closed`), as a length from its start, when it is within
+/// Where `p` lies along the polyline `pts` (closed around when `closed`), as a length from its start, when it is within
 /// `LANDMARK_TOL_MM` of it.
 fn along_of(pts: &[V2], closed: bool, p: V2) -> Option<f64> {
     let k = pts.len();
@@ -349,7 +349,7 @@ fn along_of(pts: &[V2], closed: bool, p: V2) -> Option<f64> {
     best.filter(|&(o, _)| o <= LANDMARK_TOL_MM).map(|(_, s)| s)
 }
 
-/// The point `s` along the polyline `pts` (closed round when `closed`).
+/// The point `s` along the polyline `pts` (closed around when `closed`).
 fn point_along(pts: &[V2], closed: bool, s: f64) -> V2 {
     let k = pts.len();
     let sides = if closed { k } else { k - 1 };
@@ -422,7 +422,7 @@ fn by_landmarks(profiles: &[Profile], rings: &[(Frame, Vec<V2>)], open: bool) ->
             }
             breaks.push(b);
         } else {
-            // round from the first landmark, the way the landmarks go
+            // around from the first landmark, the way the landmarks go
             let s0 = at[0];
             let fwd: Vec<f64> = at.iter().map(|&s| (s - s0).rem_euclid(total)).collect();
             let back: Vec<f64> = fwd.iter().map(|&s| (total - s).rem_euclid(total)).collect();
@@ -432,7 +432,7 @@ fn by_landmarks(profiles: &[Profile], rings: &[(Frame, Vec<V2>)], open: bool) ->
             } else if rising(&back) {
                 back.iter().map(|&s| s0 - s).collect()
             } else {
-                return Err(bad("its landmarks are not in order round it".into()));
+                return Err(bad("its landmarks are not in order around it".into()));
             };
             let dir = if rising(&fwd) { 1.0 } else { -1.0 };
             let mut b = b;
@@ -758,7 +758,7 @@ fn steps(b: &[V3; 4]) -> f64 {
 
 /// The rows of a smooth loft and the span each row's strip to the next belongs to. Each ring point follows its own
 /// centripetal Catmull-Rom curve through the matching point of every profile; an open loft's ends mirror their
-/// neighbors, and a ring (`wrap`, the last ring's start on the first) runs round. Every span is cut into as many rows
+/// neighbors, and a ring (`wrap`, the last ring's start on the first) runs around. Every span is cut into as many rows
 /// as its most bent curve needs to stay within the tolerance.
 fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>>, Vec<usize>)> {
     let count = sections.len();
@@ -789,7 +789,7 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
     let mut of = Vec::new();
     #[allow(
         clippy::needless_range_loop,
-        reason = "a ring's spans run round past its last section"
+        reason = "a ring's spans run around past its last section"
     )]
     for s in 0..spans {
         #[allow(clippy::cast_possible_wrap, reason = "profile counts are small")]
@@ -1267,10 +1267,10 @@ mod tests {
         h[1].landmarks.swap(2, 4);
         assert_eq!(
             err(&h),
-            "profiles: profile 2: its landmarks are not in order round it"
+            "profiles: profile 2: its landmarks are not in order around it"
         );
         let mut h = hull(true);
         h[3].landmarks[1..].reverse();
-        assert!(err(&h).contains("profile 4's landmarks run round the other way from profile 1's"));
+        assert!(err(&h).contains("profile 4's landmarks run around the other way from profile 1's"));
     }
 }
