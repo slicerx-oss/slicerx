@@ -349,4 +349,23 @@ mod tests {
                 .contains("no one outward side")
         );
     }
+
+    #[test]
+    fn a_sharp_crease_stays_closed() {
+        // a sheet folded back 150 degrees along x = 10: the miter is held to twice the thickness there
+        let mut s = sheet(20.0, 10.0, 2, 1);
+        let (c, sn) = (150f64.to_radians().m_cos(), 150f64.to_radians().m_sin());
+        for p in &mut s.positions {
+            if p[0] > 10.0 {
+                let d = p[0] - 10.0;
+                *p = [10.0 + d * c, p[1], d * sn];
+            }
+        }
+        for side in [Side::Outward, Side::Inward] {
+            let m = thicken(&s, &th(0.5, side)).unwrap();
+            assert!(m.edge_report().is_watertight(), "{side:?}");
+            // two 10 by 10 slabs 0.5 mm thick, less the wedge the clamped miter cuts off inside the fold
+            assert!(m.volume() > 65.0 && m.volume() < 100.0, "{side:?} {}", m.volume());
+        }
+    }
 }
