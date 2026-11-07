@@ -45,6 +45,9 @@ export interface TexturePlan {
   reply: TextureReply
   /** The object's parts the plan was made for: its edits are by triangle of these meshes. */
   parts: readonly MeshPart[]
+  /** The history revision and plate when the plan was made, to tell a preview the project moved past. */
+  revision: string
+  plate: string
 }
 
 const sources = new Map<string, TextureSource>()
@@ -243,7 +246,7 @@ function sourceRequest(src: TextureSource): Record<string, unknown> {
  * part name, so parts that share a name keep every filament as paint and their own filament stays as it is.
  */
 export async function planTexturePaint(entry: Pick<PlateEntry, 'id' | 'parts' | 'paint' | 'transform'>, src: TextureSource, mode: TextureMode = 'nearest', filaments = filamentColors()): Promise<TexturePlan> {
-  const at = { parts: entry.parts }
+  const at = { parts: entry.parts, revision: history().state().revision, plate: get().activePlate }
   const parts = entry.parts.map((p: MeshPart) => ({ positions: p.positions, indices: p.indices }))
   const count = new Map<string, number>()
   for (const p of entry.parts) count.set(p.name, (count.get(p.name) ?? 0) + 1)

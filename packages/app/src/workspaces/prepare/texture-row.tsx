@@ -8,8 +8,9 @@ import type { Host } from '@slicerx/contracts'
 import { useHost } from '../../host'
 import { Swatch } from '../../parts'
 import { useResolvedSlots } from '../../filament/use-slots'
-import { applyTexturePlans, filamentColors, listSlots, objCompanions, paletteAllowed, planTexturePaint, rememberTexture, TEXTURE_FAILED, textureSourceOf, type TextureMode, type TexturePlan, type TextureSource } from '../../plate/texture-paint'
-import type { PlateEntry } from '../../state/store'
+import { applyTexturePlans, filamentColors, listSlots, objCompanions, paletteAllowed, planCurrent, planTexturePaint, rememberTexture, TEXTURE_FAILED, textureSourceOf, type TextureMode, type TexturePlan, type TextureSource } from '../../plate/texture-paint'
+import { history } from '../../plate/history'
+import { get, type PlateEntry } from '../../state/store'
 
 type State = { busy: true } | { plan: TexturePlan; mode: TextureMode } | { note: string } | null
 
@@ -65,9 +66,11 @@ export function TextureRow({ entry }: { entry: PlateEntry | undefined }) {
   }
 
   function apply(plan: TexturePlan, mode: TextureMode) {
-    // a preview made for another object, or for filaments that changed since, is not applied
+    // a preview made for another object, for filaments that changed since, or before an edit, is not applied
     if (plan.objectId !== entry?.id) return setState(null)
     if (mode === 'nearest' && !sameColors(plan.filaments, filamentColors())) return setState({ note: 'The filaments changed since this preview. Press From texture again.' })
+    // its edits were made against the object as it was: any edit since (a stroke, an Undo, a repair) or another plate
+    if (plan.revision !== history().state().revision || plan.plate !== get().activePlate || !planCurrent(plan)) return setState({ note: 'The object changed since this preview. Press From texture again.' })
     applyTexturePlans([plan], mode === 'palette' ? plan.reply.palette : undefined)
     setState(null)
   }
