@@ -1941,8 +1941,7 @@
      "op": "eq",
      "value": true
     }
-   ],
-   "intent": "multicolor"
+   ]
   },
   {
    "key": "prime_tower_max_speed",
