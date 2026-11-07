@@ -422,7 +422,7 @@ impl<'a> Measured<'a> {
 /// chain, ends included. A ring with fewer runs the way the others do: a closed one winds about the loft as they do
 /// (`facing`: each plane's normal along the loft), and an open one starts at the end nearest its neighbor's start,
 /// each taken about its middle (`centers`) as the planes turn between them. Closed rings whose landmarks wind opposite
-/// ways are refused.
+/// ways are refused, and so are open chains whose landmarks are not at the same ends or between them.
 #[allow(
     clippy::too_many_lines,
     reason = "find the landmarks, settle each ring's way, count each run, then spread it"
@@ -583,6 +583,38 @@ fn by_landmarks(
                 breaks[0].len() - 2
             ),
         ));
+    }
+    if open {
+        // each landmark is the chain's start, its end or between them, taken the way the chain runs
+        const PLACES: [&str; 3] = ["at its start", "between its ends", "at its end"];
+        let place = |k: usize, s: f64| {
+            let p = if s <= 0.0 {
+                0
+            } else if s >= lines[k].total {
+                2
+            } else {
+                1
+            };
+            if way[k] { p } else { 2 - p }
+        };
+        for k in 1..count {
+            let odd = places[0]
+                .iter()
+                .zip(&places[k])
+                .position(|(&a, &b)| place(0, a) != place(k, b));
+            if let Some(j) = odd {
+                return Err(Error::invalid(
+                    "profiles",
+                    format!(
+                        "profile {}'s landmark {} is {} and profile 1's is {}; mark the same points on every profile",
+                        k + 1,
+                        j + 1,
+                        PLACES[place(k, places[k][j])],
+                        PLACES[place(0, places[0][j])]
+                    ),
+                ));
+            }
+        }
     }
     let runs = breaks[0].len() - 1;
     // each run's count: the most points it has on any profile, one more than its inner vertices
