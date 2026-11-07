@@ -13,6 +13,7 @@ import { test as plain, expect as plainExpect } from '@playwright/test'
 import { type Page } from '@playwright/test'
 import { journey, expect } from '../journey'
 import { command, openStudio } from '../cad-helpers'
+import { openPalette, searchPalette, submitPalette } from '../palette'
 import { COLD_START_MS, expectCurrentTab, expectTabLabel, goTab, plateReady, test as cold } from '../fixtures'
 import {
   A1_MINI,
@@ -56,18 +57,15 @@ journey.describe('the main flows of the browser build', () => {
       await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
       await page.keyboard.press('Escape')
     }
-    await page.keyboard.press('ControlOrMeta+k')
-    await page.keyboard.type('go printers')
-    await page.keyboard.press('Enter')
+    await openPalette(page)
+    await submitPalette(page, await searchPalette(page, 'go printers', /^Go to Printers/))
     await expectCurrentTab(page, 'printers', 'Printers')
   })
 
   journey('free text in Cmd+K goes to the mimir tab', async ({ page }) => {
     await goTab(page, 'prepare')
-    await page.keyboard.press('ControlOrMeta+k')
-    await page.keyboard.type('why is my first layer peeling')
-    await expect(page.locator('.sx-palette-item', { hasText: 'Ask mimir: why is my first layer peeling' })).toBeVisible()
-    await page.keyboard.press('Enter')
+    await openPalette(page)
+    await submitPalette(page, await searchPalette(page, 'why is my first layer peeling', 'Ask mimir: why is my first layer peeling'))
     await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
     await expect(page.getByTestId('mimir-chat')).toContainText('why is my first layer peeling')
     // back to the plate for the next test
@@ -116,9 +114,7 @@ journey.describe('the main flows of the browser build', () => {
 
   journey('About shows the attribution line, the license and the source link', async ({ page }) => {
     await goTab(page, 'prepare')
-    await page.keyboard.press('ControlOrMeta+k')
-    await page.keyboard.type('About SlicerX and its source code')
-    await page.locator('.sx-palette-item', { hasText: 'About SlicerX and its source code' }).first().click()
+    await command(page, 'About SlicerX and its source code')
     const about = page.getByRole('dialog', { name: /About/ })
     // The edition's attribution: "Made possible by SlicerX", linking to the support page.
     const credit = about.getByTestId('about-attribution')

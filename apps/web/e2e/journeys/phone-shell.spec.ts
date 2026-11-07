@@ -4,6 +4,7 @@
 // that sheet, and toasts over it. A phone views and prints, so its settings are Simple only and its panes are bottom
 // sheets. The desktop window's checks are in shell.spec.ts and sidebar.spec.ts.
 import { closeSheet, expect, openSheet } from '../fixtures'
+import { openPalette, searchPalette } from '../palette'
 import { addPlateFromPicker, pickPlate } from '../plate-project'
 import {
   BAY_1, HAND_PRINTERS, addFilamentMovesNothing, box, dismiss, emptyPlateSaysSo, exampleX, exportOnly, fullSectionWraps, goSlice, machineBoxesChange, objectRowIsCompact, optionsMenuOnTop, plateTypePerPlate,
@@ -63,10 +64,8 @@ test.describe('Printer settings on a phone', () => {
     await expect(page.getByTestId('slice-machine-printer-settings')).toHaveCount(0)
     await dismiss(page)
     await closeSheet(page)
-    await page.getByTestId('phone-search').click()
-    await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
-    await page.keyboard.type('Printer settings')
-    await page.locator('.sx-palette-item', { hasText: /^Printer settings/ }).first().click()
+    await openPalette(page, page.getByTestId('phone-search'))
+    await (await searchPalette(page, 'Printer settings', /^Printer settings/)).click()
     const dialog = page.getByRole('dialog', { name: /Printer settings/ })
     await expect(dialog).toBeVisible()
     const tabs = dialog.getByRole('radiogroup', { name: 'Printer settings tab' })
@@ -79,9 +78,8 @@ test.describe('Printer settings on a phone', () => {
     await dialog.getByRole('button', { name: 'Done', exact: true }).click()
     await expect(dialog).toHaveCount(0)
     // A printer setting found by name opens the dialog on it.
-    await page.getByTestId('phone-search').click()
-    await page.keyboard.type('Retraction length')
-    await page.locator('.sx-palette-item', { hasText: 'Printer setting' }).first().click()
+    await openPalette(page, page.getByTestId('phone-search'))
+    await (await searchPalette(page, 'Retraction length', 'Printer setting')).click()
     await expect(dialog).toBeVisible()
     await expect(dialog.locator('#ps-retraction_length')).toBeVisible()
     await dialog.getByRole('button', { name: 'Done', exact: true }).click()

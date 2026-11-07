@@ -683,9 +683,7 @@ test('a wrong code is refused with a plain message', async ({ page }) => {
 
 test('the camera player shows live frames from the printer', async ({ page }) => {
   await paired(page)
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('Open the camera of Voron')
-  await page.locator('.sx-palette-item', { hasText: 'Open the camera of Voron' }).first().click()
+  await command(page, 'Open the camera of Voron')
   const dialog = page.getByRole('dialog', { name: /Voron camera/ })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByText(/\d+ fps/)).toBeVisible({ timeout: 30_000 })

@@ -5,6 +5,7 @@
 // small checks that were repeated per spec.
 import { type Page, type Route, type TestInfo } from '@playwright/test'
 import { expect, goTab, plateReady, sliceCount, sliced, viewportReady } from '../../fixtures'
+import { command, openPalette, searchPalette, submitPalette } from '../../palette'
 
 export type Sx = { setState(p: unknown): void; getState(): Record<string, unknown> }
 type W = { __sx: Sx; __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string | null): unknown }
@@ -202,9 +203,7 @@ export async function sliceAndColorBy(page: Page, phone: boolean): Promise<void>
     // A phone keeps the view clear: the legend is its chip, and the color choice is in Cmd+K as well.
     await expect(page.getByTestId('legend-color-by')).toBeVisible()
     await expect(page.getByRole('list', { name: 'Toolpath legend' })).toBeHidden()
-    await page.keyboard.press('ControlOrMeta+k')
-    await page.keyboard.type('Color toolpaths by Layer time')
-    await page.locator('.sx-palette-item', { hasText: 'Color toolpaths by Layer time' }).click()
+    await command(page, 'Color toolpaths by Layer time')
     await expect(page.getByTestId('legend-color-by')).toContainText('Layer time')
     return
   }
@@ -372,9 +371,8 @@ export async function escapeAndHandAdd(page: Page, phone: boolean): Promise<void
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'Leave setup?' }).getByRole('button', { name: 'Leave' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('change look and feel')
-  await page.keyboard.press('Enter')
+  await openPalette(page)
+  await submitPalette(page, await searchPalette(page, 'change look and feel'))
   await expect(page.locator('#fr-step-label')).toHaveText(`Step 3 of ${setupSteps(phone)}`)
 }
 
@@ -391,13 +389,9 @@ export async function mimirConnectSteps(page: Page, phone: boolean): Promise<voi
   await page.locator(phone ? '.phone-tab >> nth=0' : '.sx-tab >> nth=1').click()
   await expect(page.getByTestId('mimir-chat')).toBeHidden()
   // A question offers mimir, and choosing it opens the tab with the question waiting.
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('why is my first layer rough')
-  await page.locator('.sx-palette-item', { hasText: 'Ask mimir: why is my first layer rough' }).click()
+  await command(page, 'why is my first layer rough', { wanted: 'Ask mimir: why is my first layer rough' })
   await expect(connect).toContainText('why is my first layer rough')
-  await page.keyboard.press('ControlOrMeta+k')
-  await page.keyboard.type('connect mimir')
-  await page.locator('.sx-palette-item', { hasText: 'Connect mimir' }).first().click()
+  await command(page, 'connect mimir', { wanted: 'Connect mimir' })
   const dialog = page.getByRole('dialog', { name: 'Settings' })
   await expect(dialog.getByRole('heading', { name: 'mimir' })).toBeVisible()
   await expect(dialog.getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()

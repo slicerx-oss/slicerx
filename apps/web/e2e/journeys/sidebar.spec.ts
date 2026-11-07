@@ -10,7 +10,7 @@ import { addMenu, expect, openTransform, plateReady, renameRow, setPartFilament,
 import { addPlateFromPicker, pickPlate } from '../plate-project'
 import {
   BAY_1, H2D, HAND_PRINTERS, UNCONNECTED, addFilamentMovesNothing, dismiss, emptyPlateSaysSo, exportOnly, fullSectionWraps, layoutReset, machineBoxesChange, mode, objectRowIsCompact, optionsMenuOnTop, plateTypePerPlate,
-  setState, settingsReset, sidebarAs, sidebarDone, slot, slotHighlights, spoolsShow, test, type FilamentSx,
+  command, setState, settingsReset, sidebarAs, sidebarDone, slot, slotHighlights, spoolsShow, test, type FilamentSx,
 } from './lib/shell'
 import { layeredMid } from './lib/slice'
 
@@ -466,9 +466,7 @@ test.describe('the scope pill', () => {
   }
   /** Opens Expert settings on one setting through the command palette, which searches for it there. */
   async function goTo(page: Page, name: string): Promise<void> {
-    await page.keyboard.press('ControlOrMeta+k')
-    await page.locator('.sx-palette-input').fill(name)
-    await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+    await command(page, name, { wanted: 'now' })
     await expect(page.locator('#expert-panel')).toBeVisible()
   }
 
