@@ -23,6 +23,7 @@ import { activeMeta } from '../plate/plates'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
 import { bodyCount, multiBodyChoice, regroup, severalShells, willAsk } from './multi-body'
+import { partRebuilt } from '../plate/rebuilt'
 
 export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step' | 'iges'
 type MeshFormat = Exclude<AutoFormat, 'step' | 'iges'>
@@ -436,6 +437,8 @@ export async function checkCrossings(host: Host, name: string, objects: { id: st
       edit(() => set((s) => ({ plate: s.plate.map((p) => (p.id === o.id ? { ...p, parts, handle } : p)) })))
       host.slicer.release?.(now.handle.id)
       fixed++
+      // its paint is kept by triangle number, which the rebuild changed
+      partRebuilt({ objectId: o.id, part: i, edit })
     }
   }
   if (fixed) {
