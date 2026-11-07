@@ -351,12 +351,13 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const fused = fit.gaps.filter((g) => g.kind === 'fused')
 
   // pieces: the plan's count, each a body of its own, by the plan's names
-  const { missing, free } = unmatched(pieces, fit.bodies)
+  const { missing, free, answered } = unmatched(pieces, fit.bodies)
   // bodies of one part (a mirrored leaf, an arrayed link) go by their part's name with a number, and no tool names a
-  // body on its own: with the count right, names left over are read as such bodies when every body left over is one
+  // body on its own: with the count right, names left over are read as such bodies, one each, when every body left over
+  // is one and its part answers no other name (else a piece merged into another would pass as a mirrored body)
   const bodiesIn = new Map<number, number>()
   for (const b of fit.bodies) bodiesIn.set(b.part, (bodiesIn.get(b.part) ?? 0) + 1)
-  const shared = missing.length > 0 && free.length >= missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1)
+  const shared = missing.length > 0 && free.length === missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1 && !answered.has(fit.bodies[b]!.part))
   const named = fit.pieces === pieces.length && (!missing.length || shared)
   let got: string
   if (fit.pieces === pieces.length && shared) {
@@ -406,20 +407,22 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
 
 /**
  * The plan's piece names no body answers to, one body per name: a body's own name ("Pin 2", "Pin (part 3)") first, then
- * its part's name, without regard to case; and the bodies no name took.
+ * its part's name, without regard to case; the bodies no name took; and the parts whose bodies took a name.
  */
-function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[] } {
+function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[]; answered: Set<number> } {
   const key = (v: string): string => v.trim().toLowerCase()
   const free = new Set(bodies.map((_, b) => b))
+  const answered = new Set<number>()
   const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): boolean => {
     const b = [...free].find((k) => of(bodies[k]!) !== undefined && key(of(bodies[k]!)!) === key(p))
     if (b === undefined) return false
     free.delete(b)
+    answered.add(bodies[b]!.part)
     return true
   }
   const left = pieces.filter((p) => !take(p, (b) => b.name))
   const missing = left.filter((p) => !take(p, (b) => b.partName))
-  return { missing, free: [...free] }
+  return { missing, free: [...free], answered }
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
