@@ -6,7 +6,7 @@
 // runs it; with none, the scripted stub answers over the same tools, and the chat says so.
 import { type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
-import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
+import { nozzleOr, tabToolset } from '@slicerx/mcp/toolset'
 import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
@@ -31,12 +31,11 @@ import { hostSlices } from '../../state/model-mode'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
-import { withPlanTies } from './plan-tool'
-import { mimirPlans } from './plans'
+import { cardPlans } from './plan-tool'
 import { answersReachTheirRun, forgetReplaced, retire } from './answers'
 import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
-import { mimirTools, NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter } from './scripted'
+import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter } from './scripted'
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
 
@@ -92,8 +91,8 @@ function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
   // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
-  // is left out of the tab (mimirTools).
-  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), cardSide: true })))
+  // is left out of the tab. The creative eval makes its tools with the same tabToolset (@slicerx/mcp toolset.ts).
+  if (tools.length === 0) tools = tabToolset(appDesignHost(loader), cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
   return tools
 }
 
