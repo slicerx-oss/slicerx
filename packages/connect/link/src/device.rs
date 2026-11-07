@@ -1033,6 +1033,95 @@ mod tests {
         assert_eq!(sx_connect::gcode_line_problem("G28"), None);
     }
 
+    const ALL_STATES: [PrinterState; 7] = [
+        PrinterState::Idle,
+        PrinterState::Preparing,
+        PrinterState::Printing,
+        PrinterState::Paused,
+        PrinterState::Finished,
+        PrinterState::Error,
+        PrinterState::Offline,
+    ];
+    const ALL_BEDS: [sx_permit::BedState; 4] = [
+        sx_permit::BedState::Clear,
+        sx_permit::BedState::NotCleared,
+        sx_permit::BedState::Busy,
+        sx_permit::BedState::Unknown,
+    ];
+
+    // Every printer state and plate record, with and without the person's plate answer: a line that
+    // moves the head goes only while idle or finished and only onto a plate known or said to be clear.
+    #[test]
+    fn a_motion_line_goes_only_while_idle_or_finished_onto_a_clear_plate() {
+        for s in ALL_STATES {
+            for bed in ALL_BEDS {
+                for answered in [false, true] {
+                    let want = if !matches!(s, PrinterState::Idle | PrinterState::Finished) {
+                        Some("bad_state")
+                    } else if bed != sx_permit::BedState::Clear && !answered {
+                        Some("bed_check")
+                    } else {
+                        None
+                    };
+                    let got = motion_problem(s, bed, answered).err().map(|e| e.code);
+                    assert_eq!(got.as_deref(), want, "{s:?} {bed:?} {answered}");
+                }
+            }
+        }
+    }
+
+    // A filament change goes while a print runs or is paused (the firmware parks the head), follows the
+    // plate rule on an idle or finished printer, and is refused while preparing, in an error or offline.
+    #[test]
+    fn a_filament_change_goes_mid_print_and_follows_the_plate_rule_when_idle() {
+        for s in ALL_STATES {
+            for bed in ALL_BEDS {
+                for answered in [false, true] {
+                    let want = match s {
+                        PrinterState::Printing | PrinterState::Paused => None,
+                        PrinterState::Idle | PrinterState::Finished => {
+                            (bed != sx_permit::BedState::Clear && !answered).then_some("bed_check")
+                        }
+                        _ => Some("bad_state"),
+                    };
+                    let got = filament_change_problem(s, bed, answered).err().map(|e| e.code);
+                    assert_eq!(got.as_deref(), want, "{s:?} {bed:?} {answered}");
+                }
+            }
+        }
+    }
+
+    // A line that changes how a running print goes (modes, the E frame, factors, waits) cannot move the
+    // head, so it asks nothing about the plate, but goes only while no print runs.
+    #[test]
+    fn a_print_changing_line_goes_only_while_idle_or_finished() {
+        for s in ALL_STATES {
+            for bed in ALL_BEDS {
+                let want = (!matches!(s, PrinterState::Idle | PrinterState::Finished)).then_some("bad_state");
+                let got = no_print_problem(s, bed, false).err().map(|e| e.code);
+                assert_eq!(got.as_deref(), want, "{s:?} {bed:?}");
+            }
+        }
+    }
+
+    // A refused RESUME, EXCLUDE_OBJECT, speed or flow line names the control a person uses, never an
+    // internal action key.
+    #[test]
+    fn a_refusal_names_the_control_not_an_action_key() {
+        let busy = || RpcError::new("bad_state", "busy");
+        for (line, says) in [
+            ("RESUME", "Resume"),
+            ("EXCLUDE_OBJECT NAME=a", "Skip object"),
+            ("M220 S120", "speed"),
+            ("M221 S110", "flow"),
+        ] {
+            let e = pointing_to_action(busy(), line);
+            assert_eq!(e.code, "bad_state", "{line}");
+            assert!(e.message.contains(says), "{line}: {}", e.message);
+            assert!(!e.message.contains("printer."), "{line}: {}", e.message);
+        }
+    }
+
     #[test]
     fn a_jog_down_after_a_canceled_print_asks_about_the_plate() {
         let known = motion(Some([true, true, true]), Some([5.0, 5.0, 20.0]));
