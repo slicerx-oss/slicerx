@@ -25,7 +25,7 @@ export function ResumeElsewhereNote() {
   const plate = useApp(resumeElsewhere)
   if (plate === null) return null
   return (
-    <p className="app-note" data-testid="resume-elsewhere">
+    <p className="app-note prose" data-testid="resume-elsewhere">
       A resume plan is kept for plate {plate}. This plate prints in full.
     </p>
   )
