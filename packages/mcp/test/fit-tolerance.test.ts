@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The 0.02 mm a gap may read under its limit and still clear, at the edges: it is for side gaps only (round faces drawn
-// as facets), so a gap above or below is held to its bare limit, which the fit rule floors to whole layers. A touch
+// The 0.02 mm a gap may read under its limit and still clear, at the edges: it is for gaps whose ends are round faces
+// drawn as facets, beside a pin or above one lying flat in its bore; a gap above or below between flat faces is held to
+// its bare limit, which the fit rule floors to whole layers. A touch
 // stays a touch. The engine's report is stubbed, so each gap is exactly the size the case names. Also the pieces item
 // for pieces that are bodies of one part (after geom.mirror or geom.array), which no tool can name one by one.
 import type { Design as HostDesign, DesignHost, HistoryMesh } from '@slicerx/cad-history'
@@ -15,10 +16,21 @@ type V3 = [number, number, number]
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 // one small facet per part: the report is stubbed, so the meshes only need to exist
 const part = (name: string, z: number): HistoryMesh => ({ name, slot: 0, positions: [0, 0, z, 1, 0, z, 0, 1, z], indices: [0, 1, 2] })
-const design = { id: 'd', name: 'Mechanism', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [part('Arm', 0), part('Pin', 5)], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
+const designOf = (parts: HistoryMesh[]) => ({ id: 'd', name: 'Mechanism', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts, status: [], madeBy: {}, redo: [] }) as unknown as HostDesign
+const design = designOf([part('Arm', 0), part('Pin', 5)])
+// a gap above and below between flat faces: a top facet of Arm at z 5 under a bottom facet of Pin at 5 + the gap
+const flatPair = (gapMm: number): HistoryMesh[] => [
+  { name: 'Arm', slot: 0, positions: [-1, -1, 5, 1, -1, 5, 0, 1, 5], indices: [0, 1, 2] },
+  { name: 'Pin', slot: 0, positions: [-1, -1, 5 + gapMm, 0, 1, 5 + gapMm, 1, -1, 5 + gapMm], indices: [0, 1, 2] },
+]
+// the same gap between faceted curves, a pin lying flat in its bore: the facets at the gap's ends lean, none faces up or down
+const curvedPair = (gapMm: number): HistoryMesh[] => [
+  { name: 'Arm', slot: 0, positions: [-1, -1, 5.6, 1, -1, 5.6, 0, 1, 5], indices: [0, 1, 2] },
+  { name: 'Pin', slot: 0, positions: [-1, -1, 4.4 + gapMm, 0, 1, 5 + gapMm, 1, -1, 4.4 + gapMm], indices: [0, 1, 2] },
+]
 
-/** fitFacts over a stubbed engine that reports one gap between the two parts. */
-async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, material = 'PLA') {
+/** fitFacts over a stubbed engine that reports one gap between the two parts; a gap above and below is between flat faces unless `ends` is curved. */
+async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, material = 'PLA', ends: 'flat' | 'curved' = 'flat') {
   const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material })
   const from: V3 = kind === 'vertical' ? [0, 0, 5] : [0, 0, 0]
   const to: V3 = kind === 'vertical' ? [0, 0, 5 + gapMm] : [gapMm, 0, 0]
@@ -31,7 +43,7 @@ async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, materi
     pieces: kind === 'fused' ? 1 : 2,
   }
   const host = { call: async () => report } as unknown as DesignHost
-  const fit = await fitFacts(host, design, limits)
+  const fit = await fitFacts(host, kind === 'vertical' ? designOf(ends === 'flat' ? flatPair(gapMm) : curvedPair(gapMm)) : design, limits)
   return { fit, gap: fit.gaps[0]!, limits }
 }
 
@@ -41,6 +53,7 @@ describe('the fit tolerance', () => {
   it('a flat gap of 0.38 mm above and below stays tight and fails at 0.2 mm layers (PLA): one layer, which the sag closes', async () => {
     const { fit, gap, limits } = await oneGap('vertical', 0.38)
     expect(limits.verticalMm).toBe(0.4)
+    expect(gap.flat).toBe(true)
     expect(gap.kind).toBe('vertical')
     expect(gap.direction).toBe('z')
     expect(fitVerdict(gap, limits)).toBe('fuses')
@@ -61,6 +74,31 @@ describe('the fit tolerance', () => {
     expect(fitVerdict(at.gap, at.limits)).toBe('slides')
     const under = await oneGap('vertical', 0.399)
     expect(under.gap.kind).toBe('vertical')
+  })
+
+  it('a gap above a pin lying flat in its bore, modeled at the limit, clears: its ends are faceted curves', async () => {
+    // a 0.4 mm gap over a round pin reads up to a facet's sagitta short at its top
+    for (const read of [0.385, 0.4 - FIT_TOLERANCE_MM + 1e-9]) {
+      const { fit, gap, limits } = await oneGap('vertical', read, 'PLA', 'curved')
+      expect(gap.flat, `${read} mm`).toBeUndefined()
+      expect(gap.direction).toBe('z')
+      expect(gap.kind, `${read} mm`).toBe('apart')
+      expect(fitVerdict(gap, limits), `${read} mm`).toBe('slides')
+      expect(gapsItem(fit).pass, `${read} mm`).toBe(true)
+    }
+    // more than the tolerance under still fails
+    const { fit, gap } = await oneGap('vertical', 0.4 - 0.0201, 'PLA', 'curved')
+    expect(gap.kind).toBe('vertical')
+    expect(gapsItem(fit).pass).toBe(false)
+  })
+
+  it('a flat gap above and below and its verdict agree at float error under the limit', async () => {
+    for (const under of [5e-7, 7e-7]) {
+      const { gap, limits } = await oneGap('vertical', 0.4 - under)
+      expect(gap.flat).toBe(true)
+      expect(gap.kind, `${under} under`).toBe('apart')
+      expect(fitVerdict(gap, limits), `${under} under`).toBe('slides')
+    }
   })
 
   it('a side gap within the tolerance of its limit clears', async () => {
@@ -129,14 +167,18 @@ describe('one gap rule for every caller', () => {
     expect(toolset.FIT_TOLERANCE_MM).toBe(FIT_TOLERANCE_MM)
     expect(toolset.clearsFitLimit(0.28, 'xy', l)).toBe(true)
     expect(toolset.clearsFitLimit(0.279, 'xy', l)).toBe(false)
-    expect(toolset.clearsFitLimit(0.38, 'z', l)).toBe(false)
-    expect(toolset.clearsFitLimit(0.4 - 1e-9, 'z', l)).toBe(true)
+    // between flat faces only at the limit; between faceted curves within the tolerance, as a side gap
+    expect(toolset.clearsFitLimit(0.38, 'z', l, true)).toBe(false)
+    expect(toolset.clearsFitLimit(0.4 - 1e-9, 'z', l, true)).toBe(true)
+    expect(toolset.clearsFitLimit(0.38, 'z', l)).toBe(true)
+    expect(toolset.clearsFitLimit(0.379, 'z', l)).toBe(false)
     expect(toolset.fitDirection('vertical', [0, 0, 0], [5, 0, 0])).toBe('z')
     expect(toolset.fitDirection('horizontal', [0, 0, 0], [0, 0, 5])).toBe('xy')
     expect(toolset.fitDirection('apart', [0, 0, 0], [0.1, 0, 0.5])).toBe('z')
     expect(toolset.fitDirection('fused', [0, 0, 0], [0.5, 0, 0.1])).toBe('xy')
     expect(toolset.fitDirection('fused', [0, 0, 0], [0.5, 0, 0.1], true)).toBe('z')
-    expect(toolset.fitVerdict({ kind: 'vertical', gapMm: 0.38, direction: 'z' }, l)).toBe('fuses')
+    expect(toolset.fitVerdict({ kind: 'vertical', gapMm: 0.38, direction: 'z', flat: true }, l)).toBe('fuses')
+    expect(toolset.fitVerdict({ kind: 'vertical', gapMm: 0.385, direction: 'z' }, l)).toBe('slides')
   })
 
   it("designToolset hands the run's layer height and filament to geom.fit_check and design.check", async () => {
