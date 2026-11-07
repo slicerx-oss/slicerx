@@ -3778,13 +3778,13 @@ async fn a_filament_change_goes_mid_print_and_asks_about_an_idle_plate() {
     let done = approved_line(&mut ag, &mut app, "f-resume", "RESUME").await;
     assert_eq!(done["code"], "bad_state", "{done}");
     assert!(
-        done["message"].as_str().unwrap_or("").contains("resume action"),
+        done["message"].as_str().unwrap_or("").contains("Resume"),
         "{done}"
     );
     let done = approved_line(&mut ag, &mut app, "f-skip", "EXCLUDE_OBJECT NAME=a").await;
     assert_eq!(done["code"], "bad_state", "{done}");
     assert!(
-        done["message"].as_str().unwrap_or("").contains("skip action"),
+        done["message"].as_str().unwrap_or("").contains("Skip object"),
         "{done}"
     );
 
@@ -3800,6 +3800,233 @@ async fn a_filament_change_goes_mid_print_and_asks_about_an_idle_plate() {
     let done = grant_and_wait(&mut ag, &mut app, "f-3", true).await;
     assert_eq!(done["ok"], true, "{done}");
     assert_eq!(m600s(mock_log(&mocks).await), 3);
+}
+
+/// A token holder's `gcode` call for `line` on bay-4, with the person's plate answer for `epoch` when given.
+async fn gcode_call(app: &mut Ws, id: &str, line: &str, epoch: Option<u64>) -> Value {
+    let p = json!({ "printerId": "bay-4", "line": line });
+    let _ = call(
+        app,
+        60,
+        "approvals.register",
+        json!({ "request": card(id, "printer.gcode", "printer.gcode", &p) }),
+    )
+    .await;
+    let t = call(app, 61, "approvals.grant", json!({ "requestId": id })).await["result"].clone();
+    let mut q = json!({ "printerId": "bay-4", "line": line, "token": t });
+    if let Some(e) = epoch {
+        q["plateClear"] = json!(true);
+        q["epoch"] = json!(e);
+    }
+    call(app, 62, "gcode", q).await
+}
+
+// "The plate is clear" holds for the bed epoch it was asked in. A print that ran since moves the epoch,
+// and an old answer sends nothing: a probe line and a raw filament change both ask again.
+#[tokio::test]
+async fn a_stale_plate_answer_sends_no_motion_line_and_no_filament_change() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let r = gcode_call(&mut app, "s-0", "G29", None).await;
+    assert_eq!(r["error"]["code"], "bed_check", "{r}");
+    let asked = r["error"]["details"]["epoch"].as_u64().expect("the refusal names the epoch");
+
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let now = bed(&mut app).await["epoch"].as_u64().unwrap();
+    assert!(now > asked, "a start moves the bed epoch");
+
+    for (n, line) in ["G29", "M600", "G1 Z-5"].iter().enumerate() {
+        let r = gcode_call(&mut app, &format!("s-{}", n + 1), line, Some(asked)).await;
+        assert_eq!(r["error"]["code"], "bed_check", "{line}: {r}");
+        assert_eq!(r["error"]["details"]["epoch"], now, "{line}: {r}");
+    }
+    let log = mock_log(&mocks).await;
+    for line in ["gcode G29", "gcode M600", "gcode G1 Z-5"] {
+        assert!(!log.contains(&line.to_owned()), "a stale answer sent {line}: {log:?}");
+    }
+    // The answer for the plate as it is now goes.
+    let r = gcode_call(&mut app, "s-9", "G29", Some(now)).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert!(mock_log(&mocks).await.contains(&"gcode G29".to_owned()));
+}
+
+// A paused print takes a filament change on approve; a line that moves the head is still refused.
+#[tokio::test]
+async fn a_paused_print_takes_a_filament_change_but_no_motion_line() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    mocks.set_state("moonraker", "paused").await;
+    until_bay4(&mut app, "paused").await;
+    let shown = filament_card(&mut ag, &mut app, "p-1").await;
+    assert_eq!(shown["work"]["printing"], true, "{shown}");
+    let done = grant_and_wait(&mut ag, &mut app, "p-1", false).await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(mock_log(&mocks).await.contains(&"gcode M600".to_owned()));
+    let done = approved_line_with(&mut ag, &mut app, "p-2", "G29", true).await;
+    assert_eq!(done["code"], "bad_state", "{done}");
+    assert!(!mock_log(&mocks).await.contains(&"gcode G29".to_owned()));
+}
+
+// The guard holds the printer while it reads the state and sends. A probe card approved on an idle
+// printer, while a print's upload holds the printer, waits for it, then reads the printer as printing
+// and sends nothing.
+#[tokio::test]
+async fn a_motion_line_waits_for_the_printer_and_reads_its_state_after() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    let mut app2 = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let mut ag = agent(&link).await;
+    let r = call(&mut app, 70, "bed.confirmClear", json!({ "printerId": "bay-4" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    mocks.set_upload_delay("moonraker", 1500).await;
+    let print = async {
+        let (f, _) = file("plate.gcode", 3);
+        call(
+            &mut app,
+            71,
+            "print.local",
+            json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+        )
+        .await
+    };
+    let probe = async {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        approved_line_with(&mut ag, &mut app2, "l-1", "G29", true).await
+    };
+    let (started, done) = tokio::join!(print, probe);
+    assert_eq!(started["result"]["started"], true, "{started}");
+    assert_eq!(done["code"], "bad_state", "{done}");
+    assert!(!mock_log(&mocks).await.contains(&"gcode G29".to_owned()));
+}
+
+// Mid-print the guard never sends a positioning line: a filament change into a print the printer
+// started itself, while the hub still owes it a G90 from a jog, sends M600 and nothing before it.
+#[tokio::test]
+async fn a_filament_change_mid_print_sends_no_positioning_line() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let mut ag = agent(&link).await;
+    mocks
+        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20], "failG90": 2 }))
+        .await;
+    let r = call(
+        &mut app,
+        72,
+        "jog",
+        json!({ "printerId": "bay-4", "axis": "x", "distanceMm": 1.0 }),
+    )
+    .await;
+    assert!(r["error"].is_object(), "the G90 after the jog failed: {r}");
+    mocks.set_state("moonraker", "printing").await;
+    until_bay4(&mut app, "printing").await;
+    let before = mock_log(&mocks).await.len();
+    filament_card(&mut ag, &mut app, "g-1").await;
+    let done = grant_and_wait(&mut ag, &mut app, "g-1", false).await;
+    assert_eq!(done["ok"], true, "{done}");
+    let after: Vec<String> = mock_log(&mocks).await[before..]
+        .iter()
+        .filter(|l| l.starts_with("gcode "))
+        .cloned()
+        .collect();
+    assert_eq!(after, ["gcode M600"], "{after:?}");
+}
+
+// Lines that read as still to a naive reader but move the head (parentheses, packed G92 words, M109,
+// a host action, an M600 with a park position) are motion. Lines that cannot move but change a running
+// print (extrusion and positioning modes, the E frame, speed and flow factors, waits) go only while no
+// print runs, without the plate question. A raw G91 leaves the printer marked, so the next line that
+// moves gets G90 first.
+#[tokio::test]
+async fn lines_that_change_a_running_print_wait_for_no_print() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let mut ag = agent(&link).await;
+    let sent = |log: Vec<String>| log.into_iter().filter(|l| l.starts_with("gcode ")).count();
+    started_print(&mut app, "plate.gcode").await;
+    until_bay4(&mut app, "printing").await;
+    let before = sent(mock_log(&mocks).await);
+    let lines = [
+        "(G28",
+        "(G1 Z-5 A)",
+        "( G1 Z-50",
+        "G92 E0Z0",
+        "G92EZ0",
+        "M109 S200 T1",
+        "M118 A1 action:resume",
+        "RESPOND TYPE=command MSG=action:resume",
+        "M600 Z-50",
+        "M83",
+        "M82",
+        "G92 E0",
+        "G90",
+        "M220 S120",
+        "M221 S110",
+        "G4 S1",
+        "M400",
+        "M190 S60",
+    ];
+    for (n, line) in lines.iter().enumerate() {
+        let done = approved_line(&mut ag, &mut app, &format!("w-{n}"), line).await;
+        assert_eq!(
+            (done["ok"].clone(), done["code"].clone()),
+            (json!(false), json!("bad_state")),
+            "{line}: {done}"
+        );
+    }
+    let done = approved_line(&mut ag, &mut app, "w-speed", "M220 S120").await;
+    assert!(
+        done["message"].as_str().unwrap_or("").contains("speed"),
+        "{done}"
+    );
+    for (n, line) in ["M220 S1000", "M221 S5", "G4 S600"].iter().enumerate() {
+        let done = approved_line(&mut ag, &mut app, &format!("x-{n}"), line).await;
+        assert_eq!(done["code"], "bad_request", "{line}: {done}");
+    }
+    assert_eq!(sent(mock_log(&mocks).await), before, "nothing went into the print");
+    // A heater line still goes mid-print.
+    let done = approved_line(&mut ag, &mut app, "w-heat", "M104 S205").await;
+    assert_eq!(done["ok"], true, "{done}");
+
+    // Idle again: a mode line goes with no plate question; a line that moves still asks.
+    cancel_on_printer(&mocks).await;
+    until_bay4(&mut app, "idle").await;
+    let done = approved_line(&mut ag, &mut app, "i-m83", "M83").await;
+    assert_eq!(done["ok"], true, "{done}");
+    let done = approved_line(&mut ag, &mut app, "i-paren", "(G28").await;
+    assert_eq!(done["code"], "bed_check", "{done}");
+    assert!(!mock_log(&mocks).await.contains(&"gcode (G28".to_owned()));
+    // G91 goes under the guard and leaves the printer marked: the next line that moves gets G90 first.
+    let done = approved_line_with(&mut ag, &mut app, "i-g91", "G91", true).await;
+    assert_eq!(done["ok"], true, "{done}");
+    let done = approved_line_with(&mut ag, &mut app, "i-g1", "G1 Z1", true).await;
+    assert_eq!(done["ok"], true, "{done}");
+    let log = mock_log(&mocks).await;
+    let g: Vec<&String> = log
+        .iter()
+        .filter(|l| l.starts_with("gcode "))
+        .rev()
+        .take(3)
+        .collect();
+    assert_eq!(g, ["gcode G1 Z1", "gcode G90", "gcode G91"], "{log:?}");
 }
 
 #[tokio::test]
