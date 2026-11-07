@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { headlessDesignHost, plainBed } from '../evals/creative/design-host'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
-import { runPrompt } from '../evals/creative/run'
+import { runPrompt, scoreParts } from '../evals/creative/run'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../src/toolset'
 import { useGeomEngine } from './geom-engine'
 
@@ -104,6 +104,45 @@ describe('a recorded reply that builds with the design tools', () => {
     const run = await runPrompt(P, { geom: undefined, steps: [{ calls: [{ name: 'text_to_part', args: { prompt: 'a tray' } }] }, { text: 'Done.' }], answerRecorded: true })
     expect(run.stale).toMatch(/design tools/)
     expect(run.calls).toEqual(['text_to_part'])
+  })
+})
+
+describe('a reply that builds the part again as a new design', () => {
+  const P = CREATIVE_PROMPTS.find((x) => x.id === 'spinner-ring')!
+  // a tube of `outer` and `inner` diameter, 8 mm tall, as a new body of `design` centered at `at`
+  const tube = (design: string, name: string, outer: number, inner: number, at: [number, number]) => ({
+    name: 'geom.extrude',
+    args: { design, name, distance_mm: 8, extent: 'oneSide', operation: 'new', frame: { origin: [...at, 0], normal: [0, 0, 1] }, shape: { type: 'sketch', loops: [{ type: 'circle', center: [0, 0], diameterMm: outer }, { type: 'circle', center: [0, 0], diameterMm: inner }] } },
+  })
+  // the end of the reply a live run gave after its first try failed the check and it built a second design
+  const REPLY =
+    'The spinner ring is built as "Spinner ring v2" in the project, with the core and band as two separate bodies that print in place. ' +
+    'The first attempt (the plan\'s formal check, plan_1) failed. The groove on the core came out at the wrong radius, so the band\'s lip touched the core at one point and the two printed fused. ' +
+    'I rebuilt both bodies as turned profiles with the same sizes. The fit check on the rebuilt version passes: two pieces, 0.40 mm clearance at the narrowest point, and the band slides freely. ' +
+    'The original "Spinner ring" design is still open in the project and should be deleted, since it has the bad groove.'
+  const steps = [
+    { calls: [{ name: 'pilot.sheet', args: { title: 'Spinner ring', dims: [{ key: 'inner', label: 'Inner diameter', value: 19, unit: 'mm', source: 'asked' }] } }] },
+    // the first try: the band overlaps the core, so the two print as one piece
+    { calls: [{ name: 'design.new', args: { name: 'Spinner ring' } }, tube('d1', 'Core', 24, 19, [128, 128])] },
+    { calls: [tube('d1', 'Band', 29.8, 23, [128, 128])] },
+    // the second try, a new design beside it: the band clears the core by 0.4 mm
+    { calls: [{ name: 'design.new', args: { name: 'Spinner ring v2' } }, tube('d2', 'Core', 24, 19, [60, 60])] },
+    { calls: [tube('d2', 'Band', 29.8, 24.8, [60, 60])] },
+    { text: REPLY },
+  ]
+
+  it('scores only the last design, not the first try left beside it', async () => {
+    const run = await runPrompt(P, { geom: { run: (op, input) => engine(op, input) }, steps, answerRecorded: true, tabTools: true })
+    expect(run.error).toBeUndefined()
+    expect(run.reply).toContain('Spinner ring v2')
+    expect(run.parsed).toEqual({ pass: true, detail: '2 designs, scored the last (d2): 2 feature steps, 2 mesh parts' })
+    expect(size(run.parts)).toEqual([29.8, 29.8, 8])
+    const score = scoreParts(P, run.parsed, run.parts, run.gaps)
+    // both designs together would be 4 bodies with the first try's band fused to its core
+    expect(score.bodies).toEqual({ pass: true, detail: '2 (want 2 to 3)' })
+    expect(score.clearance?.pass).toBe(true)
+    expect(score.clearance?.detail).toMatch(/^0\.4 mm side gap over 1 pair/)
+    expect(score.pass).toBe(true)
   })
 })
 
