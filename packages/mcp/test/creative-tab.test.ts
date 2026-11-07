@@ -99,7 +99,8 @@ describe('a reply that builds nothing', () => {
 })
 
 describe('the default answer to a clarifying question', () => {
-  const build = { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] }
+  // a build: the sizes confirmed on a sheet (the tab builds nothing before), a new design and its first body
+  const build = { calls: [{ name: 'pilot.sheet', args: { title: 'Size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }, { name: 'design.new', args: { name: 'Cable organizer' } }, { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 100, heightMm: 30 }, distance_mm: 20 } }] }
 
   it('answers a question once and lets the model build', async () => {
     const client = createScriptedClient([{ text: 'How long should the organizer be?' }, build, { text: 'Built it.' }], { chunk: false })
@@ -159,12 +160,32 @@ describe('the default answer to a clarifying question', () => {
     expect(JSON.stringify(client.requests[1]?.messages.at(-1))).toContain(DEFAULT_ANSWER)
   })
 
+  it('answers a question asked after the plan, since a plan builds nothing yet', async () => {
+    const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Cube size', dims: [{ key: 'side', label: 'Side', value: 20, unit: 'mm', source: 'guess' }] } }] }
+    const plan = { calls: [{ name: 'design.plan', args: { part: 'Infinity cube', units: 'mm', features: [{ name: 'cubes', kind: 'extrude', sizes: { side: 20 } }, { name: 'hinges', kind: 'extrude', sizes: { gap: 0.3 } }], assumptions: [], questions: [] } }] }
+    const asks = { text: 'Should the hinges print in place, or as loose parts you assemble?' }
+    const builds = { calls: [{ name: 'design.new', args: { name: 'Infinity cube' } }, { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, distance_mm: 20 } }] }
+    const client = createScriptedClient([sheet, plan, asks, builds, { text: 'Built the first cube.' }], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(JSON.stringify(client.requests[3]?.messages.at(-1))).toContain(DEFAULT_ANSWER)
+    expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'design.new', 'geom.extrude'])
+    expect(run.noBuild).toBeUndefined()
+  })
+
+  it('counts reads and a plan as building nothing', async () => {
+    const reads = { calls: [{ name: 'design.list', args: {} }] }
+    const run = await runPrompt(P, { geom: undefined, steps: [reads, { text: 'How long should it be?' }], defaultAnswer: false, tabTools: true })
+    expect(run.calls).toEqual(['design.list'])
+    expect(run.noBuild).toBe('asked')
+  })
+
   it('approves a plan card with Go, as the person would', async () => {
     const plan = { calls: [{ name: 'design.plan', args: { part: 'Cable organizer', units: 'mm', features: [{ name: 'base', kind: 'extrude', sizes: { length: 100 } }], assumptions: [], questions: [] } }] }
     const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }
     const client = createScriptedClient([sheet, plan, build, { text: 'Started it.' }], { chunk: false })
     const run = await runPrompt(P, { geom: undefined, client })
-    expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'design.new'])
+    expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'pilot.sheet', 'design.new', 'geom.extrude'])
     expect(JSON.stringify(client.requests[1]?.messages)).toContain('Confirmed as shown')
     expect(JSON.stringify(client.requests[2]?.messages)).toContain('\\"accepted\\":true')
     expect(run.answered).toBe(false)
