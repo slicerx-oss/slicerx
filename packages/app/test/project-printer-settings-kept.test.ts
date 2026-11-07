@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A project opened on its own printer slices with every printer setting the file holds, listed as changed or not, as
 // `sx project-settings` reads the same file: air filtration, fan direction and the silent mode machine limits among
-// them. Its machine G-code still goes through the G-code review, and the bed, the nozzle, the clearances, the firmware
+// them, though no machine limit above the printer's. Its machine G-code still goes through the G-code review, and the bed, the nozzle, the clearances, the firmware
 // and the printer's name stay the profile's, so no check gets looser. A project for a printer SlicerX has no profile
 // for, and the move to another printer, leave the file's printer settings behind as before.
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -38,9 +38,9 @@ const P1S = { printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'B
 const UNLISTED = {
   support_air_filtration: '0',
   fan_direction: 'left',
-  machine_max_speed_x: ['500', '500'],
-  machine_max_speed_y: ['500', '500'],
-  machine_max_acceleration_z: ['500', '500'],
+  machine_max_speed_x: ['500', '150'],
+  machine_max_speed_y: ['500', '150'],
+  machine_max_acceleration_z: ['500', '150'],
   extruder_colour: ['#018001'],
   best_object_pos: '0.3x0.7',
 }
@@ -79,10 +79,10 @@ describe("a project's printer settings on its own printer", () => {
     expect(get().printerId).toBe(PROJECT_PRINTER_ID)
     expect.soft(cfg['support_air_filtration']).toBe(false)
     expect.soft(cfg['fan_direction']).toBe('left')
-    // the second entry is the silent mode value, 200 in the P1S profile
-    expect.soft(cfg['machine_max_speed_x']).toEqual([500, 500])
-    expect.soft(cfg['machine_max_speed_y']).toEqual([500, 500])
-    expect.soft(cfg['machine_max_acceleration_z']).toEqual([500, 500])
+    // the second entry is the silent mode value, 200 in the P1S profile; a file may lower it
+    expect.soft(cfg['machine_max_speed_x']).toEqual([500, 150])
+    expect.soft(cfg['machine_max_speed_y']).toEqual([500, 150])
+    expect.soft(cfg['machine_max_acceleration_z']).toEqual([500, 150])
     expect.soft(cfg['extruder_colour']).toEqual(['#018001'])
     expect.soft(cfg['best_object_pos']).toEqual([0.3, 0.7])
   })
@@ -144,7 +144,34 @@ describe("a project's printer settings on its own printer", () => {
     set({ printerId: PROJECT_PRINTER_ID, printerModel: { id: PROJECT_PRINTER_ID, vendor: 'Bambu Lab', model: 'P1S' } })
     await profileReady()
     expect.soft(resolved()['fan_direction']).toBe('left')
-    expect.soft(resolved()['machine_max_speed_x']).toEqual([500, 500])
+    expect.soft(resolved()['machine_max_speed_x']).toEqual([500, 150])
+  })
+})
+
+describe("a project's machine limits on its own printer", () => {
+  it("slice at the printer's limit where the file's is above it, in normal and silent mode, and at 0", async () => {
+    const base = await sliced(project(P1S))
+    clearProject()
+    const accel = base['machine_max_acceleration_x'] as number[]
+    const speed = base['machine_max_speed_x'] as number[]
+    const jerk = base['machine_max_jerk_x'] as number[]
+    const cfg = await sliced(project({
+      ...P1S,
+      machine_max_acceleration_x: accel.map((v) => String(v * 2)),
+      machine_max_speed_x: [String(speed[0]! / 2), String(speed[1]! * 3)],
+      machine_max_jerk_x: jerk.map(() => '0'),
+    }))
+    expect.soft(cfg['machine_max_acceleration_x']).toEqual(accel)
+    expect.soft(cfg['machine_max_speed_x']).toEqual([speed[0]! / 2, speed[1]])
+    expect.soft(cfg['machine_max_jerk_x']).toEqual(jerk)
+  })
+
+  it('slice at a lower limit the file has', async () => {
+    const base = await sliced(project(P1S))
+    clearProject()
+    const accel = base['machine_max_acceleration_x'] as number[]
+    const cfg = await sliced(project({ ...P1S, machine_max_acceleration_x: accel.map((v) => String(v / 2)) }))
+    expect(cfg['machine_max_acceleration_x']).toEqual(accel.map((v) => v / 2))
   })
 })
 

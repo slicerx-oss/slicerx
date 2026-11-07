@@ -75,9 +75,9 @@ const UNLISTED = {
   different_settings_to_system: ['layer_height', '', '', ''],
   support_air_filtration: '0',
   fan_direction: 'left',
-  machine_max_speed_x: ['500', '500'],
-  machine_max_speed_y: ['500', '500'],
-  machine_max_acceleration_z: ['500', '500'],
+  machine_max_speed_x: ['500', '150'],
+  machine_max_speed_y: ['500', '150'],
+  machine_max_acceleration_z: ['500', '150'],
 }
 const UNLISTED_KEYS = ['support_air_filtration', 'fan_direction', 'machine_max_speed_x', 'machine_max_speed_y', 'machine_max_acceleration_z']
 
@@ -89,9 +89,9 @@ describe("a project slice keeps the file's printer settings, as the app's projec
     expect(opened?.ownGcode).toBe(true)
     expect.soft(opened!.config['support_air_filtration']).toBe(false)
     expect.soft(opened!.config['fan_direction']).toBe('left')
-    expect.soft(opened!.config['machine_max_speed_x']).toEqual([500, 500])
-    expect.soft(opened!.config['machine_max_speed_y']).toEqual([500, 500])
-    expect.soft(opened!.config['machine_max_acceleration_z']).toEqual([500, 500])
+    expect.soft(opened!.config['machine_max_speed_x']).toEqual([500, 150])
+    expect.soft(opened!.config['machine_max_speed_y']).toEqual([500, 150])
+    expect.soft(opened!.config['machine_max_acceleration_z']).toEqual([500, 150])
   })
 
   it("keeps the profile's bed height, nozzle, clearances and firmware", async () => {
@@ -110,6 +110,24 @@ describe("a project slice keeps the file's printer settings, as the app's projec
     expect.soft(opened!.config['min_layer_height']).toEqual([0.05])
     expect.soft(opened!.config['max_layer_height']).toEqual([0.32])
     expect.soft(opened!.config['printable_height']).toEqual(base!.config['printable_height'])
+  })
+
+  it("holds the file's machine limits to the printer's: one above it, in normal or silent mode, or at 0 takes the printer's, a lower one is kept", async () => {
+    await profiles.prepare(['machine:bambu-p1s'])
+    const base = await openProject(readProjectFile(project('limits-base.3mf', {})), profiles, ['machine:bambu-p1s'], 0.4)
+    const accel = base!.config['machine_max_acceleration_x'] as number[]
+    const speed = base!.config['machine_max_speed_x'] as number[]
+    const jerk = base!.config['machine_max_jerk_x'] as number[]
+    const above = await openProject(readProjectFile(project('limits-above.3mf', {
+      machine_max_acceleration_x: accel.map((v) => String(v * 2)),
+      machine_max_speed_x: [String(speed[0]! / 2), String(speed[1]! * 3)],
+      machine_max_jerk_x: jerk.map(() => '0'),
+    })), profiles, ['machine:bambu-p1s'], 0.4)
+    expect.soft(above!.config['machine_max_acceleration_x']).toEqual(accel)
+    expect.soft(above!.config['machine_max_speed_x']).toEqual([speed[0]! / 2, speed[1]])
+    expect.soft(above!.config['machine_max_jerk_x']).toEqual(jerk)
+    const below = await openProject(readProjectFile(project('limits-below.3mf', { machine_max_acceleration_x: accel.map((v) => String(v / 2)) })), profiles, ['machine:bambu-p1s'], 0.4)
+    expect(below!.config['machine_max_acceleration_x']).toEqual(accel.map((v) => v / 2))
   })
 
   it("leaves them behind on another printer the slice names, as before", async () => {
