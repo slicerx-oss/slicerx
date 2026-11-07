@@ -3,8 +3,8 @@
 // Picks in the sketch panel's Project card, end to end through the card: a finished sketch's sources are read where
 // that sketch is in the timeline; an edge on another body starts a projection of its own while the open one keeps
 // its edges; edges picked before the tool opened all land in one projection; a projection removed while another
-// pick is still projecting stays removed; and an edge that answers after its projection was removed or ended neither
-// brings it back nor reopens it.
+// pick is still projecting stays removed; a projection switched to reference while an edge adds to it stays
+// reference; and an edge that answers after its projection was removed or ended neither brings it back nor reopens it.
 import type { FaceFrame, ProjectSource, SketchLoop } from '@slicerx/cad-history'
 import type { PickEvent } from '@slicerx/viewport'
 import { act, createElement, useState } from 'react'
@@ -89,7 +89,7 @@ describe('picks in the Project card', () => {
     await settle()
     await act(async () => probeHandler()!(hit('b', 4)))
     await settle()
-    expect(asked.every((s) => s === 'k7')).toBe(true)
+    expect(asked).toEqual(['k7', 'k7', 'k7'])
     expect(state.list.map((p) => [p.id, p.source.body, p.source.kind === 'edges' ? p.source.edges.length : 0])).toEqual([
       ['p1', 'a', 2],
       ['p2', 'b', 1],
@@ -122,7 +122,28 @@ describe('picks in the Project card', () => {
     release()
     await settle()
     expect(state.list.map((p) => p.id)).toEqual(['p2'])
+    expect(state.loops.length).toBeGreaterThan(0)
     expect(state.loops.every((l) => l.projected === 'p2')).toBe(true)
+  })
+
+  it('keeps a projection switched to reference while an edge was adding to it', async () => {
+    const card = mount({ list: [], loops: [], next: 0 })
+    await press(card, 'sketch-project-edges')
+    await act(async () => probeHandler()!(hit('a', 0)))
+    await settle()
+    let release!: () => void
+    wait = new Promise((r) => (release = r))
+    // a second edge adds to p1, and the person makes p1 reference while it is projecting
+    await act(async () => probeHandler()!(hit('a', 2)))
+    const row = card.querySelector<HTMLElement>('[data-testid="sketch-projection-p1"]')!
+    const reference = [...row.querySelectorAll<HTMLElement>('[role="radio"]')].find((r) => r.textContent === 'Reference')!
+    await act(async () => reference.click())
+    wait = null
+    release()
+    await settle()
+    expect(state.list.map((p) => [p.id, p.mode, p.source.kind === 'edges' ? p.source.edges.length : 0])).toEqual([['p1', 'reference', 2]])
+    expect(state.loops.length).toBeGreaterThan(0)
+    expect(state.loops.every((l) => l.projected === 'p1' && (l as { construction?: true }).construction === true)).toBe(true)
   })
 
   it('drops an edge that was adding to a projection removed while it projected, and the next edge starts a new one', async () => {
