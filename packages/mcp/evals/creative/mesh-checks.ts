@@ -284,142 +284,42 @@ export function bedFit(parts: MeshPart[], bed: BuildVolume): BedFit {
 // ---------------------------------------------------------------------------
 // Moving gaps
 
-/** Closest point on a triangle to p (Ericson, Real-Time Collision Detection 5.1.5). */
-function closestOnTriangle(p: V3, a: V3, b: V3, c: V3): V3 {
-  const ab = sub(b, a)
-  const ac = sub(c, a)
-  const ap = sub(p, a)
-  const d1 = dot(ab, ap)
-  const d2 = dot(ac, ap)
-  if (d1 <= 0 && d2 <= 0) return a
-  const bp = sub(p, b)
-  const d3 = dot(ab, bp)
-  const d4 = dot(ac, bp)
-  if (d3 >= 0 && d4 <= d3) return b
-  const vc = d1 * d4 - d3 * d2
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
-    const v = d1 / (d1 - d3)
-    return [a[0] + v * ab[0], a[1] + v * ab[1], a[2] + v * ab[2]]
-  }
-  const cp = sub(p, c)
-  const d5 = dot(ab, cp)
-  const d6 = dot(ac, cp)
-  if (d6 >= 0 && d5 <= d6) return c
-  const vb = d5 * d2 - d1 * d6
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
-    const w = d2 / (d2 - d6)
-    return [a[0] + w * ac[0], a[1] + w * ac[1], a[2] + w * ac[2]]
-  }
-  const va = d3 * d6 - d5 * d4
-  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-    const w = (d4 - d3) / (d4 - d3 + (d5 - d6))
-    return [b[0] + w * (c[0] - b[0]), b[1] + w * (c[1] - b[1]), b[2] + w * (c[2] - b[2])]
-  }
-  const denom = 1 / (va + vb + vc)
-  const v = vb * denom
-  const w = vc * denom
-  return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w]
-}
-
-/** A body's triangles bucketed on a coarse grid, for distance queries within a few millimeters. */
-class TriGrid {
-  private cells = new Map<string, number[]>()
-  constructor(
-    readonly w: Welded,
-    readonly body: Body,
-    readonly cell: number,
-  ) {
-    for (const t of body.tris) {
-      const [a, b, c] = corners(w, t)
-      const lo = [0, 1, 2].map((k) => Math.floor(Math.min(a[k] ?? 0, b[k] ?? 0, c[k] ?? 0) / cell))
-      const hi = [0, 1, 2].map((k) => Math.floor(Math.max(a[k] ?? 0, b[k] ?? 0, c[k] ?? 0) / cell))
-      for (let i = lo[0] ?? 0; i <= (hi[0] ?? 0); i++) for (let j = lo[1] ?? 0; j <= (hi[1] ?? 0); j++) for (let k = lo[2] ?? 0; k <= (hi[2] ?? 0); k++) {
-        const key = `${i},${j},${k}`
-        const list = this.cells.get(key) ?? []
-        list.push(t)
-        this.cells.set(key, list)
-      }
-    }
-  }
-
-  /** Signed distance from p to the body's surface within `reach`: negative when p is inside it. Infinity when farther. */
-  signedDistance(p: V3, reach: number): number {
-    const lo = p.map((v) => Math.floor((v - reach) / this.cell))
-    const hi = p.map((v) => Math.floor((v + reach) / this.cell))
-    let best = Infinity
-    let sign = 1
-    const seen = new Set<number>()
-    for (let i = lo[0] ?? 0; i <= (hi[0] ?? 0); i++) for (let j = lo[1] ?? 0; j <= (hi[1] ?? 0); j++) for (let k = lo[2] ?? 0; k <= (hi[2] ?? 0); k++) {
-      for (const t of this.cells.get(`${i},${j},${k}`) ?? []) {
-        if (seen.has(t)) continue
-        seen.add(t)
-        const [a, b, c] = corners(this.w, t)
-        const q = closestOnTriangle(p, a, b, c)
-        const d = len(sub(p, q))
-        if (d < best) {
-          best = d
-          sign = dot(sub(p, q), cross(sub(b, a), sub(c, a))) < 0 ? -1 : 1
-        }
-      }
-    }
-    return best <= reach ? sign * best : Infinity
-  }
+/** A gap between two separate bodies, as the engine's fit check measures it. */
+export interface GapPair {
+  /** The two bodies, numbered as the fit check numbers them. */
+  parts: [number, number]
+  /** The gap, mm; 0 when they touch or overlap. */
+  gapMm: number
+  /** side by side (horizontal) or one over the other (vertical); fused when they touch or overlap */
+  kind: 'horizontal' | 'vertical' | 'fused'
 }
 
 export interface GapReport {
   /** Pairs of bodies that come within `reachMm` of each other: the joints and meshes that must move. */
   pairs: number
-  /** Smallest gap between any such pair, mm; negative when bodies overlap. null when no bodies come that close. */
+  /** Smallest gap between any such pair, mm; 0 when bodies touch or overlap. null when no bodies come that close. */
   minGapMm: number | null
+  /** Each such pair's gap, smallest first. */
+  gaps: GapPair[]
 }
 
+/** The geometry engine, as a design host calls it. */
+export type GeomCall = (op: string, request: unknown) => Promise<unknown>
+
 /**
- * The smallest gap between separate bodies that come close enough to be meant to move against each other (hinge
- * knuckles, meshing teeth, links). Samples every vertex and triangle center of one body against the other's surface,
- * both ways.
+ * The gaps between separate bodies that come close enough to be meant to move against each other (hinge knuckles,
+ * meshing teeth, links), measured by the engine's own fit check (fit.check, the check the app runs on the plate):
+ * every pair of bodies within `reachMm`, with its gap and whether it is side by side, one over the other, or touching.
+ * Bodies that touch or overlap print as one piece; the fit check does not tell how deep an overlap goes.
  */
-export function movingGaps(parts: MeshPart[], reachMm = 2): GapReport {
-  const { welded, bodies } = split(parts)
-  const cell = Math.max(1, reachMm * 2)
-  const grids = new Map<Body, TriGrid>()
-  const grid = (b: Body): TriGrid => {
-    let g = grids.get(b)
-    if (!g) {
-      g = new TriGrid(welded[b.part] ?? { pos: [], tri: [] }, b, cell)
-      grids.set(b, g)
-    }
-    return g
-  }
-  const near = (a: Body, b: Body): boolean => [0, 1, 2].every((k) => (a.min[k] ?? 0) - reachMm <= (b.max[k] ?? 0) && (b.min[k] ?? 0) - reachMm <= (a.max[k] ?? 0))
-  const samples = (b: Body): V3[] => {
-    const w = welded[b.part]
-    if (!w) return []
-    const out: V3[] = []
-    const verts = new Set<number>()
-    for (const t of b.tris) {
-      for (let k = 0; k < 3; k++) verts.add(w.tri[t * 3 + k] ?? 0)
-      const [p, q, r] = corners(w, t)
-      out.push([(p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3, (p[2] + q[2] + r[2]) / 3])
-    }
-    for (const v of verts) out.push(vtx(w, v))
-    return out
-  }
-  let pairs = 0
-  let min: number | null = null
-  for (let i = 0; i < bodies.length; i++) {
-    for (let j = i + 1; j < bodies.length; j++) {
-      const a = bodies[i]
-      const b = bodies[j]
-      if (!a || !b || !near(a, b)) continue
-      let gap = Infinity
-      for (const [from, to] of [[a, b], [b, a]] as const) {
-        const g = grid(to)
-        for (const p of samples(from)) gap = Math.min(gap, g.signedDistance(p, reachMm))
-      }
-      if (!Number.isFinite(gap)) continue
-      pairs++
-      min = min === null ? gap : Math.min(min, gap)
-    }
-  }
-  return { pairs, minGapMm: min === null ? null : Math.round(min * 1000) / 1000 }
+export async function movingGaps(parts: MeshPart[], engine: GeomCall, reachMm = 2): Promise<GapReport> {
+  const meshes = parts.filter((p) => p.indices.length).map((p) => ({ positions: Array.from(p.positions), indices: Array.from(p.indices) }))
+  if (!meshes.length) return { pairs: 0, minGapMm: null, gaps: [] }
+  // every pair within reach counts as below the limit, so the check reports each with its gap
+  const r = (await engine('fit.check', { meshes, minGapMm: reachMm })) as { gaps?: { parts: [number, number]; gapMm: number; kind: string }[] }
+  const gaps: GapPair[] = (r.gaps ?? [])
+    .filter((g) => g.kind === 'horizontal' || g.kind === 'vertical' || g.kind === 'fused')
+    .map((g) => ({ parts: g.parts, gapMm: g.kind === 'fused' ? 0 : Math.round(g.gapMm * 1000) / 1000, kind: g.kind as GapPair['kind'] }))
+    .sort((a, b) => a.gapMm - b.gapMm)
+  return { pairs: gaps.length, minGapMm: gaps.length ? (gaps[0]?.gapMm ?? null) : null, gaps }
 }

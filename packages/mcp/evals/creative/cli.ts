@@ -116,7 +116,7 @@ const report = (p: CreativePrompt, run: PromptRun): void => {
   if (mode === 'live' && flag('record') && run.steps.length && !run.error) {
     saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true })
   }
-  const sc = scoreParts(p, run.parsed, run.parts)
+  const sc = scoreParts(p, run.parsed, run.parts, run.gaps)
   scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
   const checks = run.noBuild ? `no build: ${run.noBuild}${run.answered ? ' after the default answer' : ''}` : [fmt('parses', sc.parses), fmt('watertight', sc.watertight), fmt('bodies', sc.bodies), fmt('wall', sc.minWall), fmt('bed', sc.bedFit), fmt('clearance', sc.clearance)].filter(Boolean).join('  ')
   console.log(`${(sc.pass ? 'PASS' : run.noBuild ? run.noBuild.toUpperCase() : 'FAIL').padEnd(8)} ${p.id.padEnd(28)} ${checks}${run.answered && !run.noBuild ? '  (built after the default answer)' : ''}`)

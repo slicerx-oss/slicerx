@@ -5,6 +5,7 @@
 import { readdirSync } from 'node:fs'
 import type { MeshPart } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
+import { useGeomEngine } from './geom-engine'
 import { bedFit, bodyCount, closure, minWall, movingGaps } from '../evals/creative/mesh-checks'
 import { CREATIVE_PROMPTS, type CreativePrompt } from '../evals/creative/prompts'
 import { loadRecording, parseRecording, RECORDINGS_DIR } from '../evals/creative/recordings'
@@ -91,6 +92,7 @@ function gearPair(gap: number): MeshPart[] {
 const P1S = { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }
 const prompt = (over: Partial<CreativePrompt>): CreativePrompt => ({ id: 'fixture', title: 'Fixture', prompt: 'fixture', machine: P1S, bodies: [1, 1], ...over })
 const passing = { pass: true, detail: 'fixture' }
+const g = useGeomEngine('creative-gaps')
 
 describe('mesh checks on synthetic geometry', () => {
   it('a 20 mm cube is closed, one body, 20 mm walls, and fits the bed', () => {
@@ -153,18 +155,22 @@ describe('mesh checks on synthetic geometry', () => {
   })
 })
 
-describe('moving gaps on synthetic gear pairs', () => {
-  it('measures the gap the fixture set, to the hundredth', () => {
-    expect(movingGaps(gearPair(0.1)).minGapMm).toBeCloseTo(0.1, 2)
-    expect(movingGaps(gearPair(0.4)).minGapMm).toBeCloseTo(0.4, 2)
+describe('moving gaps, measured by the engine\'s fit check', () => {
+  // the gap between separate bodies is the engine's fit.check (fit.rs), the check the app runs on the plate; the fit
+  // rule (fit_check) then says whether each gap moves
+  const gaps = (parts: MeshPart[]) => movingGaps(parts, g.engine)
+  const mech = prompt({ bodies: [2, 2], mechanism: true })
+
+  it('measures the gap the fixture set, to the hundredth', async () => {
+    expect((await gaps(gearPair(0.1))).minGapMm).toBeCloseTo(0.1, 2)
+    expect((await gaps(gearPair(0.4))).minGapMm).toBeCloseTo(0.4, 2)
   })
 
-  it('a 0.1 mm gap fuses at 0.4 mm PLA; a 0.4 mm gap turns', () => {
-    const mech = prompt({ bodies: [2, 2], mechanism: true })
-    const tight = scoreParts(mech, passing, gearPair(0.1))
+  it('a 0.1 mm gap fuses at 0.4 mm PLA; a 0.4 mm gap turns', async () => {
+    const tight = scoreParts(mech, passing, gearPair(0.1), await gaps(gearPair(0.1)))
     expect(tight.clearance).toMatchObject({ pass: false })
     expect(tight.pass).toBe(false)
-    const good = scoreParts(mech, passing, gearPair(0.4))
+    const good = scoreParts(mech, passing, gearPair(0.4), await gaps(gearPair(0.4)))
     expect(good.clearance).toMatchObject({ pass: true })
     expect(good.pass).toBe(true)
   })
@@ -174,15 +180,54 @@ describe('moving gaps on synthetic gear pairs', () => {
     expect(clearanceNeed({ ...P1S, material: 'petg' }, 0.27).moves).toBe(false)
   })
 
-  it('overlapping bodies have a negative gap', () => {
-    const g = movingGaps([box(0, 0, 0, 10, 10, 10), box(9, 0, 0, 19, 10, 10)])
-    expect(g.minGapMm).not.toBeNull()
-    expect(g.minGapMm!).toBeLessThan(0)
+  it('reads overlapping bodies as fused: they print as one piece', async () => {
+    const parts = [box(0, 0, 0, 10, 10, 10), box(9, 0, 0, 19, 10, 10)]
+    const r = await gaps(parts)
+    expect(r.gaps).toEqual([expect.objectContaining({ kind: 'fused', gapMm: 0 })])
+    const sc = scoreParts(mech, passing, parts, r)
+    expect(sc.clearance).toEqual({ pass: false, detail: '1 pair touches or overlaps, so it prints as one piece' })
   })
 
-  it('bodies far apart are not a joint, so a mechanism with nothing facing fails', () => {
-    expect(movingGaps([box(0, 0, 0, 10, 10, 10), box(30, 0, 0, 40, 10, 10)])).toEqual({ pairs: 0, minGapMm: null })
-    expect(scoreParts(prompt({ bodies: [2, 2], mechanism: true }), passing, [box(0, 0, 0, 10, 10, 10), box(30, 0, 0, 40, 10, 10)]).clearance?.pass).toBe(false)
+  it('measures a 0.2 mm side gap as 0.2 mm, too tight for PLA at 0.4 mm', async () => {
+    const parts = [box(0, 0, 0, 10, 10, 10), box(10.2, 0, 0, 20.2, 10, 10)]
+    const r = await gaps(parts)
+    expect(r.pairs).toBe(1)
+    expect(r.minGapMm).toBeCloseTo(0.2, 3)
+    expect(r.gaps[0]?.kind).toBe('horizontal')
+    expect(scoreParts(mech, passing, parts, r).clearance).toEqual({ pass: false, detail: '0.2 mm side gap over 1 pair (want 0.3 mm or more)' })
+  })
+
+  it('reads a lid resting on a rim as a 0 mm gap, not an overlap', async () => {
+    const tray = box(0, 0, 0, 20, 20, 10)
+    const lid = box(0, 0, 10, 20, 20, 12)
+    const r = await gaps([tray, lid])
+    expect(r.minGapMm).toBe(0)
+    expect(r.gaps[0]?.kind).toBe('fused')
+  })
+
+  it('reads bodies that meet only at an edge as touching, not overlapping', async () => {
+    const r = await gaps([box(0, 0, 0, 10, 10, 10), box(10, 10, 0, 20, 20, 10)])
+    expect(r.pairs).toBe(1)
+    expect(r.minGapMm).toBe(0)
+  })
+
+  it('lets a vertical gap pass on whole layers above the sag', async () => {
+    const parts = [box(0, 0, 0, 20, 20, 10), box(0, 0, 10.6, 20, 20, 12)]
+    const r = await gaps(parts)
+    expect(r.gaps[0]).toMatchObject({ kind: 'vertical' })
+    expect(r.minGapMm).toBeCloseTo(0.6, 3)
+    expect(scoreParts(mech, passing, parts, r).clearance?.pass).toBe(true)
+  })
+
+  it('finds no joint between bodies far apart, so a mechanism with nothing facing fails', async () => {
+    const parts = [box(0, 0, 0, 10, 10, 10), box(30, 0, 0, 40, 10, 10)]
+    const r = await gaps(parts)
+    expect(r).toEqual({ pairs: 0, minGapMm: null, gaps: [] })
+    expect(scoreParts(mech, passing, parts, r).clearance).toEqual({ pass: false, detail: 'no bodies face each other, so nothing moves' })
+  })
+
+  it('cannot score clearance with no engine to measure it', () => {
+    expect(scoreParts(mech, passing, gearPair(0.4)).clearance).toEqual({ pass: false, detail: 'no geometry engine to measure the gaps' })
   })
 })
 
