@@ -3,13 +3,14 @@
 // Runs one creative prompt through the whole mimir loop (a recorded reply, or a live model when the caller passes
 // one) with the geometry engine as the host, then scores the parts it added to the project.
 import type { MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
+import { neutralEdition } from '@slicerx/edition-config'
 import { modelById } from '@slicerx/printer-catalog'
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import { assessFit } from '../../skills/fit_check/index'
 import { createScriptedClient, type ScriptStepData } from '../../src/provider/scripted'
 import type { LlmClient } from '../../src/provider/types'
 import type { ToolHost } from '../../src/tool'
-import { createEvalEnv, noteApprovals } from '../harness'
+import { createEvalEnv, noteApprovals, type EvalHosts } from '../harness'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
 
@@ -76,6 +77,38 @@ export function scoreParts(p: CreativePrompt, parsed: Check, parts: MeshPart[]):
   return out
 }
 
+/**
+ * mimir as the eval runs it: the desktop app's tab (the host slices, so the whole toolset rather than the browser
+ * build's cad scope) in the edition the app runs as without one of its own, through the tab options the app's tab is
+ * made from (src/tab-options.ts). The SlicerX edition sets no brain pack tool switches either, so its groups are the
+ * same (none off).
+ */
+export const CREATIVE_TAB = { slices: true, edition: neutralEdition(), editionName: 'neutral' } as const
+
+/** The eval environment for one prompt, with the tab's options. `tab` overrides the surface (the browser build: slices false). */
+export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHosts = {}, tab: { slices: boolean } = CREATIVE_TAB) {
+  return createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tab: { slices: tab.slices, edition: CREATIVE_TAB.edition } })
+}
+
+/**
+ * Why a reply built nothing. `declined`: it says the part can't be modeled or built (often offering a simpler version
+ * and asking which one; the refusal wins). `asked`: it does not decline, and puts a question to the person (a sentence
+ * ending in a question mark). `none`: neither, such as an empty reply, a statement, or a reply cut off.
+ */
+export type NoBuild = 'asked' | 'declined' | 'none'
+
+const DECLINES = /\b(?:can(?:'|\u2019|no)t|cannot|unable to|not able to)\s+(?:\w+\s+){0,3}?(?:model|build|make|design|sculpt)\b|\boutside what (?:I|the tools?) can\b|\btools? (?:can(?:'|\u2019|no)t|cannot|only)\b/i
+const ASKS = /\?[)"'\u201d\u2019*_]*(?:\s|$)/
+
+export function classifyNoBuild(reply: string): NoBuild {
+  if (DECLINES.test(reply)) return 'declined'
+  if (ASKS.test(reply)) return 'asked'
+  return 'none'
+}
+
+/** What the eval says, once, when the model asks a question instead of building. */
+export const DEFAULT_ANSWER = 'Use common sizes and sensible defaults, then build it'
+
 export interface PromptRun {
   parsed: Check
   parts: MeshPart[]
@@ -83,14 +116,22 @@ export interface PromptRun {
   reply: string
   /** What the model sent back, one step per provider request (for --record). */
   steps: ScriptStepData[]
+  /** Why nothing was built, when no design tool was called. */
+  noBuild?: NoBuild
+  /** The model asked, and the eval gave it the default answer. */
+  answered: boolean
+  /** Why the recording no longer stands for what a live run would do (replay only). */
+  stale?: string
   error?: string
 }
 
 /**
  * One prompt through mimir. `client` is the live model; without it the recorded steps replay. Design tools are
- * approved as the person would; anything else is denied.
+ * approved as the person would; anything else is denied. When the reply builds nothing and asks a question, the eval
+ * answers once with DEFAULT_ANSWER and lets the model go on (`defaultAnswer`, on unless false). A replay answers only
+ * when the recording was captured with the answer (`answerRecorded`); a recorded question without it is marked stale.
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
   // Records each request's reply as a step, the shape the scripted client replays.
@@ -118,23 +159,41 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       }
     },
   }
-  const hosts = () => (opts.geom ? { geom: opts.geom } : {})
-  const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts })
+  const env = creativeEnv(p, client, opts.geom ? { geom: opts.geom } : {})
   const events: PilotEvent[] = []
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? (opts.client ? 300_000 : 60_000))
   let error: string | undefined
-  try {
-    for await (const ev of env.pilot.run(`creative-${p.id}`, p.prompt, { signal: ac.signal, context: { project: 'creative', machine: p.machine, objects: [] } })) {
+  /** One message to mimir in the prompt's chat; returns the reply's text. */
+  const turn = async (message: string): Promise<string> => {
+    let text = ''
+    for await (const ev of env.pilot.run(`creative-${p.id}`, message, { signal: ac.signal, context: { project: 'creative', machine: p.machine, objects: [] } })) {
       events.push(ev)
+      if (ev.type === 'text') text += ev.delta
       noteApprovals(env.audit, ev)
       if (ev.type === 'approval_request') void env.pilot.resolveApproval(ev.request.id, MODEL_TOOLS.has(ev.request.tool) ? { kind: 'approve' } : { kind: 'deny', reason: 'not part of a design request' })
+    }
+    return text
+  }
+  const built = (): boolean => events.some((e) => e.type === 'tool_call' && MODEL_TOOLS.has(e.tool))
+  let text = ''
+  let answered = false
+  let stale: string | undefined
+  try {
+    text = await turn(p.prompt)
+    if (!built() && classifyNoBuild(text) === 'asked' && opts.defaultAnswer !== false) {
+      if (!opts.client && !opts.answerRecorded) stale = 'recorded before the default answer: the model asked a question, which a live run now answers once before scoring'
+      else {
+        answered = true
+        text = await turn(DEFAULT_ANSWER)
+      }
     }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   } finally {
     clearTimeout(timer)
   }
+  const noBuild = built() ? undefined : classifyNoBuild(text)
   const calls = events.filter((e): e is Extract<PilotEvent, { type: 'tool_call' }> => e.type === 'tool_call')
   const results = new Map(events.filter((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result').map((r) => [r.callId, r]))
   const modelCalls = calls.filter((c) => MODEL_TOOLS.has(c.tool))
@@ -143,7 +202,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const parts: MeshPart[] = []
   for (const o of env.project.objects()) parts.push(...((await o.mesh?.()) ?? []))
   let parsed: Check
-  if (!last) parsed = { pass: false, detail: 'no design tool was called' }
+  if (!last) parsed = { pass: false, detail: `no design tool was called: ${noBuild ?? 'none'}${answered ? ', after the default answer' : ''}` }
   else if (!lastResult || lastResult.ok === false) parsed = { pass: false, detail: `${last.tool}: ${lastResult?.summary ?? 'no result'}` }
   else if (!parts.length) parsed = { pass: false, detail: `${last.tool} added no parts` }
   else parsed = { pass: true, detail: `${last.tool}, ${parts.length} mesh part${parts.length === 1 ? '' : 's'}` }
@@ -153,7 +212,10 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     calls: calls.map((c) => c.tool),
     reply: events.map((e) => (e.type === 'text' ? e.delta : '')).join('').slice(0, 600),
     steps,
+    answered,
   }
+  if (noBuild) run.noBuild = noBuild
+  if (stale) run.stale = stale
   if (error) run.error = error
   return run
 }

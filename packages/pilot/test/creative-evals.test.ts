@@ -215,7 +215,7 @@ describe('the creative prompt set', () => {
   it('a run with no design tool call does not parse', async () => {
     const p = CREATIVE_PROMPTS[0]!
     const run = await runPrompt(p, { geom: undefined, steps: [{ text: 'Here is a dragon.' }] })
-    expect(run.parsed).toEqual({ pass: false, detail: 'no design tool was called' })
+    expect(run.parsed).toEqual({ pass: false, detail: 'no design tool was called: none' })
     expect(scoreParts(p, run.parsed, run.parts)).toEqual({ parses: run.parsed, pass: false })
   })
 

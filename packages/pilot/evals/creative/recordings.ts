@@ -23,6 +23,11 @@ export interface CapturedRecording {
   capturedAt: string
   /** One step per provider request: the reply text and the tool calls with their arguments. */
   steps: ScriptStepData[]
+  /**
+   * Captured with the default answer on (run.ts DEFAULT_ANSWER): when the model asked a question, the steps after it
+   * answer the default answer, so a replay sends it too. Recordings from before the default answer leave it out.
+   */
+  defaultAnswer?: boolean
 }
 
 export type Recording = PendingRecording | CapturedRecording
@@ -51,7 +56,10 @@ export function parseRecording(text: string, where = 'recording'): Recording {
     }
     return step
   })
-  return { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
+  if (v['defaultAnswer'] !== undefined && typeof v['defaultAnswer'] !== 'boolean') throw new Error(`${where}: defaultAnswer must be true or false`)
+  const rec: CapturedRecording = { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
+  if (v['defaultAnswer'] === true) rec.defaultAnswer = true
+  return rec
 }
 
 export function recordingPath(id: string, dir = RECORDINGS_DIR): string {
