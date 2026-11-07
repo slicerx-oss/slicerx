@@ -9,9 +9,8 @@ import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { loadRecording } from '../evals/creative/recordings'
 import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, runPrompt } from '../evals/creative/run'
-import { CAD_TOOLS, createPilot } from '../src/runtime'
-import { createScriptedClient } from '../src/provider/scripted'
-import { editionToolGroups, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '../src/tab-options'
+import { createPilot, createScriptedClient, editionToolGroups, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
+import { CAD_TOOLS } from '@slicerx/pilot/evals'
 
 const P = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
 const stub = () => createScriptedClient([{ text: 'ok' }], { chunk: false })
@@ -43,14 +42,21 @@ describe('the tab options the app and the creative eval share', () => {
 
   it('offer the creative eval the tools a runtime made from the tab options offers', () => {
     const env = creativeEnv(P, stub())
-    const direct = createPilot({ ...env.options, ...tabOptions({ slices: true, config: env.options.config, kb: env.kb, tools: [], commands: [], toolGroups: editionToolGroups(neutralEdition()) }) })
+    const direct = createPilot({ ...env.options, ...tabOptions({ slices: true, config: env.options.config, kb: env.kb, tools: env.options.tools ?? [], commands: [], toolGroups: editionToolGroups(neutralEdition()), ...(env.options.memory ? { memory: env.options.memory } : {}) }) })
     expect(env.pilot.tools().map((t) => t.name).sort()).toEqual(direct.tools().map((t) => t.name).sort())
   })
 
   it('run the browser build in the cad scope when it does not slice', () => {
     const env = creativeEnv(P, stub(), {}, { slices: false })
     expect(env.options.scope).toBe('cad')
-    for (const t of env.pilot.tools()) expect(CAD_TOOLS.has(t.name) || t.name.startsWith('app.') || t.name.startsWith('memory.'), t.name).toBe(true)
+    const tab = new Set((env.options.tools ?? []).map((t) => t.name))
+    for (const t of env.pilot.tools()) expect(CAD_TOOLS.has(t.name) || tab.has(t.name) || t.name.startsWith('app.') || t.name.startsWith('memory.'), t.name).toBe(true)
+  })
+
+  it('offer the tab\'s own tools and its design tools, with no part generator', () => {
+    const names = creativeEnv(P, stub()).pilot.tools().map((t) => t.name)
+    for (const n of ['pilot.ask', 'lookup.show', 'pilot.sheet', 'pilot.sheet_bind', 'design.plan', 'design.new', 'design.check', 'geom.extrude']) expect(names).toContain(n)
+    for (const n of ['text_to_part', 'make_model', 'design.put_plan']) expect(names).not.toContain(n)
   })
 })
 
@@ -88,13 +94,13 @@ describe('a reply that builds nothing', () => {
 })
 
 describe('the default answer to a clarifying question', () => {
-  const build = { calls: [{ name: 'make_model', args: { name: 'Cable organizer', parts: [{ kind: 'box', name: 'base', sizeMm: [100, 30, 20] }] } }] }
+  const build = { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] }
 
   it('answers a question once and lets the model build', async () => {
     const client = createScriptedClient([{ text: 'How long should the organizer be?' }, build, { text: 'Built it.' }], { chunk: false })
     const run = await runPrompt(P, { geom: undefined, client })
     expect(run.answered).toBe(true)
-    expect(run.calls).toContain('make_model')
+    expect(run.calls).toContain('design.new')
     expect(run.noBuild).toBeUndefined()
     const answer = client.requests[1]?.messages.at(-1)
     expect(answer?.role).toBe('user')
@@ -129,13 +135,46 @@ describe('the default answer to a clarifying question', () => {
   it('replays the answer only for a recording captured with it, and marks an older question stale', async () => {
     const asked = loadRecording('gear-pair')
     if (asked.status !== 'recorded') throw new Error('gear-pair has a recording')
-    const old = await runPrompt(CREATIVE_PROMPTS.find((x) => x.id === 'gear-pair')!, { geom: undefined, steps: asked.steps })
+    const old = await runPrompt(CREATIVE_PROMPTS.find((x) => x.id === 'gear-pair')!, { geom: undefined, steps: asked.steps, tabTools: true })
     expect(old.answered).toBe(false)
     expect(old.noBuild).toBe('asked')
     expect(old.stale).toMatch(/default answer/)
-    const fresh = await runPrompt(P, { geom: undefined, steps: [{ text: 'How long?' }, build, { text: 'Done.' }], answerRecorded: true })
+    const fresh = await runPrompt(P, { geom: undefined, steps: [{ text: 'How long?' }, build, { text: 'Done.' }], answerRecorded: true, tabTools: true })
     expect(fresh.answered).toBe(true)
-    expect(fresh.calls).toContain('make_model')
+    expect(fresh.calls).toContain('design.new')
     expect(fresh.stale).toBeUndefined()
+  })
+
+  it('goes to a question card as the person\'s words, once, and the reply is not answered again', async () => {
+    const card = { calls: [{ name: 'pilot.ask', args: { title: 'Size', question: 'How long should it be?', choices: [{ id: 'short', label: '80 mm' }, { id: 'long', label: '120 mm' }] } }] }
+    const client = createScriptedClient([card, { text: 'Which color?' }, build], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.answered).toBe(true)
+    expect(run.noBuild).toBe('asked')
+    expect(client.requests).toHaveLength(2)
+    expect(JSON.stringify(client.requests[1]?.messages.at(-1))).toContain(DEFAULT_ANSWER)
+  })
+
+  it('approves a plan card with Go, as the person would', async () => {
+    const plan = { calls: [{ name: 'design.plan', args: { part: 'Cable organizer', units: 'mm', features: [{ name: 'base', kind: 'extrude', sizes: { length: 100 } }], assumptions: [], questions: [] } }] }
+    const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }
+    const client = createScriptedClient([sheet, plan, build, { text: 'Started it.' }], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.calls).toEqual(['pilot.sheet', 'design.plan', 'design.new'])
+    expect(JSON.stringify(client.requests[1]?.messages)).toContain('Confirmed as shown')
+    expect(JSON.stringify(client.requests[2]?.messages)).toContain('\\"accepted\\":true')
+    expect(run.answered).toBe(false)
+  })
+})
+
+describe('the recordings from before the tab tools', () => {
+  it('all replay as stale until a live run captures them again', async () => {
+    for (const p of CREATIVE_PROMPTS) {
+      const rec = loadRecording(p.id)
+      if (rec.status !== 'recorded') continue
+      expect(rec.tabTools, p.id).toBeUndefined()
+      const run = await runPrompt(p, { geom: undefined, steps: rec.steps, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true })
+      expect(run.stale, p.id).toMatch(/design tools/)
+    }
   })
 })

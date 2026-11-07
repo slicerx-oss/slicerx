@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// pnpm --filter @slicerx/pilot eval:creative [--prompt id,id] [--log] [--change "what changed"] [--no-default-answer]
+// pnpm --filter @slicerx/mcp eval:creative [--prompt id,id] [--log] [--change "what changed"] [--no-default-answer]
 //   live: --mode live --model id --usd-in n --usd-out n [--cap-usd 1.50] [--record]
 //         [--long-above tokens --usd-in-long n --usd-out-long n] [--usd-per-search 0.01]
 //         [--provider openai|anthropic|openai-compatible] [--base-url http://127.0.0.1:11434/v1]
@@ -10,28 +10,28 @@
 // (CAP_USD 1.50 by default, stopping at 1.40), or when the most it could cost would take the spend past the cap.
 // A reply cut off before its usage arrived is charged that most. --record saves each live reply as that prompt's
 // recording.
-// mimir runs with the desktop tab's options (run.ts CREATIVE_TAB, the app's src/tab-options.ts). A reply that builds
-// nothing is scored as asked (a question to the person), declined (says it can't model or build it) or none. When it
-// asks, the eval answers once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that off. A
-// replay answers only for a recording captured with the answer, and marks a recorded question without one stale.
+// mimir runs with the desktop tab's options (run.ts CREATIVE_TAB, @slicerx/pilot tab-options.ts) and the tab's tools
+// (src/toolset.ts tabToolset): the design toolset on the eval's own design host, so a part is built feature by feature
+// as CAD history, with the tab's questions, sheets and plan cards. A reply that builds nothing is scored as asked (a
+// question to the person), declined (says it can't model or build it) or none. When it asks, in its reply or on a
+// question card, the eval answers once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that
+// off. A replay answers only for a recording captured with the answer, and marks a recorded question without one
+// stale. A recording from before the tab's tools (it called text_to_part or no tool) replays as stale too, until a
+// live run captures it again. The log rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other
+// mimir evals.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { createNodeTransport } from '../../src/node/index'
-import { createTransportClient } from '../../src/provider/client'
-import type { LlmClient } from '../../src/provider/types'
-import { evalGeom } from '../geom'
+import { join } from 'node:path'
+import { createTransportClient, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, type LlmClient } from '@slicerx/pilot'
+import { EVALS_DIR } from '@slicerx/pilot/evals'
+import { createNodeTransport, evalGeom } from '@slicerx/pilot/evals/node'
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
 import { CREATIVE_TAB, DEFAULT_ANSWER, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
-import { TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS } from '../../src/tab-options'
 
 const PROVIDERS = ['openai', 'anthropic', 'openai-compatible']
-
-const here = dirname(fileURLToPath(import.meta.url))
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
@@ -51,7 +51,7 @@ if (!selected.length) {
 
 const defaultAnswer = !flag('no-default-answer')
 const answerLine = defaultAnswer ? `on ("${DEFAULT_ANSWER}")` : 'off'
-console.log(`mimir as the ${CREATIVE_TAB.slices ? 'desktop' : 'browser'} tab (${CREATIVE_TAB.editionName} edition, at least ${TAB_MIN_STEPS} steps and ${TAB_MIN_TOOL_CALLS} tool calls); default answer ${answerLine}`)
+console.log(`mimir as the ${CREATIVE_TAB.slices ? 'desktop' : 'browser'} tab on its tools (${CREATIVE_TAB.editionName} edition, at least ${TAB_MIN_STEPS} steps and ${TAB_MIN_TOOL_CALLS} tool calls); default answer ${answerLine}`)
 
 const geom = evalGeom()
 let client: LlmClient | undefined
@@ -115,7 +115,7 @@ const skipped: string[] = []
 const stale: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   if (mode === 'live' && flag('record') && run.steps.length && !run.error) {
-    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}) })
+    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true })
   }
   const sc = scoreParts(p, run.parsed, run.parts)
   scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
@@ -142,7 +142,7 @@ if (client) {
       console.log(`SKIP ${p.id.padEnd(28)} recorded (${rec.model}), but there is no geometry engine to build it`)
       continue
     }
-    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true }))
+    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true }))
   }
 }
 
@@ -182,8 +182,8 @@ if (flag('log') && scores.length) {
     no_build: Object.fromEntries(scores.flatMap((s) => (s.noBuild ? [[s.id, s.noBuild]] : []))),
     ...(stale.length ? { stale } : {}),
   }
-  appendFileSync(join(here, '..', 'results.jsonl'), `${JSON.stringify(line)}\n`)
-  const logMd = join(here, '..', 'LOG.md')
+  appendFileSync(join(EVALS_DIR, 'results.jsonl'), `${JSON.stringify(line)}\n`)
+  const logMd = join(EVALS_DIR, 'LOG.md')
   // The same table the scenario runs log to (evals/LOG.md); Mean holds the pass rate here, as a percent.
   if (existsSync(logMd) && readFileSync(logMd, 'utf8').trim()) {
     const notes = [line.change || 'creative prompts', `default answer ${defaultAnswer ? `on (${answeredIds.length} answered)` : 'off'}`, noBuildLine ? `${noBuildLine}: ${(['asked', 'declined', 'none'] as const).flatMap((r) => noBuild(r).map((id) => `${id} ${r}`)).join(', ')}` : '', stale.length ? `stale: ${stale.join(', ')}` : '']

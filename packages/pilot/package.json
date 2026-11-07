@@ -18,15 +18,16 @@
     "./edition-kb.*.json": "./src/kb/generated/edition-kb.*.json",
     "./edition-kb": "./src/kb/edition-kb.ts",
     "./local-models.json": "./llm/local-models.json",
-    "./local-ai": "./src/local-ai.ts"
+    "./local-ai": "./src/local-ai.ts",
+    "./evals": "./evals/index.ts",
+    "./evals/node": "./evals/node.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "kb:build": "tsx scripts/build-kb.ts",
     "parts:build": "tsx scripts/build-parts.ts",
-    "eval": "tsx evals/cli.ts",
-    "eval:creative": "tsx evals/creative/cli.ts"
+    "eval": "tsx evals/cli.ts"
   },
   "dependencies": {
     "@slicerx/contracts": "workspace:*",
