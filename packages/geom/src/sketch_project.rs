@@ -26,8 +26,11 @@ const ARC_STEP_DEG: f64 = 40.0;
 /// lines that each turn less than this, degrees, read as one smooth curve
 const SMOOTH_DEG: f64 = 20.0;
 const RUN_POINTS: usize = 4096;
-/// the most points a run of arcs may take before one ellipse fits them all
+/// the most points a run may take before one ellipse fits them all
 const FIRST_FIT_POINTS: usize = 16;
+/// facets of one round are about the same length: none is more than this many times the mean of the others, so a
+/// straight side between two facets is never read as one more facet
+const STEP_RATIO: f64 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -458,12 +461,26 @@ fn line_fits(q: &[V2]) -> bool {
     })
 }
 
-/// whether every point of `q` sits on the circle, turning one way in steps no longer than a facet of a round
+/// whether the steps along `q` are about one length, as the facets of one round are
+fn even_steps(q: &[V2]) -> bool {
+    let n = q.len().saturating_sub(1);
+    if n < 2 {
+        return true;
+    }
+    let (sum, most) = q
+        .windows(2)
+        .map(|w| d2(w[0], w[1]))
+        .fold((0.0, 0.0), |(s, m), l| (s + l, f64::max(m, l)));
+    most * (n - 1) as f64 <= STEP_RATIO * (sum - most)
+}
+
+/// whether every point of `q` sits on the circle, turning one way in even steps no longer than a facet of a round
 fn round(q: &[V2], o: V2, r: f64) -> bool {
     let step = 2.0 * (ARC_STEP_DEG.to_radians() / 2.0).m_sin() * r;
     let turn = poly2d::orient(q[0], q[1], q[2]).signum();
     q.iter().all(|&p| (d2(p, o) - r).abs() <= TOL_MM)
         && q.windows(2).all(|w| d2(w[0], w[1]) <= step)
+        && even_steps(q)
         && q.windows(3)
             .all(|w| poly2d::orient(w[0], w[1], w[2]) * turn > 0.0)
 }
@@ -548,9 +565,10 @@ fn solve5(mut m: [[f64; 5]; 5], mut b: [f64; 5]) -> Option<[f64; 5]> {
     Some(x)
 }
 
-/// whether every point lies within the tolerance of one ellipse that is no circle: a round seen at a tilt
+/// whether every point lies within the tolerance of one ellipse that is no circle, in even steps that each turn no
+/// more than a facet of a round: the facets of a round seen at a tilt
 fn on_ellipse(q: &[V2]) -> bool {
-    if q.len() < 6 {
+    if q.len() < 6 || !even_steps(q) {
         return false;
     }
     let n = q.len() as f64;
@@ -583,10 +601,31 @@ fn on_ellipse(q: &[V2]) -> bool {
         return false;
     }
     let tol = TOL_MM / s;
-    pts.iter().all(|&[x, y]| {
+    let near = pts.iter().all(|&[x, y]| {
         let v = a * x * x + b * x * y + cc * y * y + d * x + e * y + f;
         let g = (2.0 * a * x + b * y + d).m_hypot(b * x + 2.0 * cc * y + e);
         g > 1e-12 && v.abs() / g <= tol
+    });
+    // seen square on again (the square root of the quadratic part maps the ellipse to a circle about its center),
+    // each step turns as much as its facet did on the round: a polygon of a few sides is no round
+    let det = 4.0 * a * cc - b * b;
+    let o = [(b * e - 2.0 * cc * d) / det, (b * d - 2.0 * a * e) / det];
+    let root = (a * cc - b * b / 4.0).sqrt();
+    let t = (a + cc + 2.0 * root).sqrt();
+    let square = |[x, y]: V2| {
+        let (x, y) = (x - o[0], y - o[1]);
+        [
+            ((a + root) * x + b / 2.0 * y) / t,
+            (b / 2.0 * x + (cc + root) * y) / t,
+        ]
+    };
+    near && pts.windows(2).all(|w| {
+        let (u, v) = (square(w[0]), square(w[1]));
+        (u[0] * v[1] - u[1] * v[0])
+            .m_atan2(u[0] * v[0] + u[1] * v[1])
+            .abs()
+            .to_degrees()
+            <= ARC_STEP_DEG
     })
 }
 
@@ -598,27 +637,29 @@ fn on_circle(q: &[V2]) -> bool {
             .is_some_and(|(o, r)| q.iter().all(|&p| (d2(p, o) - r).abs() <= TOL_MM))
 }
 
-/// the end (exclusive) of a run from piece `i` that holds three or more arcs and whose points lie on one ellipse
-/// that is no circle: the facets of a round seen at a tilt, which the arc fit takes as short arcs off different
-/// circles. True arcs (a curved slot, a four-center oval, a rounded rectangle) lie on no one ellipse and stay arcs.
-fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
-    let is_arc = |k: usize| matches!(pieces[k].0, Piece::Arc(..));
-    // a run starts at an arc, or at the line just before one
-    if !is_arc(i) && (i + 1 >= pieces.len() || !is_arc(i + 1)) {
-        return None;
+/// whether the points turn one way at every corner, as the facets of a round do
+fn one_way(q: &[V2]) -> bool {
+    q.len() < 3 || {
+        let turn = poly2d::orient(q[0], q[1], q[2]).signum();
+        q.windows(3)
+            .all(|w| poly2d::orient(w[0], w[1], w[2]) * turn > 0.0)
     }
+}
+
+/// the end (exclusive) of a run from piece `i` of three or more pieces whose points lie on one ellipse that is no
+/// circle: the facets of a round seen at a tilt, which the arc fit takes as short arcs off different circles, or as
+/// single facets where the facets are coarse. True arcs (a curved slot, a four-center oval, a rounded rectangle) lie
+/// on no one ellipse and stay arcs, and a straight side is no facet, so it stays a line.
+fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
     let s = if i == 0 { 0 } else { pieces[i - 1].1 };
     let mut best = None;
-    let mut arcs = 0;
     // a short, nearly straight start fits no ellipse well; the run ends at the first miss after a fit
     let mut fitted = false;
     for j in i..pieces.len() {
         let pts = &p[s..=pieces[j].1];
-        if pts.len() > RUN_POINTS {
+        // a step far longer than the rest, or a turn back, stays in every longer run, so the run ends there
+        if pts.len() > RUN_POINTS || !even_steps(pts) || !one_way(pts) {
             break;
-        }
-        if is_arc(j) {
-            arcs += 1;
         }
         if pts.len() < 6 {
             continue;
@@ -632,7 +673,7 @@ fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
             continue;
         }
         fitted = true;
-        if arcs >= 3 && !on_circle(pts) {
+        if j - i >= 2 && !on_circle(pts) {
             best = Some(j + 1);
         }
     }
@@ -642,11 +683,14 @@ fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
 /// pieces as sketch segments: four or more lines that bend smoothly become one spline through their points, and so
 /// does a smooth run of arcs off different circles
 fn segments(p: &[V2], pieces: &[(Piece, usize)]) -> Vec<Segment> {
+    // the run from each piece, found once: the lines ask it of the piece ahead of them, and the loop asks again there
+    let mut runs: Vec<Option<Option<usize>>> = vec![None; pieces.len()];
+    let mut run = |k: usize| *runs[k].get_or_insert_with(|| bent_run(p, pieces, k));
     let mut out = Vec::new();
     let mut from = p[0];
     let mut i = 0;
     while i < pieces.len() {
-        if let Some(j) = bent_run(p, pieces, i) {
+        if let Some(j) = run(i) {
             let s = if i == 0 { 0 } else { pieces[i - 1].1 };
             let e = pieces[j - 1].1;
             out.push(Segment {
@@ -670,7 +714,8 @@ fn segments(p: &[V2], pieces: &[(Piece, usize)]) -> Vec<Segment> {
         let mut j = i;
         while let Some((Piece::Line(to), _)) = pieces.get(j) {
             let n = pts.len();
-            if n >= 2 && turn_deg(pts[n - 2], pts[n - 1], *to).abs() >= SMOOTH_DEG {
+            // the lines stop where the facets of a round seen at a tilt begin, which then make a spline of their own
+            if n >= 2 && (turn_deg(pts[n - 2], pts[n - 1], *to).abs() >= SMOOTH_DEG || run(j).is_some()) {
                 break;
             }
             pts.push(*to);
@@ -743,15 +788,16 @@ pub fn fit(pts: &[V2], closed: bool) -> Option<Loop> {
         let first = pieces(&ring);
         // better still, at the start of the longest straight run, so a curve between two straight sides stays whole:
         // a single facet that fits no circle inside a round seen at a tilt is a line too, and a short one
+        let begin = |k: usize| if k == 0 { 0 } else { first[k - 1].1 };
         let line_len = |k: usize| match first[k].0 {
-            Piece::Line(to) => d2(ring[first[k - 1].1], to),
+            Piece::Line(to) => d2(ring[begin(k)], to),
             Piece::Arc(..) => 0.0,
         };
-        let straight = (1..first.len())
-            .filter(|&k| matches!(first[k].0, Piece::Line(_)) && !matches!(first[k - 1].0, Piece::Line(_)))
+        let straight = (0..first.len())
+            .filter(|&k| matches!(first[k].0, Piece::Line(_)))
             .max_by(|&a, &b| line_len(a).total_cmp(&line_len(b)));
         if let Some(k) = straight {
-            p.rotate_left(first[k - 1].1 % n);
+            p.rotate_left(begin(k) % n);
         } else if first.len() >= 2 {
             p.rotate_left(first[0].1 % n);
         }
@@ -964,6 +1010,56 @@ mod tests {
                 ["line", "spline", "line", "spline"],
                 "r {r} n {n} tilt {tilt}: {l:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_tilted_slot_keeps_each_end_whole_at_any_facet_count() {
+        // round ends of 5 to 20 mm, cut in 32 to 128 facets, seen at 30 to 70 degrees: each end is one spline
+        let mut split = Vec::new();
+        for r in [5.0, 8.0, 10.0, 12.0, 15.0, 20.0] {
+            for n in [32, 40, 48, 64, 96, 128] {
+                for tilt in [30.0, 40.0, 45.0, 50.0, 60.0, 70.0] {
+                    let l = fit(&tilted_slot(30.0, r, n, tilt), true).unwrap();
+                    // the sides come back whole, 30 mm each, so each spline is a whole end; a fine facet next to a
+                    // side lies within the tolerance of its line and may join it
+                    let facet = 2.0 * r * (std::f64::consts::PI / f64::from(n)).m_sin();
+                    let mut from = l.start.unwrap();
+                    let mut sides = Vec::new();
+                    for s in &l.segments {
+                        let to = s.to.unwrap();
+                        if s.kind == "line" {
+                            sides.push(d2(from, to));
+                        }
+                        from = to;
+                    }
+                    if kinds(&l) != ["line", "spline", "line", "spline"]
+                        || sides.iter().any(|d| *d < 30.0 - 1e-9 || *d > 30.0 + 2.0 * facet)
+                    {
+                        split.push(format!(
+                            "r {r} n {n} tilt {tilt}: {:?} sides {sides:?}",
+                            kinds(&l)
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(split.is_empty(), "{} split:\n{}", split.len(), split.join("\n"));
+    }
+
+    #[test]
+    fn a_tilted_octagon_keeps_its_eight_sides() {
+        // its corners lie on one ellipse, but each side turns 45 degrees of the round, more than a facet does
+        for tilt in [0.0f64, 45.0, 60.0] {
+            let k = tilt.to_radians().m_cos();
+            let ring: Vec<V2> = (0..8)
+                .map(|i| {
+                    let (s, c) = (f64::from(i) * std::f64::consts::TAU / 8.0).m_sin_cos();
+                    [10.0 * c, 10.0 * k * s]
+                })
+                .collect();
+            let l = fit(&ring, true).unwrap();
+            assert_eq!(kinds(&l), ["line"; 8], "tilt {tilt}: {l:?}");
         }
     }
 
