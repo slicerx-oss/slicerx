@@ -17,8 +17,8 @@ describe('per-slot filament values', () => {
     expect(out.filament_z_hop).toEqual(['nil', 0.6])
   })
 
-  it('still fills ordinary keys from the first slot that has them', () => {
+  it("fills an ordinary key a slot leaves out with its default, never another slot's value", () => {
     const out = perSlot([{ a: [1] }, { fan_min_speed: [35] }])
-    expect(out.fan_min_speed).toEqual([35, 35])
+    expect(out.fan_min_speed).toEqual([20, 35])
   })
 })
