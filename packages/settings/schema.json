@@ -8996,13 +8996,13 @@
    "key": "filament_long_retractions_when_cut",
    "section": "filament",
    "type": "bools",
-   "label": "Filament long retractions when cut",
+   "label": "Filament long retraction before a cut",
    "mode": "advanced",
    "default": [],
    "nullable": true,
    "group": "retraction",
    "invalidates": "gcode",
-   "help": "Overrides the printer's long retractions when cut for this filament. Empty uses the printer's value."
+   "help": "Overrides the printer's long retraction before a filament cut for this filament. Empty uses the printer's value."
   },
   {
    "key": "filament_retract_after_wipe",
@@ -9156,7 +9156,7 @@
    "key": "filament_retraction_distances_when_cut",
    "section": "filament",
    "type": "floats",
-   "label": "Filament retraction distances when cut",
+   "label": "Filament retraction distance before a cut",
    "min": 10,
    "max": 18,
    "mode": "advanced",
@@ -9164,7 +9164,7 @@
    "nullable": true,
    "group": "retraction",
    "invalidates": "gcode",
-   "help": "Overrides the printer's retraction distances when cut for this filament. Empty uses the printer's value."
+   "help": "Overrides the printer's retraction distance when cutting filament for this filament. Empty uses the printer's value."
   },
   {
    "key": "filament_retraction_length",
@@ -9347,7 +9347,7 @@
    "key": "chamber_minimal_temperature",
    "section": "filament",
    "type": "ints",
-   "label": "Chamber minimal temperature",
+   "label": "Minimum chamber temperature to start",
    "unit": "C",
    "min": 0,
    "max": 1500,
@@ -10124,7 +10124,7 @@
    "key": "bed_custom_model",
    "section": "printer",
    "type": "string",
-   "label": "Bed custom model",
+   "label": "Custom bed model",
    "mode": "advanced",
    "default": "",
    "group": "machine",
@@ -10134,7 +10134,7 @@
    "key": "bed_custom_texture",
    "section": "printer",
    "type": "string",
-   "label": "Bed custom texture",
+   "label": "Custom bed texture",
    "mode": "advanced",
    "default": "",
    "group": "machine",
@@ -10144,7 +10144,7 @@
    "key": "bed_exclude_area",
    "section": "printer",
    "type": "points",
-   "label": "Bed exclude area",
+   "label": "Bed exclusion area",
    "mode": "advanced",
    "default": [
     [
@@ -10824,7 +10824,7 @@
    "key": "wrapping_exclude_area",
    "section": "printer",
    "type": "points",
-   "label": "Wrapping exclude area",
+   "label": "Wrap detection exclusion area",
    "mode": "advanced",
    "default": [],
    "group": "machine",
@@ -11987,7 +11987,7 @@
    "key": "long_retractions_when_cut",
    "section": "printer",
    "type": "bools",
-   "label": "Long retractions when cut",
+   "label": "Long retraction before a filament cut",
    "mode": "develop",
    "default": [
     false

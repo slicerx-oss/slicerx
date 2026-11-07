@@ -14,7 +14,7 @@
 
 ### `bed_custom_model`
 
-**Bed custom model**
+**Custom bed model**
 
 - Type: string
 - Default: empty
@@ -23,7 +23,7 @@
 
 ### `bed_custom_texture`
 
-**Bed custom texture**
+**Custom bed texture**
 
 - Type: string
 - Default: empty
@@ -32,7 +32,7 @@
 
 ### `bed_exclude_area`
 
-**Bed exclude area**
+**Bed exclusion area**
 
 - Type: list of points [x, y]
 - Default: [[0,0]]
@@ -664,7 +664,7 @@ Where the head goes before and after each extruder's tool change, in printer coo
 
 ### `wrapping_exclude_area`
 
-**Wrapping exclude area**
+**Wrap detection exclusion area**
 
 - Type: list of points [x, y]
 - Default: empty list

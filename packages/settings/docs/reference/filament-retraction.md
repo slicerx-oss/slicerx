@@ -17,9 +17,9 @@ Overrides the printer's deretraction speed for this filament. Empty uses the pri
 
 ### `filament_long_retractions_when_cut`
 
-**Filament long retractions when cut**
+**Filament long retraction before a cut**
 
-Overrides the printer's long retractions when cut for this filament. Empty uses the printer's value.
+Overrides the printer's long retraction before a filament cut for this filament. Empty uses the printer's value.
 
 - Type: list of booleans, one per extruder
 - Default: empty list
@@ -153,9 +153,9 @@ Overrides the printer's retract at each layer change for this filament. Empty us
 
 ### `filament_retraction_distances_when_cut`
 
-**Filament retraction distances when cut**
+**Filament retraction distance before a cut**
 
-Overrides the printer's retraction distances when cut for this filament. Empty uses the printer's value.
+Overrides the printer's retraction distance when cutting filament for this filament. Empty uses the printer's value.
 
 - Type: list of numbers, one per extruder
 - Default: empty list
