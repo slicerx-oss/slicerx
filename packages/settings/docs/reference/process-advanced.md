@@ -252,7 +252,7 @@ How far painted colors reach in from the outside of the part, in mm. The inside 
 
 ### `scarf_joint_flow_ratio`
 
-**Ramped seam flow ratio**
+**Scarf joint flow ratio**
 
 - Type: number
 - Default: 1
