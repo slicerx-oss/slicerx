@@ -5,8 +5,13 @@
   python3 make.py <dir>
 
   square.png   48 x 32, white with a black 16 px square 4 px in from the top left
+  wide.png     4104 x 16, the left half black and the right half white
 
-square.jpg is square.png saved as a JPEG (ffmpeg -i square.png -q:v 2 square.jpg); this script does not write it.
+The JPEGs are made from them with ffmpeg; this script does not write them:
+
+  ffmpeg -i square.png -q:v 2 square.jpg
+  ffmpeg -i square.png -pix_fmt yuvj420p -q:v 2 square-420.jpg
+  ffmpeg -i wide.png -q:v 2 wide.jpg
 """
 import struct
 import sys
@@ -31,3 +36,4 @@ if __name__ == '__main__':
     d = Path(sys.argv[1])
     d.mkdir(parents=True, exist_ok=True)
     (d / 'square.png').write_bytes(png(48, 32, square))
+    (d / 'wide.png').write_bytes(png(4104, 16, lambda x, y: (0, 0, 0) if x < 2052 else (255, 255, 255)))
