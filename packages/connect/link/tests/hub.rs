@@ -3832,7 +3832,9 @@ async fn a_stale_plate_answer_sends_no_motion_line_and_no_filament_change() {
     until_bay4(&mut app, "idle").await;
     let r = gcode_call(&mut app, "s-0", "G29", None).await;
     assert_eq!(r["error"]["code"], "bed_check", "{r}");
-    let asked = r["error"]["details"]["epoch"].as_u64().expect("the refusal names the epoch");
+    let asked = r["error"]["details"]["epoch"]
+        .as_u64()
+        .expect("the refusal names the epoch");
 
     started_print(&mut app, "plate.gcode").await;
     until_bay4(&mut app, "printing").await;
@@ -3848,7 +3850,10 @@ async fn a_stale_plate_answer_sends_no_motion_line_and_no_filament_change() {
     }
     let log = mock_log(&mocks).await;
     for line in ["gcode G29", "gcode M600", "gcode G1 Z-5"] {
-        assert!(!log.contains(&line.to_owned()), "a stale answer sent {line}: {log:?}");
+        assert!(
+            !log.contains(&line.to_owned()),
+            "a stale answer sent {line}: {log:?}"
+        );
     }
     // The answer for the plate as it is now goes.
     let r = gcode_call(&mut app, "s-9", "G29", Some(now)).await;
@@ -3924,7 +3929,10 @@ async fn a_filament_change_mid_print_sends_no_positioning_line() {
     until_bay4(&mut app, "idle").await;
     let mut ag = agent(&link).await;
     mocks
-        .set_motion("moonraker", json!({ "homed": "xyz", "position": [100, 100, 20], "failG90": 2 }))
+        .set_motion(
+            "moonraker",
+            json!({ "homed": "xyz", "position": [100, 100, 20], "failG90": 2 }),
+        )
         .await;
     let r = call(
         &mut app,
@@ -3993,15 +4001,16 @@ async fn lines_that_change_a_running_print_wait_for_no_print() {
         );
     }
     let done = approved_line(&mut ag, &mut app, "w-speed", "M220 S120").await;
-    assert!(
-        done["message"].as_str().unwrap_or("").contains("speed"),
-        "{done}"
-    );
+    assert!(done["message"].as_str().unwrap_or("").contains("speed"), "{done}");
     for (n, line) in ["M220 S1000", "M221 S5", "G4 S600"].iter().enumerate() {
         let done = approved_line(&mut ag, &mut app, &format!("x-{n}"), line).await;
         assert_eq!(done["code"], "bad_request", "{line}: {done}");
     }
-    assert_eq!(sent(mock_log(&mocks).await), before, "nothing went into the print");
+    assert_eq!(
+        sent(mock_log(&mocks).await),
+        before,
+        "nothing went into the print"
+    );
     // A heater line still goes mid-print.
     let done = approved_line(&mut ag, &mut app, "w-heat", "M104 S205").await;
     assert_eq!(done["ok"], true, "{done}");
