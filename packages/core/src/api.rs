@@ -620,6 +620,11 @@ pub struct RequestOptions {
     /// `layer_height` and `initial_layer_print_height`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_tops_mm: Option<Vec<f64>>,
+    /// With `layerTopsMm`: the tops are exact, a plate's own layer heights set by hand. Layers keep them on a
+    /// multi-color plate too, where sleipnir's tops give way to fixed layers wherever two or more filaments print,
+    /// and a Z shrinkage compensation stretches them with the model (above the first layer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_tops_exact: Option<bool>,
     /// Resume a print at this layer (0-based). The plate is sliced whole and
     /// G-code is written only from this layer, after a start sequence that
     /// heats, homes X and Y but not Z, and draws no purge line. The preview
@@ -1885,6 +1890,8 @@ pub fn request_config_report(
         .map(|t| (t, req.options.now_offset_minutes.unwrap_or(0)));
     config.limits = req.options.machine_limits.unwrap_or_default();
     config.untrusted_gcode = !req.options.trusted_gcode.unwrap_or(false);
+    config.layer_tops_exact =
+        req.options.layer_tops_exact.unwrap_or(false) && req.options.layer_tops_mm.is_some();
     config
         .trusted_gcode_keys
         .clone_from(&req.options.stock_gcode_keys);
@@ -3215,6 +3222,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
           }
         },
         "layerTopsMm": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 1, "description": "sleipnir: top of every layer in mm, ascending, first entry is the first layer's top" },
+        "layerTopsExact": { "type": "boolean", "description": "with layerTopsMm: the tops are a plate's own layer heights, kept on multi-color plates (no fixed layers where colors change) and stretched with the model by a Z shrinkage compensation" },
         "plateName": { "type": "string", "description": "For filename_format: {plate_name}" },
         "plateNumber": { "type": "integer", "minimum": 1, "description": "For filename_format: {plate_number}, from 1" },
         "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" },
