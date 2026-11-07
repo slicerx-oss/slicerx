@@ -9,7 +9,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, command, facePick, freshBox, height, openStudio, pick, sketchAt, steps, toolPanel } from '../cad-helpers'
 import {
-  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, inputOf, labels, looking, loops, r2, rect, screenAt, shot, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
+  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, inputOf, labels, looking, loops, r2, rect, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
   type V2, type W,
 } from './lib/cad'
 
@@ -2355,25 +2355,31 @@ test.describe('sketch-svg', () => {
     await panel.getByTestId('sketch-svg-open').click()
     const form = panel.getByTestId('sketch-svg')
     await expect(form).toBeVisible()
+    // the button names the form; no caption under it says Import SVG again
+    await expect(form).toHaveAccessibleName('Import SVG')
+    await expect(form.getByText('Import SVG')).toHaveCount(0)
     // nothing to add before a file is chosen
     await expect(form.getByTestId('sketch-svg-add')).toBeDisabled()
     await form.locator('#sk-svg-file').setInputFiles({ name: 'ring.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(SVG) })
     await expect(form).toContainText('ring.svg')
     await form.getByRole('radiogroup', { name: 'SVG size' }).getByRole('radio', { name: 'Width' }).click()
     await form.locator('#sk-svg-value').fill('30')
+    // the whole form is in the panel's view, Add to sketch included
+    await expect(form.getByTestId('sketch-svg-add')).toBeInViewport({ ratio: 1 })
     // its middle lands on the middle of the bed unless moved
     await expect(form.locator('#sk-svg-x')).toHaveValue(String(Math.round(bed.widthMm / 2)))
-    await shot(page, info, 'svg-sketch-form-1440-dark.png')
+    await shotBoth(page, info, 'svg-sketch-form-1440')
     await form.getByTestId('sketch-svg-add').click()
     await expect.poll(async () => (await loops(page)).length).toBe(2)
     const [outer, hole] = await loops(page)
     expect(size(outer)).toEqual([30, 30])
     expect(hole).toMatchObject({ type: 'circle', center: [Math.round(bed.widthMm / 2), Math.round(bed.depthMm / 2)], diameterMm: 12 })
-    await expect(page.getByTestId('toast').filter({ hasText: 'Added ring: 2 loops (1 hole), 4 lines, 1 circle, 30 x 30 mm.' })).toBeVisible()
-    await shot(page, info, 'svg-sketch-added-1440-dark.png')
-    await page.evaluate(() => document.documentElement.style.setProperty('color-scheme', 'light'))
-    await shot(page, info, 'svg-sketch-added-1440-light.png')
-    await page.evaluate(() => document.documentElement.style.removeProperty('color-scheme'))
+    const note = page.getByTestId('toast').filter({ hasText: 'Added ring: 2 loops (1 hole), 4 lines, 1 circle, 30 x 30 mm.' })
+    await expect(note).toBeVisible()
+    // its text keeps 16 px inside the card's border
+    const gap = await note.evaluate((el) => el.getBoundingClientRect().right - el.querySelector('.sx-toast-text')!.getBoundingClientRect().right)
+    expect(gap).toBeGreaterThanOrEqual(16)
+    await shotBoth(page, info, 'svg-sketch-added-1440')
 
     await panel.locator('#sk-dist').fill('4')
     await panel.getByRole('button', { name: 'Extrude', exact: true }).click()
@@ -2381,5 +2387,6 @@ test.describe('sketch-svg', () => {
     // the hole went through: a 30 mm square 4 mm thick less a 12 mm round hole
     await expect.poll(() => volume(page)).toBeGreaterThan(3600 - 453 - 3)
     expect(await volume(page)).toBeLessThan(3600 - 453 + 3)
+    await shotBoth(page, info, 'svg-sketch-extruded-1440')
   })
 })

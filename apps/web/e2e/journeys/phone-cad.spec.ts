@@ -8,7 +8,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, height } from '../cad-helpers'
 import {
-  boxOf, boxesOverControls, emit, inputOf, labels, loops, phoneBox, phoneStudio, pushReady, rect, screenOf, settled, shot, shown, size, still, tapView, topMiddle,
+  boxOf, boxesOverControls, emit, inputOf, labels, loops, phoneBox, phoneStudio, pushReady, rect, screenOf, settled, shot, shotBoth, shown, size, still, tapView, topMiddle,
   type W,
 } from './lib/cad'
 
@@ -165,13 +165,12 @@ test('Import SVG on a phone: the form fits the sheet and the loops land on the p
     expect(b.x).toBeGreaterThanOrEqual(0)
     expect(b.x + b.width).toBeLessThanOrEqual(vw)
   }
-  await shot(page, info, 'svg-sketch-form-390-dark.png')
-  await page.evaluate(() => document.documentElement.style.setProperty('color-scheme', 'light'))
-  await shot(page, info, 'svg-sketch-form-390-light.png')
-  await page.evaluate(() => document.documentElement.style.removeProperty('color-scheme'))
+  await shotBoth(page, info, 'svg-sketch-form-390')
   await add.tap()
   await expect.poll(async () => (await loops(page)).length).toBe(2)
   expect(size((await loops(page))[0])).toEqual([20, 20])
+  await expect(page.getByTestId('toast').filter({ hasText: 'Added ring' })).toBeVisible()
+  await shotBoth(page, info, 'svg-sketch-added-390')
 })
 
 test('a box on the shape stays clear of the undo group and the other floating controls', async ({ page }) => {
