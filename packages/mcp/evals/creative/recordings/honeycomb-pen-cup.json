@@ -2,303 +2,214 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T16:26:44.086Z",
+ "capturedAt": "2026-11-07T18:15:59.854Z",
  "steps": [
   {
+   "text": "I'll confirm the sizes first. The 80 mm and 100 mm come from your request. The wall, base, and honeycomb sizes are my guesses, so please check them.",
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "pilot.sheet",
      "args": {
-      "name": "Hex pen cup",
-      "profiles": [
+      "title": "Hexagon pen cup",
+      "views": [
+       "top",
+       "iso"
+      ],
+      "part": [
        {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            37.693,
-            0
-           ],
-           [
-            18.846,
-            32.641
-           ],
-           [
-            -18.846,
-            32.641
-           ],
-           [
-            -37.693,
-            0
-           ],
-           [
-            -18.846,
-            -32.641
-           ],
-           [
-            18.846,
-            -32.641
-           ]
-          ]
-         }
+        "plane": "xy",
+        "points": [
+         [
+          40,
+          0
+         ],
+         [
+          20,
+          34.641
+         ],
+         [
+          -20,
+          34.641
+         ],
+         [
+          -40,
+          0
+         ],
+         [
+          -20,
+          -34.641
+         ],
+         [
+          20,
+          -34.641
+         ]
         ],
-        "heightMm": 100
-       },
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
-          ]
-         }
-        ],
-        "heightMm": 2
+        "from": 0,
+        "to": 100
        }
       ],
-      "solids": [],
-      "holes": [
+      "dims": [
        {
-        "atMm": [
-         -10,
-         0,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "across",
+        "label": "Hexagon across corners",
+        "value": 80,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -40,
+          -40,
+          0
+         ],
+         "b": [
+          40,
+          -40,
+          0
+         ],
+         "off": [
+          0,
+          -10,
+          0
+         ]
+        },
+        "note": "Taken as corner to corner; say if you meant flat to flat"
        },
        {
-        "atMm": [
-         0,
-         0,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "height",
+        "label": "Cup height",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          45,
+          -30,
+          0
+         ],
+         "b": [
+          45,
+          -30,
+          100
+         ],
+         "off": [
+          5,
+          0,
+          0
+         ]
+        }
        },
        {
-        "atMm": [
-         10,
-         0,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "wall",
+        "label": "Side wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Typical for a pen cup that holds its shape"
        },
        {
-        "atMm": [
-         -15,
-         0,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "base",
+        "label": "Base thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "guess"
        },
        {
-        "atMm": [
-         -5,
-         0,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "cell",
+        "label": "Honeycomb cell, corner to corner",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Hex holes cut through each side wall"
        },
        {
-        "atMm": [
-         5,
-         0,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "key": "rib",
+        "label": "Rib between cells",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "The sizes are confirmed. Next I'll set out the build plan, since this part has several features.",
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Hexagon pen cup",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Hex body",
+        "kind": "extrude",
+        "sizes": {
+         "across_corners": 80,
+         "height": 100
+        }
        },
        {
-        "atMm": [
-         15,
-         0,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "name": "Cup cavity",
+        "kind": "cut",
+        "sizes": {
+         "inner_across_corners": 75.4,
+         "wall": 2,
+         "base": 3,
+         "depth": 97
+        }
        },
        {
-        "atMm": [
-         -10,
-         0,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         0,
-         0,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         10,
-         0,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -15,
-         0,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -5,
-         0,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         5,
-         0,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         15,
-         0,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -10,
-         0,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         0,
-         0,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         10,
-         0,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -15,
-         0,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -5,
-         0,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         5,
-         0,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         15,
-         0,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
+        "name": "Honeycomb cells, side walls",
+        "kind": "cut",
+        "sizes": {
+         "cell_across_corners": 10,
+         "rib": 2,
+         "row_pitch_z": 9.2,
+         "rows": 8,
+         "cells_per_face": 20,
+         "faces": 6
+        }
        }
       ],
-      "material": "PLA"
+      "assumptions": [
+       "80 mm is corner to corner (across corners), so the hexagon has corners on the X axis",
+       "Walls 2 mm, base 3 mm, open top",
+       "Honeycomb cells run through all six side walls, staggered rows from z 15 to 80, leaving the base and rim solid",
+       "Cells are hex prisms 10 mm corner to corner with 2 mm ribs between them"
+      ],
+      "questions": [
+       "Is 80 mm across corners or across flats? I assumed corners.",
+       "Should the honeycomb stop short of the rim, or reach the top?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "The plan is approved. I'll start building the hexagon body.",
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Hexagon pen cup"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "Hexagon pen cup",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 80,
+       "fit": "circumscribed"
+      },
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Cup body"
      }
     }
    ]
@@ -306,298 +217,706 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "Hex pen cup honeycomb",
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
+      "design": "d1",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 80,
+       "fit": "circumscribed"
+      },
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Cup body"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The hexagon came out with corners on the Y axis, not X as planned. I'll undo it and rotate the sketch 30 degrees.",
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 80,
+       "fit": "circumscribed"
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 30
+      },
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Cup body"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The body now has corners on X and matches the plan. Next I'll cut the cavity from the top, leaving a 3 mm base.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 75.4,
+       "fit": "circumscribed"
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 30
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        100
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 97,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "The cavity is cut and the body is 80 by 100 mm. Now the honeycomb: I'll cut one face of cells at a time, starting with the +Y wall.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
           ]
-         },
-         {
-          "points": [
-           [
-            37.693,
-            0
-           ],
-           [
-            18.846,
-            32.641
-           ],
-           [
-            -18.846,
-            32.641
-           ],
-           [
-            -37.693,
-            0
-           ],
-           [
-            -18.846,
-            -32.641
-           ],
-           [
-            18.846,
-            -32.641
-           ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
           ]
-         }
-        ],
-        "heightMm": 100
-       },
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
           ]
-         }
-        ],
-        "heightMm": 2
-       }
-      ],
-      "solids": [],
-      "holes": [
-       {
-        "atMm": [
-         -10,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         0,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         10,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -15,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -5,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         5,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         15,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -10,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         0,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         10,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -15,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -5,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         5,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         15,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -10,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         0,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         10,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -15,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         -5,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         5,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         15,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       }
-      ],
-      "material": "PLA"
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        40,
+        0
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ],
+       "u": [
+        -1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "The cut ran, but the volume is about half of what the honeycomb should remove, and I found the cause. The `circumscribed` fit makes the 80 mm the across-flats distance, not across corners. I'll undo the three steps and rebuild with `inscribed`, which puts 80 mm across the corners.",
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
      }
     }
    ]
@@ -605,312 +924,3696 @@
   {
    "calls": [
     {
-     "name": "project.info",
-     "args": {}
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "d1"
+     }
     }
    ]
   },
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "Hex pen cup honeycomb v3",
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            37.693,
-            0
-           ],
-           [
-            18.846,
-            32.641
-           ],
-           [
-            -18.846,
-            32.641
-           ],
-           [
-            -37.693,
-            0
-           ],
-           [
-            -18.846,
-            -32.641
-           ],
-           [
-            18.846,
-            -32.641
-           ]
-          ]
-         }
-        ],
-        "heightMm": 100
-       },
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            40,
-            0
-           ],
-           [
-            20,
-            34.641
-           ],
-           [
-            -20,
-            34.641
-           ],
-           [
-            -40,
-            0
-           ],
-           [
-            -20,
-            -34.641
-           ],
-           [
-            20,
-            -34.641
-           ]
-          ]
-         }
-        ],
-        "heightMm": 2
-       }
-      ],
-      "solids": [],
-      "holes": [
-       {
-        "atMm": [
-         30,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         40,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         50,
-         34.641,
-         24
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         25,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         35,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         45,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         55,
-         34.641,
-         32
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         30,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         40,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         50,
-         34.641,
-         40
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         25,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         35,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         45,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         55,
-         34.641,
-         48
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         30,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         40,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         50,
-         34.641,
-         56
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         25,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         35,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         45,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       },
-       {
-        "atMm": [
-         55,
-         34.641,
-         64
-        ],
-        "diameterMm": 7,
-        "axis": "y"
-       }
-      ],
-      "material": "PLA"
+      "design": "d1",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 80,
+       "fit": "inscribed"
+      },
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Cup body"
      }
     }
    ]
   },
   {
-   "text": "I built the hex cup as an 80 mm across-corners hexagon, 100 mm tall, with 2 mm walls and a 2 mm floor. The honeycomb cuts did not go through. The tool reported \"holes not cut\" on all 21 holes in each attempt, so the walls are solid right now.\n\nI made three versions while trying to place the holes, so the project has three objects. The first two (\"Hex pen cup\" and \"Hex pen cup honeycomb\") have no holes. The third, \"Hex pen cup honeycomb v3\", has the same body and the intended hole layout, but it is not cut either. Please delete the first two in Model.\n\nThe honeycomb is also not a true hex pattern. The tools can only cut round holes along the X, Y or Z axis. The two flat walls facing front and back are the only ones a straight hole can reach, and the four angled walls would need a different cut. Your options:\n\n1. Cut the honeycomb by hand in Model. Hexagonal through-cuts on all six walls are a boolean subtract, which takes a few minutes.\n2. Accept round holes on the two front and back flats only, about 21 holes in a staggered grid. I would need to find a way to make the holes cut, which I have not managed yet.\n\nNothing has been sliced or sent to the printer. Which do you want?"
+   "text": "The body is now 80 mm across the corners on X, with flats at ±Y. Next the cavity, sized inscribed at 75.4 mm so the walls stay 2 mm.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "polygon",
+       "sides": 6,
+       "diameterMm": 75.4,
+       "fit": "inscribed"
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        100
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 97,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "The cavity checks out: 3 mm base and 2 mm walls. Now the honeycomb on the +Y wall, using the same cell layout.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        40,
+        0
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ],
+       "u": [
+        -1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "The +Y wall removed about 2,590 mm³, which matches the expected 2,600. Now the other five walls, one at a time.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        -40,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        34.641,
+        20,
+        0
+       ],
+       "normal": [
+        0.866,
+        0.5,
+        0
+       ],
+       "u": [
+        -0.5,
+        0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        -34.641,
+        20,
+        0
+       ],
+       "normal": [
+        -0.866,
+        0.5,
+        0
+       ],
+       "u": [
+        -0.5,
+        -0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        -34.641,
+        -20,
+        0
+       ],
+       "normal": [
+        -0.866,
+        -0.5,
+        0
+       ],
+       "u": [
+        0.5,
+        -0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -10.66,
+           20
+          ],
+          [
+           -6.33,
+           17.5
+          ],
+          [
+           -6.33,
+           12.5
+          ],
+          [
+           -10.66,
+           10
+          ],
+          [
+           -14.99,
+           12.5
+          ],
+          [
+           -14.99,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           20
+          ],
+          [
+           4.33,
+           17.5
+          ],
+          [
+           4.33,
+           12.5
+          ],
+          [
+           0,
+           10
+          ],
+          [
+           -4.33,
+           12.5
+          ],
+          [
+           -4.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           20
+          ],
+          [
+           14.99,
+           17.5
+          ],
+          [
+           14.99,
+           12.5
+          ],
+          [
+           10.66,
+           10
+          ],
+          [
+           6.33,
+           12.5
+          ],
+          [
+           6.33,
+           17.5
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           29.23
+          ],
+          [
+           -1,
+           26.73
+          ],
+          [
+           -1,
+           21.73
+          ],
+          [
+           -5.33,
+           19.23
+          ],
+          [
+           -9.66,
+           21.73
+          ],
+          [
+           -9.66,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           29.23
+          ],
+          [
+           9.66,
+           26.73
+          ],
+          [
+           9.66,
+           21.73
+          ],
+          [
+           5.33,
+           19.23
+          ],
+          [
+           1,
+           21.73
+          ],
+          [
+           1,
+           26.73
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           38.46
+          ],
+          [
+           -6.33,
+           35.96
+          ],
+          [
+           -6.33,
+           30.96
+          ],
+          [
+           -10.66,
+           28.46
+          ],
+          [
+           -14.99,
+           30.96
+          ],
+          [
+           -14.99,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           38.46
+          ],
+          [
+           4.33,
+           35.96
+          ],
+          [
+           4.33,
+           30.96
+          ],
+          [
+           0,
+           28.46
+          ],
+          [
+           -4.33,
+           30.96
+          ],
+          [
+           -4.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           38.46
+          ],
+          [
+           14.99,
+           35.96
+          ],
+          [
+           14.99,
+           30.96
+          ],
+          [
+           10.66,
+           28.46
+          ],
+          [
+           6.33,
+           30.96
+          ],
+          [
+           6.33,
+           35.96
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           47.69
+          ],
+          [
+           -1,
+           45.19
+          ],
+          [
+           -1,
+           40.19
+          ],
+          [
+           -5.33,
+           37.69
+          ],
+          [
+           -9.66,
+           40.19
+          ],
+          [
+           -9.66,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           47.69
+          ],
+          [
+           9.66,
+           45.19
+          ],
+          [
+           9.66,
+           40.19
+          ],
+          [
+           5.33,
+           37.69
+          ],
+          [
+           1,
+           40.19
+          ],
+          [
+           1,
+           45.19
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           56.92
+          ],
+          [
+           -6.33,
+           54.42
+          ],
+          [
+           -6.33,
+           49.42
+          ],
+          [
+           -10.66,
+           46.92
+          ],
+          [
+           -14.99,
+           49.42
+          ],
+          [
+           -14.99,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           56.92
+          ],
+          [
+           4.33,
+           54.42
+          ],
+          [
+           4.33,
+           49.42
+          ],
+          [
+           0,
+           46.92
+          ],
+          [
+           -4.33,
+           49.42
+          ],
+          [
+           -4.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           56.92
+          ],
+          [
+           14.99,
+           54.42
+          ],
+          [
+           14.99,
+           49.42
+          ],
+          [
+           10.66,
+           46.92
+          ],
+          [
+           6.33,
+           49.42
+          ],
+          [
+           6.33,
+           54.42
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           66.15
+          ],
+          [
+           -1,
+           63.65
+          ],
+          [
+           -1,
+           58.65
+          ],
+          [
+           -5.33,
+           56.15
+          ],
+          [
+           -9.66,
+           58.65
+          ],
+          [
+           -9.66,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           66.15
+          ],
+          [
+           9.66,
+           63.65
+          ],
+          [
+           9.66,
+           58.65
+          ],
+          [
+           5.33,
+           56.15
+          ],
+          [
+           1,
+           58.65
+          ],
+          [
+           1,
+           63.65
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -10.66,
+           75.38
+          ],
+          [
+           -6.33,
+           72.88
+          ],
+          [
+           -6.33,
+           67.88
+          ],
+          [
+           -10.66,
+           65.38
+          ],
+          [
+           -14.99,
+           67.88
+          ],
+          [
+           -14.99,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           0,
+           75.38
+          ],
+          [
+           4.33,
+           72.88
+          ],
+          [
+           4.33,
+           67.88
+          ],
+          [
+           0,
+           65.38
+          ],
+          [
+           -4.33,
+           67.88
+          ],
+          [
+           -4.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           10.66,
+           75.38
+          ],
+          [
+           14.99,
+           72.88
+          ],
+          [
+           14.99,
+           67.88
+          ],
+          [
+           10.66,
+           65.38
+          ],
+          [
+           6.33,
+           67.88
+          ],
+          [
+           6.33,
+           72.88
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           -5.33,
+           84.61
+          ],
+          [
+           -1,
+           82.11
+          ],
+          [
+           -1,
+           77.11
+          ],
+          [
+           -5.33,
+           74.61
+          ],
+          [
+           -9.66,
+           77.11
+          ],
+          [
+           -9.66,
+           82.11
+          ]
+         ]
+        },
+        {
+         "points": [
+          [
+           5.33,
+           84.61
+          ],
+          [
+           9.66,
+           82.11
+          ],
+          [
+           9.66,
+           77.11
+          ],
+          [
+           5.33,
+           74.61
+          ],
+          [
+           1,
+           77.11
+          ],
+          [
+           1,
+           82.11
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        34.641,
+        -20,
+        0
+       ],
+       "normal": [
+        0.866,
+        -0.5,
+        0
+       ],
+       "u": [
+        0.5,
+        0.866,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "distance_mm": 12,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "All six walls are cut, and the volume drop matches six walls of cells. Now I'll check the part against the plan.",
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The pen cup is built and the sizes are right: 80 mm across the corners, 69.3 mm across the flats, 100 mm tall, watertight, with 2 mm walls. The honeycomb has 20 cells on each of the six walls, cut through and leaving the base and rim solid.\n\n**The plan check failed on one item.** The plan expected 3 features, and the part has 8 steps: body, cavity, and six wall cuts for the honeycomb. The geometry matches the plan, so I did not change it. Say if you want the honeycomb merged into fewer steps, or if the 8-step build is fine.\n\nThe 80 mm was taken as corner to corner, and the wall, base, and cell sizes are my guesses. I have not sliced or queued anything. Should I send it to your P1S on a 0.6 mm nozzle in PLA?"
   }
- ]
+ ],
+ "defaultAnswer": true,
+ "tabTools": true
 }

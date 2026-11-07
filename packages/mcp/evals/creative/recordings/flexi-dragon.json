@@ -2,10 +2,42 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T16:18:41.816Z",
+ "capturedAt": "2026-11-07T17:33:09.109Z",
  "steps": [
   {
-   "text": "I can't model a sculpted dragon. The tools build flat outlines extruded up, turned shapes and simple solids, not free-form organic curves. The closest versions I can make:\n\n1. **Flat dragon silhouette with a jointed tail.** A side-profile dragon outline extruded as a flat plaque, with the tail as a chain of linked segments that swing on pin joints and print in place.\n2. **Stacked flat sections.** The body built as flat layers of the dragon profile, with jointed segments along the spine and tail, so it reads as a dragon from the side with a bit of depth.\n3. **Articulated spine and tail only.** A tapered chain of linked segments with no head or legs. It wiggles straight off the plate and keeps the 180 mm length.\n\nFor the wiggle, the joints should print in TPU. Your P1S is loaded with PLA, and PLA joints are stiff, so I'd check for a TPU spool before printing whichever version you pick.\n\nWhich version do you want, or nothing for now? Once you choose, I'll ask for the sizes I still need."
+   "text": "A free-form dragon is a sculpted shape that curves in two directions, and my tools can't model that. The closest versions they can build are:\n\n1. **Flat silhouette**: a dragon outline extruded as a plate, with a jointed tail of linked segments and pin joints that wiggle in plane.\n2. **Stacked sections**: the body built from flat slices stacked on top of each other, with a jointed tail. It gives more depth than a plaque but looks more faceted.\n3. **Simplified jointed body**: a segmented body and tail of simple rounded blocks, leaving out the head and sculpted detail.",
+   "calls": [
+    {
+     "name": "pilot.ask",
+     "args": {
+      "title": "Dragon version",
+      "question": "Which version should I build? Sizes come after you pick.",
+      "choices": [
+       {
+        "id": "flat_silhouette",
+        "label": "Flat silhouette, jointed tail"
+       },
+       {
+        "id": "stacked_sections",
+        "label": "Stacked flat sections"
+       },
+       {
+        "id": "simple_segments",
+        "label": "Simple segmented body"
+       },
+       {
+        "id": "nothing",
+        "label": "Nothing for now"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "I haven't built anything yet. A free-form dragon is outside what my tools can model, and the version card was dismissed without a pick, so I need one more answer. Would you like a different shape the tools can make, such as a jointed flat plate or a segmented chain, or should I stop here?"
   }
- ]
+ ],
+ "defaultAnswer": true,
+ "tabTools": true
 }
