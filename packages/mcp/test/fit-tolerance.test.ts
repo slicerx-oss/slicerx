@@ -8,12 +8,14 @@ import type { Design as HostDesign, DesignHost, HistoryMesh } from '@slicerx/cad
 import { describe, expect, it } from 'vitest'
 import { fitItems, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
 import { FIT_TOLERANCE_MM, fitFacts, fitLimits, fitVerdict } from '../src/fit-facts'
+import * as toolset from '../src/toolset'
+import type { ToolContext } from '@slicerx/pilot'
 
 type V3 = [number, number, number]
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 // one small facet per part: the report is stubbed, so the meshes only need to exist
 const part = (name: string, z: number): HistoryMesh => ({ name, slot: 0, positions: [0, 0, z, 1, 0, z, 0, 1, z], indices: [0, 1, 2] })
-const design = { id: 'd', name: 'Mechanism', transform: IDENTITY, parts: [part('Arm', 0), part('Pin', 5)] } as unknown as HostDesign
+const design = { id: 'd', name: 'Mechanism', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [part('Arm', 0), part('Pin', 5)], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
 
 /** fitFacts over a stubbed engine that reports one gap between the two parts. */
 async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, material = 'PLA') {
@@ -117,5 +119,52 @@ describe('the pieces item for bodies of one part', () => {
   it('fails when one of the unnamed bodies is a part of its own', () => {
     const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Arm', partName: 'Arm' }], gaps: [apart(0, 2), apart(1, 2)] }
     expect(pieces(fit, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(false)
+  })
+})
+
+describe('one gap rule for every caller', () => {
+  it('the toolset exports the limits by direction, the way a gap runs and whether it clears', () => {
+    const l = toolset.fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
+    expect([toolset.fitLimitFor(l, 'xy'), toolset.fitLimitFor(l, 'z')]).toEqual([0.3, 0.4])
+    expect(toolset.FIT_TOLERANCE_MM).toBe(FIT_TOLERANCE_MM)
+    expect(toolset.clearsFitLimit(0.28, 'xy', l)).toBe(true)
+    expect(toolset.clearsFitLimit(0.279, 'xy', l)).toBe(false)
+    expect(toolset.clearsFitLimit(0.38, 'z', l)).toBe(false)
+    expect(toolset.clearsFitLimit(0.4 - 1e-9, 'z', l)).toBe(true)
+    expect(toolset.fitDirection('vertical', [0, 0, 0], [5, 0, 0])).toBe('z')
+    expect(toolset.fitDirection('horizontal', [0, 0, 0], [0, 0, 5])).toBe('xy')
+    expect(toolset.fitDirection('apart', [0, 0, 0], [0.1, 0, 0.5])).toBe('z')
+    expect(toolset.fitDirection('fused', [0, 0, 0], [0.5, 0, 0.1])).toBe('xy')
+    expect(toolset.fitDirection('fused', [0, 0, 0], [0.5, 0, 0.1], true)).toBe('z')
+    expect(toolset.fitVerdict({ kind: 'vertical', gapMm: 0.38, direction: 'z' }, l)).toBe('fuses')
+  })
+
+  it("designToolset hands the run's layer height and filament to geom.fit_check and design.check", async () => {
+    const asked: Record<string, unknown>[] = []
+    const report = { parts: [{ bounds: { min: [0, 0, 0], max: [1, 1, 0] }, item: 0 }, { bounds: { min: [0, 0, 5], max: [1, 1, 5] }, item: 1 }], gaps: [], pieces: 2 }
+    const host = {
+      get: () => design,
+      list: () => [design],
+      call: async (op: string, req: Record<string, unknown>) => {
+        if (op === 'fit.check') asked.push(req)
+        if (op === 'fit.check') return report
+        return op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))
+      },
+    } as unknown as DesignHost
+    const plans = toolset.createPlanRegistry()
+    plans.put({ planId: 'pip', part: 'Mechanism', units: 'mm', features: [], assumptions: [], questions: [], printInPlace: ['Arm', 'Pin'] }, 'd', 'card')
+    const tools = toolset.designToolset(host, {}, { plans, cardSide: true, fitProfile: () => ({ material: 'PETG', layerHeightMm: 0.28 }) })
+    const run = async (name: string, args: Record<string, unknown>) => {
+      const t = tools.find((x) => x.name === name)!
+      return (await t.run(t.input.parse(args), {} as ToolContext)).output as { limits?: Record<string, unknown>; body?: { fit?: { limits: Record<string, unknown> } } }
+    }
+    const fit = await run('geom.fit_check', { design: 'd' })
+    expect(fit.limits).toMatchObject({ side_mm: 0.4, vertical_mm: 0.84, material: 'PETG', layer_height_mm: 0.28 })
+    const check = await run('design.check', { planId: 'pip' })
+    expect(check.body?.fit?.limits).toMatchObject({ sideMm: 0.4, verticalMm: 0.84, material: 'PETG', layerHeightMm: 0.28 })
+    expect(asked.map((r) => [r['minGapMm'], r['minVerticalGapMm'], r['layerHeightMm']])).toEqual([
+      [0.4, 0.84, 0.28],
+      [0.4, 0.84, 0.28],
+    ])
   })
 })
