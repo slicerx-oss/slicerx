@@ -166,10 +166,14 @@ impl Case {
     }
 }
 
-/// The synthetic plates and every CLI request fixture that slices.
+/// The synthetic plates, the modifier box and every CLI request fixture that slices.
 fn all_cases(only: Option<&str>) -> Vec<Case> {
     let keep = |name: &str| only.is_none_or(|o| name.contains(o));
-    let mut out: Vec<Case> = cases().into_iter().filter(|c| keep(&c.name)).collect();
+    let mut out: Vec<Case> = cases()
+        .into_iter()
+        .chain([modifier_box()])
+        .filter(|c| keep(&c.name))
+        .collect();
     let dir = format!("{}/cli/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
@@ -420,6 +424,14 @@ fn a_repeat_and_any_layer_ranges_on_a_kept_session_give_a_fresh_ones_bytes() {
 /// never sheds.
 /// A 40 x 20 x 12 mm box whose right half prints with other walls and infill, from a modifier volume.
 fn modifier_box() -> Case {
+    modifier_box_with(
+        "modifier box",
+        &json!({"wall_loops": 4, "sparse_infill_density": 40, "top_shell_layers": 6}),
+    )
+}
+
+/// The box of [`modifier_box`], its right half printed with `settings`.
+fn modifier_box_with(name: &str, settings: &Value) -> Case {
     let object = wedge(40.0, 20.0, 12.0, 12.0);
     let modifier = wedge(20.0, 24.0, 14.0, 14.0);
     let req = serde_json::from_value(json!({
@@ -429,15 +441,15 @@ fn modifier_box() -> Case {
             "volumes": [{
                 "role": "modifier", "mesh": "half",
                 "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 120,98,-1,1],
-                "settings": {"wall_loops": 4, "sparse_infill_density": 40, "top_shell_layers": 6},
+                "settings": settings,
             }],
         }]},
-        "config": common::with_base(&json!({"layer_height": 0.2})),
+        "config": common::with_base(&json!({"layer_height": 0.2, "outer_wall_speed": [50]})),
         "options": {"flavor": "marlin2", "nowUnix": 1_790_000_000, "nowOffsetMinutes": 0},
     }))
     .unwrap();
     Case {
-        name: "modifier box".to_owned(),
+        name: name.to_owned(),
         req,
         meshes: vec![("box".to_owned(), object), ("half".to_owned(), modifier)],
     }
@@ -607,6 +619,92 @@ fn the_free_settings_changed_in_groups_keep_the_session() {
                 )
             });
         }
+    }
+}
+
+/// The plates the shell stage checks run on: the CI plates, the modifier box, and the painted and per-object
+/// fixtures.
+fn shell_cases() -> Vec<Case> {
+    let mut out = ci_cases();
+    out.push(modifier_box());
+    for name in [
+        "painted-request.json",
+        "objsettings-request.json",
+        "objranges-request.json",
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("cli/tests/fixtures")
+            .join(name);
+        out.push(Case::fixture(&path).unwrap());
+    }
+    out
+}
+
+/// The shell stages' per-layer results (a layer's walls, bridge facts and bridges) are keyed on every setting but
+/// [`api::SHELL_FREE_KEYS`], so a stage that reads one of those would hand a kept session results worked out from the
+/// old value. With those settings changed in groups, a kept session gives the bytes of a second session prepared from
+/// the same request whose first run has the new values: the two differ only in what the first session's earlier run
+/// left in its cache. `every_free_setting_keeps_the_session` (by hand) changes them one at a time.
+#[test]
+fn the_shell_stages_read_none_of_the_settings_their_key_leaves_out() {
+    let defs = schema();
+    for case in shell_cases() {
+        let load = |id: &str| case.mesh(id);
+        let kept = api::prepare(&case.req, &load).unwrap();
+        api::run_prepared(&case.req, &kept, &sx_core::NoProgress).unwrap();
+        let mut compared = 0;
+        for group in api::SHELL_FREE_KEYS.chunks(60) {
+            let mut req = case.req.clone();
+            for key in group {
+                let def = defs
+                    .iter()
+                    .find(|d| d["key"] == json!(key))
+                    .unwrap_or_else(|| panic!("{key} is not in the settings schema"));
+                let now = req.config.get(*key).cloned().unwrap_or(Value::Null);
+                req.config[*key] =
+                    other_value(def, &now).unwrap_or_else(|| panic!("no other value of {key}"));
+            }
+            // A group whose values do not slice together is no test of the cache.
+            let Ok(first) = api::prepare(&case.req, &load)
+                .and_then(|p| api::run_prepared(&req, &p, &sx_core::NoProgress))
+            else {
+                continue;
+            };
+            let again = api::run_prepared(&req, &kept, &sx_core::NoProgress).unwrap();
+            compared += 1;
+            assert!(
+                output(&again) == output(&first),
+                "{} with {} to {} changed: a kept session gives other output",
+                case.name,
+                group[0],
+                group[group.len() - 1]
+            );
+        }
+        assert!(compared > 0, "{}: no group sliced", case.name);
+    }
+}
+
+/// A modifier that sets only another outer wall speed keeps its half's first layer surface apart from the rest; with
+/// the plate's outer wall speed set to the modifier's, the two halves print alike, one surface across. The shell
+/// entries are not keyed on the speed, so they are keyed on whether the regions agree on it.
+#[test]
+fn a_kept_session_sees_two_regions_print_alike_when_a_free_setting_makes_them_agree() {
+    let case = modifier_box_with("wall speed box", &json!({"outer_wall_speed": [31]}));
+    let load = |id: &str| case.mesh(id);
+    let prepared = api::prepare(&case.req, &load).unwrap();
+    api::run_prepared(&case.req, &prepared, &sx_core::NoProgress).unwrap();
+    let mut alike = case.req.clone();
+    alike.config["outer_wall_speed"] = json!([31]);
+    let mut other = case.req.clone();
+    other.config["outer_wall_speed"] = json!([64]);
+    for (what, req) in [
+        ("alike", &alike),
+        ("back", &case.req),
+        ("another speed", &other),
+        ("alike again", &alike),
+    ] {
+        assert_eq!(case.key(req), case.key(&case.req), "{what}");
+        kept_is_fresh(&case, &prepared, req).unwrap_or_else(|e| panic!("{what}: {e}"));
     }
 }
 
