@@ -369,12 +369,13 @@ impl Pusher {
         Ok(())
     }
 
-    /// The app says whether a partner phone (by tag) may approve now.
+    /// Whether a partner phone (by tag) may approve now, as the app or its hub pairing says. Returns how
+    /// many registrations changed.
     fn set_may_approve(&self, tag: &str, may: bool) -> usize {
         let mut n = 0;
         for x in lock(&self.regs)
             .iter_mut()
-            .filter(|x| x.partner.is_some() && x.tag.as_deref() == Some(tag))
+            .filter(|x| x.partner.is_some() && x.tag.as_deref() == Some(tag) && x.may_approve != may)
         {
             x.may_approve = may;
             n += 1;
@@ -749,6 +750,12 @@ pub(crate) async fn remote_partner(
         crate::hub_rpc::save(b).await;
     }
     Ok(json!({}))
+}
+
+/// A pairing's approve right as the hub now holds it (`remote.pairings.put`): its partner phone's push
+/// token follows, both off and on. True when a registration changed.
+pub(crate) fn follow_approve(b: &Bridge, pairing_id: &str, approve: bool) -> bool {
+    b.hub.push.set_may_approve(pairing_id, approve) > 0
 }
 
 /// Drops the push registrations tagged with a pairing that was removed.
