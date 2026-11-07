@@ -151,23 +151,13 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     let eps = size * 1e-9;
     let count = sections.len();
     // the way the loft goes at each profile
-    let along: Vec<V3> = (0..count)
-        .map(|k| {
-            if opts.closed {
-                vec3::sub(
-                    sections[(k + 1) % count].center,
-                    sections[(k + count - 1) % count].center,
-                )
-            } else if k + 1 < count {
-                vec3::sub(sections[k + 1].center, sections[k].center)
-            } else {
-                vec3::sub(sections[k].center, sections[k - 1].center)
-            }
-        })
-        .collect();
-    // Every ring winds counterclockwise about the way the loft goes from it. An open chain winds the way it and the
-    // line across its ends go around; a straight one is turned to run the way its neighbor runs. Landmarked rings keep
-    // their matched points, so they turn all together or not at all.
+    let along = alongs(
+        &sections.iter().map(|s| s.center).collect::<Vec<V3>>(),
+        opts.closed,
+    );
+    // Every closed ring winds counterclockwise about the way the loft goes from it. Open chains all run one way: the
+    // first that bends winds the way it and the line across its ends go around, and the rest run the way their
+    // neighbors run. Landmarked rings keep their matched points, so they turn all together or not at all.
     if marked {
         same_way(&mut sections, &along, open)?;
     } else {
@@ -226,31 +216,47 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     Ok(surface)
 }
 
-/// Turns each ring to wind counterclockwise about `along`; see [`loft_with`].
+/// The way the loft goes at each profile, from the profiles' middles; a `closed` loft runs around.
+fn alongs(centers: &[V3], closed: bool) -> Vec<V3> {
+    let count = centers.len();
+    (0..count)
+        .map(|k| {
+            if closed {
+                vec3::sub(centers[(k + 1) % count], centers[(k + count - 1) % count])
+            } else if k + 1 < count {
+                vec3::sub(centers[k + 1], centers[k])
+            } else {
+                vec3::sub(centers[k], centers[k - 1])
+            }
+        })
+        .collect()
+}
+
+/// Turns each ring to run the way the loft needs; see [`loft_with`].
 fn orient(sections: &mut [Section], along: &[V3], open: bool) {
     let count = sections.len();
-    let mut wound = vec![!open; count];
-    for k in 0..count {
-        if open {
-            let s = &mut sections[k];
-            if let Some(ccw) = chain_winds(&s.flat) {
-                if !ccw {
-                    s.ring.reverse();
-                    s.flat.reverse();
-                }
-                wound[k] = true;
+    if !open {
+        for (s, a) in sections.iter_mut().zip(along) {
+            if vec3::dot(s.frame.w, *a) < 0.0 {
+                s.ring.reverse();
+                s.flat.reverse();
             }
         }
-        if wound[k] && vec3::dot(sections[k].frame.w, along[k]) < 0.0 {
-            sections[k].ring.reverse();
-            sections[k].flat.reverse();
-        }
+        return;
     }
-    let first = wound.iter().position(|&w| w).unwrap_or(0);
+    // the first chain that bends sets the way; a chain that bends the other way still runs as its neighbor does
+    let first = sections
+        .iter()
+        .position(|s| chain_winds(&s.flat).is_some())
+        .unwrap_or(0);
+    if !winds_along(&sections[first], along[first]).unwrap_or(true) {
+        sections[first].ring.reverse();
+        sections[first].flat.reverse();
+    }
     for k in (0..first).rev() {
         follow(sections, k, k + 1);
     }
-    for k in (first + 1..count).filter(|&k| !wound[k]) {
+    for k in first + 1..count {
         follow(sections, k, k - 1);
     }
 }
@@ -263,6 +269,11 @@ fn chain_winds(flat: &[V2]) -> Option<bool> {
         .fold(0.0f64, |m, p| m.max(p[0].abs()).max(p[1].abs()))
         .max(1.0);
     (a.abs() > span * span * 1e-9).then_some(a > 0.0)
+}
+
+/// Whether a section winds counterclockwise about `along` (None for a straight open chain).
+fn winds_along(s: &Section, along: V3) -> Option<bool> {
+    chain_winds(&s.flat).map(|ccw| ccw == (vec3::dot(s.frame.w, along) >= 0.0))
 }
 
 /// Turns every landmarked ring end for end when they all wind clockwise about `along`; fails when some do and some do

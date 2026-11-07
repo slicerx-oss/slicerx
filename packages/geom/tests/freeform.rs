@@ -376,3 +376,18 @@ fn half_sections_close_on_a_flat_mirror_seam() {
         2.0 * v
     );
 }
+
+#[test]
+fn sections_that_bow_opposite_ways_make_a_twisted_panel_not_a_bow_tie() {
+    // both drawn left to right, the first bowing up, the second down
+    let up = [[-10.0, 0.0], [-5.0, 1.5], [0.0, 2.0], [5.0, 1.5], [10.0, 0.0]];
+    let down = up.map(|p| [p[0], -p[1]]);
+    let thick = json!({ "thicknessMm": 1, "side": "center" });
+    let m = run(
+        "sketch.loft",
+        &json!({ "profiles": [open_at(0.0, &up), open_at(10.0, &down)], "thicken": thick }),
+    );
+    solid(&m);
+    let b = &m["bounds"];
+    assert!(b["max"][0].as_f64().unwrap() > 10.0 && b["min"][0].as_f64().unwrap() < -10.0);
+}
