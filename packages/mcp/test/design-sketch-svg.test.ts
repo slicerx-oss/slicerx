@@ -92,6 +92,19 @@ describe('design.sketch_svg', () => {
     expect(dense.sketches).toHaveLength(0)
   })
 
+  it('keeps a spline the engine cannot draw out of the timeline, as design.sketch does', async () => {
+    const wavy: SketchLoop[] = [{ start: [0, 0], segments: [{ type: 'spline', to: [10, 0], points: [[5, 0], [5, 0]] }, { type: 'line', to: [0, 0] }] }, LOOPS[1]!]
+    const twice = { loop: 0, kind: 'zeroLength', message: 'Loop 1 has the same point twice in a row.' }
+    const bad = host(reply({ loops: wavy, check: check([twice]) }))
+    await expect(bad.run('design.sketch_svg', { svg: SVG })).rejects.toThrow(/svg: Loop 1 has the same point twice in a row\. Raise tolerance_mm/)
+    expect(bad.sketches).toHaveLength(0)
+    // the same issue on a loop of lines is the client's to fix, so the sketch is kept and the problem named
+    const lines = host(reply({ check: check([twice]) }))
+    const out = await lines.run('design.sketch_svg', { svg: SVG })
+    expect(lines.sketches).toHaveLength(1)
+    expect(out.summary).toMatch(/1 problem to fix before it makes a solid: Loop 1 has the same point twice in a row\./)
+  })
+
   it('needs the app timeline, and checks its input', async () => {
     const { run } = host(reply(), false)
     await expect(run('design.sketch_svg', { svg: SVG })).rejects.toThrow(/design timeline of the project open in the app/)
@@ -100,6 +113,8 @@ describe('design.sketch_svg', () => {
     expect(tool.input.safeParse({ svg: '' }).success).toBe(false)
     expect(tool.input.safeParse({ svg: SVG, fit_width_mm: 0 }).success).toBe(false)
     expect(tool.input.safeParse({ svg: SVG, tolerance_mm: 2 }).success).toBe(false)
+    expect(tool.input.safeParse({ svg: SVG, tolerance_mm: 0.0005 }).success).toBe(false)
+    expect(tool.input.safeParse({ svg: SVG, tolerance_mm: 0.001 }).success).toBe(true)
     expect(tool.input.safeParse({ svg: SVG, center: [1] }).success).toBe(false)
   })
 })
