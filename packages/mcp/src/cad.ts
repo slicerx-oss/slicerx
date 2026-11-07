@@ -1528,13 +1528,22 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       "Measure the gaps between a design's bodies for print-in-place parts (hinges, pins, chains): every pair that touches or sits closer than the printer keeps open, how many separate pieces print, and per gap fuses, binds or slides. Limits come from the nozzle, layer height and material.",
     input: z.object({
       design: designArg,
-      part: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('Only these parts, by index; default all'),
-      material: z.string().min(1).max(40).optional().describe('Default the loaded filament'),
+      part: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('Only these parts, by index, each once; default all'),
+      material: z
+        .string()
+        .trim()
+        .min(1)
+        .max(40)
+        .regex(/^[A-Za-z][A-Za-z0-9 +./-]*$/, 'a filament type, such as PLA, PETG or TPU')
+        .optional()
+        .describe('A filament type, such as PLA, PETG or TPU; default the loaded filament'),
       layer_height_mm: z.number().min(0.04).max(0.8).optional(),
     }),
     async run(i) {
       const d = designOf(i.design)
       for (const k of i.part ?? []) if (!d.parts[k]) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+      const twice = i.part?.find((k, n) => i.part!.indexOf(k) !== n)
+      if (twice !== undefined) throw new ToolInputError(`part: part ${twice} is listed twice; list each part once`)
       const profile = deps.fitProfile?.() ?? {}
       const limits = fitLimits({ nozzleMm: deps.nozzleMm?.(), layerHeightMm: i.layer_height_mm ?? profile.layerHeightMm, material: i.material ?? profile.material })
       const fit = await fitFacts(designs(), d, limits, i.part)
@@ -1544,7 +1553,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         kind: g.kind,
         direction: g.direction,
         gap_mm: r3n(g.gapMm),
-        limit_mm: g.kind === 'apart' ? (g.direction === 'z' ? limits.verticalMm : limits.sideMm) : r3n(g.limitMm),
+        limit_mm: r3n(g.limitMm),
         verdict: fitVerdict(g, limits),
         ...(g.where ? { where: g.where } : {}),
         from: g.from.map(r3n),
