@@ -168,19 +168,19 @@ pub fn format_value(def: Option<&SettingDef>, v: Option<&Value>) -> String {
             gs.iter().map(|g| points_text(g)).collect::<Vec<_>>().join("; ")
         )),
         Value::Bools(b) => match list_text(b, |x| if *x { "on" } else { "off" }.to_owned()) {
-            (_, true) => format_value(def, Some(&Value::Bool(b[0]))),
+            (_, true) => format_value(def, b.first().map(|x| Value::Bool(*x)).as_ref()),
             (text, false) => clip(&text),
         },
         Value::Ints(i) => match list_text(i, |x| num(x.to_string())) {
-            (_, true) => format_value(def, Some(&Value::Int(i[0]))),
+            (_, true) => format_value(def, i.first().map(|x| Value::Int(*x)).as_ref()),
             (text, false) => numbers(text),
         },
         Value::Floats(f) => match list_text(f, |x| num(show(*x))) {
-            (_, true) => format_value(def, Some(&Value::Float(f[0]))),
+            (_, true) => format_value(def, f.first().map(|x| Value::Float(*x)).as_ref()),
             (text, false) => numbers(text),
         },
         Value::Strs(s) => match list_text(s, |x| enum_text(def, x)) {
-            (_, true) => format_value(def, Some(&Value::Str(s[0].clone()))),
+            (_, true) => format_value(def, s.first().map(|x| Value::Str(x.clone())).as_ref()),
             (text, false) => clip(&text),
         },
     }
