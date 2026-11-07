@@ -83,7 +83,7 @@ export interface LoftProfile {
   loops: SketchLoop[]
 }
 
-/** The path of a sweep: one open chain of lines and arcs on a plane (the bed when frame is absent), or points in space. */
+/** The path of a sweep: one open chain of lines, arcs and splines on a plane (the bed when frame is absent), or points in space. */
 export interface SweepPath {
   frame?: FaceFrame
   loops?: SketchLoop[]
