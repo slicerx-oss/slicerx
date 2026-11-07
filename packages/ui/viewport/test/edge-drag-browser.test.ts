@@ -135,7 +135,9 @@ beforeAll(async () => {
     entry = './edge-drag.js'
   }
   dir = root
-  browser = await chromium.launch({ headless: true })
+  // No GPU process: this page uses no WebGL. Where the GPU process starts but never produces a frame (seen in a headless
+  // Linux guest), requestAnimationFrame does not fire for seconds to minutes and the probe's frame waits time out.
+  browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--disable-software-rasterizer'] })
   page = await browser.newPage({ viewport: { width: 1000, height: 800 } })
   await page.route(`${ORIGIN}/**`, async (route) => {
     const path = new URL(route.request().url()).pathname
@@ -150,6 +152,12 @@ beforeAll(async () => {
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready === true, null, { timeout: 15_000 }).catch(() => {
     throw new Error(`the page did not load: ${errors.join('; ')}`)
   })
+  // The probe waits on animation frames: a page that cannot paint fails here with the reason, not as three timeouts.
+  await page
+    .waitForFunction(() => new Promise<boolean>((done) => requestAnimationFrame(() => done(true))), null, { timeout: 20_000 })
+    .catch(() => {
+      throw new Error('the page painted no animation frame in 20 s')
+    })
 }, 60_000)
 
 afterAll(async () => {
