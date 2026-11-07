@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! edges, a face's outline and a body's outline projected into a sketch come back as lines, arcs and circles
+#![allow(clippy::many_single_char_names, reason = "loops and results in short tests")]
 
 use serde_json::{Value, json};
 use std::f64::consts::PI;
