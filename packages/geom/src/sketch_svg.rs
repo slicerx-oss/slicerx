@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 const MIN_MM: f64 = 1e-4;
 // most points one curve takes
 const MAX_SAMPLES: usize = 64;
+// most path pieces one file may have, so the fit stays bounded
+const MAX_PIECES: usize = 50_000;
+// the finest tolerance a fit is asked for
+const MIN_TOL_MM: f64 = 0.001;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -107,22 +111,11 @@ fn to_segment(p: V2, a: V2, b: V2) -> f64 {
     dist(p, [a[0] + t * ab[0], a[1] + t * ab[1]])
 }
 
-/// the farthest any point of `a` is from the polyline `b`
-fn farthest(a: &[V2], b: &[V2]) -> f64 {
-    a.iter()
-        .map(|&p| {
-            b.windows(2)
-                .map(|w| to_segment(p, w[0], w[1]))
-                .fold(f64::INFINITY, f64::min)
-        })
-        .fold(0.0, f64::max)
-}
-
-/// what one svg curve becomes
+/// what one svg curve becomes; a spline says whether it met the tolerance
 enum Piece {
     Line,
     Arc { through: V2, center: V2, radius: f64 },
-    Spline(Vec<V2>),
+    Spline(Vec<V2>, bool),
 }
 
 /// a cubic as a line when straight, an arc when round, else a spline through samples of it
@@ -155,25 +148,26 @@ fn cubic(p: [V2; 4], tol: f64) -> Piece {
             }
         }
     }
-    let fine: Vec<V2> = (0..=256).map(|k| bez(&p, f64::from(k) / 256.0)).collect();
-    let mut best = Vec::new();
-    for n in 2..=MAX_SAMPLES {
-        let inner: Vec<V2> = (1..n).map(|k| bez(&p, k as f64 / n as f64)).collect();
-        let mut through = vec![p[0]];
-        through.extend(&inner);
-        through.push(p[3]);
-        let mut drawn = vec![p[0]];
-        drawn.extend(
-            sketch_spline::spans(&through, false)
-                .iter()
-                .flat_map(|b| sketch_spline::flatten(b, 16)),
-        );
-        best = inner;
-        if farthest(&drawn, &fine) <= tol && farthest(&fine, &drawn) <= tol {
-            break;
+    let mut n = 2;
+    loop {
+        let through: Vec<V2> = (0..=n).map(|k| bez(&p, k as f64 / n as f64)).collect();
+        // the error at matching t, a few points inside each span
+        let off = sketch_spline::spans(&through, false)
+            .iter()
+            .enumerate()
+            .flat_map(|(j, b)| {
+                (1..4).map(move |q| {
+                    let s = f64::from(q) / 4.0;
+                    dist(bez(b, s), bez(&p, (j as f64 + s) / n as f64))
+                })
+            })
+            .fold(0.0, f64::max);
+        let met = off <= tol;
+        if met || n >= MAX_SAMPLES {
+            return Piece::Spline(through[1..n].to_vec(), met);
         }
+        n = (n * 3 / 2).clamp(n + 1, MAX_SAMPLES);
     }
-    Piece::Spline(best)
 }
 
 /// whether `m` keeps circles round: no skew and the same scale both ways
@@ -187,6 +181,8 @@ struct Builder {
     // each arc's center and radius, for loops that are whole circles
     round: Vec<Option<(V2, f64)>>,
     at: V2,
+    // splines that missed the tolerance at the most points
+    missed: usize,
 }
 
 impl Builder {
@@ -227,7 +223,8 @@ impl Builder {
                 center,
                 radius,
             } => self.arc(to, through, center, radius),
-            Piece::Spline(points) => {
+            Piece::Spline(points, met) => {
+                self.missed += usize::from(!met);
                 self.segs.push(Segment {
                     kind: "spline".into(),
                     to: Some(to),
@@ -241,13 +238,14 @@ impl Builder {
     }
 }
 
-/// one subpath as a loop, closed back to its start, or None when nothing of it is left
-fn to_loop(sub: &Sub, m: &Mat, tol: f64) -> Option<Loop> {
+/// one subpath as a loop, closed back to its start, or None when nothing of it is left; counts missed fits
+fn to_loop(sub: &Sub, m: &Mat, tol: f64, missed: &mut usize) -> Option<Loop> {
     let start = apply(m, sub.start);
     let mut b = Builder {
         segs: Vec::new(),
         round: Vec::new(),
         at: start,
+        missed: 0,
     };
     let mut cur = sub.start;
     for &seg in &sub.segs {
@@ -288,6 +286,7 @@ fn to_loop(sub: &Sub, m: &Mat, tol: f64) -> Option<Loop> {
     } else if let Some(last) = b.segs.last_mut() {
         last.to = Some(start);
     }
+    *missed += b.missed;
     if b.segs.len() < 2 {
         return None;
     }
@@ -356,8 +355,8 @@ fn count(loops: &[Loop]) -> Counts {
 #[allow(clippy::too_many_lines, reason = "checks, the walk, then sizing in one pass")]
 pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
     let tol = opts.tolerance_mm;
-    if !(tol.is_finite() && tol > 0.0 && tol <= 1.0) {
-        return Err(Error::invalid("toleranceMm", "between 0 and 1 mm"));
+    if !(tol.is_finite() && (MIN_TOL_MM..=1.0).contains(&tol)) {
+        return Err(Error::invalid("toleranceMm", "between 0.001 and 1 mm"));
     }
     if opts.scale.is_some_and(|s| !(s.is_finite() && s > 0.0)) {
         return Err(Error::invalid("scale", "must be above 0"));
@@ -406,6 +405,17 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
         },
     );
 
+    let pieces: usize = found
+        .iter()
+        .flat_map(|(subs, ..)| subs)
+        .map(|sub| sub.segs.len())
+        .sum();
+    if pieces > MAX_PIECES {
+        return Err(Error::mesh(
+            "svg",
+            format!("the artwork has {pieces} path pieces, more than {MAX_PIECES}; simplify it first"),
+        ));
+    }
     let mut open = 0usize;
     let mut kept: Vec<(&Sub, Mat)> = Vec::new();
     let mut rings: Vec<Vec<V2>> = Vec::new();
@@ -455,10 +465,18 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
         opts.center[0] - f * mid[0],
         opts.center[1] - f * mid[1],
     ];
+    let mut missed = 0usize;
     let mut loops: Vec<Loop> = kept
         .iter()
-        .filter_map(|(sub, m)| to_loop(sub, &mul(&place, m), tol))
+        .filter_map(|(sub, m)| to_loop(sub, &mul(&place, m), tol, &mut missed))
         .collect();
+    if missed > 0 {
+        warnings.push(format!(
+            "{missed} {} needed more than {MAX_SAMPLES} points for the {tol} mm tolerance and {} a little further off",
+            if missed == 1 { "curve" } else { "curves" },
+            if missed == 1 { "stays" } else { "stay" }
+        ));
+    }
     loops.iter_mut().for_each(tidy_loop);
     if loops.is_empty() {
         return Err(Error::mesh("svg", "the artwork has no closed shapes"));
@@ -483,6 +501,17 @@ mod tests {
         format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100mm\">{body}</svg>"
         )
+    }
+
+    /// the farthest any point of `a` is from the polyline `b`
+    fn farthest(a: &[V2], b: &[V2]) -> f64 {
+        a.iter()
+            .map(|&p| {
+                b.windows(2)
+                    .map(|w| to_segment(p, w[0], w[1]))
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .fold(0.0, f64::max)
     }
 
     fn kinds(l: &Loop) -> Vec<&str> {
@@ -644,5 +673,55 @@ mod tests {
         .unwrap();
         assert_eq!(kinds(&r.loops[0]), ["line", "line", "line", "line"]);
         assert!(r.check.ok, "{:?}", r.check.issues);
+    }
+
+    #[test]
+    fn the_fit_is_bounded_and_says_when_it_falls_short() {
+        let fine = SvgSketchOptions {
+            tolerance_mm: 0.0005,
+            ..SvgSketchOptions::default()
+        };
+        assert!(sketch_svg(&wrap(r#"<rect width="10" height="10"/>"#), &fine).is_err());
+        // a wave ten meters across cannot meet a micron with 64 points
+        let wave = SvgSketchOptions {
+            fit_width_mm: Some(10_000.0),
+            tolerance_mm: 0.001,
+            ..SvgSketchOptions::default()
+        };
+        let r = sketch_svg(&wrap(r#"<path d="M0 0 C30 90 60 -90 90 0 V20 H0 Z"/>"#), &wave).unwrap();
+        assert!(
+            r.warnings.iter().any(|w| w.contains("64 points")),
+            "{:?}",
+            r.warnings
+        );
+        // too many pieces is an error, not a long wait
+        let mut d = String::from("M0 0");
+        for k in 0..50_001 {
+            d.push_str(if k % 2 == 0 { " h0.001" } else { " v0.001" });
+        }
+        d.push_str(" Z");
+        let many = sketch_svg(
+            &wrap(&format!(r#"<path d="{d}"/>"#)),
+            &SvgSketchOptions::default(),
+        );
+        assert!(many.is_err());
+    }
+
+    #[test]
+    fn many_curves_fit_in_bounded_time() {
+        let mut d = String::from("M0 0");
+        for _ in 0..1_000 {
+            d.push_str(" c0.03 0.09 0.06 -0.09 0.09 0");
+        }
+        d.push_str(" V20 H0 Z");
+        let wave = SvgSketchOptions {
+            fit_width_mm: Some(10_000.0),
+            tolerance_mm: 0.001,
+            ..SvgSketchOptions::default()
+        };
+        let t = std::time::Instant::now();
+        let r = sketch_svg(&wrap(&format!(r#"<path d="{d}"/>"#)), &wave).unwrap();
+        assert_eq!(r.counts.splines, 1_000);
+        assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
     }
 }
