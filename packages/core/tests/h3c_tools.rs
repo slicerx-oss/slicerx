@@ -430,3 +430,47 @@ fn a_chamber_target_above_the_printer_limit_is_held_to_it() {
     let (t, _) = chamber([70, 40], None);
     assert_eq!(t, 70);
 }
+
+/// What each change wipes on the tower, mm3 of filament: the extrusion from the wipe's start (`; CP TOOLCHANGE WIPE`)
+/// to the tower's end, on 1.75 mm filament.
+fn tower_wipes(g: &str) -> Vec<f64> {
+    let area = std::f64::consts::PI * 0.875 * 0.875;
+    let mut out = Vec::new();
+    let mut wipe: Option<f64> = None;
+    for l in g.lines() {
+        if l.starts_with("; CP TOOLCHANGE WIPE") {
+            wipe = Some(0.0);
+        } else if l.starts_with("; WIPE_TOWER_END") {
+            out.extend(wipe.take());
+        } else if let Some(e) = wipe.as_mut()
+            && l.starts_with("G1 ")
+            && let Some(v) = l
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix('E').and_then(|v| v.parse::<f64>().ok()))
+        {
+            *e += v * area;
+        }
+    }
+    out
+}
+
+#[test]
+fn a_hotend_swap_wipes_the_filaments_prime_volume_on_the_tower() {
+    // The stock H3C filament primes 30 mm3 and lists no nozzle change prime volume (60 when unlisted). A swap
+    // between hotends is a change of extruder, so the tower takes the 30 mm3, not the 60.
+    let mut c = h3c(3);
+    c.insert("enable_prime_tower".into(), json!(true));
+    c.insert("filament_prime_volume".into(), json!([30, 30, 30]));
+    c.remove("filament_prime_volume_nc");
+    let g = gcode(&slice(c, &[1, 2, 3]).unwrap());
+    let mut wipes = tower_wipes(&g);
+    assert!(wipes.len() >= 40, "{} wipes", wipes.len());
+    // The last change of a layer also fills the rest of the tower layer, so read the lower quartile: the prime
+    // volume, the 2 mm the new hotend primes first and the rest of the last row.
+    wipes.sort_by(f64::total_cmp);
+    let quartile = wipes[wipes.len() / 4];
+    assert!(
+        (30.0..45.0).contains(&quartile),
+        "wipe {quartile:.1} mm3 of {wipes:?}"
+    );
+}
