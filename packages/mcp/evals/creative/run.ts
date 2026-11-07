@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Runs one creative prompt through the whole mimir loop (a recorded reply, or a live model when the caller passes
-// one) on the mimir tab's tools, with the geometry engine as the host, then scores the parts its designs built.
+// one) on the mimir tab's tools, with the geometry engine as the host, then scores the last design it built.
 import { bakeMesh, type Design, type EngineCall } from '@slicerx/cad-history'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
 import type { Bed, CommandSpec, MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
@@ -81,8 +81,9 @@ export function clearanceCheck(m: PilotMachine, gaps: GapReport | undefined): Ch
 }
 
 /**
- * Scores the parts a run produced against the prompt's expectations. `parsed` false fails the run on its own. `gaps`
- * are the gaps the engine measured between the bodies (movingGaps), for a mechanism's clearance.
+ * Scores the parts a run produced against the prompt's expectations (runPrompt hands it the last design's parts).
+ * `parsed` false fails the run on its own. `gaps` are the gaps the engine measured between the bodies (movingGaps), for
+ * a mechanism's clearance.
  */
 export function scoreParts(p: CreativePrompt, parsed: Check, parts: MeshPart[], gaps?: GapReport): CreativeScore {
   if (!parsed.pass) return { parses: parsed, pass: false }
@@ -188,6 +189,7 @@ export const DEFAULT_ANSWER = 'Use common sizes and sensible defaults, then buil
 
 export interface PromptRun {
   parsed: Check
+  /** The last design's parts: the one a reply that built more than one design ends on, and the one that is scored. */
   parts: MeshPart[]
   calls: string[]
   reply: string
@@ -300,16 +302,19 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const last = designCalls.at(-1)
   // the last design call that did not go through, said in the tool's words when nothing was built
   const failed = designCalls.map((c) => ({ c, r: results.get(c.callId) })).filter(({ r }) => !r || r.ok === false).at(-1)
-  // the designs with a body, as their objects in the project hold them
+  // the designs with a body, as their objects in the project hold them. A reply that builds a design again as a new one
+  // (a second try after a failed check) leaves the first on the plate too; the last design is the answer it gives, so
+  // that one alone is scored, as a person would print it.
   const built3d = env.designs.list().filter((d) => d.parts.length)
+  const scored = built3d.at(-1)
   const parts: MeshPart[] = []
-  for (const o of env.project.objects()) parts.push(...((await o.mesh?.()) ?? []))
-  const featureSteps = built3d.reduce((n, d) => n + d.history.steps.length, 0)
+  for (const o of env.project.objects()) if (o.id === scored?.id) parts.push(...((await o.mesh?.()) ?? []))
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
+  const builtLine = (d: Design): string => `${plural(d.history.steps.length, 'feature step')}, ${plural(parts.length, 'mesh part')}`
   let parsed: Check
   if (!last) parsed = { pass: false, detail: `no design tool was called: ${noBuild ?? 'none'}${answered ? ', after the default answer' : ''}` }
-  else if (!parts.length) parsed = { pass: false, detail: failed ? `${failed.c.tool}: ${failed.r?.summary ?? 'no result'}` : `${last.tool}: the design tools built no body` }
-  else parsed = { pass: true, detail: `${plural(built3d.length, 'design')}, ${plural(featureSteps, 'feature step')}, ${plural(parts.length, 'mesh part')}` }
+  else if (!parts.length || !scored) parsed = { pass: false, detail: failed ? `${failed.c.tool}: ${failed.r?.summary ?? 'no result'}` : `${last.tool}: the design tools built no body` }
+  else parsed = { pass: true, detail: built3d.length === 1 ? `1 design, ${builtLine(scored)}` : `${plural(built3d.length, 'design')}, scored the last (${scored.id}): ${builtLine(scored)}` }
   const run: PromptRun = {
     parsed,
     parts,
