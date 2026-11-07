@@ -7,7 +7,7 @@ import { createAnthropicAdapter } from '../src/provider/anthropic'
 import { createTransportClient } from '../src/provider/client'
 import type { LlmEvent, LlmRequest } from '../src/provider/types'
 
-const KEY = 'test-route-key-0123456789'
+const KEY = 'test-route-key-0123456789' // gitleaks:allow (a made-up test key)
 const MODEL = 'test-model'
 
 /** A Messages API stream: one text block, one tool_use block split across deltas, and the usage. */
