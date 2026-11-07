@@ -11,6 +11,7 @@ import type { PrimitiveShape } from '../../plate/mesh-ops'
 import { toast, useApp } from '../../state/store'
 import { ObjectTools } from './object-tools'
 import { printBlock } from '../../plate/heimdall'
+import { exportAllBlock } from '../../plate/resume-tops'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../../export/actions'
 import { appName } from '../../edition'
 import { usePhoneLayout } from '../../lib/phone-layout'
@@ -61,6 +62,7 @@ export function ExportMenu({ open, onClose, align = 'start' }: MenuProps) {
   const host = useHost()
   // A plate with a strike in its slice is not exported; the item says why.
   const unsafe = useApp(printBlock)
+  const allBlocked = useApp(exportAllBlock)
   const plates = useApp((s) => s.plates.length)
   const run = runner(onClose)
   // a phone exports for the printer only; projects go to the desktop
@@ -82,7 +84,7 @@ export function ExportMenu({ open, onClose, align = 'start' }: MenuProps) {
       <MenuItem icon="send-to-printer" data-testid="export-gcode-3mf" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => run(() => exportGcode3mf(host))}>
         Sliced plate as .gcode.3mf
       </MenuItem>
-      <MenuItem icon="plates" data-testid="export-all-plates" disabled={plates < 2} onClick={() => run(() => exportAllPlates(host))}>
+      <MenuItem icon="plates" data-testid="export-all-plates" disabled={plates < 2} aria-disabled={allBlocked ? true : undefined} {...(allBlocked ? tipAttrs({ title: 'Every plate, sliced', reason: allBlocked }) : {})} onClick={() => run(() => exportAllPlates(host))}>
         Every plate, sliced
       </MenuItem>
     </Menu>

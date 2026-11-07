@@ -15,7 +15,7 @@ import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
 import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
-import { activeResume, jobLayerTops, printEverythingAgain, resumeFor, resumeLayers, sliceInputsKey, type ResumeLayers } from './resume-tops'
+import { activeResume, jobLayerTops, printEverythingAgain, resumeFor, resumeElsewhere, resumeLayers, resumeVoid, sliceInputsKey, type ResumeLayers } from './resume-tops'
 import './resume-dialog.css'
 import { appName } from '../edition'
 
@@ -36,7 +36,9 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const overrides = useApp((s) => s.overrides)
   // The plan that holds for this plate as it is; a kept plan that does not is said apart (kept).
   const active = useApp(activeResume)
-  const kept = useApp((s) => s.resume !== null && activeResume(s) === null)
+  const kept = useApp((s) => resumeVoid(s) !== null)
+  // A plan kept for another plate: planning here replaces it.
+  const elsewhere = useApp(resumeElsewhere)
   const activePlate = useApp((s) => s.activePlate)
   const storedTops = useApp((s) => activeResume(s)?.layerTopsMm)
   const doneSlice = useApp((s) => (s.slice.status === 'done' && !s.slice.stale ? s.slice.result : null))
@@ -100,6 +102,8 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
   const firstError = needsSlice && asked && !sliceRunning ? sliceError : null
   const sliceFirst = () => {
     setAsked(true)
+    // Planning again: a plan kept for this plate that no longer matches it would refuse the slice the plan reads.
+    if (resumeVoid(get())) set({ resume: null })
     void slicePlate(host)
   }
   const layersReady = layers !== null && layers.plate === activePlate ? layers : null
@@ -164,10 +168,15 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
       ) : null}
       {kept ? (
         <p className="rs-active" role="status" data-testid="resume-kept">
-          <Icon name="warning" size={16} /> A resume plan is kept that no longer matches this plate, so Print and Export wait. Plan it again here, or
+          <Icon name="warning" size={16} /> The resume plan for this plate no longer matches it, so the plate does not slice, print or export. Plan it again here, or
           <button type="button" className="rs-link" onClick={everything}>
             Print everything again
           </button>
+        </p>
+      ) : null}
+      {elsewhere !== null ? (
+        <p className="rs-active" role="status" data-testid="resume-elsewhere-dialog">
+          <Icon name="layers" size={16} /> A resume plan is kept for plate {elsewhere}. A plan made here replaces it.
         </p>
       ) : null}
       {active ? (

@@ -64,6 +64,7 @@ describe('the command bar on a host that cannot slice', () => {
       { id: 'preview-first-layer', section: 'view' },
       { id: 'check-printers', section: 'plate' },
       { id: 'print-rest', section: 'plate' },
+      { id: 'print-everything', section: 'plate' },
       { id: 'open-printers', section: 'navigate' },
       { id: 'open-vault', section: 'navigate' },
       { id: 'toggle-printable', section: 'plate' },

@@ -8,6 +8,7 @@ import { keymapFor, type KeyAction } from '@slicerx/ui'
 import { requestRename, togglePrintable } from './object-list'
 import { clipboard, copySelection, cutSelection, duplicateSelection, pasteClipboard } from './clipboard'
 import { get, openSettings, selectedIds, set, toast, type VolumeRole } from '../state/store'
+import { exportAllBlock } from './resume-tops'
 import { orientSelected, repairSelected } from './geom-ops'
 import { addPrimitiveVolume } from './volumes'
 import { addPrimitive, mergeSelected, splitSelectedToObjects, splitSelectedToParts, arrangePlate, centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, selectAll, setInstanceCount } from './edit'
@@ -152,7 +153,7 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
           { id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'stl')) },
           { id: 'export-plate-obj', title: 'Export the plate as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'obj')) },
           { id: 'export-gcode-3mf', title: 'Export the sliced plate as .gcode.3mf', section: 'slice', keywords: ['bambu', 'printer file', 'send'], run: () => exportGcode3mf(full) },
-          { id: 'export-all-plates', title: 'Slice and export every plate', section: 'slice', keywords: ['all plates', 'batch', 'gcode.3mf'], enabled: () => get().plates.length > 1, run: () => exportAllPlates(full) },
+          { id: 'export-all-plates', title: 'Slice and export every plate', section: 'slice', keywords: ['all plates', 'batch', 'gcode.3mf'], enabled: () => get().plates.length > 1 && exportAllBlock(get()) === null, run: () => exportAllPlates(full) },
         ] satisfies CommandSpec[])
       : []),
     ...[0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0].map((mm): CommandSpec => ({

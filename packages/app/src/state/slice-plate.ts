@@ -24,7 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
-import { activeResume, sliceState, storedResumeTops } from '../plate/resume-tops'
+import { activeResume, RESUME_VOID, resumeVoid, sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -55,12 +55,6 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
   return toPrint.map((p, i) => objectToMachine({ id: p.id, name: p.name, mesh: handles[i]!.id, transform: p.transform, ...overridesOf(meta, p), ...(p.volumes?.length ? { volumes: requestVolumes(p) } : {}), ...(Object.keys(objectOverrides(s, p)).length ? { settings: objectOverrides(s, p) } : {}), ...(Object.keys(partOverridesOf(entries, p)).length ? { partSettings: partOverridesOf(entries, p) } : {}), ...(p.brimPoints?.length ? { brimPoints: p.brimPoints } : {}) }, origin))
 }
 
-/** Said when a resume plan was made for another plate, or before an edit to this one: the slice prints the whole plate. */
-export const STALE_RESUME: SliceWarning = {
-  code: 'manual_step',
-  message: 'The resume plan was made for another plate or before a change to this one, so this slice is of the whole plate and Print and Export wait. Plan it again with Print the rest from this height, or choose Print everything again.',
-}
-
 /**
  * The request a plate slices with, and what the slice notes beside it: the objects, the resolved settings and the layer
  * plan (a resume's stored tops, the plate's own layer heights, sleipnir's plan or height ranges), with the resume's
@@ -71,7 +65,7 @@ export async function plateSliceRequest(
   s: AppState,
   signal: AbortSignal,
   onObjects?: () => void,
-): Promise<{ request: SliceRequest; toPrint: PlateEntry[]; config: PrintConfig; replaces: SliceWarning | null; skippedTools: SliceWarning[]; staleResume: SliceWarning | null }> {
+): Promise<{ request: SliceRequest; toPrint: PlateEntry[]; config: PrintConfig; replaces: SliceWarning | null; skippedTools: SliceWarning[] }> {
   // The plate's own print sequence (Bambu Studio and Orca set it per plate).
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const config = plateSliceConfig(s, meta)
@@ -121,7 +115,7 @@ export async function plateSliceRequest(
     config,
     options: { emitGcode: true, emitPreview: true, previewFormat: 'v2', shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(layerTopsMm && (layerTopsMm === own || layerTopsMm === stored) ? { layerTopsExact: true } : {}), ...(layerTopsMm && layerTopsMm === stored ? { layerTopsSliced: true } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(resume ? resumeSliceOptions(resume.plan, resume.declareZ) : {}) },
   }
-  return { request, toPrint, config, replaces, skippedTools, staleResume: s.resume && !resume ? STALE_RESUME : null }
+  return { request, toPrint, config, replaces, skippedTools }
 }
 
 /**
@@ -185,6 +179,13 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     if (!opts.auto) toast('Every object on this plate is set not to print. Turn one on first.')
     return
   }
+  // A resume plan kept for this plate that no longer matches it: a slice of the whole plate would print into the part
+  // still on the bed, so nothing slices until the plan is made again or cleared. Every slice comes through here (the
+  // Slice button, auto slice, Export all plates, mimir and the print queue).
+  if (resumeVoid(at)) {
+    set({ slice: { status: 'error', message: RESUME_VOID, code: 'resume_void' }, preview: null })
+    return
+  }
   sliceStage(timed, 'ready')
   const base = resolveConfig(s.easy, s.overrides)
   const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), base)
@@ -198,7 +199,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
   let again = false
   try {
-    const { request, toPrint, config, replaces, skippedTools, staleResume } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
+    const { request, toPrint, config, replaces, skippedTools } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
     const sliceWith = async () =>
       host.slicer.slice(request, {
         signal: abort.signal,
@@ -218,13 +219,19 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const placed = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
-    const notes = [...(staleResume ? [staleResume] : []), ...(replaces ? [replaces] : []), ...skippedTools].filter((n) => !placed.warnings.some((w) => w.message === n.message))
+    const notes = [...(replaces ? [replaces] : []), ...skippedTools].filter((n) => !placed.warnings.some((w) => w.message === n.message))
     const result = notes.length ? { ...placed, warnings: [...placed.warnings, ...notes] } : placed
     const raw = await host.slicer.getPreview(result.id)
     if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     sliceStage(timed, 'preview', { previewBytes: raw.byteLength })
     const preview = readPreview(raw)
     sliceStage(timed, 'parsed')
+    // The plan stopped matching while this slice ran (an edit with no new slice yet): it is not sendable.
+    if (resumeVoid(get())) {
+      host.slicer.release?.(result.id)
+      set({ slice: { status: 'error', message: RESUME_VOID, code: 'resume_void' }, preview: null })
+      return
+    }
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
     set({ slice: { status: 'done', result, stale: false }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })

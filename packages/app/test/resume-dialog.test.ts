@@ -270,4 +270,19 @@ describe('the resume dialog on a host with no engine of its own', () => {
     expect(screen.getByRole('button', { name: 'Slice the rest' })).toHaveProperty('disabled', true)
     expect(c.sent.map((x) => x.local)).toEqual([true, undefined])
   })
+
+  it('drops a plan for this plate that no longer matches when the person slices to plan again', async () => {
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.4, 0.6], plate: 'plate-1', inputs: 'before-an-edit' } })
+    const c = cloudOnlyHost(() => ENGINE)
+    mount(c.host)
+    await screen.findByText(SLICE_FIRST)
+    expect(screen.getByTestId('resume-kept')).toBeTruthy()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Slice plate' })))
+    // The slice the plan reads goes out (the void plan would have refused it), and the plan is gone.
+    await vi.waitFor(() => expect(c.sent).toHaveLength(2))
+    expect(get().resume).toBeNull()
+    expect(c.sent[1]!.req.options).not.toHaveProperty('resumeFromLayer')
+    await vi.waitFor(() => expect(screen.queryByText(SLICE_FIRST)).toBeNull())
+    expect(screen.queryByTestId('resume-kept')).toBeNull()
+  })
 })
