@@ -171,17 +171,24 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
 /**
  * Why a reply built nothing. `declined`: it says the part can't be modeled or built (often offering a simpler version
  * and asking which one; the refusal wins). `asked`: it does not decline, and puts a question to the person (a sentence
- * ending in a question mark). `none`: neither, such as an empty reply, a statement, or a reply cut off.
+ * ending in a question mark). `stopped`: it got what it asked for (its plan approved, or the eval's answer) and then
+ * ended without building, neither declining nor asking again, often saying what it would build next. `none`: none of
+ * these, such as an empty reply, a statement, or a reply cut off.
  */
-export type NoBuild = 'asked' | 'declined' | 'none'
+export type NoBuild = 'asked' | 'declined' | 'stopped' | 'none'
 
 const DECLINES = /\b(?:can(?:'|\u2019|no)t|cannot|unable to|not able to)\s+(?:\w+\s+){0,3}?(?:model|build|make|design|sculpt)\b|\boutside what (?:I|the tools?) can\b|\btools? (?:can(?:'|\u2019|no)t|cannot|only)\b/i
 const ASKS = /\?[)"'\u201d\u2019*_]*(?:\s|$)/
 
-export function classifyNoBuild(reply: string): NoBuild {
-  if (DECLINES.test(reply)) return 'declined'
-  if (ASKS.test(reply)) return 'asked'
-  return 'none'
+/**
+ * Why `reply` built nothing. `after` is what it said after its plan was approved or the eval answered it, when either
+ * happened: only that part counts then, so an offer of a simpler version it was then told to build is not a refusal.
+ */
+export function classifyNoBuild(reply: string, after?: string): NoBuild {
+  const said = after ?? reply
+  if (DECLINES.test(said)) return 'declined'
+  if (ASKS.test(said)) return 'asked'
+  return after === undefined ? 'none' : 'stopped'
 }
 
 /** What the eval says, once, when the model asks a question instead of building. */
@@ -254,6 +261,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   let text = ''
   let answered = false
   let stale: string | undefined
+  // what the reply said since its plan was approved or the eval answered it; undefined while neither has happened
+  let after: string | undefined
   // a replay sends the default answer only where the live run did
   const mayAnswer = (): boolean => opts.defaultAnswer !== false && !answered && (opts.client !== undefined || opts.answerRecorded === true)
   /** One message to mimir in the prompt's chat; returns the reply's text. */
@@ -263,16 +272,22 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     let running = ''
     for await (const ev of env.pilot.run(`creative-${p.id}`, message, { signal: ac.signal, context: { project: 'creative', machine: p.machine, objects: [] } })) {
       events.push(ev)
-      if (ev.type === 'text') reply += ev.delta
+      if (ev.type === 'text') {
+        reply += ev.delta
+        if (after !== undefined) after += ev.delta
+      }
       if (ev.type === 'tool_call') running = ev.tool
       noteApprovals(env.audit, ev)
       if (ev.type === 'approval_request') void env.pilot.resolveApproval(ev.request.id, isDesignTool(ev.request.tool) ? { kind: 'approve' } : { kind: 'deny', reason: 'not part of a design request' })
       if (ev.type === 'sheet') void env.pilot.answerSheet?.(ev.sheet.id, Object.fromEntries(ev.sheet.dims.map((d) => [d.key, d.value])))
       if (ev.type === 'ask') {
         const go = running === 'design.plan' ? ev.choices.find((c) => c.id.startsWith('go:')) : undefined
-        if (go) void env.pilot.answer?.(ev.askId, go.id)
-        else if (running === 'pilot.ask' && mayAnswer()) {
+        if (go) {
+          after = ''
+          void env.pilot.answer?.(ev.askId, go.id)
+        } else if (running === 'pilot.ask' && mayAnswer()) {
           answered = true
+          after = ''
           void env.pilot.answer?.(ev.askId, null, DEFAULT_ANSWER)
         } else void env.pilot.answer?.(ev.askId, null)
       }
@@ -283,10 +298,11 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   if (!opts.client && opts.tabTools !== true) stale = STALE_TOOLS
   try {
     text = await turn(p.prompt)
-    if (!built() && classifyNoBuild(text) === 'asked' && opts.defaultAnswer !== false && !answered) {
+    if (!built() && classifyNoBuild(text, after) === 'asked' && opts.defaultAnswer !== false && !answered) {
       if (!opts.client && !opts.answerRecorded) stale ??= 'recorded before the default answer: the model asked a question, which a live run now answers once before scoring'
       else {
         answered = true
+        after = ''
         text = await turn(DEFAULT_ANSWER)
       }
     }
@@ -295,7 +311,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   } finally {
     clearTimeout(timer)
   }
-  const noBuild = built() ? undefined : classifyNoBuild(text)
+  const noBuild = built() ? undefined : classifyNoBuild(text, after)
   const calls = events.filter((e): e is Extract<PilotEvent, { type: 'tool_call' }> => e.type === 'tool_call')
   const results = new Map(events.filter((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result').map((r) => [r.callId, r]))
   const designCalls = calls.filter((c) => isDesignTool(c.tool))
