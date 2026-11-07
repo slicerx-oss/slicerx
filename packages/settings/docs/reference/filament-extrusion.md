@@ -14,7 +14,7 @@
 
 ### `adaptive_pressure_advance_bridges`
 
-**Adaptive pressure advance bridges**
+**Adaptive pressure advance for bridges**
 
 - Type: list of numbers, one per extruder
 - Default: [0]
@@ -35,7 +35,7 @@
 
 ### `adaptive_pressure_advance_overhangs`
 
-**Adaptive pressure advance overhangs**
+**Adaptive pressure advance for overhangs**
 
 - Type: list of booleans, one per extruder
 - Default: [false]

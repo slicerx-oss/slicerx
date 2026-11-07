@@ -117,10 +117,11 @@ describe('labels', () => {
 
 describe('plain labels', () => {
   // Every shown label is plain words a maker reads. These patterns are the ways a label has read like a key before:
-  // clipped words (efc, nc, ec, id, dist, pos, temp, min, max), "Gcode" for G-code, borrowed terms, a unit written
-  // into the label, a lone x, y, z or e in lower case, a doubled word. Add to the table when a new one turns up.
+  // clipped words (efc, nc, ec, id, dist, pos, temp, min, max, num, pct, acc), a leading "Is", "Gcode" for G-code,
+  // borrowed terms, a unit written into the label, a lone x, y, z or e in lower case, a doubled word. Add to the
+  // table when a new one turns up.
   const ANY_CASE =
-    /\b(efc|nc|ec|mmu|zaa|algo|calib|dev|dist|pos|temp|freq|damp|min|max|id|apikey|cafile|webui|printhost|gcode|dont|elefant|toolchange|multitool|bbl|pwm|perimeters?|vitrification|stamping)\b/i
+    /\b(efc|nc|ec|mmu|zaa|algo|calib|dev|dist|pos|temp|freq|damp|min|max|id|apikey|cafile|webui|printhost|gcode|dont|elefant|toolchange|multitool|bbl|pwm|perimeters?|vitrification|stamping|num|pct|acc|accel|vel|spd|cfg|params?)\b/i
   // Product and material names that stay in capitals (AMS, PTC, HRC) are fine; the same letters in lower case are a key.
   const LOWER_ONLY = /\b(ams|ptc|hrc|pa)\b/
   const LONE_AXIS = /\b[xyze]\b/
@@ -130,6 +131,7 @@ describe('plain labels', () => {
   const problems = (label: string): string[] => {
     const out: string[] = []
     if (label.includes('_')) out.push('underscore')
+    if (/^Is\b/.test(label)) out.push('label opens with "Is"')
     if (label !== label.trim() || label.includes('  ')) out.push('stray space')
     const any = ANY_CASE.exec(label)
     if (any) out.push(`internal word "${any[0]}"`)
@@ -166,6 +168,32 @@ describe('plain labels', () => {
     expect(problems('Has ptc heater')).toEqual(['lower case "ptc"'])
     expect(problems('Brim width (mm)')).toEqual(['unit in the label'])
     expect(problems('Nozzle hardness')).toEqual([])
+    // Round 5: leftover short forms and a label that opens with "Is" like a flag read aloud.
+    expect(problems('Num layers')).toEqual(['internal word "Num"'])
+    expect(problems('Fan speed pct')).toEqual(['internal word "pct"'])
+    expect(problems('Acc to decel ratio')).toEqual(['internal word "Acc"'])
+    expect(problems('Accel limit')).toEqual(['internal word "Accel"'])
+    expect(problems('Is infill first')).toEqual(['label opens with "Is"'])
+    expect(problems('Filament is a support material')).toEqual([])
+    expect(problems('Print infill before walls')).toEqual([])
+  })
+
+  // Round 5: rows that named a value without saying which one ("Part fan maximum") or read as the key with a noun
+  // tacked on ("Adaptive pressure advance bridges").
+  it('names the round 5 rows in plain words', () => {
+    const want: Record<string, string> = {
+      fan_max_speed: 'Part fan maximum speed',
+      fan_min_speed: 'Part fan minimum speed',
+      adaptive_pressure_advance_bridges: 'Adaptive pressure advance for bridges',
+      adaptive_pressure_advance_overhangs: 'Adaptive pressure advance for overhangs',
+      filament_retraction_minimum_travel: 'Filament shortest travel that triggers a retraction',
+      support_multi_bed_types: 'Supports several bed plates',
+      nozzle_temperature_initial_layer: 'Nozzle temperature for the first layer',
+      scarf_joint_flow_ratio: 'Scarf joint flow ratio',
+      wipe_tower_bridging: 'Longest bridge in the prime tower',
+      wall_maximum_resolution: 'Shortest wall segment kept',
+    }
+    for (const [key, label] of Object.entries(want)) expect(settingDef(key)?.label, key).toBe(label)
   })
 
   it('keeps clipped words out of the choices of a setting too', () => {

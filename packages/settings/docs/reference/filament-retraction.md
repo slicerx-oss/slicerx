@@ -179,7 +179,7 @@ Overrides the printer's retraction length for this filament. Empty uses the prin
 
 ### `filament_retraction_minimum_travel`
 
-**Filament retraction minimum travel**
+**Filament shortest travel that triggers a retraction**
 
 Overrides the printer's shortest travel that triggers a retraction for this filament. Empty uses the printer's value.
 

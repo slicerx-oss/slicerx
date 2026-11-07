@@ -105,8 +105,8 @@ settings:
   - {key: machine_max_speed_x, label: Maximum speed X, group: motion, scope: machine, type: float, unit: mm/s, pilot: read}
 
   # Cooling
-  - {key: fan_min_speed, label: Part fan minimum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
-  - {key: fan_max_speed, label: Part fan maximum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
+  - {key: fan_min_speed, label: Part fan minimum speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
+  - {key: fan_max_speed, label: Part fan maximum speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_speed, label: Overhang fan speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_threshold, label: Overhang fan threshold, group: cooling, scope: filament, type: enum, pilot: edit}
   - {key: pre_start_fan_time, label: Fan lead time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 5}}
@@ -121,7 +121,7 @@ settings:
 
   # Temperature (guarded: they touch hardware limits and material safety)
   - {key: nozzle_temperature, label: Nozzle temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}, note: "Also capped by the printer max hotend temperature"}
-  - {key: nozzle_temperature_initial_layer, label: Hotend temperature for the first layer, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
+  - {key: nozzle_temperature_initial_layer, label: Nozzle temperature for the first layer, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
   - {key: cool_plate_temp, label: Bed temperature on the Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
   - {key: supertack_plate_temp, label: Bed temperature on the SuperTack plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}}
   - {key: textured_cool_plate_temp, label: Bed temperature on the Textured Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}

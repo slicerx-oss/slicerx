@@ -1017,7 +1017,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `wall_maximum_resolution`
 
-**Wall maximum resolution**
+**Shortest wall segment kept**
 
 - Type: number
 - Unit: mm

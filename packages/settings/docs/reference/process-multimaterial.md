@@ -340,7 +340,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_bridging`
 
-**Prime tower bridging**
+**Longest bridge in the prime tower**
 
 - Type: number
 - Unit: mm
