@@ -5,7 +5,7 @@
 // loops, each naming its projection, so everything that reads sketch loops takes them unchanged. A projection keeps
 // its source in the references the history already uses, and is found again on the source as it stands at the
 // sketch's place in the timeline. A source that is gone leaves the curves where they were and says why.
-import type { SketchItem, Timeline } from './design'
+import type { Item, SketchItem, Timeline } from './design'
 import { direction, invert, point, type HistoryMesh, type Mat4 } from './model'
 import { engineReason, type EngineCall } from './replay'
 import type { EdgeRef, FaceFrame, OpenFace, SketchLoop, Vec3 } from './types'
@@ -48,10 +48,16 @@ export function tagged(loops: readonly SketchLoop[], id: string, mode: ProjectMo
   })
 }
 
-/** The next free projection id of a sketch. */
-export function nextProjectionId(k: Pick<SketchItem, 'projections'>): string {
-  let n = 0
-  for (const p of k.projections ?? []) n = Math.max(n, Number(/^p(\d+)$/.exec(p.id)?.[1] ?? 0))
+const idNumber = (id: string | undefined): number => Number(/^p(\d+)$/.exec(id ?? '')?.[1] ?? 0)
+
+/**
+ * The next projection id of a sketch. Ids only count up: one that was removed, or whose projection a file lost, is
+ * never handed out again, since an extrude made with it still names it.
+ */
+export function nextProjectionId(k: Pick<SketchItem, 'projections' | 'loops' | 'nextProjection'>): string {
+  let n = k.nextProjection ?? 0
+  for (const p of k.projections ?? []) n = Math.max(n, idNumber(p.id))
+  for (const l of k.loops) n = Math.max(n, idNumber(l.projected))
   return `p${n + 1}`
 }
 
@@ -63,14 +69,26 @@ export function withProjection(k: SketchItem, p: Projection, loops: readonly Ske
   const list = k.projections ?? []
   const projections = list.some((x) => x.id === p.id) ? list.map((x) => (x.id === p.id ? p : x)) : [...list, p]
   const curves = (x: Projection) => tagged(x.id === p.id && loops ? loops : projectedOf(k.loops, x.id), x.id, x.mode)
-  return { ...k, loops: [...ownLoops(k.loops), ...projections.flatMap(curves)], projections }
+  const n = Math.max(k.nextProjection ?? 0, idNumber(p.id))
+  return { ...k, loops: [...ownLoops(k.loops), ...projections.flatMap(curves)], projections, ...(n ? { nextProjection: n } : {}) }
 }
 
-/** The sketch without projection `id` and its curves. */
+/** The sketch without projection `id` and its curves; its id stays counted. */
 export function withoutProjection(k: SketchItem, id: string): SketchItem {
   const { projections: _p, ...rest } = k
   const left = (k.projections ?? []).filter((x) => x.id !== id)
-  return { ...rest, loops: k.loops.filter((l) => l.projected !== id), ...(left.length ? { projections: left } : {}) }
+  const n = Math.max(k.nextProjection ?? 0, idNumber(id))
+  return { ...rest, loops: k.loops.filter((l) => l.projected !== id), ...(left.length ? { projections: left } : {}), ...(n ? { nextProjection: n } : {}) }
+}
+
+/** The items with the features on sketch `sketch` no longer naming projections it has dropped (none left in `kept`). */
+export function withoutTaken(items: readonly Item[], sketch: string, kept: ReadonlySet<string>): Item[] {
+  return items.map((i) => {
+    if (i.kind !== 'feature' || i.sketch !== sketch || !i.projected?.some((id) => !kept.has(id))) return i
+    const { projected, ...f } = i
+    const left = projected.filter((id) => kept.has(id))
+    return left.length ? { ...f, projected: left } : f
+  })
 }
 
 const unit = (v: Vec3): Vec3 => {

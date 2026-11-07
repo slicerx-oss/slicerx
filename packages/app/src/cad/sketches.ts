@@ -3,7 +3,7 @@
 // Finished sketches: Finish sketch puts the sketch in the design timeline without making a solid, the way Fusion
 // does. A finished sketch opens again from the strip or the tree to be changed, extruded or revolved; a feature
 // made from it names it by id (record.ts sketchNext), and changing the sketch replays the bodies that use it.
-import { historyOf, stepId, withSketch, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
+import { historyOf, stepId, withoutTaken, withSketch, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { useSyncExternalStore } from 'react'
 import { brandAccent } from '../edition'
@@ -24,9 +24,11 @@ export interface SketchBody {
   on?: { body: string; part: number } | undefined
   /** model geometry projected into it; their curves are the loops that name them. Absent keeps a sketch's own. */
   projections?: Projection[] | undefined
+  /** how many projection ids it has handed out */
+  nextProjection?: number | undefined
 }
 
-const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}) })
+const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}), ...(s.nextProjection ? { nextProjection: s.nextProjection } : {}) })
 
 /** Puts a finished sketch in the timeline at the marker and returns it. Undo takes it out again. */
 export function finishSketch(s: SketchBody): SketchItem {
@@ -61,10 +63,14 @@ export async function updateSketch(host: Loader, id: string, s: SketchBody, o: {
   const old = sketchById(t0, id)
   if (!old) throw new Error('That sketch is no longer in the timeline.')
   const { frame: _f, constraints: _c, ...kept } = old
-  // given projections replace the sketch's; none given keeps them
+  // given projections replace the sketch's; none given keeps them. The id count never goes down, and features stop
+  // naming a projection that is gone, so its id is never taken by a later one
   const { projections: _p, ...bare } = kept
   const keep = s.projections ? bare : kept
-  const t: Timeline = { ...t0, items: t0.items.map((i) => (i === old ? { ...keep, ...body(s) } : i)) }
+  const n = Math.max(old.nextProjection ?? 0, s.nextProjection ?? 0)
+  const next: SketchItem = { ...keep, ...body(s), ...(n ? { nextProjection: n } : {}) }
+  const items = t0.items.map((i) => (i === old ? next : i))
+  const t: Timeline = { ...t0, items: s.projections ? withoutTaken(items, id, new Set(s.projections.map((p) => p.id))) : items }
   const views = new Map<string, PlateEntry>()
   for (const b of usersOf(t, id)) {
     const entry = get().plate.find((e) => e.id === b)
