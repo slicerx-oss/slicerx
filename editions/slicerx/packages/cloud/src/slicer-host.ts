@@ -410,7 +410,8 @@ export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
     loadModel: (data, fileName) => cloud.loadModel(data, fileName),
     loadParts: (name, parts) => cloud.loadParts(name, parts),
     slice: async (req, opts) => {
-      if (!o.enabled()) return local.slice(req, opts)
+      // A slice asked for on this device (the layers a resume plans with) never goes to the cloud or counts against it.
+      if (!o.enabled() || opts?.local) return local.slice(req, opts)
       const r = await cloud.slice(o.prepare ? await o.prepare(req) : req, opts)
       clouded.add(r.id)
       const ids = (r.plates ?? []).flatMap((p) => (p.status === 'succeeded' ? [p.result.id] : []))

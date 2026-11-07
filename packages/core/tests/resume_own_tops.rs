@@ -176,7 +176,8 @@ fn a_resume_planned_in_the_job_layers_slices_from_the_measured_height() {
 #[test]
 fn a_resume_lands_on_the_measured_height_where_layers_sit_at_the_maximum() {
     // 0.28 mm layers (the printer's maximum) to 20.08 mm, then 0.1 mm to the 40 mm top, 99 percent in Z. The engine
-    // keeps the layers at the maximum and stretches the thin ones, so a part measured at 20.08 mm resumes on layer 73.
+    // keeps the layers at the maximum and stretches the thin ones, so a part measured at 20.08 mm resumes from layer
+    // index 72 (resumeFromLayer; layer 73 as printers count).
     let mut own = tops_of(&[(0.28, 71), (0.1, 198)]);
     own.push(40.0);
     assert!((own[71] - 20.08).abs() < 1e-6);
