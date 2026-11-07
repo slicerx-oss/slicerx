@@ -4,14 +4,14 @@
 // one) on the mimir tab's tools, with the geometry engine as the host, then scores the parts its designs built.
 import { bakeMesh, type Design, type EngineCall } from '@slicerx/cad-history'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
-import type { MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
+import type { Bed, CommandSpec, MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { neutralEdition, type EditionConfig } from '@slicerx/edition-config'
 import { modelById } from '@slicerx/printer-catalog'
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import type { LlmClient, ToolHost } from '@slicerx/pilot'
 import { assessFit, createEvalEnv, createScriptedClient, noteApprovals, type EvalHosts, type ScriptStepData } from '@slicerx/pilot/evals'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/toolset'
-import { headlessDesignHost } from './design-host'
+import { headlessDesignHost, plainBed } from './design-host'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
 
@@ -110,7 +110,7 @@ function sizeOf(parts: readonly MeshPart[]): [number, number, number] {
  * in the project, as a design on the app's plate is. `tab` overrides the surface (the browser build: slices false) and
  * the edition.
  */
-export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHosts = {}, tab: { slices: boolean; edition?: EditionConfig } = CREATIVE_TAB) {
+export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHosts = {}, tab: { slices: boolean; edition?: EditionConfig; commands?: readonly CommandSpec[] } = CREATIVE_TAB) {
   const geom = hosts.geom
   // the engine as the app's worker calls it: every mesh asked for with its faces
   const engine: EngineCall = (op, request) => (geom ? geom.run(op, request && typeof request === 'object' && !Array.isArray(request) ? { ...request, withFaces: true } : request) : Promise.reject(new Error(NO_ENGINE)))
@@ -131,10 +131,13 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
     placed.set(d.id, entry)
     void project.addObject?.({ id: d.id, name: d.name, bboxMm: entry.bboxMm }, entry.parts)
   }
-  const designs = headlessDesignHost(engine, { changed })
+  // the machine's bed, which a body built off it lands on as on the app's plate
+  const v = buildVolumeOf(p.machine)
+  const bed: Bed = v.shape === 'circular' ? { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z, round: true } : { widthMm: v.x, depthMm: v.y, heightMm: v.z }
+  const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length)) })
   let plans = 0
   const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}` })
-  const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition } })
+  const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
   project = env.project
   return { ...env, designs }
 }
