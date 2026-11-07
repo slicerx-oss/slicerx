@@ -43,7 +43,7 @@ pub use crate::plate::{Bed, Plate, PlateObject};
 pub use crate::preview::{preview_buffers, stitch as stitch_preview};
 pub use crate::project_split::{ProjectFiles, ProjectPlate, SplitProjects, split_projects};
 pub use crate::session::{HeightRange, SliceSession};
-pub use crate::session_key::{SESSION_FREE_KEYS, session_key};
+pub use crate::session_key::{SESSION_FREE_KEYS, SHELL_FREE_KEYS, session_key};
 pub use crate::threemf::{ProjectMetadata, metadata as project_metadata};
 pub use crate::validate::{GcodeReport, validate_gcode};
 pub use crate::{Cancellable, NoProgress, Progress, SliceEngine, SliceOptions, SxEngine, slice, slice_range};
@@ -3580,6 +3580,8 @@ mod tests {
         assert_eq!(after[2], after[1], "{after:?}");
         // Every later run holds at most two values' entries.
         assert!(after.iter().all(|&n| n <= 2 * one), "{after:?}");
+        // The entries are not keyed on a speed, so each run finds the first run's and adds none.
+        assert!(after.iter().all(|&n| n == one), "{after:?}");
     }
 
     /// The grown and inset outlines and the slits are what a layer's walls, infill area and bridge facts are worked

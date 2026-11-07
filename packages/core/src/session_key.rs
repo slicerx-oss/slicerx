@@ -375,6 +375,22 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "zaa_minimize_perimeter_height",
 ];
 
+/// The settings the shell stages' per-layer results (`shells::Cache`: a layer's walls, bridge facts and bridges, and
+/// the shell walks, slits and region walls they are worked out from) are not keyed on. On a kept session only
+/// [`SESSION_FREE_KEYS`] change, and none of those stages reads one of them: the speeds, temperatures, fans,
+/// retraction and the other G-code and preview settings are read where paths and G-code are written. So a session
+/// given another value of one finds every entry it worked out before. `tests/session_cache.rs` checks that a kept
+/// session with each of these changed slices as a session that never saw the old value.
+pub const SHELL_FREE_KEYS: &[&str] = SESSION_FREE_KEYS;
+
+/// True for a setting the shell stages' per-layer results are not keyed on ([`SHELL_FREE_KEYS`]).
+pub(crate) fn shell_free(key: &str) -> bool {
+    use crate::par::Init as _;
+    static KEYS: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    KEYS.once(|| SHELL_FREE_KEYS.iter().copied().collect())
+        .contains(key)
+}
+
 /// Request options a session never reads: they shape the output only.
 const FREE_OPTIONS: &[&str] = &[
     "shards",

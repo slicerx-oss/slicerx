@@ -76,16 +76,45 @@ type RawPart = (u8, Vec<[f64; 3]>, Vec<[u32; 3]>, crate::paint::Facets);
 /// A layer's sparse infill for the bridge facts: segments for a pattern on scanlines, else the paths it prints.
 type SparseLines = (Vec<[IntPoint<i32>; 2]>, Vec<Vec<crate::geom::Point>>);
 
-/// A fingerprint of the settings a per-layer result was worked out with, for `shells::Cache` keys. The
-/// line widths are part of it: the first layer's settings (`PrintConfig::for_first_layer`) change them
-/// without touching the profile values, and walls worked out at the first layer's width must not stand in
-/// for a neighbor's walls at the normal width, or the other way round.
+/// A fingerprint of every setting a result was worked out with: the profile values, and the typed values
+/// [`hash_widths`] adds.
 fn settings_tag(cfg: &PrintConfig) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     serde_json::to_string(&cfg.raw).unwrap_or_default().hash(&mut h);
-    cfg.layer_height.to_bits().hash(&mut h);
-    cfg.line_width.to_bits().hash(&mut h);
+    hash_widths(cfg, &mut h);
+    h.finish()
+}
+
+/// A fingerprint of the settings the shell stages read, for `shells::Cache` keys: [`settings_tag`] without the
+/// settings none of them reads ([`crate::session_key::SHELL_FREE_KEYS`]), so a kept session given another speed or
+/// temperature finds the walls, bridge facts and bridges it worked out before.
+fn shell_tag(cfg: &PrintConfig) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let mut text = Vec::new();
+    for (k, v) in &cfg.raw {
+        if crate::session_key::shell_free(k) {
+            continue;
+        }
+        let _ = serde_json::to_writer(&mut text, k);
+        text.push(b':');
+        let _ = serde_json::to_writer(&mut text, v);
+        text.push(b',');
+    }
+    text.hash(&mut h);
+    hash_widths(cfg, &mut h);
+    h.finish()
+}
+
+/// What a fingerprint of the settings takes beside the profile values. The line widths are part of it: the first
+/// layer's settings (`PrintConfig::for_first_layer`) change them without touching the profile values, and walls
+/// worked out at the first layer's width must not stand in for a neighbor's walls at the normal width, or the other
+/// way round.
+fn hash_widths(cfg: &PrintConfig, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    cfg.layer_height.to_bits().hash(h);
+    cfg.line_width.to_bits().hash(h);
     let fw = &cfg.feature_widths;
     for w in [
         fw.outer_wall,
@@ -96,44 +125,98 @@ fn settings_tag(cfg: &PrintConfig) -> u64 {
         fw.support,
         fw.initial_layer,
     ] {
-        w.map(f64::to_bits).hash(&mut h);
+        w.map(f64::to_bits).hash(h);
     }
     // The first layer's settings read their modifiers' and parts' first layer settings ([`first_layer_mods`]).
     if cfg.first_layer {
-        1u8.hash(&mut h);
+        1u8.hash(h);
     }
-    h.finish()
+}
+
+/// Which of `configs` agree on each setting the shell tag leaves out, for the settings they do not all agree on; 0
+/// when they agree on all of them. The regions of a layer print one first layer surface only when their settings are
+/// alike, those settings included ([`first_layer_alike`]), so a shell entry depends on whether the regions' values
+/// are the same, though not on the values.
+fn free_split(configs: &[&PrintConfig]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let Some((first, rest)) = configs.split_first() else {
+        return 0;
+    };
+    let keys: std::collections::BTreeSet<&str> = configs
+        .iter()
+        .flat_map(|c| c.raw.keys())
+        .map(String::as_str)
+        .filter(|k| crate::session_key::shell_free(k))
+        .collect();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let mut any = false;
+    for k in keys {
+        let lead = first.raw.get(k);
+        if rest.iter().all(|c| c.raw.get(k) == lead) {
+            continue;
+        }
+        any = true;
+        k.hash(&mut h);
+        // Each config by the first config with its value.
+        for c in configs {
+            let v = c.raw.get(k);
+            configs.iter().position(|o| o.raw.get(k) == v).hash(&mut h);
+        }
+    }
+    if any { h.finish().max(1) } else { 0 }
 }
 
 /// What the layers of one slice read of each of the slice's configs, worked out once per config instead of in
-/// every layer: its settings tag (which writes out every profile value) and its filament views
-/// (`PrintConfig::for_filament`, a copy of the whole config when the filament has settings of its own).
+/// every layer: its shell tag (which writes out the profile values, and which of the configs agree on the settings it
+/// leaves out) and its filament views (`PrintConfig::for_filament`, a copy of the whole config when the filament has
+/// settings of its own).
 struct Tags<'c> {
     configs: Vec<(&'c PrintConfig, u64)>,
     /// Per entry of `configs` and 1-based slot, filled the first time a layer asks.
     filaments: Vec<Vec<std::sync::OnceLock<std::borrow::Cow<'c, PrintConfig>>>>,
+    /// [`free_split`] of `configs`.
+    split: u64,
 }
 
 impl<'c> Tags<'c> {
     fn of_all(configs: impl IntoIterator<Item = &'c PrintConfig>, slots: u8) -> Self {
-        let configs: Vec<(&'c PrintConfig, u64)> =
-            configs.into_iter().map(|c| (c, settings_tag(c))).collect();
+        let all: Vec<&'c PrintConfig> = configs.into_iter().collect();
+        let split = free_split(&all);
+        let configs: Vec<(&'c PrintConfig, u64)> = all
+            .into_iter()
+            .map(|c| (c, Self::with_split(shell_tag(c), split)))
+            .collect();
         let filaments = configs
             .iter()
             .map(|_| (0..slots.max(1)).map(|_| std::sync::OnceLock::new()).collect())
             .collect();
-        Self { configs, filaments }
+        Self {
+            configs,
+            filaments,
+            split,
+        }
+    }
+
+    /// A shell tag that tells the configs' agreement apart too.
+    fn with_split(tag: u64, split: u64) -> u64 {
+        use std::hash::{Hash, Hasher};
+        if split == 0 {
+            return tag;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (tag, split).hash(&mut h);
+        h.finish()
     }
 
     fn index(&self, cfg: &PrintConfig) -> Option<usize> {
         self.configs.iter().position(|(c, _)| std::ptr::eq(*c, cfg))
     }
 
-    /// `settings_tag(cfg)`, looked up when `cfg` is one of the slice's configs.
+    /// The shell tag of `cfg`, looked up when `cfg` is one of the slice's configs.
     fn of(&self, cfg: &PrintConfig) -> u64 {
         self.index(cfg)
             .and_then(|i| self.configs.get(i))
-            .map_or_else(|| settings_tag(cfg), |(_, t)| *t)
+            .map_or_else(|| Self::with_split(shell_tag(cfg), self.split), |(_, t)| *t)
     }
 
     /// `cfg.for_filament(slot)`, kept when `cfg` is one of the slice's configs.
@@ -15980,7 +16063,7 @@ mod wall_key_tests {
 
 #[cfg(test)]
 mod tag_tests {
-    use super::settings_tag;
+    use super::{settings_tag, shell_tag};
     use crate::config::PrintConfig;
 
     #[test]
@@ -15992,6 +16075,19 @@ mod tag_tests {
         assert_eq!(first.raw, cfg.raw);
         assert_ne!(settings_tag(&first), settings_tag(&cfg));
         assert_eq!(settings_tag(&cfg.clone()), settings_tag(&cfg));
+        assert_ne!(shell_tag(&first), shell_tag(&cfg));
+    }
+
+    /// A speed is no part of the shell tag, a wall count is.
+    #[test]
+    fn a_speed_keeps_the_shell_tag_and_a_wall_count_changes_it() {
+        let of = |v: serde_json::Value| PrintConfig::from_value(&v).unwrap();
+        let base = of(serde_json::json!({"outer_wall_speed": [50], "wall_loops": 2}));
+        let faster = of(serde_json::json!({"outer_wall_speed": [45], "wall_loops": 2}));
+        let more = of(serde_json::json!({"outer_wall_speed": [50], "wall_loops": 3}));
+        assert_ne!(settings_tag(&faster), settings_tag(&base));
+        assert_eq!(shell_tag(&faster), shell_tag(&base));
+        assert_ne!(shell_tag(&more), shell_tag(&base));
     }
 }
 
