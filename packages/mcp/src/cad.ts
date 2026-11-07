@@ -400,12 +400,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
-  // a spline the engine cannot draw (repeated points, too sharp a bend, too many points) never reaches the timeline
+  // the check issues of a spline the engine cannot draw (repeated points, too sharp a bend, too many points)
+  // a sketch past the point budget is named on the loop that tips it, which need not be a spline
+  const undrawable = (issues: unknown, l: Loops) => (Array.isArray(issues) ? (issues as { loop: number; kind: string; message: string }[]) : []).filter((x) => x.kind === 'tooDense' || (['zeroLength', 'tooSmall'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {}))))
+
+  // a spline the engine cannot draw never reaches the timeline
   const splinesDraw = async (l: Loops): Promise<void> => {
     if (!splines(l)) return
     const out = await engine('sketch.check', { loops: l })
-    // a sketch past the point budget is named on the loop that tips it, which need not be a spline
-    const bad = (Array.isArray(out['issues']) ? (out['issues'] as { loop: number; kind: string; message: string }[]) : []).filter((x) => x.kind === 'tooDense' || (['zeroLength', 'tooSmall'].includes(x.kind) && /spline/i.test(JSON.stringify(l[x.loop] ?? {}))))
+    const bad = undrawable(out['issues'], l)
     if (bad.length) throw new ToolInputError(`loops: ${bad.map((x) => x.message).join(' ')}`)
   }
 
@@ -813,7 +816,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
       fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
       center: vec2.optional().describe('Where the middle of the artwork lands, sketch mm; the origin when absent (on the bed, its corner)'),
-      tolerance_mm: z.number().positive().max(1).optional().describe('How far a spline may stray from a curve of the artwork; 0.01 when absent'),
+      tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
     }),
     async run(i) {
       const host = deps.designs
@@ -824,9 +827,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const loopsIn = out['loops'] as Loops
       const check = (out['check'] ?? {}) as { ok?: boolean; areaMm2?: number; loops?: { index: number; role: string; areaMm2: number; lengthMm: number }[]; issues?: { kind: string; message: string }[] }
       const issues = check.issues ?? []
-      // a curve too dense to draw never reaches the timeline
-      const dense = issues.filter((x) => x.kind === 'tooDense')
-      if (dense.length) throw new ToolInputError(`svg: ${dense.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
+      // a spline that cannot be drawn never reaches the timeline, as for design.sketch
+      const bad = undrawable(issues, loopsIn)
+      if (bad.length) throw new ToolInputError(`svg: ${bad.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
       const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }))
       const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
       const size = out['sizeMm'] as [number, number]
