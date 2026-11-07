@@ -1829,12 +1829,18 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             </div>
           </div>
         </div>
-        <Button size="sm" className="tp-pill" icon="svg-face" aria-pressed={svgOpen} data-testid="sketch-svg-open" data-tip-title="Import SVG" data-tip-body="Adds the closed paths of an SVG file to this sketch as lines, arcs, circles and splines to edit, dimension and extrude." onClick={() => setSvgOpen(!svgOpen)}>
-          Import SVG
-        </Button>
       </div>
+    </>
+  )
+  // Import SVG: one button until it is opened, after the solid card, so it never pushes the drawing card's settings
+  // or the solid's Distance and Draft down; opened, its form shows below the button and scrolls into view
+  const svgImport = featureOnly ? null : (
+    <div className="sketch-svg-import">
+      <Button size="sm" className="tp-pill" icon="svg-face" aria-pressed={svgOpen} data-testid="sketch-svg-open" data-tip-title="Import SVG" data-tip-body="Adds the closed paths of an SVG file to this sketch as lines, arcs, circles and splines to edit, dimension and extrude." onClick={() => setSvgOpen(!svgOpen)}>
+        Import SVG
+      </Button>
       {svgOpen ? (
-        // the button above names it, so no caption repeats it; it scrolls into view as it opens
+        // the button above names it, so no caption repeats it
         <fieldset ref={svgRef} className="sketch-copies sketch-svg" aria-label="Import SVG" data-testid="sketch-svg">
           <SvgFileField id="sk-svg-file" file={svgFile} onFile={(f) => (setSvgFile(f), setNote(null))} onError={setNote} />
           <Choice id="sk-svg-size" label="Size" ariaLabel="SVG size" value={svgForm.size} onChange={(size) => setSvgForm({ ...svgForm, size, value: size === 'scale' ? '100' : svgForm.size === 'scale' ? '50' : svgForm.value })} options={SVG_SIZES} />
@@ -1846,7 +1852,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           </Button>
         </fieldset>
       ) : null}
-    </>
+    </div>
   )
   // what Select picked and what to do with it: in the drawing card on a desktop, after the check's messages on a phone
   const picks = (
@@ -1990,6 +1996,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {messages}
           {picks}
           {solid}
+          {svgImport}
         </>
       ) : (
         <>
@@ -2009,6 +2016,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             {messages}
             {solid}
           </Card>
+          {svgImport}
         </>
       )}
       {note ? <Message text={note} /> : null}
