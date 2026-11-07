@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileRef, Host, MeshHandle } from '@slicerx/contracts'
 import { setGeomProvider } from '../src/geom/client'
 import { HostContext } from '../src/host'
-import { history } from '../src/plate/history'
+import { history, inStep } from '../src/plate/history'
+import { commitStroke } from '../src/plate/paint'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { rememberTexture, type TextureSource } from '../src/plate/texture-paint'
 import { identity } from '../src/plate/transform'
@@ -132,6 +133,18 @@ describe('From texture in the paint panel', () => {
     await flush()
     expect(screen.queryByTestId('paint-texture-preview')).toBeNull()
     expect(get().plate.every((e) => !e.paint)).toBe(true)
+  })
+
+  it('does not apply a preview made before the object changed', async () => {
+    mount(get().plate[0])
+    fireEvent.click(screen.getByTestId('paint-from-texture'))
+    await flush()
+    // a stroke on a triangle the texture leaves unpainted, after the preview
+    act(() => inStep({}, () => commitStroke({ objectId: 'a', partIndex: 0, layer: 'color', edits: [{ triangle: 5, after: '4' }] })))
+    fireEvent.click(screen.getByTestId('paint-texture-apply'))
+    expect(get().plate[0]!.paint?.[0]?.color).toEqual({ 5: '4' })
+    expect(history().state().undo).toBe(1)
+    expect(screen.getByText('The object changed since this preview. Press From texture again.')).toBeTruthy()
   })
 
   it('does not apply a preview made before the filaments changed', async () => {
