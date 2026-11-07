@@ -77,7 +77,8 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; changed: string[]; note: string } {
   const s = get()
   const current = resolveConfig(s.easy, s.overrides)
-  const changes = projectPrinterChanges(settings, match, current, s.profile?.nozzle)
+  // The printer's own limits, not the plate's: an override carried over from before the open is no ceiling.
+  const changes = projectPrinterChanges(settings, match, current, s.profile?.nozzle, resolveConfig(s.easy, {}))
   const { all, dropped } = changes
   if (match?.kind !== 'match') {
     const fileNozzle = match?.nozzle ?? Number(first(settings['nozzle_diameter']))

@@ -297,8 +297,13 @@ export interface ProjectPrinterChanges {
  * With a profile for the file's printer (`match`), that is the file's whole process and filament settings and its
  * printer settings (`projectOwnPrinterSettings`); else the settings that suit the current printer (`nozzle` is its nozzle, undefined without
  * a printer). The project's own G-code is not in `values`: on its own printer it goes through the G-code review.
+ * `profile` is the printer's own settings, without the plate's changes (`current` when it has none): every route holds
+ * the file's machine limits to it (`clampMachineLimits`), so neither the file nor a limit raised by hand before the
+ * open lifts them.
  */
-export function projectPrinterChanges(settings: Record<string, unknown>, match: ProjectPrinterMatch | null, current: PrintConfig, nozzle: number | undefined): ProjectPrinterChanges {
+export function projectPrinterChanges(settings: Record<string, unknown>, match: ProjectPrinterMatch | null, current: PrintConfig, nozzle: number | undefined, profile: PrintConfig = current): ProjectPrinterChanges {
+  const ceiling = profile as unknown as Record<string, SettingValue | undefined>
+  const held = (out: ProjectPrinterChanges): ProjectPrinterChanges => ({ ...out, values: clampMachineLimits(out.values, ceiling) })
   // SlicerX's defaults for the keys the project does not set at all (precise outer wall); a value it sets is its own.
   const { values, taken } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, current)
   const now = current as unknown as Record<string, SettingValue | undefined>
@@ -315,7 +320,7 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
     const ours = Object.fromEntries(keeps.filter((k) => !sameChoice(now[k], SLICERX_KEEP_VALUES[k])).map((k) => [k, SLICERX_KEEP_VALUES[k] as SettingValue]))
     const { kept, dropped } = carryOver({ ...own, ...ours }, [], sameNozzle)
     // Left out names only real changes: a value equal to the current one loses nothing.
-    return { values: kept, all: values, dropped: dropped.filter((k) => k in values), keeps, listed: false, printerKeys: [] }
+    return held({ values: kept, all: values, dropped: dropped.filter((k) => k in values), keeps, listed: false, printerKeys: [] })
   }
   // The process and the filaments are taken whole: the file holds what it was sliced with, the system presets its
   // presets came from (inherits_group) with the person's changes on top, and Bambu Studio opens it as it is. Our
@@ -337,6 +342,6 @@ export function projectPrinterChanges(settings: Record<string, unknown>, match: 
   const settingsOnly = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
   // The file's printer settings, listed or not, on the printer it was made for; a project for another nozzle keeps to
   // what the file lists, as before.
-  const printer = match.asked ? {} : projectOwnPrinterSettings(settings, now)
-  return { values: { ...printer, ...settingsOnly }, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined, printerKeys: Object.keys(printer) }
+  const printer = match.asked ? {} : projectOwnPrinterSettings(settings, ceiling)
+  return held({ values: { ...printer, ...settingsOnly }, all: values, dropped: [], keeps: [...keeps], listed: only !== undefined, printerKeys: Object.keys(printer) })
 }
