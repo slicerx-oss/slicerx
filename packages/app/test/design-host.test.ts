@@ -14,6 +14,7 @@ import { createHistory } from '../src/plate/history'
 import { bounds } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
+import { designToolset } from '@slicerx/mcp/toolset'
 
 useGeomEngine('design-host-replies')
 
@@ -351,4 +352,27 @@ describe('an edit that leaves a design off the bed', () => {
     expect(entry(d.id).transform).toEqual(was)
     expect(d.landed).toEqual({ offBed: true, edit: true, locked: true })
   })
+
+  it('tells the bed of the open printer, and an SVG sketch with no center lands in its middle', async () => {
+    set({ bed: { widthMm: 180, depthMm: 250, heightMm: 40 } })
+    const host = appDesignHost(loader)
+    expect(host.bed!()).toEqual({ widthMm: 180, depthMm: 250 })
+    // the engine stands in here: its reply is what sketch.svg makes of a 20 mm square around the center it was sent
+    const sent: unknown[] = []
+    const square = (c: [number, number]) => [{ start: [c[0] - 10, c[1] - 10], segments: [{ type: 'line', to: [c[0] + 10, c[1] - 10] }, { type: 'line', to: [c[0] + 10, c[1] + 10] }, { type: 'line', to: [c[0] - 10, c[1] + 10] }, { type: 'line', to: [c[0] - 10, c[1] - 10] }] }]
+    const call = async (op: string, req: unknown) => {
+      if (op !== 'sketch.svg') throw new Error(`unexpected ${op}`)
+      sent.push(req)
+      const c = (req as { options: { center: [number, number] } }).options.center
+      return { loops: square(c), counts: { lines: 4, arcs: 0, splines: 0, circles: 0 }, sizeMm: [20, 20], mmPerUnit: 1, check: { ok: true, areaMm2: 400, loops: [{ index: 0, role: 'outer', areaMm2: 400, lengthMm: 80 }], issues: [] }, warnings: [] }
+    }
+    const tool = designToolset({ ...host, call })
+      .find((t) => t.name === 'design.sketch_svg')!
+    const out = (await tool.run({ svg: '<svg viewBox="0 0 20 20"><rect width="20" height="20"/></svg>' } as never, {} as never)).output as { id: string; loops: { start: [number, number] }[] }
+    expect(sent).toEqual([{ svg: '<svg viewBox="0 0 20 20"><rect width="20" height="20"/></svg>', options: { center: [90, 125] } }])
+    const k = get().timeline.items.find((i) => i.kind === 'sketch' && i.id === out.id)
+    expect(k).toMatchObject({ kind: 'sketch', loops: square([90, 125]) })
+    expect(k).not.toHaveProperty('frame')
+  })
 })
+

@@ -26,8 +26,11 @@ type V3 = [number, number, number]
 export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
-/** The most SVG text design.sketch_svg takes, as sent: under the app link's 64 KB of arguments, room left for the rest. */
-const SVG_SENT = 60_000
+/** What the app link takes: the UTF-8 bytes of a call's arguments as compact JSON (sx-link app_link.rs, MAX_ARGS). */
+const LINK_ARGS = 64 * 1024
+/** design.sketch_svg's arguments may come to this many bytes; 512 are kept back for numbers the link may write longer. */
+const SVG_ARGS = LINK_ARGS - 512
+const kb = (bytes: number) => `${Math.round((bytes / 1024) * 10) / 10} KB`
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -811,24 +814,24 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
-    input: z.object({
-      svg: z
-        .string()
-        .min(1)
-        .max(SVG_SENT)
-        .superRefine((s, ctx) => {
-          // the app link carries 64 KB of arguments, quotes escaped
-          const sent = JSON.stringify(s).length
-          if (sent > SVG_SENT) ctx.addIssue({ code: 'custom', message: `the SVG is ${Math.ceil(sent / 1000)} KB as sent, over the ${SVG_SENT / 1000} KB the app link carries; simplify it in a vector editor (fewer points, no embedded images, fonts or metadata), or split it and import each part with its own center` })
-        })
-        .describe(`The SVG file as text, up to ${SVG_SENT / 1000} KB as sent (the app link's limit)`),
-      frame: frameRef.optional(),
-      scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
-      fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
-      fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
-      center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
-      tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
-    }),
+    input: z
+      .object({
+        svg: z
+          .string()
+          .min(1)
+          .describe(`The SVG file as text. With the other fields it may come to ${kb(SVG_ARGS)} (${SVG_ARGS} bytes of UTF-8 JSON, quotes escaped), the most the app link carries`),
+        frame: frameRef.optional(),
+        scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
+        fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
+        fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
+        center: vec2.optional().describe("Where the middle of the artwork lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
+        tolerance_mm: z.number().min(0.001).max(1).optional().describe('How far a spline may stray from a curve of the artwork, 0.001 to 1; 0.01 when absent'),
+      })
+      .superRefine((args, ctx) => {
+        // the link counts the bytes of every field as it sends them, so non-Latin text counts 2 to 4 a character
+        const sent = new TextEncoder().encode(JSON.stringify(args)).length
+        if (sent > SVG_ARGS) ctx.addIssue({ code: 'custom', path: ['svg'], message: `This SVG comes to ${kb(sent)} once sent to the app, and the app link takes ${kb(SVG_ARGS)}. Simplify it in a vector editor (fewer points, no embedded images, fonts, metadata or long text), or split it and import each part with its own center.` })
+      }),
     async run(i) {
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
