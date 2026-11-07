@@ -7,3 +7,5 @@
 1d482f4c17e9be06e223240fb6d093330db85c0a:packages/mcp/test/mimir-memory.test.ts:generic-api-key:88
 c1acc9cba5d51cf4f194789cc487d0e97589d9e0:packages/app/test/app-link-mimir-memory.test.ts:private-key:100
 c1acc9cba5d51cf4f194789cc487d0e97589d9e0:packages/app/test/app-link-mimir-memory.test.ts:stripe-access-token:99
+# made-up key in the eval transport test, before its gitleaks:allow marker
+03da8913bef746c803d41a4e5dfd9e6b5a3cb0a5:packages/pilot/test/node-transport.test.ts:generic-api-key:10
