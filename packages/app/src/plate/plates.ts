@@ -57,8 +57,7 @@ export function switchPlate(id: string): void {
 export function addPlate(settings: PlateSettings = activeMeta()?.settings ?? {}, show = true): string {
   const s = get()
   const id = newId()
-  const { layerProfile: _own, ...rest } = settings
-  set({ plates: [...s.plates, { id, name: nextName(s.plates), objects: [], settings: rest }] })
+  set({ plates: [...s.plates, { id, name: nextName(s.plates), objects: [], settings: newPlateSettings(settings) }] })
   if (show) switchPlate(id)
   return id
 }
@@ -130,6 +129,12 @@ export function renamePlate(id: string, name: string): void {
 export function setPlateSettings(id: string, patch: Partial<PlateSettings>, replace = false): void {
   set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, settings: replace ? { ...patch } : { ...p.settings, ...patch } } : p)) }))
   if (id === get().activePlate) markStale()
+}
+
+/** The settings a new plate takes from another: all of them but its own layer heights, made for that plate's objects. */
+export function newPlateSettings(settings: PlateSettings): PlateSettings {
+  const { layerProfile: _own, ...rest } = settings
+  return rest
 }
 
 /** Sets a plate's own layer heights (plate/layer-profile.ts), or with null clears them, so the plate slices as before. */

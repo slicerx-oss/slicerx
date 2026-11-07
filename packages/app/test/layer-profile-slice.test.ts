@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { setGeomProvider } from '../src/geom/client'
 import { forgetLayerPlans } from '../src/plate/smart-layer'
-import { addPlate, duplicatePlate, setPlateLayerProfile } from '../src/plate/plates'
+import { addPlate, allPlates, duplicatePlate, setPlateLayerProfile } from '../src/plate/plates'
+import { appProject } from '../src/workspaces/mimir/project'
 import { layerLimits, profileTops } from '../src/plate/layer-profile'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
@@ -59,6 +60,10 @@ function engine(): { host: Host; requests: SliceRequest[] } {
   } as unknown as Host
   return { host, requests }
 }
+
+// The request keys the app sent on main for this plate (7fb56d5ef), so the request without a profile stays as it was.
+const OPTION_KEYS = { on: ['emitGcode', 'emitPreview', 'layerTopsMm', 'modelName', 'plateName', 'plateNumber', 'previewFormat', 'shards'], off: ['emitGcode', 'emitPreview', 'modelName', 'plateName', 'plateNumber', 'previewFormat', 'shards'] }
+const REQUEST_KEYS = ['config', 'options', 'plate']
 
 let plans = 0
 const notes = () => {
@@ -133,6 +138,32 @@ describe("a plate's own layer heights", () => {
     expect(plans).toBe(1)
   })
 
+  it('set or cleared on the shown plate, make its finished slice stale; on another plate, leave it be', async () => {
+    set({ plates: [...get().plates, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }] })
+    await slicePlate(engine().host)
+    const done = () => get().slice as { status: string; stale?: boolean }
+    expect(done()).toMatchObject({ status: 'done', stale: false })
+    setPlateLayerProfile('plate-2', PROFILE)
+    expect(done().stale).toBe(false)
+    setPlateLayerProfile('plate-1', PROFILE)
+    expect(done().stale).toBe(true)
+    await slicePlate(engine().host)
+    expect(done().stale).toBe(false)
+    setPlateLayerProfile('plate-1', null)
+    expect(done().stale).toBe(true)
+  })
+
+  it('never go to a plate made through mimir', async () => {
+    setPlateLayerProfile('plate-1', PROFILE)
+    const project = appProject({ slicer: { loadParts: async () => handle } } as never)()
+    project.setPlates([{ index: 1, items: [{ objectId: 'a', copies: 1 }] }, { index: 2, items: [{ objectId: 'a', copies: 1 }] }])
+    const plates = allPlates()
+    expect(plates).toHaveLength(2)
+    expect(plates[1]!.objects).toHaveLength(1)
+    expect(plates[0]!.settings.layerProfile).toEqual(PROFILE)
+    expect(plates[1]!.settings.layerProfile).toBeUndefined()
+  })
+
   it('stay with a duplicated plate but never go to a new one', () => {
     setPlateLayerProfile('plate-1', PROFILE)
     const copy = duplicatePlate('plate-1')!
@@ -152,5 +183,9 @@ describe('a plate without its own layer heights', () => {
     await slicePlate(off.host)
     expect(off.requests[0]!.options).not.toHaveProperty('layerTopsMm')
     expect(notes()).toEqual([])
+    // Only the keys a plate of this kind sent before; a profile adds nothing else to the request.
+    expect(Object.keys(on.requests[0]!.options ?? {}).sort()).toEqual(OPTION_KEYS.on)
+    expect(Object.keys(off.requests[0]!.options ?? {}).sort()).toEqual(OPTION_KEYS.off)
+    expect(Object.keys(on.requests[0]!).sort()).toEqual(REQUEST_KEYS)
   })
 })
