@@ -26,20 +26,33 @@ export const MAX_POINTS = 200
 const MAX_LAYERS = 200_000
 
 const first = (v: unknown): number => Number(Array.isArray(v) ? v[0] : v)
+const all = (v: unknown): number[] => (Array.isArray(v) ? v : [v]).map(Number)
 const round4 = (v: number): number => Math.round(v * 1e4) / 1e4
 
 /**
  * The printer's limits from a resolved config: min_layer_height and max_layer_height (0 or missing: 0.07 mm and three
- * quarters of the nozzle, as the engine reads them), kept inside what the engine takes. The first layer is the
+ * quarters of the nozzle, as the engine reads them), kept inside what the engine takes. On a printer with several
+ * extruders whose limits differ, the strictest of them: the largest minimum and the smallest maximum, each extruder's
+ * maximum from its own entry or its own nozzle, so every layer prints on any of its nozzles. The first layer is the
  * config's first layer height, or the layer height over a raft.
  */
 export function layerLimits(config: Readonly<Record<string, unknown>>): LayerLimits {
-  const nozzle = first(config['nozzle_diameter'])
-  const nozzleMm = Number.isFinite(nozzle) && nozzle > 0 ? nozzle : 0.4
-  const lo = first(config['min_layer_height'])
-  const hi = first(config['max_layer_height'])
-  const minMm = round4(Math.min(ENGINE_MAX_MM, Math.max(ENGINE_MIN_MM, Number.isFinite(lo) && lo > 0 ? lo : 0.07)))
-  const maxMm = round4(Math.max(minMm, Math.min(ENGINE_MAX_MM, Number.isFinite(hi) && hi > 0 ? hi : 0.75 * nozzleMm)))
+  const nozzles = all(config['nozzle_diameter'])
+  const los = all(config['min_layer_height'])
+  const his = all(config['max_layer_height'])
+  const n = Math.max(1, nozzles.length, los.length, his.length)
+  let lo = ENGINE_MIN_MM
+  let hi = ENGINE_MAX_MM
+  for (let i = 0; i < n; i++) {
+    const nozzle = nozzles[i] ?? nozzles[0] ?? NaN
+    const nozzleMm = Number.isFinite(nozzle) && nozzle > 0 ? nozzle : 0.4
+    const l = los[i] ?? los[0] ?? NaN
+    const h = his[i] ?? his[0] ?? NaN
+    lo = Math.max(lo, Number.isFinite(l) && l > 0 ? l : 0.07)
+    hi = Math.min(hi, Number.isFinite(h) && h > 0 ? h : 0.75 * nozzleMm)
+  }
+  const minMm = round4(Math.min(ENGINE_MAX_MM, lo))
+  const maxMm = round4(Math.max(minMm, hi))
   const raft = first(config['raft_layers'])
   const layer = first(config['layer_height'])
   const firstLayer = first(config['initial_layer_print_height'])
@@ -64,8 +77,9 @@ export function heightAt(points: readonly ProfilePoint[], z: number): number {
 
 /**
  * A profile made safe to use: finite points only, heights above the bed from 0, rising (a repeated height keeps its
- * last point), each layer height inside the limits, at most MAX_POINTS points. `clamped` says a height was moved into
- * the limits; `dropped` that a point was left out. Null when no point is left.
+ * last point), each layer height inside the limits, at most MAX_POINTS points. A longer one keeps the points that
+ * shape the curve most (the ends, then each step and bend), not every Nth. `clamped` says a height was moved into the
+ * limits; `dropped` that a point was left out. Null when no point is left.
  */
 export function cleanProfile(points: readonly (readonly number[])[], limits: Pick<LayerLimits, 'minMm' | 'maxMm'>): { points: ProfilePoint[]; clamped: boolean; dropped: boolean } | null {
   let clamped = false
@@ -87,7 +101,7 @@ export function cleanProfile(points: readonly (readonly number[])[], limits: Pic
   let out = [...byZ].sort((a, b) => a[0] - b[0]) as ProfilePoint[]
   if (out.length > MAX_POINTS) {
     dropped = true
-    out = thin(out, MAX_POINTS)
+    out = simplifyTo(out, MAX_POINTS)
   }
   return out.length ? { points: out, clamped, dropped } : null
 }
@@ -96,8 +110,9 @@ export function cleanProfile(points: readonly (readonly number[])[], limits: Pic
  * The layer tops for a plate whose objects reach `topMm`: the first layer at the printer's first layer height, then
  * each layer as thick as the curve says at its bottom, inside the limits, and the last one ending on the top of the
  * plate. A last layer thinner than the minimum joins the one below it, or the two share their height evenly when one
- * layer would pass the maximum. Tops are kept to 0.1 micron, so every layer's thickness is what the engine checks it
- * against.
+ * layer would pass the maximum; when neither fits (right over the first layer, or a maximum under twice the minimum)
+ * it is the minimum thick and ends just over the top. Tops are kept to 0.1 micron, so every layer's thickness is what
+ * the engine checks it against.
  */
 export function profileTops(points: readonly ProfilePoint[], topMm: number, limits: LayerLimits): number[] {
   const tops: number[] = [limits.firstMm]
@@ -109,10 +124,14 @@ export function profileTops(points: readonly ProfilePoint[], topMm: number, limi
     tops.push(bottom)
   }
   const n = tops.length
-  if (n > 2 && tops[n - 1]! - tops[n - 2]! < limits.minMm - 1e-6) {
-    const below = tops[n - 3]!
-    if (top - below <= limits.maxMm + 1e-6) tops.splice(n - 2, 1)
-    else tops[n - 2] = round4(below + (top - below) / 2)
+  if (n >= 2 && tops[n - 1]! - tops[n - 2]! < limits.minMm - 1e-6) {
+    const below = n > 2 ? tops[n - 3]! : NaN
+    const half = round4(below + (top - below) / 2)
+    if (n > 2 && top - below <= limits.maxMm + 1e-6) tops.splice(n - 2, 1)
+    else if (n > 2 && half - below >= limits.minMm - 1e-6 && top - half >= limits.minMm - 1e-6) tops[n - 2] = half
+    // Right over the first layer, or where two layers cannot share it inside the limits: the last layer is the thinnest
+    // the printer prints and ends a little over the top, which the engine takes (its middle decides whether it prints).
+    else tops[n - 1] = round4(tops[n - 2]! + limits.minMm)
   }
   return tops
 }
@@ -165,6 +184,46 @@ function simplify(pts: readonly ProfilePoint[], tolerance: number): ProfilePoint
   return pts.filter((_, i) => keep[i])
 }
 
+/**
+ * At most `max` of the points, its ends kept: each next point is the one a straight line between the points kept so far
+ * misses by the most, so steps and bends stay and points on straight runs go first.
+ */
+function simplifyTo(pts: readonly ProfilePoint[], max: number): ProfilePoint[] {
+  if (pts.length <= max) return [...pts]
+  const off = (a: number, b: number): [number, number] => {
+    const [za, ha] = pts[a]!
+    const [zb, hb] = pts[b]!
+    let worst = -1
+    let at = -1
+    for (let i = a + 1; i < b; i++) {
+      const [z, h] = pts[i]!
+      const d = Math.abs(h - (zb === za ? ha : ha + ((hb - ha) * (z - za)) / (zb - za)))
+      if (d > worst) {
+        worst = d
+        at = i
+      }
+    }
+    return [worst, at]
+  }
+  const keep = new Set<number>([0, pts.length - 1])
+  const spans: { a: number; b: number; worst: number; at: number }[] = []
+  const add = (a: number, b: number) => {
+    const [worst, at] = off(a, b)
+    if (at >= 0) spans.push({ a, b, worst, at })
+  }
+  add(0, pts.length - 1)
+  while (keep.size < max && spans.length) {
+    let k = 0
+    for (let i = 1; i < spans.length; i++) if (spans[i]!.worst > spans[k]!.worst) k = i
+    const { a, b, worst, at } = spans.splice(k, 1)[0]!
+    if (worst <= 1e-6) break
+    keep.add(at)
+    add(a, at)
+    add(at, b)
+  }
+  return [...keep].sort((x, y) => x - y).map((i) => pts[i]!)
+}
+
 /** `max` points spread evenly over the list, its ends kept. */
 function thin(pts: readonly ProfilePoint[], max: number): ProfilePoint[] {
   if (pts.length <= max) return [...pts]
@@ -207,10 +266,12 @@ export interface FileObjectProfile {
 
 /**
  * The profile a plate takes from its objects' own (a project file keeps one per object): heights moved up by where
- * each object's bottom sits, then made safe for the printer. When the objects' profiles differ, the tallest object's
- * is used and `from` names it. `clamped` says a height was moved into the printer's limits. Null when none has one.
+ * each object's bottom sits, then made safe for the printer. The tallest object's is used. Profiles that give the same
+ * layer heights over the heights they share are one curve (a saved plate writes its curve cut to each object's
+ * height); when they differ, `from` names the object whose profile was used. `clamped` says a height was moved into the
+ * printer's limits, `dropped` that points were left out. Null when none has one.
  */
-export function plateProfileFromFile(objects: readonly FileObjectProfile[], limits: Pick<LayerLimits, 'minMm' | 'maxMm'>): { points: ProfilePoint[]; clamped: boolean; from?: string } | null {
+export function plateProfileFromFile(objects: readonly FileObjectProfile[], limits: Pick<LayerLimits, 'minMm' | 'maxMm'>): { points: ProfilePoint[]; clamped: boolean; dropped?: boolean; from?: string } | null {
   const withProfile = objects.flatMap((o) => {
     if (!o.points?.length) return []
     const box = o.entry ? bounds(o.entry.parts, o.entry.transform) : null
@@ -220,8 +281,17 @@ export function plateProfileFromFile(objects: readonly FileObjectProfile[], limi
     return clean ? [{ name: o.name, top, ...clean }] : []
   })
   if (!withProfile.length) return null
-  const key = (pts: readonly ProfilePoint[]) => JSON.stringify(pts)
-  const same = withProfile.every((o) => key(o.points) === key(withProfile[0]!.points))
-  const pick = same ? withProfile[0]! : withProfile.reduce((a, b) => (b.top > a.top ? b : a))
-  return { points: pick.points, clamped: withProfile.some((o) => o.clamped), ...(same ? {} : { from: pick.name }) }
+  const pick = withProfile.reduce((a, b) => (b.top > a.top ? b : a))
+  const same = withProfile.every((o) => o === pick || sameOverShared(o.points, pick.points))
+  const dropped = withProfile.some((o) => o.dropped)
+  return { points: pick.points, clamped: withProfile.some((o) => o.clamped), ...(dropped ? { dropped } : {}), ...(same ? {} : { from: pick.name }) }
+}
+
+/** Whether two curves give the same layer height, to 1 micron, everywhere over the heights both cover. */
+function sameOverShared(a: readonly ProfilePoint[], b: readonly ProfilePoint[]): boolean {
+  const lo = Math.max(a[0]![0], b[0]![0])
+  const hi = Math.min(a[a.length - 1]![0], b[b.length - 1]![0])
+  if (hi < lo) return false
+  const zs = [lo, hi, ...a.map((p) => p[0]), ...b.map((p) => p[0])].filter((z) => z >= lo && z <= hi)
+  return zs.every((z) => Math.abs(heightAt(a, z) - heightAt(b, z)) <= 1e-3)
 }
