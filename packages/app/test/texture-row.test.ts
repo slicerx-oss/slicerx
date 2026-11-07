@@ -90,6 +90,26 @@ describe('From texture in the paint panel', () => {
     expect([1, 2, 3, 4].map((i) => get().slotSetup[i]?.color)).toEqual(RGBW)
   })
 
+  it('keeps each filament type when the palette sets the colors, and one Undo takes back colors and paint', async () => {
+    const types = ['PETG', 'ABS', 'PLA', 'TPU']
+    set({ slotSetup: {}, printerSlots: [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }] as never, fileSlotColors: ['#111111', '#222222', '#333333', '#444444'], fileSlotTypes: types })
+    history().clear()
+    engine.mockImplementation(async () => ({ ...reply, palette: RGBW }))
+    mount(get().plate[0])
+    fireEvent.click(screen.getByTestId('paint-from-texture'))
+    await flush()
+    fireEvent.click(screen.getByTestId('paint-texture-palette'))
+    await flush()
+    fireEvent.click(screen.getByTestId('paint-texture-apply'))
+    expect([1, 2, 3, 4].map((i) => [get().slotSetup[i]?.type, get().slotSetup[i]?.brand, get().slotSetup[i]?.color])).toEqual(types.map((t, i) => [t, '', RGBW[i]]))
+    expect(get().plate[0]!.paint?.[0]?.color).toEqual({ 0: '8', 1: '12' })
+    expect(history().state().undo).toBe(1)
+    history().undo()
+    expect(get().slotSetup).toEqual({})
+    expect(get().plate[0]!.paint).toBeUndefined()
+    expect(history().state().undo).toBe(0)
+  })
+
   it('asks for the missing image when picked files leave it out, and paints nothing', async () => {
     const h = host({ 'cube.obj': 'mtllib cube.mtl\nv 0 0 0\n', 'cube.mtl': 'newmtl a\nmap_Kd cube.png\n' }, ['cube.obj', 'cube.mtl'])
     mount(get().plate[1], h)

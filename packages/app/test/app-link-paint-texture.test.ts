@@ -112,14 +112,22 @@ describe.skipIf(!liveEngine)('paint.from_texture over the app link', () => {
     await expect(call('from_texture', { object: e.id, mode: 'palette' })).rejects.toMatchObject({ code: 'refused' })
   })
 
-  it('picks the filament colors from the texture in palette mode and sets them on apply', async () => {
-    set({ slotSetup: {}, printerSlots: [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }] as FilamentSlot[] })
+  it('picks the filament colors from the texture in palette mode and sets them on apply, each keeping its type', async () => {
+    const types = ['PETG', 'ABS', 'PLA', 'TPU']
+    set({ slotSetup: {}, printerSlots: [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }] as FilamentSlot[], fileSlotTypes: types })
     const e = await open('textured-cube.obj', 'textured-cube.mtl', 'quadrants.png')
+    const steps = history().state().undo
     const pv = (await call('from_texture', { object: e.id, mode: 'palette' })).output
     expect(pv.palette).toHaveLength(4)
     expect(pv.changed).toBe(true)
     await call('apply', { preview: pv.preview })
-    expect([1, 2, 3, 4].map((i) => get().slotSetup[i]?.color)).toEqual(pv.palette)
+    expect([1, 2, 3, 4].map((i) => [get().slotSetup[i]?.type, get().slotSetup[i]?.color])).toEqual(types.map((t, i) => [t, pv.palette![i]]))
+    expect(Object.keys(get().plate[0]!.paint?.[0]?.color ?? {}).length).toBeGreaterThan(0)
+    expect(history().state().undo).toBe(steps + 1)
+    history().undo()
+    expect(get().slotSetup).toEqual({})
+    expect(get().plate[0]!.paint).toBeUndefined()
+    expect(history().state().undo).toBe(steps)
   })
 
   it('refuses a preview applied after the project changed', async () => {
