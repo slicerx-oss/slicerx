@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Tracing an image: a value per pixel that is above zero inside, specks and pinholes cleaned away, and closed rings
-//! along the zero line by marching squares with sub-pixel edges.
-//!
-//! inside regions are 8-connected and outside ones 4-connected, in the cleanup and in the ambiguous cells alike, so
-//! every ring is closed and simple and bounds exactly one region. rings are in working px with y up, the image
-//! spanning 0 to w and 0 to h: outer rings counterclockwise, holes clockwise.
+//! Tracing an image into closed rings: a value per pixel, specks cleaned away, sub-pixel marching squares.
+// inside regions are 8-connected and outside ones 4-connected, in the cleanup and in the ambiguous cells alike, so
+// every ring is closed and simple and bounds exactly one region. rings are in working px with y up, the image
+// spanning 0 to w and 0 to h: outer rings counterclockwise, holes clockwise.
 // pixel and edge offsets are within the field, made from its own width and height
 #![allow(clippy::indexing_slicing)]
 // grid coordinates run one cell past each side, so they are signed; they stay far below 2^31
@@ -31,6 +29,12 @@ pub const MAX_LOOPS: usize = 2000;
 pub const MAX_COLORS: usize = 8;
 /// keeps a crossing off the pixel centers, so two rings never share a point
 const EPS: f32 = 1e-4;
+/// The largest color tolerance; no two colors are much further apart.
+pub const MAX_TOLERANCE: f64 = 100.0;
+/// how far past the tolerance a color is fully outside
+const COLOR_BAND: f32 = 12.0;
+/// marks a region that touches the image edge, beside its pixel count
+const EDGE: u32 = 1 << 31;
 
 /// What counts as inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -164,8 +168,8 @@ fn luma(p: [u8; 4]) -> f32 {
     0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2])
 }
 
-/// The threshold that best splits a histogram into two groups (largest between-group variance); the middle of a run
-/// of equal best splits. None for a histogram with one value.
+/// The threshold that best splits a histogram in two (largest between-group variance), none for one value.
+// the middle of a run of equal best splits, so a pure black and white image splits at 127
 #[must_use]
 pub fn otsu(hist: &[u64; 256]) -> Option<u8> {
     let n: u64 = hist.iter().sum();
@@ -260,8 +264,10 @@ pub fn field(r: &Raster, o: &TraceOptions) -> Result<(Field, Mode, Option<f64>)>
         if o.colors.len() > MAX_COLORS {
             return Err(Error::invalid_arg(format!("pick at most {MAX_COLORS} colors")));
         }
-        if !(o.color_tolerance >= 0.0 && o.color_tolerance.is_finite()) {
-            return Err(Error::invalid_arg("the color tolerance is 0 or more"));
+        if !(0.0..=MAX_TOLERANCE).contains(&o.color_tolerance) {
+            return Err(Error::invalid_arg(format!(
+                "the color tolerance is 0 to {MAX_TOLERANCE}"
+            )));
         }
         o.colors.iter().map(|&c| oklab(&lut, c)).collect()
     } else {
@@ -288,7 +294,19 @@ pub fn field(r: &Raster, o: &TraceOptions) -> Result<(Field, Mode, Option<f64>)>
                             (a * a + b * b + e * e).sqrt()
                         })
                         .fold(f32::INFINITY, f32::min);
-                    (tol - d) / 100.0
+                    // inside up to the tolerance, the picked color itself at 0. a picked color and a far one sit at
+                    // 0.5 and -0.5, so a hard edge between them lands halfway as in the other modes; colors near
+                    // the tolerance move the edge toward them
+                    if d <= tol {
+                        let half = tol / 2.0;
+                        if half > 0.0 {
+                            0.5 - 0.25 * ((d - half) / half).clamp(0.0, 1.0)
+                        } else {
+                            0.5
+                        }
+                    } else {
+                        -0.5 * ((d - tol) / COLOR_BAND).min(1.0)
+                    }
                 };
                 match seen.get(&rgb) {
                     Some(&v) => v,
@@ -312,24 +330,27 @@ pub fn field(r: &Raster, o: &TraceOptions) -> Result<(Field, Mode, Option<f64>)>
     Ok((Field { w, h, v }, mode, threshold))
 }
 
-/// Labels the 8-connected inside regions, or the 4-connected outside ones, from 1 in scan order (0 for the other
-/// side). Returns each region's pixel count and whether it touches the image edge.
-fn label(f: &Field, inside: bool, labels: &mut Vec<u32>) -> Vec<(usize, bool)> {
+/// Labels the inside or outside regions from 1 in scan order, each with its pixel count, or none past `limit` rings.
+// inside regions are 8-connected and each has an outer ring; outside ones are 4-connected and those clear of the
+// image edge are holes. a region is its count, with EDGE set when it touches the image edge
+fn label(f: &Field, inside: bool, labels: &mut Vec<u32>, limit: usize) -> Option<Vec<u32>> {
     let (w, h) = (f.w, f.h);
     labels.clear();
     labels.resize(w * h, 0);
     let mut regions = Vec::new();
-    let mut stack = Vec::new();
+    let mut rings = 0usize;
+    let mut stack: Vec<u32> = Vec::new();
     let is = |i: usize| (f.v[i] > 0.0) == inside;
     for start in 0..w * h {
         if labels[start] != 0 || !is(start) {
             continue;
         }
         let id = u32::try_from(regions.len() + 1).unwrap_or(u32::MAX);
-        let (mut count, mut edge) = (0usize, false);
+        let (mut count, mut edge) = (0u32, false);
         labels[start] = id;
-        stack.push(start);
+        stack.push(start as u32);
         while let Some(i) = stack.pop() {
+            let i = i as usize;
             count += 1;
             let (x, y) = (i % w, i / w);
             edge |= x == 0 || y == 0 || x + 1 == w || y + 1 == h;
@@ -353,13 +374,17 @@ fn label(f: &Field, inside: bool, labels: &mut Vec<u32>) -> Vec<(usize, bool)> {
                 let j = ny as usize * w + nx as usize;
                 if labels[j] == 0 && is(j) {
                     labels[j] = id;
-                    stack.push(j);
+                    stack.push(j as u32);
                 }
             }
         }
-        regions.push((count, edge));
+        regions.push(if edge { count | EDGE } else { count });
+        rings += usize::from(inside || !edge);
+        if rings > limit {
+            return None;
+        }
     }
-    regions
+    Some(regions)
 }
 
 /// Drops inside regions of fewer than `min_px` pixels, then fills holes of fewer.
@@ -368,19 +393,19 @@ pub fn despeckle(f: &mut Field, min_px: f64) -> Dropped {
     if min_px <= 1.0 {
         return out;
     }
-    let small = |n: usize| (n as f64) < min_px;
+    let small = |r: u32| f64::from(r & !EDGE) < min_px;
     let mut labels = Vec::new();
-    let regions = label(f, true, &mut labels);
-    out.specks = regions.iter().filter(|r| small(r.0)).count();
+    let regions = label(f, true, &mut labels, usize::MAX).unwrap_or_default();
+    out.specks = regions.iter().filter(|&&r| small(r)).count();
     if out.specks > 0 {
         for (v, &l) in f.v.iter_mut().zip(&labels) {
-            if l != 0 && small(regions[l as usize - 1].0) {
+            if l != 0 && small(regions[l as usize - 1]) {
                 *v = -*v;
             }
         }
     }
-    let regions = label(f, false, &mut labels);
-    let hole = |r: &(usize, bool)| !r.1 && small(r.0);
+    let regions = label(f, false, &mut labels, usize::MAX).unwrap_or_default();
+    let hole = |r: &u32| r & EDGE == 0 && small(*r);
     out.holes = regions.iter().filter(|r| hole(r)).count();
     if out.holes > 0 {
         for (v, &l) in f.v.iter_mut().zip(&labels) {
@@ -395,12 +420,28 @@ pub fn despeckle(f: &mut Field, min_px: f64) -> Dropped {
 /// The rings along the zero line of `f`, grouped into shapes in scan order of their regions.
 pub fn contours(f: &Field) -> Result<Vec<Shape>> {
     let (w, h) = (f.w as i64, f.h as i64);
-    // the image sits in a ring of outside pixels, so every contour closes
+    // rings are the inside regions and the holes, so they are counted before any crossing is kept
+    let too_many = || {
+        Error::invalid(
+            "image",
+            format!("more than {MAX_LOOPS} loops; drop larger specks or trace at a smaller working size"),
+        )
+    };
+    let mut labels = Vec::new();
+    let holes = label(f, false, &mut labels, MAX_LOOPS)
+        .ok_or_else(too_many)?
+        .iter()
+        .filter(|&&r| r & EDGE == 0)
+        .count();
+    let regions = label(f, true, &mut labels, MAX_LOOPS - holes).ok_or_else(too_many)?;
+    // the image sits in a ring of outside pixels, each the negative of its neighbor inside, so every contour closes
+    // and one along the image edge lands on it
     let at = |x: i64, y: i64| -> f32 {
         if x >= 0 && y >= 0 && x < w && y < h {
             f.v[(y * w + x) as usize]
         } else {
-            -1.0
+            let n = f.v[(y.clamp(0, h - 1) * w + x.clamp(0, w - 1)) as usize];
+            if n > 0.0 { -n } else { -1.0 }
         }
     };
     let stride = w + 2;
@@ -451,25 +492,15 @@ pub fn contours(f: &Field) -> Result<Vec<Shape>> {
             ay as f64 + 0.5 + t * (by - ay) as f64,
         ]
     };
-    let mut labels = Vec::new();
-    let regions = label(f, true, &mut labels);
     let region_of = |id: u64| {
         let ((ax, ay), (bx, by)) = corners(id);
         let (x, y) = if at(ax, ay) > 0.0 { (ax, ay) } else { (bx, by) };
         labels[(y * w + x) as usize] as usize - 1
     };
     let mut shapes = vec![Shape::default(); regions.len()];
-    let mut rings = 0usize;
     for s in starts {
         if !next.contains_key(&s) {
             continue;
-        }
-        rings += 1;
-        if rings > MAX_LOOPS {
-            return Err(Error::invalid(
-                "image",
-                format!("more than {MAX_LOOPS} loops; raise Remove specks or Smoothing"),
-            ));
         }
         let mut ring = Vec::new();
         let mut e = s;
@@ -607,8 +638,7 @@ mod tests {
         assert!((area(s) / want - 1.0).abs() < 0.01, "{} vs {want}", area(s));
     }
 
-    /// A 200 px image with a black square from 50 to 150, 25 black 2 x 2 specks outside it and 25 white 2 x 2
-    /// pinholes inside it, placed from a seed.
+    /// A 200 px image: a black square, 25 black 2 px specks outside it and 25 white pinholes in it, from a seed.
     fn speckled() -> Raster {
         let mut seed = 0x2545_f491_u64;
         let mut rand = |n: u64| {
@@ -856,7 +886,10 @@ mod tests {
             }
         }
         let dots = Raster::new(100, 100, px).unwrap();
-        assert!(msg(trace(&dots, &opts())).contains("raise Remove specks"));
+        assert_eq!(
+            msg(trace(&dots, &opts())),
+            "image: more than 2000 loops; drop larger specks or trace at a smaller working size"
+        );
         assert!(
             msg(trace(
                 &dots,
@@ -883,5 +916,228 @@ mod tests {
         assert_eq!(a.working_px, [100, 67]);
         assert_eq!(a.image_px, [300, 200]);
         assert_eq!(a.shapes.len(), 1);
+    }
+
+    /// A field of `n` single inside pixels two apart, in rows of 50.
+    fn dots(n: usize) -> Field {
+        let (w, h) = (100, n.div_ceil(50) * 2);
+        let mut v = vec![-0.5f32; w * h];
+        for i in 0..n {
+            v[(i / 50) * 2 * w + (i % 50) * 2] = 0.5;
+        }
+        Field { w, h, v }
+    }
+
+    #[test]
+    fn exactly_the_ring_limit_traces_and_one_more_is_refused() {
+        assert_eq!(contours(&dots(MAX_LOOPS)).unwrap().len(), MAX_LOOPS);
+        assert!(contours(&dots(MAX_LOOPS + 1)).is_err());
+        // holes count too: one block with 1999 pinholes is 2000 rings
+        let (w, h) = (100, 86);
+        let mut v = vec![0.5f32; w * h];
+        for i in 0..MAX_LOOPS {
+            v[(1 + (i / 48) * 2) * w + 1 + (i % 48) * 2] = -0.5;
+        }
+        assert!(contours(&Field { w, h, v: v.clone() }).is_err());
+        v[w + 1] = 0.5;
+        let s = contours(&Field { w, h, v }).unwrap();
+        assert_eq!((s.len(), s[0].holes.len()), (1, MAX_LOOPS - 1));
+    }
+
+    #[test]
+    fn a_4096_checkerboard_is_refused_before_its_crossings_are_kept() {
+        let n = 4096;
+        let v = (0..n * n)
+            .map(|i| if (i % n + i / n) % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        let f = Field { w: n, h: n, v };
+        let t = std::time::Instant::now();
+        assert!(
+            contours(&f)
+                .unwrap_err()
+                .to_string()
+                .contains("more than 2000 loops")
+        );
+        // keeping its 33 million crossings took seconds and gigabytes; counting stops at the limit
+        assert!(t.elapsed().as_secs_f64() < 2.0, "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn a_shape_touching_the_image_edge_reaches_it() {
+        let all = Field {
+            w: 30,
+            h: 20,
+            v: vec![0.5; 600],
+        };
+        let s = contours(&all).unwrap();
+        let b = bbox(&s[0].outer);
+        for (got, want) in b.iter().zip([0.0, 0.0, 30.0, 20.0]) {
+            assert!((got - want).abs() < 1e-9, "{b:?}");
+        }
+        // a square flush with the top left corner of the image, in y up from 25 to 40
+        let img = draw(40, 40, WHITE, |x, y| (x < 15.0 && y < 15.0).then_some(BLACK));
+        let t = trace(&img, &opts()).unwrap();
+        let b = bbox(&t.shapes[0].outer);
+        for (got, want) in b.iter().zip([0.0, 25.0, 15.0, 40.0]) {
+            assert!((got - want).abs() < 0.01, "{b:?}");
+        }
+        assert!((area(&t.shapes[0]) - 225.0).abs() < 0.6, "{}", area(&t.shapes[0]));
+    }
+
+    #[test]
+    fn a_tolerance_of_0_picks_exactly_the_color_and_a_tight_one_leaves_a_near_shade() {
+        let mut px = vec![WHITE; 100];
+        for p in &mut px[..30] {
+            *p = [220, 30, 40, 255];
+        }
+        for p in &mut px[60..70] {
+            *p = [210, 40, 50, 255];
+        }
+        let img = Raster::new(10, 10, px).unwrap();
+        let pick = |color_tolerance: f64| {
+            trace(
+                &img,
+                &TraceOptions {
+                    mode: Mode::Color,
+                    colors: vec![[220, 30, 40]],
+                    color_tolerance,
+                    ..opts()
+                },
+            )
+            .unwrap()
+        };
+        let exact = pick(0.0);
+        assert_eq!(exact.shapes.len(), 1);
+        assert!((area(&exact.shapes[0]) - 30.0).abs() < 1.0);
+        assert_eq!(pick(1.0).shapes.len(), 1);
+        assert_eq!(pick(12.0).shapes.len(), 2);
+    }
+
+    #[test]
+    fn every_bad_option_is_refused_with_its_reason() {
+        let img = draw(20, 20, WHITE, |x, y| {
+            (x > 5.0 && y > 5.0 && x < 15.0 && y < 15.0).then_some(BLACK)
+        });
+        let color = |colors: usize, color_tolerance: f64| TraceOptions {
+            mode: Mode::Color,
+            colors: vec![[0, 0, 0]; colors],
+            color_tolerance,
+            ..opts()
+        };
+        let dark = |t: f64| TraceOptions {
+            mode: Mode::Dark,
+            threshold: Some(t),
+            ..opts()
+        };
+        let cases = [
+            (dark(256.0), "argument: the threshold is 0 to 255"),
+            (dark(f64::NAN), "argument: the threshold is 0 to 255"),
+            (dark(-1.0), "argument: the threshold is 0 to 255"),
+            (
+                TraceOptions {
+                    speck_px: -1.0,
+                    ..opts()
+                },
+                "argument: the speck size is 0 or more",
+            ),
+            (
+                TraceOptions {
+                    speck_px: f64::NAN,
+                    ..opts()
+                },
+                "argument: the speck size is 0 or more",
+            ),
+            (
+                TraceOptions {
+                    max_side_px: 0,
+                    ..opts()
+                },
+                "argument: the working size is 1 to 4096 px",
+            ),
+            (color(1, -1.0), "argument: the color tolerance is 0 to 100"),
+            (color(1, f64::NAN), "argument: the color tolerance is 0 to 100"),
+            (color(1, 1e10), "argument: the color tolerance is 0 to 100"),
+            (color(9, 12.0), "argument: pick at most 8 colors"),
+        ];
+        for (o, want) in cases {
+            assert_eq!(trace(&img, &o).unwrap_err().to_string(), want);
+        }
+        assert_eq!(trace(&img, &color(8, 12.0)).unwrap().shapes.len(), 1);
+    }
+
+    #[test]
+    fn light_takes_the_light_side_of_the_automatic_threshold() {
+        let img = draw(40, 40, BLACK, |x, y| {
+            ((10.0..30.0).contains(&x) && (10.0..30.0).contains(&y)).then_some(WHITE)
+        });
+        let t = trace(
+            &img,
+            &TraceOptions {
+                mode: Mode::Light,
+                ..opts()
+            },
+        )
+        .unwrap();
+        assert_eq!(t.threshold, Some(127.0));
+        assert_eq!(t.shapes.len(), 1);
+        assert!((area(&t.shapes[0]) - 400.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn a_half_clear_dark_pixel_is_outside_in_dark_mode() {
+        let mut px = vec![WHITE; 25];
+        px[12] = [0, 0, 0, 100];
+        px[6] = BLACK;
+        let img = Raster::new(5, 5, px).unwrap();
+        let t = trace(
+            &img,
+            &TraceOptions {
+                mode: Mode::Dark,
+                threshold: Some(127.0),
+                ..opts()
+            },
+        )
+        .unwrap();
+        // the black pixel alone, not joined to its half clear neighbor at the corner
+        assert_eq!(t.shapes.len(), 1);
+        assert!(area(&t.shapes[0]) < 0.75, "{}", area(&t.shapes[0]));
+    }
+
+    #[test]
+    fn cleanup_joins_specks_at_corners_and_leaves_background_at_the_edge() {
+        // two pixels touching at a corner are one 2 px region, kept at a limit of 2
+        let mut f = Field {
+            w: 6,
+            h: 6,
+            v: vec![-0.5; 36],
+        };
+        f.v[2 * 6 + 2] = 0.5;
+        f.v[3 * 6 + 3] = 0.5;
+        assert_eq!(despeckle(&mut f.clone(), 2.0), Dropped::default());
+        assert_eq!(despeckle(&mut f, 3.0), Dropped { specks: 1, holes: 0 });
+        // a white notch on the image edge is background; one pixel inside is a hole
+        let mut f = Field {
+            w: 6,
+            h: 6,
+            v: vec![0.5; 36],
+        };
+        f.v[3] = -0.5;
+        assert_eq!(despeckle(&mut f.clone(), 4.0), Dropped::default());
+        f.v[3 * 6 + 3] = -0.5;
+        assert_eq!(despeckle(&mut f, 4.0), Dropped { specks: 0, holes: 1 });
+        // a speck in a small hole goes, and then the hole is filled
+        let mut f = Field {
+            w: 9,
+            h: 9,
+            v: vec![0.5; 81],
+        };
+        for y in 3..6 {
+            for x in 3..6 {
+                f.v[y * 9 + x] = -0.5;
+            }
+        }
+        f.v[4 * 9 + 4] = 0.5;
+        assert_eq!(despeckle(&mut f, 10.0), Dropped { specks: 1, holes: 1 });
+        assert!(f.v.iter().all(|&v| v > 0.0));
     }
 }
