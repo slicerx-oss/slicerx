@@ -4,7 +4,7 @@
 export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP, layerConfig, nearestGoalBy, defaultWallGenerator, PRESET_OWN_PRINTERS, presetDefaults, SLICERX_PRESET_DEFAULTS } from './easy'
 export { SETTINGS, SETTING_NOTES, PROJECT_KEYS, ORCA_COMMIT, registerSettingText, clearSettingText, settingDef, settingsFor, invalidates, defaultConfig } from './schema'
 export { importFlat, importOrcaProfile, exportOrcaProfile, orcaReadable, withoutRefusedValues, mergeConfigs, mergeLayers, ProfileError, PROFILE_META_KEYS, LEGACY_KEYS, LEGACY_GROUPS } from './import'
-export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unavailableIn } from './validate'
+export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unavailableIn, rangeMessage, usualRangeMessage } from './validate'
 export { diffConfigs, firstStage, formatValue, sameValue, toSettingsPlan } from './diff'
 export { isVisible, settingsForTier, isEnabled, failedConditions, disabledKeys, scalarOf, numberOf, widthOf } from './config'
 export type { VisibilityContext, UserTier } from './config'

@@ -363,6 +363,54 @@
     ],
     "message": "Layer height 0.28 mm is outside the sleipnir range 0.1 to 0.2 mm."
    }
+  ],
+  "layer height under its only limit": [
+   {
+    "code": "out_of_range",
+    "severity": "error",
+    "keys": [
+     "layer_height"
+    ],
+    "message": "Layer height is 0; it must be at least 0.01 mm.",
+    "fix": {
+     "key": "layer_height",
+     "value": 0.01
+    }
+   }
+  ],
+  "filament diameter under its only limit": [
+   {
+    "code": "out_of_range",
+    "severity": "error",
+    "keys": [
+     "filament_diameter"
+    ],
+    "message": "Filament diameter is 0; it must be at least 0.01 mm."
+   }
+  ],
+  "prime tower rib length over its only limit": [
+   {
+    "code": "out_of_range",
+    "severity": "error",
+    "keys": [
+     "wipe_tower_extra_rib_length"
+    ],
+    "message": "Prime tower extra rib length is 400; it must be at most 300 mm.",
+    "fix": {
+     "key": "wipe_tower_extra_rib_length",
+     "value": 300
+    }
+   }
+  ],
+  "first layer bed temperature over its only limit": [
+   {
+    "code": "out_of_range",
+    "severity": "error",
+    "keys": [
+     "hot_plate_temp_initial_layer"
+    ],
+    "message": "Hot plate temp initial layer is 400; it must be at most 300 C."
+   }
   ]
  }
 }
