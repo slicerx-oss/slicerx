@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Raster images: PNG and JPEG decoded to one RGBA level, turned upright by their EXIF orientation, and box reduced
-//! in linear light.
+//! Raster images: PNG and JPEG decoded upright to one RGBA level, box reduced in linear light.
 // pixel offsets are within each image's pixel count, made from its own width and height
 #![allow(clippy::indexing_slicing)]
 
 use crate::fm::Fm as _;
 
-/// The largest side kept. A bigger PNG is reduced row by row while it decodes; a bigger JPEG is refused.
+/// The largest side kept; a bigger image is box reduced while it decodes.
 pub const MAX_SIDE: usize = 4096;
 /// A PNG past this is refused before it decodes.
 const MAX_PNG_SIDE: usize = 4 * MAX_SIDE;
+/// A JPEG past this is refused before it decodes.
+// a JPEG decodes whole before it is reduced: 8192 px covers 24 and 48 MP photos
+const MAX_JPEG_SIDE: usize = 2 * MAX_SIDE;
+/// The most pixels a file may have.
+const MAX_PIXELS: usize = 100_000_000;
 /// The largest file read.
 pub const MAX_BYTES: usize = 30 << 20;
 
@@ -189,7 +193,7 @@ fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     if w == 0 || h == 0 {
         return Err(Unusable::Damaged);
     }
-    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE {
+    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE || w * h > MAX_PIXELS {
         return Err(Unusable::TooLarge);
     }
     let (color, _) = reader.output_color_type();
@@ -199,62 +203,130 @@ fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
         return Err(Unusable::TooLarge);
     }
     let (ow, oh) = (w.div_ceil(k), h.div_ceil(k));
-    let light = Light::new();
-    let mut out: Vec<[u8; 4]> = Vec::with_capacity(ow * oh);
+    // reserved once the first rows have decoded, so a header alone commits no memory
+    let mut out: Vec<[u8; 4]> = Vec::new();
     if reader.info().interlaced {
         let size = reader.output_buffer_size().ok_or(Unusable::TooLarge)?;
         let mut buf = vec![0u8; size];
         let info = reader.next_frame(&mut buf).map_err(|_| Unusable::Damaged)?;
         let line = info.line_size;
+        out.reserve_exact(ow * oh);
         for y in 0..h {
             let row = buf.get(y * line..(y + 1) * line).ok_or(Unusable::Damaged)?;
             to_rgba(color, row, &mut out);
         }
     } else {
-        // row by row, so the file's pixels are never all held at once; past the largest side k rows at a time,
-        // each k x k block averaged in linear light
-        let mut band: Vec<Vec<[u8; 4]>> = Vec::with_capacity(k);
-        let mut block = Vec::with_capacity(k * k);
-        let mut y = 0;
-        while y < h {
+        // row by row, so the file's pixels are never all held at once
+        let mut shrink = Shrink::new(k, w);
+        for y in 0..h {
             let row = reader
                 .next_row()
                 .map_err(|_| Unusable::Damaged)?
                 .ok_or(Unusable::Damaged)?;
-            y += 1;
+            if y == 0 {
+                out.reserve_exact(ow * oh);
+            }
             if k == 1 {
                 to_rgba(color, row.data(), &mut out);
                 continue;
             }
             let mut px = Vec::with_capacity(w);
             to_rgba(color, row.data(), &mut px);
-            band.push(px);
-            if band.len() == k || y == h {
-                for ox in 0..ow {
-                    block.clear();
-                    for r in &band {
-                        block.extend_from_slice(r.get(ox * k..((ox + 1) * k).min(w)).unwrap_or_default());
-                    }
-                    out.push(light.average(&block));
-                }
-                band.clear();
-            }
+            shrink.row(px, y + 1 == h, &mut out);
         }
     }
+    // reads on to the end, where an eXIf chunk may come after the pixels; a damaged tail costs only the orientation
+    let _ = reader.finish();
     let exif = reader.info().exif_metadata.as_ref().map(|e| e.to_vec());
     let mut r = Raster::new(ow, oh, out)?;
     r.file_size = (w, h);
     Ok((r, exif))
 }
 
+/// A JPEG's frame kind and size from its frame header, before anything decodes.
+fn jpeg_frame(bytes: &[u8]) -> Option<(u8, usize, usize)> {
+    let mut i = 2;
+    loop {
+        if *bytes.get(i)? != 0xFF {
+            return None;
+        }
+        let m = *bytes.get(i + 1)?;
+        match m {
+            // fill bytes and markers with no length
+            0xFF => i += 1,
+            0x01 | 0xD0..=0xD7 => i += 2,
+            // the scan starts with no frame seen
+            0xD9 | 0xDA => return None,
+            _ => {
+                let len = usize::from(u16::from_be_bytes([*bytes.get(i + 2)?, *bytes.get(i + 3)?]));
+                // every start of frame but huffman tables (c4), the reserved c8 and arithmetic conditioning (cc)
+                if (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC) {
+                    let h = u16::from_be_bytes([*bytes.get(i + 5)?, *bytes.get(i + 6)?]);
+                    let w = u16::from_be_bytes([*bytes.get(i + 7)?, *bytes.get(i + 8)?]);
+                    return Some((m, usize::from(w), usize::from(h)));
+                }
+                i += 2 + len;
+            }
+        }
+    }
+}
+
+/// k x k blocks of pixels averaged in linear light, k rows at a time.
+struct Shrink {
+    k: usize,
+    w: usize,
+    band: Vec<Vec<[u8; 4]>>,
+    block: Vec<[u8; 4]>,
+    light: Light,
+}
+
+impl Shrink {
+    fn new(k: usize, w: usize) -> Self {
+        Self {
+            k,
+            w,
+            band: Vec::with_capacity(k),
+            block: Vec::with_capacity(k * k),
+            light: Light::new(),
+        }
+    }
+
+    fn row(&mut self, px: Vec<[u8; 4]>, last: bool, out: &mut Vec<[u8; 4]>) {
+        self.band.push(px);
+        if self.band.len() < self.k && !last {
+            return;
+        }
+        for ox in 0..self.w.div_ceil(self.k) {
+            self.block.clear();
+            for r in &self.band {
+                let end = ((ox + 1) * self.k).min(self.w);
+                self.block
+                    .extend_from_slice(r.get(ox * self.k..end).unwrap_or_default());
+            }
+            out.push(self.light.average(&self.block));
+        }
+        self.band.clear();
+    }
+}
+
 fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     use zune_jpeg::zune_core::bytestream::ZCursor;
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
+    // the decoder reports a size over its limits as a damaged file, so the size is read first
+    if let Some((kind, w, h)) = jpeg_frame(bytes) {
+        if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE || w * h > MAX_PIXELS {
+            return Err(Unusable::TooLarge);
+        }
+        // only baseline, extended huffman and progressive are read; the decoder calls the rest damaged
+        if kind > 0xC2 {
+            return Err(Unusable::Unsupported);
+        }
+    }
     let options = DecoderOptions::default()
         .jpeg_set_out_colorspace(ColorSpace::RGB)
-        .set_max_width(MAX_SIDE)
-        .set_max_height(MAX_SIDE);
+        .set_max_width(MAX_JPEG_SIDE)
+        .set_max_height(MAX_JPEG_SIDE);
     let mut dec = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options);
     let rgb = dec.decode().map_err(|e| match e {
         zune_jpeg::errors::DecodeErrors::LargeDimensions(_) => Unusable::TooLarge,
@@ -266,13 +338,23 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     if rgb.len() != w * h * 3 {
         return Err(Unusable::Damaged);
     }
-    let px = rgb
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .map(|&[r, g, b]| [r, g, b, 255])
-        .collect();
-    Ok((Raster::new(w, h, px)?, dec.exif().cloned()))
+    let exif = dec.exif().cloned();
+    drop(dec);
+    let k = w.max(h).div_ceil(MAX_SIDE).max(1);
+    let mut px = Vec::with_capacity(w.div_ceil(k) * h.div_ceil(k));
+    let mut shrink = Shrink::new(k, w);
+    for (y, row) in rgb.chunks_exact(w * 3).enumerate() {
+        let row = row.as_chunks::<3>().0.iter().map(|&[r, g, b]| [r, g, b, 255]);
+        if k == 1 {
+            px.extend(row);
+        } else {
+            shrink.row(row.collect(), y + 1 == h, &mut px);
+        }
+    }
+    drop(rgb);
+    let mut r = Raster::new(w.div_ceil(k), h.div_ceil(k), px)?;
+    r.file_size = (w, h);
+    Ok((r, exif))
 }
 
 /// The EXIF orientation (1 to 8) in a TIFF block, 1 when it has none.
@@ -371,8 +453,7 @@ pub(crate) mod tests {
         !c
     }
 
-    /// A PNG of `w` x `h` pixels of `channels` bytes each (1 gray, 3 RGB, 4 RGBA), rows from the top, with an
-    /// optional eXIf chunk.
+    /// A PNG of `w` x `h` pixels, `channels` bytes each (1 gray, 3 RGB, 4 RGBA), with an optional eXIf chunk.
     pub(crate) fn png(w: usize, h: usize, channels: usize, data: &[u8], exif: Option<&[u8]>) -> Vec<u8> {
         let mut raw = Vec::with_capacity((w * channels + 1) * h);
         for y in 0..h {
@@ -405,17 +486,49 @@ pub(crate) mod tests {
         out
     }
 
-    /// A little endian TIFF block holding only an orientation.
+    /// A little endian TIFF block: an image width, the orientation and a resolution unit.
     pub(crate) fn exif_orientation(o: u16) -> Vec<u8> {
         let mut t = b"II*\0".to_vec();
         t.extend_from_slice(&8u32.to_le_bytes());
-        t.extend_from_slice(&1u16.to_le_bytes());
-        t.extend_from_slice(&0x0112u16.to_le_bytes());
         t.extend_from_slice(&3u16.to_le_bytes());
-        t.extend_from_slice(&1u32.to_le_bytes());
-        t.extend_from_slice(&o.to_le_bytes());
-        t.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        for (tag, v) in [(0x0100u16, 48u16), (0x0112, o), (0x0128, 2)] {
+            t.extend_from_slice(&tag.to_le_bytes());
+            t.extend_from_slice(&3u16.to_le_bytes());
+            t.extend_from_slice(&1u32.to_le_bytes());
+            t.extend_from_slice(&v.to_le_bytes());
+            t.extend_from_slice(&[0, 0]);
+        }
+        t.extend_from_slice(&[0, 0, 0, 0]);
         t
+    }
+
+    /// `png` with a chunk put just before its end.
+    fn with_chunk_at_end(png: &[u8], kind: [u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut out = png[..png.len() - 12].to_vec();
+        out.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&crc32(&body).to_be_bytes());
+        out.extend_from_slice(&png[png.len() - 12..]);
+        out
+    }
+
+    /// The start of a JPEG whose frame header of kind `sof` says `w` x `h`, and nothing after it.
+    fn jpeg_header(sof: u8, w: u16, h: u16) -> Vec<u8> {
+        let mut j = vec![0xFF, 0xD8, 0xFF, sof, 0, 11, 8];
+        j.extend_from_slice(&h.to_be_bytes());
+        j.extend_from_slice(&w.to_be_bytes());
+        j.extend_from_slice(&[1, 1, 0x11, 0]);
+        j
+    }
+
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!(
+            "{}/tests/fixtures/trace/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
     }
 
     /// The checked-in JPEG: 48 x 32, white with a black 16 px square 4 px in from the top left.
@@ -429,12 +542,17 @@ pub(crate) mod tests {
 
     /// `jpeg` with an APP1 EXIF segment holding `tiff` put right after its start marker.
     fn with_exif(jpeg: &[u8], tiff: &[u8]) -> Vec<u8> {
-        let mut out = jpeg[..2].to_vec();
+        with_exif_at(jpeg, tiff, 2)
+    }
+
+    /// `jpeg` with an APP1 EXIF segment holding `tiff` put `at` bytes in.
+    fn with_exif_at(jpeg: &[u8], tiff: &[u8], at: usize) -> Vec<u8> {
+        let mut out = jpeg[..at].to_vec();
         out.extend_from_slice(&[0xFF, 0xE1]);
         out.extend_from_slice(&u16::try_from(tiff.len() + 8).unwrap().to_be_bytes());
         out.extend_from_slice(b"Exif\0\0");
         out.extend_from_slice(tiff);
-        out.extend_from_slice(&jpeg[2..]);
+        out.extend_from_slice(&jpeg[at..]);
         out
     }
 
@@ -511,26 +629,27 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn every_orientation_puts_the_marked_corner_where_exif_says() {
-        // 3 x 2 with the top left marked; where each orientation shows it
-        let mut px = vec![[255u8, 255, 255, 255]; 6];
-        px[0] = [0, 0, 0, 255];
-        let src = Raster::new(3, 2, px).unwrap();
-        let want = [
-            (1, 0, 0),
-            (2, 2, 0),
-            (3, 2, 1),
-            (4, 0, 1),
-            (5, 0, 0),
-            (6, 1, 0),
-            (7, 1, 2),
-            (8, 0, 2),
+    fn every_orientation_shows_the_whole_image_as_exif_says() {
+        // 3 x 2, pixels 0 1 2 over 3 4 5; each orientation as it is shown, rows from the top
+        let src = Raster::new(3, 2, (0..6).map(|v| [v, 0, 0, 255]).collect()).unwrap();
+        let want: [(u8, usize, [u8; 6]); 8] = [
+            (1, 3, [0, 1, 2, 3, 4, 5]),
+            (2, 3, [2, 1, 0, 5, 4, 3]),
+            (3, 3, [5, 4, 3, 2, 1, 0]),
+            (4, 3, [3, 4, 5, 0, 1, 2]),
+            (5, 2, [0, 3, 1, 4, 2, 5]),
+            (6, 2, [3, 0, 4, 1, 5, 2]),
+            (7, 2, [5, 2, 4, 1, 3, 0]),
+            (8, 2, [2, 5, 1, 4, 0, 3]),
         ];
-        for (o, x, y) in want {
+        for (o, w, grid) in want {
             let r = upright(src.clone(), o);
-            assert!(dark(&r, x, y), "orientation {o}");
-            assert_eq!(r.w * r.h, 6);
-            assert_eq!((r.w, r.h) == (2, 3), o >= 5, "orientation {o}");
+            assert_eq!((r.w, r.h), (w, 6 / w), "orientation {o}");
+            assert_eq!(
+                r.px.iter().map(|p| p[0]).collect::<Vec<_>>(),
+                grid,
+                "orientation {o}"
+            );
         }
         assert_eq!(orientation(&exif_orientation(6)), 6);
         assert_eq!(orientation(b"II*\0"), 1);
@@ -540,6 +659,70 @@ pub(crate) mod tests {
         be.extend_from_slice(&1u16.to_be_bytes());
         be.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 3, 0, 0]);
         assert_eq!(orientation(&be), 3);
+    }
+
+    #[test]
+    fn a_png_with_its_exif_chunk_after_the_pixels_is_turned_upright() {
+        let mut gray = vec![255u8; 6];
+        gray[0] = 0;
+        let file = with_chunk_at_end(&png(3, 2, 1, &gray, None), *b"eXIf", &exif_orientation(8));
+        let r = decode(&file).unwrap();
+        assert_eq!((r.w, r.h), (2, 3));
+        assert!(dark(&r, 0, 2));
+    }
+
+    #[test]
+    fn a_jpeg_too_large_is_refused_as_too_large_before_it_decodes() {
+        assert_eq!(
+            decode(&jpeg_header(0xC0, 8193, 10)).err(),
+            Some(Unusable::TooLarge)
+        );
+        assert_eq!(
+            decode(&jpeg_header(0xC2, 65535, 65535)).err(),
+            Some(Unusable::TooLarge)
+        );
+        assert_eq!(
+            decode(&jpeg_header(0xC0, 10, 8193)).err(),
+            Some(Unusable::TooLarge)
+        );
+        // within the limit, a header alone is only damaged
+        assert_eq!(
+            decode(&jpeg_header(0xC0, 8192, 8192)).err(),
+            Some(Unusable::Damaged)
+        );
+        // arithmetic coding is not read
+        assert_eq!(
+            decode(&jpeg_header(0xC9, 8, 8)).err(),
+            Some(Unusable::Unsupported)
+        );
+        // a PNG with more pixels than the budget, though each side is within its limit
+        let mut file = png(1, 1, 3, &[0; 3], None);
+        file[16..20].copy_from_slice(&16_000u32.to_be_bytes());
+        file[20..24].copy_from_slice(&16_000u32.to_be_bytes());
+        let crc = crc32(&file[12..29]);
+        file[29..33].copy_from_slice(&crc.to_be_bytes());
+        assert_eq!(decode(&file).err(), Some(Unusable::TooLarge));
+    }
+
+    #[test]
+    fn a_jpeg_over_the_largest_side_is_reduced_in_linear_light() {
+        let r = decode(&fixture("wide.jpg")).unwrap();
+        assert_eq!((r.w, r.h), (2052, 8));
+        assert_eq!(r.file_size, (4104, 16));
+        assert!(dark(&r, 10, 4) && !dark(&r, 2040, 4));
+    }
+
+    #[test]
+    fn a_subsampled_jpeg_and_exif_after_the_first_segment_read_too() {
+        let r = decode(&fixture("square-420.jpg")).unwrap();
+        assert_eq!((r.w, r.h), (48, 32));
+        assert!(dark(&r, 10, 10) && !dark(&r, 40, 10));
+        // after the comment segment the encoder writes first
+        let jpeg = fixture_jpeg();
+        let at = 4 + usize::from(u16::from_be_bytes([jpeg[4], jpeg[5]]));
+        let r = decode(&with_exif_at(&jpeg, &exif_orientation(6), at)).unwrap();
+        assert_eq!((r.w, r.h), (32, 48));
+        assert!(dark(&r, 21, 10));
     }
 
     #[test]
