@@ -132,10 +132,10 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
             .map(|(f, r)| centroid(&r.iter().map(|&p| f.at(p, 0.0)).collect::<Vec<V3>>()))
             .collect();
         let way = alongs(&centers, opts.closed);
-        let facing: Vec<bool> = rings
+        let facing: Vec<V3> = rings
             .iter()
             .zip(&way)
-            .map(|((f, _), a)| vec3::dot(f.w, *a) >= 0.0)
+            .map(|((f, _), a)| toward(f.w, *a))
             .collect();
         by_landmarks(profiles, &rings, open, &facing, &centers)?
     } else {
@@ -170,22 +170,27 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     );
     // Every closed ring winds counterclockwise about the way the loft goes from it. Open chains all run one way: the
     // first that bends winds the way it and the line across its ends go around, and the rest run the way their
-    // neighbors run. Landmarked rings keep their matched points, so they turn all together or not at all.
+    // neighbors run, taken as the planes turn between them. Landmarked rings keep their matched points, so they turn
+    // all together or not at all.
+    let facing: Vec<V3> = sections
+        .iter()
+        .zip(&along)
+        .map(|(s, a)| toward(s.frame.w, *a))
+        .collect();
     if marked {
         same_way(&mut sections, &along, open);
     } else {
-        orient(&mut sections, &along, open);
+        orient(&mut sections, &along, &facing, open);
     }
-    let facing: Vec<V3> = (0..count)
-        .map(|k| {
-            let w = sections[k].frame.w;
-            if vec3::dot(w, along[k]) < 0.0 {
-                vec3::scale(w, -1.0)
-            } else {
-                w
-            }
-        })
-        .collect();
+    // open chains joined end to end around a ring must meet the first the same way when they come back to it
+    if open && opts.closed && crossed(&sections[count - 1], &sections[0], facing[count - 1], facing[0]) {
+        return Err(Error::geometry(
+            "loft",
+            format!(
+                "profile {count} meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
+            ),
+        ));
+    }
     let pairs = if opts.closed { count } else { count - 1 };
     for k in 0..pairs {
         let j = (k + 1) % count;
@@ -246,7 +251,7 @@ fn alongs(centers: &[V3], closed: bool) -> Vec<V3> {
 }
 
 /// Turns each ring to run the way the loft needs; see [`loft_with`].
-fn orient(sections: &mut [Section], along: &[V3], open: bool) {
+fn orient(sections: &mut [Section], along: &[V3], facing: &[V3], open: bool) {
     let count = sections.len();
     if !open {
         for (s, a) in sections.iter_mut().zip(along) {
@@ -267,10 +272,10 @@ fn orient(sections: &mut [Section], along: &[V3], open: bool) {
         sections[first].flat.reverse();
     }
     for k in (0..first).rev() {
-        follow(sections, k, k + 1);
+        follow(sections, facing, k, k + 1);
     }
     for k in first + 1..count {
-        follow(sections, k, k - 1);
+        follow(sections, facing, k, k - 1);
     }
 }
 
@@ -415,8 +420,9 @@ impl<'a> Measured<'a> {
 ///
 /// The landmarks' order sets the way each ring runs when it can: three or more on a closed ring, two or more on an open
 /// chain, ends included. A ring with fewer runs the way the others do: a closed one winds about the loft as they do
-/// (`facing` says whether its plane faces along the loft), and an open one starts at the end nearest its neighbor's
-/// start, each taken about its middle (`centers`). Closed rings whose landmarks wind opposite ways are refused.
+/// (`facing`: each plane's normal along the loft), and an open one starts at the end nearest its neighbor's start,
+/// each taken about its middle (`centers`) as the planes turn between them. Closed rings whose landmarks wind opposite
+/// ways are refused.
 #[allow(
     clippy::too_many_lines,
     reason = "find the landmarks, settle each ring's way, count each run, then spread it"
@@ -425,7 +431,7 @@ fn by_landmarks(
     profiles: &[Profile],
     rings: &[(Frame, Vec<V2>)],
     open: bool,
-    facing: &[bool],
+    facing: &[V3],
     centers: &[V3],
 ) -> Result<Vec<Vec<V2>>> {
     let count = rings.len();
@@ -503,6 +509,7 @@ fn by_landmarks(
         let settle = |k: usize, to: usize, way: &mut Vec<bool>| {
             way[k] = ways[k].unwrap_or_else(|| {
                 let (s, e) = ends(to, way[to]);
+                let (s, e) = (turned(s, facing[to], facing[k]), turned(e, facing[to], facing[k]));
                 let cost = |fwd: bool| {
                     let (a, b) = ends(k, fwd);
                     let (x, y) = (vec3::sub(a, s), vec3::sub(b, e));
@@ -519,7 +526,7 @@ fn by_landmarks(
         }
     } else {
         // closed rings all wind one way about the loft: the way the first whose landmarks set it winds
-        let winds = |k: usize, fwd: bool| fwd == facing[k];
+        let winds = |k: usize, fwd: bool| fwd == (vec3::dot(rings[k].0.w, facing[k]) > 0.0);
         let set = ways.iter().position(Option::is_some);
         let want = set.is_none_or(|r| winds(r, ways[r].unwrap_or(true)));
         for k in 0..count {
@@ -617,24 +624,54 @@ fn by_landmarks(
     Ok(out)
 }
 
-/// Turns section `k` end for end when that lines it up better with section `to`, each taken about its own center.
-fn follow(sections: &mut [Section], k: usize, to: usize) {
-    let (a, b) = (&sections[to], &sections[k]);
+/// Turns section `k` end for end when that lines it up better with section `to`; see [`crossed`].
+fn follow(sections: &mut [Section], facing: &[V3], k: usize, to: usize) {
+    if crossed(&sections[to], &sections[k], facing[to], facing[k]) {
+        sections[k].ring.reverse();
+        sections[k].flat.reverse();
+    }
+}
+
+/// Whether `b` lines up better with `a` end for end, each taken about its own center and `a` turned as the planes turn
+/// between them (`na`, `nb`: each plane's normal along the loft).
+fn crossed(a: &Section, b: &Section, na: V3, nb: V3) -> bool {
     let n = a.ring.len();
-    let off = |p: V3, c: V3| vec3::sub(p, c);
     let cost = |rev: bool| -> f64 {
         (0..n)
             .map(|i| {
                 let j = if rev { n - 1 - i } else { i };
-                let e = vec3::sub(off(a.ring[i], a.center), off(b.ring[j], b.center));
+                let e = vec3::sub(
+                    turned(vec3::sub(a.ring[i], a.center), na, nb),
+                    vec3::sub(b.ring[j], b.center),
+                );
                 vec3::dot(e, e)
             })
             .sum()
     };
-    if cost(true) < cost(false) {
-        sections[k].ring.reverse();
-        sections[k].flat.reverse();
+    cost(true) < cost(false)
+}
+
+/// A plane's normal `w` turned to face the way the loft goes (`along`).
+fn toward(w: V3, along: V3) -> V3 {
+    if vec3::dot(w, along) < 0.0 {
+        vec3::scale(w, -1.0)
+    } else {
+        w
     }
+}
+
+/// `v` turned by the least rotation that takes the unit `from` onto the unit `to`; as it is when they point opposite
+/// ways, which two neighboring planes facing along the loft never do.
+fn turned(v: V3, from: V3, to: V3) -> V3 {
+    let (w, c) = (vec3::cross(from, to), vec3::dot(from, to));
+    if c <= -1.0 + 1e-9 {
+        return v;
+    }
+    // Rodrigues' rotation with the axis scaled by the sine
+    vec3::add(
+        vec3::add(vec3::scale(v, c), vec3::cross(w, v)),
+        vec3::scale(w, vec3::dot(w, v) / (1.0 + c)),
+    )
 }
 
 fn frame_of(p: &Profile) -> Result<Frame> {
@@ -1418,7 +1455,7 @@ mod tests {
             .map(|(k, p)| (frame_of(p).unwrap(), ring_of(k, p).unwrap()))
             .collect();
         let centers: Vec<V3> = profiles.iter().map(|p| frame_of(p).unwrap().origin).collect();
-        let facing = vec![true; profiles.len()];
+        let facing = vec![[0.0, 0.0, 1.0]; profiles.len()];
         by_landmarks(profiles, &rings, open, &facing, &centers)
     }
 
