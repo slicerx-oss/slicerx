@@ -20,6 +20,8 @@ export interface SketchItem {
   on?: { body: string; part: number }
   /** model geometry projected into it (project.ts); their curves are the loops that name them */
   projections?: Projection[]
+  /** how many projection ids it has handed out; a removed one is never handed out again */
+  nextProjection?: number
 }
 
 type Extrude = Extract<StepParams, { op: 'shape.extrude' }>

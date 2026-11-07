@@ -347,6 +347,29 @@ function projectionsOf(v: unknown): Pick<SketchItem, 'projections'> {
   return out.length ? { projections: out } : {}
 }
 
+const MAX_PROJECTION = 1_000_000
+
+/**
+ * How many projection ids each sketch has handed out: its saved count, or the highest id its projections, its loops or
+ * the features on it name, so an id a file dropped or never counted is not handed out again.
+ */
+function projectionCounts(items: readonly unknown[]): Map<string, number> {
+  const out = new Map<string, number>()
+  const see = (sketch: unknown, id: unknown) => {
+    const n = typeof id === 'number' ? id : Number(/^p(\d+)$/.exec(typeof id === 'string' ? id : '')?.[1] ?? 0)
+    if (typeof sketch === 'string' && Number.isInteger(n) && n > 0 && n <= MAX_PROJECTION) out.set(sketch, Math.max(out.get(sketch) ?? 0, n))
+  }
+  for (const it of items) {
+    if (!obj(it)) continue
+    if (it['kind'] === 'sketch') {
+      see(it['id'], it['nextProjection'])
+      if (Array.isArray(it['projections'])) for (const p of it['projections'].slice(0, 256)) if (obj(p)) see(it['id'], p['id'])
+      if (Array.isArray(it['loops'])) for (const l of it['loops']) if (obj(l)) see(it['id'], l['projected'])
+    } else if (Array.isArray(it['projected'])) for (const id of it['projected'].slice(0, 256)) see(it['sketch'], id)
+  }
+  return out
+}
+
 // the body a sketch sits on; anything malformed is dropped, the sketch kept
 function onOf(v: unknown): Pick<SketchItem, 'on'> {
   if (!obj(v) || typeof v['body'] !== 'string' || !Number.isInteger(v['part']) || (v['part'] as number) < 0) return {}
@@ -391,11 +414,13 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
   if (!histories.size) return null
   const items: Item[] = []
   let marker = 0
+  const counted = projectionCounts(j['items'] as unknown[])
   ;(j['items'] as unknown[]).forEach((it, i) => {
     if (!obj(it)) return
     if (it['kind'] === 'sketch') {
       const name = typeof it['name'] === 'string' && it['name'].trim() ? it['name'].trim().slice(0, 100) : 'Sketch'
-      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']), ...projectionsOf(it['projections']) }
+      const n = counted.get(it['id'] as string) ?? 0
+      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']), ...projectionsOf(it['projections']), ...(n ? { nextProjection: n } : {}) }
       items.push(k)
     } else {
       const step = histories.get(it['body'] as string)?.steps.find((s) => s.id === it['id'])
