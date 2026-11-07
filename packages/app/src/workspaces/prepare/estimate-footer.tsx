@@ -14,8 +14,8 @@ import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
-import { openResume } from '../../plate/resume-state'
-import { printEverythingAgain, RESUME_VOID } from '../../plate/resume-tops'
+import { RESUME_VOID } from '../../plate/resume-tops'
+import { ResumeElsewhereNote, ResumeVoidActions } from '../../plate/resume-void-actions'
 import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
 import { checkingSlowly, engineVerdict, preflightProblem } from '../../plate/engine-check'
 import { clearanceTrouble } from '../../plate/sequence-check'
@@ -155,17 +155,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       {unsafe !== null && !(trouble !== null && unsafe === heads) ? (
         <p className="app-err" role="alert">
           {unsafe}
-          {unsafe === RESUME_VOID ? (
-            <>
-              {' '}
-              <button type="button" className="est-show" data-testid="resume-plan-again" onClick={() => openResume()}>
-                Plan again
-              </button>{' '}
-              <button type="button" className="est-show" data-testid="resume-print-everything" onClick={() => printEverythingAgain()}>
-                Print everything again
-              </button>
-            </>
-          ) : null}
+          {unsafe === RESUME_VOID ? <ResumeVoidActions /> : null}
           {hit !== null ? ' ' : null}
           {hit !== null ? (
             <button type="button" className="est-show" data-testid="slice-block-show" {...tipAttrs({ title: 'Show me', body: 'Go to the first strike in the sliced plate.' })} onClick={() => void showSpot({ kind: 'collision', index: hit })}>
@@ -176,7 +166,9 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       ) : (trouble !== null || check !== null) && (!done || done.stale) ? (
         <PreflightWarning plan={trouble} check={check} checking={checking} />
       ) : null}
-      {slice.status === 'error' ? (
+      <ResumeElsewhereNote />
+      {/* A slice the kept resume plan refused says so once, above, with its two ways on. */}
+      {slice.status === 'error' && !(slice.code === 'resume_void' && unsafe === RESUME_VOID) ? (
         <p className="app-err est-error" role="alert" data-testid="slice-estimate-error">
           {slice.message}
           {refused !== null ? ' ' : null}

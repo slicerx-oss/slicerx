@@ -83,8 +83,9 @@ export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
  * its answer replaces the rule's, and that answer holds nothing back (the slice decides).
  */
 export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'> & Partial<Pick<AppState, 'plateCheck' | 'resume'>>): string | null {
-  // A resume plan kept for another plate, or for this one before a change, would print the whole plate into the part on
-  // the bed: Print and Export wait until it is planned again or cleared (Print everything again). Callers pass the store.
+  // A resume plan kept for this plate from before a change to it: the plate does not slice (slicePlate refuses), and
+  // Print and Export wait until it is planned again or cleared (Print everything again). A plan kept for another plate
+  // holds nothing here. Callers pass the store.
   if (s.resume) {
     const voided = resumeVoid(s as AppState)
     if (voided) return voided

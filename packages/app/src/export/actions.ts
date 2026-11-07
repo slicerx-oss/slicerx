@@ -15,6 +15,7 @@ import { heldBodies } from '../plate/timeline'
 import { markClean } from '../project/unsaved'
 import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
+import { exportAllBlock } from '../plate/resume-tops'
 import { appName } from '../edition'
 import { exportingUserId } from './identity'
 import { savedPaintNote } from './paint-check'
@@ -210,6 +211,11 @@ export async function printGcode3mf(gcode: string, plateNumber?: number): Promis
 
 /** Print output: slices every plate that has objects and writes them all into one .gcode.3mf. */
 export async function exportAllPlates(host: Host): Promise<boolean> {
+  const blocked = exportAllBlock(get())
+  if (blocked) {
+    toast(blocked, 'error')
+    return false
+  }
   const start = get().activePlate
   const gcode: Record<number, string> = {}
   const plates = get().plates

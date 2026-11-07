@@ -127,7 +127,7 @@ export const SLICE_ONLY_COMMANDS: ReadonlySet<string> = new Set(['slice', 'slice
 const SLICER_COMMANDS: ReadonlySet<string> = new Set([
   'user-presets', 'printer-settings', 'bridge-open', 'apps-open', 'vary-layer-height', 'brim-toggle', 'expert-open', 'expert-reset',
   'calibration', 'flush-volumes', 'paint-support', 'paint-seam', 'paint-fuzzy', 'volume-blocker', 'volume-enforcer', 'volume-modifier', 'toolpath-palette',
-  'check-printers', 'toggle-printable', 'print-rest',
+  'check-printers', 'toggle-printable', 'print-rest', 'print-everything',
 ])
 const SLICER_PREFIXES = ['nozzle-', 'goal-', 'speed-', 'layer-', 'preview-']
 

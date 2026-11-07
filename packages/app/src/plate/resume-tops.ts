@@ -5,7 +5,7 @@
 // engine works them out from the plate as the job sliced it, so the plan never counts in layers of its own making.
 import type { Host } from '@slicerx/contracts'
 import { INPUTS } from '../state/slice-inputs'
-import { fullPlate, get, markStale, set, type AppState } from '../state/store'
+import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
 export function sliceState(s: AppState): AppState {
@@ -32,23 +32,56 @@ export const KEY_LEAVES_OUT: Readonly<Partial<Record<(typeof INPUTS)[number], st
 }
 const KEY_INPUTS = INPUTS.filter((k) => !(k in KEY_LEAVES_OUT))
 
-/** What of an object moves layers: its mesh, placement, filaments, paint, volumes, settings and ears; not its name, thumbnail or lock. */
-const objectKey = (e: AppState['plate'][number]): unknown[] => [e.id, e.handle.hash, e.parts.map((p) => [p.name, p.slot]), e.transform, e.printable ?? true, e.slotOverrides ?? null, e.paint ?? null, e.volumes ?? null, e.partSettings ?? null, e.brimPoints ?? null, e.layerRanges ?? null]
+/**
+ * The fields of an object (PlateEntry) the key leaves out, and why: none of them moves layers. Every other field is in
+ * the key, so a new field counts until it is named here.
+ */
+export const OBJECT_LEAVES_OUT = {
+  name: 'what the object is called',
+  colors: 'the colors the object shows in the view',
+  thumb: 'its picture in lists',
+  instanceOf: 'which object it copies; its mesh hash and placement are in the key',
+  splitOf: 'which model it was split from; its own mesh is in the key',
+  locked: 'whether it can be moved, not where it is',
+  source: 'where the model came from, for the file',
+  dimensions: 'measurements drawn on it',
+  history: 'its modeling history; the mesh it made is in the key',
+} as const satisfies Partial<Record<keyof PlateEntry, string>>
 
-/** A user preset by what it sets: not its name or when it was saved or tuned. */
-function presetKey(p: Record<string, unknown>): Record<string, unknown> {
-  const { name: _n, createdAt: _c, updatedAt: _u, tuned, ...rest } = p
-  const t = tuned as { results?: Record<string, Record<string, unknown>> } | undefined
-  if (!t?.results) return tuned === undefined ? rest : { ...rest, tuned }
-  return { ...rest, tuned: { ...t, results: Object.fromEntries(Object.entries(t.results).map(([r, { at: _at, ...v }]) => [r, v])) } }
+/** What of an object moves layers: every field but OBJECT_LEAVES_OUT, the mesh by its hash and parts by name and filament. */
+function objectKey(e: PlateEntry): unknown[] {
+  const rec = e as unknown as Record<string, unknown>
+  return Object.keys(rec)
+    .filter((k) => !(k in OBJECT_LEAVES_OUT) && rec[k] !== undefined && !(k === 'printable' && rec[k] === true))
+    .sort()
+    .map((k) => [k, k === 'handle' ? e.handle.hash : k === 'parts' ? e.parts.map((p) => [p.name, p.slot]) : rec[k]])
 }
 
-/** An input as the key reads it: the printer's slots by filament (not what is left on a spool or its tag), presets by their values (not when they were saved). */
-function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState): unknown {
+/**
+ * The tuned filament presets a slice reads (tunedValues, measuredHoleClearance) by what they set, not by name or save
+ * time. They stay in the store's order: tunedValues applies them in it, so with two for one spool the later wins. A
+ * result keeps its time, since the newest measurement of a spool is the one used.
+ */
+function tunedPresets(s: AppState): unknown[] {
+  return s.userPresets.filter((p) => p.kind === 'filament' && p.tuned?.key).map((p) => [p.id, p.values, p.tuned])
+}
+
+/** An input as the key reads it, narrowed to what moves the shown plate's layers. */
+function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState, ids: ReadonlySet<string>): unknown {
+  // The printer's slots by filament and color, not what is left on a spool or its tag.
   if (k === 'printerSlots') return s.printerSlots.map((slot) => [slot.id, slot.material ?? null, slot.color ?? null])
-  if (k === 'userPresets') return s.userPresets.map((p) => presetKey(p as unknown as Record<string, unknown>))
+  if (k === 'userPresets') return tunedPresets(s)
+  // Object settings of this plate's objects only.
+  if (k === 'objectSettings') return Object.entries(s.objectSettings).filter(([id]) => ids.has(id)).sort(([x], [y]) => (x < y ? -1 : 1))
+  // The nozzles and extruders of the printer the slice uses only.
+  const printer = s.printerModel?.id
+  if (k === 'printerNozzles') return printer ? (s.printerNozzles[printer] ?? null) : null
+  if (k === 'printerExtruders') return printer ? (s.printerExtruders[printer] ?? null) : null
   return s[k] ?? null
 }
+
+/** State outside INPUTS that picks a slot's filament preset, and so its tuned values (shrinkage moves layers). */
+export const KEY_SLOT_MATCH = ['slotMatch', 'fileSlotTypes', 'fileSlotVendors', 'printerModel'] as const satisfies readonly (keyof AppState)[]
 
 /** JSON with mesh arrays as their lengths (the handle hash names their content) and the shipped G-code left out. */
 const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${(v as { length?: number }).length ?? 0}` : key === 'shippedGcode' ? undefined : v)
@@ -58,17 +91,20 @@ let last: { refs: unknown[]; key: string } | null = null
 /**
  * What the shown plate's layers come from, as one key: the slice inputs (state/slice-inputs.ts INPUTS) that move
  * layers, but not the ones KEY_LEAVES_OUT names: each object's layer inputs as the slice sees the plate, this plate's
- * own settings and calibration, the profile and its layer, the Easy choices, overrides, object settings, filament slots,
- * the printer's slots by filament, flush, the prime tower, user presets by their values, nozzles, extruders and the
- * bed. A spool reload (new grams left or a new tag), a rename, a lock or a thumbnail leaves it as it was. Equal keys
+ * own settings and calibration, the profile and its layer, the Easy choices, overrides, this plate's object settings,
+ * filament slots and what matches them to presets, the printer's slots by filament, flush, the prime tower, tuned
+ * filament presets, the slice printer's nozzles and extruders and the bed. A spool reload (new grams left or a new tag), a rename, a lock or a thumbnail leaves it as it was. Equal keys
  * mean a slice would plan the same layers. The last key is kept while none of these change.
  */
 export function sliceInputsKey(s: AppState): string {
   const meta = s.plates.find((p) => p.id === s.activePlate)
-  const refs: unknown[] = [s.plate, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k])]
+  const refs: unknown[] = [s.plate, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k]), ...KEY_SLOT_MATCH.map((k) => s[k])]
   if (last && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) return last.key
-  const objects = fullPlate(s).map(objectKey)
-  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s))], lean))
+  const entries = fullPlate(s)
+  const ids = new Set(entries.map((e) => e.id))
+  const objects = entries.map(objectKey)
+  const slots = KEY_SLOT_MATCH.map((k) => (k === 'printerModel' ? (s.printerModel?.id ?? null) : s[k]))
+  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s, ids)), slots], lean))
   last = { refs, key }
   return key
 }
@@ -137,12 +173,37 @@ export async function resumeLayers(host: Host, signal: AbortSignal): Promise<Res
   }
 }
 
-/** Why Print and Export wait while a resume plan is kept that no longer matches the shown plate (activeResume). */
-export const RESUME_VOID = 'The resume plan no longer matches this plate. Plan it again, or choose Print everything again.'
+/**
+ * Why the plate does not slice, and Print and Export wait, while a resume plan is kept for the shown plate that no longer
+ * matches it (activeResume): a slice of the whole plate would print into the part still on the bed.
+ */
+export const RESUME_VOID = 'The resume plan for this plate no longer matches it, so the plate does not slice, print or export. Plan it again, or choose Print everything again.'
 
-/** RESUME_VOID while a resume plan is kept that does not hold for the shown plate as it is; else null. */
+/** RESUME_VOID while a resume plan is kept for the shown plate that does not hold for it as it is; else null. A plan for another plate holds nothing here. */
 export function resumeVoid(s: AppState): string | null {
-  return s.resume && !activeResume(s) ? RESUME_VOID : null
+  return s.resume && s.resume.plate === s.activePlate && !activeResume(s) ? RESUME_VOID : null
+}
+
+/** The plate a kept resume plan was made for, as the person counts plates (1 based); null with no plan. */
+function resumePlate(s: AppState): number | null {
+  if (!s.resume) return null
+  const i = s.plates.findIndex((p) => p.id === s.resume?.plate)
+  return i >= 0 ? i + 1 : null
+}
+
+/** The plate a kept resume plan was made for (1 based) while another plate is shown: that plate prints freely. */
+export function resumeElsewhere(s: AppState): number | null {
+  return s.resume && s.resume.plate !== s.activePlate ? resumePlate(s) : null
+}
+
+/**
+ * Why every plate does not slice into one file while a resume plan is kept: one plate of it would print only the rest
+ * of a part. Null with no plan.
+ */
+export function exportAllBlock(s: AppState): string | null {
+  if (!s.resume) return null
+  const n = resumePlate(s)
+  return `A resume plan is kept${n ? ` for plate ${n}` : ''}. Print that plate on its own, or choose Print everything again first.`
 }
 
 /** Print everything again: drops the resume plan, so the next slice, Print and Export are of the whole plate. */
