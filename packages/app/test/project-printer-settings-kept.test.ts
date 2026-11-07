@@ -115,8 +115,10 @@ describe("a project's printer settings on its own printer", () => {
       extruder_max_nozzle_count: ['3'],
       host_type: 'octoprint',
       bbl_use_printhost: '1',
+      nozzle_height: '9',
     }))
-    for (const k of ['printable_height', 'nozzle_type', 'nozzle_hrc', 'extruder_clearance_radius', 'extruder_clearance_height_to_rod', 'extruder_clearance_height_to_lid', 'extruder_printable_height', 'gcode_flavor', 'printable_area', 'bed_exclude_area', 'printer_notes', 'machine_max_printed_mass', 'extruder_max_nozzle_count', 'host_type', 'bbl_use_printhost']) {
+    expect(base['nozzle_height']).not.toBe(9)
+    for (const k of ['nozzle_height', 'printable_height', 'nozzle_type', 'nozzle_hrc', 'extruder_clearance_radius', 'extruder_clearance_height_to_rod', 'extruder_clearance_height_to_lid', 'extruder_printable_height', 'gcode_flavor', 'printable_area', 'bed_exclude_area', 'printer_notes', 'machine_max_printed_mass', 'extruder_max_nozzle_count', 'host_type', 'bbl_use_printhost']) {
       expect.soft(cfg[k], k).toEqual(base[k])
     }
   })

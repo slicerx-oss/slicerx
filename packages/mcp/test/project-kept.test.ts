@@ -94,10 +94,10 @@ describe("a project slice keeps the file's printer settings, as the app's projec
     expect.soft(opened!.config['machine_max_acceleration_z']).toEqual([500, 150])
   })
 
-  it("keeps the profile's bed height, nozzle, clearances and firmware", async () => {
+  it("keeps the profile's bed height, nozzle, nozzle height, clearances and firmware", async () => {
     await profiles.prepare(['machine:bambu-p1s'])
     const base = await openProject(readProjectFile(project('base.3mf', {})), profiles, ['machine:bambu-p1s'], 0.4)
-    const held = { printable_height: '400', nozzle_type: ['hardened_steel'], nozzle_hrc: '60', extruder_clearance_radius: '1', gcode_flavor: 'klipper' }
+    const held = { printable_height: '400', nozzle_type: ['hardened_steel'], nozzle_hrc: '60', extruder_clearance_radius: '1', gcode_flavor: 'klipper', nozzle_height: '9' }
     const opened = await openProject(readProjectFile(project('held.3mf', held)), profiles, ['machine:bambu-p1s'], 0.4)
     for (const k of Object.keys(held)) expect.soft(opened!.config[k], k).toEqual(base!.config[k])
   })
