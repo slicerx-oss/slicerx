@@ -2,230 +2,222 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T16:21:07.131Z",
+ "capturedAt": "2026-11-07T17:36:49.455Z",
  "steps": [
   {
-   "text": "I'll model the box, lid and hinge knuckles as one part, then check the result.",
+   "text": "Here is the plan so far. I'll confirm the sizes first, then design the box and lid with a print-in-place hinge, slice it for the Prusa MK4S in PETG, and queue it only if you ask.\n\n1. Confirm the sizes on the sheet (needs your OK).\n2. Plan the features and build the box, lid and hinge.\n3. Check the part against the plan.\n4. Set the printer and PETG spool, then slice (needs your OK to queue).",
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "pilot.sheet",
      "args": {
-      "name": "SD card box with print-in-place hinge",
-      "material": "PETG",
-      "solids": [
+      "title": "SD card box with print-in-place hinge",
+      "views": [
+       "front",
+       "top",
+       "side",
+       "iso"
+      ],
+      "part": [
        {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         0
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          60,
+          0
+         ],
+         [
+          60,
+          40
+         ],
+         [
+          0,
+          40
+         ]
         ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         39,
-         23
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
-       },
-       {
-        "type": "box",
-        "atMm": [
-         0,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         46,
-         39,
-         23
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
-       },
-       {
-        "type": "box",
-        "atMm": [
-         46,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         16,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 28
-       },
-       {
-        "type": "box",
-        "atMm": [
-         16,
-         37,
-         26.5
-        ],
-        "sizeMm": [
-         28,
-         3,
-         1.5
-        ]
-       },
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 3,
-        "heightMm": 60
+        "from": 0,
+        "to": 30
        }
       ],
-      "profiles": [
+      "dims": [
        {
-        "loops": [
-         {
-          "points": [
-           [
-            0,
-            0
-           ],
-           [
-            60,
-            0
-           ],
-           [
-            60,
-            40
-           ],
-           [
-            0,
-            40
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            2,
-            2
-           ],
-           [
-            2,
-            38
-           ],
-           [
-            58,
-            38
-           ],
-           [
-            58,
-            2
-           ]
-          ]
-         }
-        ],
-        "heightMm": 20,
-        "atMm": [
-         0,
-         0,
-         0
-        ]
+        "key": "box_length",
+        "label": "Overall length (X)",
+        "value": 60,
+        "unit": "mm",
+        "min": 60,
+        "max": 60,
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          60,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
        },
        {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            37.5
-           ],
-           [
-            2.5,
-            37.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            35.5
-           ],
-           [
-            55.5,
-            35.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
+        "key": "box_width",
+        "label": "Overall width (Y)",
+        "value": 40,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          60,
+          0,
+          0
+         ],
+         "b": [
+          60,
+          40,
+          0
+         ],
+         "off": [
+          6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "box_height",
+        "label": "Overall height (Z)",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          60,
+          40,
+          0
+         ],
+         "b": [
+          60,
+          40,
+          30
+         ],
+         "off": [
+          6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Enough for PETG at 0.4 mm nozzle (3 perimeters)",
+        "at": {
+         "a": [
+          0,
+          40,
+          30
+         ],
+         "b": [
+          2,
+          40,
+          30
+         ],
+         "off": [
+          0,
+          6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "lid_height",
+        "label": "Lid height (split line on box)",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Box body 20 mm, lid 10 mm",
+        "at": {
+         "a": [
+          0,
+          40,
+          0
+         ],
+         "b": [
+          0,
+          40,
+          20
+         ],
+         "off": [
+          -6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hinge_pin",
+        "label": "Hinge pin diameter",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Pin runs along X at the back edge",
+        "at": {
+         "a": [
+          30,
+          40,
+          19
+         ],
+         "b": [
+          30,
+          40,
+          21
+         ],
+         "off": [
+          3,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hinge_gap",
+        "label": "Print-in-place clearance",
+        "value": 0.4,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Gap between moving knuckles; PETG typically 0.3 to 0.5 mm",
+        "at": {
+         "a": [
+          40,
+          40,
+          20
+         ],
+         "b": [
+          40,
+          40,
+          20.4
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
        }
-      ],
-      "holes": []
+      ]
      }
     }
    ]
@@ -233,224 +225,97 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "design.plan",
      "args": {
-      "name": "SD card box with print-in-place hinge",
-      "material": "PETG",
-      "solids": [
+      "part": "SD card box with print-in-place hinge",
+      "units": "mm",
+      "features": [
        {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
+        "name": "Box body",
+        "kind": "extrude",
+        "sizes": {
+         "length": 60,
+         "width": 40,
+         "height": 20
+        }
        },
        {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
+        "name": "Interior cavity",
+        "kind": "cut",
+        "sizes": {
+         "wall": 2,
+         "depth": 18
+        }
        },
        {
-        "type": "box",
-        "atMm": [
-         0,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3.5
-        ]
+        "name": "Lid",
+        "kind": "extrude",
+        "sizes": {
+         "length": 60,
+         "width": 40,
+         "height": 10,
+         "wall": 2
+        }
        },
        {
-        "type": "cylinder",
-        "atMm": [
-         46,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
+        "name": "Hinge knuckles",
+        "kind": "extrude",
+        "sizes": {
+         "pin_diameter": 2,
+         "clearance": 0.4
+        }
        },
        {
-        "type": "box",
-        "atMm": [
-         46,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3.5
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         16,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 28
-       },
-       {
-        "type": "box",
-        "atMm": [
-         16,
-         37,
-         26.5
-        ],
-        "sizeMm": [
-         28,
-         3,
-         1.5
-        ]
-       },
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 3,
-        "heightMm": 60
+        "name": "Hinge pin",
+        "kind": "extrude",
+        "sizes": {
+         "diameter": 2
+        }
        }
       ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            0,
-            0
-           ],
-           [
-            60,
-            0
-           ],
-           [
-            60,
-            40
-           ],
-           [
-            0,
-            40
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            2,
-            2
-           ],
-           [
-            2,
-            38
-           ],
-           [
-            58,
-            38
-           ],
-           [
-            58,
-            2
-           ]
-          ]
-         }
-        ],
-        "heightMm": 20,
-        "atMm": [
-         0,
-         0,
-         0
-        ]
-       },
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            35.5
-           ],
-           [
-            2.5,
-            35.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            33.5
-           ],
-           [
-            55.5,
-            33.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
-       }
+      "assumptions": [
+       "Overall 60 x 40 x 30 mm, lid split at 20 mm so the body is 20 mm and the lid 10 mm",
+       "Hinge runs along the back edge (Y = 40), pin along X",
+       "Clearance of 0.4 mm between moving knuckles, print in place",
+       "Open interior, no SD card slots or dividers (not asked)",
+       "Print orientation: box lying flat, lid open on the bed"
       ],
-      "holes": []
+      "questions": [
+       "Do you want card slots or dividers inside? SD cards are 32 x 24 x 2.1 mm each; a slot pitch of 3 mm would fit about 10 in a row."
+      ],
+      "overall": {
+       "x": 60,
+       "y": 40,
+       "z": 30
+      },
+      "holes": [
+       {
+        "name": "Hinge pin",
+        "diameter": 2,
+        "count": 1
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "text": "The plan is accepted. Building the box body first.",
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "SD card box"
+     }
+    },
+    {
+     "name": "settings.get",
+     "args": {
+      "keys": [
+       "layer_height",
+       "wall_loops",
+       "infill_sparse_density"
+      ]
      }
     }
    ]
@@ -458,213 +323,25 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "SD card box with print-in-place hinge",
-      "material": "PETG",
-      "solids": [
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         0,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
-       },
-       {
-        "type": "box",
-        "atMm": [
-         0,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3.5
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         46,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 14
-       },
-       {
-        "type": "box",
-        "atMm": [
-         46,
-         38,
-         20
-        ],
-        "sizeMm": [
-         14,
-         2,
-         3.5
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         16,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 28
-       },
-       {
-        "type": "box",
-        "atMm": [
-         16,
-         37,
-         26.5
-        ],
-        "sizeMm": [
-         28,
-         3,
-         1.5
-        ]
-       },
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       }
-      ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            0,
-            0
-           ],
-           [
-            60,
-            0
-           ],
-           [
-            60,
-            40
-           ],
-           [
-            0,
-            40
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            2,
-            2
-           ],
-           [
-            2,
-            38
-           ],
-           [
-            58,
-            38
-           ],
-           [
-            58,
-            2
-           ]
-          ]
-         }
-        ],
-        "heightMm": 20,
-        "atMm": [
-         0,
-         0,
-         0
-        ]
-       },
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            35.5
-           ],
-           [
-            2.5,
-            35.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            33.5
-           ],
-           [
-            55.5,
-            33.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
-       }
-      ],
-      "holes": []
+      "design": "d1",
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 60,
+       "heightMm": 40
+      },
+      "placement": {
+       "center": [
+        30,
+        20
+       ],
+       "rotationDeg": 0
+      },
+      "distance_mm": 20,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Box body"
      }
     }
    ]
@@ -672,78 +349,152 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "SD card box body test",
-      "material": "PETG",
-      "solids": [
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         0
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       }
-      ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            0,
-            0
-           ],
-           [
-            60,
-            0
-           ],
-           [
-            60,
-            40
-           ],
-           [
-            0,
-            40
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            2,
-            2
-           ],
-           [
-            2,
-            38
-           ],
-           [
-            58,
-            38
-           ],
-           [
-            58,
-            2
-           ]
-          ]
-         }
-        ],
-        "heightMm": 20,
-        "atMm": [
-         0,
-         0,
-         0
-        ]
-       }
-      ],
-      "holes": []
+      "design": "d1",
+      "frame": {
+       "origin": [
+        30,
+        20,
+        20
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 56,
+       "heightMm": 36
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "distance_mm": 18,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "text": "The box body is 60 x 40 x 20 with a 2 mm wall cavity. Next, the lid.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        30,
+        20,
+        20.4
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 60,
+       "heightMm": 40
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "distance_mm": 9.6,
+      "extent": "oneSide",
+      "operation": "new",
+      "name": "Lid"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        30,
+        20,
+        20.4
+       ],
+       "normal": [
+        0,
+        0,
+        -1
+       ]
+      },
+      "shape": {
+       "type": "rectangle",
+       "widthMm": 56,
+       "heightMm": 36
+      },
+      "placement": {
+       "center": [
+        0,
+        0
+       ],
+       "rotationDeg": 0
+      },
+      "distance_mm": 8,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 1
+     }
+    }
+   ]
+  },
+  {
+   "text": "The lid and its 2 mm top pocket are in place. Now the hinge: two box knuckles at the back, clearance cuts in the lid around them, a bore for the pin, then the pin.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        0,
+        38,
+        20.2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      },
+      "distance_mm": 15,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "name": "Box knuckle left"
      }
     }
    ]
@@ -751,102 +502,82 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "SD card box lid test",
-      "material": "PETG",
-      "solids": [
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         16,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 28
-       },
-       {
-        "type": "box",
-        "atMm": [
-         16,
-         37,
-         26.5
-        ],
-        "sizeMm": [
-         28,
-         3,
-         1.5
-        ]
-       }
-      ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            35.5
-           ],
-           [
-            2.5,
-            35.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            33.5
-           ],
-           [
-            55.5,
-            33.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
-       }
-      ],
-      "holes": []
+      "design": "d1",
+      "frame": {
+       "origin": [
+        60,
+        38,
+        20.2
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4
+      },
+      "distance_mm": 15,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "name": "Box knuckle right"
+     }
+    }
+   ]
+  },
+  {
+   "text": "Both box knuckles are in. Now the clearance around them in the lid, and the pin bore through the middle.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        -1,
+        38,
+        20.2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4.8
+      },
+      "distance_mm": 16.4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 1,
+      "name": "Lid clearance left"
      }
     }
    ]
@@ -854,78 +585,41 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "SD card box lid test",
-      "material": "PETG",
-      "solids": [
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       }
-      ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            35.5
-           ],
-           [
-            2.5,
-            35.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            33.5
-           ],
-           [
-            55.5,
-            33.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
-       }
-      ],
-      "holes": []
+      "design": "d1",
+      "frame": {
+       "origin": [
+        -1,
+        38,
+        20.2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4.8
+      },
+      "distance_mm": 16.4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 1,
+      "flip": true,
+      "name": "Lid clearance left"
      }
     }
    ]
@@ -933,108 +627,143 @@
   {
    "calls": [
     {
-     "name": "text_to_part",
+     "name": "geom.extrude",
      "args": {
-      "name": "SD card box lid test",
-      "material": "PETG",
-      "solids": [
-       {
-        "type": "plate",
-        "atMm": [
-         0,
-         0,
-         28
-        ],
-        "sizeMm": [
-         60,
-         40,
-         2
-        ]
-       },
-       {
-        "type": "cylinder",
-        "atMm": [
-         16,
-         39,
-         23.5
-        ],
-        "axis": "x",
-        "diameterMm": 6,
-        "heightMm": 28
-       },
-       {
-        "type": "box",
-        "atMm": [
-         16,
-         37,
-         25
-        ],
-        "sizeMm": [
-         28,
-         3,
-         3
-        ]
-       }
-      ],
-      "profiles": [
-       {
-        "loops": [
-         {
-          "points": [
-           [
-            2.5,
-            2.5
-           ],
-           [
-            57.5,
-            2.5
-           ],
-           [
-            57.5,
-            35.5
-           ],
-           [
-            2.5,
-            35.5
-           ]
-          ]
-         },
-         {
-          "points": [
-           [
-            4.5,
-            4.5
-           ],
-           [
-            4.5,
-            33.5
-           ],
-           [
-            55.5,
-            33.5
-           ],
-           [
-            55.5,
-            4.5
-           ]
-          ]
-         }
-        ],
-        "heightMm": 10,
-        "atMm": [
-         0,
-         0,
-         18
-        ]
-       }
-      ],
-      "holes": []
+      "design": "d1",
+      "frame": {
+       "origin": [
+        61,
+        38,
+        20.2
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 4.8
+      },
+      "distance_mm": 16.4,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 1,
+      "flip": true,
+      "name": "Lid clearance right"
      }
     }
    ]
   },
   {
-   "text": "I could not build the print-in-place hinge. The geometry engine rejected every version that joined the hinge knuckles to the box and lid, with intersecting faces, so no complete box with a working hinge exists yet.\n\nThree test pieces from my attempts are now on the plate: a 60 x 40 x 20 mm body shell, a 60 x 40 x 12 mm lid with its inner lip, and a 60 x 42 x 12 mm lid with one hinge knuckle. None of them is a finished part, so please delete them in Model before slicing.\n\nTwo ways forward:\n1. A 60 x 40 x 30 mm box with a friction-fit lid and no hinge. I can build this in one pass and it will print reliably in PETG.\n2. A two-part hinge with a separate pin, printed as loose pieces to assemble. This is less clean, but it avoids the fused-knuckle problem.\n\nNothing has been sliced or sent to a printer. Which option do you want?"
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        15,
+        38,
+        20.2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 2.4
+      },
+      "distance_mm": 30,
+      "extent": "oneSide",
+      "operation": "cut",
+      "part": 1,
+      "flip": true,
+      "name": "Lid pin bore"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "frame": {
+       "origin": [
+        0,
+        38,
+        20.2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ],
+       "u": [
+        0,
+        1,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "shape": {
+       "type": "circle",
+       "diameterMm": 2
+      },
+      "distance_mm": 60,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "name": "Hinge pin"
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_1",
+      "design": "d1"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The box and lid are built, but the part does not pass the plan check yet, so I have not moved on to slicing or printing.\n\n- **Passes:** overall size is 60.02 x 40 x 30 mm, and the body is closed.\n- **Fails, minimum wall:** the box knuckles are centred 2 mm from the back face, so they touch it and leave a 0.01 mm sliver. That is the real defect.\n- **Fails, hinge pin:** the check looks for a hole, but I built a 2 mm pin, so the plan's wording does not match the part.\n- **Fails, feature count:** I used 10 steps against the planned 5, so this is a plan mismatch rather than a geometry problem.\n\nThe clearance is 0.4 mm around the knuckles and the pin has 0.2 mm radial clearance in the lid bore. The lid is a 9.6 mm cap over the box rim, and the pin is fused to the box knuckles only, so the lid should swing free. I have not checked that the lid actually moves in Model.\n\nDo you want me to move the hinge axis about 2 mm in from the back face so the wall sliver goes away? That means rebuilding the knuckles and lid clearance cuts, and I would re-run the check after."
   }
- ]
+ ],
+ "defaultAnswer": true,
+ "tabTools": true
 }
