@@ -478,6 +478,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [svgFile, setSvgFile] = useDraft<{ name: string; text: string } | null>('svgFile', null)
   const [svgForm, setSvgForm] = useDraft<{ size: SvgSize; value: string; x: string; y: string }>('svgForm', () => ({ size: 'width', value: '50', x: String(Math.round((plane.min[0] + plane.max[0]) / 2)), y: String(Math.round((plane.min[1] + plane.max[1]) / 2)) }))
   const [svgBusy, setSvgBusy] = useState(false)
+  const svgRef = useRef<HTMLFieldSetElement | null>(null)
+  useEffect(() => {
+    if (svgOpen) svgRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [svgOpen, svgFile])
   const [copies, setCopies] = useDraft<{ kind: 'line' | 'circle'; count: string; dx: string; dy: string; angle: string }>('copies', { kind: 'line', count: '3', dx: '10', dy: '0', angle: '360' })
   // Mirror waits for its line, a round pattern for its center
   const [pending, setPending] = useState<{ kind: 'mirror' | 'round'; e: number } | null>(null)
@@ -1508,6 +1512,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   /** Adds the SVG's closed paths to the sketch as loops to edit; Finish sketch or Extrude records them as any drawing. */
   const doSvg = async () => {
+    // Enter in a field while an import runs would add the artwork twice
+    if (svgBusy) return
     if (!svgFile) return setNote('Choose an SVG file first.')
     setNote(null)
     setSvgBusy(true)
@@ -1828,8 +1834,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </Button>
       </div>
       {svgOpen ? (
-        <fieldset className="sketch-copies sketch-svg" data-testid="sketch-svg">
-          <legend>Import SVG</legend>
+        // the button above names it, so no caption repeats it; it scrolls into view as it opens
+        <fieldset ref={svgRef} className="sketch-copies sketch-svg" aria-label="Import SVG" data-testid="sketch-svg">
           <SvgFileField id="sk-svg-file" file={svgFile} onFile={(f) => (setSvgFile(f), setNote(null))} onError={setNote} />
           <Choice id="sk-svg-size" label="Size" ariaLabel="SVG size" value={svgForm.size} onChange={(size) => setSvgForm({ ...svgForm, size, value: size === 'scale' ? '100' : svgForm.size === 'scale' ? '50' : svgForm.value })} options={SVG_SIZES} />
           <Num id="sk-svg-value" label={SVG_SIZE_LABELS[svgForm.size]} unit={svgForm.size === 'scale' ? '%' : 'mm'} value={svgForm.value} onChange={(value) => setSvgForm({ ...svgForm, value })} onEnter={() => void doSvg()} />
