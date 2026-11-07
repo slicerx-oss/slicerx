@@ -18,7 +18,8 @@ import { setGeomProvider, toGeom } from '../src/geom/client'
 import { planResume } from '../src/geom/resume'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { setPlateLayerProfile } from '../src/plate/plates'
-import { jobLayerTops, resumeFor, resumeLayers, sliceInputsKey } from '../src/plate/resume-tops'
+import { jobLayerTops, KEY_LEAVES_OUT, resumeFor, resumeLayers, sliceInputsKey } from '../src/plate/resume-tops'
+import { INPUTS } from '../src/state/slice-inputs'
 import { forgetLayerPlans } from '../src/plate/smart-layer'
 import { compose } from '../src/plate/transform'
 import { slicePlate } from '../src/state/actions'
@@ -378,41 +379,47 @@ describe('a stored resume plan', () => {
 describe('the slice inputs key', () => {
   beforeEach(() => {
     onePlate(1, {})
-    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }] })
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], printerSlots: [{ id: 'A1', material: 'PLA', color: '#ffffff', remainingG: 600, remainingPct: 60, spoolUid: 'tag-1', spoolmanId: 3 }], userPresets: [{ id: 'u1', kind: 'filament', name: 'Mine', values: { nozzle_temperature: [215] }, createdAt: 1, updatedAt: 1 }] } as never)
   })
   const entry = (patch: Record<string, unknown>) => set({ plate: get().plate.map((e) => ({ ...e, ...patch })) })
   const meta = (patch: Record<string, unknown>) => set({ plates: get().plates.map((p) => (p.id === 'plate-1' ? { ...p, settings: { ...p.settings, ...patch } } : p)) })
   const grow = (k: string, extra: Record<string, unknown>) => set({ [k]: { ...((get() as unknown as Record<string, object>)[k] ?? {}), ...extra } } as never)
+  const slot = (patch: Record<string, unknown>) => set({ printerSlots: get().printerSlots.map((x) => ({ ...x, ...patch })) })
+  const preset = (patch: Record<string, unknown>) => set({ userPresets: (get() as unknown as { userPresets: Record<string, unknown>[] }).userPresets.map((p) => ({ ...p, ...patch })) } as never)
 
-  // Each changes only that input; each must change the key, so a stored plan stops holding.
-  const changes: [string, () => void][] = [
-    ['mesh (handle hash)', () => entry({ handle: { ...get().plate[0]!.handle, hash: 'other' } })],
-    ['placement', () => entry({ transform: compose({ position: [101, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })],
-    ['paint', () => entry({ paint: { 0: { color: { 0: '8' } } } })],
-    ['volumes', () => entry({ volumes: [{ id: 'v', name: 'v', role: 'modifier' }] })],
-    ['part settings', () => entry({ partSettings: { Body: { wall_loops: 3 } } })],
-    ['slot overrides', () => entry({ slotOverrides: { Body: 2 } })],
-    ['printable', () => entry({ printable: false })],
-    ['height ranges from a project', () => entry({ layerRanges: [{ fromMm: 0, toMm: 1, settings: { layer_height: 0.1 } }] })],
-    ['object settings', () => set({ objectSettings: { a: { layer_height: 0.12 } } })],
-    ['the plate own layer heights', () => meta({ layerProfile: [[0, 0.1]] })],
-    ['plate settings', () => meta({ sequence: 'by-object' })],
-    ['calibration', () => set({ calibration: { 'plate-1': { ranges: [] } } } as never)],
-    ['printer', () => set({ printerId: 'another' } as never)],
-    ['profile nozzle', () => set({ profile: { ...(get().profile ?? {}), nozzle: 0.6 } } as never)],
-    ['Easy vary layer height', () => set({ easy: { ...get().easy, varyLayerHeight: !get().easy.varyLayerHeight } })],
-    ['overrides', () => set({ overrides: { ...get().overrides, layer_height: 0.12 } })],
-    ['filament slots', () => set({ slotSetup: { 2: { type: 'PETG', brand: '', color: '#000' } } } as never)],
-    ["the printer's slots", () => grow('printerSlots', { x: 1 })],
-    ['flush', () => grow('flush', { x: 1 })],
-    ['prime tower', () => grow('tower', { x: 1 })],
-    ['user presets', () => set({ userPresets: [...((get() as unknown as { userPresets: unknown[] }).userPresets ?? []), { id: 'u' }] } as never)],
-    ['printer nozzles', () => grow('printerNozzles', { x: [0.6] })],
-    ['printer extruders', () => grow('printerExtruders', { x: 2 })],
-    ['bed', () => set({ bed: { ...get().bed, widthMm: 300 } })],
-    ['a history step open for editing that hides a part', () => set({ historyEdit: { stepId: 's', objectId: 'gone', original: { ...get().plate[0]!, id: 'gone' } } } as never)],
+  // Each changes one slice input (the INPUTS name first) in a way that moves layers; each must change the key.
+  const changes: [string, string, () => void][] = [
+    ['plate', 'mesh (handle hash)', () => entry({ handle: { ...get().plate[0]!.handle, hash: 'other' } })],
+    ['plate', 'placement', () => entry({ transform: compose({ position: [101, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })],
+    ['plate', 'paint', () => entry({ paint: { 0: { color: { 0: '8' } } } })],
+    ['plate', 'volumes', () => entry({ volumes: [{ id: 'v', name: 'v', role: 'modifier' }] })],
+    ['plate', 'part settings', () => entry({ partSettings: { Body: { wall_loops: 3 } } })],
+    ['plate', 'slot overrides', () => entry({ slotOverrides: { Body: 2 } })],
+    ['plate', 'printable', () => entry({ printable: false })],
+    ['plate', 'height ranges from a project', () => entry({ layerRanges: [{ fromMm: 0, toMm: 1, settings: { layer_height: 0.1 } }] })],
+    ['plate', 'brim ears', () => entry({ brimPoints: [[0, 0, 0, 3]] })],
+    ['plate', 'a part moved to another filament', () => entry({ parts: get().plate[0]!.parts.map((p) => ({ ...p, slot: 2 })) })],
+    ['plate', 'a history step open for editing that hides a part', () => set({ historyEdit: { stepId: 's', objectId: 'gone', original: { ...get().plate[0]!, id: 'gone' } } } as never)],
+    ['objectSettings', 'object settings', () => set({ objectSettings: { a: { layer_height: 0.12 } } })],
+    ['plates', 'the plate own layer heights', () => meta({ layerProfile: [[0, 0.1]] })],
+    ['plates', 'plate settings', () => meta({ sequence: 'by-object' })],
+    ['activePlate', 'the shown plate', () => set({ activePlate: 'plate-2' })],
+    ['calibration', 'calibration', () => set({ calibration: { 'plate-1': { ranges: [] } } } as never)],
+    ['printerId', 'printer', () => set({ printerId: 'another' } as never)],
+    ['profile', 'profile nozzle', () => set({ profile: { ...(get().profile ?? {}), nozzle: 0.6 } } as never)],
+    ['easy', 'Easy vary layer height', () => set({ easy: { ...get().easy, varyLayerHeight: !get().easy.varyLayerHeight } })],
+    ['overrides', 'overrides', () => set({ overrides: { ...get().overrides, layer_height: 0.12 } })],
+    ['slotSetup', 'filament slots', () => set({ slotSetup: { 2: { type: 'PETG', brand: '', color: '#000' } } } as never)],
+    ['printerSlots', "the printer's slot material", () => slot({ material: 'PETG' })],
+    ['printerSlots', "the printer's slot color", () => slot({ color: '#000000' })],
+    ['flush', 'flush', () => grow('flush', { x: 1 })],
+    ['tower', 'prime tower', () => grow('tower', { x: 1 })],
+    ['userPresets', 'a user preset value', () => preset({ values: { nozzle_temperature: [220] } })],
+    ['printerNozzles', 'printer nozzles', () => grow('printerNozzles', { x: [0.6] })],
+    ['printerExtruders', 'printer extruders', () => grow('printerExtruders', { x: 2 })],
+    ['bed', 'bed', () => set({ bed: { ...get().bed, widthMm: 300 } })],
   ]
-  for (const [name, change] of changes) {
+  for (const [, name, change] of changes) {
     it(`changes with ${name}`, () => {
       const before = sliceInputsKey(get())
       change()
@@ -420,15 +427,34 @@ describe('the slice inputs key', () => {
     })
   }
 
-  it('stays the same for state a slice does not read, a copy with the same content, and a trip to another plate and back', () => {
-    const before = sliceInputsKey(get())
-    set({ slice: { status: 'done', result: { id: 'r', layerZ: Float32Array.from([0.2]), warnings: [] }, stale: false }, layerMarks: { 'plate-1': [] } } as never)
-    expect(sliceInputsKey(get())).toBe(before)
-    set({ overrides: { ...get().overrides }, easy: { ...get().easy }, plate: get().plate.map((e) => ({ ...e })) })
-    expect(sliceInputsKey(get())).toBe(before)
-    set({ activePlate: 'plate-2' })
-    expect(sliceInputsKey(get())).not.toBe(before)
-    set({ activePlate: 'plate-1' })
-    expect(sliceInputsKey(get())).toBe(before)
+  // What changes on its own around a failed print, or is only a name or a picture: none of it moves layers.
+  const holds: [string, () => void][] = [
+    ['grams left on a spool', () => slot({ remainingG: 120 })],
+    ['percent left on a spool', () => slot({ remainingPct: 12 })],
+    ["a reloaded spool's tag", () => slot({ spoolUid: 'tag-2' })],
+    ['a spool manager id', () => slot({ spoolmanId: 9 })],
+    ['an object renamed', () => entry({ name: 'Renamed' })],
+    ['an object locked', () => entry({ locked: true })],
+    ['a new thumbnail', () => entry({ thumb: 'data:image/png;base64,AA' })],
+    ['colors shown on the object', () => entry({ colors: ['#000'] })],
+    ['where the model came from', () => entry({ source: { modelId: 'm', creatorId: 'c' } })],
+    ['a user preset renamed or saved again', () => preset({ name: 'Renamed', updatedAt: 99 })],
+    ['the profile shipped G-code', () => set({ profile: { ...(get().profile ?? {}), shippedGcode: { start: 'G28' } } } as never)],
+    ['a slice result and layer marks', () => set({ slice: { status: 'done', result: { id: 'r', layerZ: Float32Array.from([0.2]), warnings: [] }, stale: false }, layerMarks: { 'plate-1': [] } } as never)],
+    ['copies with the same content', () => set({ overrides: { ...get().overrides }, easy: { ...get().easy }, plate: get().plate.map((e) => ({ ...e })) })],
+    ['another plate shown and back', () => (set({ activePlate: 'plate-2' }), set({ activePlate: 'plate-1' }))],
+  ]
+  for (const [name, change] of holds) {
+    it(`stays the same with ${name}`, () => {
+      const before = sliceInputsKey(get())
+      change()
+      expect(sliceInputsKey(get())).toBe(before)
+    })
+  }
+
+  it('covers every slice input: each is changed above or named as left out, with a reason', () => {
+    const changed = new Set(changes.map(([input]) => input))
+    for (const k of INPUTS) expect(changed.has(k) || k in KEY_LEAVES_OUT, k).toBe(true)
+    for (const [k, why] of Object.entries(KEY_LEAVES_OUT)) expect(String(why).length, k).toBeGreaterThan(20)
   })
 })
