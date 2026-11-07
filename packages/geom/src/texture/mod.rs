@@ -1130,10 +1130,12 @@ pub(crate) mod tests {
 
     #[test]
     fn a_triangle_far_outside_the_source_is_found_without_scanning_the_empty_rings() {
-        // one small triangle 1 km off a 20 mm source square: about 10^5 empty rings, each once 10^10 cells to scan
+        // one 5 mm triangle 1000 km off a 20 mm source square. The cells are about 24 mm (the mean of the triangles'
+        // first edges, 20 and 28.3 mm), so the point is about 4.1e7 rings out. Reading each ring's every x and y, inside
+        // the grid or not, took about 4r steps a ring: some 3e15 for one lookup.
         let src = square_source();
         let mut far = TriMesh::default();
-        for p in [[1e6, 1e6, 0.0], [1e6 + 5.0, 1e6, 0.0], [1e6, 1e6 + 5.0, 0.0]] {
+        for p in [[1e9, 1e9, 0.0], [1e9 + 5.0, 1e9, 0.0], [1e9, 1e9 + 5.0, 0.0]] {
             far.push_vertex(p);
         }
         far.triangles.push([0, 1, 2]);
