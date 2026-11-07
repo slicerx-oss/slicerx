@@ -6,9 +6,7 @@ import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { budgetedClient, canStart, createBudget, DEFAULT_USD_PER_SEARCH, runLive, SEARCHES_PER_LOOKUP, STOP_MARGIN_USD, usageUsd, worstUsd, type Price } from '../evals/creative/live'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
-import { createAnthropicAdapter } from '../src/provider/anthropic'
-import { createTransportClient } from '../src/provider/client'
-import type { LlmEvent, LlmRequest } from '../src/provider/types'
+import { createAnthropicAdapter, createTransportClient, type LlmEvent, type LlmRequest } from '@slicerx/pilot'
 
 const PRICE: Price = { usdIn: 1, usdOut: 5 }
 const enc = new TextEncoder()

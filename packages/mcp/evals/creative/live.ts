@@ -2,9 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The live side of the creative evals: what a reply costs, and the budget that stops a run before its cap.
 import type { LlmHttpRequest } from '@slicerx/contracts'
-import type { ToolHost } from '../../src/tool'
-import { adapterFor } from '../../src/provider/client'
-import type { LlmClient, LlmEvent } from '../../src/provider/types'
+import type { LlmClient, LlmEvent, ToolHost } from '@slicerx/pilot'
+import { adapterFor } from '@slicerx/pilot/evals'
 import type { CreativePrompt } from './prompts'
 import { runPrompt, type PromptRun } from './run'
 

@@ -25,7 +25,8 @@
     ".": "./src/index.ts",
     "./agents": "./src/agents.ts",
     "./cli": "./dist/cli.js",
-    "./toolset": "./src/toolset.ts"
+    "./toolset": "./src/toolset.ts",
+    "./evals/creative": "./evals/creative/run.ts"
   },
   "files": [
     "dist",
@@ -67,6 +68,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "tools-doc": "tsx scripts/tools-doc.ts",
     "test": "vitest run",
+    "eval:creative": "tsx evals/creative/cli.ts",
     "prepack": "node scripts/build.mjs && node ../../scripts/copy-integrator-docs.mjs .",
     "prepublishOnly": "node ../../scripts/publish-guard.mjs"
   },
@@ -89,6 +91,7 @@
     "@slicerx/cad-history": "workspace:*",
     "@slicerx/connect": "workspace:*",
     "@slicerx/contracts": "workspace:*",
+    "@slicerx/edition-config": "workspace:*",
     "@slicerx/embed": "workspace:*",
     "@slicerx/fleet-sim": "workspace:*",
     "@slicerx/link-client": "workspace:*",

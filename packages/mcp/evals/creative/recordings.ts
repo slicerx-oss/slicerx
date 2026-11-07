@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ScriptStepData } from '../../src/provider/scripted'
+import type { ScriptStepData } from '@slicerx/pilot/evals'
 
 export const RECORDINGS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'recordings')
 
@@ -28,6 +28,12 @@ export interface CapturedRecording {
    * answer the default answer, so a replay sends it too. Recordings from before the default answer leave it out.
    */
   defaultAnswer?: boolean
+  /**
+   * Captured on the mimir tab's tools (the design toolset, questions, lookups, sheets and design.plan, run.ts
+   * creativeEnv). Recordings from before leave it out: they called text_to_part or no tool, and replay as stale until a
+   * live run captures them again.
+   */
+  tabTools?: boolean
 }
 
 export type Recording = PendingRecording | CapturedRecording
@@ -56,9 +62,10 @@ export function parseRecording(text: string, where = 'recording'): Recording {
     }
     return step
   })
-  if (v['defaultAnswer'] !== undefined && typeof v['defaultAnswer'] !== 'boolean') throw new Error(`${where}: defaultAnswer must be true or false`)
+  for (const k of ['defaultAnswer', 'tabTools'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
   const rec: CapturedRecording = { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
   if (v['defaultAnswer'] === true) rec.defaultAnswer = true
+  if (v['tabTools'] === true) rec.tabTools = true
   return rec
 }
 

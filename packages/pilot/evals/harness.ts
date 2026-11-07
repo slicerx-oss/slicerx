@@ -34,6 +34,7 @@ import type { PilotProject } from '../src/project'
 import type { LlmClient } from '../src/provider/types'
 import type { PrintRunHost } from '../src/run/print-run'
 import { createPilot, type CreatePilotOptions } from '../src/runtime'
+import type { MemoryFact, MemoryStore } from '../src/memory/facts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { editionToolGroups, tabOptions, withBrain } from '../src/tab-options'
 import type { PilotTool, ToolHost } from '../src/tool'
@@ -294,13 +295,25 @@ export interface EvalEnvOptions {
   printRun?: PrintRunHost
   /**
    * Runs mimir as the app's tab does, through the tab options the app uses (src/tab-options.ts): its step and tool call
-   * limits, the cad scope when `slices` is false, the edition's brain pack (tool groups, web search, routing) and the
-   * commands. `scope` is then ignored.
+   * limits, the cad scope when `slices` is false, the edition's brain pack (tool groups, web search, routing), the
+   * commands, and the person's notes where the edition keeps them (ai.brain.memory.local), here an empty set of this
+   * run's own. `scope` is then ignored.
    */
   tab?: { slices: boolean; edition: Pick<EditionConfig, 'ai'>; commands?: CommandSpec[] }
 }
 
 export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport' | 'localNetwork'>>
+
+/** The person's notes for one run: none to start with, kept until the run ends. */
+function runNotes(): MemoryStore {
+  const rows = new Map<string, MemoryFact>()
+  return {
+    list: async () => [...rows.values()].map((r) => structuredClone(r)),
+    put: async (f) => void rows.set(f.id, structuredClone(f)),
+    remove: async (id) => void rows.delete(id),
+    clear: async () => rows.clear(),
+  }
+}
 
 export function createEvalEnv(opts: EvalEnvOptions) {
   const kb = evalKb()
@@ -337,7 +350,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
   const base: PilotConfig = { provider: opts.client.provider, model: opts.model ?? 'scripted', maxSteps: 24, maxToolCalls: 40, webSearch: opts.webSearch ?? true, ...opts.config }
   // the tab's config carries the edition's brain pack, as the app's does (session.ts)
   const config = opts.tab ? withBrain(base, opts.tab.edition) : base
-  const tab = opts.tab ? tabOptions({ slices: opts.tab.slices, config, kb, tools: opts.tools ?? [], commands: opts.tab.commands ?? [], toolGroups: editionToolGroups(opts.tab.edition) }) : null
+  const tab = opts.tab ? tabOptions({ slices: opts.tab.slices, config, kb, tools: opts.tools ?? [], commands: opts.tab.commands ?? [], toolGroups: editionToolGroups(opts.tab.edition), memory: { local: opts.tab.edition.ai.brain.memory.local, store: runNotes() } }) : null
   const options: CreatePilotOptions = {
     host: {
       llm: { available: async () => true, stream: () => { throw new Error('evals pass a client') } },
