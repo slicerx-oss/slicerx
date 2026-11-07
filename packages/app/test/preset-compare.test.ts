@@ -202,6 +202,52 @@ describe('Compare presets panel', () => {
     expect(undo().disabled).toBe(true)
   })
 
+  it('says what a copy did on the status line, with the setting label and the preset name, until the next action', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    set({ userPresets: [preset('a', 'process', { layer_height: 0.2, wall_loops: 9, raft_layers: 1 }, { name: 'Draft fast 0.28' }), preset('b', 'process', { layer_height: 0.12, raft_layers: 2 }, { name: 'Fine detail' })] })
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root.render(createElement(ComparePanel)))
+    pick('cmp-a', 'a')
+    pick('cmp-b', 'preset:b')
+    await flush()
+    const status = () => host.querySelectorAll('[role="status"]')
+    const text = () => status()[0]!.textContent
+    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-testid="preset-compare-row"]')]
+    const copyRow = async (key: string) => {
+      await act(async () => rows().find((r) => r.dataset['key'] === key)!.querySelector<HTMLButtonElement>('[data-testid="preset-compare-copy"]')!.click())
+      await flush()
+    }
+    // One status line, the same element before and after, so nothing around it moves.
+    expect(status().length).toBe(1)
+    expect(text()).toBe('3 settings differ')
+    // One layer reads in the singular.
+    expect(rows().find((r) => r.dataset['key'] === 'raft_layers')!.textContent).toContain('1 layer')
+    expect(rows().find((r) => r.dataset['key'] === 'raft_layers')!.textContent).not.toContain('1 layers')
+
+    await copyRow('layer_height')
+    expect(status().length).toBe(1)
+    expect(text()).toBe('Copied Layer height to Draft fast 0.28')
+    expect(text()).not.toContain('layer_height')
+    // The next copy replaces it.
+    await copyRow('raft_layers')
+    expect(text()).toBe('Copied Raft layers to Draft fast 0.28')
+    // Show all is the next action: the line goes back to the count.
+    act(() => host.querySelector<HTMLButtonElement>('[role="switch"]')!.click())
+    expect(text()).toBe('1 setting differs')
+    await copyRow('wall_loops')
+    expect(text()).toBe('Copied Wall loops to Draft fast 0.28')
+    // So are Undo and choosing another preset.
+    await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Undo')!.click())
+    await flush()
+    expect(text()).not.toMatch(/^Copied/)
+    await copyRow('wall_loops')
+    expect(text()).toMatch(/^Copied/)
+    pick('cmp-b', 'stock')
+    expect(text()).not.toMatch(/^Copied/)
+  })
+
   it('says when the parent does not ship with the app', async () => {
     set({ userPresets: [preset('a', 'filament', { nozzle_temperature: [231] }, { name: 'Odd PLA', inherits: 'No Such PLA @Nowhere' })] })
     host = document.createElement('div')
