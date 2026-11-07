@@ -67,6 +67,12 @@ const REPLIES = {
   shipHull: "A hull's curved planking bends in two directions at once, and the tools can't model that freely curving surface. I can build the closest version instead. Which would you like?",
   gearPair: 'Nothing is built or sliced yet. The 20-tooth gear would be 30 mm pitch diameter and the 40-tooth gear 60 mm, both on one base plate with a pin each, and both fit the P1S bed. Should the gears print already seated on their pins with running clearance, or as loose pieces you assemble?',
   phoneStand: "Before I model it, I need your phone's size. The slot width depends on the phone's thickness with its case, and the stand's width depends on its width. Which phone is it, and do you use a case? If you don't know the exact numbers, a case-on or case-off choice is enough, and I'll use typical dimensions for that model.",
+  // a later live run: it offered a simpler version, was told to build it, had its plan approved, and ended there
+  flexiFishStopped: [
+    "The tools can't model a smoothly curved, organic fish body. They can build a segmented fish from extruded side-profile pieces with flat faces, pin hinges and a fin on its own pivot. That version would be 120 mm long and print in place, with the segments moving on pins. Which would you like?",
+    "I'll go with the segmented fish you described, using common sizes. Here is the plan for the card.",
+    "The plan is approved as shown, so I'll build the body segments next. Each segment is a flat-sided block with a hinge socket, so the fish can flex on its pins.",
+  ],
   // cut off mid list: no question and no refusal
   pipChain: "A fully flat chain can't link on the bed. Two rings can only interlock if one passes through the other's hole, and a link lying flat has no height to pass through.\n\n1. **Classic chain, printed with supports.** Odd links lie flat and",
 }
@@ -89,6 +95,34 @@ describe('a reply that builds nothing', () => {
     expect(classifyNoBuild('')).toBe('none')
     expect(classifyNoBuild('Here is a dragon.')).toBe('none')
     expect(classifyNoBuild(REPLIES.pipChain)).toBe('none')
+  })
+
+  it('is stopped when it ends without building after its plan was approved or it was answered', () => {
+    const [offer, plan, next] = REPLIES.flexiFishStopped as [string, string, string]
+    expect(classifyNoBuild(offer + plan + next, next)).toBe('stopped')
+    expect(classifyNoBuild('', '')).toBe('stopped')
+    // what it says afterwards still decides: a refusal or another question after the answer
+    expect(classifyNoBuild(offer + next + "I can't model the fins after all.", "I can't model the fins after all.")).toBe('declined')
+    expect(classifyNoBuild(offer + 'And how long?', 'And how long?')).toBe('asked')
+    // with no approval or answer the whole reply counts, and a refusal stays one
+    expect(classifyNoBuild(offer + plan + next)).toBe('declined')
+  })
+
+  it('scores a plan approved and then no build as stopped, not declined', async () => {
+    const [offer, plan, next] = REPLIES.flexiFishStopped as [string, string, string]
+    const FISH = CREATIVE_PROMPTS.find((x) => x.id === 'flexi-fish')!
+    const choices = [{ id: 'segmented_fish', label: 'Segmented fish with flopping fin' }, { id: 'chain_no_fin', label: 'Jointed chain, no fin' }, { id: 'nothing', label: 'Nothing for now' }]
+    const ask = { name: 'pilot.ask', args: { title: 'Fish version', question: 'Which version should I build?', choices } }
+    const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: [], questions: [] } }
+    const client = createScriptedClient([{ text: offer, calls: [ask] }, { calls: [ask] }, { text: plan, calls: [card] }, { text: next }], { chunk: false })
+    const run = await runPrompt(FISH, { geom: undefined, client })
+    expect(run.calls).toEqual(['pilot.ask', 'pilot.ask', 'design.plan'])
+    expect(run.answered).toBe(true)
+    expect(JSON.stringify(client.requests[3]?.messages)).toContain('\\"accepted\\":true')
+    expect(run.noBuild).toBe('stopped')
+    expect(run.parsed.pass).toBe(false)
+    // it was not asked again, so the eval did not answer a second time
+    expect(client.requests).toHaveLength(4)
   })
 
   it('is scored with its reason instead of a plain parse failure', async () => {
