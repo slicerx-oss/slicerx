@@ -23,7 +23,7 @@ const MIN_START_DEG: f64 = 1.0;
 /// The shortest step between two path points, mm.
 const MIN_STEP_MM: f64 = 1e-6;
 
-/// The path of a sweep: one open chain of lines and arcs drawn on a plane (the bed when `frame` is absent), or an
+/// The path of a sweep: one open chain of lines, arcs and splines drawn on a plane (the bed when `frame` is absent), or an
 /// open polyline of points in space.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -255,7 +255,7 @@ fn path_points(path: &Path) -> Result<(Vec<V3>, V3, V3)> {
             return Err(Error::invalid(
                 "path",
                 format!(
-                    "a sweep path is one open chain of lines and arcs, not {}",
+                    "a sweep path is one open chain of lines, arcs and splines, not {}",
                     more.len()
                 ),
             ));
@@ -607,6 +607,30 @@ mod tests {
     }
 
     #[test]
+    fn a_spline_path_starts_and_ends_square_to_its_curve() {
+        // from (0, 0) through (10, 5) to (20, 0): it leaves along (10, 5) and arrives along (10, -5)
+        let r = 2.0;
+        let n0 = vec3::normalize([10.0, 5.0, 0.0]).unwrap();
+        let n1 = vec3::normalize([10.0, -5.0, 0.0]).unwrap();
+        let f = FaceFrame::for_normal([0.0, 0.0, 0.0], n0).unwrap();
+        let spline = Segment {
+            kind: "spline".into(),
+            points: vec![[10.0, 5.0]],
+            to: Some([20.0, 0.0]),
+            ..Segment::default()
+        };
+        let m = sweep(
+            &on(f, circle([0.0, 0.0], 2.0 * r)),
+            &chain([0.0, 0.0], vec![spline]),
+        )
+        .unwrap();
+        closed(&m);
+        let ring = sketch::circle_steps(r);
+        assert_eq!(on_plane(&m, [0.0, 0.0, 0.0], n0, 3.0), ring);
+        assert_eq!(on_plane(&m, [20.0, 0.0, 0.0], n1, 3.0), ring);
+    }
+
+    #[test]
     fn the_profile_does_not_twist_along_a_path_in_space() {
         // a bent path that leaves its plane: the profile turns only as the path turns
         let path = points(&[
@@ -710,6 +734,18 @@ mod tests {
             ..Path::default()
         };
         assert_eq!(err(&sq, &round), "path: Loop 1 is a circle, which has no ends.");
+        let blob = Path {
+            loops: vec![Loop {
+                kind: Some("spline".into()),
+                points: vec![[0.0, 0.0], [10.0, 0.0], [5.0, 8.0]],
+                ..Loop::default()
+            }],
+            ..Path::default()
+        };
+        assert_eq!(
+            err(&sq, &blob),
+            "path: Loop 1 is a closed spline, which has no ends."
+        );
         let ring = chain(
             [0.0, 0.0],
             vec![line([10.0, 0.0]), line([10.0, 10.0]), line([0.0, 0.0])],

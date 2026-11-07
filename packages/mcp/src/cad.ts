@@ -730,7 +730,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     description: 'Sweep a closed sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
     input: z.object({
       profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()) }).optional().describe('One closed loop and its frame, as for slicerx_geom_revolve'),
-      path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines and arcs (frame, loops), or points [[x,y,z],...]'),
+      path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]'),
       profile_sketch: z.string().optional(),
       path_sketch: z.string().optional(),
       operation: z.enum(['new', 'join', 'cut']).default('new'),
