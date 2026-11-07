@@ -107,6 +107,47 @@ fn show(v: f64) -> String {
     v.to_string()
 }
 
+/// The message for a value past a setting's hard limits. A side with no limit is left out of the
+/// sentence, so nobody reads "inf".
+fn range_message(label: &str, n: f64, lo: Option<f64>, hi: Option<f64>, unit: &str) -> String {
+    match (lo, hi) {
+        (Some(lo), Some(hi)) => format!(
+            "{label} is {}, outside {} to {}{unit}.",
+            show(n),
+            show(lo),
+            show(hi)
+        ),
+        (Some(lo), None) => format!("{label} is {}; it must be at least {}{unit}.", show(n), show(lo)),
+        (None, hi) => format!(
+            "{label} is {}; it must be at most {}{unit}.",
+            show(n),
+            hi.map_or_else(String::new, show)
+        ),
+    }
+}
+
+/// The message for a value outside a setting's usual range, worded the same way.
+fn usual_range_message(label: &str, n: f64, lo: Option<f64>, hi: Option<f64>, unit: &str) -> String {
+    match (lo, hi) {
+        (Some(lo), Some(hi)) => format!(
+            "{label} is {}, outside the usual {} to {}{unit}.",
+            show(n),
+            show(lo),
+            show(hi)
+        ),
+        (Some(lo), None) => format!(
+            "{label} is {}, below the usual minimum of {}{unit}.",
+            show(n),
+            show(lo)
+        ),
+        (None, hi) => format!(
+            "{label} is {}, above the usual maximum of {}{unit}.",
+            show(n),
+            hi.map_or_else(String::new, show)
+        ),
+    }
+}
+
 fn numbers_in(v: &Value) -> Option<Vec<f64>> {
     match v {
         Value::Int(_) | Value::Float(_) | Value::Ints(_) | Value::Floats(_) => match v {
@@ -239,14 +280,6 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
             continue;
         }
         let unit = def.unit.as_ref().map_or(String::new(), |u| format!(" {u}"));
-        let inf = |b: Option<f64>, neg: bool| {
-            b.map_or_else(
-                || {
-                    if neg { "-inf".to_owned() } else { "inf".to_owned() }
-                },
-                show,
-            )
-        };
         if let Some(bad) = nums
             .iter()
             .copied()
@@ -261,14 +294,7 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                 "out_of_range",
                 Severity::Error,
                 &[key],
-                format!(
-                    "{} is {}, outside {} to {}{}.",
-                    def.label,
-                    show(bad),
-                    inf(hard_lo, true),
-                    inf(hard_hi, false),
-                    unit
-                ),
+                range_message(&def.label, bad, hard_lo, hard_hi, &unit),
             );
             if matches!(v, Value::Int(_) | Value::Float(_)) {
                 i = with_fix(i, key, Value::Float(fixed));
@@ -285,14 +311,7 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                 "outside_recommended_range",
                 Severity::Warning,
                 &[key],
-                format!(
-                    "{} is {}, outside the usual {} to {}{}.",
-                    def.label,
-                    show(soft),
-                    inf(def.min, true),
-                    inf(def.max, false),
-                    unit
-                ),
+                usual_range_message(&def.label, soft, def.min, def.max, &unit),
             ));
         }
     }
@@ -724,4 +743,37 @@ pub fn missing_keys(config: &PrintConfig) -> Vec<&'static str> {
         .filter(|d| !config.contains(&d.key))
         .map(|d| d.key.as_str())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{range_message, usual_range_message};
+
+    #[test]
+    fn range_messages_name_only_the_limits_a_setting_has() {
+        assert_eq!(
+            range_message("Layer height", 0.0, Some(0.01), None, " mm"),
+            "Layer height is 0; it must be at least 0.01 mm."
+        );
+        assert_eq!(
+            range_message("Skirt height", 20000.0, None, Some(10000.0), " layers"),
+            "Skirt height is 20000; it must be at most 10000 layers."
+        );
+        assert_eq!(
+            range_message("Wall loops", -1.0, Some(0.0), Some(1000.0), ""),
+            "Wall loops is -1, outside 0 to 1000."
+        );
+        assert_eq!(
+            usual_range_message("Layer height", 0.9, None, Some(0.6), " mm"),
+            "Layer height is 0.9, above the usual maximum of 0.6 mm."
+        );
+        assert_eq!(
+            usual_range_message("Wall loops", 0.0, Some(1.0), None, ""),
+            "Wall loops is 0, below the usual minimum of 1."
+        );
+        assert_eq!(
+            usual_range_message("Wall loops", 0.0, Some(1.0), Some(20.0), ""),
+            "Wall loops is 0, outside the usual 1 to 20."
+        );
+    }
 }

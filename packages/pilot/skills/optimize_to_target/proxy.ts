@@ -3,6 +3,7 @@
 // The strength proxy and setting checks shared by optimize_to_target and
 // compare_setups.
 import type { PrintConfig, SettingValue } from '@slicerx/contracts'
+import { rangeMessage } from '@slicerx/settings'
 import type { KnowledgeBase } from '../../src/kb/kb'
 
 /**
@@ -140,7 +141,7 @@ export function checkChanges(kb: KnowledgeBase, changes: Record<string, ChangeVa
     if (def.bounds && typeof v === 'number') {
       const { min, max } = def.bounds
       if ((min !== undefined && v < min) || (max !== undefined && v > max)) {
-        out.rejected.push(`${k}=${v} is outside ${min ?? '-inf'} to ${max ?? 'inf'}`)
+        out.rejected.push(rangeMessage(k, v, min, max, def.unit ? ' ' + def.unit : ''))
         continue
       }
     }

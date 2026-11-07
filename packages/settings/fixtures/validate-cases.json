@@ -433,6 +433,46 @@
    "codes": [
     "smart_layer_outside_layer_height"
    ]
+  },
+  {
+   "name": "layer height under its only limit",
+   "config": {
+    "layer_height": 0
+   },
+   "codes": [
+    "out_of_range"
+   ]
+  },
+  {
+   "name": "filament diameter under its only limit",
+   "config": {
+    "filament_diameter": [
+     0
+    ]
+   },
+   "codes": [
+    "out_of_range"
+   ]
+  },
+  {
+   "name": "prime tower rib length over its only limit",
+   "config": {
+    "wipe_tower_extra_rib_length": 400
+   },
+   "codes": [
+    "out_of_range"
+   ]
+  },
+  {
+   "name": "first layer bed temperature over its only limit",
+   "config": {
+    "hot_plate_temp_initial_layer": [
+     400
+    ]
+   },
+   "codes": [
+    "out_of_range"
+   ]
   }
  ]
 }
