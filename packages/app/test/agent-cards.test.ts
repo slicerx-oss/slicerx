@@ -466,6 +466,16 @@ describe('cards the hub could not carry out', () => {
     stop()
   })
 
+  it('says the filament change did not start when the hub refuses its card', async () => {
+    const h = fakeHub()
+    const stop = watchHubCards(h.hub, names)
+    h.emit(card({ id: 'f-1', actions: [{ action: 'printer.filament_change', target: 'bay-4', paramsHash: 'f' }], work: { kind: 'filament_change', printerId: 'bay-4', printing: true } }))
+    await get().approval!.approve()
+    h.done({ requestId: 'f-1', printerId: 'bay-4', ok: false, code: 'bad_state', message: 'preparing' })
+    expect(get().toast?.text).toBe('Bay 4 is busy, so the filament change did not start.')
+    stop()
+  })
+
   it('shows nothing beyond the approval when the hub carries it out', async () => {
     const h = fakeHub()
     const stop = watchHubCards(h.hub, names)
