@@ -13,7 +13,7 @@
 
 ### `chamber_minimal_temperature`
 
-**Chamber minimal temperature**
+**Minimum chamber temperature to start**
 
 - Type: list of integers, one per extruder
 - Unit: C

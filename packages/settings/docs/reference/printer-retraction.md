@@ -28,7 +28,7 @@
 
 ### `long_retractions_when_cut`
 
-**Long retractions when cut** (develop mode)
+**Long retraction before a filament cut** (develop mode)
 
 - Type: list of booleans, one per extruder
 - Default: [false]
