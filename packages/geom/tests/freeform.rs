@@ -134,7 +134,7 @@ fn smooth_sides_leave_a_middle_profile_the_way_they_arrive() {
 
 #[test]
 fn a_closed_loft_is_a_watertight_ring() {
-    // eight circles round the z axis on planes through it: a torus 20 mm out, 3 mm thick
+    // eight circles around the z axis on planes through it: a torus 20 mm out, 3 mm thick
     let profiles: Vec<Value> = (0..8)
         .map(|k| {
             let a = f64::from(k) * PI / 4.0;

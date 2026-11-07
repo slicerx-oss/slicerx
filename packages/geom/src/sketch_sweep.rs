@@ -65,7 +65,7 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> 
     let mut flat = if profile.open {
         let mut c =
             sketch_loft::open_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?;
-        // an open chain winds the way it and the line across its ends go round, as a closed ring does
+        // an open chain winds the way it and the line across its ends go around, as a closed ring does
         if poly2d::signed_area(&c) < 0.0 {
             c.reverse();
         }
