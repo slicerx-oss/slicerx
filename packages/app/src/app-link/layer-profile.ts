@@ -20,7 +20,11 @@ function plateOf(ref: number | string | undefined) {
   return { id, meta, number: s.plates.findIndex((p) => p.id === id) + 1 }
 }
 
-/** The plate's profile and what it slices with, read back. */
+/**
+ * The plate's profile and what it slices with, read back, in the slice's order: a calibration plate keeps its bands and
+ * a resume plan its layers (on the shown plate), whatever profile the plate has; then its own layer heights, sleipnir,
+ * or the fixed layer height.
+ */
 function read(ref: number | string | undefined) {
   const s = get()
   const { id, meta, number } = plateOf(ref)
@@ -30,8 +34,9 @@ function read(ref: number | string | undefined) {
   const profile = meta.settings.layerProfile ?? null
   const sleipnir = String(config['smart_layer'] ?? 'off') !== 'off'
   const tops = profile && top > 0 ? profileTops(cleanProfile(profile, limits)?.points ?? [], top, limits) : null
-  const mode = profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
-  const words = { own: `its own layer heights${tops ? `, ${tops.length} layers` : ''}`, sleipnir: 'sleipnir (adaptive layers)', fixed: `a fixed ${Number(config['layer_height'])} mm layer height` }[mode]
+  const mode = s.calibration[id] ? 'calibration' : id === s.activePlate && s.resume?.layerTopsMm?.length ? 'resume' : profile ? 'own' : sleipnir ? 'sleipnir' : 'fixed'
+  const kept = profile && (mode === 'calibration' || mode === 'resume') ? ', and its own layer heights wait until that ends' : ''
+  const words = { calibration: `the calibration's layer heights${kept}`, resume: `the layers of the print it resumes${kept}`, own: `its own layer heights${tops ? `, ${tops.length} layers` : ''}`, sleipnir: 'sleipnir (adaptive layers)', fixed: `a fixed ${Number(config['layer_height'])} mm layer height` }[mode]
   return {
     summary: `Plate ${number} slices with ${words}.`,
     output: {
@@ -58,9 +63,10 @@ export function editLayerProfile(args: Record<string, unknown>, client: string) 
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.message)
   const i = parsed.data
   const s = get()
-  if (s.plateLoading || s.dragging || s.liveEdit || s.historyEdit || ['paint', 'brim', 'face', 'probe'].includes(toolStore.getState().tool)) {
-    throw new LinkError('busy', 'Finish the current load, tool or history edit first')
+  if (s.plateLoading || s.dragging || s.liveEdit || s.historyEdit || s.rollback || s.slice.status === 'running' || ['paint', 'brim', 'face', 'probe'].includes(toolStore.getState().tool)) {
+    throw new LinkError('busy', 'Finish the current load, slice, tool or history edit first')
   }
+  if (i.revision !== undefined && i.revision !== history().state().revision) throw new LinkError('busy', 'The project changed; read app_layer_profile again before editing')
   const { id, meta, number } = plateOf(i.plate)
   if (i.action === 'reset') {
     const had = Boolean(meta.settings.layerProfile)
