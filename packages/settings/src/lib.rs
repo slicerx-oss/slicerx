@@ -49,7 +49,7 @@ pub use config::{
     disabled_keys, failed_conditions, is_enabled, is_visible, number_of, scalar_of, settings_for_tier,
     width_of,
 };
-pub use diff::{ChangeKind, ConfigDiffEntry, diff_configs, first_stage, format_value, same_value};
+pub use diff::{ChangeKind, ConfigDiffEntry, diff_configs, first_stage, format_value, is_unset, same_value};
 pub use easy::{
     EasyGoal, EasySettings, SmartLayer, SpeedPreset, SupportMode, apply_choice, apply_easy, choice_value,
     derive_shell_layers, easy_choices, easy_control_for, easy_control_label, easy_keys, goal_easy,

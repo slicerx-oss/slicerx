@@ -65,8 +65,23 @@ describe('formatValue', () => {
     expect(formatValue(settingDef('layer_height'), 0.2)).toBe('0.2 mm')
     expect(formatValue(settingDef('enable_support'), true)).toBe('on')
     expect(formatValue(settingDef('nozzle_temperature'), [220, 220])).toBe('220 C')
-    expect(formatValue(settingDef('outer_wall_speed'), [200, 350])).toBe('200, 350')
+    expect(formatValue(settingDef('outer_wall_speed'), [200, 350])).toBe('200, 350 mm/s')
     expect(formatValue(undefined, undefined)).toBe('not set')
+  })
+
+  it('writes a list with its unit once, a point as X x Y, and an empty list as not set', () => {
+    expect(formatValue(settingDef('machine_max_speed_x'), [500, 300])).toBe('500, 300 mm/s')
+    expect(formatValue(settingDef('slow_down_layer_time'), [8])).toBe('8 s')
+    expect(formatValue(settingDef('slow_down_layer_time'), [8, 4])).toBe('8, 4 s')
+    expect(formatValue(settingDef('fan_cooling_layer_time'), [60])).toBe('60 s')
+    expect(formatValue(settingDef('additional_cooling_fan_speed'), [20, 30])).toBe('20%, 30%')
+    expect(formatValue(settingDef('toolchange_park_position'), [[10, 12]])).toBe('10 x 12 mm')
+    // A point is one value, even with both coordinates alike.
+    expect(formatValue(settingDef('bed_mesh_min'), [10, 10])).toBe('10 x 10 mm')
+    expect(formatValue(settingDef('printable_area'), [[0, 0], [200, 0], [200, 200]])).toBe('0 x 0, 200 x 0, 200 x 200')
+    expect(formatValue(settingDef('filament_wipe'), [true, false])).toBe('on, off')
+    expect(formatValue(settingDef('filament_wipe'), [])).toBe('not set')
+    expect(formatValue(settingDef('toolchange_park_position'), [])).toBe('not set')
   })
 
   it('shows enum values by their labels', () => {
