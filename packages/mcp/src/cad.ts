@@ -13,7 +13,8 @@ import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, 
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
-import { nozzleOr } from './design-check'
+import { gapMm, gapSentence, nozzleOr } from './design-check'
+import { fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -444,7 +445,7 @@ export function imageTooLarge(bytes: number): ToolInputError {
   return new ToolInputError(`image: the file is ${kb(bytes)}, over the 30 MB a trace takes. Export it smaller first.`)
 }
 
-export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height and material the part prints with, for geom.fit_check; half the nozzle and PLA without them. */ fitProfile?: (() => FitProfile) | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
   const call = deps.files.call
   const path = (model: string): Promise<string> => deps.files.path(model)
   const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
@@ -1517,6 +1518,59 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const r3n = (v: number): number => Math.round(v * 1000) / 1000 || 0
+  const fitCheck = defineTool({
+    name: 'geom.fit_check',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      "Measure the gaps between a design's bodies for print-in-place parts (hinges, pins, chains): every pair that touches or sits closer than the printer keeps open, how many separate pieces print, and per gap fuses, binds or slides. Limits come from the nozzle, layer height and material.",
+    input: z.object({
+      design: designArg,
+      part: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('Only these parts, by index; default all'),
+      material: z.string().min(1).max(40).optional().describe('Default the loaded filament'),
+      layer_height_mm: z.number().min(0.04).max(0.8).optional(),
+    }),
+    async run(i) {
+      const d = designOf(i.design)
+      for (const k of i.part ?? []) if (!d.parts[k]) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+      const profile = deps.fitProfile?.() ?? {}
+      const limits = fitLimits({ nozzleMm: deps.nozzleMm?.(), layerHeightMm: i.layer_height_mm ?? profile.layerHeightMm, material: i.material ?? profile.material })
+      const fit = await fitFacts(designs(), d, limits, i.part)
+      const gaps = fit.gaps.map((g) => ({
+        bodies: g.bodies,
+        names: g.bodies.map((b) => fit.bodies[b]!.name),
+        kind: g.kind,
+        direction: g.direction,
+        gap_mm: r3n(g.gapMm),
+        limit_mm: g.kind === 'apart' ? (g.direction === 'z' ? limits.verticalMm : limits.sideMm) : r3n(g.limitMm),
+        verdict: fitVerdict(g, limits),
+        ...(g.where ? { where: g.where } : {}),
+        from: g.from.map(r3n),
+        to: g.to.map(r3n),
+      }))
+      const tight = fit.gaps.filter((g) => g.kind !== 'apart')
+      const warnings = tight.map((g) => gapSentence(fit, g, 'moving pieces need'))
+      const least = fit.gaps.reduce<(typeof fit.gaps)[number] | null>((a, g) => (!a || g.gapMm < a.gapMm ? g : a), null)
+      const pieces = `${fit.pieces} ${fit.pieces === 1 ? 'piece' : 'pieces'}`
+      const summary = tight.length
+        ? `${pieces}; ${tight.length} ${tight.length === 1 ? 'gap' : 'gaps'} under the limit: ${warnings[0]}`
+        : `${pieces}; no gap under ${limits.sideMm} mm side by side or ${limits.verticalMm} mm above or below${least ? `, smallest ${gapMm(least.gapMm)}` : ''}`
+      return {
+        summary,
+        output: {
+          design: d.id,
+          limits: { side_mm: limits.sideMm, vertical_mm: limits.verticalMm, material: limits.material, nozzle_mm: limits.nozzleMm, layer_height_mm: limits.layerHeightMm },
+          pieces: fit.pieces,
+          bodies: fit.bodies.map((b, k) => ({ body: k, part: b.part, name: b.name })),
+          gaps,
+          warnings,
+        },
+      }
+    },
+  })
+
   /** A hole as the engine finds it (hole.find), the same object the app's hole step keeps. */
   interface FoundHole {
     entry: V3
@@ -1711,5 +1765,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     }
   }
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, fitCheck, shell, holeTool] as PilotTool<never>[]
 }

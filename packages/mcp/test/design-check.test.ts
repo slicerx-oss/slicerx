@@ -822,9 +822,9 @@ describe('design.put_plan', () => {
     expect(plans.get('client-59')?.origin).toBe('client')
   })
 
-  it('is 1.1.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
+  it('is 1.2.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
     const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
-    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.1.0')
+    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.2.0')
     const features = [{ name: 'Wheel', sizes: { spokes: 5, rake: 12 }, kinds: { spokes: 'count', rake: 'angle' } }, { name: 'Rim', sizes: { width: 8 }, kinds: {} }]
     await run('design.put_plan', { plan: { ...boxPlan, planId: 'kinds-1', features } })
     expect(plans.get('kinds-1')!.plan.features).toEqual([features[0], { name: 'Rim', sizes: { width: 8 } }])
