@@ -520,30 +520,119 @@ fn segment(kind: &str, to: V2) -> Segment {
     }
 }
 
-/// the end (exclusive) of a smooth run from piece `i` with three or more arcs in a row, and the lines that lead in
-/// and out of it smoothly: points off no one circle, such as a round seen at a tilt
-fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
-    // the join after piece k turns no more than a facet does
-    let smooth = |k: usize| {
-        let e = pieces[k].1;
-        e > 0 && e + 1 < p.len() && turn_deg(p[e - 1], p[e], p[e + 1]).abs() < SMOOTH_DEG
+/// the 5 by 5 system solved by elimination with partial pivoting; none when it is singular
+fn solve5(mut m: [[f64; 5]; 5], mut b: [f64; 5]) -> Option<[f64; 5]> {
+    for c in 0..5 {
+        let r = (c..5).max_by(|&x, &y| m[x][c].abs().total_cmp(&m[y][c].abs()))?;
+        if m[r][c].abs() < 1e-12 {
+            return None;
+        }
+        m.swap(c, r);
+        b.swap(c, r);
+        let (pivot, bp) = (m[c], b[c]);
+        for (row, bk) in m.iter_mut().zip(b.iter_mut()).skip(c + 1) {
+            let f = row[c] / pivot[c];
+            for (x, p) in row.iter_mut().zip(pivot).skip(c) {
+                *x -= f * p;
+            }
+            *bk -= f * bp;
+        }
+    }
+    let mut x = [0.0; 5];
+    for c in (0..5).rev() {
+        let t: f64 = (c + 1..5).map(|j| m[c][j] * x[j]).sum();
+        x[c] = (b[c] - t) / m[c][c];
+    }
+    Some(x)
+}
+
+/// whether every point lies within the tolerance of one ellipse that is no circle: a round seen at a tilt
+fn on_ellipse(q: &[V2]) -> bool {
+    if q.len() < 6 {
+        return false;
+    }
+    let n = q.len() as f64;
+    let c = [
+        q.iter().map(|p| p[0]).sum::<f64>() / n,
+        q.iter().map(|p| p[1]).sum::<f64>() / n,
+    ];
+    let s = q.iter().map(|p| d2(*p, c)).fold(0.0, f64::max);
+    if s < 1e-9 {
+        return false;
+    }
+    // centered and scaled to about one; the conic a x2 + b xy + (1 - a) y2 + d x + e y + f = 0 by least squares
+    let pts: Vec<V2> = q.iter().map(|p| [(p[0] - c[0]) / s, (p[1] - c[1]) / s]).collect();
+    let mut m = [[0.0; 5]; 5];
+    let mut rhs = [0.0; 5];
+    for &[x, y] in &pts {
+        let row = [x * x - y * y, x * y, x, y, 1.0];
+        for i in 0..5 {
+            for j in 0..5 {
+                m[i][j] += row[i] * row[j];
+            }
+            rhs[i] -= row[i] * y * y;
+        }
+    }
+    let Some([a, b, d, e, f]) = solve5(m, rhs) else {
+        return false;
     };
+    let cc = 1.0 - a;
+    if 4.0 * a * cc - b * b <= 0.0 {
+        return false;
+    }
+    let tol = TOL_MM / s;
+    pts.iter().all(|&[x, y]| {
+        let v = a * x * x + b * x * y + cc * y * y + d * x + e * y + f;
+        let g = (2.0 * a * x + b * y + d).m_hypot(b * x + 2.0 * cc * y + e);
+        g > 1e-12 && v.abs() / g <= tol
+    })
+}
+
+/// whether the points lie on one circle, within the tolerance
+fn on_circle(q: &[V2]) -> bool {
+    let n = q.len();
+    n >= 3
+        && circle3(q[0], q[n / 2], q[n - 1])
+            .is_some_and(|(o, r)| q.iter().all(|&p| (d2(p, o) - r).abs() <= TOL_MM))
+}
+
+/// the end (exclusive) of a run from piece `i` that holds three or more arcs and whose points lie on one ellipse
+/// that is no circle: the facets of a round seen at a tilt, which the arc fit takes as short arcs off different
+/// circles. True arcs (a curved slot, a four-center oval, a rounded rectangle) lie on no one ellipse and stay arcs.
+fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
     let is_arc = |k: usize| matches!(pieces[k].0, Piece::Arc(..));
-    let mut j = i;
-    while j + 1 < pieces.len() && !is_arc(j) && smooth(j) {
-        j += 1;
-    }
-    let first = j;
-    while j < pieces.len() && is_arc(j) && (j == first || smooth(j - 1)) {
-        j += 1;
-    }
-    if j - first < 3 {
+    // a run starts at an arc, or at the line just before one
+    if !is_arc(i) && (i + 1 >= pieces.len() || !is_arc(i + 1)) {
         return None;
     }
-    while j < pieces.len() && !is_arc(j) && smooth(j - 1) {
-        j += 1;
+    let s = if i == 0 { 0 } else { pieces[i - 1].1 };
+    let mut best = None;
+    let mut arcs = 0;
+    // a short, nearly straight start fits no ellipse well; the run ends at the first miss after a fit
+    let mut fitted = false;
+    for j in i..pieces.len() {
+        let pts = &p[s..=pieces[j].1];
+        if pts.len() > RUN_POINTS {
+            break;
+        }
+        if is_arc(j) {
+            arcs += 1;
+        }
+        if pts.len() < 6 {
+            continue;
+        }
+        if !on_ellipse(pts) {
+            if fitted {
+                break;
+            }
+            continue;
+        }
+        fitted = true;
+        if arcs >= 3 && !on_circle(pts) {
+            best = Some(j + 1);
+        }
     }
-    Some(j)
+    best
 }
 
 /// pieces as sketch segments: four or more lines that bend smoothly become one spline through their points, and so
@@ -648,7 +737,12 @@ pub fn fit(pts: &[V2], closed: bool) -> Option<Loop> {
         ring.clone_from(&p);
         ring.push(p[0]);
         let first = pieces(&ring);
-        if first.len() >= 2 {
+        // better still, at the start of a straight run, so a curve between two straight sides stays whole
+        let straight = (1..first.len())
+            .find(|&k| matches!(first[k].0, Piece::Line(_)) && !matches!(first[k - 1].0, Piece::Line(_)));
+        if let Some(k) = straight {
+            p.rotate_left(first[k - 1].1 % n);
+        } else if first.len() >= 2 {
             p.rotate_left(first[0].1 % n);
         }
         p.push(p[0]);
@@ -712,5 +806,137 @@ mod tests {
         let kinds: Vec<&str> = l.segments.iter().map(|s| s.kind.as_str()).collect();
         assert_eq!(kinds.iter().filter(|k| **k == "arc").count(), 2, "{kinds:?}");
         assert_eq!(kinds.iter().filter(|k| **k == "line").count(), 2, "{kinds:?}");
+    }
+
+    /// points along a circle from `a0` to `a1` degrees, a facet every `step` degrees, the end left out
+    fn arc_pts(o: V2, r: f64, a0: f64, a1: f64, step: f64) -> Vec<V2> {
+        let n = (1u32..720)
+            .find(|&n| f64::from(n) * step >= (a1 - a0).abs())
+            .unwrap_or(720);
+        (0..n)
+            .map(|k| {
+                let a = (a0 + (a1 - a0) * f64::from(k) / f64::from(n)).to_radians();
+                let (s, c) = a.m_sin_cos();
+                [o[0] + r * c, o[1] + r * s]
+            })
+            .collect()
+    }
+
+    fn kinds(l: &Loop) -> Vec<&str> {
+        l.segments.iter().map(|s| s.kind.as_str()).collect()
+    }
+
+    #[test]
+    fn a_curved_slot_stays_four_arcs() {
+        // the outer arc, a round end, the inner arc back, the other end
+        let mut ring = arc_pts([0.0, 0.0], 30.0, 30.0, 150.0, 3.0);
+        ring.extend(arc_pts([-25.0 * 3f64.sqrt() / 2.0, 12.5], 5.0, 150.0, 330.0, 6.0));
+        ring.extend(arc_pts([0.0, 0.0], 20.0, 150.0, 30.0, 3.0));
+        ring.extend(arc_pts([25.0 * 3f64.sqrt() / 2.0, 12.5], 5.0, 210.0, 390.0, 6.0));
+        let l = fit(&ring, true).unwrap();
+        assert_eq!(kinds(&l), ["arc", "arc", "arc", "arc"], "{l:?}");
+    }
+
+    #[test]
+    fn a_four_center_oval_stays_four_arcs() {
+        let b = 2f64.sqrt() * 10.0 + 6.0;
+        let mut ring = arc_pts([10.0, 0.0], 6.0, -45.0, 45.0, 4.0);
+        ring.extend(arc_pts([0.0, -10.0], b, 45.0, 135.0, 2.0));
+        ring.extend(arc_pts([-10.0, 0.0], 6.0, 135.0, 225.0, 4.0));
+        ring.extend(arc_pts([0.0, 10.0], b, 225.0, 315.0, 2.0));
+        let l = fit(&ring, true).unwrap();
+        assert_eq!(kinds(&l), ["arc", "arc", "arc", "arc"], "{l:?}");
+    }
+
+    #[test]
+    fn a_rounded_rectangle_stays_lines_and_arcs() {
+        let mut ring = Vec::new();
+        for (o, a0) in [
+            ([27.0, 3.0], -90.0),
+            ([27.0, 17.0], 0.0),
+            ([3.0, 17.0], 90.0),
+            ([3.0, 3.0], 180.0),
+        ] {
+            ring.extend(arc_pts(o, 3.0, a0, a0 + 90.0, 5.0));
+            let (s, c) = (a0 + 90.0f64).to_radians().m_sin_cos();
+            ring.push([o[0] + 3.0 * c, o[1] + 3.0 * s]);
+        }
+        let l = fit(&ring, true).unwrap();
+        let k = kinds(&l);
+        assert_eq!(k.iter().filter(|x| **x == "arc").count(), 4, "{k:?}");
+        assert_eq!(k.iter().filter(|x| **x == "line").count(), 4, "{k:?}");
+    }
+
+    #[test]
+    fn a_tangent_pair_of_arcs_stays_two_arcs() {
+        let mut run = arc_pts([0.0, 0.0], 10.0, 180.0, 90.0, 3.0);
+        run.extend(arc_pts([0.0, 15.0], 5.0, 270.0, 360.0, 3.0));
+        run.push([5.0, 15.0]);
+        let l = fit(&run, false).unwrap();
+        assert_eq!(kinds(&l), ["arc", "arc"], "{l:?}");
+    }
+
+    /// a ring of `n` facets of radius 5 seen at `tilt` degrees: x as it is, y shortened by its cosine
+    fn tilted_ring(n: u32, tilt: f64) -> Vec<V2> {
+        let k = tilt.to_radians().m_cos();
+        (0..n)
+            .map(|i| {
+                let (s, c) = (f64::from(i) * std::f64::consts::TAU / f64::from(n)).m_sin_cos();
+                [5.0 * c, 5.0 * k * s]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_tilted_slot_has_a_spline_at_each_end_and_its_sides_stay_lines() {
+        let k = 60f64.to_radians().m_cos();
+        let squash = |p: V2| [p[0], p[1] * k];
+        let mut ring = vec![[0.0, -5.0 * k], [20.0, -5.0 * k]];
+        ring.extend(
+            arc_pts([20.0, 0.0], 5.0, -90.0, 90.0, 5.0)
+                .into_iter()
+                .skip(1)
+                .map(squash),
+        );
+        ring.extend([[20.0, 5.0 * k], [0.0, 5.0 * k]]);
+        ring.extend(
+            arc_pts([0.0, 0.0], 5.0, 90.0, 270.0, 5.0)
+                .into_iter()
+                .skip(1)
+                .map(squash),
+        );
+        let l = fit(&ring, true).unwrap();
+        let k = kinds(&l);
+        assert_eq!(k.iter().filter(|x| **x == "spline").count(), 2, "{k:?}");
+        assert_eq!(k.iter().filter(|x| **x == "line").count(), 2, "{k:?}");
+        assert!(!k.contains(&"arc"), "{k:?}");
+    }
+
+    #[test]
+    fn an_open_run_after_a_straight_edge_bends_into_one_spline() {
+        // a straight lead to the rim's left end, then the lower half of a tilted rim
+        let half = tilted_ring(64, 60.0);
+        let run: Vec<V2> = std::iter::once([-25.0, 0.0])
+            .chain(half[32..].iter().copied())
+            .chain(std::iter::once([5.0, 0.0]))
+            .collect();
+        let l = fit(&run, false).unwrap();
+        assert_eq!(kinds(&l), ["line", "spline"], "{l:?}");
+    }
+
+    #[test]
+    fn a_tilted_ring_is_one_closed_spline() {
+        let l = fit(&tilted_ring(64, 60.0), true).unwrap();
+        assert_eq!(kinds(&l), ["spline"], "{l:?}");
+        assert_eq!(l.segments[0].to, l.start);
+    }
+
+    #[test]
+    fn odd_runs_fit_without_panicking() {
+        assert!(fit(&[[0.0, 0.0], [1.0, 0.0]], false).is_some());
+        assert!(fit(&[[0.0, 0.0]], false).is_none());
+        assert!(fit(&[[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]], true).is_none());
+        let l = fit(&[[0.0, 0.0], [5.0, 1e-7], [10.0, 0.0], [5.0, -1e-7]], true);
+        assert!(l.is_none_or(|l| !l.segments.is_empty()));
     }
 }

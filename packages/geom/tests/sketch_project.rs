@@ -4,7 +4,11 @@
 
 use serde_json::{Value, json};
 use std::f64::consts::PI;
+use sx_geom::fm::Fm;
 use sx_geom::json::call;
+
+/// the engine's fit tolerance, mm
+const TOL: f64 = 0.005;
 
 fn run(op: &str, req: &Value) -> Value {
     serde_json::from_str(&call(op, &req.to_string()).unwrap_or_else(|e| panic!("{op}: {e}"))).unwrap()
@@ -419,28 +423,72 @@ fn a_face_key_found_on_two_faces_was_split() {
     assert!(e.contains("face this projected was split"), "{e}");
 }
 
-#[test]
-fn a_hole_rim_seen_at_a_tilt_is_a_smooth_ellipse() {
+/// the plate's hole rim projected onto a plane tipped `deg` degrees about x
+fn rim_at_tilt(deg: f64) -> Value {
     let mesh = plate();
     let top = key_of(&mesh, [0.0, 0.0, 1.0], 10.0);
     let table = mesh["faces"]["table"].as_array().unwrap();
     let wall = table.iter().position(|s| s["kind"] == "cylinder").unwrap();
     let wall = mesh["faces"]["keys"][wall].as_u64().unwrap();
     let rim = json!({ "a": [25, 20, 10], "b": [25, 20, 10], "face": [0, 0, 1], "center": [20, 20, 10], "keys": [top, wall] });
-    // a plane tipped 60 degrees about x: the 10 mm circle is seen as an ellipse 10 by 5
-    let (s, c) = (3f64.sqrt() / 2.0, 0.5);
+    let (s, c) = deg.to_radians().m_sin_cos();
     let tilted = json!({ "origin": [0, 0, 0], "normal": [0, -s, c], "u": [1, 0, 0], "v": [0, c, s] });
-    let out = run(
+    run(
         "sketch.project",
         &json!({ "parts": [{ "mesh": mesh }], "frame": tilted, "source": { "kind": "edges", "edges": [rim] } }),
-    );
+    )
+}
+
+#[test]
+fn where_a_tilted_rim_turns_from_a_circle_to_one_spline() {
+    let shape = |deg: f64| {
+        let out = rim_at_tilt(deg);
+        assert_eq!(out["loops"].as_array().unwrap().len(), 1, "{out}");
+        let l = &out["loops"][0];
+        if l["type"] == "circle" {
+            vec!["circle".to_owned()]
+        } else {
+            kinds(l)
+        }
+    };
+    // within the tolerance of its circle up to 2 degrees; then two arcs, each within the tolerance
+    assert_eq!(shape(2.0), ["circle"]);
+    assert_eq!(shape(3.0), ["arc", "arc"]);
+    // one closed spline from 5 degrees to 75
+    for deg in [5.0, 30.0, 45.0, 60.0, 75.0] {
+        assert_eq!(shape(deg), ["spline"], "{deg}");
+    }
+    // nearly edge on, the ends turn too sharply for one smooth run
+    assert_eq!(shape(80.0), ["line", "spline"]);
+    assert_eq!(shape(85.0), ["spline", "spline"]);
+}
+
+#[test]
+fn a_hole_rim_seen_at_a_tilt_is_a_smooth_ellipse() {
+    // tipped 60 degrees about x: the 10 mm circle is seen as an ellipse 10 by 5
+    let out = rim_at_tilt(60.0);
     let loops = out["loops"].as_array().unwrap();
     assert_eq!(loops.len(), 1, "{out}");
-    assert_ne!(loops[0]["type"], "circle", "{out}");
-    let k = kinds(&loops[0]);
-    assert!(k.iter().any(|t| t == "spline"), "{k:?}");
-    assert!(k.iter().all(|t| t != "line"), "{k:?}");
-    let a = area(&out["loops"]);
+    let l = &loops[0];
+    assert_eq!(kinds(l), ["spline"], "{out}");
+    // one closed spline: it ends where it starts
+    let seg = &l["segments"][0];
+    assert_eq!(seg["to"], l["start"]);
+    // every point on the ellipse around the rim's center, half axes 5 along u and 2.5 along v
+    // the rim's center seen on the tipped plane
+    let o = [20.0, 20.0 * 0.5 + 10.0 * 3f64.sqrt() / 2.0];
+    let mut pts = vec![&l["start"]];
+    pts.extend(seg["points"].as_array().unwrap());
+    assert!(pts.len() > 16, "{l}");
+    for p in pts {
+        let (x, y) = (
+            (p[0].as_f64().unwrap() - o[0]) / 5.0,
+            (p[1].as_f64().unwrap() - o[1]) / 2.5,
+        );
+        let off = (x.m_hypot(y) - 1.0).abs() * 5.0;
+        assert!(off < TOL, "{p} is {off} mm off");
+    }
+    let got = area(&out["loops"]);
     let want = PI * 5.0 * 2.5;
-    assert!((a - want).abs() < want * 0.01, "{a} vs {want}");
+    assert!((got - want).abs() < want * 0.01, "{got} vs {want}");
 }
