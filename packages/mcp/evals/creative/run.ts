@@ -15,8 +15,19 @@ import { headlessDesignHost, plainBed } from './design-host'
 import { bedFit, bodyCount, closure, minWall, movingGaps, type BuildVolume, type GapReport } from './mesh-checks'
 import type { CreativePrompt } from './prompts'
 
-/** The tab's design tools (design.* and geom.*), the one way it builds a part: a reply that calls none built nothing. */
+/** The tab's design tools (design.* and geom.*), the one way it builds a part. */
 export const isDesignTool = (name: string): boolean => name.startsWith('design.') || name.startsWith('geom.')
+
+/** The design tools that only read or plan: the plan card, the check and the reads of a design or a face. */
+const DESIGN_READS = new Set(['design.plan', 'design.check', 'design.list', 'design.steps', 'design.timeline', 'design.put_plan', 'geom.info', 'geom.faces', 'geom.face_pick', 'geom.edge_pick', 'geom.measure', 'geom.sketch_check', 'geom.sketch_edit', 'geom.sketch_solve'])
+/** Design tools that change no body: a new design starts empty, a finished sketch is not a body, a save writes a file. */
+const NO_BODY = new Set(['design.new', 'design.sketch', 'design.save'])
+
+/**
+ * A call that adds or changes geometry: any design tool but a read, a plan or one that makes no body. A reply that
+ * makes none built nothing, however much it planned or read, and a question it then asks gets the default answer.
+ */
+export const isBuildCall = (name: string): boolean => isDesignTool(name) && !DESIGN_READS.has(name) && !NO_BODY.has(name)
 
 /** The build volume of the eval machine's printer, from the printer catalog. */
 export function buildVolumeOf(machine: PilotMachine): BuildVolume {
@@ -182,7 +193,7 @@ export interface PromptRun {
   reply: string
   /** What the model sent back, one step per provider request (for --record). */
   steps: ScriptStepData[]
-  /** Why nothing was built, when no design tool was called. */
+  /** Why nothing was built, when no call added or changed geometry. */
   noBuild?: NoBuild
   /** For a mechanism with parts and an engine: the gaps between its bodies, as the engine's fit check measures them. */
   gaps?: GapReport
@@ -266,7 +277,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     }
     return reply
   }
-  const built = (): boolean => events.some((e) => e.type === 'tool_call' && isDesignTool(e.tool))
+  const built = (): boolean => events.some((e) => e.type === 'tool_call' && isBuildCall(e.tool))
   if (!opts.client && opts.tabTools !== true) stale = STALE_TOOLS
   try {
     text = await turn(p.prompt)
