@@ -50,7 +50,7 @@
 
 ### `printer_agent`
 
-**Network agent for the printer**
+**Printer network connection type**
 
 - Type: string
 - Default: empty

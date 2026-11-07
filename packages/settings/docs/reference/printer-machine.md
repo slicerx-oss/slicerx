@@ -141,7 +141,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `detraction_speed`
 
-**Deretraction speed**
+**Deretraction speed (older name)**
 
 - Type: number
 - Unit: mm/s

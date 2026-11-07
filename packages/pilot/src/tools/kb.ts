@@ -22,6 +22,21 @@ export function slim(v: unknown, depth = 0): unknown {
   return v
 }
 
+/**
+ * The settings a question names: by key, by key with spaces, by label, or by the last three or more words of the
+ * key ("max volumetric speed" for filament_max_volumetric_speed), so the words the knowledge base itself uses still
+ * find a setting after its label changes.
+ */
+export function settingsForQuery<T extends { key: string; label: string }>(settings: readonly T[], query: string): T[] {
+  const q = query.toLowerCase()
+  return settings.filter((s) => {
+    const words = s.key.toLowerCase().split('_')
+    const tails = [s.key.toLowerCase(), s.label.toLowerCase()]
+    for (let from = 0; from <= Math.max(0, words.length - 3); from++) tails.push(words.slice(from).join(' '))
+    return tails.some((t) => q.includes(t))
+  })
+}
+
 function range(v: unknown, unit: string): string | null {
   if (!v || typeof v !== 'object') return null
   const r = v as Record<string, unknown>
@@ -157,10 +172,7 @@ export function kbTools(): PilotTool<never>[] {
     args: (i) => `"${i.query}"`,
     async run(i, ctx) {
       const hits = ctx.kb.search(i.query, { limit: i.limit ?? 5 })
-      const settingHits = ctx.kb
-        .settings()
-        .filter((s) => i.query.toLowerCase().includes(s.key) || i.query.toLowerCase().includes(s.label.toLowerCase()))
-        .slice(0, 5)
+      const settingHits = settingsForQuery(ctx.kb.settings(), i.query).slice(0, 5)
       if (hits.length === 0 && settingHits.length === 0) {
         return { ok: false, summary: `Nothing in the knowledge base for "${i.query}"`, output: { found: false, hint: 'Use web.lookup and cite the result.' } }
       }

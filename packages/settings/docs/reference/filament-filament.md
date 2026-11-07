@@ -74,7 +74,7 @@
 
 ### `filament_printable`
 
-**Extruders that can print this filament**
+**Extruder types that can print this filament**
 
 - Type: list of integers, one per extruder
 - Default: [3]

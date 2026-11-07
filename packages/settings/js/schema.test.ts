@@ -160,6 +160,45 @@ describe('plain labels', () => {
     expect(problems('Wave overhang flow (mm3 per mm)')).toEqual(['unit in the label'])
     expect(problems('Brim width')).toEqual([])
     expect(problems('Has PTC heater')).toEqual([])
+    expect(problems('Foo_bar')).toEqual(['underscore'])
+    expect(problems(' Foo')).toEqual(['stray space'])
+    expect(problems('Wall wall')).toEqual(['doubled word'])
+    expect(problems('Has ptc heater')).toEqual(['lower case "ptc"'])
+    expect(problems('Brim width (mm)')).toEqual(['unit in the label'])
+    expect(problems('Nozzle hardness')).toEqual([])
+  })
+
+  it('keeps clipped words out of the choices of a setting too', () => {
+    // A choice may carry a size ("TPU 2.85 mm"), so only a unit is allowed here.
+    const bad = SETTINGS.flatMap((d) => (d.enumLabels ?? []).map((l) => ({ d, l, why: problems(l).filter((w) => w !== 'unit in the label') })))
+      .filter((x) => x.why.length > 0)
+      .map((x) => `${x.d.key}: "${x.l}" (${x.why.join(', ')})`)
+    expect(bad).toEqual([])
+  })
+
+  it('gives no two settings of a section the same label', () => {
+    const seen = new Map<string, string>()
+    const dup: string[] = []
+    for (const d of SETTINGS) {
+      const id = `${d.section}: ${d.label}`
+      const first = seen.get(id)
+      if (first) dup.push(`${id} (${first}, ${d.key})`)
+      else seen.set(id, d.key)
+    }
+    expect(dup).toEqual([])
+  })
+
+  // A unit written into a label ("(mm2)") has to move to the unit field when the label is cleaned, or the panel,
+  // the explain text and the validation messages show a bare number.
+  it('keeps the unit of a setting whose label lost it', () => {
+    expect(settingDef('wave_overhang_flow_mm3_per_mm')?.unit).toBe('mm2')
+    expect(settingDef('wave_overhang_min_new_area')?.unit).toBe('mm2')
+  })
+
+  it('gives a unit to every setting whose key names one', () => {
+    const NAMES = new Set(['mm', 'mm2', 'mm3', 'deg', 'percent'])
+    const bad = SETTINGS.filter((d) => !d.unit && d.key.split('_').some((w) => NAMES.has(w))).map((d) => `${d.key}: ${d.label}`)
+    expect(bad).toEqual([])
   })
 })
 
