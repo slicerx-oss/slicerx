@@ -410,12 +410,17 @@ fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result
 #[cfg(feature = "cad")]
 fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let profiles: Vec<sketch_loft::Profile> = field(req, "profiles")?;
+    let opts = sketch_loft::Options {
+        smooth: field_or_default(req, "smooth")?,
+        closed: field_or_default(req, "closed")?,
+        thicken: field_or_default(req, "thicken")?,
+    };
     let op: face::Operation = field_or_default(req, "operation")?;
     let target = match req.get("target") {
         None | Some(Value::Null) => None,
         Some(v) => Some(item(v, "target", files)?),
     };
-    let tool = sketch_loft::loft(&profiles)?;
+    let tool = sketch_loft::loft_with(&profiles, &opts)?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc)
@@ -425,12 +430,13 @@ fn sketch_loft_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
 fn sketch_sweep_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let profile: sketch_loft::Profile = field(req, "profile")?;
     let path: sketch_sweep::Path = field(req, "path")?;
+    let thicken: Option<crate::thicken::Thicken> = field_or_default(req, "thicken")?;
     let op: face::Operation = field_or_default(req, "operation")?;
     let target = match req.get("target") {
         None | Some(Value::Null) => None,
         Some(v) => Some(item(v, "target", files)?),
     };
-    let tool = sketch_sweep::sweep(&profile, &path)?;
+    let tool = sketch_sweep::sweep_with(&profile, &path, thicken.as_ref())?;
     let world = target.as_ref().map(Item::world);
     let r = face::apply(tool, op, world.as_ref())?;
     tool_reply(r, target.as_ref(), op, enc)
