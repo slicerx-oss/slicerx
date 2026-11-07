@@ -15,7 +15,7 @@ G-code for this filament, written each time the print moves to another feature, 
 
 ### `filament_end_gcode`
 
-**Filament end gcode**
+**Filament end G-code**
 
 - Type: list of strings, one per extruder
 - Default: [" "]
@@ -24,7 +24,7 @@ G-code for this filament, written each time the print moves to another feature, 
 
 ### `filament_start_gcode`
 
-**Filament start gcode**
+**Filament start G-code**
 
 - Type: list of strings, one per extruder
 - Default: [" "]

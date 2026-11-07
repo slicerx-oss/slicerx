@@ -115,6 +115,54 @@ describe('labels', () => {
   })
 })
 
+describe('plain labels', () => {
+  // Every shown label is plain words a maker reads. These patterns are the ways a label has read like a key before:
+  // clipped words (efc, nc, ec, id, dist, pos, temp, min, max), "Gcode" for G-code, borrowed terms, a unit written
+  // into the label, a lone x, y, z or e in lower case, a doubled word. Add to the table when a new one turns up.
+  const ANY_CASE =
+    /\b(efc|nc|ec|mmu|zaa|algo|calib|dev|dist|pos|temp|freq|damp|min|max|id|apikey|cafile|webui|printhost|gcode|dont|elefant|toolchange|multitool|bbl|pwm|perimeters?|vitrification|stamping)\b/i
+  // Product and material names that stay in capitals (AMS, PTC, HRC) are fine; the same letters in lower case are a key.
+  const LOWER_ONLY = /\b(ams|ptc|hrc|pa)\b/
+  const LONE_AXIS = /\b[xyze]\b/
+  const UNIT_IN_LABEL = /\((mm|s|%|C|deg)[^)]*\)|\bmm[23]?\b|\bper mm\b/
+  const DOUBLED = /\b(\w+)\s+\1\b/i
+
+  const problems = (label: string): string[] => {
+    const out: string[] = []
+    if (label.includes('_')) out.push('underscore')
+    if (label !== label.trim() || label.includes('  ')) out.push('stray space')
+    const any = ANY_CASE.exec(label)
+    if (any) out.push(`internal word "${any[0]}"`)
+    const lower = LOWER_ONLY.exec(label)
+    if (lower) out.push(`lower case "${lower[0]}"`)
+    if (LONE_AXIS.test(label)) out.push('lone lower case x, y, z or e')
+    if (UNIT_IN_LABEL.test(label)) out.push('unit in the label')
+    if (DOUBLED.test(label)) out.push('doubled word')
+    return out
+  }
+
+  it('keeps clipped words, borrowed terms and units out of every label', () => {
+    const bad = SETTINGS.map((d) => ({ d, why: problems(d.label) }))
+      .filter((x) => x.why.length > 0)
+      .map((x) => `${x.d.key}: "${x.d.label}" (${x.why.join(', ')})`)
+    expect(bad).toEqual([])
+  })
+
+  it('starts every label with a capital or a digit, except the sleipnir rows', () => {
+    const bad = SETTINGS.filter((d) => !/^[A-Z0-9]/.test(d.label) && !d.label.startsWith('sleipnir')).map((d) => `${d.key}: ${d.label}`)
+    expect(bad).toEqual([])
+  })
+
+  it('catches the labels this table was written for', () => {
+    expect(problems('Brim use efc outline')).toEqual(['internal word "efc"'])
+    expect(problems('Gcode comments')).toEqual(['internal word "Gcode"'])
+    expect(problems('First x layer fan speed')).toEqual(['lone lower case x, y, z or e'])
+    expect(problems('Wave overhang flow (mm3 per mm)')).toEqual(['unit in the label'])
+    expect(problems('Brim width')).toEqual([])
+    expect(problems('Has PTC heater')).toEqual([])
+  })
+})
+
 describe('knowledge/settings.yaml', () => {
   const NORM: Record<string, string> = {
     floats: 'float', ints: 'int', bools: 'bool', percents: 'percent', strings: 'string', enums: 'enum', gcode: 'string',
