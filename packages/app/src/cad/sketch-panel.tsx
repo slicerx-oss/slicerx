@@ -239,7 +239,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
   const loops = p.op === 'sketch.revolve' ? p.loops : p.shape.type === 'sketch' ? p.shape.loops : []
   const sketch = fromLoops(ownLoops(loops))
   const drawnOn = ed.step.sketch ? sketchById(get().timeline, ed.step.sketch) : null
-  const projected = { list: drawnOn?.projections ?? [], loops: loops.filter((l) => l.projected !== undefined) }
+  const projected = { list: drawnOn?.projections ?? [], loops: loops.filter((l) => l.projected !== undefined), next: drawnOn?.nextProjection ?? 0 }
   const constraints = (p.op === 'sketch.revolve' ? p.constraints : p.shape.type === 'sketch' ? p.shape.constraints : undefined) ?? []
   if (!sketch) return { note: 'This sketch has segments given by length and angle, which sketch mode cannot show. Its numbers can still change in the history list.' }
   const now = nowOf(ed.step, ed.entry.transform)
@@ -304,7 +304,7 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
       constraints: (k.constraints ?? []) as SketchConstraint[],
       from: open,
       ...(open.mode === 'edit' ? {} : { target }),
-      projected: { list: k.projections ?? [], loops: k.loops.filter((l) => l.projected !== undefined) },
+      projected: { list: k.projections ?? [], loops: k.loops.filter((l) => l.projected !== undefined), next: k.nextProjection ?? 0 },
     },
   }
 }
@@ -419,7 +419,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
   const [constraints, setConstraints] = useDraft<SketchConstraint[]>('constraints', init?.constraints ?? [])
   // model geometry projected into the sketch: drawn and checked with it, never edited as its own loops
-  const [projected, setProjected] = useDraft<Projected>('projected', init?.projected ?? { list: [], loops: [] })
+  const [projected, setProjected] = useDraft<Projected>('projected', init?.projected ?? { list: [], loops: [], next: 0 })
   const projectedShapes = useMemo(() => fromLoops(projected.loops) ?? [], [projected.loops])
   // The sketch's own undo and redo: each drawn, typed, edited or deleted change is a step; the solver settling a change
   // and the frames of one point drag fold into the step that started them.
@@ -1601,7 +1601,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name, profile, dof: solved ? solved.solved.dof : null, ready, reason, loops: loopsKey })
   }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
-  const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list })
+  const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
   // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
   // timeline first and the solid names it, and a finished one takes changed projections first.
   const keepProjections = async (): Promise<string | null> => {
@@ -2005,7 +2005,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     </div>
   ) : null
   // edges, a face or a body projected onto the plane; a step opened from the history keeps what it has
-  const projectCard = <ProjectCard frame={plane.frame} value={projected} onChange={setProjected} locked={stepEdit} />
+  const projectCard = <ProjectCard frame={plane.frame} value={projected} onChange={setProjected} locked={stepEdit} {...(init?.from ? { sketch: init.from.id } : {})} />
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label} {...(change ? { action: change } : {})}>
       {planeAsk}

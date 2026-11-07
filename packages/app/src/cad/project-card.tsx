@@ -9,15 +9,22 @@ import { Button, Seg } from '@slicerx/ui'
 import { useState } from 'react'
 import { get } from '../state/store'
 import { errorText, Message, Note, useProbe } from './panel-kit'
-import { bodySource, edgeSource, faceSource, projectNow, projectionName } from './project-sketch'
+import { addsTo, bodySource, edgeSource, faceSource, projectNow, projectionName } from './project-sketch'
 
-/** A sketch's projections and their curves, as the editor holds them. */
+/** A sketch's projections and their curves, as the editor holds them, and how many ids it has handed out. */
 export interface Projected {
   list: Projection[]
   loops: SketchLoop[]
+  next: number
 }
 
 type Kind = 'edges' | 'face' | 'body'
+
+const KINDS: { value: Kind; label: string; testId: string }[] = [
+  { value: 'edges', label: 'Edges', testId: 'sketch-project-edges' },
+  { value: 'face', label: 'Face', testId: 'sketch-project-face' },
+  { value: 'body', label: 'Body', testId: 'sketch-project-body' },
+]
 
 const MODES: { value: ProjectMode; label: string }[] = [
   { value: 'real', label: 'Real' },
@@ -31,15 +38,20 @@ const HINTS: Record<Kind, string> = {
 }
 
 /** The projections as a sketch item, so the cad-history helpers can change them. */
-const asSketch = (p: Projected, frame: FaceFrame): SketchItem => ({ kind: 'sketch', id: 'draft', name: '', frame, loops: p.loops, projections: p.list })
-const fromSketch = (k: SketchItem): Projected => ({ list: k.projections ?? [], loops: k.loops })
+const asSketch = (p: Projected, frame: FaceFrame): SketchItem => ({ kind: 'sketch', id: 'draft', name: '', frame, loops: p.loops, projections: p.list, ...(p.next ? { nextProjection: p.next } : {}) })
+const fromSketch = (k: SketchItem): Projected => ({ list: k.projections ?? [], loops: k.loops, next: k.nextProjection ?? 0 })
 
 function Picker({ onPick, faces }: { onPick: (hit: PickEvent) => void; faces: boolean }) {
   useProbe(onPick, faces)
   return null
 }
 
-export function ProjectCard({ frame, value, onChange, locked = false }: { frame: FaceFrame; value: Projected; onChange: (next: Projected) => void; locked?: boolean }) {
+/**
+ * `sketch` is the finished sketch being changed: a source is read where that sketch is in the timeline, as the MCP
+ * tool and replay read it. A new sketch reads the model as it stands. `locked` (a step opened from the history) shows
+ * the projections and changes none.
+ */
+export function ProjectCard({ frame, value, onChange, locked = false, sketch }: { frame: FaceFrame; value: Projected; onChange: (next: Projected) => void; locked?: boolean; sketch?: string }) {
   const [picking, setPicking] = useState<Kind | null>(null)
   const [mode, setMode] = useState<ProjectMode>('real')
   const [note, setNote] = useState<string | null>(null)
@@ -48,7 +60,7 @@ export function ProjectCard({ frame, value, onChange, locked = false }: { frame:
   const [busy, setBusy] = useState(false)
 
   const put = async (source: ProjectSource, id: string) => {
-    const loops = await projectNow(source, frame)
+    const loops = await projectNow(source, frame, sketch)
     const was = value.list.find((p) => p.id === id)
     onChange(fromSketch(withProjection(asSketch(value, frame), { id, source, mode: was?.mode ?? mode }, loops)))
   }
@@ -60,16 +72,19 @@ export function ProjectCard({ frame, value, onChange, locked = false }: { frame:
     setBusy(true)
     setNote(null)
     const run = async () => {
+      const fresh = () => nextProjectionId(asSketch(value, frame))
       if (picking === 'body') {
-        await put(bodySource(e), nextProjectionId(asSketch(value, frame)))
+        await put(bodySource(e), fresh())
         setPicking(null)
       } else if (picking === 'face') {
-        await put(faceSource(e, part, hit.triangle!, hit.point!), nextProjectionId(asSketch(value, frame)))
+        await put(faceSource(e, part, hit.triangle!, hit.point!), fresh())
         setPicking(null)
       } else {
         const open = edges ? value.list.find((p) => p.id === edges) : undefined
-        const id = open?.id ?? nextProjectionId(asSketch(value, frame))
-        await put(await edgeSource(e, part, hit.triangle!, hit.point!, open?.source), id)
+        const next = await edgeSource(e, part, hit.triangle!, hit.point!, open?.source)
+        // an edge of another body or part starts a projection of its own
+        const id = open && addsTo(open.source, next) ? open.id : fresh()
+        await put(next, id)
         setEdges(id)
       }
     }
@@ -98,19 +113,7 @@ export function ProjectCard({ frame, value, onChange, locked = false }: { frame:
         <Note>Projections are added to a finished sketch or a new one; a step opened from the history keeps the ones it has.</Note>
       ) : (
         <>
-          <div className="cad-row sketch-project-kinds" role="group" aria-label="Project">
-            {(['edges', 'face', 'body'] as const).map((k) => (
-              <Button key={k} size="sm" className="tp-pill" data-testid={`sketch-project-${k}`} pressed={picking === k} onClick={() => start(k)}>
-                {k === 'edges' ? 'Edges' : k === 'face' ? 'Face' : 'Body'}
-              </Button>
-            ))}
-          </div>
-          <div className="tp-row sketch-project-mode">
-            <span className="tp-label" data-tip-title="Use as" data-tip-body="Real curves close profiles to extrude or cut. Reference curves are construction: they show and snap, and make no profile.">
-              Use as
-            </span>
-            <Seg label="Use new projections as" size="sm" value={mode} onChange={setMode} options={MODES} />
-          </div>
+          <Seg label="Project" size="sm" full className="sketch-project-kinds" value={picking ?? ('' as Kind)} onChange={start} options={KINDS} />
           {picking ? (
             <p className="cad-hint" role="status" data-testid="sketch-project-hint">
               {busy ? 'Projecting...' : HINTS[picking]}
@@ -124,16 +127,39 @@ export function ProjectCard({ frame, value, onChange, locked = false }: { frame:
           {picking ? <Picker onPick={onPick} faces={picking !== 'edges'} /> : null}
         </>
       )}
-      {value.list.map((p) => (
-        <div key={p.id} className="sketch-projection" data-testid={`sketch-projection-${p.id}`}>
-          <div className="cad-row">
-            <span className="sketch-projection-name">{projectionName(p.source)}</span>
-            <Seg label={`Use ${projectionName(p.source)} as`} size="sm" value={p.mode} onChange={(m) => switchMode(p.id, m)} options={MODES} />
-            <Button size="sm" variant="ghost" icon="delete" aria-label={`Remove ${projectionName(p.source)}`} data-testid={`sketch-projection-${p.id}-remove`} onClick={() => remove(p.id)} />
+      {/* "Use as" and each projection share three columns, so their choices line up */}
+      <div className="sketch-project-list">
+        {locked ? null : (
+          <div className="sketch-projection sketch-project-mode">
+            <span className="tp-label" data-tip-title="Use as" data-tip-body="Real curves close profiles to extrude or cut. Reference curves are construction: they show and snap, and make no profile.">
+              Use as
+            </span>
+            <Seg label="Use new projections as" size="sm" value={mode} onChange={setMode} options={MODES} />
+            <span />
           </div>
-          {p.lost ? <Message text={p.lost} testId={`sketch-projection-${p.id}-lost`} /> : null}
-        </div>
-      ))}
+        )}
+        {value.list.map((p) => {
+          const name = projectionName(p.source)
+          return (
+            <div key={p.id} className="sketch-projection" data-testid={`sketch-projection-${p.id}`}>
+              <span className="sketch-projection-name" data-tip-title={name}>
+                {name}
+              </span>
+              {locked ? (
+                <span className="sketch-projection-mode">{p.mode === 'real' ? 'Real' : 'Reference'}</span>
+              ) : (
+                <Seg label={`Use ${name} as`} size="sm" value={p.mode} onChange={(m) => switchMode(p.id, m)} options={MODES} />
+              )}
+              {locked ? <span /> : <Button size="sm" variant="ghost" icon="delete" aria-label={`Remove ${name}`} data-testid={`sketch-projection-${p.id}-remove`} onClick={() => remove(p.id)} />}
+              {p.lost ? (
+                <div className="sketch-projection-note">
+                  <Message text={p.lost} testId={`sketch-projection-${p.id}-lost`} />
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
       {note ? <Message text={note} /> : null}
     </div>
   )
