@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 769 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 771 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -12,10 +12,10 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Advanced extrusion](process-advanced.md): 30 settings
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
-- [Multi material](process-multimaterial.md): 43 settings
+- [Multi material](process-multimaterial.md): 44 settings
 - [Overhangs and bridges](process-overhangs.md): 30 settings
 - [Profile metadata](process-profile.md): 8 settings
-- [Quality and geometry](process-quality.md): 96 settings
+- [Quality and geometry](process-quality.md): 97 settings
 - [Retraction](process-retraction.md): 2 settings
 - [Special modes](process-special.md): 25 settings
 - [Speed](process-speed.md): 23 settings
@@ -351,6 +351,7 @@ Alphabetical, each linking to its group file.
 - `initial_layer_acceleration`: First layer acceleration, [process/motion](process-motion.md#initial_layer_acceleration)
 - `initial_layer_fan_speed`: Initial layer fan speed, [filament/cooling](filament-cooling.md#initial_layer_fan_speed)
 - `initial_layer_flow_ratio`: Initial layer flow ratio, [process/advanced](process-advanced.md#initial_layer_flow_ratio)
+- `initial_layer_infill_line_width`: Infill line width on the first layer, [process/quality](process-quality.md#initial_layer_infill_line_width)
 - `initial_layer_infill_speed`: Infill speed on the first layer, [process/speed](process-speed.md#initial_layer_infill_speed)
 - `initial_layer_inner_wall_line_width`: Inner wall line width on the first layer, [process/quality](process-quality.md#initial_layer_inner_wall_line_width)
 - `initial_layer_internal_solid_infill_line_width`: Internal solid infill line width on the first layer, [process/quality](process-quality.md#initial_layer_internal_solid_infill_line_width)
@@ -526,6 +527,7 @@ Alphabetical, each linking to its group file.
 - `prime_tower_enable_framework`: Prime tower enable framework, [process/multimaterial](process-multimaterial.md#prime_tower_enable_framework)
 - `prime_tower_flat_ironing`: Iron the prime tower flat, [process/multimaterial](process-multimaterial.md#prime_tower_flat_ironing)
 - `prime_tower_infill_gap`: Prime tower infill gap, [process/multimaterial](process-multimaterial.md#prime_tower_infill_gap)
+- `prime_tower_line_width`: Prime tower line width, [process/multimaterial](process-multimaterial.md#prime_tower_line_width)
 - `prime_tower_max_speed`: Prime tower max speed, [process/multimaterial](process-multimaterial.md#prime_tower_max_speed)
 - `prime_tower_position_type`: Prime tower position, [printer/machine](printer-machine.md#prime_tower_position_type)
 - `prime_tower_skip_points`: Prime tower skip points, [process/multimaterial](process-multimaterial.md#prime_tower_skip_points)

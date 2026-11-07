@@ -1,6 +1,6 @@
 # Process: Quality and geometry
 
-96 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+97 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `detect_thin_wall`
 
@@ -148,6 +148,18 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: on
 - Tier: Expert, quality
 - Changing it redoes: contours
+- mimir class: read (not in the catalog: never written)
+
+### `initial_layer_infill_line_width`
+
+**Infill line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `initial_layer_inner_wall_line_width`
