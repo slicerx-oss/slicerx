@@ -684,6 +684,9 @@ importers:
       '@slicerx/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@slicerx/edition-config':
+        specifier: workspace:*
+        version: link:../edition-config
       '@slicerx/embed':
         specifier: workspace:*
         version: link:../embed

@@ -221,9 +221,10 @@ describe('the creative prompt set', () => {
 
   it('a design call without a geometry engine is reported in the tool\'s words', async () => {
     const p = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
-    const run = await runPrompt(p, { geom: undefined, steps: [{ calls: [{ name: 'make_model', args: { name: 'Cable organizer', parts: [{ kind: 'box', name: 'base', sizeMm: [100, 30, 20] }] } }] }, { text: 'Done.' }] })
-    expect(run.calls).toContain('make_model')
+    const steps = [{ calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }, { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] }, { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 100, heightMm: 30 }, distance_mm: 20 } }] }, { text: 'Done.' }]
+    const run = await runPrompt(p, { geom: undefined, steps, tabTools: true })
+    expect(run.calls).toEqual(['pilot.sheet', 'design.new', 'geom.extrude'])
     expect(run.parsed.pass).toBe(false)
-    expect(run.parsed.detail).toMatch(/^make_model: /)
+    expect(run.parsed.detail).toMatch(/^geom\.extrude: .*geometry engine/)
   })
 })
