@@ -9,7 +9,7 @@
 // prints around it, off the bed or into an excluded area lands it again the same way, in the same undo step, and says
 // so. A part that still prints where it stands stays put; one parked off the bed before the step, or a locked one,
 // stays where it is, and the step says it is off the bed.
-import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, landEdit, landNew, stepId, type BedLanding, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -263,15 +263,19 @@ export function appDesignHost(loader: Loader): DesignHost {
   /**
    * Where a new body goes on the shown plate: where it was built when it prints there (printsOnBed: on the bed, and its
    * brim and skirt too), else the middle of the bed or the first free spot. A body with no room anywhere stays where it
-   * was built, and says so.
+   * was built, and says so. The rule is cad-history's landNew, which the creative eval's design host runs too.
    */
   function landing(id: string, parts: PlateEntry['parts'], transform: Mat4): { transform: Mat4; moved?: Landed } {
+    return landNew(parts, transform, onPlate(id))
+  }
+
+  /** The shown plate as the landing rule (@slicerx/cad-history landing.ts) reads it for design `id`. */
+  function onPlate(id: string): BedLanding<PlateEntry['parts']> {
     const s = get()
-    const item = { id, parts, transform: [...transform] }
-    if (printsOnBed(item, s.bed)) return { transform: item.transform }
-    const to = landOnBed(item, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions())
-    if (!to) return { transform: item.transform, moved: { offBed: true } }
-    return { transform: to, moved: shiftOf(transform, to) }
+    return {
+      printsOnBed: (parts, transform) => printsOnBed({ parts, transform }, s.bed),
+      landOnBed: (parts, transform) => landOnBed({ id, parts, transform }, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions()),
+    }
   }
 
   /**
@@ -284,29 +288,12 @@ export function appDesignHost(loader: Loader): DesignHost {
   function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined; landed: () => Landed | undefined } {
     let out: Landed | undefined
     const land = (latest: PlateEntry, parts: PlateEntry['parts']): Mat4 | undefined => {
-      out = undefined
-      const s = get()
-      const item = { id, parts, transform: [...latest.transform] }
-      if (printsOnBed(item, s.bed)) return undefined
-      if (!printsOnBed({ parts: latest.parts, transform: latest.transform }, s.bed)) {
-        out = { offBed: true, edit: true, parked: true }
-        return undefined
-      }
-      if (latest.locked) {
-        out = { offBed: true, edit: true, locked: true }
-        return undefined
-      }
-      const to = landOnBed(item, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions())
-      out = to ? { ...shiftOf(latest.transform, to), edit: true } : { offBed: true, edit: true }
-      return to ?? undefined
+      const r = landEdit({ parts: latest.parts, transform: latest.transform, locked: latest.locked }, parts, onPlate(id))
+      out = r.landed
+      return r.to
     }
     return { land, landed: () => out }
   }
 
   return host
 }
-
-const r2 = (v: number) => Math.round(v * 100) / 100
-
-/** How far a landing moved a part, mm, in X and Y. */
-const shiftOf = (from: Mat4, to: Mat4) => ({ dxMm: r2((to[12] ?? 0) - (from[12] ?? 0)), dyMm: r2((to[13] ?? 0) - (from[13] ?? 0)) })
