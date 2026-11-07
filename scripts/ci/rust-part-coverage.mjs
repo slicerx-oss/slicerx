@@ -18,7 +18,7 @@ import { commands, loadWeights } from './windows-rust-tests.mjs'
 // The splits ci.yml runs. job is the workflow job of the parts; extra lists the sx-core test targets that have a part
 // of their own beside the split (the hosted Linux split keeps firmware and requests apart).
 export const SPLITS = [
-  { name: 'macOS', job: 'rust-macos-parts', of: 2 },
+  { name: 'macOS', job: 'rust-macos-parts', of: 3 },
   { name: 'Windows', job: 'rust-windows-parts', of: 3 },
   { name: 'hosted Linux core', job: 'rust-tests-part', of: 2, coreOnly: true, extra: ['firmware', 'requests'] },
 ]
