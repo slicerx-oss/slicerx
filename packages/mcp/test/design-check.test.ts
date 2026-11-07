@@ -403,6 +403,45 @@ describe('design.check picks the design it checks', () => {
     expect(client.plans.get('box-1')?.design).toBe('d2')
   })
 
+  it('follows a replacement: a card plan whose part failed is checked on the design started to fix it', async () => {
+    // as in a recorded run: the plan is approved, design.new starts d1 (the tab ties the plan to it), the check fails,
+    // design.new starts d2 to fix it, and the check names d2
+    const d1 = boxDesign('d1', 'Spinner ring')
+    d1.parts[0] = { name: 'Spinner ring', slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
+    const d2 = boxDesign('d2', 'Spinner ring v2')
+    const plans = createPlanRegistry()
+    plans.put({ ...boxPlan, part: 'Spinner ring' }, undefined, 'card')
+    plans.tie('box-1', 'd1')
+    const all = [d1]
+    const tool = designToolset(hostOf(all), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    const check = async (args: Record<string, unknown>) => (await tool.run(tool.input.parse(args), {} as ToolContext)).output as { design: string; pass: boolean; chosen: string }
+    expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd1', pass: false })
+    all.push(d2)
+    expect(await check({ planId: 'box-1', design: 'd2' })).toMatchObject({ design: 'd2', pass: true, chosen: 'tied to the plan' })
+    expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1 })
+    // the plan now follows d2, with or without the design named
+    expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: true })
+    // a client off the card's side still cannot move it
+    const client = designToolset(hostOf(all), {}, { plans }).find((t) => t.name === 'design.check')!
+    await expect(client.run(client.input.parse({ planId: 'box-1', design: 'd1' }), {} as ToolContext)).rejects.toThrow(/already tied to design d2/)
+  })
+
+  it('a replacement keeps the one fix round: a second miss on the new design closes the plan', async () => {
+    const bad = (id: string) => {
+      const d = boxDesign(id, 'Spinner ring')
+      d.parts[0] = { name: 'Spinner ring', slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
+      return d
+    }
+    const plans = createPlanRegistry()
+    plans.put(boxPlan, 'd1', 'card')
+    const tool = designToolset(hostOf([bad('d1'), bad('d2')]), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext)
+    const second = (await tool.run(tool.input.parse({ planId: 'box-1', design: 'd2' }), {} as ToolContext)).output as { design: string; stop?: string }
+    expect(second.design).toBe('d2')
+    expect(second.stop).toContain('The fix round is used')
+    expect(plans.get('box-1')?.closed).toBeDefined()
+  })
+
   it("checks a client's given design for an untied card plan without tying it; the card side ties it", async () => {
     const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, undefined, 'card')
     const client = await checkOn([a, b], card, { planId: 'box-1', design: 'd2' })
