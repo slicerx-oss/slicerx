@@ -10,6 +10,7 @@ import { writeZip } from '../src/zip'
 import { connect, data, text } from './helpers'
 
 const SKIPPED_PAINT = 'paint in a newer facets JSON version was skipped'
+const NEWER_PAINT = 'Some paint in this file uses a newer format and was left out.'
 const POSITIONS = [0, 0, 0, 10, 0, 0, 0, 10, 0, 10, 10, 0, 0, 0, 10, 10, 0, 10, 0, 10, 10, 10, 10, 10]
 const INDICES = [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4, 2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5]
 
@@ -34,6 +35,15 @@ describe('slicerx_design_open reads back what the engine left out', () => {
     expect(output.designs.map((d) => d.name)).toEqual(['Box'])
     expect(output.notes).toEqual([SKIPPED_PAINT])
     expect(text(r)).toContain(SKIPPED_PAINT)
+  })
+
+  it('says a note that is a whole sentence as it is', async () => {
+    const { r, output } = await open([NEWER_PAINT])
+    expect(output.notes).toEqual([NEWER_PAINT])
+    expect(text(r)).toContain(`Opened 1 design. ${NEWER_PAINT}`)
+    expect(text(r)).not.toContain('Not everything')
+    const both = await open([SKIPPED_PAINT, NEWER_PAINT])
+    expect(text(both.r)).toContain(`Opened 1 design. Not everything in the file was read: ${SKIPPED_PAINT}. ${NEWER_PAINT}`)
   })
 
   it('has no notes when the file was read whole', async () => {

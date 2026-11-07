@@ -334,7 +334,11 @@ fn a_facets_painting_of_a_newer_version_is_left_out_with_a_note() {
     let paint = &p.objects[0].parts[0].paint;
     assert!(paint.color.is_empty());
     assert_eq!(paint.seam, vec![(1, "8".to_owned())]);
-    assert_eq!(p.notes.len(), 1, "{:?}", p.notes);
+    // A whole sentence, short enough to show in full where the app's open note is narrowest.
+    assert_eq!(
+        p.notes,
+        vec!["Some paint in this file uses a newer format and was left out.".to_owned()]
+    );
     // A file that is not the JSON leaves the paint alone.
     let p = painted([r#"paint_color="4""#, ""], &[(FACETS, "{not json")]);
     assert_eq!(p.objects[0].parts[0].paint.color, vec![(0, "4".to_owned())]);
