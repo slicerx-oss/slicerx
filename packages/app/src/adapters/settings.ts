@@ -18,19 +18,6 @@ export function formatValue(def: SettingDef | undefined, v: SettingValue | undef
   return plainValue(def, v)
 }
 
-const GROUP_ORDER = ['quality', 'strength', 'speed', 'support', 'adhesion', 'cooling', 'temperature', 'extrusion', 'multimaterial', 'machine', 'gcode']
-
-export function groupLabel(group: string): string {
-  if (group === 'multimaterial') return 'Multi-material'
-  if (group === 'gcode') return 'G-code'
-  return group.charAt(0).toUpperCase() + group.slice(1)
-}
-
-export function groupRank(group: string): number {
-  const i = GROUP_ORDER.indexOf(group)
-  return i < 0 ? GROUP_ORDER.length : i
-}
-
 export { baseConfig, easyConfig, GOALS, isGoal, resolveConfig } from './config'
 
 export function show(key: string, config: PrintConfig): string {

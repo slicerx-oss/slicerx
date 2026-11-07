@@ -54,7 +54,8 @@ export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'pro
 
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {
-  call<T = unknown>(method: string, args?: Record<string, unknown>): Promise<T>
+  /** `timeoutMs` lets a call wait longer for the app (the hub allows up to 120 s), such as one the person answers. */
+  call<T = unknown>(method: string, args?: Record<string, unknown>, opts?: { timeoutMs?: number }): Promise<T>
 }
 
 /**

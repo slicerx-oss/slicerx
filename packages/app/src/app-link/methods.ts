@@ -189,6 +189,12 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // Vault designs as the Vault lists them, with the store session the app already has: the catalog, and the person's
   // saved and uploaded designs when signed in; never a file, a download link or a token
   'vault.list': 'read',
+  // The person's saved presets as Compare presets has them: listed and compared (read), and one setting's value copied
+  // from the second side into a preset, or that copy put back (edit: it changes the saved preset).
+  'presets.list': 'read',
+  'presets.compare': 'read',
+  'presets.copy': 'edit',
+  'presets.undo': 'edit',
 }
 
 export { LinkError } from './methods-error'
@@ -523,6 +529,10 @@ const HANDLERS: Record<string, Handler> = {
   'mimir.brain': async () => (await import('./mimir-brain')).brainState(),
   'mimir.run': async (args) => (await import('./mimir-run')).readRun(args),
   'vault.list': async (args) => (await import('./vault')).listVault(args),
+  'presets.list': async (args) => (await import('./presets')).presetCall('presets.list', args),
+  'presets.compare': async (args) => (await import('./presets')).presetCall('presets.compare', args),
+  'presets.copy': async (args, client) => (await import('./presets')).presetCall('presets.copy', args, client),
+  'presets.undo': async (args, client) => (await import('./presets')).presetCall('presets.undo', args, client),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

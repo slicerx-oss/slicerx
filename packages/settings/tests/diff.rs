@@ -131,9 +131,54 @@ fn formats_values() {
             setting_def("outer_wall_speed"),
             Some(&Value::Floats(vec![200.0, 350.0]))
         ),
-        "200, 350"
+        "200, 350 mm/s"
     );
     assert_eq!(format_value(None, None), "not set");
+}
+
+#[test]
+fn lists_carry_their_unit_and_points_read_x_by_y() {
+    let text = |key: &str, v: Value| format_value(setting_def(key), Some(&v));
+    assert_eq!(
+        text("machine_max_speed_x", Value::Floats(vec![500.0, 300.0])),
+        "500, 300 mm/s"
+    );
+    assert_eq!(text("slow_down_layer_time", Value::Floats(vec![8.0])), "8 s");
+    assert_eq!(
+        text("slow_down_layer_time", Value::Floats(vec![8.0, 4.0])),
+        "8, 4 s"
+    );
+    assert_eq!(text("fan_cooling_layer_time", Value::Floats(vec![60.0])), "60 s");
+    assert_eq!(
+        text("additional_cooling_fan_speed", Value::Ints(vec![20, 30])),
+        "20%, 30%"
+    );
+    assert_eq!(
+        text("toolchange_park_position", Value::Points(vec![[10.0, 12.0]])),
+        "10 x 12 mm"
+    );
+    // a point is one value, even with both coordinates alike
+    assert_eq!(text("bed_mesh_min", Value::Point([10.0, 10.0])), "10 x 10 mm");
+    assert_eq!(
+        text(
+            "printable_area",
+            Value::Points(vec![[0.0, 0.0], [200.0, 0.0], [200.0, 200.0]])
+        ),
+        "0 x 0, 200 x 0, 200 x 200"
+    );
+    assert_eq!(text("filament_wipe", Value::Bools(vec![true, false])), "on, off");
+    assert_eq!(text("filament_wipe", Value::Bools(vec![])), "not set");
+    assert_eq!(text("toolchange_park_position", Value::Points(vec![])), "not set");
+}
+
+#[test]
+fn one_layer_reads_in_the_singular() {
+    let raft = || setting_def("raft_layers");
+    assert_eq!(format_value(raft(), Some(&Value::Int(1))), "1 layer");
+    assert_eq!(format_value(raft(), Some(&Value::Int(2))), "2 layers");
+    assert_eq!(format_value(raft(), Some(&Value::Int(0))), "0 layers");
+    assert_eq!(format_value(raft(), Some(&Value::Float(1.0))), "1 layer");
+    assert_eq!(format_value(raft(), Some(&Value::Ints(vec![1, 1]))), "1 layer");
 }
 
 #[test]

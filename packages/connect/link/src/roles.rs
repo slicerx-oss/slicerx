@@ -276,6 +276,14 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Vault designs as the Vault lists them, read with the store session the app already has: the catalog, and the
     // person's own saved and uploaded designs when signed in. Never a file, a download link or a token.
     ("vault.list", LinkClass::Read),
+    // The person's saved presets as Compare presets has them: listed and compared. Copying one setting's value into a
+    // saved preset, or putting that copy back, changes the preset, so both are edits. Presets are not the open project
+    // the grant covers, so the app also asks the person about each copy and undo. Nothing is created, deleted or
+    // applied to the plate by a client.
+    ("presets.list", LinkClass::Read),
+    ("presets.compare", LinkClass::Read),
+    ("presets.copy", LinkClass::Edit),
+    ("presets.undo", LinkClass::Edit),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -597,6 +605,10 @@ mod tests {
         ("mimir.brain", LinkClass::Read),
         ("mimir.run", LinkClass::Read),
         ("vault.list", LinkClass::Read),
+        ("presets.list", LinkClass::Read),
+        ("presets.compare", LinkClass::Read),
+        ("presets.copy", LinkClass::Edit),
+        ("presets.undo", LinkClass::Edit),
     ];
 
     #[test]

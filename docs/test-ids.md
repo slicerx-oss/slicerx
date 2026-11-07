@@ -161,6 +161,12 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `set-units-<unit>` | Display units in Settings, Modeling: `set-units-mm`, `set-units-in` |
 | `set-precision` | The Precision row in Settings |
 | `set-toolbar-size` | The Toolbar size row in Settings, Look and feel: Large, Medium or Small (desktop only) |
+| `preset-compare-kind`, `preset-compare-a`, `preset-compare-with` | Compare presets in Settings, Presets: the kind, the preset to compare, and what to compare it with (another preset of the kind, its parent preset or the stock settings) |
+| `preset-compare-all` | Show all: every setting of the kind, not only those that differ |
+| `preset-compare-undo` | Undo the last value copied into the preset |
+| `preset-compare-group` | A settings group of the comparison; `data-group` names it (`quality`, `cooling`) |
+| `preset-compare-row` | A setting in it; `data-key` is the setting's key and `data-differs` is set when the two sides differ |
+| `preset-compare-copy` | On a row that differs: copies the second side's value into the preset being compared |
 | `set-model-framing` | The Frame the view row in Settings, Look and feel, Workspace: Always or On open and add (editions with Model) |
 | `set-model-framing-<choice>` | Frame the view's two options: `set-model-framing-selection` (Always), `set-model-framing-open` (On open and add) |
 | `set-precision-pick` | Precision of shown lengths, a select: `d0` to `d4` decimals, `f16`, `f32`, `f64` inch fractions |
@@ -565,6 +571,10 @@ carries `data-loading`.
 | `app-link-sheet` | A client's dimension sheet, for the person to confirm; the agent bridge refuses its buttons |
 | `app-link-sheet-confirm` | Build with these sizes |
 | `app-link-sheet-decline` | Not now |
+| `app-link-preset` | A client's change to a saved preset (a copied setting, or that copy put back), asked each time; the agent bridge refuses its buttons |
+| `app-link-preset-what` | The change it asks about: the setting, the preset and the value |
+| `app-link-preset-allow` | Change preset |
+| `app-link-preset-decline` | Not now |
 
 ## Print sheet
 

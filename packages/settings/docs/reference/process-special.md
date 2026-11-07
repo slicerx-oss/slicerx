@@ -194,6 +194,7 @@ Object order on a layer: ending at the object nearest the bed's origin, or a cha
 **Preheat time**
 
 - Type: number
+- Unit: s
 - Default: 30
 - Recommended range: 0 to 120
 - Tier: Expert, effects

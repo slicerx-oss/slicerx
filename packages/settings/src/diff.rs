@@ -87,24 +87,42 @@ fn enum_text(def: Option<&SettingDef>, s: &str) -> String {
         .map_or_else(|| s.to_owned(), Clone::clone)
 }
 
-fn list_items(v: &Value) -> Vec<String> {
-    let json = v.to_json();
-    match json {
-        serde_json::Value::Array(a) => a
-            .iter()
-            .map(|x| match x {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            })
-            .collect(),
-        _ => Vec::new(),
+/// A value a config leaves unset: an empty list (a filament's override of a printer setting it does not make).
+#[must_use]
+pub fn is_unset(v: &Value) -> bool {
+    match v {
+        Value::Bools(x) => x.is_empty(),
+        Value::Ints(x) => x.is_empty(),
+        Value::Floats(x) => x.is_empty(),
+        Value::Strs(x) => x.is_empty(),
+        Value::Points(x) => x.is_empty(),
+        Value::PointGroups(x) => x.is_empty(),
+        _ => false,
     }
 }
 
-/// Human text for a value: `0.2 mm`, `on`, `220 C`, `Rectilinear`. Lists that repeat one value show it once.
+/// `10 x 12`: a point's two coordinates.
+fn point_text(p: &[f64; 2]) -> String {
+    format!("{} x {}", show(p[0]), show(p[1]))
+}
+
+fn points_text(ps: &[[f64; 2]]) -> String {
+    ps.iter().map(point_text).collect::<Vec<_>>().join(", ")
+}
+
+/// Each value of a list, and whether they are all one value.
+fn list_text<T: PartialEq>(items: &[T], each: impl Fn(&T) -> String) -> (String, bool) {
+    let repeated = items.first().is_some_and(|f| items.iter().all(|x| x == f));
+    (items.iter().map(each).collect::<Vec<_>>().join(", "), repeated)
+}
+
+/// Human text for a value: `0.2 mm`, `on`, `220 C`, `Rectilinear`, `not set`. Lists that repeat one value show it
+/// once; other lists show each value and the unit once (`500, 300 mm/s`, `20%, 30%`), and points read `10 x 12 mm`.
 #[must_use]
 pub fn format_value(def: Option<&SettingDef>, v: Option<&Value>) -> String {
-    let Some(v) = v else { return "not set".into() };
+    let Some(v) = v.filter(|v| !is_unset(v)) else {
+        return "not set".into();
+    };
     let unit = def
         .filter(|d| {
             !matches!(
@@ -114,25 +132,26 @@ pub fn format_value(def: Option<&SettingDef>, v: Option<&Value>) -> String {
         })
         .and_then(|d| d.unit.as_deref())
         .map_or("", unit_text);
+    let pct = def.and_then(|d| d.unit.as_deref()) == Some("%");
+    // A count of one reads in the singular: `1 layer`, `2 layers`.
+    let unit_for = |one: bool| match def.and_then(|d| d.unit.as_deref()) {
+        Some("%") => "%",
+        _ if one && unit == " layers" => " layer",
+        _ => unit,
+    };
+    // A list of numbers: each with `%` for a percent, else the unit once at the end.
+    let numbers = |text: String| {
+        if pct {
+            clip(&text)
+        } else {
+            clip(&format!("{text}{unit}"))
+        }
+    };
+    let num = |s: String| if pct { format!("{s}%") } else { s };
     match v {
         Value::Bool(b) => if *b { "on" } else { "off" }.into(),
-        Value::Int(i) => format!(
-            "{i}{}",
-            if def.and_then(|d| d.unit.as_deref()) == Some("%") {
-                "%"
-            } else {
-                unit
-            }
-        ),
-        Value::Float(f) => format!(
-            "{}{}",
-            show(*f),
-            if def.and_then(|d| d.unit.as_deref()) == Some("%") {
-                "%"
-            } else {
-                unit
-            }
-        ),
+        Value::Int(i) => format!("{i}{}", unit_for(*i == 1)),
+        Value::Float(f) => format!("{}{}", show(*f), unit_for((*f - 1.0).abs() < f64::EPSILON)),
         Value::Str(s) => {
             if s.is_empty() {
                 "empty".into()
@@ -140,21 +159,29 @@ pub fn format_value(def: Option<&SettingDef>, v: Option<&Value>) -> String {
                 clip(&enum_text(def, s))
             }
         }
-        _ => {
-            let items: Vec<String> = list_items(v).iter().map(|s| enum_text(def, s)).collect();
-            let repeated = items.first().is_some_and(|f| items.iter().all(|x| x == f));
-            let one = match v {
-                Value::Bools(b) => b.first().map(|x| Value::Bool(*x)),
-                Value::Ints(i) => i.first().map(|x| Value::Int(*x)),
-                Value::Floats(f) => f.first().map(|x| Value::Float(*x)),
-                Value::Strs(s) => s.first().map(|x| Value::Str(x.clone())),
-                _ => None,
-            };
-            match one {
-                Some(single) if repeated => format_value(def, Some(&single)),
-                _ => clip(&items.join(", ")),
-            }
-        }
+        // A point is one value of two coordinates, and a list of points one per corner of a shape.
+        Value::Point(p) => clip(&format!("{}{unit}", point_text(p))),
+        Value::Points(ps) => clip(&format!("{}{unit}", points_text(ps))),
+        Value::PointGroups(gs) => clip(&format!(
+            "{}{unit}",
+            gs.iter().map(|g| points_text(g)).collect::<Vec<_>>().join("; ")
+        )),
+        Value::Bools(b) => match list_text(b, |x| if *x { "on" } else { "off" }.to_owned()) {
+            (_, true) => format_value(def, b.first().map(|x| Value::Bool(*x)).as_ref()),
+            (text, false) => clip(&text),
+        },
+        Value::Ints(i) => match list_text(i, |x| num(x.to_string())) {
+            (_, true) => format_value(def, i.first().map(|x| Value::Int(*x)).as_ref()),
+            (text, false) => numbers(text),
+        },
+        Value::Floats(f) => match list_text(f, |x| num(show(*x))) {
+            (_, true) => format_value(def, f.first().map(|x| Value::Float(*x)).as_ref()),
+            (text, false) => numbers(text),
+        },
+        Value::Strs(s) => match list_text(s, |x| enum_text(def, x)) {
+            (_, true) => format_value(def, s.first().map(|x| Value::Str(x.clone())).as_ref()),
+            (text, false) => clip(&text),
+        },
     }
 }
 

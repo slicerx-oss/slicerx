@@ -25,21 +25,39 @@ function enumText(def: SettingDef | undefined, s: string): string {
   return (i >= 0 ? def.enumLabels?.[i] : undefined) ?? s
 }
 
-/** Human text for a value: `0.2 mm`, `on`, `220 C`, `Rectilinear`. Lists that repeat one value show it once. */
+/** A value a config leaves unset: no value, or an empty list (a filament's override of a printer setting it does not make). */
+export function isUnset(v: SettingValue | undefined): boolean {
+  return v === undefined || (Array.isArray(v) && v.length === 0)
+}
+
+const clip = (t: string): string => (t.length > 60 ? t.slice(0, 57) + '...' : t)
+/** `10 x 12`: a point's two coordinates. */
+const pointText = (p: unknown): string => (Array.isArray(p) ? (p as unknown[]).map((x) => String(x)).join(' x ') : String(p))
+
+/**
+ * Human text for a value: `0.2 mm`, `on`, `220 C`, `Rectilinear`, `not set`. Lists that repeat one value show it once;
+ * other lists show each value and the unit once (`500, 300 mm/s`, `20%, 30%`), and points read `10 x 12 mm`.
+ */
 export function formatValue(def: SettingDef | undefined, v: SettingValue | undefined): string {
-  if (v === undefined) return 'not set'
+  if (v === undefined || isUnset(v)) return 'not set'
   const unit = def?.unit && def.type !== 'floatOrPercent' && def.type !== 'floatsOrPercents' ? UNIT_TEXT[def.unit] : ''
   if (typeof v === 'boolean') return v ? 'on' : 'off'
-  if (typeof v === 'number') return String(v) + (def?.unit === '%' ? '%' : unit)
+  // A count of one reads in the singular: `1 layer`, `2 layers`.
+  if (typeof v === 'number') return String(v) + (def?.unit === '%' ? '%' : v === 1 && unit === ' layers' ? ' layer' : unit)
   if (typeof v === 'string') {
     const t = enumText(def, v)
-    return t === '' ? 'empty' : t.length > 60 ? t.slice(0, 57) + '...' : t
+    return t === '' ? 'empty' : clip(t)
   }
   if (Array.isArray(v)) {
     const items = v as unknown[]
-    if (items.length > 0 && items.every((x) => typeof x !== 'object' && x === items[0])) return formatValue(def, items[0] as SettingValue)
-    const text = items.map((x) => (typeof x === 'object' ? JSON.stringify(x) : enumText(def, String(x)))).join(', ')
-    return text.length > 60 ? text.slice(0, 57) + '...' : text
+    // A point is one value of two coordinates, and a list of points one per line of a shape.
+    if (def?.type === 'point') return clip(pointText(items) + unit)
+    if (def?.type === 'pointsGroups') return clip(items.map((g) => (Array.isArray(g) ? (g as unknown[]).map(pointText).join(', ') : String(g))).join('; ') + unit)
+    if (def?.type === 'points' || items.some((x) => Array.isArray(x))) return clip(items.map(pointText).join(', ') + unit)
+    if (items.every((x) => typeof x !== 'object' && x === items[0])) return formatValue(def, items[0] as SettingValue)
+    const pct = def?.unit === '%'
+    const text = items.map((x) => (typeof x === 'boolean' ? (x ? 'on' : 'off') : typeof x === 'object' ? JSON.stringify(x) : enumText(def, String(x)) + (pct && typeof x === 'number' ? '%' : ''))).join(', ')
+    return clip(text + (pct || items.some((x) => typeof x !== 'number') ? '' : unit))
   }
   return JSON.stringify(v)
 }

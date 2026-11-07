@@ -659,7 +659,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* one height for every section and option: a centered dialog that changed height would move everything in it. On a
    short window the dialog fits the window: the header and the footer stay put and only the body scrolls, with its
    scrollbar lane kept so a long section and a short one start at the same x */
-.settings-dialog[open] { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 2 * var(--gutter))); overflow: hidden; }
+.settings-dialog { --set-h: min(720px, calc(100dvh - 2 * var(--gutter))); }
+/* clip, not hidden: screen-reader-only labels deep in the body are placed against the dialog, below its bottom edge, which
+   made a hidden-overflow dialog scrollable. Bringing a control into view (a find, a focus move, a test's scroll) could
+   then scroll the whole dialog, title included, and the next layout put it back, moving every control. A clipped box
+   never scrolls. */
+.settings-dialog[open] { display: flex; flex-direction: column; height: var(--set-h); overflow: clip; }
 /* One right edge for the dialog: the 24 px content gutter, and the header and footer keep the body's scrollbar lane
    (scrollbar-gutter on a clipped box), so the close button and the footer end where the rows' controls end. */
 .settings-dialog .sx-dialog-h, .settings-dialog .sx-dialog-foot { flex: none; overflow: hidden; scrollbar-gutter: stable; }
@@ -1028,6 +1033,82 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Developer mode: the experimental connectors switch at the bottom of Connected apps. */
 .app-experimental-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; }
 .preset-name .preset-for { color: var(--muted); }
+
+/* Compare presets: what differs by settings group, the two sides in two columns and a copy button per row. The rows are
+   flat (part of the page); on a narrow panel the label takes its own line above the two values. */
+.cmp { container: cmp / inline-size; --cmp-cols: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 28px; }
+.cmp-picks { flex-wrap: wrap; }
+.cmp-picks > .cmp-pick { flex: 1 1 160px; }
+/* The Kind select sizes itself to its longest option in its own font, and its face is drawn at the body size: the select
+   gets that size too (a phone's settings sheet keeps its 16 px), so no kind's name is cut whatever the platform's font
+   metrics. It never shrinks below that. */
+.cmp-picks > .sx-selectwrap:not(.cmp-pick) { flex: none; }
+.cmp-picks > .sx-selectwrap > .sx-select[data-face] { font-size: var(--fs-body); }
+/* The count and the column header stay at the top of whichever box scrolls the rows (the dialog body, or on a desktop
+   the list's own box under them), on the dialog's surface made opaque so the rows pass under without showing through. */
+.cmp-top { position: sticky; top: calc(-1 * var(--s-2)); z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 4px; background: var(--surface-card); background: rgb(from var(--surface-dialog) r g b / 1); }
+/* It sticks at the body's edge, over the body's top padding, so no row shows in a strip above it. A phone's settings
+   sheet is the plain page color, so the bar takes that. */
+:root[data-phone] .cmp-top { top: calc(-1 * var(--s-4)); background: var(--ink-1); }
+.cmp-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+/* One line whatever it says (the count, or what a copy did), cut short with an ellipsis, so nothing beside or under it moves.
+   The bar's one column has a floor of zero, so a long line never widens the bar, the header or the section past the dialog;
+   the whole text is the line's tip and what a screen reader hears. */
+.cmp-bar > .cmp-status { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cmp-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+/* Show all: the words and the switch are one control; the label's box fills the gap between them. */
+.cmp-all { display: inline-flex; align-items: center; gap: 8px; min-height: var(--h-sm); color: var(--muted); cursor: pointer; }
+/* Groups sit at the top: room a copy leaves (the list keeps its height until the next action) stays at the end. */
+.cmp-list { display: grid; gap: 12px; align-content: start; }
+/* At desktop width the list scrolls inside itself, under the picks and the bar: scrolled to it, the bar sticks at the top
+   of the dialog body and the list fills the rest of the body (the dialog keeps one height; 210 px is the dialog's title
+   and footer, the bar and the header), with a floor for a short window. On a phone the dialog body is the one scroll box (UI spec 9).
+   The header keeps the list's scrollbar lane (scrollbar-gutter on a clipped box), so its columns line up with the rows'. */
+@media (min-width: 701px) {
+  .cmp-list { max-height: max(180px, calc(var(--set-h) - 210px)); overflow-y: auto; align-content: start; scrollbar-gutter: stable; }
+  .cmp-head { overflow: hidden; scrollbar-gutter: stable; }
+}
+.cmp-head { display: grid; grid-template-columns: var(--cmp-cols); gap: 8px; padding: 0 8px 4px; border-bottom: 1px solid var(--line-soft); color: var(--muted); font-weight: var(--fw-semibold); }
+.cmp-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-head::after { content: ''; }
+.cmp-group { display: grid; gap: 4px; }
+.cmp-group-h { margin: 0; padding: 0 8px; font: var(--fw-semibold) var(--fs-xs) var(--f-body); color: var(--muted); }
+.cmp-table { width: 100%; border-collapse: collapse; }
+.cmp-table tbody { display: grid; border: 1px solid var(--line-soft); border-radius: 10px; }
+.cmp-table tr { display: grid; grid-template-columns: var(--cmp-cols); gap: 8px; align-items: center; min-height: 34px; padding: 0 8px; }
+/* A row scrolled into view (keyboard focus, a find) lands below the sticky bar and header, not under them. */
+.cmp-table tr { scroll-margin-top: 112px; }
+.cmp-table tr + tr { border-top: 1px solid var(--line-soft); }
+.cmp-table th, .cmp-table td { padding: 4px 0; text-align: left; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.cmp-table th { font-weight: var(--fw-medium); color: var(--fg); display: grid; gap: 4px; }
+.cmp-table td { color: var(--muted); }
+.cmp-table tr[data-differs='true'] td { color: var(--fg); }
+/* Show all marks the rows that differ with a bar at the row's start (a shape, not only the brighter values) and the
+   words ", differs" in the row header for a screen reader. Listing only what differs needs no mark. */
+.cmp-list[data-all] .cmp-table tr[data-differs='true'] { box-shadow: inset 3px 0 0 var(--accent); }
+.cmp-list[data-all] .cmp-table tr[data-differs='true'] th { font-weight: var(--fw-semibold); }
+/* The bar follows the rounded corners of the group's box at its first and last rows. */
+.cmp-list[data-all] .cmp-table tr:first-child { border-top-left-radius: 9px; }
+.cmp-list[data-all] .cmp-table tr:last-child { border-bottom-left-radius: 9px; }
+.cmp-note { color: var(--dim); font-size: var(--fs-xs); font-weight: var(--fw-regular, 400); }
+.cmp-act { display: flex; justify-content: flex-end; }
+/* Hit areas past the drawn controls (UI spec 2 and 9): the copy arrow (28 px) and the Show all switch (36 x 20) reach 44 x 44
+   on a phone by invisible padding, their look and place unchanged. The inset counts from inside the 1 px border. */
+.cmp-act .sx-btn, .cmp-all .sx-switch { position: relative; }
+@media (pointer: coarse), (max-width: 700px) {
+  .cmp-act .sx-btn::before { content: ''; position: absolute; inset: -9px; }
+  .cmp-all .sx-switch::before { content: ''; position: absolute; inset: -13px -5px; }
+}
+@container cmp (max-width: 420px) {
+  .cmp-top, .cmp-list { --cmp-cols: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+  /* The status line takes its own row over the tools, so a copy's longer line has the width. */
+  .cmp-bar { flex-wrap: wrap; row-gap: 0; }
+  .cmp-bar > .cmp-status { flex-basis: 100%; }
+  .cmp-tools { margin-left: auto; }
+  .cmp-head > .cmp-head-label { display: none; }
+  .cmp-table tr { row-gap: 0; padding-top: 4px; }
+  .cmp-table th { grid-column: 1 / -1; padding-bottom: 0; }
+}
 
 /* Preset import report */
 .imp-report { display: grid; gap: 6px; margin-top: 8px; }

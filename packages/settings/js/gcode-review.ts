@@ -238,6 +238,20 @@ export function reviewProjectGcode(input: GcodeReviewInput): GcodeReview {
   return out
 }
 
+/**
+ * The line diff of two G-code texts, the way a project's G-code is compared with the printer profile's: line endings,
+ * trailing spaces and blank lines do not count. `names` label the old and new sides of the unified text.
+ */
+export function gcodeTextDiff(before: string, after: string, names?: readonly [string, string]): { added: number; removed: number; unified: string } {
+  const ops = diffLines(lines(before), lines(after))
+  return { added: ops.filter((o) => o.kind === 'added').length, removed: ops.filter((o) => o.kind === 'removed').length, unified: unified(ops, names) }
+}
+
+/** The number of G-code lines that count in `text` (blank lines left out). */
+export function gcodeLineCount(text: string): number {
+  return lines(text).length
+}
+
 /** The diff and the flags of one changed setting. */
 export function reviewChange(key: string, slot: number | undefined, label: string, text: string, reference: string, limits: LintLimits): GcodeChange {
   const section = gcodeSection(key)
@@ -335,9 +349,9 @@ function hunks(ops: GcodeDiffLine[]): GcodeDiffLine[] {
   return out
 }
 
-function unified(ops: GcodeDiffLine[]): string {
+function unified(ops: GcodeDiffLine[], names: readonly [string, string] = ['printer profile', 'project']): string {
   const show = shown(ops)
-  const out = ['--- printer profile', '+++ project']
+  const out = [`--- ${names[0]}`, `+++ ${names[1]}`]
   let i = 0
   while (i < ops.length) {
     if (!show[i]) {
