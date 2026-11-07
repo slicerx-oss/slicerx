@@ -14,15 +14,15 @@ import { connect, data, text } from './helpers'
 const NO_ZERO: { key: string; list: boolean; message: string }[] = [
   { key: 'bridge_flow', list: false, message: 'Bridge flow ratio is 0, outside 0.01 to 2.' },
   { key: 'internal_bridge_flow', list: false, message: 'Internal bridge flow is 0, outside 0.01 to 2.' },
-  { key: 'layer_height', list: false, message: 'Layer height is 0, outside 0.01 to inf mm.' },
-  { key: 'initial_layer_print_height', list: false, message: 'First layer height is 0, outside 0.01 to inf mm.' },
-  { key: 'filament_diameter', list: true, message: 'Filament diameter is 0, outside 0.01 to inf mm.' },
+  { key: 'layer_height', list: false, message: 'Layer height is 0; it must be at least 0.01 mm.' },
+  { key: 'initial_layer_print_height', list: false, message: 'First layer height is 0; it must be at least 0.01 mm.' },
+  { key: 'filament_diameter', list: true, message: 'Filament diameter is 0; it must be at least 0.01 mm.' },
   { key: 'filament_flow_ratio', list: true, message: 'Flow ratio is 0, outside 0.01 to 2.' },
   { key: 'nozzle_diameter', list: true, message: 'Nozzle diameter is 0, outside 0.01 to 100 mm.' },
-  { key: 'nozzle_height', list: false, message: 'Nozzle height is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_height_to_lid', list: false, message: 'Extruder clearance height to lid is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_height_to_rod', list: false, message: 'Extruder clearance height to rod is 0, outside 0.01 to inf mm.' },
-  { key: 'extruder_clearance_radius', list: false, message: 'Extruder clearance radius is 0, outside 0.01 to inf mm.' },
+  { key: 'nozzle_height', list: false, message: 'Nozzle height is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_height_to_lid', list: false, message: 'Extruder clearance height to lid is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_height_to_rod', list: false, message: 'Extruder clearance height to rod is 0; it must be at least 0.01 mm.' },
+  { key: 'extruder_clearance_radius', list: false, message: 'Extruder clearance radius is 0; it must be at least 0.01 mm.' },
 ]
 
 type Issue = { code: string; severity: string; keys: string[]; message: string }
