@@ -26,6 +26,8 @@ const ARC_STEP_DEG: f64 = 40.0;
 /// lines that each turn less than this, degrees, read as one smooth curve
 const SMOOTH_DEG: f64 = 20.0;
 const RUN_POINTS: usize = 4096;
+/// the most points a run of arcs may take before one ellipse fits them all
+const FIRST_FIT_POINTS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -622,7 +624,9 @@ fn bent_run(p: &[V2], pieces: &[(Piece, usize)], i: usize) -> Option<usize> {
             continue;
         }
         if !on_ellipse(pts) {
-            if fitted {
+            // a run that fits no ellipse over its first few points never will, so it gives up there rather than
+            // refitting every longer prefix to the end of the outline
+            if fitted || pts.len() >= FIRST_FIT_POINTS {
                 break;
             }
             continue;
@@ -929,6 +933,37 @@ mod tests {
         let l = fit(&tilted_ring(64, 60.0), true).unwrap();
         assert_eq!(kinds(&l), ["spline"], "{l:?}");
         assert_eq!(l.segments[0].to, l.start);
+    }
+
+    /// a closed organic outline of `n` points: a wavy blob whose radius wanders, with a fine ripple like a scan's
+    fn blob(n: u32) -> Vec<V2> {
+        (0..n)
+            .map(|i| {
+                let t = f64::from(i) * std::f64::consts::TAU / f64::from(n);
+                let r = 40.0
+                    + 4.0 * (5.0 * t).m_sin()
+                    + 2.5 * (11.0 * t + 0.7).m_sin()
+                    + 1.2 * (23.0 * t + 2.0).m_sin()
+                    + 0.02 * (f64::from(i) * 1.7).m_sin();
+                let (s, c) = t.m_sin_cos();
+                [r * c, r * s]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_large_organic_outline_fits_quickly() {
+        let ring = blob(4000);
+        let t = std::time::Instant::now();
+        let l = fit(&ring, true).unwrap();
+        let took = t.elapsed();
+        assert!(!l.segments.is_empty());
+        assert_eq!(l.segments.last().and_then(|s| s.to), l.start);
+        assert!(
+            took.as_secs_f64() < 2.0,
+            "took {took:?} for {} segments",
+            l.segments.len()
+        );
     }
 
     #[test]
