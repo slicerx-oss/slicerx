@@ -332,6 +332,7 @@ function outcomeOf(has: (action: string) => boolean, slot: string | null, starts
   if (has('printer.resume')) return { undone: 'the print did not resume', notReady: 'is not paused' }
   if (has('printer.gcode')) return { undone: 'the G-code line was not sent', notReady: 'is busy' }
   if (has('printer.home')) return { undone: 'the axes were not homed', notReady: 'is not idle' }
+  if (has('printer.filament_change')) return { undone: 'the filament change did not start', notReady: 'is busy' }
   if (has('printer.config') || has('printer.adjust')) return { undone: 'the change was not made', notReady: 'is not printing' }
   if (has('printer.skip')) return { undone: 'the object was not skipped', notReady: 'is not printing' }
   if (has('plugin.call')) return { undone: 'the connected app did not run it', notReady: 'is not ready for it' }

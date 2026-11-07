@@ -157,21 +157,34 @@ pub fn gcode_line_problem(line: &str) -> Option<&'static str> {
     }
 }
 
-/// One G-code line as firmware reads it: comments (`;` to the end, `( ... )`) and a checksum (`*71`)
-/// dropped, a line number skipped with any spacing (`N10`, `N 10`, or a bare `N` before a command),
-/// upper case, trimmed.
-fn command_text(line: &str) -> String {
-    let mut text = String::with_capacity(line.len());
-    let mut depth = 0_u32;
-    for c in line.chars() {
-        match c {
-            ';' if depth == 0 => break,
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            _ if depth == 0 => text.push(c.to_ascii_uppercase()),
-            _ => {}
+/// The part of a line a firmware reads: everything before the first `;`. Only `;` starts a comment on
+/// every firmware a host drives; Klipper reads no comment in parentheses.
+fn code_part(line: &str) -> &str {
+    line.split(';').next().unwrap_or("")
+}
+
+/// Whether the guard cannot be sure how a firmware reads the line, so it fails closed: a `(` or `)`
+/// (Marlin and RepRapFirmware skip a parenthesized comment, Klipper runs `(G28` as G28), a `*` with
+/// anything but a checksum after it, or text left with no command (a bare `N10`).
+fn opaque(line: &str) -> bool {
+    let code = code_part(line);
+    if code.contains(['(', ')']) {
+        return true;
+    }
+    if let Some(star) = code.find('*') {
+        let sum = code[star + 1..].trim();
+        if sum.is_empty() || !sum.bytes().all(|c| c.is_ascii_digit()) {
+            return true;
         }
     }
+    !code.trim().is_empty() && command_word(&command_text(line)).is_none()
+}
+
+/// One G-code line as firmware reads it: a comment (`;` to the end) and a checksum (`*71`) dropped, a
+/// line number skipped with any spacing (`N10`, `N 10`, or a bare `N` before a command), upper case,
+/// trimmed.
+fn command_text(line: &str) -> String {
+    let text = code_part(line).to_ascii_uppercase();
     let mut rest = text.trim();
     if let Some(star) = rest.find('*') {
         rest = rest[..star].trim_end();
@@ -213,12 +226,32 @@ fn command_word(text: &str) -> Option<(String, &str)> {
     Some((text[..end].to_owned(), text[end..].trim_start()))
 }
 
+/// The parameters of a G or M code, read by letter as firmware reads them, not by word: `E0Z50` is
+/// `E` 0 and `Z` 50, as is `E0 Z50`. `None` when the rest holds anything but letters, numbers, signs,
+/// points and spaces, which the guard does not try to read.
+fn params_by_letter(rest: &str) -> Option<Vec<(char, String)>> {
+    let mut out: Vec<(char, String)> = Vec::new();
+    for c in rest.chars() {
+        if c.is_ascii_alphabetic() {
+            out.push((c, String::new()));
+        } else if c.is_ascii_digit() || matches!(c, '.' | '-' | '+') {
+            out.last_mut()?.1.push(c);
+        } else if !c.is_whitespace() {
+            return None;
+        }
+    }
+    Some(out)
+}
+
 /// Whether one G-code line homes the printer: a `G28`, however it is written (any case, spaces, a line
 /// number, leading zeros, a decimal such as `G28.1`, axis words with or without a space, or a comment
 /// after it). Homing Z brings the nozzle down to the plate, so a host sends such a line only under its
-/// home rules. Errs toward yes: a line that reads as G28 to any firmware counts.
+/// home rules. Errs toward yes: a line that reads as G28 to any firmware counts, and so does any line
+/// with a parenthesis, which Klipper reads as a command where other firmware sees a comment.
 pub fn homes_axes(line: &str) -> bool {
-    command_word(&command_text(line)).is_some_and(|(code, _)| code == "G28" || code.starts_with("G28."))
+    code_part(line).contains(['(', ')'])
+        || command_word(&command_text(line))
+            .is_some_and(|(code, _)| code == "G28" || code.starts_with("G28."))
 }
 
 /// The command of one line as firmware reads it (as [`moves_axes`] reads it): `G1` for `g01 x1`,
@@ -227,56 +260,149 @@ pub fn command_name(line: &str) -> Option<String> {
     command_word(&command_text(line)).map(|(code, _)| code)
 }
 
-/// Whether one line is a filament change (`M600`), however it is written. The firmware parks the head
-/// for the swap and waits for the person, so a host may send it while a print runs or is paused; on an
-/// idle or finished printer it still moves the head like any other line that moves.
+/// Whether one line is the plain filament change: `M600` with nothing but an optional `B` (beeps),
+/// however it is written. The firmware parks the head at its own place for the swap and waits for the
+/// person, so a host may send it while a print runs or is paused; on an idle or finished printer it
+/// still moves the head like any other line that moves. An M600 that names a park position or lengths
+/// (`X`, `Y`, `Z`, `E`, `U`, `L`) is not this: it moves where it says, so it is motion.
 pub fn changes_filament(line: &str) -> bool {
-    command_name(line).as_deref() == Some("M600")
+    if opaque(line) {
+        return false;
+    }
+    let text = command_text(line);
+    match command_word(&text) {
+        Some((code, rest)) if code == "M600" => {
+            params_by_letter(rest).is_some_and(|p| p.iter().all(|(l, _)| *l == 'B'))
+        }
+        _ => false,
+    }
 }
 
-/// G-codes that cannot move the head: a dwell, millimeter units and absolute positioning. `G92` is
-/// read on its own: it is safe only when it sets the extruder alone.
-const STILL_G: &[&str] = &["G4", "G21", "G90"];
+/// When a host may send one raw G-code line: the motion guard's classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineRule {
+    /// Heater and fan targets, messages and reports: at any time, a running print included.
+    AnyTime,
+    /// Cannot move the head, but changes how a running print goes (extrusion and positioning modes, the
+    /// E frame, speed and flow factors, dwells and waits): only while no print runs.
+    NoPrint,
+    /// Can move the head, or the guard cannot tell: only while the printer is idle or finished, and only
+    /// onto a plate known to be clear or said to be clear.
+    Motion,
+    /// Never as a raw line, for the reason given.
+    Refused(&'static str),
+}
 
-/// M-codes that cannot move the head: heater and fan targets and waits, messages, reports, extruder
-/// modes, progress, speed and flow factors, a beep and waiting for moves to finish.
-const STILL_M: &[&str] = &[
-    "M73", "M82", "M83", "M104", "M105", "M106", "M107", "M109", "M110", "M114", "M115", "M117", "M118",
-    "M119", "M140", "M141", "M155", "M190", "M191", "M220", "M221", "M300", "M400", "M503",
+/// Heater and fan targets, messages, reports, auto reports and a beep: they cannot move the head and do
+/// not change what a running print does.
+const ANY_TIME_M: &[&str] = &[
+    "M104", "M105", "M106", "M107", "M114", "M115", "M117", "M118", "M119", "M140", "M141", "M155", "M300",
+    "M503",
 ];
 
 /// Klipper commands that cannot move the head: heaters, fans, messages and reports.
-const STILL_MACROS: &[&str] = &[
+const ANY_TIME_MACROS: &[&str] = &[
     "SET_HEATER_TEMPERATURE",
     "TURN_OFF_HEATERS",
     "SET_FAN_SPEED",
-    "TEMPERATURE_WAIT",
     "RESPOND",
     "STATUS",
     "QUERY_ENDSTOPS",
     "GET_POSITION",
 ];
 
-/// Whether one G-code line can move the head, the motion guard's test. It fails closed: a line moves
-/// unless its command is on the short lists of lines that cannot (heaters, fans, messages, reports,
-/// waits, `G92` of the extruder alone). So moves and homes, probing and leveling in every firmware's
-/// form (`G29` and its Bambu Lab decimals, `G30`, `G32`, `G34`, Prusa's `G80` and `G81`, `M48`, Klipper's
-/// `PROBE`, `BED_MESH_CALIBRATE`, `QUAD_GANTRY_LEVEL`, `Z_TILT_ADJUST`, `SCREWS_TILT_CALCULATE`), start
-/// macros, position and mode changes, filament and tool changes, and every code or macro this list does
-/// not know all count. The line is read as [`homes_axes`] reads it.
-pub fn moves_axes(line: &str) -> bool {
-    let text = command_text(line);
-    let Some((code, rest)) = command_word(&text) else {
-        return false;
-    };
-    if code == "G92" {
-        // Only the extruder: `G92 E0`. Any axis, or none (which zeroes every axis), moves the frame.
-        let words: Vec<&str> = rest.split_whitespace().collect();
-        return words.is_empty() || !words.iter().all(|w| w.starts_with('E'));
+/// Codes that cannot move the head but change a running print: millimeter units and absolute
+/// positioning, progress, extrusion modes, the line number, waits for the bed, the chamber and moves.
+/// `G4`, `G92`, `M220` and `M221` are read on their own.
+const NO_PRINT_CODES: &[&str] = &["G21", "G90", "M73", "M82", "M83", "M110", "M190", "M191", "M400"];
+
+/// Longest dwell a raw `G4` may ask for, in seconds.
+const MAX_DWELL_S: f64 = 60.0;
+
+/// The speed and flow factors a raw `M220` or `M221` may set, in percent: the running print adjustment's
+/// speed limits.
+const FACTOR_PERCENT: std::ops::RangeInclusive<f64> = 50.0..=150.0;
+
+/// When a host may send `line` ([`LineRule`]). It fails closed: a line moves unless it is read as one
+/// command on the short lists of lines that cannot. So moves and homes, probing and leveling in every
+/// firmware's form (`G29` and its Bambu Lab decimals, `G30`, `G32`, `G34`, Prusa's `G80` and `G81`, `M48`,
+/// Klipper's `PROBE`, `BED_MESH_CALIBRATE`, `QUAD_GANTRY_LEVEL`, `Z_TILT_ADJUST`, `SCREWS_TILT_CALCULATE`),
+/// start macros, position and mode changes, `M109` (which picks a tool on some firmware), filament and
+/// tool changes, a message that carries a host action, every code or macro the lists do not know, and
+/// any line the guard cannot read as one command (a parenthesis, text after a checksum) all count.
+#[must_use]
+pub fn line_rule(line: &str) -> LineRule {
+    let code = code_part(line);
+    if code.trim().is_empty() {
+        return LineRule::AnyTime;
     }
-    !(STILL_G.contains(&code.as_str())
-        || STILL_M.contains(&code.as_str())
-        || STILL_MACROS.contains(&code.as_str()))
+    if opaque(line) {
+        return LineRule::Motion;
+    }
+    let text = command_text(line);
+    let Some((name, rest)) = command_word(&text) else {
+        return LineRule::Motion;
+    };
+    let name = name.as_str();
+    // A message that carries a host action (`action:resume`, `action:cancel`) can resume or stop a print
+    // through the host, around the resume and pause rules.
+    if matches!(name, "M117" | "M118" | "RESPOND") {
+        return if rest.contains("ACTION:") {
+            LineRule::Motion
+        } else {
+            LineRule::AnyTime
+        };
+    }
+    if ANY_TIME_MACROS.contains(&name) {
+        return LineRule::AnyTime;
+    }
+    if name == "TEMPERATURE_WAIT" {
+        return LineRule::NoPrint;
+    }
+    if !(name.starts_with('G') || name.starts_with('M')) {
+        return LineRule::Motion;
+    }
+    let Some(params) = params_by_letter(rest) else {
+        return LineRule::Motion;
+    };
+    let letters = |allowed: &[char]| params.iter().all(|(l, _)| allowed.contains(l));
+    let value = |p: &(char, String)| p.1.parse::<f64>().ok();
+    match name {
+        // Only the extruder: every parameter letter is E. Any other axis, or none (which zeroes every
+        // axis), moves the frame.
+        "G92" => {
+            if !params.is_empty() && letters(&['E']) {
+                LineRule::NoPrint
+            } else {
+                LineRule::Motion
+            }
+        }
+        "G4" => match params.as_slice() {
+            [] => LineRule::NoPrint,
+            [p @ ('S' | 'P', _)] => match value(p) {
+                Some(v) if v >= 0.0 && (if p.0 == 'S' { v } else { v / 1000.0 }) <= MAX_DWELL_S => {
+                    LineRule::NoPrint
+                }
+                _ => LineRule::Refused("a raw dwell (G4) is at most 60 seconds, given as one S or P value"),
+            },
+            _ => LineRule::Refused("a raw dwell (G4) is at most 60 seconds, given as one S or P value"),
+        },
+        "M220" | "M221" => match params.as_slice() {
+            [p @ ('S', _)] if value(p).is_some_and(|v| FACTOR_PERCENT.contains(&v)) => LineRule::NoPrint,
+            _ => LineRule::Refused(
+                "a raw speed or flow factor (M220, M221) is one S value from 50 to 150 percent",
+            ),
+        },
+        _ if NO_PRINT_CODES.contains(&name) => LineRule::NoPrint,
+        _ if ANY_TIME_M.contains(&name) => LineRule::AnyTime,
+        _ => LineRule::Motion,
+    }
+}
+
+/// Whether one G-code line can move the head, the motion guard's test: [`line_rule`] is
+/// [`LineRule::Motion`].
+pub fn moves_axes(line: &str) -> bool {
+    line_rule(line) == LineRule::Motion
 }
 
 /// [`gcode_line_problem`] as a driver error. Every driver calls it before the token check, so one
@@ -457,6 +583,16 @@ mod tests {
             "EXCLUDE_OBJECT NAME=a",
             "RESUME",
             "SET_KINEMATIC_POSITION Z=0",
+        ] {
+            assert_eq!(line_rule(line), LineRule::Motion, "{line}");
+            assert!(moves_axes(line), "{line}");
+        }
+    }
+
+    // Lines a naive reader takes for still ones but a firmware runs as moves fail closed too.
+    #[test]
+    fn a_line_that_reads_as_still_only_to_a_naive_reader_is_motion() {
+        for line in [
             // Parentheses are no comment to Klipper: "(G28" runs as G28. Any "(" or ")" fails closed.
             "(G28",
             "(G28 X)",
@@ -674,8 +810,7 @@ mod tests {
             assert!(homes_axes(line), "{line}");
         }
         for line in [
-            "G29", "G280", "G2", "G1 Z5", "M28", "; G28", "M117 G28", "G92 Z0", "", "N28", "G",
-            "N5 M28",
+            "G29", "G280", "G2", "G1 Z5", "M28", "; G28", "M117 G28", "G92 Z0", "", "N28", "G", "N5 M28",
         ] {
             assert!(!homes_axes(line), "{line}");
         }
