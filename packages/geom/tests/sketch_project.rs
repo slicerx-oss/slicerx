@@ -458,9 +458,36 @@ fn where_a_tilted_rim_turns_from_a_circle_to_one_spline() {
     for deg in [5.0, 30.0, 45.0, 60.0, 75.0] {
         assert_eq!(shape(deg), ["spline"], "{deg}");
     }
-    // nearly edge on, the ends turn too sharply for one smooth run
-    assert_eq!(shape(80.0), ["line", "spline"]);
-    assert_eq!(shape(85.0), ["spline", "spline"]);
+    // nearly edge on, the ends turn too sharply for one smooth run, and how the loop splits there follows the
+    // facets; what holds is that it closes on the ellipse, with no circle and the ellipse's area
+    for deg in [80.0, 85.0] {
+        let out = rim_at_tilt(deg);
+        let loops = out["loops"].as_array().unwrap();
+        assert_eq!(loops.len(), 1, "{deg}: {out}");
+        let l = &loops[0];
+        assert_ne!(l["type"], "circle", "{deg}: {l}");
+        let segs = l["segments"].as_array().unwrap();
+        assert!(!segs.is_empty(), "{deg}: {l}");
+        assert_eq!(segs[segs.len() - 1]["to"], l["start"], "{deg}: {l}");
+        assert!(segs.iter().all(|x| x["type"] != "circle"), "{deg}: {l}");
+        // every point the loop goes through, within the tolerance of the 10 mm circle seen at the tilt
+        let (s, c) = f64::to_radians(deg).m_sin_cos();
+        let (o, a, b) = ([20.0, 20.0 * c + 10.0 * s], 5.0, 5.0 * c);
+        let mut pts = vec![&l["start"]];
+        for x in segs {
+            pts.extend(x["points"].as_array().into_iter().flatten());
+            pts.extend(x.get("through"));
+            pts.push(&x["to"]);
+        }
+        for p in pts {
+            let (x, y) = (p[0].as_f64().unwrap() - o[0], p[1].as_f64().unwrap() - o[1]);
+            let h = (x / a).m_hypot(y / b);
+            let off = (h - 1.0).abs() * h / (x / (a * a)).m_hypot(y / (b * b));
+            assert!(off < TOL, "{deg}: {p} is {off} mm off");
+        }
+        let (got, want) = (area(&out["loops"]), PI * a * b);
+        assert!((got - want).abs() < want * 0.01, "{deg}: {got} vs {want}");
+    }
 }
 
 #[test]
