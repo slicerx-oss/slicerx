@@ -226,7 +226,8 @@ export type SliceState =
   /** `last` is the slice before this one: the screen keeps showing it, as stale, until this one lands. */
   | { status: 'running'; progress: SliceProgress | null; startedAt: number; last?: SliceResult }
   | { status: 'done'; result: SliceResult; stale: boolean }
-  | { status: 'error'; message: string }
+  /** `code` names a refusal the panels act on: resume_void offers to plan the resume again or clear it. */
+  | { status: 'error'; message: string; code?: 'resume_void' }
 
 /**
  * heimdall's plate check (plate/engine-check.ts): the run or the answer for request `id`, and the slice inputs it is

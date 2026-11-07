@@ -18,13 +18,13 @@ import { setGeomProvider, toGeom } from '../src/geom/client'
 import { planResume } from '../src/geom/resume'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { setPlateLayerProfile } from '../src/plate/plates'
-import { jobLayerTops, KEY_LEAVES_OUT, resumeFor, resumeLayers, sliceInputsKey } from '../src/plate/resume-tops'
+import { jobLayerTops, KEY_LEAVES_OUT, KEY_SLOT_MATCH, OBJECT_LEAVES_OUT, RESUME_VOID, resumeFor, resumeLayers, sliceInputsKey } from '../src/plate/resume-tops'
 import { INPUTS } from '../src/state/slice-inputs'
 import { forgetLayerPlans } from '../src/plate/smart-layer'
 import { compose } from '../src/plate/transform'
 import { slicePlate } from '../src/state/actions'
 import { engineErrorText } from '../src/lib/engine-errors'
-import { plateLayerZ, plateSliceRequest, STALE_RESUME } from '../src/state/slice-plate'
+import { plateLayerZ } from '../src/state/slice-plate'
 import { get, set, type PlateEntry, type PaintData } from '../src/state/store'
 import { binBuilt, GEOM_BUILD, SX_BUILD } from './binaries'
 
@@ -290,6 +290,31 @@ describe('the job layers a resume waits for', () => {
     expect(await p).toBeNull()
   })
 
+  it('drops the layers when a setting changes before they land', async () => {
+    const h = heldHost()
+    const p = resumeLayers(h.host, new AbortController().signal)
+    await started(h)
+    set({ overrides: { ...get().overrides, layer_height: 0.12 } })
+    h.release()
+    expect(await p).toBeNull()
+  })
+
+  it('drops the layers of a run that dropped a refused project setting, and the next run keys them by the plate as it is', async () => {
+    set({ overrides: { ...get().overrides, raft_first_layer_expansion: -1 }, projectSettings: { source: 'the opened project', keys: ['raft_first_layer_expansion'] } })
+    const before = sliceInputsKey(get())
+    const e = scriptedHost([new Error('config key raft_first_layer_expansion: -1 is outside 0 to 100'), [0.2, 0.4, 0.6], [0.2, 0.4, 0.6]])
+    // The run changed the plate's settings, so its layers are for a plate that is gone.
+    expect(await resumeLayers(e.host, new AbortController().signal)).toBeNull()
+    expect(e.requests).toHaveLength(2)
+    expect(get().overrides).not.toHaveProperty('raft_first_layer_expansion')
+    expect(sliceInputsKey(get())).not.toBe(before)
+    // The dialog asks again (its inputs changed): one slice, with the setting already gone.
+    const l = await resumeLayers(e.host, new AbortController().signal)
+    expect(e.requests).toHaveLength(3)
+    expect(l?.tops.map((t) => Math.round(t * 10) / 10)).toEqual([0.2, 0.4, 0.6])
+    expect(l?.inputs).toBe(sliceInputsKey(get()))
+  })
+
   it('drops a setting the opened project brought that the engine refuses, and slices again', async () => {
     set({ overrides: { ...get().overrides, raft_first_layer_expansion: -1 }, projectSettings: { source: 'the opened project', keys: ['raft_first_layer_expansion'] } })
     const e = scriptedHost([new Error('config key raft_first_layer_expansion: -1 is outside 0 to 100'), [0.2, 0.4, 0.6]])
@@ -315,13 +340,14 @@ describe('a stored resume plan', () => {
   const TOPS = [0.2, 0.4, 0.6, 0.8, 1]
   /** Stores a plan with TOPS, declaring the height, for the shown plate as it is, as Slice the rest does. */
   const store = () => set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, declareZ: true, layerTopsMm: TOPS }) })
-  /** The options the next slice sends, and the note it adds about the plan. */
-  async function sent(): Promise<{ opts: Record<string, unknown>; note: string | null }> {
+  /** The options the next slice sends, or, when slicePlate refused to send one, why (`refused`). */
+  async function sent(): Promise<{ opts: Record<string, unknown>; refused: string | null }> {
     const e = { requests: [] as SliceRequest[] }
     const host = { kind: 'desktop', capabilities: { threads: 1 }, slicer: { loadModel: async () => ({ id: 'm' }), release: () => undefined, slice: async (r: SliceRequest) => (e.requests.push(r), Promise.reject(new Error('stop'))) } } as unknown as Host
-    const { staleResume } = await plateSliceRequest(host, get(), new AbortController().signal)
     await slicePlate(host)
-    return { opts: (e.requests[0]?.options ?? {}) as Record<string, unknown>, note: staleResume?.message ?? null }
+    const s = get().slice
+    const refused = e.requests.length === 0 && s.status === 'error' ? s.message : null
+    return { opts: (e.requests[0]?.options ?? {}) as Record<string, unknown>, refused }
   }
   /** Nothing of the plan goes out: not its layers, not the layer it starts from, not the height it declares. */
   const none = (opts: Record<string, unknown>) => {
@@ -335,57 +361,62 @@ describe('a stored resume plan', () => {
   it('holds as one for the plate it was planned on, as it was', async () => {
     store()
     expect(jobLayerTops(get())).toEqual(TOPS)
-    const { opts, note } = await sent()
+    const { opts, refused } = await sent()
     expect(opts).toMatchObject({ layerTopsMm: TOPS, layerTopsExact: true, layerTopsSliced: true, resumeFromLayer: 2, resumeZ: { mode: 'declare', zMm: 0.4 } })
-    expect(note).toBeNull()
+    expect(refused).toBeNull()
   })
 
-  it('holds for none of it after a switch to another plate, and says to plan it again', async () => {
+  it('holds for none of it on another plate, which slices whole', async () => {
     store()
     set({ activePlate: 'plate-2' })
     expect(jobLayerTops(get())).toBeUndefined()
-    const { opts, note } = await sent()
+    const { opts, refused } = await sent()
     none(opts)
-    expect(note).toBe(STALE_RESUME.message)
+    expect(refused).toBeNull()
     // Back on its plate, unchanged, it holds again.
     set({ activePlate: 'plate-1' })
     expect((await sent()).opts).toMatchObject({ resumeFromLayer: 2 })
   })
 
-  it('holds for none of it after an edit to the plate or its settings', async () => {
+  it('after an edit to the plate or its settings, holds for none of it and the plate does not slice', async () => {
     store()
     set({ overrides: { ...get().overrides, layer_height: 0.12 } })
     expect(jobLayerTops(get())).toBeUndefined()
     let r = await sent()
-    none(r.opts)
-    expect(r.note).toBe(STALE_RESUME.message)
+    expect(r.refused).toBe(RESUME_VOID)
     store()
     set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [120, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
     expect(jobLayerTops(get())).toBeUndefined()
     r = await sent()
-    none(r.opts)
-    expect(r.note).toBe(STALE_RESUME.message)
+    expect(r.refused).toBe(RESUME_VOID)
   })
 
   it('holds for none of it when it does not say which plate and inputs it was made for', async () => {
+    // No plate: it is no plate's plan, so the plate slices whole.
     set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS } })
     expect(jobLayerTops(get())).toBeUndefined()
     none((await sent()).opts)
+    // This plate but no inputs: it cannot be checked, so the plate does not slice.
     set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: TOPS, plate: 'plate-1' } })
-    none((await sent()).opts)
+    expect((await sent()).refused).toBe(RESUME_VOID)
   })
 })
+
+/** A filament preset the calibration tuned for one spool, printer and nozzle (calibration/tuned.ts). */
+const TUNED = { id: 'u1', kind: 'filament', name: 'Mine', values: { filament_shrinkage_compensation_z: [100.5] }, tuned: { key: 'k1', filament: 'PLA', printerId: 'p1', nozzleMm: 0.4, results: { tolerance: { label: 'Tolerance', value: '0.1', at: 1, raw: 0.1 } } }, createdAt: 1, updatedAt: 1 }
 
 describe('the slice inputs key', () => {
   beforeEach(() => {
     onePlate(1, {})
-    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], printerSlots: [{ id: 'A1', material: 'PLA', color: '#ffffff', remainingG: 600, remainingPct: 60, spoolUid: 'tag-1', spoolmanId: 3 }], userPresets: [{ id: 'u1', kind: 'filament', name: 'Mine', values: { nozzle_temperature: [215] }, createdAt: 1, updatedAt: 1 }] } as never)
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], printerSlots: [{ id: 'A1', material: 'PLA', color: '#ffffff', remainingG: 600, remainingPct: 60, spoolUid: 'tag-1', spoolmanId: 3 }], userPresets: [TUNED, { id: 'u2', kind: 'filament', name: 'Plain', values: { nozzle_temperature: [215] }, createdAt: 1, updatedAt: 1 }, { id: 'u3', kind: 'process', name: 'Fine', values: { layer_height: 0.12 }, createdAt: 1, updatedAt: 1 }], printerModel: { id: 'p1', vendor: 'Bambu Lab', model: 'A1' }, printerNozzles: { p1: 0.4, p2: 0.4 }, printerExtruders: {}, slotMatch: {}, fileSlotTypes: [], fileSlotVendors: [] } as never)
   })
   const entry = (patch: Record<string, unknown>) => set({ plate: get().plate.map((e) => ({ ...e, ...patch })) })
   const meta = (patch: Record<string, unknown>) => set({ plates: get().plates.map((p) => (p.id === 'plate-1' ? { ...p, settings: { ...p.settings, ...patch } } : p)) })
   const grow = (k: string, extra: Record<string, unknown>) => set({ [k]: { ...((get() as unknown as Record<string, object>)[k] ?? {}), ...extra } } as never)
   const slot = (patch: Record<string, unknown>) => set({ printerSlots: get().printerSlots.map((x) => ({ ...x, ...patch })) })
-  const preset = (patch: Record<string, unknown>) => set({ userPresets: (get() as unknown as { userPresets: Record<string, unknown>[] }).userPresets.map((p) => ({ ...p, ...patch })) } as never)
+  /** Changes the preset with this id. */
+  const preset = (id: string, patch: (p: Record<string, unknown>) => Record<string, unknown>) => set({ userPresets: (get() as unknown as { userPresets: Record<string, unknown>[] }).userPresets.map((p) => (p['id'] === id ? { ...p, ...patch(p) } : p)) } as never)
+  const tuned = (patch: Record<string, unknown>) => preset('u1', (p) => ({ tuned: { ...(p['tuned'] as object), ...patch } }))
 
   // Each changes one slice input (the INPUTS name first) in a way that moves layers; each must change the key.
   const changes: [string, string, () => void][] = [
@@ -401,6 +432,7 @@ describe('the slice inputs key', () => {
     ['plate', 'a part moved to another filament', () => entry({ parts: get().plate[0]!.parts.map((p) => ({ ...p, slot: 2 })) })],
     ['plate', 'a history step open for editing that hides a part', () => set({ historyEdit: { stepId: 's', objectId: 'gone', original: { ...get().plate[0]!, id: 'gone' } } } as never)],
     ['objectSettings', 'object settings', () => set({ objectSettings: { a: { layer_height: 0.12 } } })],
+    ['objectSettings', "object settings of this plate's object beside another's", () => set({ objectSettings: { zz: { wall_loops: 2 }, a: { wall_loops: 4 } } })],
     ['plates', 'the plate own layer heights', () => meta({ layerProfile: [[0, 0.1]] })],
     ['plates', 'plate settings', () => meta({ sequence: 'by-object' })],
     ['activePlate', 'the shown plate', () => set({ activePlate: 'plate-2' })],
@@ -414,9 +446,13 @@ describe('the slice inputs key', () => {
     ['printerSlots', "the printer's slot color", () => slot({ color: '#000000' })],
     ['flush', 'flush', () => grow('flush', { x: 1 })],
     ['tower', 'prime tower', () => grow('tower', { x: 1 })],
-    ['userPresets', 'a user preset value', () => preset({ values: { nozzle_temperature: [220] } })],
-    ['printerNozzles', 'printer nozzles', () => grow('printerNozzles', { x: [0.6] })],
-    ['printerExtruders', 'printer extruders', () => grow('printerExtruders', { x: 2 })],
+    ['userPresets', 'a tuned filament preset value', () => preset('u1', () => ({ values: { filament_shrinkage_compensation_z: [99] } }))],
+    ['userPresets', 'a tuned result measured again', () => tuned({ results: { tolerance: { label: 'Tolerance', value: '0.2', at: 1, raw: 0.2 } } })],
+    ['userPresets', 'a tuned result measured again with the same value, later', () => tuned({ results: { tolerance: { label: 'Tolerance', value: '0.1', at: 5, raw: 0.1 } } })],
+    ['userPresets', 'a filament tuned with no results yet', () => set({ userPresets: [...get().userPresets, { id: 'u4', kind: 'filament', name: 'New', values: {}, tuned: { key: 'k2', filament: 'PETG', printerId: 'p1', nozzleMm: 0.4, results: {} }, createdAt: 1, updatedAt: 1 }] } as never)],
+    ['userPresets', 'a tuned filament preset gone', () => set({ userPresets: get().userPresets.filter((p) => p.id !== 'u1') })],
+    ['printerNozzles', "the slice printer's nozzle", () => grow('printerNozzles', { p1: 0.6 })],
+    ['printerExtruders', "the slice printer's extruders", () => grow('printerExtruders', { p1: [{ diameterMm: 0.4 }] })],
     ['bed', 'bed', () => set({ bed: { ...get().bed, widthMm: 300 } })],
   ]
   for (const [, name, change] of changes) {
@@ -438,7 +474,13 @@ describe('the slice inputs key', () => {
     ['a new thumbnail', () => entry({ thumb: 'data:image/png;base64,AA' })],
     ['colors shown on the object', () => entry({ colors: ['#000'] })],
     ['where the model came from', () => entry({ source: { modelId: 'm', creatorId: 'c' } })],
-    ['a user preset renamed or saved again', () => preset({ name: 'Renamed', updatedAt: 99 })],
+    ['a tuned preset renamed or saved again', () => preset('u1', () => ({ name: 'Renamed', updatedAt: 99 }))],
+    ['a filament preset with no tuning changed', () => preset('u2', () => ({ values: { nozzle_temperature: [230] } }))],
+    ['a process preset changed (it reaches a slice through overrides)', () => preset('u3', () => ({ values: { layer_height: 0.28 } }))],
+    ['a preset added that is not a tuned filament', () => set({ userPresets: [...get().userPresets, { id: 'u0', kind: 'printer', name: 'Mine', values: {}, createdAt: 2, updatedAt: 2 }] } as never)],
+    ['object settings of an object on another plate', () => set({ objectSettings: { zz: { layer_height: 0.12 } } })],
+    ["another printer's nozzle", () => grow('printerNozzles', { p2: 0.8 })],
+    ["another printer's extruders", () => grow('printerExtruders', { p2: [{ diameterMm: 0.6 }] })],
     ['the profile shipped G-code', () => set({ profile: { ...(get().profile ?? {}), shippedGcode: { start: 'G28' } } } as never)],
     ['a slice result and layer marks', () => set({ slice: { status: 'done', result: { id: 'r', layerZ: Float32Array.from([0.2]), warnings: [] }, stale: false }, layerMarks: { 'plate-1': [] } } as never)],
     ['copies with the same content', () => set({ overrides: { ...get().overrides }, easy: { ...get().easy }, plate: get().plate.map((e) => ({ ...e })) })],
@@ -452,9 +494,79 @@ describe('the slice inputs key', () => {
     })
   }
 
+  // What picks a slot's filament preset outside INPUTS (so which tuned values apply): each must change the key.
+  const slotMatch: [(typeof KEY_SLOT_MATCH)[number], () => void][] = [
+    ['slotMatch', () => set({ slotMatch: { 1: { brand: 'Other', family: 'PLA', vendor: 'Other' } } } as never)],
+    ['fileSlotTypes', () => set({ fileSlotTypes: ['PETG'] })],
+    ['fileSlotVendors', () => set({ fileSlotVendors: ['Other'] })],
+    ['printerModel', () => set({ printerModel: { id: 'p2', vendor: 'Bambu Lab', model: 'P1S' } })],
+  ]
+  for (const [name, change] of slotMatch) {
+    it(`changes with ${name}`, () => {
+      const before = sliceInputsKey(get())
+      change()
+      expect(sliceInputsKey(get())).not.toBe(before)
+    })
+  }
+
   it('covers every slice input: each is changed above or named as left out, with a reason', () => {
     const changed = new Set(changes.map(([input]) => input))
     for (const k of INPUTS) expect(changed.has(k) || k in KEY_LEAVES_OUT, k).toBe(true)
     for (const [k, why] of Object.entries(KEY_LEAVES_OUT)) expect(String(why).length, k).toBeGreaterThan(20)
+    expect(new Set(slotMatch.map(([k]) => k))).toEqual(new Set(KEY_SLOT_MATCH))
+  })
+
+  // Every field of an object, each changed one way: a field that moves layers changes the key, one OBJECT_LEAVES_OUT
+  // names does not. A new PlateEntry field fails to compile here until it is put in one group or the other.
+  const LEFT_OUT = 'left out'
+  const objectFields = {
+    id: () => entry({ id: 'b' }),
+    handle: () => entry({ handle: { ...get().plate[0]!.handle, hash: 'other' } }),
+    parts: () => entry({ parts: get().plate[0]!.parts.map((p) => ({ ...p, slot: 3 })) }),
+    transform: () => entry({ transform: compose({ position: [100, 101, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }),
+    paint: () => entry({ paint: { 0: { color: { 0: '8' } } } }),
+    volumes: () => entry({ volumes: [{ id: 'v', name: 'v', role: 'modifier' }] }),
+    printable: () => entry({ printable: false }),
+    slotOverrides: () => entry({ slotOverrides: { Body: 2 } }),
+    partSettings: () => entry({ partSettings: { Body: { wall_loops: 3 } } }),
+    brimPoints: () => entry({ brimPoints: [[0, 0, 0, 3]] }),
+    layerRanges: () => entry({ layerRanges: [{ fromMm: 0, toMm: 1, settings: { layer_height: 0.1 } }] }),
+    name: LEFT_OUT,
+    colors: LEFT_OUT,
+    thumb: LEFT_OUT,
+    instanceOf: LEFT_OUT,
+    splitOf: LEFT_OUT,
+    locked: LEFT_OUT,
+    source: LEFT_OUT,
+    dimensions: LEFT_OUT,
+    history: LEFT_OUT,
+  } satisfies Record<keyof PlateEntry, (() => void) | typeof LEFT_OUT>
+
+  for (const [field, change] of Object.entries(objectFields)) {
+    it(`${change === LEFT_OUT ? 'stays the same' : 'changes'} with the object's ${field}`, () => {
+      const before = sliceInputsKey(get())
+      if (change === LEFT_OUT) {
+        expect(field in OBJECT_LEAVES_OUT, field).toBe(true)
+        entry({ [field]: { any: 'value' } })
+        expect(sliceInputsKey(get())).toBe(before)
+      } else {
+        expect(field in OBJECT_LEAVES_OUT, field).toBe(false)
+        change()
+        expect(sliceInputsKey(get())).not.toBe(before)
+      }
+    })
+  }
+
+  it('names a reason for every object field it leaves out, and leaves out only those', () => {
+    for (const [k, why] of Object.entries(OBJECT_LEAVES_OUT)) {
+      expect(objectFields[k as keyof typeof objectFields], k).toBe(LEFT_OUT)
+      expect(why.length, k).toBeGreaterThan(10)
+    }
+  })
+
+  it('counts a field it does not know yet, so a new one never goes unseen', () => {
+    const before = sliceInputsKey(get())
+    entry({ futureField: 1 })
+    expect(sliceInputsKey(get())).not.toBe(before)
   })
 })

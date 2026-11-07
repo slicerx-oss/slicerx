@@ -13,7 +13,8 @@ import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
 import { RolledBack } from '../prepare/rolled-back'
 import { rolledBackNote } from '../../plate/timeline'
-import { activeResume } from '../../plate/resume-tops'
+import { activeResume, RESUME_VOID } from '../../plate/resume-tops'
+import { ResumeVoidActions } from '../../plate/resume-void-actions'
 import { slotLabel } from '../../filament/rail'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse } from '../../state/actions'
@@ -229,6 +230,7 @@ export function PreviewRight() {
         {unsafe !== null ? (
           <p className="app-err" role="alert">
             {unsafe}
+            {unsafe === RESUME_VOID ? <ResumeVoidActions /> : null}
           </p>
         ) : null}
       </Block>
@@ -307,6 +309,7 @@ export function PreviewRight() {
         {unsafe !== null ? (
           <p className="app-err" role="alert">
             {unsafe}
+            {unsafe === RESUME_VOID ? <ResumeVoidActions /> : null}
           </p>
         ) : outdated ? (
           <p className="app-note prose" data-testid="slice-outdated">
