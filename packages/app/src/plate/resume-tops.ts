@@ -1,66 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The layer tops a resume plans with: the failed job's own layers when the app still has them, else the layers the
-// resumed slice will print. A plate with its own layer heights prints at its own tops, which the engine stretches by a
-// filament's Z shrinkage compensation, so the plan counts layers in those, not in even layers of layer_height.
-import { effectiveSlot, mapSlot } from '../filament/slots'
-import { plateSliceConfig } from '../state/slice-plate'
-import type { AppState } from '../state/store'
-import { plateProfileTops } from './layer-profile'
-import { activeMeta } from './plates'
+// The layer tops a resume plans with: the failed job's own layers. The app has them while its slice is current or
+// once a plan stored them; otherwise (a reopened project, a resume from the printer list) the engine works them out
+// from the plate as the job sliced it, so the plan never counts in layers of its own making.
+import type { Host } from '@slicerx/contracts'
+import { get, type AppState } from '../state/store'
 
-/** The failed job's layers: a resume plan's stored tops, else the last slice's layers while it is still current. */
+/**
+ * The failed job's layers: a resume plan's stored tops, else the last slice's layers while it is still current. A
+ * stale slice (the plate or its settings changed since) is not the plate a resume slices, so it gives none.
+ */
 export function jobLayerTops(s: Pick<AppState, 'resume' | 'slice'>): number[] | undefined {
   if (s.resume?.layerTopsMm?.length) return s.resume.layerTopsMm
-  if (s.slice.status !== 'done') return undefined
+  if (s.slice.status !== 'done' || s.slice.stale) return undefined
   const z = (s.slice.result as { layerZ?: ArrayLike<number> }).layerZ
   return z && z.length ? Array.from(z) : undefined
 }
 
-/** A filament percentage for a slot from an array or a single value ("99.5%" or 99.5), 100 when unset. */
-function percentFor(v: unknown, slot: number): number {
-  const at = Array.isArray(v) ? (v[slot - 1] ?? v[v.length - 1]) : v
-  const n = typeof at === 'number' ? at : Number(String(at ?? '').trim().replace(/%$/, ''))
-  return Number.isFinite(n) && n > 0 ? n : 100
+/** The layers a resume of the shown plate plans with, and the plate they are for. */
+export interface ResumeLayers {
+  plate: string
+  tops: number[]
 }
 
 /**
- * The Z scale a filament shrinkage compensation gives the plate, as the engine applies it: 100 over
- * filament_shrinkage_compensation_z when every slot the plate prints with has the same filament_shrink and Z value,
- * else 1 (no compensation).
+ * The job's layers for the shown plate: jobLayerTops when the app has them, else the engine's (plateLayerZ). Null when
+ * `signal` aborts or the shown plate changes before they are ready, so a closed dialog or another plate never gets
+ * them. Engine errors reach the caller.
  */
-export function zShrinkFactor(config: Readonly<Record<string, unknown>>, slots: Iterable<number>): number {
-  const values = [...new Set(slots)].map((slot) => [percentFor(config['filament_shrink'], slot), percentFor(config['filament_shrinkage_compensation_z'], slot)] as const)
-  if (!values.length || values.some(([xy, z]) => xy !== values[0]![0] || z !== values[0]![1])) return 1
-  const z = values[0]![1]
-  return Math.abs(z - 100) < 1e-9 ? 1 : 100 / Math.max(1, z)
-}
-
-/** Tops stretched as the engine stretches exact tops by `fz`: the first layer as it is, the rest evenly, the last on last x fz. */
-export function stretchTops(tops: readonly number[], fz: number): number[] {
-  const first = tops[0]
-  const last = tops[tops.length - 1]
-  if (first === undefined || last === undefined || tops.length < 2 || last <= first || Math.abs(fz - 1) < 1e-12) return [...tops]
-  const k = (last * fz - first) / (last - first)
-  return tops.map((t) => first + (t - first) * k)
-}
-
-/**
- * The tops a resume plans with. The job's own layers when the app has them (jobLayerTops). Without them (the slice is
- * not current: a reopened project, a resume from the fleet), the tops the resumed slice will print: the plate's own
- * layer heights, stretched by its Z shrinkage as the engine stretches them. Undefined for a plate without its own, which
- * prints even layers. These are for the plan only: the slice sends the plate's own tops unstretched, as the job did.
- */
-export function resumePlanTops(s: AppState): number[] | undefined {
-  const job = jobLayerTops(s)
-  if (job) return job
-  const meta = activeMeta(s)
-  const profile = meta?.settings.layerProfile
-  if (!profile?.length || s.calibration[s.activePlate]) return undefined
-  const entries = s.plate.filter((p) => p.printable !== false)
-  const config = plateSliceConfig(s, meta)
-  const tops = plateProfileTops(profile, entries, config)
-  if (!tops) return undefined
-  const slots = entries.flatMap((o) => o.handle.parts.map((part) => mapSlot(meta, effectiveSlot(o, part))))
-  return stretchTops(tops, zShrinkFactor(config, slots.length ? slots : [1]))
+export async function resumeLayers(host: Host, signal: AbortSignal): Promise<ResumeLayers | null> {
+  const plate = get().activePlate
+  const job = jobLayerTops(get())
+  if (job) return { plate, tops: job }
+  const { plateLayerZ } = await import('../state/slice-plate')
+  try {
+    const tops = await plateLayerZ(host, signal)
+    return signal.aborted || get().activePlate !== plate ? null : { plate, tops }
+  } catch (e) {
+    if (signal.aborted || get().activePlate !== plate) return null
+    throw e
+  }
 }
