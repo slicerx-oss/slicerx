@@ -26,6 +26,8 @@ const MAX_POINTS: usize = 1_000_000;
 pub const SMOOTH_TOL_MM: f64 = 0.005;
 /// How far a landmark may sit from its profile, mm: twice the arc tolerance, so a point on a flattened arc counts.
 const LANDMARK_TOL_MM: f64 = 0.01;
+/// The most landmarks one profile marks.
+pub const MAX_LANDMARKS: usize = 64;
 /// The most rows one smooth span between two profiles takes; one that needs more is refused, so the tolerance holds.
 const MAX_SPAN_ROWS: usize = 1024;
 
@@ -124,7 +126,18 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     }
     let marked = landmarked(profiles)?;
     let flats: Vec<Vec<V2>> = if marked {
-        by_landmarks(profiles, &rings, open)?
+        // which way each plane faces along the loft, and each profile's middle, from its points as drawn
+        let centers: Vec<V3> = rings
+            .iter()
+            .map(|(f, r)| centroid(&r.iter().map(|&p| f.at(p, 0.0)).collect::<Vec<V3>>()))
+            .collect();
+        let way = alongs(&centers, opts.closed);
+        let facing: Vec<bool> = rings
+            .iter()
+            .zip(&way)
+            .map(|((f, _), a)| vec3::dot(f.w, *a) >= 0.0)
+            .collect();
+        by_landmarks(profiles, &rings, open, &facing, &centers)?
     } else {
         let n = rings.iter().map(|(_, r)| r.len()).max().unwrap_or(0);
         rings.iter().map(|(_, r)| resample(r, n, !open)).collect()
@@ -159,7 +172,7 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     // first that bends winds the way it and the line across its ends go around, and the rest run the way their
     // neighbors run. Landmarked rings keep their matched points, so they turn all together or not at all.
     if marked {
-        same_way(&mut sections, &along, open)?;
+        same_way(&mut sections, &along, open);
     } else {
         orient(&mut sections, &along, open);
     }
@@ -276,34 +289,15 @@ fn winds_along(s: &Section, along: V3) -> Option<bool> {
     chain_winds(&s.flat).map(|ccw| ccw == (vec3::dot(s.frame.w, along) >= 0.0))
 }
 
-/// Turns every landmarked ring end for end when they all wind clockwise about `along`; fails when some do and some do
-/// not, since their landmarks then run opposite ways.
-fn same_way(sections: &mut [Section], along: &[V3], open: bool) -> Result<()> {
-    let mut want: Option<(usize, bool)> = None;
-    for (k, s) in sections.iter().enumerate() {
-        let ccw = if open {
-            chain_winds(&s.flat)
-        } else {
-            Some(poly2d::signed_area(&s.flat) >= 0.0)
-        };
-        let Some(ccw) = ccw else { continue };
-        let ok = ccw == (vec3::dot(s.frame.w, along[k]) >= 0.0);
-        match want {
-            None => want = Some((k, ok)),
-            Some((first, w)) if w != ok => {
-                return Err(Error::invalid(
-                    "profiles",
-                    format!(
-                        "profile {}'s landmarks run around the other way from profile {}'s; list them in the same order on every profile",
-                        k + 1,
-                        first + 1
-                    ),
-                ));
-            }
-            Some(_) => {}
-        }
-    }
-    if want.is_some_and(|(_, ok)| !ok) {
+/// Turns every landmarked ring end for end when the first that winds at all winds clockwise about `along`. Their
+/// landmarks already run the same way (see [`by_landmarks`]), so they turn all together.
+fn same_way(sections: &mut [Section], along: &[V3], open: bool) {
+    let turn = sections
+        .iter()
+        .zip(along)
+        .find_map(|(s, a)| winds_along(s, *a))
+        .is_some_and(|ok| !ok);
+    if turn {
         for s in sections.iter_mut() {
             s.ring.reverse();
             s.flat.reverse();
@@ -314,7 +308,6 @@ fn same_way(sections: &mut [Section], along: &[V3], open: bool) -> Result<()> {
             }
         }
     }
-    Ok(())
 }
 
 /// Whether the profiles mark landmarks: all of them the same number, or none.
@@ -328,6 +321,12 @@ fn landmarked(profiles: &[Profile]) -> Result<bool> {
                 k + 1,
                 profiles[k].landmarks.len()
             ),
+        ));
+    }
+    if first > MAX_LANDMARKS {
+        return Err(Error::invalid(
+            "profiles",
+            format!("a profile marks at most {MAX_LANDMARKS} landmarks"),
         ));
     }
     Ok(first > 0)
@@ -360,51 +359,84 @@ fn along_of(pts: &[V2], closed: bool, p: V2) -> Option<f64> {
     best.filter(|&(o, _)| o <= LANDMARK_TOL_MM).map(|(_, s)| s)
 }
 
-/// The point `s` along the polyline `pts` (closed around when `closed`).
-fn point_along(pts: &[V2], closed: bool, s: f64) -> V2 {
-    let k = pts.len();
-    let sides = if closed { k } else { k - 1 };
-    let mut run = 0.0;
-    for i in 0..sides {
-        let (a, b) = (pts[i], pts[(i + 1) % k]);
-        let l = (b[0] - a[0]).m_hypot(b[1] - a[1]);
-        if s <= run + l || i + 1 == sides {
-            let t = if l > 0.0 {
-                ((s - run) / l).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+/// A polyline measured along its length: where each point is, and how long it is (back to the start when closed).
+struct Measured<'a> {
+    pts: &'a [V2],
+    closed: bool,
+    at: Vec<f64>,
+    total: f64,
+}
+
+impl<'a> Measured<'a> {
+    fn new(pts: &'a [V2], closed: bool) -> Self {
+        let n = pts.len();
+        let mut at = Vec::with_capacity(n);
+        let mut run = 0.0;
+        for i in 0..n {
+            at.push(run);
+            if closed || i + 1 < n {
+                let (a, b) = (pts[i], pts[(i + 1) % n]);
+                run += (b[0] - a[0]).m_hypot(b[1] - a[1]);
+            }
         }
-        run += l;
+        Self {
+            pts,
+            closed,
+            at,
+            total: run,
+        }
     }
-    pts[0]
+
+    /// The point `s` along it: taken around a closed one, held to the ends of an open one.
+    fn point(&self, s: f64) -> V2 {
+        let n = self.pts.len();
+        let s = if self.closed {
+            s.rem_euclid(self.total)
+        } else {
+            s.clamp(0.0, self.total)
+        };
+        let i = self.at.partition_point(|&a| a <= s).saturating_sub(1);
+        let i = if self.closed { i } else { i.min(n - 2) };
+        let (a, b) = (self.pts[i], self.pts[(i + 1) % n]);
+        let len = if i + 1 < n { self.at[i + 1] } else { self.total } - self.at[i];
+        let t = if len > 0.0 {
+            ((s - self.at[i]) / len).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    }
 }
 
 /// The rings matched by their landmarks. Each profile's points are split at its landmarks (an open chain's ends are
-/// landmarks too; a closed ring starts at its first), and each run between two landmarks is spread evenly by length
-/// over the same number of points on every profile: the most that run has on any profile.
+/// landmarks too, and a landmark within `LANDMARK_TOL_MM` of an end is that end; a closed ring starts at its first),
+/// and each run between two landmarks is spread evenly by length over the same number of points on every profile: the
+/// most that run has on any profile.
+///
+/// The landmarks' order sets the way each ring runs when it can: three or more on a closed ring, two or more on an open
+/// chain, ends included. A ring with fewer runs the way the others do: a closed one winds about the loft as they do
+/// (`facing` says whether its plane faces along the loft), and an open one starts at the end nearest its neighbor's
+/// start, each taken about its middle (`centers`). Closed rings whose landmarks wind opposite ways are refused.
 #[allow(
     clippy::too_many_lines,
-    reason = "find the landmarks, count each run, then spread it"
+    reason = "find the landmarks, settle each ring's way, count each run, then spread it"
 )]
-fn by_landmarks(profiles: &[Profile], rings: &[(Frame, Vec<V2>)], open: bool) -> Result<Vec<Vec<V2>>> {
-    let mut breaks: Vec<Vec<f64>> = Vec::with_capacity(rings.len());
-    for (k, ((_, pts), p)) in rings.iter().zip(profiles).enumerate() {
+fn by_landmarks(
+    profiles: &[Profile],
+    rings: &[(Frame, Vec<V2>)],
+    open: bool,
+    facing: &[bool],
+    centers: &[V3],
+) -> Result<Vec<Vec<V2>>> {
+    let count = rings.len();
+    let lines: Vec<Measured<'_>> = rings.iter().map(|(_, pts)| Measured::new(pts, !open)).collect();
+    // each landmark's place along its profile, in the order given
+    let mut places: Vec<Vec<f64>> = Vec::with_capacity(count);
+    for (k, (line, p)) in lines.iter().zip(profiles).enumerate() {
         let bad = |why: String| Error::invalid("profiles", format!("profile {}: {why}", k + 1));
-        let total: f64 = {
-            let n = pts.len();
-            let sides = if open { n - 1 } else { n };
-            (0..sides)
-                .map(|i| {
-                    let (a, b) = (pts[i], pts[(i + 1) % n]);
-                    (b[0] - a[0]).m_hypot(b[1] - a[1])
-                })
-                .sum()
-        };
         let mut at = Vec::with_capacity(p.landmarks.len());
         for (j, &l) in p.landmarks.iter().enumerate() {
-            let s = along_of(pts, !open, l).ok_or_else(|| {
+            let mut s = along_of(line.pts, !open, l).ok_or_else(|| {
                 bad(format!(
                     "landmark {} at ({:.3}, {:.3}) is not on the profile",
                     j + 1,
@@ -412,107 +444,173 @@ fn by_landmarks(profiles: &[Profile], rings: &[(Frame, Vec<V2>)], open: bool) ->
                     l[1]
                 ))
             })?;
+            if open {
+                if s <= LANDMARK_TOL_MM {
+                    s = 0.0;
+                } else if line.total - s <= LANDMARK_TOL_MM {
+                    s = line.total;
+                }
+            }
             at.push(s);
         }
-        let eps = total * 1e-9;
+        places.push(at);
+    }
+    // each ring's way where its landmarks set it: forward (true) or backward
+    let mut ways: Vec<Option<bool>> = Vec::with_capacity(count);
+    for (k, (line, at)) in lines.iter().zip(&places).enumerate() {
+        let bad = |why: &str| Error::invalid("profiles", format!("profile {}: {why}", k + 1));
+        let eps = line.total * 1e-9;
+        let rising = |v: &[f64]| v.windows(2).all(|w| w[1] - w[0] > eps);
         if open {
-            // the ends are landmarks already; a chain marked from its far end runs backward
-            let mut marks: Vec<f64> = at.into_iter().filter(|&s| s > eps && s < total - eps).collect();
-            let backward = marks.len() > 1 && marks.windows(2).all(|w| w[0] > w[1]);
-            if backward {
-                marks.reverse();
+            let back: Vec<f64> = at.iter().rev().copied().collect();
+            ways.push(if at.len() < 2 {
+                None
+            } else if rising(at) {
+                Some(true)
+            } else if rising(&back) {
+                Some(false)
+            } else {
+                return Err(bad("its landmarks are not in order along it"));
+            });
+        } else {
+            let s0 = at[0];
+            let fwd: Vec<f64> = at.iter().map(|&s| (s - s0).rem_euclid(line.total)).collect();
+            let back: Vec<f64> = fwd
+                .iter()
+                .map(|&s| (line.total - s).rem_euclid(line.total))
+                .collect();
+            let (f, b) = (rising(&fwd), rising(&back));
+            if !f && !b {
+                return Err(bad("its landmarks are not in order around it"));
             }
-            if marks.windows(2).any(|w| w[1] - w[0] <= eps) {
-                return Err(bad("its landmarks are not in order along it".into()));
-            }
+            ways.push((at.len() >= 3).then_some(f));
+        }
+    }
+    let mut way = vec![true; count];
+    if open {
+        // a ring whose landmarks do not set its way starts at the end nearest its neighbor's start
+        let ends = |k: usize, fwd: bool| -> (V3, V3) {
+            let (f, pts) = (&rings[k].0, &rings[k].1);
+            let (a, b) = (pts[0], pts[pts.len() - 1]);
+            let (a, b) = if fwd { (a, b) } else { (b, a) };
+            (
+                vec3::sub(f.at(a, 0.0), centers[k]),
+                vec3::sub(f.at(b, 0.0), centers[k]),
+            )
+        };
+        let first = ways.iter().position(Option::is_some).unwrap_or(0);
+        way[first] = ways[first].unwrap_or(true);
+        let settle = |k: usize, to: usize, way: &mut Vec<bool>| {
+            way[k] = ways[k].unwrap_or_else(|| {
+                let (s, e) = ends(to, way[to]);
+                let cost = |fwd: bool| {
+                    let (a, b) = ends(k, fwd);
+                    let (x, y) = (vec3::sub(a, s), vec3::sub(b, e));
+                    vec3::dot(x, x) + vec3::dot(y, y)
+                };
+                cost(true) <= cost(false)
+            });
+        };
+        for k in (0..first).rev() {
+            settle(k, k + 1, &mut way);
+        }
+        for k in first + 1..count {
+            settle(k, k - 1, &mut way);
+        }
+    } else {
+        // closed rings all wind one way about the loft: the way the first whose landmarks set it winds
+        let winds = |k: usize, fwd: bool| fwd == facing[k];
+        let set = ways.iter().position(Option::is_some);
+        let want = set.is_none_or(|r| winds(r, ways[r].unwrap_or(true)));
+        for k in 0..count {
+            way[k] = match ways[k] {
+                Some(fwd) if winds(k, fwd) != want => {
+                    return Err(Error::invalid(
+                        "profiles",
+                        format!(
+                            "profile {}'s landmarks run around the other way from profile {}'s; list them in the same order on every profile",
+                            k + 1,
+                            set.unwrap_or(0) + 1
+                        ),
+                    ));
+                }
+                Some(fwd) => fwd,
+                None => winds(k, true) == want,
+            };
+        }
+    }
+    // where each run starts and ends along its profile, the way the ring runs
+    let mut breaks: Vec<Vec<f64>> = Vec::with_capacity(count);
+    for ((line, at), &fwd) in lines.iter().zip(&places).zip(&way) {
+        let t = line.total;
+        let eps = t * 1e-9;
+        let b = if open {
+            let mut inner: Vec<f64> = at.iter().copied().filter(|&s| s > eps && s < t - eps).collect();
+            inner.sort_by(f64::total_cmp);
             let mut b = vec![0.0];
-            b.extend(marks);
-            b.push(total);
-            if backward {
+            b.extend(inner);
+            b.push(t);
+            if !fwd {
                 b.reverse();
             }
-            breaks.push(b);
+            b
         } else {
-            // around from the first landmark, the way the landmarks go
             let s0 = at[0];
-            let fwd: Vec<f64> = at.iter().map(|&s| (s - s0).rem_euclid(total)).collect();
-            let back: Vec<f64> = fwd.iter().map(|&s| (total - s).rem_euclid(total)).collect();
-            let rising = |v: &[f64]| v.windows(2).all(|w| w[1] - w[0] > eps);
-            let b = if rising(&fwd) {
-                fwd.iter().map(|&s| s0 + s).collect::<Vec<f64>>()
-            } else if rising(&back) {
-                back.iter().map(|&s| s0 - s).collect()
-            } else {
-                return Err(bad("its landmarks are not in order around it".into()));
-            };
-            let dir = if rising(&fwd) { 1.0 } else { -1.0 };
-            let mut b = b;
-            b.push(s0 + dir * total);
-            breaks.push(b);
-        }
+            let dir = if fwd { 1.0 } else { -1.0 };
+            let mut b: Vec<f64> = at
+                .iter()
+                .map(|&s| s0 + dir * (dir * (s - s0)).rem_euclid(t))
+                .collect();
+            b.push(s0 + dir * t);
+            b
+        };
+        breaks.push(b);
+    }
+    if let Some(k) = breaks.iter().position(|b| b.len() != breaks[0].len()) {
+        return Err(Error::invalid(
+            "profiles",
+            format!(
+                "profile {} and profile 1 mark different numbers of landmarks between their ends ({} and {}); mark the same points on every profile",
+                k + 1,
+                breaks[k].len() - 2,
+                breaks[0].len() - 2
+            ),
+        ));
     }
     let runs = breaks[0].len() - 1;
     // each run's count: the most points it has on any profile, one more than its inner vertices
     let mut counts = vec![1usize; runs];
-    for ((_, pts), b) in rings.iter().zip(&breaks) {
-        let n = pts.len();
-        let mut s = 0.0;
-        let mut vert = Vec::with_capacity(n);
-        for i in 0..n {
-            vert.push(s);
-            let (a, c) = (pts[i], pts[(i + 1) % n]);
-            s += (c[0] - a[0]).m_hypot(c[1] - a[1]);
-        }
-        let total = s;
-        for (j, count) in counts.iter_mut().enumerate() {
+    for (line, b) in lines.iter().zip(&breaks) {
+        let t = line.total;
+        for (j, c) in counts.iter_mut().enumerate() {
             let (lo, hi) = (b[j].min(b[j + 1]), b[j].max(b[j + 1]));
-            let inner = vert
+            let inner = line
+                .at
                 .iter()
-                .filter(|&&v| {
-                    [v, v + total, v - total]
-                        .iter()
-                        .any(|&w| w > lo + 1e-9 && w < hi - 1e-9)
-                })
+                .filter(|&&v| [v, v + t, v - t].iter().any(|&w| w > lo + 1e-9 && w < hi - 1e-9))
                 .count();
-            *count = (*count).max(inner + 1);
+            *c = (*c).max(inner + 1);
         }
     }
-    let mut out = Vec::with_capacity(rings.len());
-    for ((_, pts), b) in rings.iter().zip(&breaks) {
-        let total_closed = |s: f64| -> f64 {
-            if open {
-                s
-            } else {
-                let n = pts.len();
-                let len: f64 = (0..n)
-                    .map(|i| {
-                        let (a, c) = (pts[i], pts[(i + 1) % n]);
-                        (c[0] - a[0]).m_hypot(c[1] - a[1])
-                    })
-                    .sum();
-                s.rem_euclid(len)
-            }
-        };
-        let mut ring = Vec::new();
-        for j in 0..runs {
-            for i in 0..counts[j] {
+    let n = counts.iter().sum::<usize>() + usize::from(open);
+    if n > MAX_RING {
+        return Err(Error::invalid(
+            "profiles",
+            format!("the landmarked profiles would have more than {MAX_RING} points each"),
+        ));
+    }
+    let mut out = Vec::with_capacity(count);
+    for (line, b) in lines.iter().zip(&breaks) {
+        let mut ring = Vec::with_capacity(n);
+        for (j, &c) in counts.iter().enumerate() {
+            for i in 0..c {
                 #[allow(clippy::cast_precision_loss, reason = "counts are small")]
-                let t = i as f64 / counts[j] as f64;
-                ring.push(point_along(
-                    pts,
-                    !open,
-                    total_closed(b[j] + (b[j + 1] - b[j]) * t),
-                ));
+                let t = i as f64 / c as f64;
+                ring.push(line.point(b[j] + (b[j + 1] - b[j]) * t));
             }
         }
         if open {
-            ring.push(point_along(pts, false, b[runs]));
-        }
-        if ring.len() > MAX_RING {
-            return Err(Error::invalid(
-                "profiles",
-                format!("the landmarked profiles would have more than {MAX_RING} points each"),
-            ));
+            ring.push(line.point(b[runs]));
         }
         out.push(ring);
     }
@@ -1283,5 +1381,157 @@ mod tests {
         let mut h = hull(true);
         h[3].landmarks[1..].reverse();
         assert!(err(&h).contains("profile 4's landmarks run around the other way from profile 1's"));
+    }
+
+    /// Each landmark's point index in each ring.
+    fn marks_at(rings: &[Vec<V2>], profiles: &[Profile]) -> Vec<Vec<usize>> {
+        rings
+            .iter()
+            .zip(profiles)
+            .map(|(r, p)| {
+                p.landmarks
+                    .iter()
+                    .map(|l| {
+                        r.iter()
+                            .position(|q| (q[0] - l[0]).m_hypot(q[1] - l[1]) < 1e-9)
+                            .unwrap_or_else(|| panic!("{l:?} is not a point of {r:?}"))
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn rings_of(profiles: &[Profile], open: bool) -> Result<Vec<Vec<V2>>> {
+        let rings: Vec<(Frame, Vec<V2>)> = profiles
+            .iter()
+            .enumerate()
+            .map(|(k, p)| (frame_of(p).unwrap(), ring_of(k, p).unwrap()))
+            .collect();
+        let centers: Vec<V3> = profiles.iter().map(|p| frame_of(p).unwrap().origin).collect();
+        let facing = vec![true; profiles.len()];
+        by_landmarks(profiles, &rings, open, &facing, &centers)
+    }
+
+    #[test]
+    fn landmarks_land_on_the_same_point_of_every_ring() {
+        let h = hull(true);
+        let rings = rings_of(&h, false).unwrap();
+        let at = marks_at(&rings, &h);
+        assert!(at.iter().all(|a| *a == at[0]), "{at:?}");
+        assert_eq!(at[0][0], 0, "a closed ring starts at its first landmark");
+        assert!(rings.iter().all(|r| r.len() == rings[0].len()));
+        // listed the other way around, every ring runs the other way, its first landmark still first
+        let mut back = hull(true);
+        for p in &mut back {
+            p.landmarks[1..].reverse();
+        }
+        let rings = rings_of(&back, false).unwrap();
+        let at = marks_at(&rings, &back);
+        assert!(at.iter().all(|a| *a == at[0]) && at[0][0] == 0, "{at:?}");
+        assert!(poly2d::signed_area(&rings[0]) < 0.0);
+        // a loft of them is the same solid
+        let opts = Options::default();
+        let (a, b) = (
+            loft_with(&hull(true), &opts).unwrap(),
+            loft_with(&back, &opts).unwrap(),
+        );
+        closed(&b);
+        assert!((a.volume() - b.volume()).abs() < 1e-6 * a.volume());
+    }
+
+    fn chain(z: f64, pts: Vec<V2>, marks: Vec<V2>) -> Profile {
+        let mut frame = FaceFrame::bed([0.0, 0.0]);
+        frame.origin[2] = z;
+        Profile {
+            frame: Some(frame),
+            loops: vec![Loop {
+                points: pts,
+                ..Loop::default()
+            }],
+            open: true,
+            landmarks: marks,
+        }
+    }
+
+    #[test]
+    fn open_chains_split_at_their_landmarks() {
+        // a short and a long chain, each marked once and twice inside its ends
+        let short = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]];
+        let long = vec![
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [8.0, 0.0],
+            [12.0, 0.0],
+            [12.0, 4.0],
+            [12.0, 8.0],
+            [12.0, 12.0],
+        ];
+        for (ms, ml) in [
+            (vec![[10.0, 0.0]], vec![[12.0, 0.0]]),
+            (vec![[5.0, 0.0], [10.0, 0.0]], vec![[8.0, 0.0], [12.0, 0.0]]),
+        ] {
+            let p = [chain(0.0, short.clone(), ms), chain(10.0, long.clone(), ml)];
+            let rings = rings_of(&p, true).unwrap();
+            let at = marks_at(&rings, &p);
+            assert_eq!(at[0], at[1]);
+            assert_eq!(rings[0].len(), rings[1].len());
+            let near = |a: V2, b: V2| (a[0] - b[0]).m_hypot(a[1] - b[1]) < 1e-12;
+            assert!(near(rings[0][0], [0.0, 0.0]) && near(*rings[1].last().unwrap(), [12.0, 12.0]));
+            // the runs are spread evenly: equal steps between the landmarks
+            let step = |r: &[V2], i: usize| (r[i + 1][0] - r[i][0]).m_hypot(r[i + 1][1] - r[i][1]);
+            let last = *at[0].last().unwrap();
+            for i in last..rings[0].len() - 2 {
+                assert!((step(&rings[1], i) - step(&rings[1], i + 1)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn landmarks_that_cannot_be_matched_are_refused() {
+        let sq = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let closed_at = |z: f64, marks: Vec<V2>| {
+            let mut p = chain(z, sq.clone(), marks);
+            p.open = false;
+            p
+        };
+        let err = |p: &[Profile]| loft_with(p, &Options::default()).unwrap_err().to_string();
+        assert_eq!(
+            err(&[
+                closed_at(0.0, vec![[0.0, 0.0], [0.0, 0.0]]),
+                closed_at(10.0, vec![[0.0, 0.0], [10.0, 10.0]])
+            ]),
+            "profiles: profile 1: its landmarks are not in order around it"
+        );
+        // one run takes all of the first ring's points and the other all of the second's
+        let dense = |a: V2, b: V2| -> Vec<V2> {
+            (0..3000)
+                .map(|i| {
+                    let t = f64::from(i) / 3000.0;
+                    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+                })
+                .collect()
+        };
+        let mut one = dense([0.0, 0.0], [10.0, 0.0]);
+        one.extend([[10.0, 10.0], [0.0, 10.0]]);
+        let mut two = vec![[0.0, 0.0]];
+        two.extend(dense([10.0, 0.0], [10.0, 10.0]));
+        two.push([0.0, 10.0]);
+        let marks = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]];
+        let mut a = closed_at(0.0, marks.clone());
+        a.loops[0].points = one;
+        let mut b = closed_at(10.0, marks);
+        b.loops[0].points = two;
+        assert_eq!(
+            err(&[a, b]),
+            "profiles: the landmarked profiles would have more than 4096 points each"
+        );
+        let mut many = closed_at(0.0, vec![[0.0, 0.0]; 65]);
+        many.landmarks = vec![[0.0, 0.0]; 65];
+        let mut other = closed_at(10.0, Vec::new());
+        other.landmarks = vec![[0.0, 0.0]; 65];
+        assert_eq!(
+            err(&[many, other]),
+            "profiles: a profile marks at most 64 landmarks"
+        );
     }
 }
