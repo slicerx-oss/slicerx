@@ -17,6 +17,9 @@ export { layerProfileEditInput, layerProfileReadInput } from './layer-profile-in
 export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
 export type { DesignToolOptions } from './design-tools'
 export { createCardPlans, mimirTabTools, PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, planChoiceId, PlanInputSchema, samePlan, type CardPlans, type PlanAnswer, type PlanInput } from './tab-tools'
+// the print-in-place gap rule design.check and geom.fit_check use: limits by direction, the way a gap runs, and whether it clears
+export { clearsFitLimit, FIT_TOLERANCE_MM, fitDirection, fitLimitFor, fitLimits, fitVerdict, type FitDirection, type FitProfile } from './fit-facts'
+export type { FitGap, FitLimits } from './design-check'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
 export { appPartInputs, type AppParts } from './app-parts'
