@@ -68,6 +68,20 @@ export function LayerProfileEditor({ onClose }: { onClose: () => void }) {
   const [edited, setEdited] = useState(false)
   const svg = useRef<SVGSVGElement>(null)
   const drag = useRef<number | null>(null)
+  // Screen pixels per graph unit as drawn, so a phone's hit areas stay 44 px across however small the graph draws.
+  const [scale, setScale] = useState(1)
+  useEffect(() => {
+    const el = svg.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const read = () => {
+      const a = el.getScreenCTM()?.a
+      if (a && Number.isFinite(a) && a > 0) setScale(a)
+    }
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [start])
 
   useEffect(() => {
     let live = true
@@ -245,8 +259,8 @@ export function LayerProfileEditor({ onClose }: { onClose: () => void }) {
                 const n = members.length
                 return (
                   <g key={members[0]}>
-                    {/* the hit area: 44 px across on a phone, 20 on a desktop (spec 2) */}
-                    <circle className="lp-hit" cx={hx} cy={hy} r={phone ? 20 : 10} onPointerDown={(e) => onDown(e as unknown as PointerEvent<SVGCircleElement>, members)} />
+                    {/* the hit area: 44 px across on a phone, 20 units on a desktop (spec 2) */}
+                    <circle className="lp-hit" cx={hx} cy={hy} r={phone ? 22 / scale : 10} onPointerDown={(e) => onDown(e as unknown as PointerEvent<SVGCircleElement>, members)} />
                     <circle
                       className="lp-point"
                       data-picked={members.includes(picked) || undefined}
