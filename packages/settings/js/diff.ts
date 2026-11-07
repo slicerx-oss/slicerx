@@ -9,7 +9,7 @@ import { settingDef } from './schema'
 
 const UNIT_TEXT: Record<SettingUnit, string> = {
   mm: ' mm', 'mm/s': ' mm/s', 'mm/s2': ' mm/s2', 'mm3/s': ' mm3/s', '%': '%', C: ' C', s: ' s', 'g/cm3': ' g/cm3',
-  deg: ' deg', 'money/kg': ' per kg', mm3: ' mm3', layers: ' layers', Hz: ' Hz', 'delta-C': ' C', 'money/h': ' per hour',
+  deg: ' deg', 'money/kg': ' per kg', mm2: ' mm2', mm3: ' mm3', layers: ' layers', Hz: ' Hz', 'delta-C': ' C', 'money/h': ' per hour',
 }
 
 export function sameValue(a: SettingValue | undefined, b: SettingValue | undefined): boolean {

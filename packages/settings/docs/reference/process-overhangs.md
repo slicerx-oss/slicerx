@@ -52,7 +52,7 @@
 
 ### `bridge_no_support`
 
-**Bridge no support**
+**No support under bridges**
 
 - Type: boolean
 - Default: off
@@ -89,7 +89,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `detect_overhang_wall`
 
-**Detect overhang wall**
+**Detect overhanging walls**
 
 - Type: boolean
 - Default: on
@@ -130,7 +130,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `make_overhang_printable_angle`
 
-**Make overhang printable angle**
+**Maximum angle for printable overhangs**
 
 - Type: number
 - Unit: degrees
@@ -142,7 +142,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `make_overhang_printable_hole_size`
 
-**Make overhang printable hole size**
+**Largest hole filled under overhangs**
 
 - Type: number
 - Default: 0
@@ -209,7 +209,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_reverse`
 
-**Overhang reverse**
+**Reverse walls on overhangs**
 
 - Type: boolean
 - Default: off
@@ -219,7 +219,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_reverse_internal_only`
 
-**Overhang reverse internal only**
+**Reverse inner walls only**
 
 - Type: boolean
 - Default: off
@@ -229,7 +229,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `overhang_reverse_threshold`
 
-**Overhang reverse threshold**
+**Overhang needed to reverse a wall**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm
@@ -265,9 +265,10 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `wave_overhang_flow_mm3_per_mm`
 
-**Wave overhang flow (mm3 per mm)**
+**Wave overhang flow**
 
 - Type: number
+- Unit: mm2
 - Default: 0.16
 - Recommended range: 0.02 to 1.5
 - Tier: Expert, effects
@@ -311,9 +312,10 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 
 ### `wave_overhang_min_new_area`
 
-**Wave overhang minimum new area (mm2)**
+**Wave overhang minimum new area**
 
 - Type: number
+- Unit: mm2
 - Default: 0.01
 - Recommended range: 0 to no maximum
 - Tier: Expert, effects

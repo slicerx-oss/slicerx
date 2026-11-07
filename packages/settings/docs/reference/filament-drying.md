@@ -40,7 +40,7 @@
 
 ### `filament_dev_chamber_drying_bed_temperature`
 
-**Chamber drying bed temperature**
+**Bed temperature for chamber drying**
 
 - Type: list of numbers, one per extruder
 - Default: [0]

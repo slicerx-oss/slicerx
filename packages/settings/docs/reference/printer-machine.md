@@ -14,7 +14,7 @@
 
 ### `bed_custom_model`
 
-**Bed custom model**
+**Custom bed model**
 
 - Type: string
 - Default: empty
@@ -23,7 +23,7 @@
 
 ### `bed_custom_texture`
 
-**Bed custom texture**
+**Custom bed texture**
 
 - Type: string
 - Default: empty
@@ -32,7 +32,7 @@
 
 ### `bed_exclude_area`
 
-**Bed exclude area**
+**Bed exclusion area**
 
 - Type: list of points [x, y]
 - Default: [[0,0]]
@@ -41,7 +41,7 @@
 
 ### `bed_mesh_max`
 
-**Bed mesh max**
+**Bed mesh probe area, far corner**
 
 - Type: point [x, y]
 - Unit: mm
@@ -51,7 +51,7 @@
 
 ### `bed_mesh_min`
 
-**Bed mesh min**
+**Bed mesh probe area, near corner**
 
 - Type: point [x, y]
 - Unit: mm
@@ -93,7 +93,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `best_object_pos`
 
-**Best object pos**
+**Where arrange centers parts**
 
 - Type: point [x, y]
 - Default: [0.5,0.5]
@@ -141,7 +141,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `detraction_speed`
 
-**Deretraction speed**
+**Deretraction speed (older name)**
 
 - Type: number
 - Unit: mm/s
@@ -213,7 +213,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `extruder_clearance_max_radius`
 
-**Extruder clearance radius**
+**Largest toolhead radius**
 
 - Type: number
 - Unit: mm
@@ -371,7 +371,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 
 ### `machine_ptc_exist`
 
-**Has PTC heater**
+**Has chamber heater**
 
 - Type: boolean
 - Default: off
@@ -664,7 +664,7 @@ Where the head goes before and after each extruder's tool change, in printer coo
 
 ### `wrapping_exclude_area`
 
-**Wrapping exclude area**
+**Wrap detection exclusion area**
 
 - Type: list of points [x, y]
 - Default: empty list

@@ -15,7 +15,7 @@ export type SettingType =
 export type SettingValue = number | boolean | string | number[] | boolean[] | string[] | [number, number][] | [number, number][][]
 export type SettingUnit =
   | 'mm' | 'mm/s' | 'mm/s2' | 'mm3/s' | '%' | 'C' | 's' | 'g/cm3' | 'deg' | 'money/kg'
-  | 'mm3' | 'layers' | 'Hz' | 'delta-C' | 'money/h'
+  | 'mm2' | 'mm3' | 'layers' | 'Hz' | 'delta-C' | 'money/h'
 export type SettingMode = 'simple' | 'advanced' | 'expert' | 'develop' | 'hidden'
 export type SettingIntent = 'quality' | 'strength' | 'speed' | 'supports' | 'adhesion' | 'multicolor' | 'effects' | 'output'
 export type PilotRule = 'edit' | 'guarded' | 'read'

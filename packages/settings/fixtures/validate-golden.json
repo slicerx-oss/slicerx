@@ -409,7 +409,7 @@
     "keys": [
      "hot_plate_temp_initial_layer"
     ],
-    "message": "Hot plate temp initial layer is 400; it must be at most 300 C."
+    "message": "Bed temperature on the High Temperature plate or smooth PEI, first layer is 400; it must be at most 300 C."
    }
   ]
  }

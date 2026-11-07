@@ -41,7 +41,7 @@
 
 ### `print_host_webui`
 
-**Print host webui**
+**Print host web page**
 
 - Type: string
 - Default: empty
@@ -50,7 +50,7 @@
 
 ### `printer_agent`
 
-**Printer agent**
+**Printer network connection type**
 
 - Type: string
 - Default: empty
@@ -59,7 +59,7 @@
 
 ### `printhost_apikey`
 
-**Printhost apikey**
+**Print host API key**
 
 - Type: string
 - Default: empty
@@ -78,7 +78,7 @@
 
 ### `printhost_cafile`
 
-**Printhost cafile**
+**Print host certificate file**
 
 - Type: string
 - Default: empty
@@ -87,7 +87,7 @@
 
 ### `printhost_password`
 
-**Printhost password**
+**Print host password**
 
 - Type: string
 - Default: empty
@@ -96,7 +96,7 @@
 
 ### `printhost_port`
 
-**Printhost port**
+**Print host port**
 
 - Type: string
 - Default: empty
@@ -114,7 +114,7 @@
 
 ### `printhost_user`
 
-**Printhost user**
+**Print host user**
 
 - Type: string
 - Default: empty

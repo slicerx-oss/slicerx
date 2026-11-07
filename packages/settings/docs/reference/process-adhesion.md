@@ -16,7 +16,7 @@
 
 ### `brim_ears_max_angle`
 
-**Brim ears max angle**
+**Brim ears maximum angle**
 
 - Type: number
 - Unit: degrees
@@ -88,7 +88,7 @@ How many loops a brim prints: an even number of loops that fit in the brim width
 
 ### `brim_use_efc_outline`
 
-**Brim use efc outline**
+**Brim follows elephant foot compensation**
 
 - Type: boolean
 - Default: off
@@ -125,7 +125,7 @@ How many loops a brim prints: an even number of loops that fit in the brim width
 
 ### `min_skirt_length`
 
-**Min skirt length**
+**Minimum skirt length**
 
 - Type: number
 - Unit: mm
@@ -209,7 +209,7 @@ How many loops a brim prints: an even number of loops that fit in the brim width
 
 ### `skirt_brim_edge`
 
-**Skirt brim edge**
+**Measure skirt distance from the brim**
 
 Where the skirt measures its distance from a brim: the loops the brim prints, or the brim's set width out from the first layer after elephant foot compensation. Prusa projects set it when opened; the app does not list it.
 
@@ -347,7 +347,7 @@ Where the skirt measures its distance from a brim: the loops the brim prints, or
 - Type: number
 - Default: 3
 - Recommended range: 0 to no maximum
-- Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"; and Tree support auto brim (`tree_support_auto_brim`) is off
+- Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"; and Set the tree support brim size automatically (`tree_support_auto_brim`) is off
 - Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)

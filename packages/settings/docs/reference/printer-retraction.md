@@ -28,7 +28,7 @@
 
 ### `long_retractions_when_cut`
 
-**Long retractions when cut** (develop mode)
+**Long retraction before a filament cut** (develop mode)
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -37,7 +37,7 @@
 
 ### `parking_pos_retraction`
 
-**Parking position retraction**
+**Filament parking distance**
 
 - Type: number
 - Unit: mm
@@ -103,7 +103,7 @@
 
 ### `retract_lift_enforce`
 
-**Retract lift enforce**
+**Z hop surfaces**
 
 - Type: list of enum values, one per extruder
 - Default: ["All Surfaces"]

@@ -36,7 +36,7 @@ const TYPE = {
   bools: 'list of booleans, one per extruder', percents: 'list of percents, one per extruder', floatsOrPercents: 'list of millimeter or percent strings, one per extruder',
   enums: 'list of enum values, one per extruder', strings: 'list of strings, one per extruder', points: 'list of points [x, y]', pointsGroups: 'list of point lists',
 }
-const UNIT = { mm: 'mm', 'mm/s': 'mm/s', 'mm/s2': 'mm/s2', 'mm3/s': 'mm3/s', '%': '%', C: 'C', s: 's', 'g/cm3': 'g/cm3', deg: 'degrees', 'money/kg': 'money per kg', mm3: 'mm3', layers: 'layers', Hz: 'Hz', 'delta-C': 'C (difference)', 'money/h': 'money per hour' }
+const UNIT = { mm: 'mm', 'mm/s': 'mm/s', 'mm/s2': 'mm/s2', 'mm3/s': 'mm3/s', mm2: 'mm2', '%': '%', C: 'C', s: 's', 'g/cm3': 'g/cm3', deg: 'degrees', 'money/kg': 'money per kg', mm3: 'mm3', layers: 'layers', Hz: 'Hz', 'delta-C': 'C (difference)', 'money/h': 'money per hour' }
 const OPS = { eq: 'is', ne: 'is not', gt: 'is above', ge: 'is at least', lt: 'is below', le: 'is at most', in: 'is one of', notin: 'is none of' }
 
 const label = (k) => byKey.get(k)?.label ?? k

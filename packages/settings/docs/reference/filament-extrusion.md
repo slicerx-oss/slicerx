@@ -14,7 +14,7 @@
 
 ### `adaptive_pressure_advance_bridges`
 
-**Adaptive pressure advance bridges**
+**Adaptive pressure advance for bridges**
 
 - Type: list of numbers, one per extruder
 - Default: [0]
@@ -35,7 +35,7 @@
 
 ### `adaptive_pressure_advance_overhangs`
 
-**Adaptive pressure advance overhangs**
+**Adaptive pressure advance for overhangs**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -77,7 +77,7 @@
 
 ### `filament_max_volumetric_speed`
 
-**Max volumetric speed**
+**Maximum volumetric speed**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3/s
@@ -102,7 +102,7 @@
 
 ### `filament_shrinkage_compensation_z`
 
-**Filament shrinkage compensation z**
+**Shrinkage compensation Z**
 
 - Type: list of percents, one per extruder
 - Unit: %

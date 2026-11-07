@@ -42,7 +42,7 @@ Which small internal bridges are dropped so solid infill prints straight over th
 
 ### `elefant_foot_compensation_layers`
 
-**Elefant foot compensation layers**
+**Elephant foot compensation layers**
 
 - Type: integer
 - Unit: layers
@@ -54,7 +54,7 @@ Which small internal bridges are dropped so solid infill prints straight over th
 
 ### `elefant_foot_layers_density`
 
-**Elefant foot layers density**
+**Infill density of elephant foot layers**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -89,7 +89,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `enable_mixed_color_sublayer`
 
-**Enable mixed color sublayer**
+**Print mixed colors in thin sublayers**
 
 - Type: boolean
 - Default: off
@@ -99,7 +99,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `filter_out_gap_fill`
 
-**Filter out gap fill**
+**Shortest gap fill printed**
 
 - Type: number
 - Unit: mm
@@ -120,7 +120,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `hole_to_polyhole_max_edges`
 
-**Hole to polyhole max edges**
+**Most sides on a polyhole**
 
 - Type: integer
 - Default: 50
@@ -131,7 +131,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `hole_to_polyhole_threshold`
 
-**Hole to polyhole threshold**
+**Hole roundness tolerance for polyholes**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm
@@ -142,7 +142,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `hole_to_polyhole_twisted`
 
-**Hole to polyhole twisted**
+**Twist polyholes each layer**
 
 - Type: boolean
 - Default: on
@@ -202,7 +202,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `initial_layer_min_bead_width`
 
-**Initial layer min bead width**
+**Narrowest wall line on the first layer**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -292,7 +292,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `internal_bridge_flow`
 
-**Internal bridge flow**
+**Internal bridge flow ratio**
 
 - Type: number
 - Default: 1
@@ -330,7 +330,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `ironing_angle_fixed`
 
-**Ironing angle fixed**
+**Iron at a fixed angle**
 
 - Type: boolean
 - Default: off
@@ -431,7 +431,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `is_infill_first`
 
-**Is infill first**
+**Print infill before walls**
 
 - Type: boolean
 - Default: off
@@ -471,7 +471,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `max_travel_detour_distance`
 
-**Max travel detour distance**
+**Longest travel detour**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm
@@ -483,7 +483,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `min_bead_width`
 
-**Min bead width**
+**Narrowest wall line**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -496,7 +496,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `min_feature_size`
 
-**Min feature size**
+**Smallest feature printed**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -509,7 +509,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `min_length_factor`
 
-**Min length factor**
+**Shortest open wall kept**
 
 - Type: number
 - Unit: mm
@@ -521,7 +521,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `min_width_top_surface`
 
-**Min width top surface**
+**Narrowest top surface**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm
@@ -533,7 +533,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `only_one_wall_first_layer`
 
-**Only one wall first layer**
+**One wall on the first layer**
 
 - Type: boolean
 - Default: off
@@ -663,7 +663,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `seam_slope_conditional`
 
-**Seam slope conditional**
+**Scarf joint only on smooth loops**
 
 - Type: boolean
 - Default: off
@@ -673,7 +673,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `seam_slope_entire_loop`
 
-**Seam slope entire loop**
+**Scarf joint along the whole loop**
 
 - Type: boolean
 - Default: off
@@ -683,7 +683,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `seam_slope_inner_walls`
 
-**Seam slope inner walls**
+**Scarf joint on inner walls**
 
 - Type: boolean
 - Default: off
@@ -693,20 +693,20 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `seam_slope_min_length`
 
-**Seam slope min length**
+**Minimum scarf joint length**
 
 - Type: number
 - Unit: mm
 - Default: 20
 - Recommended range: 0 to no maximum
-- Used only when: Scarf joint seam (`seam_slope_type`) is not "none"; and Seam slope entire loop (`seam_slope_entire_loop`) is off
+- Used only when: Scarf joint seam (`seam_slope_type`) is not "none"; and Scarf joint along the whole loop (`seam_slope_entire_loop`) is off
 - Tier: Expert, quality
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `seam_slope_start_height`
 
-**Seam slope start height**
+**Scarf joint start height**
 
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Unit: mm
@@ -719,7 +719,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `seam_slope_steps`
 
-**Seam slope steps**
+**Scarf joint steps**
 
 - Type: integer
 - Default: 10
@@ -950,7 +950,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `tree_support_auto_brim`
 
-**Tree support auto brim**
+**Set the tree support brim size automatically**
 
 - Type: boolean
 - Default: off
@@ -961,7 +961,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `unsupported_wall_last`
 
-**Unsupported wall last**
+**Print unsupported walls last**
 
 - Type: boolean
 - Default: off
@@ -982,7 +982,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `wall_distribution_count`
 
-**Wall distribution count**
+**Walls that share width changes**
 
 - Type: integer
 - Default: 1
@@ -1017,7 +1017,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `wall_maximum_resolution`
 
-**Wall maximum resolution**
+**Shortest wall segment kept**
 
 - Type: number
 - Unit: mm
@@ -1054,7 +1054,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `wall_transition_filter_deviation`
 
-**Wall transition filter deviation**
+**Wall transition margin**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -1090,7 +1090,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `wipe_inward`
 
-**Wipe inward**
+**Wipe inward at the end of a loop**
 
 - Type: boolean
 - Default: off
@@ -1150,7 +1150,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `zaa_dont_alternate_fill_direction`
 
-**Zaa dont alternate fill direction**
+**Keep the fill direction the same on every layer**
 
 - Type: boolean
 - Default: off
@@ -1160,7 +1160,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `zaa_enabled`
 
-**Zaa enabled**
+**Z contouring**
 
 - Type: boolean
 - Default: off
@@ -1170,7 +1170,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `zaa_min_z`
 
-**Zaa min z**
+**Thinnest layer for Z contouring**
 
 - Type: number
 - Unit: mm
@@ -1182,7 +1182,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 
 ### `zaa_minimize_perimeter_height`
 
-**Zaa minimize perimeter height**
+**Slope angle for lowering top walls**
 
 - Type: number
 - Unit: degrees

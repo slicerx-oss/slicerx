@@ -14,7 +14,7 @@
 
 ### `accel_to_decel_factor`
 
-**Accel to decel factor**
+**Acceleration to deceleration ratio**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %

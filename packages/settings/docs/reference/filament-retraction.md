@@ -17,9 +17,9 @@ Overrides the printer's deretraction speed for this filament. Empty uses the pri
 
 ### `filament_long_retractions_when_cut`
 
-**Filament long retractions when cut**
+**Filament long retraction before a cut**
 
-Overrides the printer's long retractions when cut for this filament. Empty uses the printer's value.
+Overrides the printer's long retraction before a filament cut for this filament. Empty uses the printer's value.
 
 - Type: list of booleans, one per extruder
 - Default: empty list
@@ -53,7 +53,7 @@ Overrides the printer's retract before wipe for this filament. Empty uses the pr
 
 ### `filament_retract_length_nc`
 
-**Filament retract length nc**
+**Filament retraction length on a nozzle change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -65,7 +65,7 @@ Overrides the printer's retract before wipe for this filament. Empty uses the pr
 
 ### `filament_retract_length_toolchange`
 
-**Filament retract length toolchange**
+**Filament retraction length at a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -76,7 +76,7 @@ Overrides the printer's retract before wipe for this filament. Empty uses the pr
 
 ### `filament_retract_lift_above`
 
-**Filament retract lift above**
+**Filament Z hop only above height**
 
 Overrides the printer's retract lift above for this filament. Empty uses the printer's value.
 
@@ -90,7 +90,7 @@ Overrides the printer's retract lift above for this filament. Empty uses the pri
 
 ### `filament_retract_lift_below`
 
-**Filament retract lift below**
+**Filament Z hop only below height**
 
 Overrides the printer's retract lift below for this filament. Empty uses the printer's value.
 
@@ -104,7 +104,7 @@ Overrides the printer's retract lift below for this filament. Empty uses the pri
 
 ### `filament_retract_lift_enforce`
 
-**Filament retract lift enforce**
+**Filament Z hop surfaces**
 
 Overrides the printer's retract lift enforce for this filament. Empty uses the printer's value.
 
@@ -117,7 +117,7 @@ Overrides the printer's retract lift enforce for this filament. Empty uses the p
 
 ### `filament_retract_restart_extra`
 
-**Filament retract restart extra**
+**Filament extra length on restart**
 
 Overrides the printer's retract restart extra for this filament. Empty uses the printer's value.
 
@@ -130,7 +130,7 @@ Overrides the printer's retract restart extra for this filament. Empty uses the 
 
 ### `filament_retract_restart_extra_toolchange`
 
-**Filament retract restart extra toolchange**
+**Filament extra length on restart after a tool change**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -141,7 +141,7 @@ Overrides the printer's retract restart extra for this filament. Empty uses the 
 
 ### `filament_retract_when_changing_layer`
 
-**Filament retract when changing layer**
+**Filament retract at each layer change**
 
 Overrides the printer's retract at each layer change for this filament. Empty uses the printer's value.
 
@@ -153,9 +153,9 @@ Overrides the printer's retract at each layer change for this filament. Empty us
 
 ### `filament_retraction_distances_when_cut`
 
-**Filament retraction distances when cut**
+**Filament retraction distance before a cut**
 
-Overrides the printer's retraction distances when cut for this filament. Empty uses the printer's value.
+Overrides the printer's retraction distance when cutting filament for this filament. Empty uses the printer's value.
 
 - Type: list of numbers, one per extruder
 - Default: empty list
@@ -179,7 +179,7 @@ Overrides the printer's retraction length for this filament. Empty uses the prin
 
 ### `filament_retraction_minimum_travel`
 
-**Filament retraction minimum travel**
+**Filament shortest travel that triggers a retraction**
 
 Overrides the printer's shortest travel that triggers a retraction for this filament. Empty uses the printer's value.
 
@@ -259,7 +259,7 @@ Overrides the printer's z hop height for this filament. Empty uses the printer's
 
 ### `filament_z_hop_types`
 
-**Filament z hop types**
+**Filament Z hop type**
 
 Overrides the printer's z hop type for this filament. Empty uses the printer's value.
 
@@ -272,7 +272,7 @@ Overrides the printer's z hop type for this filament. Empty uses the printer's v
 
 ### `long_retractions_when_ec`
 
-**Long retractions when ec**
+**Long retraction when switching extruders**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -282,7 +282,7 @@ Overrides the printer's z hop type for this filament. Empty uses the printer's v
 
 ### `retraction_distances_when_ec`
 
-**Retraction distances when ec**
+**Retraction distance when switching extruders**
 
 - Type: list of numbers, one per extruder
 - Unit: mm

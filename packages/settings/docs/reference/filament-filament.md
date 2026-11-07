@@ -65,7 +65,7 @@
 
 ### `filament_is_support`
 
-**Filament is support**
+**Filament is a support material**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -74,7 +74,7 @@
 
 ### `filament_printable`
 
-**Filament printable**
+**Extruder types that can print this filament**
 
 - Type: list of integers, one per extruder
 - Default: [3]
@@ -83,7 +83,7 @@
 
 ### `filament_soluble`
 
-**Filament soluble**
+**Soluble filament**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -101,7 +101,7 @@
 
 ### `required_nozzle_HRC`
 
-**Required nozzle HRC**
+**Required nozzle hardness**
 
 - Type: list of integers, one per extruder
 - Default: [0]

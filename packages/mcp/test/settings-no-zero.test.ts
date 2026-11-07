@@ -13,7 +13,7 @@ import { connect, data, text } from './helpers'
 /** Each setting, whether it holds one value per filament or extruder, and the message its 0 is refused with. */
 const NO_ZERO: { key: string; list: boolean; message: string }[] = [
   { key: 'bridge_flow', list: false, message: 'Bridge flow ratio is 0, outside 0.01 to 2.' },
-  { key: 'internal_bridge_flow', list: false, message: 'Internal bridge flow is 0, outside 0.01 to 2.' },
+  { key: 'internal_bridge_flow', list: false, message: 'Internal bridge flow ratio is 0, outside 0.01 to 2.' },
   { key: 'layer_height', list: false, message: 'Layer height is 0; it must be at least 0.01 mm.' },
   { key: 'initial_layer_print_height', list: false, message: 'First layer height is 0; it must be at least 0.01 mm.' },
   { key: 'filament_diameter', list: true, message: 'Filament diameter is 0; it must be at least 0.01 mm.' },

@@ -49,7 +49,7 @@
 
 ### `max_bridge_length`
 
-**Max bridge length**
+**Maximum bridge length**
 
 - Type: number
 - Unit: mm
@@ -123,7 +123,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `support_bottom_z_distance`
 
-**Support bottom z distance**
+**Vertical gap between support and the part below**
 
 - Type: number
 - Unit: mm
@@ -182,7 +182,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `support_interface_not_for_body`
 
-**Support interface not for body**
+**Keep interface filament out of the support body**
 
 - Type: boolean
 - Default: on
@@ -232,7 +232,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `support_object_first_layer_gap`
 
-**Support object first layer gap**
+**Gap between support and part on the first layer**
 
 - Type: number
 - Unit: mm
@@ -270,7 +270,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `support_remove_small_overhang`
 
-**Support remove small overhang**
+**Skip support for small overhangs**
 
 - Type: boolean
 - Default: on
@@ -348,7 +348,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_angle_slow`
 
-**Tree support angle slow**
+**Tree branch angle when unobstructed**
 
 - Type: number
 - Unit: degrees
@@ -373,7 +373,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_branch_angle_organic`
 
-**Tree support branch angle organic**
+**Organic tree branch lean angle**
 
 - Type: number
 - Unit: degrees
@@ -398,7 +398,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_branch_diameter_angle`
 
-**Tree support branch diameter angle**
+**Organic tree branch thickening angle**
 
 - Type: number
 - Unit: degrees
@@ -410,7 +410,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_branch_diameter_organic`
 
-**Tree support branch diameter organic**
+**Organic tree branch thickness**
 
 - Type: number
 - Unit: mm
@@ -435,7 +435,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_branch_distance_organic`
 
-**Tree support branch distance organic**
+**Distance between organic tree branches**
 
 - Type: number
 - Unit: mm
@@ -460,7 +460,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 ### `tree_support_top_rate`
 
-**Tree support top rate**
+**Tree branch tip density**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %

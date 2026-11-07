@@ -4,7 +4,7 @@
 
 ### `bottom_surface_filament_id`
 
-**Bottom surface filament id**
+**Filament for bottom surfaces**
 
 - Type: integer
 - Default: 0
@@ -26,7 +26,7 @@
 
 ### `enable_tower_interface_cooldown_during_tower`
 
-**Enable tower interface cooldown during tower**
+**Drop to print temperature at the start of the prime tower**
 
 - Type: boolean
 - Default: off
@@ -76,7 +76,7 @@
 
 ### `inner_wall_filament_id`
 
-**Inner wall filament id**
+**Filament for inner walls**
 
 - Type: integer
 - Default: 0
@@ -87,7 +87,7 @@
 
 ### `internal_solid_filament_id`
 
-**Internal solid filament id**
+**Filament for solid infill**
 
 - Type: integer
 - Default: 0
@@ -108,7 +108,7 @@
 
 ### `outer_wall_filament_id`
 
-**Outer wall filament id**
+**Filament for outer walls**
 
 - Type: integer
 - Default: 0
@@ -146,7 +146,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `prime_tower_enable_framework`
 
-**Prime tower enable framework**
+**Add ribs inside the prime tower**
 
 - Type: boolean
 - Default: off
@@ -192,7 +192,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `prime_tower_max_speed`
 
-**Prime tower max speed**
+**Prime tower maximum speed**
 
 - Type: number
 - Unit: mm/s
@@ -206,7 +206,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `prime_tower_skip_points`
 
-**Prime tower skip points**
+**Leave an opening where each prime tower wipe starts**
 
 - Type: boolean
 - Default: on
@@ -242,7 +242,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `single_extruder_multi_material_priming`
 
-**Single extruder multi material priming**
+**Prime every filament along the bed front**
 
 - Type: boolean
 - Default: off
@@ -252,7 +252,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `sparse_infill_filament_id`
 
-**Sparse infill filament id**
+**Filament for sparse infill**
 
 - Type: integer
 - Default: 0
@@ -263,7 +263,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `standby_temperature_delta`
 
-**Standby temperature delta**
+**Idle extruder temperature change**
 
 - Type: integer
 - Unit: C (difference)
@@ -298,7 +298,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `toolchange_cyclic_first_layer`
 
-**Toolchange cyclic first layer**
+**Cyclic tool changes on the first layer**
 
 - Type: boolean
 - Default: off
@@ -308,7 +308,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `toolchange_cyclic_order`
 
-**Toolchange cyclic order**
+**Cyclic tool change order**
 
 - Type: string
 - Default: empty
@@ -318,7 +318,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `toolchange_ordering`
 
-**Toolchange ordering**
+**Tool change order on each layer**
 
 - Type: enum
 - Default: "default"
@@ -329,7 +329,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `top_surface_filament_id`
 
-**Top surface filament id**
+**Filament for top surfaces**
 
 - Type: integer
 - Default: 0
@@ -340,7 +340,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_bridging`
 
-**Prime tower bridging**
+**Longest bridge in the prime tower**
 
 - Type: number
 - Unit: mm
@@ -413,7 +413,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_fillet_wall`
 
-**Prime tower fillet wall**
+**Round the prime tower rib corners**
 
 - Type: boolean
 - Default: on
@@ -423,7 +423,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_max_purge_speed`
 
-**Prime tower max purge speed**
+**Prime tower maximum purge speed**
 
 - Type: number
 - Unit: mm/s
@@ -436,7 +436,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_no_sparse_layers`
 
-**Prime tower no sparse layers**
+**Skip prime tower layers without a tool change**
 
 - Type: boolean
 - Default: off
@@ -471,7 +471,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_sparse_layers_combination`
 
-**Prime tower sparse layers combination**
+**Combine sparse prime tower layers**
 
 - Type: boolean
 - Default: off
@@ -492,7 +492,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wiping_volumes_extruders`
 
-**Wiping volumes extruders**
+**Wiping volumes by extruder**
 
 - Type: list of numbers, one per extruder
 - Default: [70,70,70,70,70,70,70,70,70,70]

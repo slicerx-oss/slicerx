@@ -13,7 +13,7 @@
 
 ### `chamber_minimal_temperature`
 
-**Chamber minimal temperature**
+**Minimum chamber temperature to start**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -50,7 +50,7 @@
 
 ### `cool_plate_temp_initial_layer`
 
-**Cool plate temp initial layer**
+**Bed temperature on the Cool Plate, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -74,7 +74,7 @@
 
 ### `eng_plate_temp_initial_layer`
 
-**Eng plate temp initial layer**
+**Bed temperature on the Engineering Plate, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -85,7 +85,7 @@
 
 ### `filament_flush_temp`
 
-**Filament flush temp**
+**Flush temperature**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -97,7 +97,7 @@
 
 ### `filament_flush_temp_fast`
 
-**Filament flush temp fast**
+**Fast flush temperature**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -109,7 +109,7 @@
 
 ### `filament_pre_cooling_temperature`
 
-**Filament pre cooling temperature**
+**Nozzle cooling temperature before a filament change**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -121,7 +121,7 @@
 
 ### `filament_pre_cooling_temperature_nc`
 
-**Filament pre cooling temperature nc**
+**Nozzle cooling temperature before a nozzle change**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -133,7 +133,7 @@
 
 ### `filament_preheat_temperature_delta`
 
-**Filament preheat temperature delta**
+**Preheat below print temperature**
 
 - Type: list of numbers, one per extruder
 - Unit: C
@@ -144,7 +144,7 @@
 
 ### `filament_tower_interface_print_temp`
 
-**Filament tower interface print temp**
+**Prime tower temperature between materials**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -155,7 +155,7 @@
 
 ### `hot_plate_temp`
 
-**Bed temperature on the High Temp plate or smooth PEI**
+**Bed temperature on the High Temperature plate or smooth PEI**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -168,7 +168,7 @@
 
 ### `hot_plate_temp_initial_layer`
 
-**Hot plate temp initial layer**
+**Bed temperature on the High Temperature plate or smooth PEI, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -203,7 +203,7 @@
 
 ### `nozzle_temperature_initial_layer`
 
-**Hotend temperature for the first layer**
+**Nozzle temperature for the first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -249,7 +249,7 @@
 
 ### `supertack_plate_temp_initial_layer`
 
-**Supertack plate temp initial layer**
+**Bed temperature on the SuperTack plate, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -260,7 +260,7 @@
 
 ### `temperature_vitrification`
 
-**Temperature vitrification**
+**Softening temperature**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -282,7 +282,7 @@
 
 ### `textured_cool_plate_temp_initial_layer`
 
-**Textured cool plate temp initial layer**
+**Bed temperature on the Textured Cool Plate, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C
@@ -306,7 +306,7 @@
 
 ### `textured_plate_temp_initial_layer`
 
-**Textured plate temp initial layer**
+**Bed temperature on textured PEI, first layer**
 
 - Type: list of integers, one per extruder
 - Unit: C

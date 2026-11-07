@@ -42,7 +42,7 @@
 
 ### `additional_fan_full_speed_layer`
 
-**Additional fan full speed layer**
+**Layer where the auxiliary fan reaches full speed**
 
 - Type: list of integers, one per extruder
 - Default: [0]
@@ -52,7 +52,7 @@
 
 ### `close_additional_fan_first_x_layers`
 
-**Close additional fan first x layers**
+**Auxiliary fan off for the first layers**
 
 - Type: list of integers, one per extruder
 - Unit: layers
@@ -76,7 +76,7 @@
 
 ### `complete_print_exhaust_fan_speed`
 
-**Complete print exhaust fan speed**
+**Exhaust fan speed after the print**
 
 - Type: list of integers, one per extruder
 - Unit: %
@@ -87,7 +87,7 @@
 
 ### `dont_slow_down_outer_wall`
 
-**Dont slow down outer wall**
+**Do not slow down outer walls**
 
 - Type: list of booleans, one per extruder
 - Default: [false]
@@ -96,7 +96,7 @@
 
 ### `during_print_exhaust_fan_speed`
 
-**During print exhaust fan speed**
+**Exhaust fan speed during the print**
 
 - Type: list of integers, one per extruder
 - Unit: %
@@ -107,7 +107,7 @@
 
 ### `enable_overhang_bridge_fan`
 
-**Enable overhang bridge fan**
+**Separate fan speed for overhangs and bridges**
 
 - Type: list of booleans, one per extruder
 - Default: [true]
@@ -116,7 +116,7 @@
 
 ### `fan_cooling_layer_time`
 
-**Fan cooling layer time**
+**Layer time below which the fan speeds up**
 
 - Type: list of numbers, one per extruder
 - Default: [60]
@@ -126,7 +126,7 @@
 
 ### `fan_max_speed`
 
-**Part fan maximum**
+**Part fan maximum speed**
 
 - Type: list of numbers, one per extruder
 - Unit: %
@@ -138,7 +138,7 @@
 
 ### `fan_min_speed`
 
-**Part fan minimum**
+**Part fan minimum speed**
 
 - Type: list of numbers, one per extruder
 - Unit: %
@@ -150,7 +150,7 @@
 
 ### `filament_cooling_before_tower`
 
-**Filament cooling before tower**
+**Nozzle cooling before the prime tower**
 
 - Type: list of numbers, one per extruder
 - Unit: C
@@ -161,7 +161,7 @@
 
 ### `filament_cooling_final_speed`
 
-**Filament cooling final speed**
+**Cooling move final speed**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -172,7 +172,7 @@
 
 ### `filament_cooling_initial_speed`
 
-**Filament cooling initial speed**
+**Cooling move initial speed**
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s
@@ -183,7 +183,7 @@
 
 ### `filament_cooling_moves`
 
-**Filament cooling moves**
+**Cooling tube moves**
 
 - Type: list of integers, one per extruder
 - Default: [4]
@@ -193,7 +193,7 @@
 
 ### `first_x_layer_fan_speed`
 
-**First x layer fan speed**
+**Auxiliary fan speed for the first layers**
 
 - Type: list of numbers, one per extruder
 - Unit: %
@@ -257,7 +257,7 @@ The layer where the part cooling fan reaches full speed. From the first layer wi
 - Unit: %
 - Default: [100]
 - Recommended range: 0 to 100
-- Used only when: Enable overhang bridge fan (`enable_overhang_bridge_fan`) is on
+- Used only when: Separate fan speed for overhangs and bridges (`enable_overhang_bridge_fan`) is on
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)
 - Effect: higher: More fan on overhangs improves them. lower: Less fan on overhangs can curl them
@@ -332,7 +332,7 @@ How much a wall must overhang before the overhang fan speed applies. Bridges and
 
 ### `support_material_interface_fan_speed`
 
-**Support material interface fan speed**
+**Support interface fan speed**
 
 - Type: list of integers, one per extruder
 - Unit: %

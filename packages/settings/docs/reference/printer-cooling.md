@@ -119,7 +119,7 @@
 
 ### `support_multi_bed_types`
 
-**Several bed plates supported**
+**Supports several bed plates**
 
 - Type: boolean
 - Default: off

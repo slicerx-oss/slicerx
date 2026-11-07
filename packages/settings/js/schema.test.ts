@@ -115,6 +115,121 @@ describe('labels', () => {
   })
 })
 
+describe('plain labels', () => {
+  // Every shown label is plain words a maker reads. These patterns are the ways a label has read like a key before:
+  // clipped words (efc, nc, ec, id, dist, pos, temp, min, max, num, pct, acc), a leading "Is", "Gcode" for G-code,
+  // borrowed terms, a unit written into the label, a lone x, y, z or e in lower case, a doubled word. Add to the
+  // table when a new one turns up.
+  const ANY_CASE =
+    /\b(efc|nc|ec|mmu|zaa|algo|calib|dev|dist|pos|temp|freq|damp|min|max|id|apikey|cafile|webui|printhost|gcode|dont|elefant|toolchange|multitool|bbl|pwm|perimeters?|vitrification|stamping|num|pct|acc|accel|vel|spd|cfg|params?)\b/i
+  // Product and material names that stay in capitals (AMS, PTC, HRC) are fine; the same letters in lower case are a key.
+  const LOWER_ONLY = /\b(ams|ptc|hrc|pa)\b/
+  const LONE_AXIS = /\b[xyze]\b/
+  const UNIT_IN_LABEL = /\((mm|s|%|C|deg)[^)]*\)|\bmm[23]?\b|\bper mm\b/
+  const DOUBLED = /\b(\w+)\s+\1\b/i
+
+  const problems = (label: string): string[] => {
+    const out: string[] = []
+    if (label.includes('_')) out.push('underscore')
+    if (/^Is\b/.test(label)) out.push('label opens with "Is"')
+    if (label !== label.trim() || label.includes('  ')) out.push('stray space')
+    const any = ANY_CASE.exec(label)
+    if (any) out.push(`internal word "${any[0]}"`)
+    const lower = LOWER_ONLY.exec(label)
+    if (lower) out.push(`lower case "${lower[0]}"`)
+    if (LONE_AXIS.test(label)) out.push('lone lower case x, y, z or e')
+    if (UNIT_IN_LABEL.test(label)) out.push('unit in the label')
+    if (DOUBLED.test(label)) out.push('doubled word')
+    return out
+  }
+
+  it('keeps clipped words, borrowed terms and units out of every label', () => {
+    const bad = SETTINGS.map((d) => ({ d, why: problems(d.label) }))
+      .filter((x) => x.why.length > 0)
+      .map((x) => `${x.d.key}: "${x.d.label}" (${x.why.join(', ')})`)
+    expect(bad).toEqual([])
+  })
+
+  it('starts every label with a capital or a digit, except the sleipnir rows', () => {
+    const bad = SETTINGS.filter((d) => !/^[A-Z0-9]/.test(d.label) && !d.label.startsWith('sleipnir')).map((d) => `${d.key}: ${d.label}`)
+    expect(bad).toEqual([])
+  })
+
+  it('catches the labels this table was written for', () => {
+    expect(problems('Brim use efc outline')).toEqual(['internal word "efc"'])
+    expect(problems('Gcode comments')).toEqual(['internal word "Gcode"'])
+    expect(problems('First x layer fan speed')).toEqual(['lone lower case x, y, z or e'])
+    expect(problems('Wave overhang flow (mm3 per mm)')).toEqual(['unit in the label'])
+    expect(problems('Brim width')).toEqual([])
+    expect(problems('Has PTC heater')).toEqual([])
+    expect(problems('Foo_bar')).toEqual(['underscore'])
+    expect(problems(' Foo')).toEqual(['stray space'])
+    expect(problems('Wall wall')).toEqual(['doubled word'])
+    expect(problems('Has ptc heater')).toEqual(['lower case "ptc"'])
+    expect(problems('Brim width (mm)')).toEqual(['unit in the label'])
+    expect(problems('Nozzle hardness')).toEqual([])
+    // Round 5: leftover short forms and a label that opens with "Is" like a flag read aloud.
+    expect(problems('Num layers')).toEqual(['internal word "Num"'])
+    expect(problems('Fan speed pct')).toEqual(['internal word "pct"'])
+    expect(problems('Acc to decel ratio')).toEqual(['internal word "Acc"'])
+    expect(problems('Accel limit')).toEqual(['internal word "Accel"'])
+    expect(problems('Is infill first')).toEqual(['label opens with "Is"'])
+    expect(problems('Filament is a support material')).toEqual([])
+    expect(problems('Print infill before walls')).toEqual([])
+  })
+
+  // Round 5: rows that named a value without saying which one ("Part fan maximum") or read as the key with a noun
+  // tacked on ("Adaptive pressure advance bridges").
+  it('names the round 5 rows in plain words', () => {
+    const want: Record<string, string> = {
+      fan_max_speed: 'Part fan maximum speed',
+      fan_min_speed: 'Part fan minimum speed',
+      adaptive_pressure_advance_bridges: 'Adaptive pressure advance for bridges',
+      adaptive_pressure_advance_overhangs: 'Adaptive pressure advance for overhangs',
+      filament_retraction_minimum_travel: 'Filament shortest travel that triggers a retraction',
+      support_multi_bed_types: 'Supports several bed plates',
+      nozzle_temperature_initial_layer: 'Nozzle temperature for the first layer',
+      scarf_joint_flow_ratio: 'Scarf joint flow ratio',
+      wipe_tower_bridging: 'Longest bridge in the prime tower',
+      wall_maximum_resolution: 'Shortest wall segment kept',
+    }
+    for (const [key, label] of Object.entries(want)) expect(settingDef(key)?.label, key).toBe(label)
+  })
+
+  it('keeps clipped words out of the choices of a setting too', () => {
+    // A choice may carry a size ("TPU 2.85 mm"), so only a unit is allowed here.
+    const bad = SETTINGS.flatMap((d) => (d.enumLabels ?? []).map((l) => ({ d, l, why: problems(l).filter((w) => w !== 'unit in the label') })))
+      .filter((x) => x.why.length > 0)
+      .map((x) => `${x.d.key}: "${x.l}" (${x.why.join(', ')})`)
+    expect(bad).toEqual([])
+  })
+
+  it('gives no two settings of a section the same label', () => {
+    const seen = new Map<string, string>()
+    const dup: string[] = []
+    for (const d of SETTINGS) {
+      const id = `${d.section}: ${d.label}`
+      const first = seen.get(id)
+      if (first) dup.push(`${id} (${first}, ${d.key})`)
+      else seen.set(id, d.key)
+    }
+    expect(dup).toEqual([])
+  })
+
+  // A unit written into a label ("(mm2)") has to move to the unit field when the label is cleaned, or the panel,
+  // the explain text and the validation messages show a bare number.
+  it('keeps the unit of a setting whose label lost it', () => {
+    expect(settingDef('wave_overhang_flow_mm3_per_mm')?.unit).toBe('mm2')
+    expect(settingDef('wave_overhang_min_new_area')?.unit).toBe('mm2')
+  })
+
+  it('gives a unit to every setting whose key names one', () => {
+    const NAMES = new Set(['mm', 'mm2', 'mm3', 'deg', 'percent'])
+    const bad = SETTINGS.filter((d) => !d.unit && d.key.split('_').some((w) => NAMES.has(w))).map((d) => `${d.key}: ${d.label}`)
+    expect(bad).toEqual([])
+  })
+})
+
 describe('knowledge/settings.yaml', () => {
   const NORM: Record<string, string> = {
     floats: 'float', ints: 'int', bools: 'bool', percents: 'percent', strings: 'string', enums: 'enum', gcode: 'string',

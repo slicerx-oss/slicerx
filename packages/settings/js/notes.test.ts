@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Every setting a user can see has a short, plain note for its tooltip.
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PRODUCT_NAME, setProductName } from '@slicerx/contracts/brand'
 import { SETTING_NOTES, SETTINGS, clearSettingText, registerSettingText, settingDef } from './index'
@@ -47,6 +48,36 @@ describe('setting notes', () => {
 
   it('reach the definitions', () => {
     expect(settingDef('wall_loops')?.note).toMatch(/loops/)
+  })
+
+  // A note that points to another setting writes its label in double quotes, exactly as the schema has it.
+  it('quote only labels the schema has', () => {
+    const labels = new Set(SETTINGS.map((d) => d.label))
+    const bad = Object.entries(SETTING_NOTES)
+      .flatMap(([k, n]) => [...n.matchAll(/"([^"]+)"/g)].map((m) => ({ k, q: m[1]! })))
+      .filter((x) => !labels.has(x.q))
+      .map((x) => `${x.k}: "${x.q}"`)
+    expect(bad).toEqual([])
+  })
+
+  it('do not name a label that a setting no longer has', () => {
+    const renamed = JSON.parse(readFileSync(new URL('../fixtures/renamed-labels.json', import.meta.url), 'utf8')) as { labels: Record<string, string> }
+    const current = new Set(SETTINGS.map((d) => d.label.toLowerCase()))
+    const stale = Object.entries(renamed.labels).filter(([, old]) => !current.has(old.toLowerCase()))
+    const names = (text: string, phrase: string): boolean => {
+      const t = text.toLowerCase()
+      const p = phrase.toLowerCase()
+      for (let at = t.indexOf(p); at >= 0; at = t.indexOf(p, at + 1)) {
+        const before = t.charAt(at - 1)
+        const after = t.charAt(at + p.length)
+        if (!/[a-z]/.test(before) && !/[a-z]/.test(after)) return true
+      }
+      return false
+    }
+    const bad = Object.entries(SETTING_NOTES).flatMap(([k, n]) =>
+      stale.filter(([, old]) => names(n, old)).map(([rk, old]) => `${k} names "${old}" (now ${settingDef(rk)?.label})`),
+    )
+    expect(bad).toEqual([])
   })
 })
 

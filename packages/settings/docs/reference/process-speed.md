@@ -124,7 +124,7 @@
 
 ### `role_based_wipe_speed`
 
-**Role based wipe speed**
+**Wipe at the speed of the last line**
 
 - Type: boolean
 - Default: on
@@ -134,7 +134,7 @@
 
 ### `slow_down_layers`
 
-**Slow down layers**
+**Layers to ramp speed up over**
 
 - Type: integer
 - Unit: layers
@@ -157,7 +157,7 @@
 
 ### `small_perimeter_speed`
 
-**Small perimeter speed**
+**Small wall speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
@@ -170,7 +170,7 @@
 
 ### `small_perimeter_threshold`
 
-**Small perimeter threshold**
+**Small wall threshold**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -183,7 +183,7 @@
 
 ### `small_support_perimeter_speed`
 
-**Small support perimeter speed**
+**Small support wall speed**
 
 - Type: list of millimeter or percent strings, one per extruder
 - Unit: mm/s
@@ -196,7 +196,7 @@
 
 ### `small_support_perimeter_threshold`
 
-**Small support perimeter threshold**
+**Small support wall threshold**
 
 - Type: list of numbers, one per extruder
 - Unit: mm
@@ -287,7 +287,7 @@
 
 ### `travel_speed_z`
 
-**Travel speed z** (develop mode)
+**Z travel speed** (develop mode)
 
 - Type: list of numbers, one per extruder
 - Unit: mm/s

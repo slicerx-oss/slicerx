@@ -73,13 +73,13 @@ settings:
   - {key: infill_combination, label: Combine infill layers, group: strength, scope: process, type: bool, pilot: edit}
   - {key: ensure_vertical_shell_thickness, label: Keep shells thick on steep sides, group: strength, scope: process, type: enum, values: [none, ensure_critical_only, ensure_moderate, ensure_all], pilot: edit}
   - {key: only_one_wall_top, label: Single wall on the top surface, group: quality, scope: process, type: bool, pilot: edit}
-  - {key: interface_shells, label: Interface shells, group: strength, scope: process, type: bool, pilot: edit}
+  - {key: interface_shells, label: Separate solid shells between filaments, group: strength, scope: process, type: bool, pilot: edit}
   - {key: extra_perimeters_on_overhangs, label: More walls under overhangs, group: quality, scope: process, type: bool, pilot: edit}
 
   # Speed and motion
   - {key: outer_wall_speed, label: Outer wall speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
   - {key: inner_wall_speed, label: Inner wall speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
-  - {key: small_perimeter_speed, label: Small perimeter speed, group: speed, scope: process, type: percent_or_mm_s, pilot: edit}
+  - {key: small_perimeter_speed, label: Small wall speed, group: speed, scope: process, type: percent_or_mm_s, pilot: edit}
   - {key: sparse_infill_speed, label: Sparse infill speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
   - {key: internal_solid_infill_speed, label: Solid infill speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
   - {key: top_surface_speed, label: Top surface speed, group: speed, scope: process, type: float, unit: mm/s, pilot: edit, bounds: {min: 5, max: 1000}}
@@ -105,8 +105,8 @@ settings:
   - {key: machine_max_speed_x, label: Maximum speed X, group: motion, scope: machine, type: float, unit: mm/s, pilot: read}
 
   # Cooling
-  - {key: fan_min_speed, label: Part fan minimum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
-  - {key: fan_max_speed, label: Part fan maximum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
+  - {key: fan_min_speed, label: Part fan minimum speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
+  - {key: fan_max_speed, label: Part fan maximum speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_speed, label: Overhang fan speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_threshold, label: Overhang fan threshold, group: cooling, scope: filament, type: enum, pilot: edit}
   - {key: pre_start_fan_time, label: Fan lead time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 5}}
@@ -121,12 +121,12 @@ settings:
 
   # Temperature (guarded: they touch hardware limits and material safety)
   - {key: nozzle_temperature, label: Nozzle temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}, note: "Also capped by the printer max hotend temperature"}
-  - {key: nozzle_temperature_initial_layer, label: Hotend temperature for the first layer, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
+  - {key: nozzle_temperature_initial_layer, label: Nozzle temperature for the first layer, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 150, max: 350}}
   - {key: cool_plate_temp, label: Bed temperature on the Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
   - {key: supertack_plate_temp, label: Bed temperature on the SuperTack plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}}
   - {key: textured_cool_plate_temp, label: Bed temperature on the Textured Cool Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 60}}
   - {key: eng_plate_temp, label: Bed temperature on the Engineering Plate, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
-  - {key: hot_plate_temp, label: Bed temperature on the High Temp plate or smooth PEI, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
+  - {key: hot_plate_temp, label: Bed temperature on the High Temperature plate or smooth PEI, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
   - {key: textured_plate_temp, label: Bed temperature on textured PEI, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 120}}
   - {key: chamber_temperature, label: Chamber temperature, group: temperature, scope: filament, type: int, unit: C, pilot: guarded, bounds: {min: 0, max: 80}, note: "Only on printers with active chamber heating (X1E, H2D, Core One, Voron with heater)"}
   - {key: activate_chamber_temp_control, label: Control chamber heating, group: temperature, scope: filament, type: bool, pilot: guarded}
@@ -134,7 +134,7 @@ settings:
 
   # Extrusion and retraction
   - {key: filament_flow_ratio, label: Flow ratio, group: extrusion, scope: filament, type: float, pilot: guarded, bounds: {min: 0.8, max: 1.2}}
-  - {key: filament_max_volumetric_speed, label: Max volumetric speed, group: extrusion, scope: filament, type: float, unit: mm3/s, pilot: guarded, bounds: {min: 0.5, max: 80}}
+  - {key: filament_max_volumetric_speed, label: Maximum volumetric speed, group: extrusion, scope: filament, type: float, unit: mm3/s, pilot: guarded, bounds: {min: 0.5, max: 80}}
   - {key: pressure_advance, label: Pressure advance, group: extrusion, scope: filament, type: float, pilot: guarded, bounds: {min: 0, max: 1.5}}
   - {key: enable_pressure_advance, label: Enable pressure advance, group: extrusion, scope: filament, type: bool, pilot: guarded}
   - {key: adaptive_pressure_advance, label: Adaptive pressure advance, group: extrusion, scope: filament, type: bool, pilot: guarded}
