@@ -30,6 +30,10 @@ pub struct FitOptions {
     /// also report separate pieces closer than this that do not touch, the closest pair per two pieces
     #[serde(default)]
     pub apart_mm: Option<f64>,
+    /// per two bodies, the closest side-by-side pair and the closest pair above and below, each against its own limit;
+    /// without it, the one closest pair, so a tight vertical gap can hide behind a wider side gap
+    #[serde(default)]
+    pub by_direction: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,40 +122,45 @@ pub fn fit_check_items(items: &[TriMesh], opts: &FitOptions) -> Result<FitReport
             if !boxes_within(ba, bb, reach) {
                 continue;
             }
-            if let Some(gap) = pair_gap(a, b, ba, bb, reach) {
-                let kind = classify(&gap);
-                if kind == GapKind::Fused {
-                    let (ri, rj) = (root(&mut piece, i), root(&mut piece, j));
-                    piece[rj] = ri;
-                    if opts.skip_fused {
-                        continue;
-                    }
+            let found = closest_pairs(a, b, ba, bb, reach, opts.by_direction);
+            if found.iter().any(|c| classify(c) == GapKind::Fused) {
+                let (ri, rj) = (root(&mut piece, i), root(&mut piece, j));
+                piece[rj] = ri;
+            }
+            let mut tight = false;
+            for c in &found {
+                let kind = classify(c);
+                if kind == GapKind::Fused && opts.skip_fused {
+                    continue;
                 }
                 let limit = if kind == GapKind::Vertical { gv } else { g };
-                if let Some(a) = apart
-                    && kind != GapKind::Fused
-                    && gap.d >= limit
-                    && gap.d < a
-                {
-                    loose.push(Gap {
-                        parts: [i, j],
-                        gap_mm: gap.d,
-                        limit_mm: a,
-                        kind: GapKind::Apart,
-                        from: gap.p,
-                        to: gap.q,
-                    });
-                }
-                if kind == GapKind::Fused || gap.d < limit {
+                if kind == GapKind::Fused || c.d < limit {
+                    tight = true;
                     gaps.push(Gap {
                         parts: [i, j],
-                        gap_mm: gap.d,
+                        gap_mm: c.d,
                         limit_mm: limit,
                         kind,
-                        from: gap.p,
-                        to: gap.q,
+                        from: c.p,
+                        to: c.q,
                     });
                 }
+            }
+            // two bodies with no tight gap and no touch: their closest pair, when it is near
+            let closest = found.iter().min_by(|x, y| x.d.total_cmp(&y.d));
+            if let (Some(a), Some(c)) = (apart, closest)
+                && !tight
+                && classify(c) != GapKind::Fused
+                && c.d < a
+            {
+                loose.push(Gap {
+                    parts: [i, j],
+                    gap_mm: c.d,
+                    limit_mm: a,
+                    kind: GapKind::Apart,
+                    from: c.p,
+                    to: c.q,
+                });
             }
         }
     }
@@ -269,12 +278,23 @@ fn classify(c: &Closest) -> GapKind {
     if c.fused || c.d <= 1e-9 {
         return GapKind::Fused;
     }
-    let v = vec3::sub(c.q, c.p);
-    if v[2].abs() > v[0].m_hypot(v[1]) {
+    if runs_vertical(c.p, c.q) {
         GapKind::Vertical
     } else {
         GapKind::Horizontal
     }
+}
+
+/// whether the gap from `p` to `q` runs more up and down than sideways
+fn runs_vertical(p: V3, q: V3) -> bool {
+    let v = vec3::sub(q, p);
+    v[2].abs() > v[0].m_hypot(v[1])
+}
+
+/// the closest pair of points of two bodies within `reach`, or the pair where they touch
+#[cfg(test)]
+fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Option<Closest> {
+    closest_pairs(a, b, ba, bb, reach, false).into_iter().next()
 }
 
 #[allow(
@@ -282,17 +302,27 @@ fn classify(c: &Closest) -> GapKind {
     clippy::cast_sign_loss,
     reason = "grid coordinates are clamped to the grid"
 )]
-fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Option<Closest> {
+/// The closest pair of points of two bodies within `reach`, or the pair where they touch. With `by_direction`, the
+/// closest pair that runs sideways and the closest that runs up and down, each found on its own (one pair when they
+/// touch).
+fn closest_pairs(
+    a: &TriMesh,
+    b: &TriMesh,
+    ba: &Aabb,
+    bb: &Aabb,
+    reach: f64,
+    by_direction: bool,
+) -> Vec<Closest> {
     if let (Some(&pa), Some(&pb)) = (a.positions.first(), b.positions.first())
         && ((contains(bb, ba) && convex::point_inside_mesh(b, pa))
             || (contains(ba, bb) && convex::point_inside_mesh(a, pb)))
     {
-        return Some(Closest {
+        return vec![Closest {
             d: 0.0,
             p: pa,
             q: pa,
             fused: true,
-        });
+        }];
     }
     let lo = [0, 1, 2].map(|k| ba.min[k].max(bb.min[k]) - reach);
     let hi = [0, 1, 2].map(|k| ba.max[k].min(bb.max[k]) + reach);
@@ -312,7 +342,7 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
     };
     let (ta, tb) = (near(a), near(b));
     if ta.is_empty() || tb.is_empty() {
-        return None;
+        return Vec::new();
     }
     let corners_a = |m: usize| a.corners(a.triangles[ta[m] as usize]);
     let corners_b = |n: usize| b.corners(b.triangles[tb[n] as usize]);
@@ -333,7 +363,8 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
             .collect::<Vec<_>>(),
     );
     let mut seen = vec![u32::MAX; tb.len()];
-    let mut best: Option<Closest> = None;
+    // the closest pair so far: sideways, then up and down when they are kept apart
+    let mut best: [Option<Closest>; 2] = [None, None];
     for m in 0..ta.len() {
         let c = corners_a(m);
         let r = range(&c, 0.0);
@@ -349,32 +380,46 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
                         seen[n] = m as u32;
                         let t = corners_b(n);
                         // no pair of points of two triangles is closer than their boxes: a pair whose boxes are farther
-                        // apart than the closest pair so far cannot take its place (with room for rounding)
-                        if let Some(b) = &best {
-                            let reach = b.d + 1e-9 * b.d.max(1.0);
-                            if box_gap2(&cb, &t) > reach * reach {
-                                continue;
-                            }
+                        // apart than every closest pair so far, or than the reach, cannot take a place (with room for
+                        // rounding)
+                        let kept = if by_direction { &best[..] } else { &best[..1] };
+                        let far = kept
+                            .iter()
+                            .map(|b| b.as_ref().map_or(f64::INFINITY, |b| b.d))
+                            .fold(0.0, f64::max)
+                            .min(reach);
+                        let bound = far + 1e-9 * far.max(1.0);
+                        if box_gap2(&cb, &t) > bound * bound {
+                            continue;
                         }
                         let (d, p, q, crosses) = tri_tri(&c, &t);
-                        if best.as_ref().is_none_or(|b| d < b.d) {
-                            best = Some(Closest {
+                        // nothing is closer than touching: the first such pair is the answer
+                        if d == 0.0 {
+                            return vec![Closest {
+                                d,
+                                p,
+                                q,
+                                fused: crosses,
+                            }];
+                        }
+                        let k = usize::from(by_direction && runs_vertical(p, q));
+                        if best[k].as_ref().is_none_or(|b| d < b.d) {
+                            best[k] = Some(Closest {
                                 d,
                                 p,
                                 q,
                                 fused: crosses,
                             });
-                            // nothing is closer than touching: the first such pair is the answer
-                            if d == 0.0 {
-                                return best;
-                            }
                         }
                     }
                 }
             }
         }
     }
-    best.filter(|b| b.d < reach || b.fused)
+    best.into_iter()
+        .flatten()
+        .filter(|b| b.d < reach || b.fused)
+        .collect()
 }
 
 /// The squared distance between a box (its span on each axis) and a triangle's box.
@@ -605,6 +650,7 @@ mod tests {
             layer_height_mm: Some(0.2),
             skip_fused: false,
             apart_mm: None,
+            by_direction: false,
         }
     }
 
@@ -723,6 +769,69 @@ mod tests {
                 None => assert!(every >= reach, "{dx}: none against {every}"),
             }
         }
+    }
+
+    /// a pin 0.35 mm from its socket all round, side and above and below, by the json options a client sends
+    fn uniform_pin(by_direction: bool) -> FitReport {
+        let w = crate::vec3::Frame::WORLD;
+        let mut m = build::box_mesh([-10.0, -10.0, 0.0], [10.0, 10.0, 10.0]);
+        let mut cavity = build::cylinder(&w, 5.35, 1.65, 8.35, 96);
+        cavity.flip();
+        m.append(&cavity);
+        m.append(&build::cylinder(&w, 5.0, 2.0, 8.0, 96));
+        fit_check(&m, &side_and_vertical(by_direction, None)).unwrap()
+    }
+
+    /// 0.3 mm side by side and 0.4 mm above or below, as the json a client sends
+    fn side_and_vertical(by_direction: bool, apart_mm: Option<f64>) -> FitOptions {
+        serde_json::from_value(serde_json::json!({
+            "minGapMm": 0.3, "minVerticalGapMm": 0.4, "layerHeightMm": 0.2, "byDirection": by_direction, "apartMm": apart_mm
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_tight_vertical_gap_is_not_hidden_by_a_wider_side_gap() {
+        // the side gap (0.347 mm across the facets) is the closest pair and clears 0.3 mm; the 0.35 mm above and
+        // below the pin is under 0.4 mm and closes when sliced
+        let r = uniform_pin(true);
+        assert_eq!(r.pieces, 2, "{r:?}");
+        // one gap per two bodies and direction: the closer of the two 0.35 mm gaps over and under the pin
+        assert_eq!(r.gaps.len(), 1, "{r:?}");
+        let g = &r.gaps[0];
+        assert_eq!(g.kind, GapKind::Vertical);
+        assert!((g.gap_mm - 0.35).abs() < 1e-9, "{}", g.gap_mm);
+        assert!((g.limit_mm - 0.4).abs() < 1e-12);
+        assert!((g.to[2] - g.from[2]).abs() > 0.34, "{g:?}");
+        assert!(
+            r.warnings[0].contains("0.35 mm apart vertically, less than 0.40 mm"),
+            "{:?}",
+            r.warnings
+        );
+        // without byDirection, the one closest pair per two bodies as before: the side gap, which clears its limit
+        assert!(uniform_pin(false).gaps.is_empty());
+    }
+
+    #[test]
+    fn by_direction_reports_each_tight_direction_and_one_closest_pair_apart() {
+        // side 0.2 under 0.3 and above 0.6 clear of 0.4: only the side gap; both clear: the closest pair, apart
+        let mut m = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+        m.append(&build::box_mesh([10.2, 0.0, 0.0], [12.0, 10.0, 10.0]));
+        m.append(&build::box_mesh([0.0, 0.0, 10.6], [10.0, 10.0, 12.0]));
+        let r = fit_check(&m, &side_and_vertical(true, Some(2.0))).unwrap();
+        let kinds: Vec<_> = r.gaps.iter().map(|g| (g.parts, g.kind)).collect();
+        assert!(kinds.contains(&([0, 1], GapKind::Horizontal)), "{kinds:?}");
+        assert!(kinds.contains(&([0, 2], GapKind::Apart)), "{kinds:?}");
+        assert_eq!(
+            r.gaps.iter().filter(|g| g.parts == [0, 1]).count(),
+            1,
+            "{kinds:?}"
+        );
+        assert_eq!(
+            r.gaps.iter().filter(|g| g.parts == [0, 2]).count(),
+            1,
+            "{kinds:?}"
+        );
     }
 
     #[test]
