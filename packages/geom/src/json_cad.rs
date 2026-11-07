@@ -42,6 +42,8 @@ use crate::sketch_edit;
 #[cfg(feature = "cad")]
 use crate::sketch_loft;
 #[cfg(feature = "cad")]
+use crate::sketch_project;
+#[cfg(feature = "cad")]
 use crate::sketch_solve;
 #[cfg(feature = "cad")]
 use crate::sketch_sweep;
@@ -171,6 +173,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.snaps" => sketch_snaps_op(req, files),
         #[cfg(feature = "cad")]
         "sketch.offset" => sketch_offset_op(req),
+        #[cfg(feature = "cad")]
+        "sketch.project" => sketch_project_op(req, files),
         #[cfg(feature = "cad")]
         "dimension.anchor" => dimension_anchor_op(req, files),
         #[cfg(feature = "cad")]
@@ -458,6 +462,24 @@ fn sketch_snaps_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let meshes: Vec<TriMesh> = items(req, "meshes", files)?.iter().map(Item::world).collect();
     let near: f64 = field_or(req, "nearMm", 0.01)?;
     to_value(&sketch::snaps(&frame.checked()?, &outline, &meshes, near))
+}
+
+#[cfg(feature = "cad")]
+fn sketch_project_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    let frame: FaceFrame = field(req, "frame")?;
+    let source: sketch_project::Source = field(req, "source")?;
+    let parts: Vec<sketch_project::Part> = items(req, "parts", files)?
+        .into_iter()
+        .map(|it| sketch_project::Part {
+            mesh: it.mesh,
+            transform: it.transform,
+        })
+        .collect();
+    if parts.is_empty() {
+        return Err(Error::invalid("parts", "needs at least one mesh"));
+    }
+    let loops = sketch_project::project(&parts, &frame.checked()?, &source)?;
+    Ok(json!({ "loops": to_value(&loops)? }))
 }
 
 #[cfg(feature = "cad")]

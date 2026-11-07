@@ -31,6 +31,10 @@ name = "freeform"
 required-features = ["cad"]
 
 [[test]]
+name = "sketch_project"
+required-features = ["cad"]
+
+[[test]]
 name = "nest_bench"
 required-features = ["nest"]
 
