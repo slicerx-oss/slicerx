@@ -122,6 +122,19 @@ describe('design.sketch_svg', () => {
     expect(bare.engine).toHaveBeenLastCalledWith('sketch.svg', { svg: SVG, options: { center: [0, 0] } })
   })
 
+  it('takes only as much SVG as the app link carries, and says so', () => {
+    const tool = designToolset(NO_ENGINE_HOST).find((t) => t.name === 'design.sketch_svg')!
+    const pad = (n: number, c: string) => `<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0H10V10Z"/><desc>${c.repeat(n)}</desc></svg>`
+    expect(tool.input.safeParse({ svg: pad(50_000, 'a') }).success).toBe(true)
+    const long = tool.input.safeParse({ svg: pad(70_000, 'a') })
+    expect(long.success).toBe(false)
+    expect(JSON.stringify(long.error?.issues)).toMatch(/over the 60 KB the app link carries; simplify it in a vector editor/)
+    // quotes are escaped on the way, so 40 000 of them are 80 KB as sent
+    const quoted = tool.input.safeParse({ svg: pad(40_000, '"') })
+    expect(quoted.success).toBe(false)
+    expect(JSON.stringify(quoted.error?.issues)).toMatch(/the SVG is 8\d KB as sent/)
+  })
+
   it('needs the app timeline, and checks its input', async () => {
     const { run } = host(reply(), false)
     await expect(run('design.sketch_svg', { svg: SVG })).rejects.toThrow(/design timeline of the project open in the app/)
