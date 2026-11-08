@@ -46,7 +46,7 @@ import { createTransportClient, errorText, type CloudShare } from './provider/cl
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { capLine, capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
-import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
+import { DESIGN_MADE, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
@@ -380,6 +380,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const picked = new Map<string, TurnSet>()
   /** The set each chat's last turn ended on, which a request with no words for a set keeps. */
   const lastSet = new Map<string, TurnSet>()
+  /** The chats with a design to shape: one of their tools made or opened one (turnsets.ts DESIGN_MADE). */
+  const designed = new Set<string>()
   if (turnSets) {
     const t = turnSetTool((sessionId, set) => picked.set(sessionId, set)) as AnyTool
     add(t)
@@ -716,6 +718,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
       if (e.type === 'tool_call') called.set(e.callId, e.tool)
+      if (e.type === 'tool_result' && e.ok && DESIGN_MADE(called.get(e.callId) ?? '')) designed.add(sessionId)
       if (e.type === 'tool_result' && e.ok && called.get(e.callId) === 'design.check' && (e.output as { pass?: unknown } | undefined)?.pass === false) checkMissed = true
       // building takes tries; only other failures count toward moving up
       if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) fails++
@@ -1138,7 +1141,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         })
         let done: PilotEvent & { type: 'done' }
         try {
-          const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId)) : undefined
+          const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId), { design: designed.has(sessionId) }) : undefined
           done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet)
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })

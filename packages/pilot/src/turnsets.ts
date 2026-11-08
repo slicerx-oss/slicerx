@@ -4,7 +4,8 @@
 // (context.ts), and the tab's tools alone measure well over that, so the system prompt would be cut off. Each turn
 // sends the tools every turn needs and one set picked for it: building a new part, shaping one, editing one, the app
 // (slicing, settings, the project, the knowledge base and the app's commands), or the printers. The set is
-// read from the request's words; a request with no such words keeps the chat's last set. A model that needs a tool of
+// read from the request's words and whether the chat has a design to shape yet; a request with no such words keeps the
+// chat's last set. A model that needs a tool of
 // another set loads it with pilot.tools, and calling a tool of another set loads that set for the next step, so a
 // turn never gets stuck without a tool. A cloud model is not affected: every turn sends every tool, up to the
 // provider's tool limit (toolsets.ts).
@@ -104,28 +105,36 @@ const PRINT_WORDS = /\b(printers?|printing|jobs?|spools?|ams|camera|pause\w*|res
 const BUILD_WORDS = /\b(make|design|model|build|create|draw|cad|sketch|part|box|cube|cylinder|bracket|hook|lid|gear|knob|holder|mount|stand|clip|spacer|plate with|enclosure|case)\w*\b/i
 
 /** Words that shape a part further. */
-const SHAPE_WORDS = /\b(mirror\w*|array|pattern\w*|split\w*|subtract\w*|emboss\w*|engrav\w*|text on|hollow\w*|repair\w*|push|pull|measure\w*|cut (?:out|away|off|a|the|it|into)|combine|merge)\b/i
+const SHAPE_WORDS = /\b(mirror\w*|array|pattern\w*|split\w*|subtract\w*|emboss\w*|engrav\w*|text on|hollow\w*|repair\w*|push|pull|measure\w*|cut (?:out|away|off|a|the|it|into)|cut-?outs?|cop(?:y|ies) of|combine|merge)\b/i
 
 /** Words that change a part already built. */
 const EDIT_WORDS = /\b(edit\w*|change|changing|resize\w*|bigger|smaller|wider|narrower|taller|shorter|thicker|thinner|longer|deeper|rename|undo|redo|step|steps|timeline|open the design|go back|move (?:the|it)|adjust\w*|instead)\b/i
 
 const readsFile = (files: readonly Pick<PilotAttachment, 'type'>[]): boolean => files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
 
+/** What the runtime knows about the chat a turn is in. */
+export interface TurnChat {
+  /** Whether the chat has a design yet: one of its tools made or opened one (turnsets.ts DESIGN_MADE). */
+  design?: boolean
+}
+
 /**
- * The set a turn starts on, from the request: a picture or PDF to build from is a new part; words about shaping or
- * changing a part pick those sets; words about slicing, settings, the project or a print problem pick app, and words
- * about the printers alone pick print, unless the request also asks for a new part, which comes first ("a hook, then
- * slice it"). A request that opens on making a new part ("design a stand ...") builds even with shaping words in it
- * ("a hollow tapered stem", "a pattern of vent holes"), unless what it makes is itself a shaping ("make a pattern of
- * holes in the lid", "make a mirrored copy"). A request with none of these words keeps `last`, the set the chat's
- * previous turn ended on, or starts a part when there is none.
+ * The set a turn starts on, from the request and the chat: a picture or PDF to build from is a new part; words about
+ * shaping or changing a part pick those sets; words about slicing, settings, the project or a print problem pick app,
+ * and words about the printers alone pick print, unless the request also asks for a new part, which comes first ("a
+ * hook, then slice it"). Shaping needs a part: in a chat with no design yet, a request with words for a part builds
+ * whatever shaping words it has ("make a hollow vase", "a box with a pattern of vent holes"), unless it opens on a
+ * shaping of a part it names ("mirror the bracket"). In a chat with a design, a request that opens on making a new
+ * part builds ("make a hollow vase", "design a stand"), unless what it makes is a shaping of the part there ("make a
+ * pattern of holes in the lid", "make a mirrored copy of it"). A request with none of these words keeps `last`, the
+ * set the chat's previous turn ended on, or starts a part when there is none.
  */
-export function turnSet(message: string, files: readonly Pick<PilotAttachment, 'type'>[] = [], last?: TurnSet): TurnSet {
+export function turnSet(message: string, files: readonly Pick<PilotAttachment, 'type'>[] = [], last?: TurnSet, chat: TurnChat = {}): TurnSet {
   if (readsFile(files)) return 'build'
   const print = PRINT_WORDS.test(message)
   const app = APP_WORDS.test(message) || print
   const build = BUILD_WORDS.test(message)
-  const newPart = build && NEW_PART.test(message)
+  const newPart = build && (chat.design ? NEW_PART.test(message) : !SHAPE_START.test(message))
   if (SHAPE_WORDS.test(message) && !app && !newPart) return 'shape'
   if (EDIT_WORDS.test(message) && !app && (last === 'build' || last === 'shape' || last === 'edit')) return 'edit'
   // both: a request that opens on making a part, or makes it and then prints, builds first; else it is about the app
@@ -136,14 +145,26 @@ export function turnSet(message: string, files: readonly Pick<PilotAttachment, '
   return last ?? 'build'
 }
 
+/**
+ * Tools whose success means the chat has a design to shape: making or opening one, or any geometry step, which runs on
+ * a design or a model that is there.
+ */
+export const DESIGN_MADE = (tool: string): boolean => tool === 'design.new' || tool === 'design.open' || tool.startsWith('geom.')
+
 /** A request that goes on to a second thing after the first ("a hook, then slice it"). */
 const THEN = /\b(then|and then|after that|afterwards)\b/i
 
 /**
- * A request that opens on making a new part ("design a stand ...", "make me two clips"), not on changing one ("make it
- * hollow") or on a shaping of one ("make a pattern of holes", "make a mirrored copy", "make a cut out").
+ * A request that opens on making a new part ("design a stand ...", "make me two clips", "make a hollow vase"), not on
+ * changing one ("make it hollow") or on a shaping of one ("make a pattern of holes", "make an array of pegs", "make a
+ * mirrored copy of it", "make a cut out in the lid").
  */
-const NEW_PART = /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\s+(?:me\s+)?(?:a|an|some|two|three|four|\d+)\s+(?!(?:pattern\w*|mirror\w*|cop(?:y|ies)|split\w*|cut\w*|hollow\w*|engrav\w*|text|emboss\w*)\b)/i
+const NEW_PART =
+  /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\s+(?:me\s+)?(?:a|an|some|two|three|four|\d+)\s+(?!(?:pattern|array|(?:mirror(?:ed)?\s+)?(?:cop(?:y|ies)|image))\s+of\b|cut[- ]?outs?\s+(?:in|on|into|through|from)\b)/i
+
+/** A request that opens on a shaping of a part it names ("mirror the bracket", "split it in half", "hollow out the base"). */
+const SHAPE_START =
+  /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:mirror|split|pattern|array|subtract|emboss|engrave|hollow|repair|measure|cut|combine|merge)\s+(?:out\s+)?(?:the|it|this|that|these|those|them|both|my)\b/i
 
 /** A request that opens on making a part ("make a hook ...", "design me ..."), which builds first whatever follows. */
 const BUILD_START = /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\b/i
