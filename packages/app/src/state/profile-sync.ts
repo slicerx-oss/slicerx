@@ -43,13 +43,27 @@ export function slotsOf(s: AppState): { type: string; vendor?: string; family?: 
   return list.filter((r): r is NonNullable<typeof r> => Boolean(r)).map((r) => ({ type: r.type, ...(r.vendor ? { vendor: r.vendor } : {}), ...(r.family ? { family: r.family } : {}) }))
 }
 
-/** No printer layer: the plate goes back to the generic bed the configuration slices for. */
-function dropLayer(): void {
+/**
+ * The printer's nozzle volume, the base of every flush volume, as Prepare sets it when it shows the printer (the
+ * generic printer's without one). Its code loads on first use.
+ */
+async function nozzleVolumeOf(model: { vendor: string; model: string } | null): Promise<number> {
+  const [{ printerBase }, { printerMinFlush }] = await Promise.all([import('../workspaces/prepare/printer-base'), import('@slicerx/settings/flush')])
+  return printerMinFlush((printerBase(model ? { vendor: model.vendor, model: model.model } : undefined) as Record<string, SettingValue>)['nozzle_volume'])
+}
+
+/**
+ * No printer layer: the plate goes back to the generic bed the configuration slices for, and the nozzle volume to the
+ * printer's own (the generic one without a printer), so a slice waiting for the profile does not read the last one's.
+ */
+async function dropLayer(model: { vendor: string; model: string } | null): Promise<void> {
+  const printerNozzleVolume = await nozzleVolumeOf(model)
   setProfileLayer(null, [])
   setAvoidAreas([])
   const { bed, profile } = get()
   const generic = bed.widthMm === GENERIC_BED.widthMm && bed.depthMm === GENERIC_BED.depthMm && bed.heightMm === GENERIC_BED.heightMm && !bed.round
-  if (profile || !generic) withoutDirtying(() => set({ profile: null, ...(generic ? {} : { bed: { ...GENERIC_BED } }), overrides: { ...get().overrides } }))
+  if (profile || !generic) withoutDirtying(() => set({ printerNozzleVolume, profile: null, ...(generic ? {} : { bed: { ...GENERIC_BED } }), overrides: { ...get().overrides } }))
+  else if (get().printerNozzleVolume !== printerNozzleVolume) withoutDirtying(() => set({ printerNozzleVolume }))
 }
 
 /**
@@ -91,7 +105,7 @@ async function rebuild(): Promise<void> {
   built = k
   const model = s.printerModel
   if (!model) {
-    dropLayer()
+    await dropLayer(null)
     return
   }
   await loadSettings()
@@ -99,14 +113,13 @@ async function rebuild(): Promise<void> {
   const layer = await buildProfileLayer(inputOf(s, model, tierOf(s)))
   if (tierOf(s) === 'standard') standard = { key: printerKeyOf(s), values: Promise.resolve(layer?.values ?? null) }
   if (!layer) {
-    dropLayer()
+    await dropLayer(model)
     return
   }
   // The printer's nozzle volume, the base of every flush volume, is set with its layer, so a slice waiting for the
   // profile (profileReady) reads the new printer's (Prepare sets the same value when it shows the printer). Its code
   // loads before the layer is applied, so a chunk that fails to load leaves the layer and the profile as they were.
-  const [{ printerBase }, { printerMinFlush }] = await Promise.all([import('../workspaces/prepare/printer-base'), import('@slicerx/settings/flush')])
-  const printerNozzleVolume = printerMinFlush((printerBase({ vendor: model.vendor, model: model.model }) as Record<string, SettingValue>)['nozzle_volume'])
+  const printerNozzleVolume = await nozzleVolumeOf(model)
   setProfileLayer(layer.values, get().easyTouched, layer.nozzleValues)
   // The no-print areas are machine coordinates; arranging works on the plate.
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
