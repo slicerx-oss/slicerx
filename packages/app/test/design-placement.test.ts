@@ -1951,6 +1951,40 @@ describe('a project saved before sketches moved with their bodies', () => {
     expect(reads(split.id)).toEqual({ model: [158, 138, 10], host: [158, 138, 10] })
   })
 
+  it('opens an older project with a shared sketch whose first body is on the second plate where that app showed it, and moves it with that body', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const left = String((await run('design.new', { name: 'Left' })).output['design'])
+    expect((await run('geom.extrude', { design: left, ...block, placement: { center: [60, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const right = String((await run('design.new', { name: 'Right' })).output['design'])
+    expect((await run('geom.extrude', { design: right, ...block, placement: { center: [190, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const top = { normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number] }
+    // a slot across both, cut from the right block first, so the right block carries it
+    const slot = finishSketch({ frame: { ...top, origin: [125, 128, 10] }, loops: [{ points: [[-70, -2], [70, -2], [70, 2], [-70, 2]] }] as never }).id
+    expect((await run('geom.extrude', { design: right, sketch: slot, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    expect((await run('geom.extrude', { design: left, sketch: slot, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    // the right block is dragged after its cut, then sent to a second plate
+    drag(right, 0, 30)
+    const r = entry(right)
+    const bytes = writeProject({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate.filter((e) => e.id !== right), settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [r], settings: {} }], bed: { widthMm: 256, depthMm: 256 }, settings: {}, timeline: get().timeline })
+    const bed = { widthMm: 256, depthMm: 256 }
+    readProjectsWithGeom(false)
+    const p = await readProject(older(bytes), bed).finally(() => readProjectsWithGeom(true))
+    expect(p.plates.map((pl) => pl.objects.length)).toEqual([1, 1])
+    const [o1, o2] = [p.plates[0]!.objects[0]!, p.plates[1]!.objects[0]!]
+    const { withBodyIds } = await import('@slicerx/cad-history')
+    stop?.()
+    const made = (id: string, o: typeof o1): PlateEntry => ({ id, name: o.name, handle: handle(id), parts: o.parts, colors: ['#bd93f9'], transform: o.transform, history: p.histories.get(o.fileId)! })
+    appStore.setState({ plate: [made('l', o1)], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [made('r', o2)], settings: {} }], activePlate: 'plate-1', timeline: withBodyIds(p.timeline!, (f) => (f === o1.fileId ? 'l' : f === o2.fileId ? 'r' : undefined)) })
+    stop = startTimeline()
+    // pinned to the right block, where it stands in its own plate as the file opens, so the slot reads where it was stored
+    expect(o2.transform).toEqual(r.transform)
+    expect(sketchItem(slot).drawnFor).toEqual([{ design: 'r', transform: o2.transform }])
+    expect(reads(slot)).toEqual({ model: [125, 128, 10], host: [125, 128, 10] })
+    // and moves with it on its plate
+    set((s) => ({ plates: s.plates.map((pl) => (pl.id === 'plate-2' ? { ...pl, objects: pl.objects.map((e) => ({ ...e, transform: e.transform.map((v, i) => (i === 12 ? v + 5 : v)) })) } : pl)) }))
+    expect(reads(slot)).toEqual({ model: [130, 128, 10], host: [130, 128, 10] })
+  })
+
   it('opens an older version 3 project with two bodies and two sketches each where that app showed it, and each moves with its own body after', async () => {
     const run = toolsOn(appDesignHost(loader))
     const left = String((await run('design.new', { name: 'Left' })).output['design'])
