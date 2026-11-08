@@ -29,7 +29,8 @@ describe('history steps in the project file', () => {
 
   it('keeps the part an array of separate copies copied, and drops a name no part could have', () => {
     const copies = (arrayOf: unknown) => ({ op: 'parts.add', parts: [{ ...boxMesh(2, 2, 2), name: 'Segment 1 2' }], label: 'Array of 2, separate', arrayOf }) as unknown as StepParams
-    expect((roundTrip(copies('Segment 1'))?.steps[0]?.params as { arrayOf?: string }).arrayOf).toBe('Segment 1')
+    // kept as written, up to the 120 characters the tools take
+    for (const good of ['Segment 1', 'x'.repeat(120), '  Segment 1']) expect((roundTrip(copies(good))?.steps[0]?.params as { arrayOf?: string }).arrayOf, good).toBe(good)
     for (const bad of ['x'.repeat(121), '   ', 7]) {
       const back = roundTrip(copies(bad))?.steps[0]?.params as { op: string; arrayOf?: string } | undefined
       expect(back?.op, String(bad)).toBe('parts.add')
