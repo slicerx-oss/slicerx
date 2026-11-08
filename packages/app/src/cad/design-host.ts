@@ -187,8 +187,8 @@ export function appDesignHost(loader: Loader): DesignHost {
       const drawnFor = d ? [standing(d.id)] : [...empty.keys()].map(standing)
       // drawn in a design's frame: stored in the plate's, by that design's landing
       const by = d?.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
-      const k = finishSketch(by ? { ...s, frame: movedFrame(s.frame, by) } : s)
-      if (drawnFor.length) set((st) => ({ timeline: { ...st.timeline, items: st.timeline.items.map((i) => (i.kind === 'sketch' && i.id === k.id ? { ...i, drawnFor } : i)) } }))
+      // one write, so one undo step takes the sketch back with what it is drawn for
+      const k = finishSketch({ ...s, ...(by ? { frame: movedFrame(s.frame, by) } : {}), drawnFor })
       return d ? host.sketch!(k.id, d.id) : k
     },
 
