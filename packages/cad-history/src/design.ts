@@ -301,12 +301,16 @@ export function withSketch(t: Timeline, sketch: Omit<SketchItem, 'kind' | 'name'
   return { ...t, items: [...t.items.slice(0, at), k, ...t.items.slice(at)], marker: at + 1 }
 }
 
-/** The timeline without a body that left the plate: its features go, and so do sketches only they used. */
-export function withoutBody(t: Timeline, body: string): Timeline {
+/**
+ * The timeline without a body that left the plate: its features go, and so do sketches only they used, except one drawn
+ * for a design that waits for its body (`waits`): it waits with that design, under its id, for the design's next step.
+ */
+export function withoutBody(t: Timeline, body: string, waits?: (design: string) => boolean): Timeline {
   if (!t.bodies.some((b) => b.id === body)) return t
   const used = new Set(t.items.flatMap((i) => (i.kind === 'feature' && i.body !== body && i.sketch !== undefined ? [i.sketch] : [])))
   const mine = new Set(t.items.flatMap((i) => (i.kind === 'feature' && i.body === body && i.sketch !== undefined ? [i.sketch] : [])))
-  const gone = (i: Item) => (i.kind === 'feature' ? i.body === body : mine.has(i.id) && !used.has(i.id))
+  const waiting = (i: SketchItem) => waits !== undefined && (i.drawnFor ?? []).some((f) => waits(f.design))
+  const gone = (i: Item) => (i.kind === 'feature' ? i.body === body : mine.has(i.id) && !used.has(i.id) && !waiting(i))
   const marker = t.items.slice(0, t.marker).filter((i) => !gone(i)).length
   return { bodies: t.bodies.filter((b) => b.id !== body), items: t.items.filter((i) => !gone(i)), marker }
 }
@@ -321,10 +325,11 @@ function bodiesOf<O extends Obj>(objects: readonly O[]): O[] {
 }
 
 /**
- * The timeline with every object's history folded in, and without bodies no object has now. With no bodies yet, the
- * objects' histories are merged by when each step was made, as an older file opens.
+ * The timeline with every object's history folded in, and without bodies no object has now (a sketch drawn for a design
+ * that `waits` for its body stays, withoutBody). With no bodies yet, the objects' histories are merged by when each
+ * step was made, as an older file opens.
  */
-export function syncTimeline(t: Timeline, objects: readonly Obj[], seen?: WeakSet<History>): Timeline {
+export function syncTimeline(t: Timeline, objects: readonly Obj[], seen?: WeakSet<History>, waits?: (design: string) => boolean): Timeline {
   const bodies = bodiesOf(objects)
   if (!t.bodies.length && !t.items.length && bodies.length) {
     for (const o of bodies) seen?.add(o.history!)
@@ -332,7 +337,7 @@ export function syncTimeline(t: Timeline, objects: readonly Obj[], seen?: WeakSe
   }
   const here = new Set(bodies.map((o) => o.id))
   let out = t
-  for (const b of t.bodies) if (!here.has(b.id)) out = withoutBody(out, b.id)
+  for (const b of t.bodies) if (!here.has(b.id)) out = withoutBody(out, b.id, waits)
   for (const o of bodies) {
     const h = o.history!
     if (seen?.has(h) && out.bodies.some((b) => b.id === o.id)) continue

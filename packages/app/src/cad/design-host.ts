@@ -35,7 +35,8 @@ import { settle } from './sketch-dimension'
 import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
-import { placeOf, setWaiting } from './sketch-place'
+import { placeOf } from './sketch-place'
+import { setWaiting } from './waiting'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -154,10 +155,11 @@ export function appDesignHost(loader: Loader): DesignHost {
           const stood = was?.transform ?? movedBy(d.transform, d.placed)
           // the step that landed it is undone: the designs its landing moved over go back, in the same write
           const room = was?.roomMoves && !d.history.steps.some((x) => x.id === was.roomMoves!.step) ? was.roomMoves : undefined
-          set((s) => ({ plate: movedBack(s.plate.filter((p) => p.id !== d.id), room?.moves ?? []) }))
-          // with the room taken back it waits where it was built, so a redo lands it again and makes room again
+          // with the room taken back it waits where it was built, so a redo lands it again and makes room again. It
+          // waits before it leaves the plate, so the timeline keeps the sketches drawn for it, under their ids.
           if (room) empty.set(d.id, { name: d.name, history: withPlaced(d.history, room.placed), transform: [...room.built] })
           else empty.set(d.id, { name: d.name, history: d.history, transform: stood })
+          set((s) => ({ plate: movedBack(s.plate.filter((p) => p.id !== d.id), room?.moves ?? []) }))
           bodyRevisions.register(d.id)
         } else {
           const parts = base.map(toPart)
@@ -414,7 +416,7 @@ export function appDesignHost(loader: Loader): DesignHost {
   return host
 }
 
-/** The designs a host keeps waiting for their first body; where each waits is shared with every reader (sketch-place.ts). */
+/** The designs a host keeps waiting for their first body; where each waits is shared with every reader (waiting.ts). */
 class Waiting extends Map<string, { name: string; history: History; transform: Mat4 }> {
   override set(id: string, w: { name: string; history: History; transform: Mat4 }): this {
     setWaiting(id, w.transform)
