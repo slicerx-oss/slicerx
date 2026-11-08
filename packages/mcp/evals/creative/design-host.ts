@@ -21,7 +21,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, madeAt, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -147,8 +147,15 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
 
   /** Where a stored design stands on the plate, waiting for its first body or not, as the app reads it. */
   const placeOf = (body: string): Mat4 | undefined => all.get(body)?.transform
-  /** The steps drawn on sketch `id`, as the app's timeline lists its features: each design's in turn. */
-  const users = (id: string) => [...all.values()].flatMap((x) => x.history.steps.flatMap((st) => (st.sketch === id ? [{ body: x.id, transform: st.transform }] : [])))
+  /**
+   * The steps drawn on sketch `id` in the order they were made, as the app's timeline lists its features (by when each
+   * step was made, its id's time and count, as timelineOf merges them), so the first is the same one the app anchors on.
+   */
+  const users = (id: string) => {
+    const at = (st: Step) => madeAt(st.id) ?? { time: Infinity, seq: 0 }
+    const used = [...all.values()].flatMap((x) => x.history.steps.flatMap((st) => (st.sketch === id ? [{ body: x.id, transform: st.transform, made: at(st) }] : [])))
+    return used.sort((a, b) => a.made.time - b.made.time || a.made.seq - b.made.seq).map(({ body, transform }) => ({ body, transform }))
+  }
   const sketchOf = (id: string) => timeline.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === id)
   /** How far sketch `id` moved since it was stored, by the same rule as the app (cad-history sketchAnchor). */
   const sketchMoved = (k: SketchItem): Mat4 => anchoredMove(k, users(k.id), placeOf)
