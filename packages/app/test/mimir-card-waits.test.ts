@@ -6,7 +6,7 @@
 import type { PilotEvent } from '@slicerx/contracts'
 import { emptyTranscript, foldEvents, startTurn } from '@slicerx/pilot/ui'
 import { describe, expect, it } from 'vitest'
-import { cardWaits, openChoice } from '../src/workspaces/mimir/card-waits'
+import { cardWaits, openChoice, openSheetCard } from '../src/workspaces/mimir/card-waits'
 
 const request = { id: 'apr_1', sessionId: 's', tool: 'printer.queue', permission: 'queue' as const, title: 'Print on Bay 6?', lines: [], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
 const ask = { type: 'ask', askId: 'ask_1', title: 'Confirm the part', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }] } as PilotEvent
@@ -67,5 +67,18 @@ describe('openChoice', () => {
     const replayed = run([ask])
     const turns = replayed.turns.map((t) => ({ ...t, blocks: t.blocks.map((b) => (b.kind === 'choice' ? { ...b, replay: true } : b)) }))
     expect(openChoice({ ...replayed, turns })).toBeNull()
+  })
+})
+
+describe('the waiting sheet a linked client reads', () => {
+  it('names a count row given in mm a count and an angle row degrees, as the sheet shows them', () => {
+    const dims = [
+      { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', source: 'asked' },
+      { key: 'draft_angle', label: 'Draft', value: 2, unit: 'mm', source: 'asked' },
+      { key: 'lean', label: 'Lean', value: 70, unit: 'deg', source: 'asked' },
+      { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' },
+    ]
+    const t = run([{ type: 'sheet', sheet: { id: 'sh_2', title: 'Gear sizes', views: ['iso'], dims } } as unknown as PilotEvent])
+    expect(openSheetCard(t)?.sizes.map((s) => [s.key, s.unit])).toEqual([['teeth', 'count'], ['draft_angle', 'deg'], ['lean', 'deg'], ['width', 'mm']])
   })
 })

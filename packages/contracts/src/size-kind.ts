@@ -12,13 +12,15 @@ export type SizeKind = 'count' | 'angle' | 'length'
 const ANGLE_UNITS = new Set(['deg', 'degs', 'degree', 'degrees'])
 /** Words that make a key a length wherever they stand in it ("count_mm" is a length in mm). */
 const LENGTH_UNITS = new Set(['mm', 'cm', 'in', 'inch', 'inches', 'millimeter', 'millimeters'])
-/** The last word of a count's key: "count", "segment_count", "num_teeth", "spokes". */
+/** The last word of a count's key: "count", "segment_count", "num_teeth", "spokes". Turns, coils and loops stay out: a helix or spring often has a fraction of one. */
 const COUNT_HEADS = new Set([
   'count', 'counts', 'number', 'num', 'nb', 'n', 'qty', 'quantity', 'teeth', 'segments', 'sides', 'copies', 'instances', 'repeats',
   'rows', 'columns', 'cols', 'spokes', 'ribs', 'fins', 'slots', 'holes', 'pins', 'posts', 'legs', 'arms', 'blades', 'lobes', 'petals',
-  'starts', 'turns', 'coils', 'loops', 'steps', 'levels', 'layers', 'pieces', 'parts', 'divisions', 'sections', 'links', 'facets',
+  'starts', 'steps', 'levels', 'layers', 'pieces', 'parts', 'divisions', 'sections', 'links', 'facets',
   'grooves', 'notches', 'tabs', 'cells', 'rungs', 'bars', 'magnets', 'screws',
 ])
+/** The last word of a length's key, which wins over its first word: "number_height", "angle_leg_length". */
+const LENGTH_HEADS = new Set(['height', 'width', 'depth', 'length', 'thickness', 'diameter', 'radius', 'size', 'spacing', 'pitch', 'offset', 'gap', 'clearance', 'wall', 'margin', 'inset', 'lip'])
 /** The first word of a count's key: "n_holes", "number_of_teeth", "count_x". */
 const COUNT_LEADS = new Set(['count', 'number', 'num', 'nb', 'n', 'qty', 'quantity'])
 /** The last word of an angle's key: "angle", "draft", "helix_angle". */
@@ -36,9 +38,9 @@ function words(key: string): string[] {
 }
 
 /**
- * What a size measures, from its key. A degree word anywhere makes it an angle and a length unit a length; otherwise
- * its last word, then its first, says count or angle ("tooth_height" ends in a length, so it is one). Anything else is
- * a length.
+ * What a size measures, from its key. A degree word anywhere makes it an angle and a length unit a length. A length
+ * word last makes it a length whatever its first word ("number_height", "angle_leg_length"); otherwise its last word,
+ * then its first, says count or angle. Anything else is a length.
  */
 export function sizeKind(key: string): SizeKind {
   const w = words(key)
@@ -46,11 +48,17 @@ export function sizeKind(key: string): SizeKind {
   if (w.some((x) => ANGLE_UNITS.has(x))) return 'angle'
   if (w.some((x) => LENGTH_UNITS.has(x))) return 'length'
   const head = w.at(-1)!
+  if (LENGTH_HEADS.has(head)) return 'length'
   if (COUNT_HEADS.has(head)) return 'count'
   if (ANGLE_HEADS.has(head)) return 'angle'
   if (w.length > 1 && COUNT_LEADS.has(w[0]!)) return 'count'
   if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return 'angle'
   return 'length'
+}
+
+/** A count as typed, kept whole: rounded to the nearest whole number, and at least 1. */
+export function wholeCount(v: number): number {
+  return Math.max(1, Math.round(v))
 }
 
 /** The unit a size of this kind shows with: none for a count, ° for an angle, else the plan's units. */

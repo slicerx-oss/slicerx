@@ -9,7 +9,7 @@
 // panel takes the chat's place instead, between its header and the composer.
 import { drawingPick, foldDrawing, PANE_NAMES, PANE_VIEWS, paneOffered, panesFor, paneShowing, pickFor, showPane, usePhoneDrawing, type PhonePane } from './drawing-pick'
 import { assistantText } from '@slicerx/contracts'
-import { dimText, dimUnit as unitOf } from '@slicerx/contracts/size-kind'
+import { dimText, dimUnit as unitOf, wholeCount } from '@slicerx/contracts/size-kind'
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -444,7 +444,7 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
                   digits={2}
                   step={dimUnit(d).step}
                   disabled={disabled}
-                  onCommit={(v) => void commit(d, v)}
+                  onCommit={(v) => void commit(d, dimUnit(d).unit === '' ? wholeCount(v) : v)}
                   {...(d.min !== undefined ? { min: d.min } : {})}
                   {...(d.max !== undefined ? { max: d.max } : {})}
                 />
