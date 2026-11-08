@@ -809,7 +809,7 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
             let before = boolean::Solid::new(t)?;
             let tool_solid = boolean::Solid::new(&tool)?;
             let v0 = before.volume();
-            let shells0 = before.to_mesh().components().len();
+            let shells0 = outer_shells(&before.to_mesh());
             let bop = if op == Operation::Join {
                 BoolOp::Union
             } else {
@@ -822,7 +822,9 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
             }
             let dv = r.volume_mm3 - v0;
             let changed = dv.abs() > 1e-9 * v0.abs().max(1.0);
-            let touches = changed && (op != Operation::Join || r.shells <= shells0);
+            // a join that adds a body of its own touches nothing; one that closes a hollow (a hook over
+            // an open stem, a lid on a cup) adds only an inner shell, so the outer shells are counted
+            let touches = changed && (op != Operation::Join || outer_shells(&mesh) <= shells0);
             Ok(ExtrudeResult {
                 report: ExtrudeReport {
                     volume_change_mm3: dv,
@@ -836,6 +838,12 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
             })
         }
     }
+}
+
+/// The closed shells of `m` that face outward: its separate bodies, without the inner walls of hollows
+/// sealed inside them.
+fn outer_shells(m: &TriMesh) -> usize {
+    m.components().iter().filter(|c| c.volume() > 0.0).count()
 }
 
 #[cfg(test)]
@@ -1202,6 +1210,36 @@ mod tests {
         assert!((r.mesh.volume() - area * 5.0).abs() < 1e-6, "{}", r.mesh.volume());
         let b = r.mesh.bounds().unwrap();
         assert!((b.max[1] - b.min[1] - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_join_that_seals_a_hollow_touches_the_body() {
+        // an open-top cup with 2 mm walls, then a lid that sits 1 mm into its rim and closes the hollow
+        let outer = build::box_mesh([0.0; 3], [30.0, 30.0, 20.0]);
+        let cup = apply(
+            build::box_mesh([2.0, 2.0, 2.0], [28.0, 28.0, 25.0]),
+            Operation::Cut,
+            Some(&outer),
+        )
+        .unwrap();
+        assert!(cup.report.touches && cup.report.shells == 1, "{:?}", cup.report);
+        let lid = apply(
+            build::box_mesh([0.0, 0.0, 19.0], [30.0, 30.0, 22.0]),
+            Operation::Join,
+            Some(&cup.mesh),
+        )
+        .unwrap();
+        // the sealed hollow is a second, inward-facing shell; the lid still joined the one body
+        assert_eq!(lid.report.shells, 2, "{:?}", lid.report);
+        assert!(lid.report.touches, "{:?}", lid.report);
+        // a lid off to the side is still a body of its own
+        let apart = apply(
+            build::box_mesh([40.0, 0.0, 0.0], [50.0, 10.0, 3.0]),
+            Operation::Join,
+            Some(&cup.mesh),
+        )
+        .unwrap();
+        assert!(!apart.report.touches, "{:?}", apart.report);
     }
 
     #[test]
