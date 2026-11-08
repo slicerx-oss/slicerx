@@ -269,7 +269,8 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
     expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
     const s = r.score
     expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: true })
-    expect(s.hook?.detail).toMatch(/^leaves the stem side below its top; tip rises/)
+    // the stem is read from the part, so the lofted stem shows its taper
+    expect(s.hook?.detail).toMatch(/^stem tapers from \d+ to \d+ mm across, \w+; leaves the stem side below its top; tip rises/)
     expect({ watertight: s.watertight?.pass, bodies: s.bodies?.pass, sizes: s.sizes?.pass }, JSON.stringify(s)).toEqual({ watertight: true, bodies: true, sizes: true })
     expect(((check['items'] ?? []) as { name: string; pass: boolean }[]).find((i) => i.name === 'watertight')?.pass).toBe(true)
   })
