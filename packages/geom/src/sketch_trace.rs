@@ -31,6 +31,11 @@ pub const MAX_COLORS: usize = 8;
 const EPS: f32 = 1e-4;
 /// The largest color tolerance; no two colors are much further apart.
 pub const MAX_TOLERANCE: f64 = 100.0;
+/// More crossings than this are refused, before any is kept.
+// each crossing costs up to about 80 bytes while the rings are made (its map entry with the map's spare room, its
+// start, its point), so 1 << 20 of them stay near 80 MB beside the 128 MB of a 4096 px field and its labels: within
+// 250 MB. a 4096 px photo of fine detail had about 80000.
+pub const MAX_CROSSINGS: usize = 1 << 20;
 /// how far past the tolerance a color is fully outside
 const COLOR_BAND: f32 = 12.0;
 /// marks a region that touches the image edge, beside its pixel count
@@ -417,10 +422,38 @@ pub fn despeckle(f: &mut Field, min_px: f64) -> Dropped {
     out
 }
 
-/// The rings along the zero line of `f`, grouped into shapes in scan order of their regions.
-pub fn contours(f: &Field) -> Result<Vec<Shape>> {
-    let (w, h) = (f.w as i64, f.h as i64);
-    // rings are the inside regions and the holes, so they are counted before any crossing is kept
+/// The pixel sides between inside and outside, the image edge included: one ring point each.
+fn crossings(f: &Field) -> usize {
+    let (w, h) = (f.w, f.h);
+    let inside = |x: usize, y: usize| f.v[y * w + x] > 0.0;
+    let mut n = 0;
+    for y in 0..h {
+        for x in 0..w {
+            let c = inside(x, y);
+            if x + 1 < w {
+                n += usize::from(c != inside(x + 1, y));
+            }
+            if y + 1 < h {
+                n += usize::from(c != inside(x, y + 1));
+            }
+            // the sides on the image edge
+            let edges =
+                usize::from(x == 0) + usize::from(x + 1 == w) + usize::from(y == 0) + usize::from(y + 1 == h);
+            n += if c { edges } else { 0 };
+        }
+    }
+    n
+}
+
+/// The inside labels and regions of `f`, or why it has too much to trace.
+// crossings and rings (the inside regions and the holes) are counted before any crossing is kept
+fn within_limits(f: &Field) -> Result<(Vec<u32>, Vec<u32>)> {
+    if crossings(f) > MAX_CROSSINGS {
+        return Err(Error::invalid(
+            "image",
+            "the outlines are too detailed; trace at a smaller working size or drop larger specks",
+        ));
+    }
     let too_many = || {
         Error::invalid(
             "image",
@@ -434,6 +467,13 @@ pub fn contours(f: &Field) -> Result<Vec<Shape>> {
         .filter(|&&r| r & EDGE == 0)
         .count();
     let regions = label(f, true, &mut labels, MAX_LOOPS - holes).ok_or_else(too_many)?;
+    Ok((labels, regions))
+}
+
+/// The rings along the zero line of `f`, grouped into shapes in scan order of their regions.
+pub fn contours(f: &Field) -> Result<Vec<Shape>> {
+    let (w, h) = (f.w as i64, f.h as i64);
+    let (labels, regions) = within_limits(f)?;
     // the image sits in a ring of outside pixels, each the negative of its neighbor inside, so every contour closes
     // and one along the image edge lands on it
     let at = |x: i64, y: i64| -> f32 {
@@ -952,14 +992,9 @@ mod tests {
             .collect();
         let f = Field { w: n, h: n, v };
         let t = std::time::Instant::now();
-        assert!(
-            contours(&f)
-                .unwrap_err()
-                .to_string()
-                .contains("more than 2000 loops")
-        );
-        // keeping its 33 million crossings took seconds and gigabytes; counting stops at the limit
-        assert!(t.elapsed().as_secs_f64() < 2.0, "{:?}", t.elapsed());
+        assert_eq!(contours(&f).unwrap_err().to_string(), TOO_DETAILED);
+        // keeping its 33 million crossings took seconds and gigabytes; a loose bound for a debug build
+        assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
     }
 
     #[test]
@@ -1139,5 +1174,178 @@ mod tests {
         f.v[4 * 9 + 4] = 0.5;
         assert_eq!(despeckle(&mut f, 10.0), Dropped { specks: 1, holes: 1 });
         assert!(f.v.iter().all(|&v| v > 0.0));
+    }
+
+    const TOO_DETAILED: &str =
+        "image: the outlines are too detailed; trace at a smaller working size or drop larger specks";
+
+    #[test]
+    fn a_4096_comb_of_one_region_is_refused_before_its_crossings_are_kept() {
+        // one region: a solid top band and a tooth in every other column, 16 million crossings
+        let n = 4096;
+        let v: Vec<f32> = (0..n * n)
+            .map(|i| {
+                if i / n >= n - 8 || (i % n) % 2 == 0 {
+                    0.5
+                } else {
+                    -0.5
+                }
+            })
+            .collect();
+        let f = Field { w: n, h: n, v };
+        let mut labels = Vec::new();
+        assert_eq!(label(&f, true, &mut labels, usize::MAX).unwrap().len(), 1);
+        drop(labels);
+        assert!(crossings(&f) > MAX_CROSSINGS);
+        let t = std::time::Instant::now();
+        assert_eq!(contours(&f).unwrap_err().to_string(), TOO_DETAILED);
+        assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn the_crossing_count_is_every_pixel_side_between_inside_and_outside() {
+        // one pixel: four sides, the image edge included
+        assert_eq!(
+            crossings(&Field {
+                w: 1,
+                h: 1,
+                v: vec![0.5]
+            }),
+            4
+        );
+        assert_eq!(
+            crossings(&Field {
+                w: 3,
+                h: 2,
+                v: vec![0.5; 6]
+            }),
+            10
+        );
+        assert_eq!(
+            crossings(&Field {
+                w: 3,
+                h: 2,
+                v: vec![-0.5; 6]
+            }),
+            0
+        );
+        let f = dots(MAX_LOOPS);
+        assert_eq!(crossings(&f), 4 * MAX_LOOPS);
+        // what contours keeps is exactly what was counted
+        let points: usize = contours(&f)
+            .unwrap()
+            .iter()
+            .map(|s| s.outer.len() + s.holes.iter().map(Vec::len).sum::<usize>())
+            .sum();
+        assert_eq!(points, crossings(&f));
+    }
+
+    #[test]
+    fn isolated_dots_across_a_4096_image_are_refused_on_the_ring_count() {
+        // 8192 single pixels, far under the crossing limit, so the inside count trips
+        let (w, h) = (4096, 8);
+        let v = (0..w * h)
+            .map(|i| {
+                if (i % w) % 2 == 0 && (i / w) % 2 == 0 {
+                    0.5
+                } else {
+                    -0.5
+                }
+            })
+            .collect();
+        let f = Field { w, h, v };
+        assert!(crossings(&f) < MAX_CROSSINGS);
+        assert_eq!(
+            contours(&f).unwrap_err().to_string(),
+            "image: more than 2000 loops; drop larger specks or trace at a smaller working size"
+        );
+    }
+
+    /// The field value of one pixel of `c` when `pick` is picked at `tolerance`.
+    fn color_value(c: [u8; 3], pick: [u8; 3], tolerance: f64) -> f32 {
+        let img = Raster::new(1, 1, vec![[c[0], c[1], c[2], 255]]).unwrap();
+        let o = TraceOptions {
+            mode: Mode::Color,
+            colors: vec![pick],
+            color_tolerance: tolerance,
+            ..opts()
+        };
+        field(&img, &o).unwrap().0.v[0]
+    }
+
+    #[test]
+    fn the_color_value_steps_down_from_the_pick_to_the_tolerance_and_out_over_a_band() {
+        let (pick, near) = ([220, 30, 40], [140, 110, 120]);
+        let lut = linear_lut();
+        let (a, b) = (oklab(&lut, pick), oklab(&lut, near));
+        let (x, y, z) = (a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        let d = (x * x + y * y + z * z).sqrt();
+        assert!(d > 13.0 && d < 40.0, "{d}");
+        let d = f64::from(d);
+        let at = |tol: f64| color_value(near, pick, tol);
+        let close = |got: f32, want: f32| (got - want).abs() < 1e-3;
+        assert!(close(color_value(pick, pick, 0.0), 0.5));
+        // within half the tolerance, full; at the tolerance, a quarter; just past it, about 0
+        assert!(close(at(2.0 * d), 0.5), "{}", at(2.0 * d));
+        assert!(close(at(1.5 * d), 0.5 - 0.25 / 3.0), "{}", at(1.5 * d));
+        assert!(close(at(d), 0.25), "{}", at(d));
+        assert!(at(d - 0.01) < 0.0 && at(d - 0.01) > -0.01, "{}", at(d - 0.01));
+        // past it, half way out at 6 and fully out at 12
+        assert!(close(at(d - 6.0), -0.25), "{}", at(d - 6.0));
+        assert!(close(at(d - 12.0), -0.5), "{}", at(d - 12.0));
+        assert!(close(at(0.0), -0.5));
+    }
+
+    #[test]
+    fn a_picked_color_on_a_far_one_has_its_edge_halfway_at_any_tolerance() {
+        let red = [220, 30, 40, 255];
+        let img = draw(20, 20, BLACK, |x, y| {
+            ((5.0..15.0).contains(&x) && (5.0..15.0).contains(&y)).then_some(red)
+        });
+        // black is 61 away, past 40 and its band
+        for tol in [0.0, 12.0, 40.0] {
+            let t = trace(
+                &img,
+                &TraceOptions {
+                    mode: Mode::Color,
+                    colors: vec![[220, 30, 40]],
+                    color_tolerance: tol,
+                    ..opts()
+                },
+            )
+            .unwrap();
+            assert_eq!(t.shapes.len(), 1, "{tol}");
+            // 100 less the four cut corners
+            assert!(
+                (area(&t.shapes[0]) - 99.5).abs() < 0.1,
+                "{tol}: {}",
+                area(&t.shapes[0])
+            );
+        }
+    }
+
+    #[test]
+    fn the_largest_tolerance_is_taken_and_takes_in_the_whole_image() {
+        let mut px = vec![[220, 30, 40, 255]; 200];
+        px[57] = BLACK;
+        px[123] = WHITE;
+        let img = Raster::new(20, 10, px).unwrap();
+        let color = |color_tolerance: f64| TraceOptions {
+            mode: Mode::Color,
+            colors: vec![[220, 30, 40]],
+            color_tolerance,
+            ..opts()
+        };
+        let t = trace(&img, &color(MAX_TOLERANCE)).unwrap();
+        assert_eq!(t.shapes.len(), 1);
+        assert!(t.shapes[0].holes.is_empty());
+        let b = bbox(&t.shapes[0].outer);
+        for (got, want) in b.iter().zip([0.0, 0.0, 20.0, 10.0]) {
+            assert!((got - want).abs() < 1e-6, "{b:?}");
+        }
+        assert_eq!(
+            trace(&img, &color(MAX_TOLERANCE + 1e-4)).unwrap_err().to_string(),
+            "argument: the color tolerance is 0 to 100"
+        );
     }
 }
