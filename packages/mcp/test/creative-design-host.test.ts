@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { headlessDesignHost, plainBed } from '../evals/creative/design-host'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { parseRecording } from '../evals/creative/recordings'
-import { runPrompt, scoreParts } from '../evals/creative/run'
+import { runPrompt, scoreParts, STALE_RESTART } from '../evals/creative/run'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../src/toolset'
 import { useGeomEngine } from './geom-engine'
 
@@ -104,6 +104,16 @@ describe('a recorded reply that builds with the design tools', () => {
     const run = await runPrompt(P, { geom: undefined, steps: [{ calls: [{ name: 'text_to_part', args: { prompt: 'a tray' } }] }, { text: 'Done.' }], answerRecorded: true })
     expect(run.stale).toMatch(/design tools/)
     expect(run.calls).toEqual(['text_to_part'])
+  })
+
+  it('marks a recording that starts the same part again in one reply stale, since mimir now refuses that restart', async () => {
+    const steps = [{ calls: [{ name: 'design.new', args: { name: 'Cable tray' } }] }, { calls: [{ name: 'design.new', args: { name: 'Cable tray v2' } }] }, { text: 'Done.' }]
+    const run = await runPrompt(P, { geom: undefined, steps, answerRecorded: true, tabTools: true })
+    expect(run.stale).toBe(STALE_RESTART)
+    expect(run.stale).toMatch(/starts the same part again with a second design\.new/)
+    // a separate part the prompt names is no restart, so it replays as recorded
+    const two = await runPrompt({ ...P, prompt: 'A cable tray and a cable clip as separate parts' }, { geom: undefined, steps: [steps[0]!, { calls: [{ name: 'design.new', args: { name: 'Cable clip' } }] }, { text: 'Done.' }], answerRecorded: true, tabTools: true })
+    expect(two.stale).toBeUndefined()
   })
 })
 
