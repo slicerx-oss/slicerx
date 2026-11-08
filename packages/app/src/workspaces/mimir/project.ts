@@ -223,6 +223,10 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
         return { plate: output.plate, overrides: output.overrides, effective: output.effective, shadowed: output.shadowed }
       },
       async plate(plateIndex: number): Promise<Plate> {
+        // The printer, filament and process layer must match the printer and the plate's slots before the plate and its
+        // configuration are read (a printer just picked, or a part moved to another slot, rebuilds it), as the app's
+        // own slice waits for it (slice-plate.ts).
+        await (await import('../../state/profile-sync')).profileReady()
         const meta = metaAt(plateIndex)
         if (!meta) throw new Error(`No plate ${plateIndex}`)
         const s = get()

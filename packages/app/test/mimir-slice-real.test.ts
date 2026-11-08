@@ -54,11 +54,12 @@ const QUEUE = { name: 'printer.queue', args: { printerId: 'bench', plate: 1 } }
 async function tab(opts: { tower?: boolean; during?: () => void } = {}) {
   let n = 0
   const uploaded: string[] = []
+  const requests: { config: Record<string, unknown> }[] = []
   const slicer = {
     loadModel: async (m: { id?: string }) => handle(m.id ?? 'm'),
     release: () => undefined,
     getPreview: async () => rawPreview(),
-    slice: async () => (opts.during?.(), { id: `r${++n}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 60, filamentMm: [1, 1], filamentG: [1, 1], cost: 0, toolChanges: 1 }, stageMicros: {}, wallMs: 1, ...(opts.tower ? { primeTower: { x: 200, y: 200, width: 35, depth: 35 } } : {}) }) as unknown as SliceResult,
+    slice: async (req: { config: Record<string, unknown> }) => (requests.push(req), opts.during?.(), { id: `r${++n}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 60, filamentMm: [1, 1], filamentG: [1, 1], cost: 0, toolChanges: 1 }, stageMicros: {}, wallMs: 1, ...(opts.tower ? { primeTower: { x: 200, y: 200, width: 35, depth: 35 } } : {}) }) as unknown as SliceResult,
     exportGcode: async (id: string) => ({ fileName: `${id}.gcode`, bytes: 4, sha256: '', blob: new Blob([`; slice ${id}\nG28\n`]) }),
   }
   const printers = {
@@ -72,7 +73,7 @@ async function tab(opts: { tower?: boolean; during?: () => void } = {}) {
   } as unknown as PrinterHost
   const host = { kind: 'desktop', slicer, printers, approvals: createApprovalBroker(), capabilities: { threads: 1 } } as unknown as Host
   const options = tabPilotOptions(host, { llm: noLlm, config: DEFAULT_CONFIG, kb: await bundledKb(), tools: [], commands: [SLICE] })
-  return { options, uploaded }
+  return { options, uploaded, requests }
 }
 
 /** One chat: a turn of `before` then app.slice, then a turn that queues. Cards are answered as a person would. */
@@ -190,6 +191,21 @@ describe("mimir's real slice is current when it lands", () => {
     timers.forEach(clearTimeout)
     expect(get().printerNozzleVolume).toBe(volume(P1S))
     expect(pilot.printRun?.('printer-change')?.slice).toMatchObject({ sliceId: 'r1', stale: false })
+  })
+
+  it("the slice tool right after a part moves to another slot: it slices with the rebuilt profile, and the slice is current", async () => {
+    const { options, requests } = await tab()
+    const pilot = createPilot({ ...options, client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { text: 'Sliced.' }], { chunk: false }) })
+    const ids = get().profile?.filamentIds
+    // the part moves to slot 2, as picking a spool in another slot does: the profile layer rebuilds for two filaments
+    set({ plate: get().plate.map((e) => ({ ...e, slotOverrides: { Body: 2 } })) })
+    for await (const ev of pilot.run('slot-move', 'go', {})) if (ev.type === 'approval_request') await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+    await profileReady()
+    expect(get().profile?.filamentIds).not.toEqual(ids)
+    expect(requests).toHaveLength(1)
+    // the configuration sliced lists both slots, from the rebuilt layer
+    expect(requests[0]!.config['filament_flow_ratio']).toHaveLength(2)
+    expect(pilot.printRun?.('slot-move')?.slice).toMatchObject({ sliceId: 'r1', stale: false })
   })
 
   it('a two-color plate with an auto tower: the slice is current after it lands and printer.queue sends it', async () => {
