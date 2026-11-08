@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What a planned size measures, read from its key: a count shows with no unit, an angle in degrees, and anything else is
-// a length in the plan's units. An inch plan never converts a count or an angle.
+// @vitest-environment node
+// What a planned size measures, read from its key (@slicerx/contracts/size-kind): a count shows with no unit, an angle in
+// degrees, and anything else is a length in the plan's units. An inch plan never converts a count or an angle, and a
+// sheet row given in mm reads the same way. Ambiguous keys (walls, taper) stay lengths.
 import { describe, expect, it } from 'vitest'
-import { sizeKind, sizeLabelKey, sizeText, sizeUnit } from '../src/size-kind'
+import { dimText, dimUnit, sizeKind, sizeLabelKey, sizeText, sizeUnit } from '@slicerx/contracts/size-kind'
 
 describe('sizeKind', () => {
   it('reads a count from its key', () => {
@@ -15,7 +17,7 @@ describe('sizeKind', () => {
   })
 
   it('reads everything else as a length', () => {
-    for (const key of ['width', 'wall_thickness', 'lipHeight', 'diameter', 'radius', 'pitch', 'tooth_height', 'segment_length', 'total_length', 'count_mm', 'm3-hole', 'x', 'thickness', '']) expect(sizeKind(key), key).toBe('length')
+    for (const key of ['width', 'wall_thickness', 'lipHeight', 'diameter', 'radius', 'pitch', 'tooth_height', 'segment_length', 'total_length', 'count_mm', 'm3-hole', 'x', 'thickness', 'walls', 'taper', '']) expect(sizeKind(key), key).toBe('length')
   })
 })
 
@@ -48,5 +50,19 @@ describe('sizeLabelKey', () => {
     expect(sizeLabelKey('deg')).toBe('deg')
     expect(sizeLabelKey('width_mm')).toBe('width_mm')
     expect(sizeLabelKey('count')).toBe('count')
+  })
+})
+
+describe('dimUnit and dimText', () => {
+  it('reads a sheet row given in mm by its key, and keeps degrees and percent as given', () => {
+    expect(dimUnit({ key: 'teeth', unit: 'mm' })).toBe('')
+    expect(dimUnit({ key: 'draft_angle', unit: 'mm' })).toBe('°')
+    expect(dimUnit({ key: 'width', unit: 'mm' })).toBe('mm')
+    expect(dimUnit({ key: 'lean', unit: 'deg' })).toBe('°')
+    expect(dimUnit({ key: 'infill', unit: '%' })).toBe('%')
+    expect(dimText({ key: 'teeth', unit: 'mm' }, 20)).toBe('20')
+    expect(dimText({ key: 'lean', unit: 'deg' }, 70)).toBe('70°')
+    expect(dimText({ key: 'infill', unit: '%' }, 15)).toBe('15%')
+    expect(dimText({ key: 'width', unit: 'mm' }, 80)).toBe('80 mm')
   })
 })

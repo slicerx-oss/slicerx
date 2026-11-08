@@ -4,6 +4,7 @@
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
 import type { PilotDim, PilotDimAt, PilotSheet, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
+import { dimText } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
@@ -267,10 +268,11 @@ export function sheetTool(): PilotTool<never> {
       const answer = await ctx.sheet(sheetOf(i))
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question
       if (!answer.confirmed && answer.said) {
-        // sizes they had typed on the sheet before writing come along, so they are not lost
+        // sizes they had typed on the sheet before writing come along, so they are not lost, each read as the sheet shows
+        // it: a count given in mm with no unit, an angle in degrees
         const typed = answer.changed.map((k) => {
           const d = i.dims.find((x) => x.key === k)!
-          return `${d.label} ${answer.values[k]} ${d.unit} (was ${d.value})`
+          return `${d.label} ${dimText(d, answer.values[k]!)} (was ${d.value})`
         })
         const sizes = typed.length ? ` They had typed on it: ${typed.join(', ')}; keep those.` : ''
         return { ok: false, summary: `Set aside; the person wrote instead: "${answer.said}".${sizes} Build nothing from this sheet: do what they wrote, and show a new sheet if sizes still need confirming (words never confirm one).`, output: answer }

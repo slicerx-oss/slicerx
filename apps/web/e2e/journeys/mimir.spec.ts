@@ -643,7 +643,7 @@ test.describe('the dimension sheet', () => {
     }
     const status = rec.getByTestId('mimir-sheet-status')
     await expect(rec.locator('.sheet-rec-row[data-guess]')).toHaveCount(5)
-    await expect(status).toHaveText('5 assumed values: room for a case 1.5 mm, lean angle 70 ° and 3 more')
+    await expect(status).toHaveText('5 assumed values: room for a case 1.5 mm, lean angle 70° and 3 more')
     await expect(status).toHaveAttribute('data-assumed', '')
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-sheet-dark.png` })
 

@@ -6,7 +6,7 @@
 // given in the sheet's own frame move onto the built part when they miss it, and a row with no place whose value is one
 // of the part's overall sizes gets that size's line.
 import type { PilotDim, PilotDimAt, PilotSheet } from '@slicerx/contracts'
-import { sizeKind } from '@slicerx/mcp/toolset'
+import { sizeKind } from '@slicerx/contracts/size-kind'
 import type { PlateEntry } from '../../state/store'
 import { shapeBounds, shapeOfMesh, shapeOfSolids, type Shape, type V3 } from './sheet-draw'
 
