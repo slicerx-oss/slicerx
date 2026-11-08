@@ -268,7 +268,8 @@ fn array_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     if field_or(req, "merge", false)? {
         let opts: BooleanOptions = field_or_default(req, "options")?;
         let (m, r) = array::merged(&world, &spec, &opts)?;
-        let merged = mesh_report(&it.to_local(&m)?, enc);
+        // like a join, a merged array that would not store is refused here, not at save
+        let merged = mesh_report(&boolean::storage_mesh(&it.to_local(&m)?)?, enc);
         if let (Some(o), Value::Object(extra)) = (v.as_object_mut(), merged) {
             o.extend(extra);
         }
@@ -1603,5 +1604,51 @@ mod tests {
             "path: the path ends where it starts; a sweep path is open, with two ends"
         );
         assert_eq!(err(json!({ "path": path })), "request: missing \"profile\"");
+    }
+
+    #[test]
+    fn a_merged_array_that_would_not_store_is_refused() {
+        // a pin standing in the bore: the bore is not empty, so the array falls back to the plain join
+        let v: Value = serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
+        let nums = |k: &str| {
+            v[k].as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "fixture indices"
+        )]
+        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
+        let hub = crate::mesh::TriMesh::from_flat(&nums("positions"), &idx).unwrap();
+        let cyl =
+            |r: f64, h0: f64, h1: f64, n: usize| build::cylinder(&crate::vec3::Frame::WORLD, r, h0, h1, n);
+        let o = crate::boolean::BooleanOptions::default();
+        let bored = crate::boolean::boolean(
+            &[hub],
+            &[cyl(2.5, 2.0, 11.0, 40)],
+            crate::boolean::BoolOp::Difference,
+            &o,
+        )
+        .unwrap()
+        .0;
+        let pinned = crate::boolean::boolean(
+            &[bored, cyl(1.0, 1.0, 8.0, 24)],
+            &[],
+            crate::boolean::BoolOp::Union,
+            &o,
+        )
+        .unwrap()
+        .0;
+        let req = json!({
+            "mesh": { "mesh": MeshOut::Flat.mesh(&pinned), "transform": translate([0.0, 0.0, 0.0]) },
+            "spec": { "kind": "circular", "count": 12, "center": [0, 0, 0] },
+            "merge": true,
+        });
+        let e = call("array", &req.to_string()).unwrap_err().to_string();
+        assert!(e.contains("unsafe at mesh storage precision"), "{e}");
     }
 }
