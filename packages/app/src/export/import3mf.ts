@@ -990,7 +990,10 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
   const histories = parseHistories(files, fileIds)
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
-  const timeline = histories.size ? parseTimeline(files, fileIds) : null
+  // where each object stands as the project opens: a file from before sketches moved with their bodies opens with each
+  // sketch where that app showed it
+  const standing = new Map(plates.flatMap((p) => p.objects.map((o) => [o.fileId, o.transform] as const)))
+  const timeline = histories.size ? parseTimeline(files, fileIds, (id) => standing.get(id)) : null
   // Paint is checked by the open (open-project.ts), against the filaments the project has once it is open.
   return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
 }
