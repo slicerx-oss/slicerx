@@ -21,7 +21,7 @@ function grid(positions: number[], indices: number[], cells: number, sizeMm: num
 }
 
 /** 9 slabs stacked with 0.4 mm between each top and the bottom above it: 8 gaps, every face a dense grid of level facets. */
-function chain(cells: number, sizeMm: number, at: [number, number]) {
+function chain(cells: number, sizeMm: number, at: readonly [number, number]) {
   const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
   const parts: HistoryMesh[] = []
   for (let k = 0; k < 9; k++) {
