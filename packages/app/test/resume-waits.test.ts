@@ -8,24 +8,33 @@ import { act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest, type SliceResult } from '@slicerx/contracts'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { resumeFor, SLICE_NOT_CURRENT } from '../src/plate/resume-tops'
+import { RESUME_VOID, resumeFor, SLICE_NOT_CURRENT } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
 import { EXPORT_SWITCHED, exportAllPlates, exportGcode3mf } from '../src/export/actions'
+import { createPageBridge, installCapture, type Capture } from '../src/agent-bridge'
+import { builtinCommands } from '../src/commands/builtin'
+import { registerCommands } from '../src/commands/registry'
 import { switchPlate } from '../src/plate/plates'
 import { sendToPrinter, slicePlate, STALE_SLICE } from '../src/state/actions'
-import { notStarted } from '../src/state/send-actions'
 import { get, set, type PlateEntry } from '../src/state/store'
-import { mimirCommands, SWITCHED_REPLY } from '../src/workspaces/mimir/session'
+import { mimirCommands, STALE_REPLY, SWITCHED_REPLY } from '../src/workspaces/mimir/session'
 
 /** Gates the test holds the profile load and the project G-code question on. */
-const gates = vi.hoisted(() => ({ profile: null as Promise<void> | null, question: null as Promise<void> | null, asked: 0 }))
-vi.mock('../src/state/profile-sync', async (original) => ({ ...(await original<object>()), profileReady: () => gates.profile ?? Promise.resolve() }))
+const gates = vi.hoisted(() => ({ profile: null as Promise<void> | null, question: null as Promise<void> | null, asked: 0, calls: 0, only: 0, answer: 'profile' as string | null }))
+vi.mock('../src/state/profile-sync', async (original) => ({
+  ...(await original<object>()),
+  // `only` gates just that call (1 based); 0 gates every call while `profile` is set.
+  profileReady: () => {
+    gates.calls++
+    return (gates.only === 0 || gates.only === gates.calls) && gates.profile ? gates.profile : Promise.resolve()
+  },
+}))
 vi.mock('../src/state/project-gcode', async (original) => ({
   ...(await original<object>()),
   askProjectGcode: async () => {
     gates.asked++
     if (gates.question) await gates.question
-    return 'profile'
+    return gates.answer
   },
 }))
 
@@ -127,6 +136,9 @@ beforeEach(() => {
   gates.profile = null
   gates.question = null
   gates.asked = 0
+  gates.calls = 0
+  gates.only = 0
+  gates.answer = 'profile'
   set({ plate: [box], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [other], settings: {} }], activePlate: 'plate-1', resume: null, slice: { status: 'idle' }, preview: null, calibration: {}, layerMarks: {}, objectSettings: {}, overrides: {}, printerSlots: [], historyEdit: null, toast: null, printSheet: null, queue: [], projectGcode: null } as never)
 })
 afterEach(() => {
@@ -214,8 +226,40 @@ describe('the waits between the sheet and a start', () => {
     await sent
     expect(e.uploads).toHaveLength(1)
     expect(e.started).toEqual([])
-    expect(get().toast?.text).toBe(notStarted('Demo 1', e.uploads[0]!))
+    expect(get().toast?.text).toBe(`Demo 1 has ${e.uploads[0]}, but it did not start: the slice changed while it uploaded. Don't start it from the printer. Slice the plate again, then print.`)
     expect(get().toast?.tone).toBe('error')
+  })
+
+  it('names the plan, not a reslice, when the plan goes void while it uploads', async () => {
+    const g = gate()
+    const e = engine({ upload: g })
+    plan()
+    await slicePlate(e.host)
+    const sent = confirm(e.host, DEMO)
+    await vi.waitFor(() => expect(g.reached).toBe(1))
+    set({ overrides: { ...get().overrides, wall_loops: 7 } })
+    g.open()
+    await sent
+    expect(e.started).toEqual([])
+    expect(get().toast?.text).toBe(`Demo 1 has ${e.uploads[0]}, but it did not start: the resume plan no longer matches the plate. Don't start it from the printer. Plan it again, or choose Print everything again.`)
+    expect(RESUME_VOID).toContain('no longer matches')
+  })
+
+  it('does not start when another plate shows or an object is renamed while it uploads', async () => {
+    for (const change of [() => switchPlate('plate-2'), () => set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })]) {
+      set({ plate: [box], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [other], settings: {} }], activePlate: 'plate-1', slice: { status: 'idle' }, preview: null, toast: null } as never)
+      const g = gate()
+      const e = engine({ upload: g })
+      await slicePlate(e.host)
+      const sent = confirm(e.host, DEMO)
+      await vi.waitFor(() => expect(g.reached).toBe(1))
+      change()
+      g.open()
+      await sent
+      expect(e.uploads).toHaveLength(1)
+      expect(e.started).toEqual([])
+      expect(get().toast?.text).toBe(`Demo 1 has ${e.uploads[0]}, but it did not start: the slice changed while it uploaded. Don't start it from the printer. Slice the plate again, then print.`)
+    }
   })
 
   it('starts the uploaded file when nothing changed while it uploaded', async () => {
@@ -279,9 +323,29 @@ describe('export and a plate switch before the slice starts', () => {
     gates.profile = null
     g.open()
     expect(await out).toBe(false)
-    expect(get().toast).toMatchObject({ text: `Plate 1: ${EXPORT_SWITCHED}`, tone: 'error' })
+    expect(get().toast).toMatchObject({ text: 'Plate 1: another plate was shown while it sliced, so nothing was saved. Run Export every plate again.', tone: 'error' })
     expect(e.requests).toEqual([])
     expect(e.saved).toEqual([])
+    // The plate the person showed stays shown.
+    expect(get().activePlate).toBe('plate-2')
+  })
+
+  it('Export every plate saves nothing when another plate shows while the second plate waits, with the first already sliced', async () => {
+    const e = engine()
+    const g = gate()
+    gates.profile = g.wait
+    gates.only = 2
+    const out = exportAllPlates(e.host)
+    await vi.waitFor(() => expect(gates.calls).toBe(2))
+    expect(e.requests).toHaveLength(1)
+    expect(get().activePlate).toBe('plate-2')
+    switchPlate('plate-1')
+    g.open()
+    expect(await out).toBe(false)
+    expect(get().toast?.text).toBe('Plate 2: another plate was shown while it sliced, so nothing was saved. Run Export every plate again.')
+    expect(e.requests).toHaveLength(1)
+    expect(e.saved).toEqual([])
+    expect(get().activePlate).toBe('plate-1')
   })
 
   it('Export plate 3MF exports nothing when another plate shows while it waits on the profile, and exports when nothing switched', async () => {
@@ -299,5 +363,66 @@ describe('export and a plate switch before the slice starts', () => {
     expect(e.saved).toEqual([])
     expect(await exportGcode3mf(e.host)).toBe(true)
     expect(e.saved).toHaveLength(1)
+  })
+})
+
+describe("the bridge's slice and mimir's slice read one stale rule, and pin their plate", () => {
+  let capture: Capture | null = null
+  afterEach(() => {
+    capture?.stop()
+    capture = null
+  })
+  function bridgeWith(host: Host) {
+    const off = registerCommands(builtinCommands(host, []).filter((c) => c.id === 'slice'))
+    capture = installCapture(window)
+    const bridge = createPageBridge(capture)
+    bridge.attach({} as never)
+    return { bridge, off }
+  }
+
+  it('slices again after a rename, where it handed back the old summary, and exports then', async () => {
+    const e = engine()
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await slicePlate(e.host)
+      await expect(bridge.handle('export_info', {})).resolves.toMatchObject({ id: 'r1' })
+      set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+      await expect(bridge.handle('export_info', {})).rejects.toMatchObject({ code: 'refused', message: 'the plate changed after the last slice; slice it again, then export' })
+      await bridge.handle('slice', { timeoutMs: 5000 })
+      expect(e.requests).toHaveLength(2)
+      await expect(bridge.handle('export_info', {})).resolves.toMatchObject({ id: 'r2' })
+    } finally {
+      off()
+    }
+  })
+
+  it('answers not_ready, slicing nothing, when another plate shows while its slice waits on the profile', async () => {
+    const e = engine()
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      const g = gate()
+      gates.profile = g.wait
+      const out = bridge.handle('slice', { timeoutMs: 5000 })
+      await vi.waitFor(() => expect(gates.calls).toBe(1))
+      toPlate2()
+      gates.profile = null
+      g.open()
+      await expect(out).rejects.toMatchObject({ code: 'not_ready', message: 'another plate was shown before Plate 1 finished slicing, so no slice was kept for it; show it and slice again' })
+      expect(e.requests).toEqual([])
+    } finally {
+      off()
+    }
+  })
+
+  it("mimir's slice reads a rename since the last slice as stale when no new slice ran", async () => {
+    const e = engine()
+    await slicePlate(e.host)
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })), projectGcode: { source: 'Project.3mf', changes: [], asking: false } } as never)
+    // The project G-code question is dismissed, so no slice runs.
+    gates.answer = null
+    const cx = { sliced: vi.fn(), refused: vi.fn() }
+    expect(await runSlice(e.host, cx)).toEqual({ status: 'stale', message: STALE_REPLY })
+    expect(e.requests).toHaveLength(1)
+    expect(cx.sliced).not.toHaveBeenCalled()
   })
 })

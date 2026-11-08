@@ -15,7 +15,7 @@ import { heldBodies } from '../plate/timeline'
 import { markClean } from '../project/unsaved'
 import { slicePlate, STALE_SLICE } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
-import { exportAllBlock, stampBlock } from '../plate/resume-tops'
+import { exportAllBlock, needsSlice, stampBlock } from '../plate/resume-tops'
 import { appName } from '../edition'
 import { exportingUserId } from './identity'
 import { savedPaintNote } from './paint-check'
@@ -187,11 +187,13 @@ async function gcodeText(host: Host): Promise<{ text: string } | { reason: strin
 /** Export's answer when another plate showed while the plate it was exporting sliced. */
 export const EXPORT_SWITCHED = 'Another plate was shown before this one finished slicing, so nothing was exported. Show the plate and export it again.'
 
+/** Export every plate's answer when another plate showed while one of them sliced. */
+export const exportAllSwitched = (plate: string): string => `${plate}: another plate was shown while it sliced, so nothing was saved. Run Export every plate again.`
+
 /** Print output: the sliced active plate as .gcode.3mf, the file Bambu Lab printers take. Slices first when needed. */
 export async function exportGcode3mf(host: Host): Promise<boolean> {
   const s = get()
-  const resliced = s.slice.status !== 'done' || s.slice.stale
-  if (resliced) await slicePlate(host, { plate: s.activePlate })
+  if (needsSlice(s)) await slicePlate(host, { plate: s.activePlate })
   // The slice waits on the profile and may ask a question first: the file is the plate it was asked for, or nothing.
   if (get().activePlate !== s.activePlate) {
     toast(EXPORT_SWITCHED, 'error')
@@ -241,13 +243,16 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
   const start = get().activePlate
   const gcode: Record<number, string> = {}
   const plates = get().plates
+  // A plate the person showed while a plate sliced stays shown.
+  let theirs = false
   try {
     for (const [i, p] of plates.entries()) {
       switchPlate(p.id)
       if (get().plate.length === 0) continue
       await slicePlate(host, { plate: p.id })
       if (get().activePlate !== p.id) {
-        toast(`${p.name}: ${EXPORT_SWITCHED}`, 'error')
+        theirs = true
+        toast(exportAllSwitched(p.name), 'error')
         return false
       }
       const got = await gcodeText(host)
@@ -258,7 +263,7 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
       gcode[i] = got.text
     }
   } finally {
-    switchPlate(start)
+    if (!theirs) switchPlate(start)
   }
   if (Object.keys(gcode).length === 0) {
     toast('There is nothing on the plates to slice.', 'info')

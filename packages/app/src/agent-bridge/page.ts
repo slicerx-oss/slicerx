@@ -10,7 +10,7 @@ import { resolveSlots } from '../filament/slots'
 import { spoolParts } from '../filament/pick'
 import { activeMeta, allPlates } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
-import { resumeState } from '../plate/resume-tops'
+import { needsSlice, resumeState } from '../plate/resume-tops'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
 import { openTiming, viewTiming } from '../lib/open-timing'
@@ -271,7 +271,11 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     const timeoutMs = num(a['timeoutMs'], 300_000, 1_000, 900_000)
     const s = get()
     if (s.plate.length === 0) throw new BridgeError('not_ready', 'the plate is empty')
-    if (s.slice.status === 'done' && !s.slice.stale && a['force'] !== true) return sliceSummary(s)
+    if (!needsSlice(s) && a['force'] !== true) return sliceSummary(s)
+    // The Slice command slices only the plate shown when it starts (slicePlate `plate`); another plate shown before
+    // that slice lands leaves the plate asked for with none.
+    const asked = s.activePlate
+    const name = s.plates.find((p) => p.id === asked)?.name ?? 'the plate'
     const mark = capture.marker()
     // The Slice command, as the button and Ctrl+Enter run it. A refusal (nothing printable, say) comes back at once.
     const run = runCommand('slice')
@@ -280,8 +284,9 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     const out = await until(
       () => {
         const now = get()
+        if (now.activePlate !== asked) throw new BridgeError('not_ready', `another plate was shown before ${name} finished slicing, so no slice was kept for it; show it and slice again`)
         if (now.projectGcode?.asking) throw new BridgeError('not_ready', 'the app asks whether to use the project\'s own printer G-code; answer the dialog, then slice again')
-        return now.slice.status === 'done' && !now.slice.stale ? now : now.slice.status === 'error' ? now : null
+        return !needsSlice(now) ? now : now.slice.status === 'error' ? now : null
       },
       timeoutMs,
       mark,
@@ -319,8 +324,9 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   function exportInfo(): unknown {
     const s = get()
     if (s.slice.status !== 'done') throw new BridgeError('not_ready', 'slice the plate first')
-    // The G-code on hand is from before the last change to the plate or its settings; it is not what the plate shows.
-    if (s.slice.stale) throw new BridgeError('refused', 'the plate changed after the last slice; slice it again, then export')
+    // The G-code on hand is from before the last change to the plate, its settings or what goes into its G-code (an
+    // object's name, a layer mark); it is not what the plate shows.
+    if (needsSlice(s)) throw new BridgeError('refused', 'the plate changed after the last slice; slice it again, then export')
     const unsafe = printBlock(s)
     if (unsafe) throw new BridgeError('refused', unsafe)
     return { id: s.slice.result.id, fileName: jobFileName(s, s.slice.result.fileName) }

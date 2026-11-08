@@ -13,6 +13,7 @@ import { bounds } from '../plate/transform'
 import { holdUpdates } from '../updates/hold'
 import { exportPlateGcode, sha256Hex } from '../calibration/gcode'
 import { printBlock } from '../plate/heimdall'
+import { RESUME_VOID } from '../plate/resume-tops'
 import { isExportOnly } from '../lib/hand-printers'
 import { get, set, toast, type AppState, type PlateEntry } from './store'
 import { appName } from '../edition'
@@ -69,14 +70,20 @@ function plateBoundsOf(st: AppState, bounds: (parts: PlateEntry['parts'], t: num
 }
 
 /**
+ * The toast when the plate's slice changed while its file uploaded: the file is on the printer, not started. With a
+ * resume plan that no longer matches the plate (`reason` RESUME_VOID), slicing again is refused, so it says what is.
+ */
+export const notStarted = (printer: string, file: string, reason?: string): string =>
+  reason === RESUME_VOID
+    ? `${printer} has ${file}, but it did not start: the resume plan no longer matches the plate. Don't start it from the printer. Plan it again, or choose Print everything again.`
+    : `${printer} has ${file}, but it did not start: the slice changed while it uploaded. Don't start it from the printer. Slice the plate again, then print.`
+
+/**
  * Prints the sliced plate on a printer through the Print sheet (packages/app/src/send/print-sheet.tsx). The sheet is
  * the approval: it shows the file, the printer, the preflight result and the choices, and its confirm button is the
  * person's click. The token is granted on that click and bound to the
  * exact upload and start parameters. Remote, mimir, queued and scheduled starts keep the approval card.
  */
-/** The toast when the plate's slice changed while its file uploaded: the file is on the printer, not started. */
-export const notStarted = (printer: string, file: string): string => `${printer} has ${file}, but it did not start: the slice changed while it uploaded. Don't start it from the printer. Slice the plate again, then print.`
-
 export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<void> {
   // Restart to update waits while a print is on its way (updates/updates.ts).
   const release = holdUpdates()
@@ -351,7 +358,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       // The upload is a wait too: a plan kept, cleared or voided, or another plate shown meanwhile, and it does not start.
       const afterUpload = start ? stillSendable() : null
       if (afterUpload) {
-        toast(notStarted(printer.name, file.name), 'error')
+        toast(notStarted(printer.name, file.name, afterUpload), 'error')
         return 'done'
       }
       if (start) {
