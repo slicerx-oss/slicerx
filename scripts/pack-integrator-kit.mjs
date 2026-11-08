@@ -5,8 +5,10 @@
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
 // (docs/integrators/credit-kit) and every setting's default (defaults.json) beside them. The optional STEP reader
 // (@slicerx/step-reader, OpenCASCADE in wasm with its license texts and source offer) is its own tarball, installed
-// only by apps that read STEP files. SHA256SUMS.txt lists every tarball and file the pack writes at the top. Use it
-// for a build that is not on npm yet:
+// only by apps that read STEP files. The self-contained MCP server (slicerx-mcp-standalone/, every dependency inlined, run
+// with plain node and no node_modules) sits beside them, unpacked and as slicerx-mcp-standalone.zip, for apps that ship
+// the server as files instead of installing the package. SHA256SUMS.txt lists every tarball and file the pack writes at
+// the top. Use it for a build that is not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
 //   npm install ~/slicerx-kit/slicerx-viewport.tgz ~/slicerx-kit/slicerx-embed.tgz ~/slicerx-kit/slicerx-mcp.tgz
 //   npm install ~/slicerx-kit/slicerx-step-reader.tgz     # only to read STEP files
@@ -154,7 +156,9 @@ export function writeKitFiles(dest) {
 export const OPTIONAL_PACKAGES = new Set(['@slicerx/step-reader'])
 
 // stable copies work on platforms where extracting symlinks needs extra privileges.
-export function writePackageManifest(dest, packages) {
+// `extra` are files the pack wrote in `dest` already (the self-contained server's zip), each `{ name, ...details }`; the
+// manifest lists them in `files` with their sha256, after the KIT_FILES.
+export function writePackageManifest(dest, packages, extra = []) {
   const entries = packages.map(({ name, version }) => {
     const stem = name.replace('@', '').replace('/', '-')
     const archive = `${stem}-${version}.tgz`
@@ -164,7 +168,8 @@ export function writePackageManifest(dest, packages) {
     const entry = { name, version, file, archive, sha256: createHash('sha256').update(bytes).digest('hex') }
     return OPTIONAL_PACKAGES.has(name) ? { ...entry, optional: true } : entry
   })
-  const manifest = { schemaVersion: 1, packages: entries, files: writeKitFiles(dest) }
+  const sha = (name) => createHash('sha256').update(readFileSync(join(dest, name))).digest('hex')
+  const manifest = { schemaVersion: 1, packages: entries, files: [...writeKitFiles(dest), ...extra.map((f) => ({ ...f, sha256: sha(f.name) }))] }
   writeFileSync(join(dest, 'kit-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   writeSums(dest, [...entries.flatMap((e) => [e.archive, e.file]), 'kit-manifest.json', ...manifest.files.map((f) => f.name)])
   return manifest
@@ -275,6 +280,45 @@ export function zipAssets(dest, version, seconds = sourceDate()) {
   return { file, entries }
 }
 
+/** The self-contained MCP server's folder in the kit, and the zip of it named `<STANDALONE>.zip`. */
+export const STANDALONE = 'slicerx-mcp-standalone'
+
+const STANDALONE_README = `SlicerX MCP server, self-contained build
+
+Every dependency is inlined, so it runs with plain Node 24 or later: no node_modules and no npm install.
+
+  node slicerx-mcp.mjs --printers off --allow-dir /absolute/path/to/models
+
+Ship this whole folder as it is and start slicerx-mcp.mjs. It loads slicerx-mcp-main.mjs, chunks/ and data/ from beside
+itself, so do not bundle it again.
+
+Reading STEP and IGES files (slicerx_step_read) needs the optional STEP reader, the kit's slicerx-step-reader.tgz.
+Unpack it and set SLICERX_STEP_READER_DIR to its package/dist folder. Without it the tool is refused with not_supported.
+
+Licenses: LICENSE-APACHE and NOTICE for the server, LICENSE-AGPL-profiles.txt and LICENSE-LGPL-cura-profiles.txt for
+the printer profiles it carries. The licenses of the inlined packages are at the end of slicerx-mcp-main.mjs.
+`
+
+/**
+ * Builds the self-contained MCP server (packages/mcp/scripts/build.mjs --standalone, without the STEP reader, which
+ * stays its own optional tarball) into `<dest>/slicerx-mcp-standalone/` with its licenses and a README, and zips that
+ * folder into `<dest>/slicerx-mcp-standalone.zip` (reproducible, as zipFolder writes it). Returns the manifest entry
+ * without its sha256: `{ name, version, folder, entry }`.
+ */
+export function writeStandalone(dest, seconds = sourceDate()) {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const mcp = join(root, 'packages', 'mcp')
+  const dir = join(dest, STANDALONE)
+  rmSync(dir, { recursive: true, force: true })
+  execFileSync(process.execPath, [join(mcp, 'scripts', 'build.mjs'), '--standalone', dir], { stdio: ['ignore', 'ignore', 'inherit'] })
+  for (const f of ['LICENSE-APACHE', 'NOTICE']) cpSync(join(mcp, f), join(dir, f))
+  writeFileSync(join(dir, 'README.txt'), STANDALONE_README)
+  const name = `${STANDALONE}.zip`
+  zipFolder(dir, join(dest, name), STANDALONE, seconds)
+  const version = JSON.parse(readFileSync(join(mcp, 'package.json'), 'utf8')).version
+  return { name, version, folder: STANDALONE, entry: `${STANDALONE}/slicerx-mcp.mjs` }
+}
+
 const KIT_FOLDERS = ['ui/viewport', 'embed', 'mcp', 'step-reader']
 
 export function kitPackages() {
@@ -314,12 +358,14 @@ function packPackages(dest) {
   for (const f of ['kit-manifest.json', 'SHA256SUMS.txt']) rmSync(join(dest, f), { force: true })
   for (const { name } of KIT_FILES) rmSync(join(dest, name), { force: true })
   for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp|step-reader)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
+  rmSync(join(dest, `${STANDALONE}.zip`), { force: true })
   const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   for (const p of packages) {
     // pack runs each package's prepack, which builds it.
     execFileSync(pnpm, ['--filter', p, 'pack', '--pack-destination', dest], { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' })
   }
-  const manifest = writePackageManifest(dest, metadata)
+  const standalone = writeStandalone(dest)
+  const manifest = writePackageManifest(dest, metadata, [standalone])
   const files = manifest.packages.filter((p) => !p.optional).map((p) => p.file)
   // the credit kit is for people, so it sits beside the tarballs rather than in node_modules
   const credit = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'integrators', 'credit-kit')
@@ -328,6 +374,7 @@ function packPackages(dest) {
   console.log(`credit kit: ${join(dest, 'credit-kit')}`)
   console.log(`npm install ${files.map((f) => join(dest, f)).join(' ')}`)
   for (const p of manifest.packages.filter((p) => p.optional)) console.log(`optional, to read STEP files: npm install ${join(dest, p.file)}`)
+  console.log(`self-contained MCP server, no install: node ${join(dest, standalone.entry)} (also ${join(dest, standalone.name)})`)
   const doc = toolsDocNote()
   if (doc) console.log(doc)
   for (const p of pendingChanges()) {
