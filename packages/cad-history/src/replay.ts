@@ -58,6 +58,9 @@ const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions:
 /** What a step that changed a painted part's triangles notes. */
 export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
 
+/** What a join or cut notes when the engine reports the part it left as not closed. */
+export const NOT_CLOSED = 'The part is not closed after this step: look where the shapes meet before it is printed.'
+
 /**
  * The part with a step's result mesh, its faces with it. Its paint goes: the triangles it named are not there any
  * more. `dropped` is told when there was paint, for the step's note.
@@ -321,9 +324,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'sketch.loft':
       case 'sketch.sweep': {
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
-        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean } }
+        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; watertight?: boolean } }
         if (!r.report.touches) throw new Broken('The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
+        // the step lands, and says so, when the engine reads the part it left as open
+        if (r.report.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
         break
       }
       case 'subtract': {
