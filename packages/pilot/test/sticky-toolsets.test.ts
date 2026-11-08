@@ -9,7 +9,7 @@ import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTranspo
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
-import { capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from '../src/toolsets'
+import { capTools, LOAD_TOOLS_TOOL, LOADABLE_TOOLSETS, TOOLSET_LABELS, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -336,6 +336,26 @@ describe('pilot.load_tools answers only what it does', () => {
     const { out, asked } = await ask({ queued: ['theme'] }, 'theme')
     expect(out.ok).not.toBe(false)
     expect(asked).toEqual([])
+  })
+
+  it('names each toolset in plain words in what the chat shows, never by its key', async () => {
+    const keys = /\b(?:cad|kb|local_ai|fleets|settings|theme|mesh|skills|cloud|printers)\b/
+    for (const toolset of LOADABLE_TOOLSETS) {
+      const label = TOOLSET_LABELS[toolset]
+      const t = loadToolsTool(report, { load: () => undefined, fits: () => true, loaded: new Set(), queued: () => new Set() })
+      expect(t.args?.({ toolset } as never)).toBe(label)
+      const answers = [
+        await ask({}, toolset),
+        await ask({ fits: false }, toolset),
+        await ask({ loaded: [toolset] }, toolset),
+        await ask({ queued: [toolset] }, toolset),
+      ]
+      for (const { out } of answers) {
+        expect(out.summary).toContain(label)
+        // a key may show only where it is also the plain word (calibration)
+        expect(out.summary.replace(label, '')).not.toMatch(keys)
+      }
+    }
   })
 
   it('loads a toolset that fits', async () => {

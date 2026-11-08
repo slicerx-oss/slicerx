@@ -224,6 +224,22 @@ export function localTurnTools<T extends SetTool>(surface: ToolSurface, tools: r
 /** The tool a capped cloud request adds so the model can load a toolset that was left out. */
 export const LOAD_TOOLS_TOOL = 'pilot.load_tools'
 
+/** Each toolset as a person reads it, for the words mimir's chat shows (the keys are for the model and the code). */
+export const TOOLSET_LABELS: Record<Exclude<Toolset, 'core'>, string> = {
+  cad: 'design',
+  settings: 'slicing and settings',
+  printers: 'printer',
+  project: 'project and plate',
+  kb: 'knowledge base',
+  mesh: 'mesh editing',
+  calibration: 'calibration',
+  fleets: 'fleet and schedule',
+  skills: 'skill',
+  theme: 'appearance',
+  cloud: 'cloud account',
+  local_ai: 'local model',
+}
+
 /** What each toolset holds, in the words pilot.load_tools uses. */
 export const TOOLSET_WORDS: Record<Exclude<Toolset, 'core'>, string> = {
   cad: 'the design tools: sketches, solids, holes, fillets, the timeline',
@@ -396,15 +412,15 @@ export function loadToolsTool(report: ToolCapReport, hooks: LoadHooks): PilotToo
     toolset: 'core',
     description: `Load a toolset that was left out of your tools to stay under the provider's tool limit. Its tools come whole with your next step; others may be left out to make room, never the ones you used last, and a toolset that cannot fit beside those is refused. Left out now: ${out.join(', ') || 'none'}. Toolsets: ${LOADABLE_TOOLSETS.map((s) => `${s}: ${TOOLSET_WORDS[s]}`).join('; ')}.`,
     input: z.object({ toolset: z.enum(LOADABLE_TOOLSETS) }),
-    args: (i) => i.toolset,
+    args: (i) => TOOLSET_LABELS[i.toolset],
     async run(i) {
-      if (!offered.has(i.toolset)) return { ok: false, summary: `This chat has no ${i.toolset} tools`, output: { loaded: null, toolset: i.toolset } }
-      if (report.toolsets.includes(i.toolset)) return { summary: `The ${i.toolset} tools are already loaded`, output: { loaded: i.toolset, already: true } }
-      if (hooks.queued().has(i.toolset)) return { summary: `The ${i.toolset} tools come with the next step`, output: { loaded: i.toolset, already: true } }
-      if (hooks.loaded.has(i.toolset)) return { ok: false, summary: `The ${i.toolset} tools were loaded once and still went only in part`, output: { loaded: null, toolset: i.toolset, reason: 'partial' } }
-      if (!hooks.fits(i.toolset)) return { ok: false, summary: `No room for the ${i.toolset} tools without leaving out tools you just used`, output: { loaded: null, toolset: i.toolset, reason: 'no_room' } }
+      if (!offered.has(i.toolset)) return { ok: false, summary: `This chat has no ${TOOLSET_LABELS[i.toolset]} tools`, output: { loaded: null, toolset: i.toolset } }
+      if (report.toolsets.includes(i.toolset)) return { summary: `The ${TOOLSET_LABELS[i.toolset]} tools are already loaded`, output: { loaded: i.toolset, already: true } }
+      if (hooks.queued().has(i.toolset)) return { summary: `The ${TOOLSET_LABELS[i.toolset]} tools come with the next step`, output: { loaded: i.toolset, already: true } }
+      if (hooks.loaded.has(i.toolset)) return { ok: false, summary: `The ${TOOLSET_LABELS[i.toolset]} tools were loaded once and still went only in part`, output: { loaded: null, toolset: i.toolset, reason: 'partial' } }
+      if (!hooks.fits(i.toolset)) return { ok: false, summary: `No room for the ${TOOLSET_LABELS[i.toolset]} tools without leaving out tools you just used`, output: { loaded: null, toolset: i.toolset, reason: 'no_room' } }
       hooks.load(i.toolset)
-      return { summary: `Loaded the ${i.toolset} tools for the next step`, output: { loaded: i.toolset, already: false } }
+      return { summary: `Loaded the ${TOOLSET_LABELS[i.toolset]} tools for the next step`, output: { loaded: i.toolset, already: false } }
     },
   }) as PilotTool<never>
 }
