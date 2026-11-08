@@ -99,7 +99,8 @@ const BUILD_PINS: Record<string, string[]> = {
 /** The rules a build tool's short local text must keep from its full text, word for word. */
 const TWIN_RULES: Record<string, string[]> = {
   'geom.boolean': ['removes', 'keeps what they share'],
-  'design.check': ['a step or more tagged with each planned feature'],
+  // the feature tags, and for a print-in-place plan its pieces and gaps and the fit check that must run first
+  'design.check': ['a step or more tagged with each planned feature', 'A plan with printInPlace also gets pieces', 'fit_check has run on the design as it is now'],
   'design.plan': ['kinds', 'count or angle'],
   'geom.chamfer': ["edge's own face", 'distance2_mm'],
   'geom.fillet': ['edge_pick'],
