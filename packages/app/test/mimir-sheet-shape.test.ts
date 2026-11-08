@@ -294,6 +294,35 @@ describe('rows placed around mimir\'s own origin', () => {
     expect(alignDims([length, width, hole], own, plate)).toEqual(out)
   })
 
+  // A sheet already in the part's frame, its solids drawn 5 mm short of the part's corner along x: only the row that
+  // misses the part moves. The hole lands on the part both before and after the 5 mm shift, and stays where it is.
+  describe('a sheet already in the part\'s frame', () => {
+    const own = shapeOfSolids([{ plane: 'xy', points: [[95, 100], [145, 100], [145, 140], [95, 140]], from: 0, to: 30 }])
+    // on the part as given; 5 mm along x puts its far end off the part
+    const length = row('length', 50, { a: [100, 100, 0], b: [150, 100, 0], off: [0, 0, -8] })
+    const width = row('width', 40, { a: [150, 100, 0], b: [150, 140, 0], off: [8, 0, 0] })
+    // off the part as given, on it after the shift
+    const height = row('height', 30, { a: [95, 100, 0], b: [95, 100, 30], off: [-8, 0, 0] })
+    // on the part both ways
+    const hole = row('hole', 3, { a: [120, 120, 30], b: [123, 120, 30], off: [0, 6, 0] })
+
+    it('moves only the row that misses the part, and leaves a hole that lands either way where it is', () => {
+      const out = alignDims([length, width, height, hole], own, shape)
+      expect(out[0]).toEqual(length)
+      expect(out[1]).toEqual(width)
+      expect(out[2]!.at).toEqual({ a: [100, 100, 0], b: [100, 100, 30], off: [-8, 0, 0] })
+      expect(out[3]).toEqual(hole)
+    })
+
+    // one row lands only before the shift and one only after: a tie keeps the part's frame
+    it('keeps the part\'s frame on a tie', () => {
+      const out = alignDims([length, height, hole], own, shape)
+      expect(out[0]).toEqual(length)
+      expect(out[1]!.at).toEqual({ a: [100, 100, 0], b: [100, 100, 30], off: [-8, 0, 0] })
+      expect(out[2]).toEqual(hole)
+    })
+  })
+
   it('leaves rows inside the part (a hole and its spacing) alone, not snapped to its corner', () => {
     const hole = row('hole', 3, { a: [10, 10, 30], b: [13, 10, 30], off: [0, 6, 0] })
     const pitch = row('pitch', 30, { a: [10, 10, 30], b: [40, 10, 30], off: [0, -6, 0] })
