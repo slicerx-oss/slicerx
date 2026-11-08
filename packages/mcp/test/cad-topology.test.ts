@@ -214,3 +214,24 @@ it.each([false, true])('refuses invalid or removed scoped holes before committin
   if (removed) expect(() => designs.revision(d.id)).toThrow('The body was removed.')
   else expect(designs.revision(d.id)).toBe(revision)
 })
+
+it.each(['slicerx_geom_push_pull', 'slicerx_geom_hole'])('%s refuses a stale face with the id of a design given by its name', async (tool) => {
+  const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
+  const outDir = mkdtempSync(join(tmpdir(), 'stale-by-name-')); directories.push(outDir)
+  const engine = vi.fn(async (op: string) => {
+    if (op === 'hole.find') return { entry: [0, 0, 1], axis: [0, 0, 1], diameterMm: 4, depthMm: 1, through: true }
+    if (op === 'measure.feature') return { feature: { kind: 'plane', normal: [0, 0, 1], offset: 0 } }
+    return { mesh }
+  })
+  const designs = new Designs({ engine, policy: { outDir, allowDirs: undefined, allowUrls: false } })
+  const d = await designs.create('Corner Plate', [mesh]), revision = designs.revision(d.id)
+  await designs.add(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh] })
+  const unused = async (): Promise<never> => { throw new Error('must not read a file') }
+  const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
+  const face = { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }
+  const result = await h.call(tool, { design: '  corner   plate ', face, ...(tool === 'slicerx_geom_hole' ? { diameter_mm: 6 } : { distance_mm: 2 }) })
+  expect(result.isError, text(result)).toBe(true)
+  const details = (result.structuredContent as { error: { details: { bodyId?: string; operationResult: { bodyId: string } } } }).error.details
+  expect(details.operationResult.bodyId).toBe(d.id)
+  if (tool === 'slicerx_geom_hole') expect(details.bodyId).toBe(d.id)
+})
