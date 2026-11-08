@@ -14,7 +14,7 @@ const MAX_PNG_SIDE: usize = 4 * MAX_SIDE;
 /// A JPEG past this is refused before it decodes.
 // a JPEG decodes whole before it is reduced: 8192 px covers 24 and 48 MP photos
 const MAX_JPEG_SIDE: usize = 2 * MAX_SIDE;
-/// The most pixels a file may have.
+/// The most pixels a PNG may have, for trace and textures alike.
 const MAX_PIXELS: usize = 100_000_000;
 /// The largest file read.
 pub const MAX_BYTES: usize = 30 << 20;
@@ -27,19 +27,17 @@ const MAX_DECODE_BYTES: usize = 256 << 20;
 pub struct Read {
     /// Turned the way EXIF says it is shown, or left as the file stores it.
     pub upright: bool,
-    /// The longest side of a JPEG; one past [`MAX_SIDE`] decodes whole and is reduced.
+    /// The longest side of a JPEG that is read: one over [`MAX_SIDE`] and within this decodes whole and is then
+    /// reduced, and one over this is refused as too large.
     pub jpeg_side: usize,
-    /// The most pixels a PNG may have.
-    pub png_pixels: usize,
     /// How a reduced image rounds back to sRGB.
     pub round: Round,
 }
 
-/// Trace: upright, a JPEG up to 8192 px a side, a PNG up to 100 megapixels.
+/// Trace: upright, and a JPEG up to 8192 px a side.
 pub const TRACE: Read = Read {
     upright: true,
     jpeg_side: MAX_JPEG_SIDE,
-    png_pixels: MAX_PIXELS,
     round: Round::Table,
 };
 
@@ -47,7 +45,6 @@ pub const TRACE: Read = Read {
 pub const TEXTURE: Read = Read {
     upright: false,
     jpeg_side: MAX_SIDE,
-    png_pixels: usize::MAX,
     round: Round::Curve,
 };
 
@@ -271,7 +268,7 @@ fn decode_png(bytes: &[u8], how: Read) -> std::result::Result<Decoded, Unusable>
     if w == 0 || h == 0 {
         return Err(Unusable::Damaged);
     }
-    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE || w * h > how.png_pixels {
+    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE || w * h > MAX_PIXELS {
         return Err(Unusable::TooLarge);
     }
     let (color, _) = reader.output_color_type();
@@ -850,6 +847,8 @@ pub(crate) mod tests {
         let crc = crc32(&file[12..29]);
         file[29..33].copy_from_slice(&crc.to_be_bytes());
         assert_eq!(decode(&file).err(), Some(Unusable::TooLarge));
+        // textures too: a flat PNG that size is a small file but seconds of rows
+        assert_eq!(read(&file, TEXTURE).err(), Some(Unusable::TooLarge));
     }
 
     #[test]
@@ -1440,5 +1439,85 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!((r.w, r.h, r.px[0]), (4000, 3000, [128, 128, 128, 255]));
+    }
+
+    /// The linear table of texture levels as they always made it, kept here to pin [`Round::Curve`].
+    fn texture_lin() -> [f32; 256] {
+        let mut t = [0f32; 256];
+        for (i, v) in t.iter_mut().enumerate() {
+            let c = i as f32 / 255.0;
+            #[allow(clippy::cast_possible_truncation)]
+            let lin = if c <= 0.040_45 {
+                c / 12.92
+            } else {
+                ((f64::from(c) + 0.055) / 1.055).m_powf(2.4) as f32
+            };
+            *v = lin;
+        }
+        t
+    }
+
+    /// Linear light back to sRGB as texture levels always did it.
+    fn texture_srgb(v: f32) -> u8 {
+        let v = f64::from(v.clamp(0.0, 1.0));
+        let s = if v <= 0.003_130_8 {
+            v * 12.92
+        } else {
+            1.055 * v.m_powf(1.0 / 2.4) - 0.055
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let out = (s * 255.0).round().clamp(0.0, 255.0) as u8;
+        out
+    }
+
+    #[test]
+    fn texture_rounding_stays_the_curve_textures_always_used() {
+        let (curve, table) = (Light::new(Round::Curve), Light::new(Round::Table));
+        // to the bit, as the old table had them
+        let bits = |t: &[f32; 256]| t.map(f32::to_bits);
+        assert_eq!(bits(&curve.lin), bits(&texture_lin()));
+        // the two tables differ by an ulp here and there, which is why textures keep their own
+        assert_ne!(bits(&curve.lin), bits(&table.lin));
+        // every step point and its neighbors, the dark branch below 0.0031308 included, then a sweep
+        let mut vs: Vec<f32> = table
+            .up
+            .iter()
+            .flat_map(|&t| {
+                [
+                    f32::from_bits(t.to_bits() - 1),
+                    t,
+                    f32::from_bits(t.to_bits() + 1),
+                ]
+            })
+            .collect();
+        vs.extend((0..=20_000).map(|i| i as f32 / 20_000.0));
+        vs.extend([-1.0, 0.0, 0.003_130_8, 0.001, 1.5]);
+        assert!(vs.iter().filter(|&&v| v > 0.0 && v < 0.003_130_8).count() > 60);
+        for v in vs {
+            assert_eq!(curve.srgb(v), texture_srgb(v), "{v}");
+        }
+        let mut split = 0;
+        for &t in &table.up {
+            split += usize::from(curve.srgb(t) != table.srgb(t));
+        }
+        assert!(split > 0);
+    }
+
+    #[test]
+    fn a_reduced_texture_png_keeps_the_texture_rounding() {
+        // pairs of dark grays whose mean sits on a step: 0 and 7 round to 3 for textures and 4 for trace, 6 and 9
+        // to 8 and 7
+        let w = MAX_SIDE + 4;
+        let gray: Vec<u8> = (0..w).map(|x| [0, 7, 6, 9][x % 4]).collect();
+        let file = png(w, 1, 1, &gray, None);
+        let tex = read(&file, TEXTURE).unwrap();
+        let trace = decode(&file).unwrap();
+        assert_eq!((tex.w, tex.h, trace.w), (w / 2, 1, w / 2));
+        assert_eq!(
+            &tex.px[..4],
+            &[[3, 3, 3, 255], [8, 8, 8, 255], [3, 3, 3, 255], [8, 8, 8, 255]]
+        );
+        assert_eq!(&trace.px[..2], &[[4, 4, 4, 255], [7, 7, 7, 255]]);
+        assert!(tex.px.chunks(2).all(|p| p == [[3, 3, 3, 255], [8, 8, 8, 255]]));
     }
 }
