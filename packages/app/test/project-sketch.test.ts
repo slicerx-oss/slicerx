@@ -4,16 +4,19 @@
 // Projecting into a sketch (cad-history project.ts, cad/project-sketch.ts): the curves sit in the sketch as tagged
 // loops, a projection follows its body when that body changes and the bodies drawn on the sketch replay with it, in
 // the same undo step; a source that is gone keeps its curves and says why; projections save and open with the
-// project; and an MCP client projects, switches and removes through the MCP tool on the app's host, reading back each time.
+// project; an MCP client projects, switches and removes through the MCP tool on the app's host, reading back each time;
+// and an Extrude of a new sketch with a projection leaves no sketch behind when it fails and undoes in one step when
+// it lands.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { BODY_GONE, featureParams, followProjections, historyOf, MAX_PROJECTION, nextProjectionId, TOO_MANY_PROJECTIONS, projectRequest, withHistory, parseTimeline, projectedOf, timelineFiles, withBodyIds, withProjection, withoutProjection, type FaceFrame, type FeatureItem, type HistoryMesh, type ProjectSource, type SketchItem, type SketchLoop, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
 import { addsTo, bodyOf, changeProjection, faceSource, followBodies, projectNow } from '../src/cad/project-sketch'
-import { finishSketch, sketchById, updateSketch } from '../src/cad/sketches'
+import { finishSketch, sketchById, solidOnNewSketch, updateSketch } from '../src/cad/sketches'
+import { applyExtrude, applyRevolve, type ExtrudeInput } from '../src/cad/cad-ops'
 import { setGeomProvider } from '../src/geom/client'
-import { createHistory } from '../src/plate/history'
+import { createHistory, history } from '../src/plate/history'
 import { stepWords } from '../src/workspaces/mimir/step-words'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { startTimeline } from '../src/plate/timeline'
@@ -36,6 +39,8 @@ const widest = (m: { positions: ArrayLike<number> }) => {
 const calls: string[] = []
 /** While set, sketch.project waits for it: a follow still running when another edit lands. */
 let hold: Promise<void> | null = null
+/** The next shape.extrude refuses with this message, or misses the body it joins; used once. */
+let nextExtrude: { refuse: string } | 'miss' | null = null
 const engine = {
   async call<T>(op: string, request: unknown): Promise<T> {
     calls.push(op)
@@ -48,6 +53,10 @@ const engine = {
       return { loops: [square(w)] } as T
     }
     if (op === 'shape.extrude') {
+      const next = nextExtrude
+      nextExtrude = null
+      if (next && next !== 'miss') throw new Error(next.refuse)
+      if (next === 'miss') return { mesh: { positions: [], indices: [] }, frame: 'target', report: { touches: false, volumeChangeMm3: 0 } } as T
       const loops = ((r['shape'] as { loops: SketchLoop[] }).loops).filter((l) => !l.construction)
       if (!loops.length) throw new Error('shape.extrude: shape: the sketch has no closed profile')
       const w = Math.max(0, ...loops.flatMap((l) => ('segments' in l ? l.segments.map((s) => ('to' in s && s.to ? s.to[0] : 0)) : [])))
@@ -65,6 +74,7 @@ let stop: (() => void) | null = null
 beforeEach(() => {
   calls.length = 0
   hold = null
+  nextExtrude = null
   setGeomProvider(engine)
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, timeline: { bodies: [], items: [], marker: 0 }, rollback: null, objectTool: null, bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
   stop = startTimeline()
@@ -678,5 +688,49 @@ describe('a body replayed onto its sketch', () => {
     const nk = t.items.find((i) => i.kind === 'sketch') as SketchItem
     expect(nk.loops).toEqual([square(2), square(9)])
     expect(featureOn(t, 'c').projected).toBeUndefined()
+  })
+})
+
+describe('a solid from a new sketch with a projection', () => {
+  // the panel's Extrude or Revolve of a sketch that is not in the timeline yet: its own square and a projected face
+  const drawn = () => ({ frame: BED, loops: [square(4), { ...square(10), projected: 'p1' }], projections: [{ id: 'p1', source: faceOf('b'), mode: 'real' as const }], nextProjection: 1 })
+  const input = (loops: SketchLoop[], over: Partial<ExtrudeInput['spec']> = {}, onto?: string): ExtrudeInput => ({ frame: BED, shape: { type: 'sketch', loops }, placement: {}, spec: { distanceMm: 3, operation: 'new', ...over }, name: 'Sketch body', ...(onto ? { target: { objectId: onto, partIndex: 0 } } : {}) })
+  const kinds = () => get().timeline.items.map((i) => i.kind)
+  const undo = history()
+
+  it('leaves no sketch behind when the engine refuses, and the retry makes one sketch the solid names', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    nextExtrude = { refuse: 'shape.extrude: the extrusion does not make one body' }
+    await expect(solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops)))).rejects.toThrow(/one body/)
+    expect(get().timeline.items).toEqual([])
+    expect(undo.state().undo).toBe(0)
+    await solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops)))
+    const t = get().timeline
+    expect(kinds()).toEqual(['sketch', 'feature'])
+    const k = t.items[0] as SketchItem
+    expect(k).toMatchObject({ name: 'Sketch 1', projections: [{ id: 'p1', mode: 'real' }] })
+    expect(t.items[1]).toMatchObject({ sketch: k.id, projected: ['p1'] })
+    // one undo takes the solid and its sketch together, as a plain extrude and its sketch go
+    expect(undo.state().undo).toBe(1)
+    undo.undo()
+    expect(get().timeline.items).toEqual([])
+    expect(get().plate.map((e) => e.id)).toEqual(['b'])
+  })
+
+  it('takes the sketch back out when a revolve is refused or a join misses the body', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    // the stand-in engine has no revolve, so it refuses as a revolve whose axis crosses the profile does
+    const axis = { point: [2, 0] as [number, number], direction: [0, 1] as [number, number] }
+    await expect(solidOnNewSketch(s, () => applyRevolve(loader, { frame: BED, loops: s.loops, axis, angleDeg: 360, operation: 'new', name: 'Revolved body' }))).rejects.toThrow(/sketch.revolve/)
+    expect(kinds()).toEqual([])
+    nextExtrude = 'miss'
+    const r = await solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops, { operation: 'join' }, 'b')))
+    expect(r.warn).toBe(true)
+    expect(kinds()).toEqual([])
+    expect(undo.state().undo).toBe(0)
   })
 })

@@ -68,6 +68,19 @@ export function inStep<T>(token: object, fn: () => T): T {
 }
 
 /**
+ * Opens an undo step that stays open across awaits until the returned close runs: an action whose edits come on both
+ * sides of an engine call (a new sketch, then the solid that names it) undoes as one step.
+ */
+export function openStep(): () => void {
+  const token = {}
+  const was = step
+  step = token
+  return () => {
+    if (step === token) step = was
+  }
+}
+
+/**
  * Runs edits as part of the last undo step: what the app does after an edit because of it (a projection following
  * the body it came from) undoes with that edit.
  */
