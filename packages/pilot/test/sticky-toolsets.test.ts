@@ -9,7 +9,7 @@ import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTranspo
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
-import { capTools, LOAD_TOOLS_TOOL, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, type StickyToolsets } from '../src/toolsets'
+import { capTools, LOAD_TOOLS_TOOL, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -95,6 +95,17 @@ function setup(kind: Kind, steps: Step[] = [], tools = manyTools()) {
 }
 
 const state = (over: Partial<StickyToolsets> = {}): StickyToolsets => ({ ...stickyToolsets(), ...over })
+
+describe('a request to print needs the slicing tools on a cloud model', () => {
+  for (const ask of ['Print it on Bay 2 in green PLA', 'print this on my Bay 6', 'Send it anyway', 'Want me to slice it and send it to Printer 3?'])
+    it(ask, () => {
+      expect([...turnNeeds(ask, { sliceToPrint: true })]).toEqual(expect.arrayContaining(['printers', 'settings']))
+      // a local model's turn sets pick its own slicing tools: its needs are what they were
+      expect(turnNeeds(ask).has('settings')).toBe(/slice/i.test(ask))
+    })
+  for (const ask of ["How's the print on printer 3 going?", 'Pause the printer', 'Is my printer online?'])
+    it(`not "${ask}"`, () => expect(turnNeeds(ask, { sliceToPrint: true }).has('settings')).toBe(false))
+})
 
 describe('stickyCapTools', () => {
   const tools = manyTools()
