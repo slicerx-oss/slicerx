@@ -53,8 +53,12 @@ thread_local! {
     static SPENT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// the solid through the robust engine, cut by a box around it; none unless that comes out clean
-fn cleaned(s: &Solid, opts: BooleanOptions, work: &Work) -> Option<Solid> {
+/// what the end cleanup may hand the kernel, per triangle of the body it cleans
+const CLEAN_WORK_PER_TRI: u64 = 40;
+
+/// the solid through the robust engine, cut by a box around it, on a budget of its own; none unless that comes out clean
+fn cleaned(s: &Solid, opts: BooleanOptions) -> Option<Solid> {
+    let work = Work::new(CLEAN_WORK_PER_TRI * (s.m.num_tri() as u64 + 12));
     let b = s.m.bounding_box();
     let around = crate::build::box_mesh(
         [b.min.x - 1.0, b.min.y - 1.0, b.min.z - 1.0],
@@ -65,7 +69,13 @@ fn cleaned(s: &Solid, opts: BooleanOptions, work: &Work) -> Option<Solid> {
         ..opts
     };
     let (r, _) = s
-        .apply(&Solid::new(&around).ok()?, OpType::Intersect, robust, true, work)
+        .apply(
+            &Solid::new(&around).ok()?,
+            OpType::Intersect,
+            robust,
+            true,
+            Some(&work),
+        )
         .ok()?;
     (!r.self_intersects()).then_some(r)
 }
@@ -260,12 +270,11 @@ impl Solid {
         op: OpType,
         opts: BooleanOptions,
         unclean: bool,
-        work: &Work,
+        work: Option<&Work>,
     ) -> Result<(Self, bool)> {
         let robust = match opts.engine {
             Engine::Robust => true,
             Engine::Exact => false,
-            // by the inputs: exact slivers read as self-intersections and the robust engine stalls on them
             Engine::Auto => opts.keep_inverted || unclean,
         };
         if !robust && (self.soup || other.soup) {
@@ -284,24 +293,29 @@ impl Solid {
         } else {
             WindingRule::Positive
         };
-        let size = (self.m.num_tri() + other.m.num_tri()) as u64;
-        if !work.add(size) {
-            return Err(too_long());
-        }
-        let counted = work.clone();
-        let progress = ProgressReporter::new(move |_, at| {
-            if at.is_some() {
-                counted.add(size / 100 + 1);
+        let m = if let Some(work) = work {
+            let size = (self.m.num_tri() + other.m.num_tri()) as u64;
+            if !work.add(size) {
+                return Err(too_long());
             }
-        });
-        let m = self.m.boolean_with_engine_rule_and_progress(
-            &other.m,
-            op,
-            engine,
-            rule,
-            Some(&work.token),
-            Some(&progress),
-        );
+            let counted = work.clone();
+            let progress = ProgressReporter::new(move |_, at| {
+                if at.is_some() {
+                    counted.add(size / 100 + 1);
+                }
+            });
+            self.m.boolean_with_engine_rule_and_progress(
+                &other.m,
+                op,
+                engine,
+                rule,
+                Some(&work.token),
+                Some(&progress),
+            )
+        } else {
+            self.m
+                .boolean_with_engine_rule_and_progress(&other.m, op, engine, rule, None, None)
+        };
         check(&m)?;
         let tables = self.tables.iter().chain(&other.tables).cloned().collect();
         Ok((
@@ -453,9 +467,22 @@ pub fn boolean_solids(
     op: BoolOp,
     opts: &BooleanOptions,
 ) -> Result<(TriMesh, BooleanReport)> {
-    boolean_within(a, b, op, *opts, WORK_BUDGET)
+    folded(a, b, op, *opts, None)
 }
 
+/// a merged array's join: the engine picked by the inputs, a work budget, and one robust pass for crossing slivers
+pub(crate) fn boolean_array(
+    a: &[TriMesh],
+    b: &[TriMesh],
+    op: BoolOp,
+    opts: BooleanOptions,
+) -> Result<(TriMesh, BooleanReport)> {
+    let sa = a.iter().map(Solid::new).collect::<Result<Vec<_>>>()?;
+    let sb = b.iter().map(Solid::new).collect::<Result<Vec<_>>>()?;
+    folded(&sa, &sb, op, opts, Some(WORK_BUDGET))
+}
+
+#[cfg(test)]
 pub(crate) fn boolean_within(
     a: &[Solid],
     b: &[Solid],
@@ -463,7 +490,19 @@ pub(crate) fn boolean_within(
     opts: BooleanOptions,
     budget: u64,
 ) -> Result<(TriMesh, BooleanReport)> {
-    let work = Work::new(budget);
+    folded(a, b, op, opts, Some(budget))
+}
+
+/// a join step by step; with a budget it is an array's join, without one every step judges its running result
+fn folded(
+    a: &[Solid],
+    b: &[Solid],
+    op: BoolOp,
+    opts: BooleanOptions,
+    budget: Option<u64>,
+) -> Result<(TriMesh, BooleanReport)> {
+    let work = budget.map(Work::new);
+    let work = work.as_ref();
     let flags: Vec<bool> = a.iter().chain(b).map(Solid::unclean).collect();
     let unclean = flags.iter().filter(|&&u| u).count();
     let (fa, fb) = flags.split_at(a.len());
@@ -476,8 +515,13 @@ pub(crate) fn boolean_within(
         };
         let mut acc = first.clone();
         for (s, u) in it {
-            dirty |= u;
-            let (r, used) = acc.apply(s, op, opts, dirty, &work)?;
+            // an array judges by its inputs, since exact slivers read as self-intersections; any other join as before
+            dirty = if work.is_some() {
+                dirty | u
+            } else {
+                acc.unclean() || u
+            };
+            let (r, used) = acc.apply(s, op, opts, dirty, work)?;
             robust |= used;
             ended_exact = !used;
             // a robust step's result is clean
@@ -495,7 +539,12 @@ pub(crate) fn boolean_within(
             let cut = fold(b.iter().zip(fb.iter().copied()).collect(), OpType::Add)?;
             match (base, cut) {
                 (Some((x, ux)), Some((y, uy))) => {
-                    let (r, used) = x.apply(&y, OpType::Subtract, opts, ux || uy, &work)?;
+                    let unclean = if work.is_some() {
+                        ux || uy
+                    } else {
+                        x.unclean() || y.unclean()
+                    };
+                    let (r, used) = x.apply(&y, OpType::Subtract, opts, unclean, work)?;
                     robust |= used;
                     ended_exact = !used;
                     Some((r, false))
@@ -507,17 +556,18 @@ pub(crate) fn boolean_within(
     let mut result = result.map(|(s, _)| s);
     // one look at the end of a longer exact fold, not one a step: crossing slivers get one robust pass
     if opts.engine == Engine::Auto
+        && work.is_some()
         && ended_exact
         && a.len() + b.len() >= 3
         && let Some(s) = &result
         && s.self_intersects()
-        && let Some(clean) = cleaned(s, opts, &work)
+        && let Some(clean) = cleaned(s, opts)
     {
         result = Some(clean);
         robust = true;
     }
     #[cfg(test)]
-    SPENT.set(work.done.load(Ordering::Relaxed));
+    SPENT.set(work.map_or(0, |w| w.done.load(Ordering::Relaxed)));
     let Some(result) = result else {
         return Err(Error::invalid("meshes", "needs at least one mesh"));
     };
@@ -843,7 +893,7 @@ mod tests {
         let a = build::uv_sphere([0.0; 3], 20.0, 64, 128);
         let b = build::uv_sphere([15.0, 0.0, 0.0], 20.0, 64, 128);
         let t = build::torus([0.0, 0.0, 0.0], 25.0, 6.0, 128, 48);
-        let (_, r) = boolean(&[a, b, t], &[], BoolOp::Union, &o).unwrap();
+        let (_, r) = boolean_array(&[a, b, t], &[], BoolOp::Union, o).unwrap();
         let spent = SPENT.get();
         assert!(r.watertight, "{r:?}");
         assert!(spent < WORK_BUDGET / 20, "{spent}");
@@ -856,5 +906,27 @@ mod tests {
         let u = tidy(u, &mut r);
         assert!(!Solid::new(&u).unwrap().self_intersects());
         assert!(storage_mesh(&u).is_ok());
+    }
+
+    #[test]
+    fn a_join_outside_an_array_judges_its_running_result_as_before() {
+        // 7 turned 8 sided cylinders cross themselves once joined, so the next step goes robust, with no work budget
+        let m = build::cylinder(&crate::vec3::Frame::WORLD, 9.5, 0.0, 10.0, 8);
+        let spec = crate::array::ArraySpec::Circular {
+            count: 7,
+            center: [0.0; 3],
+            axis: None,
+            angle_deg: None,
+            rotate_copies: None,
+        };
+        let mut parts: Vec<TriMesh> = crate::array::transforms(&spec)
+            .unwrap()
+            .iter()
+            .map(|t| crate::xform::transformed(&m, t))
+            .collect();
+        parts.push(build::box_mesh([30.0, 30.0, 0.0], [32.0, 32.0, 2.0]));
+        let (_, r) = boolean(&parts, &[], BoolOp::Union, &BooleanOptions::default()).unwrap();
+        assert!(r.unclean_inputs == 0 && r.engine == "robust", "{r:?}");
+        assert_eq!(SPENT.get(), 0);
     }
 }
