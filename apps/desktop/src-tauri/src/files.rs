@@ -422,7 +422,8 @@ mod tests {
     fn a_junction_out_of_the_folder_is_not_followed() {
         let (root, models) = folder("junction");
         let obj = models.join("cube.obj");
-        let ok = std::process::Command::new("cmd")
+        let mut mklink = std::process::Command::new("cmd");
+        let ok = crate::launch::no_window(&mut mklink)
             .args(["/C", "mklink", "/J"])
             .arg(models.join("maps"))
             .arg(root.join("outside"))
