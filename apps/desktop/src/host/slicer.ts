@@ -109,16 +109,19 @@ function nativeRequest(req: SliceRequest, options: Record<string, unknown> = {})
   return JSON.stringify({ plate: { ...req.plate, objects: req.plate.objects.map((o) => ({ ...o, mesh: Number(o.mesh), ...(o.volumes ? { volumes: o.volumes.map((v) => ({ ...v, mesh: Number(v.mesh) })) } : {}) })) }, config: req.config, options: { ...options, ...(req.options ?? {}) } })
 }
 
+/** How the shell answers a check a newer check or an arrange stopped: no answer, not a failed check. */
+const STOPPED_CHECK = /^plate check (skipped|canceled):/
+
 /**
- * heimdall's plate check on the blocking pool (the check_plate command). Each check is numbered, so the shell skips one
- * still waiting when a newer one comes; an abort lets the answer go.
+ * heimdall's plate check on the blocking pool (the check_plate command). Each check is numbered, so the shell stops one
+ * a newer check or an arrange overtakes, waiting or running; that check, like an aborted one, throws an AbortError.
  */
 async function checkPlate(req: SliceRequest, opts?: { signal?: AbortSignal }): Promise<PlateCheck> {
   const signal = opts?.signal
   const canceled = () => new DOMException('Plate check canceled', 'AbortError')
   if (signal?.aborted) throw canceled()
   const raw = await invoke('check_plate', { request: nativeRequest(req), job: nextCheck++ }).catch((e: unknown) => {
-    if (signal?.aborted) throw canceled()
+    if (signal?.aborted || (typeof e === 'string' && STOPPED_CHECK.test(e))) throw canceled()
     throw e
   })
   if (signal?.aborted) throw canceled()

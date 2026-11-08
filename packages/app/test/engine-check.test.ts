@@ -50,8 +50,8 @@ const CLEAR = answer()
 
 /** A host whose plate check answers when the test says, recording each request and its signal. */
 function host() {
-  const asked: { req: SliceRequest; signal: AbortSignal | undefined; answer: (r: PlateCheck) => void }[] = []
-  const checkPlate = vi.fn((req: SliceRequest, opts?: { signal?: AbortSignal }) => new Promise<PlateCheck>((resolve) => asked.push({ req, signal: opts?.signal, answer: resolve })))
+  const asked: { req: SliceRequest; signal: AbortSignal | undefined; answer: (r: PlateCheck) => void; fail: (e: unknown) => void }[] = []
+  const checkPlate = vi.fn((req: SliceRequest, opts?: { signal?: AbortSignal }) => new Promise<PlateCheck>((resolve, reject) => asked.push({ req, signal: opts?.signal, answer: resolve, fail: reject })))
   const h = { kind: 'desktop', capabilities: { threads: 1 }, slicer: { loadModel: async () => ({}), loadParts: async () => ({}), checkPlate } } as unknown as Host
   return { h, asked, checkPlate }
 }
@@ -144,6 +144,22 @@ describe('when the plate check runs', () => {
     expect(engineVerdict(get())).toBeNull()
     asked[1]!.answer(CLEAR)
     await vi.waitFor(() => expect(engineVerdict(get())).toBe(CLEAR))
+  })
+
+  it('lets a check the host stopped go without calling it failed, and still marks a real failure', async () => {
+    const { h, asked } = host()
+    stop = startEngineCheck(h)
+    await settle(CHECK_DELAY_MS + 10)
+    await vi.waitFor(() => expect(asked).toHaveLength(1))
+    // A newer check or an arrange took over in the host: no answer, and no error either.
+    asked[0]!.fail(new DOMException('Plate check canceled', 'AbortError'))
+    await settle(1)
+    expect(get().plateCheck.status).toBe('running')
+    set({ plate: [entry('a', 'Cube A', 100), entry('b', 'Cube B', 151)] })
+    await settle(CHECK_DELAY_MS + 10)
+    await vi.waitFor(() => expect(asked).toHaveLength(2))
+    asked[1]!.fail(new Error('unknown mesh 9'))
+    await vi.waitFor(() => expect(get().plateCheck.status).toBe('error'))
   })
 
   it('says it is checking only once a run takes a moment', async () => {
