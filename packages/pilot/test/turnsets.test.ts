@@ -87,8 +87,17 @@ describe('the set a request picks', () => {
     ['A hollow box with a hole in the middle', undefined, false, 'build'],
     ['I need a box with a pattern of vent holes in the lid', undefined, false, 'build'],
     ['Make a box with a pattern of vent holes in the lid', undefined, false, 'build'],
-    // with no design known, a shaping of "it" or of a part the request names as there ("the lid") still shapes
-    ...['Make it hollow', 'Make this hollow', 'Make the lid hollow', 'Make the lid split in half', 'Engrave SX on the lid', 'Add a pattern of holes to the lid', 'Make a pattern of four holes on it', 'Make a pattern of six vent holes in the lid', 'Make a mirrored copy of the bracket', 'Make a cut out in the lid'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', false, 'shape']),
+    // with no body on the plate there is nothing to shape, so a shaping of "it" or of "the lid" builds; with a design it shapes
+    ...['Make it hollow', 'Make this hollow', 'Make the lid hollow', 'Make the lid split in half', 'Engrave SX on the lid', 'Add a pattern of holes to the lid', 'Make a pattern of four holes on it', 'Make a pattern of six vent holes in the lid', 'Make a mirrored copy of the bracket', 'Make a cut out in the lid', 'Mirror it', 'Hollow it out'].flatMap((m): [string, TurnSet | undefined, boolean, TurnSet][] => [
+      [m, 'build', false, 'build'],
+      [m, 'shape', false, 'build'],
+      [m, 'build', true, 'shape'],
+    ]),
+    // a new part that names a place on it ("on the lid", "on the front") builds when there is no design, however it opens
+    ...['Hey, can you make a hollow box with SX engraved on the lid', 'Give me a box with my name engraved on the lid', 'Design hooks with my name engraved on the front', 'Make the case for my Raspberry Pi with a cut-out'].flatMap((m): [string, TurnSet | undefined, boolean, TurnSet][] => [
+      [m, undefined, false, 'build'],
+      [m, 'shape', false, 'build'],
+    ]),
     // a shaping with no part named builds when there is no design, and shapes the design when there is one
     [PROBE, 'build', false, 'build'],
     [PROBE, 'build', true, 'shape'],
@@ -108,9 +117,11 @@ describe('the set a request picks', () => {
     ['Make a copy of the hook on the other side', 'build', true, 'shape'],
     ['Make a cut out in the lid', 'build', true, 'shape'],
     ['Make a cutout on the front for the USB port', 'build', true, 'shape'],
-    // a shaping of a part the request names ("the bracket") is not a new part, with or without a design in the chat
-    ['Mirror the bracket', undefined, false, 'shape'],
-    ['Split the case in half', undefined, false, 'shape'],
+    // a shaping of a part the request names ("the bracket") shapes the design there, and builds when there is none
+    ['Mirror the bracket', 'build', true, 'shape'],
+    ['Split the case in half', 'build', true, 'shape'],
+    ['Mirror the bracket', undefined, false, 'build'],
+    ['Split the case in half', undefined, false, 'build'],
     ['Make the base thicker', 'build', true, 'edit'],
     ['Undo that step', 'shape', true, 'edit'],
     ['What layer height and infill should I print the bracket with?', 'build', true, 'app'],
