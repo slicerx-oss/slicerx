@@ -20,6 +20,7 @@ import { geom } from '../../geom/client'
 import { useHost } from '../../host'
 import { guardedPrinters } from '../../plate/guard'
 import { sendLedger } from '../../plate/send-ledger'
+import { needsSlice } from '../../plate/resume-tops'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { chatNotesGo, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
@@ -165,8 +166,9 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
             if (s.status !== 'done') return { status: s.status }
             // The slice on screen is not of the plate asked for: nothing of it is recorded as this plate's.
             if (s.stamp !== undefined && s.stamp.plate !== before.activePlate) return { status: 'stale', message: SWITCHED_REPLY }
-            // a slice that did not run leaves the last one, which an edit since has made stale: it is not this plate's
-            if (s.stale) return { status: 'stale', message: STALE_REPLY }
+            // a slice that did not run leaves the last one, which an edit since has made stale (needsSlice, as export reads
+            // it): it is not this plate's
+            if (needsSlice(after)) return { status: 'stale', message: STALE_REPLY }
             const r = s.result
             const figures = sliceFigures(r)
             // only a slice this call made is recorded: when none ran (a host that cannot slice), the one on screen was

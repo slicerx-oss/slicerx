@@ -17,7 +17,7 @@ import { HostContext } from '../src/host'
 import { plateCommands } from '../src/plate/commands'
 import { printBlock } from '../src/plate/heimdall'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { planFor, printEverythingAgain, RESUME_VOID, resumeFor, resumeState, setResume, SLICE_NOT_CURRENT, sliceInputsKey } from '../src/plate/resume-tops'
+import { needsSlice, planFor, printEverythingAgain, RESUME_VOID, resumeFor, resumeState, setResume, SLICE_NOT_CURRENT, sliceInputsKey } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
 import { HELD_NOT_CURRENT, QUEUED_NOT_CURRENT, queuedBlock, type QueueItem } from '../src/queue/queue'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate, STALE_SLICE, startQueued } from '../src/state/actions'
@@ -845,22 +845,68 @@ describe('round 17: what goes into the G-code, before and after a slice lands', 
     expect(await landsStale(e, () => set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 12 }] } as never))).toBe(false)
   })
 
-  it('holds back a landed slice once an object is renamed after it, with auto slice off, and lets it go once the name is back', async () => {
+  it('holds Print back once an object is renamed after a slice lands, with auto slice off, and Export plate 3MF slices again and saves', async () => {
     const e = engine()
     await slicePlate(e.host)
     expect(printBlock(get())).toBeNull()
+    expect(needsSlice(get())).toBe(false)
     set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
     expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    expect(needsSlice(get())).toBe(true)
     expect(printBlock(get())).toBe(STALE_SLICE)
-    expect(await exportGcode3mf(e.host)).toBe(false)
-    expect(e.saved).toEqual([])
-    expect(get().toast).toMatchObject({ text: STALE_SLICE, tone: 'error' })
-    set({ toast: null } as never)
     await sendToPrinter(e.host, DEMO)
     expect(get().printSheet).toBeNull()
     expect(get().toast).toMatchObject({ text: STALE_SLICE, tone: 'error' })
-    set({ plate: get().plate.map((p) => ({ ...p, name: 'Box' })) })
+    // Export plate 3MF slices first when needed: the rename is one such case.
+    expect(await exportGcode3mf(e.host)).toBe(true)
+    expect(e.requests).toHaveLength(2)
+    expect(e.saved).toHaveLength(1)
+    expect(needsSlice(get())).toBe(false)
     expect(printBlock(get())).toBeNull()
+  })
+
+  it('reads only the names of objects that print: renaming one set not to print holds nothing back, before or while it slices', async () => {
+    const e = engine()
+    set({ plate: [box, { ...box, id: 'c', name: 'Off', printable: false }] })
+    await slicePlate(e.host)
+    set({ plate: get().plate.map((p) => (p.id === 'c' ? { ...p, name: 'Still off' } : p)) })
+    expect(needsSlice(get())).toBe(false)
+    expect(printBlock(get())).toBeNull()
+    const go = e.hold()
+    const run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(2))
+    set({ plate: get().plate.map((p) => (p.id === 'c' ? { ...p, name: 'Off again' } : p)) })
+    go()
+    await run
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    // The one that prints still counts.
+    set({ plate: get().plate.map((p) => (p.id === 'a' ? { ...p, name: 'Renamed' } : p)) })
+    expect(printBlock(get())).toBe(STALE_SLICE)
+  })
+
+  it('keeps a slice current through a grams-only spool reload while its plate is out of view, with a tower spot per plate, and not through another color', async () => {
+    const { switchPlate } = await import('../src/plate/plates')
+    const { trackPlateSlices } = await import('../src/workspaces/preview/plate-slices')
+    const stop = trackPlateSlices()
+    try {
+      const e = engine()
+      // An opened project with a tower spot per plate: each switch back makes the plate's tower again, the same spot.
+      set({ profile: null, printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }], towerFromProject: true, projectTowers: { 'plate-1': { x: 20, y: 30 }, 'plate-2': { x: 40, y: 50 } }, tower: { auto: false, x: 20, y: 30 } } as never)
+      // The printer layer settles for these slots first, as it has long before a print in the app.
+      await (await import('../src/state/profile-sync')).profileReady()
+      await slicePlate(e.host)
+      switchPlate('plate-2')
+      set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10, spoolUid: 'new' }] } as never)
+      switchPlate('plate-1')
+      expect(get().slice).toMatchObject({ status: 'done', stale: false })
+      expect(printBlock(get())).toBeNull()
+      switchPlate('plate-2')
+      set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#000', remainingG: 10 }] } as never)
+      switchPlate('plate-1')
+      expect(get().slice).toMatchObject({ status: 'done', stale: true })
+    } finally {
+      stop()
+    }
   })
 
   it('reads a spool reload that changes only grams or the tag as no slice input, so auto slice leaves the slice current', async () => {
