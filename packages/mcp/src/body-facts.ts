@@ -5,7 +5,7 @@
 // inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
 // and geom.hole do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a
 // grid of the facets, within a budget).
-import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
+import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts } from './design-check'
 
@@ -53,10 +53,13 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
     }
   }
   const wall = minWall(world)
+  const shaping = d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint')
   return {
     size: bounds(world),
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
-    features: d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint').length,
+    features: shaping.length,
+    steps: shaping.map((s) => stepName(s)),
+    ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     watertight,
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
     minWallMm: wall.mm,
@@ -251,6 +254,20 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
   return { mm: Number.isFinite(best) ? Math.round(best * 1000) / 1000 : null }
 }
 
+/** A facet whose doubled area is under this share of its longest edge squared is a needle (about a 0.06 degree corner). */
+const NEEDLE = 1e-3
+/** A facet whose longest edge is under this, in mm, is a speck no nozzle prints: it measures no wall. */
+const SPECK_MM = 0.01
+
+/** Whether facets `a` and `b` (offsets into `tri`) share an edge: two corners at the same place. */
+function shareEdge(tri: Float64Array, a: number, b: number): boolean {
+  let same = 0
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      if (tri[a + i * 3] === tri[b + j * 3] && tri[a + i * 3 + 1] === tri[b + j * 3 + 1] && tri[a + i * 3 + 2] === tri[b + j * 3 + 2]) same++
+  return same >= 2
+}
+
 /** The thinnest wall of one part, no more than `bestSoFar`; null when `late` says the time ran out. */
 function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | null {
   const tris = Math.floor(m.indices.length / 3)
@@ -350,6 +367,13 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
     const nz = e10 * e21 - e11 * e20
     const l = Math.hypot(nx, ny, nz)
     if (l < 1e-12) continue
+    // a needle facet (a sliver a boolean leaves where faces meet) has no reliable normal: its ray runs along the
+    // surface into the next facet and reads a wall of nothing. The facets around it measure the wall there.
+    const e30 = tri[b + 6]! - tri[b + 3]!
+    const e31 = tri[b + 7]! - tri[b + 4]!
+    const e32 = tri[b + 8]! - tri[b + 5]!
+    const longest = Math.max(e10 * e10 + e11 * e11 + e12 * e12, e20 * e20 + e21 * e21 + e22 * e22, e30 * e30 + e31 * e31 + e32 * e32)
+    if (l < NEEDLE * longest || longest < SPECK_MM * SPECK_MM) continue
     const d0 = -nx / l
     const d1 = -ny / l
     const d2 = -nz / l
@@ -377,7 +401,8 @@ function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | nul
         if (f === t || tested[f] === t) continue
         tested[f] = t
         const d = rayHit(o0, o1, o2, d0, d1, d2, tri, f * 9)
-        if (d > 1e-6 && d < hit) hit = d
+        // a facet sharing an edge with this one is its neighbor on the same surface, never the far side of a wall
+        if (d > 1e-6 && d < hit && !shareEdge(tri, b, f * 9)) hit = d
       }
       const exit = Math.min(t0, t1, t2)
       // a hit inside the cells walked so far is the first; a cell past the best wall cannot beat it
