@@ -6,7 +6,7 @@
 // and geom.hole do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a
 // grid of the facets, within a budget).
 import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
-import { closureByPosition, notClosedWords } from './closure'
+import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts } from './design-check'
 
 type V3 = [number, number, number]
@@ -24,8 +24,9 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
 /** The facts about the design's body now. */
 export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
-  // closed as geom.info and the slicer read it: corners at the same point are one vertex, whatever their indices
-  const shut = world.map((w) => closureByPosition(w.positions, w.indices))
+  // closed as geom.info and the slicer read it: corners at the same point of the part's own positions are one vertex,
+  // whatever their indices
+  const shut = d.parts.map((p) => partClosure(p))
   const watertight = shut.length > 0 && shut.every((c) => c.watertight)
   const open = { boundaryEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 }
   for (const c of shut) {

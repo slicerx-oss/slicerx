@@ -3,11 +3,12 @@
 // Whether a part is closed, read the way the slicer welds it: corners at the same single-precision point are one
 // vertex, whatever their indices. A sweep joined to a post once left a part whose triangle indices were closed while
 // five tiny edges, welded, each had four triangles: geom.info and design.check said closed, the slicer saw a pinch.
-import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
+import { bakeMesh, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
+import { bodyFacts } from '../src/body-facts'
 import { cadTools, type CadFiles } from '../src/cad'
-import { closureByPosition } from '../src/closure'
+import { closureByPosition, partClosure } from '../src/closure'
 import { createPlanRegistry, type PartPlan } from '../src/design-check'
 import { designToolset } from '../src/toolset'
 import { useGeomEngine } from './geom-engine'
@@ -122,8 +123,8 @@ describe('closureByPosition', () => {
 })
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-const designOf = (id: string, mesh: { positions: number[]; indices: number[] }): HostDesign =>
-  ({ id, name: 'Handle', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [{ name: 'Handle', slot: 0, ...mesh }], status: [], madeBy: {}, redo: [] }) as unknown as HostDesign
+const designOf = (id: string, mesh: { positions: number[]; indices: number[] }, transform: number[] = IDENTITY): HostDesign =>
+  ({ id, name: 'Handle', history: { version: 1, base: [], steps: [] }, transform, parts: [{ name: 'Handle', slot: 0, ...mesh }], status: [], madeBy: {}, redo: [] }) as unknown as HostDesign
 
 const geom = useGeomEngine('closure-by-position-replies')
 
@@ -191,5 +192,69 @@ describe('repair on the pinch', () => {
     const r = (await geom.engine('repair', { mesh: pinch(), options: {} })) as { mesh: { positions: number[]; indices: number[] }; report: { watertight: boolean; nonManifoldEdges: number } }
     expect(r.report).toMatchObject({ watertight: false, nonManifoldEdges: 1 })
     expect(closureByPosition(r.mesh.positions, r.mesh.indices)).toMatchObject({ watertight: false, nonManifoldEdges: 1 })
+  })
+})
+
+/** The next single-precision number above x. */
+const nextUp = (x: number): number => {
+  const f = new Float32Array([x])
+  const bits = new Uint32Array(f.buffer)
+  bits[0] = bits[0]! + (x >= 0 ? 1 : -1)
+  return f[0]!
+}
+
+/**
+ * A closed box from lo to hi whose first triangle takes its second corner from a copy of that vertex moved to x: the
+ * copy at another single-precision point leaves the triangle's two edges at that corner open.
+ */
+function splitCorner(lo: V3, hi: V3, x: number) {
+  const b = indexed(boxTris(lo, hi))
+  const v = b.indices[1]!
+  const copy = b.positions.length / 3
+  b.positions.push(x, b.positions[v * 3 + 1]!, b.positions[v * 3 + 2]!)
+  b.indices[1] = copy
+  return b
+}
+
+const moved = (dx: number): number[] => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, 0, 0, 1]
+
+describe('closure read on the part before its transform', () => {
+  it('keeps corners one ulp apart on the part apart wherever the part sits on the bed', async () => {
+    // the box's corner at x = 20 and a copy one ulp above it: two points on the part, as the slicer welds it
+    const b = splitCorner([10, 0, 0], [20, 10, 10], nextUp(20))
+    expect(b.positions.at(-3)).not.toBe(20)
+    // moved to x = 170 the two round to one single-precision point, so reading the moved mesh would call it closed
+    expect(closureByPosition(bakeMesh({ name: 'Box', slot: 0, ...b }, moved(150)).positions, b.indices).watertight).toBe(true)
+    for (const transform of [IDENTITY, moved(150)]) {
+      const r = await info(designOf('d3', b, transform))
+      expect(r.output.parts[0]).toMatchObject({ watertight: false, edges: { boundaryEdges: 4, nonManifoldEdges: 0, flippedEdges: 0 } })
+    }
+  })
+
+  it('gives design.check the same reading for a part moved on the bed', async () => {
+    const d = designOf('d7', splitCorner([10, 0, 0], [20, 10, 10], nextUp(20)), moved(150))
+    expect(await bodyFacts(hostOf([d]), d)).toMatchObject({ watertight: false, openWhy: '4 open edges' })
+  })
+
+  it('keeps -0 apart from 0 through geom.info', async () => {
+    const b = splitCorner([0, 0, 0], [10, 10, 10], -0)
+    // the corner the copy stands for is at x = 0
+    expect(Object.is(b.positions.at(-3), -0)).toBe(true)
+    const r = await info(designOf('d4', b))
+    expect(r.output.parts[0]).toMatchObject({ watertight: false, edges: { boundaryEdges: 4 } })
+  })
+
+  it('reads a mirrored part as it reads the part', async () => {
+    const mirror = [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    expect((await info(designOf('d5', pinch(), mirror))).output.parts[0]).toMatchObject({ watertight: false, edges: { boundaryEdges: 0, nonManifoldEdges: 1, flippedEdges: 0 } })
+    expect((await info(designOf('d6', soupBox(), mirror))).output.parts[0]).toMatchObject({ watertight: true, edges: { boundaryEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 } })
+  })
+
+  it('reads an unchanged part once', () => {
+    const part = pinch()
+    const first = partClosure(part)
+    expect(partClosure(part)).toBe(first)
+    // a step replaces the part's arrays; the new mesh is read again
+    expect(partClosure({ positions: part.positions, indices: [...part.indices] })).not.toBe(first)
   })
 })
