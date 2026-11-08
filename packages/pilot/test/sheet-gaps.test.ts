@@ -44,15 +44,16 @@ const stub = (name: string) =>
 
 const SHEET = { name: 'pilot.sheet', args: { title: 'Hinge', dims: [{ key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] } }
 
-async function sheets(steps: ScriptStep[], context?: PilotContext): Promise<PilotDim[][]> {
+async function sheets(steps: ScriptStep[], context?: PilotContext, messages: string[] = ['A print-in-place hinge']): Promise<PilotDim[][]> {
   const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), stub('geom.extrude')] })
   const shown: PilotDim[][] = []
-  for await (const e of p.run('s', 'A print-in-place hinge', context ? { context } : {}) as AsyncIterable<PilotEvent>) {
-    if (e.type === 'sheet') {
-      shown.push(e.sheet.dims)
-      void p.answerSheet!(e.sheet.id, {})
+  for (const message of messages)
+    for await (const e of p.run('s', message, context ? { context } : {}) as AsyncIterable<PilotEvent>) {
+      if (e.type === 'sheet') {
+        shown.push(e.sheet.dims)
+        void p.answerSheet!(e.sheet.id, {})
+      }
     }
-  }
   return shown
 }
 
@@ -162,8 +163,13 @@ describe('the gaps on a print-in-place sheet', () => {
     // the hinge is built after its sheet, then a spacer is asked for: it skips the plan
     const built = await sheets([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf' } }] }, { calls: [spacer] }, { text: 'Done.' }])
     expect(built.map((dims) => dims.map((d) => d.key))).toEqual([['width', 'clearance', 'clearance_vertical'], ['height']])
-    // the person moved on before the hinge was built: the spacer's own design starts, then its sheet
-    const moved = await sheets([{ calls: [hinge] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [spacer] }, { text: 'Done.' }])
+    // the person moved on before the hinge was built: in the next message the spacer's own design starts, then its
+    // sheet (within one reply a second part waits until the first has a body)
+    const moved = await sheets(
+      [{ calls: [hinge] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [SHEET] }, { text: 'Shall I build it?' }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [spacer] }, { text: 'Done.' }],
+      undefined,
+      ['A print-in-place hinge', 'Forget the hinge, make me a 20 mm spacer'],
+    )
     expect(moved.map((dims) => dims.map((d) => d.key))).toEqual([['width', 'clearance', 'clearance_vertical'], ['height']])
     // a later plan without printInPlace takes them away
     const replanned = await sheets([{ calls: [hinge] }, { calls: [{ name: 'design.plan', args: { part: 'Box' } }] }, { calls: [SHEET] }, { text: 'Done.' }])
@@ -533,15 +539,16 @@ describe('the gaps on a print-in-place sheet', () => {
   })
 
   it('hold the design started under the planned part\'s name over one started before it under another name', async () => {
-    // the first design started after the plan is a base under another name; the next is named as the part, so it is
-    // the part's design, and the base is changed at once
+    // the first design started after the plan is a base under another name; the next, in the next message (within one
+    // reply a second part waits until the first has a body), is named as the part, so it is the part's design, and the
+    // base is changed at once
     const { ran, seen } = await talk(
-      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Base' } }] }, { calls: [{ name: 'design.new', args: { name: 'hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd2' } }] }, { calls: [{ name: 'geom.push_pull', args: { design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
-      ['A print-in-place hinge'],
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Base' } }] }, { text: 'Base started.' }, { calls: [{ name: 'design.new', args: { name: 'hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd2' } }] }, { calls: [{ name: 'geom.push_pull', args: { design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
+      ['A print-in-place hinge', 'Now the hinge itself'],
       [{ width: 60 }],
     )
-    expect(seen[4]).toContain(HELD)
-    expect(seen[5]).not.toContain('Nothing was built')
+    expect(seen[5]).toContain(HELD)
+    expect(seen[6]).not.toContain('Nothing was built')
     expect(ran).toEqual(['new Base', 'new hinge', 'push@d1'])
   })
 
