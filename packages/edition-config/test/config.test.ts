@@ -114,7 +114,7 @@ describe('edition config', () => {
     expect(on.features.cad).toBe(true)
     expect(geomFeatures(on)).toBeNull()
     const off = parseEditionConfig(mergeLayers(harbor, { features: { cad: false } }))
-    expect(geomFeatures(off)).toEqual(['text', 'svg', 'nest', 'calib', 'hollow', 'formats'])
+    expect(geomFeatures(off)).toEqual(['text', 'svg', 'nest', 'calib', 'hollow', 'formats', 'texture'])
   })
 
   it('applies environment overrides', () => {
