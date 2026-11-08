@@ -81,7 +81,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const cut = defineTool({
     name: 'geom.cut',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -110,7 +110,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const split = defineTool({
     name: 'geom.split',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -142,7 +142,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const mirror = defineTool({
     name: 'geom.mirror',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -164,7 +164,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.2.1',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -197,7 +197,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const repair = defineTool({
     name: 'geom.repair',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Repair a mesh: weld vertices, fix winding and normals, and close small holes. With "design" it adds a repair step with the default options; with a model it writes a repaired STL and a report of what was fixed and what stayed open.',
@@ -226,7 +226,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const hollow = defineTool({
     name: 'geom.hollow',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. With "design" it adds a hollow step (wall only); with a model it writes a new STL and a volume report.',
@@ -255,7 +255,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const emboss = defineTool({
     name: 'geom.emboss',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL. With a design, textFit in the reply compares the text with the face, along the text and across it (mm), and gives the largest letter height that fits (fitSizeMm).',
@@ -310,7 +310,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const build = defineTool({
     name: 'geom.build',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
@@ -340,7 +340,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const subtract = defineTool({
     name: 'geom.subtract',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
