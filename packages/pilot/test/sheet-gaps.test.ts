@@ -296,7 +296,7 @@ describe('the gaps on a print-in-place sheet', () => {
       plan,
       tool('design.new', (i) => (ran.push(`new ${String(i.name)}`), { design: `d${++n}`, name: i.name })),
       tool('design.open', () => { const id = `d${++n}`; ran.push(`open ${id}`); return { designs: [{ design: id, name: 'Lamp' }] } }),
-      tool('geom.extrude', (i) => (ran.push(`${String(i.name)}@${String(i.design)}`), { design: i.design })),
+      tool('geom.extrude', (i) => (ran.push(`${String(i.name)}@${String(i.design)}`), { design: i.design }), 'slice'),
       tool('geom.push_pull', (i) => (ran.push(`push@${String(i.design)}`), { design: i.design }), 'slice'),
     ]
     const seen: string[] = []
@@ -379,6 +379,34 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(seen[4]).toContain(HELD)
     expect(seen[5]).not.toContain('Nothing was built')
     expect(ran).toEqual(['new Hinge', 'open d2', 'Shade@d2', 'Leaf@d1'])
+  })
+
+  it('hold every change to the planned part started from a model while its plan waits, a join on it included', async () => {
+    // design.new from a model brings the part's bodies, so its first change is no new body: a push or a join on it
+    const join = { name: 'geom.extrude', args: { name: 'Knuckle', design: 'd1', operation: 'join' } }
+    const push = { name: 'geom.push_pull', args: { design: 'd1' } }
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Hinge', from: 'hinge.stl' } }] }, { calls: [push] }, { calls: [join] }, { calls: [HINGE] }, { calls: [push] }, { calls: [join] }, { text: 'Done.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(seen[2]).not.toContain('Nothing was built')
+    expect(seen[3]).toContain(HELD)
+    expect(seen[4]).toContain(HELD)
+    expect(ran).toEqual(['new Hinge', 'push@d1', 'Knuckle@d1'])
+  })
+
+  it('hold a join on the empty design of the planned part while its plan waits, and change another design', async () => {
+    // the open question from the review: a join on a design with no body yet makes none (the step has no part to join),
+    // and while the plan waits it does not run at all; a change to another design does
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1', operation: 'join' } }] }, { calls: [{ name: 'design.open', args: { path: 'lamp.3mf' } }] }, { calls: [{ name: 'geom.push_pull', args: { design: 'd2' } }] }, { text: 'Waiting for the plan.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(seen[3]).toContain(HELD)
+    expect(seen[5]).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Hinge', 'open d2', 'push@d2'])
   })
 
   it("keep the mark in the host's plans: a size change marks the plan, a plan made again or declined clears it, and the plan's own design is the one held", async () => {
