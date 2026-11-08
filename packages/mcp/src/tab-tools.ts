@@ -195,7 +195,7 @@ export type CardPlans = ReturnType<typeof createCardPlans>
  * with no card, for MCP clients) stays out: plans in the tab are made on the card.
  */
 export function mimirTabTools(plan: PilotTool<never>, extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), plan]
+  const own = [askTool({ sizesOnSheet: true }), lookupTool(), sheetTool(), sheetBindTool(), plan]
   const names = new Set([...own.map((t) => t.name), 'design.put_plan'])
   return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
