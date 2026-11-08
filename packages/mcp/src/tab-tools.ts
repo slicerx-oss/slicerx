@@ -6,9 +6,10 @@
 // inline and approve with Go. The card answers through the same question channel pilot.ask uses. The plans made there
 // are kept by id with the person's latest edits, so a later check can read the plan the part was built from. The app's
 // tab and the creative eval make these tools here (toolset.ts tabToolset), each over its own plan registry.
-import { askTool, defineTool, lookupTool, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
+import { askTool, clearanceProfileOf, defineTool, lookupTool, printInPlaceClearance, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import type { z } from 'zod'
-import { MAX_PLANS, partPlanSchema, PLAN_SIZE_MAX, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
+import { gapLimitsText, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
+import { fitLimits, type FitProfile } from './fit-facts'
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
@@ -25,7 +26,15 @@ export interface PlanAnswer {
   accepted: boolean
   /** The plan with the person's edits, when they changed anything before Go. */
   edits?: PartPlan
+  /** For an approved plan with printInPlace: the smallest gaps moving pieces need on this printer, per side. */
+  gaps?: { sideMm: number; verticalMm: number }
 }
+
+/** The fit rule's smallest print-in-place gaps for a 0.4 mm nozzle in PLA, as design.plan's text names them. */
+const RULE = printInPlaceClearance()
+const n = (v: number): string => `${Math.round(v * 1000) / 1000}`
+const RULE_MIN = `at least ${n(RULE.sideMm)} mm side by side and ${n(RULE.verticalMm)} mm above or below`
+const RULE_GAPS = `${RULE_MIN} (${n(RULE.nozzleMm)} mm nozzle, ${RULE.material.toUpperCase()})`
 
 /** The registry keeps this many plans; the oldest goes first. */
 export const PLAN_KEEP = MAX_PLANS
@@ -152,17 +161,21 @@ export function createCardPlans(plans: PlanRegistry) {
     return cardEntry(planId) ? planId : null
   }
 
-  /** `newId` names each plan (tests, and the eval, whose recorded replies name their plans); by default a random plan_ id. */
-  function planTool(opts: { newId?: () => string } = {}): PilotTool<never> {
+  /**
+   * `newId` names each plan (tests, and the eval, whose recorded replies name their plans); by default a random plan_ id.
+   * `fitProfile` is what design.check holds a print-in-place part's gaps to (the printer's nozzle, layer height and
+   * material); what it leaves out comes from the run's machine.
+   */
+  function planTool(opts: { newId?: () => string; fitProfile?: () => FitProfile } = {}): PilotTool<never> {
     return defineTool({
       name: 'design.plan',
       version: '1.1.0',
       source: 'command',
       permission: 'read',
       description:
-        'Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, and the edited plan when they changed anything; build from that. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.',
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet; in kinds, count or angle for every size that is a count or an angle, such as teeth: count or draft: angle, since a size with none is read by its name), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, and the edited plan when they changed anything; build from that. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.`,
       localDescription:
-        'Before the first geometry step of a part with two or more features, show the person the plan and wait: part, units, features in build order with their sizes and kind (kinds: count or angle for each such size), the overall size and holes when known, assumptions and questions. Returns accepted and the edited plan; build from that. Not accepted: build nothing and ask what to change. One feature: no plan. More: kb.search "modeling tools".',
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: part, units, features in build order with their sizes and kind (kinds: count or angle for each such size), the overall size and holes when known, assumptions and questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}. Returns accepted and the edited plan; build from that. Not accepted: build nothing and ask what to change. One feature: no plan. More: kb.search "modeling tools".`,
       input: PlanInputSchema,
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
       async run(i, ctx) {
@@ -190,7 +203,14 @@ export function createCardPlans(plans: PlanRegistry) {
         unbuilt = plan.planId
         const edited = !samePlan(latest, shown)
         const answer: PlanAnswer = edited ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
-        return { summary: edited ? 'Approved with changes' : 'Approved as shown', output: answer }
+        const said = edited ? 'Approved with changes' : 'Approved as shown'
+        if (!latest.printInPlace || latest.printInPlace.length < 2) return { summary: said, output: answer }
+        // a print-in-place part: the gaps this printer needs before the first step, and any planned gap under them
+        const given = Object.fromEntries(Object.entries(opts.fitProfile?.() ?? {}).filter(([, v]) => v !== undefined))
+        const limits = fitLimits({ ...clearanceProfileOf(ctx.context ?? {}), ...given })
+        const under = plannedGaps(latest, limits).filter((g) => !g.pass)
+        const summary = `${said}. Moving pieces need gaps of ${gapLimitsText(limits)} on this printer.${under.length ? ` ${under.map((g) => g.text).join('; ')}` : ''}`
+        return { summary, output: { ...answer, gaps: { sideMm: limits.sideMm, verticalMm: limits.verticalMm } } }
       },
     }) as PilotTool<never>
   }
