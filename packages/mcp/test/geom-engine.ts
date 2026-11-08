@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
-import type { EngineCall } from '@slicerx/cad-history'
+import { clearReplayCache, type EngineCall } from '@slicerx/cad-history'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 
 export interface Recorded {
@@ -142,8 +142,13 @@ export class ReplayMismatch extends Error {
  * The replaying engine over `replies`, recorded in `fixture`: `start(key)` begins a test's replies at its first one, and
  * `stale` lists every call that did not match, with what to do about it.
  */
-export function replayEngine(fixture: string, replies: Record<string, Recorded[]>): { engine: EngineCall; start(key: string): void; stale: string[] } {
+export function replayEngine(fixture: string, replies: Record<string, Recorded[]>, pooled = false): { engine: EngineCall; start(key: string): void; stale: string[] } {
   const stale: string[] = []
+  // With `pooled`, a call the test's own list does not hold at its place is looked up by op and request in every test's
+  // list of the file. The engine answers a request the same way wherever it is asked. A test that starts with an empty
+  // replay cache makes calls that were recorded in an earlier test only, because that test cached the steps for it.
+  const pool = new Map<string, Recorded>()
+  if (pooled) for (const list of Object.values(replies)) for (const r of list) if (!pool.has(`${r.op}\0${r.request}`)) pool.set(`${r.op}\0${r.request}`, r)
   let key = SETUP
   let next = 0
   const mismatch = (why: string): never => {
@@ -152,10 +157,13 @@ export function replayEngine(fixture: string, replies: Record<string, Recorded[]
     throw new ReplayMismatch(message)
   }
   const engine: EngineCall = async (op, request) => {
-    const r = replies[key]?.[next++]
+    const here = replies[key]?.[next]
+    const now = digest(request)
+    const elsewhere = pooled && !(here && here.op === op && here.request === now) ? pool.get(`${op}\0${now}`) : undefined
+    if (!elsewhere) next++
+    const r = elsewhere ?? here
     if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
     if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
-    const now = digest(request)
     if (now !== r.request) return mismatch(`the ${op} request of call ${next} differs from the recorded one (digest ${now}, recorded ${r.request})`)
     if (r.error !== undefined) throw new Error(r.error)
     return r.reply
@@ -179,13 +187,17 @@ export function useGeomEngine(name: string): { engine: EngineCall } {
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Record<string, Recorded[]> = {}
   const replies: Record<string, Recorded[]> = !liveEngine && existsSync(fixture) ? (JSON.parse(gunzipSync(readFileSync(fixture)).toString('utf8')) as Record<string, Recorded[]>) : {}
-  const replay = liveEngine ? undefined : replayEngine(fixture, replies)
+  const replay = liveEngine ? undefined : replayEngine(fixture, replies, true)
   const out: { engine: EngineCall } = { engine: () => Promise.reject(new Error('the engine is set in beforeAll')) }
   beforeAll(async () => {
     if (liveEngine) out.engine = await wasmEngine((r) => (recorded[testKey()] ??= []).push(r))
     else out.engine = replay!.engine
   })
+  // The replay cache (packages/cad-history) outlives a test, and a step it holds makes no engine call. Recorded replies
+  // are counted per call, so a test that ran after another one that cached the same steps asked for fewer calls than
+  // were recorded and failed, in some orders only. Each test makes every call it needs, live or recorded.
   beforeEach(() => {
+    clearReplayCache()
     replay?.start(testKey())
   })
   // A replayed call that did not match fails the test, even when the code under test caught the error and fell back.
