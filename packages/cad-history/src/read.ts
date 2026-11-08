@@ -396,14 +396,16 @@ function drawnForOf(v: unknown): Pick<SketchItem, 'drawnFor'> {
  * steps included, or an older file's histories merged by when each step was made. Null when there is none; a body
  * whose history does not read is left out with its features. With `standing`, where each object stands by its 3MF
  * object id, a file written before sketches moved with what they are drawn for or on opens with each sketch where that
- * app showed it (pinnedOlder).
+ * app showed it (pinnedOlder): a version 3 file at its stored frame, a version 1 or 2 file moved with its body.
  */
 export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>, standing?: PlaceOf): Timeline | null {
   const t = readTimeline(files, objectIds)
   if (!t || !standing) return t
-  // written before sketches moved with what they are drawn for or on: each opens where that app showed it
+  // written before sketches moved with what they are drawn for or on: each opens where that app showed it, at its stored
+  // frame from a design file, moved with its body since its step from an object history file
   const j = JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!)) as Record<string, unknown>
-  return j['version'] === DESIGN_FILE_VERSION && j['sketchAnchors'] === SKETCH_ANCHORS ? t : pinnedOlder(t, standing)
+  if (j['version'] !== DESIGN_FILE_VERSION) return pinnedOlder(t, standing, true)
+  return j['sketchAnchors'] === SKETCH_ANCHORS ? t : pinnedOlder(t, standing)
 }
 
 function readTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>): Timeline | null {
