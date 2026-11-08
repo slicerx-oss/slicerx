@@ -205,7 +205,9 @@ describe('the mimir tab on a local model', () => {
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {
     const tools = async (message: string, before?: string) => read(await turn(LOCAL, message, before)).tools.map((t) => t.name)
     const build = await tools('A 30 mm cube with a fillet')
-    expect(build).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__revolve', 'geom__loft', 'geom__sweep', 'geom__hole', 'geom__fit_check', 'pilot__sheet', 'pilot__tools']))
+    expect(build).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__revolve', 'geom__loft', 'geom__sweep', 'geom__hole', 'geom__faces', 'pilot__sheet', 'pilot__tools']))
+    // the fit check loads on demand: a new part's turn has no room for it beside the face list
+    expect(build).not.toContain('geom__fit_check')
     // projecting edges into a sketch edits a part already built; a new part never starts with it
     expect(build).not.toContain('design__sketch_project')
     expect(await tools('Make the base thicker', 'A 30 mm cube with a fillet')).toContain('design__sketch_project')
@@ -296,6 +298,8 @@ describe('the mimir tab on a local model', () => {
     expect(state.turns.build).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.edge_pick', 'geom.faces', TURN_SET_TOOL]))
     // edge and face pickers serve both the first build and later edits
     expect(state.turns.edit).toEqual(expect.arrayContaining(['geom.edge_pick', 'geom.faces']))
+    expect(state.turns.build).not.toContain('geom.fit_check')
+    expect(state.turns.shape).toContain('geom.fit_check')
     expect(state.turns.app).toEqual(expect.arrayContaining(['app.slice', 'printer.queue', TURN_SET_TOOL]))
     expect(state.turns.app).not.toContain('geom.extrude')
   })
