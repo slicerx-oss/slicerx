@@ -96,6 +96,21 @@ describe('sweep as a design step', () => {
     expect(Math.abs(out.volumeMm3 / torus - 1)).toBeLessThan(5e-3)
   }, 60_000)
 
+  it('refuses a profile drawn at bed X and Y on a frame already at the path start, saying where it sits', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Stand' })).output.design
+    // the hook as a live build sent it: the frame on the path's start, the circle at that point's bed X and Y again
+    const off = await h.call('slicerx_geom_sweep', { design: d, operation: 'new', profile: { frame: { origin: [128, 128, 150], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [128, 128], diameterMm: 12 }] }, path: { points: [[128, 128, 150], [128, 128, 158], [138, 128, 168], [188, 128, 168]] } })
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/its loop sits 181\.02 mm from where the path starts \(128, 128, 150\)/)
+    expect(text(off)).toMatch(/centered at \[0, 0\]/)
+    // the same on a path drawn on a plane
+    const drawn = await h.call('slicerx_geom_sweep', { design: d, profile: { frame: { origin: [0, 40, 0], normal: [0, 1, 0] }, loops: [square(10)] }, path: { frame: { origin: [0, 0, 0], normal: [0, 0, 1] }, loops: [{ points: [[0, 0], [0, 50]] }] } })
+    expect(drawn.isError).toBe(true)
+    expect(text(drawn)).toMatch(/its loop sits 40 mm from where the path starts \(0, 0, 0\)/)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
+  }, 60_000)
+
   it('refuses a bend too tight, a profile along the path and input it cannot use, and leaves the design as it was', async () => {
     const h = await connect({ geomEngine: engine })
     const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'X' })).output.design

@@ -53,6 +53,47 @@ export function frameFor(origin: V3, normal: V3, u?: V3): { origin: V3; normal: 
   return { origin, normal: z0(w), u: z0(uu), v: z0(cross(w, uu)) }
 }
 
+/**
+ * Why a sweep profile is refused as drawn away from the path's start, or null. A profile is carried as it sits, and its
+ * loops are [u, v] from its frame's origin, so a loop given at bed X and Y on a frame already at the path's start lands
+ * far off the path; swept from there every bend reads as too tight, which tells the client nothing about the cause.
+ */
+export function profileOffPath(frame: FaceFrame | undefined, loops: readonly SketchLoop[], start: V3): string | null {
+  const f = frame ?? { origin: [0, 0, 0] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
+  const uv: [number, number][] = []
+  for (const l of loops) {
+    if ('type' in l && l.type === 'circle') {
+      const r = l.diameterMm / 2
+      uv.push([l.center[0] - r, l.center[1] - r], [l.center[0] + r, l.center[1] + r])
+    } else if ('points' in l) uv.push(...l.points.map((q) => [q[0], q[1]] as [number, number]))
+    else if ('start' in l) {
+      uv.push([l.start[0], l.start[1]])
+      for (const g of l.segments) {
+        if ('to' in g && g.to) uv.push([g.to[0], g.to[1]])
+        if ('points' in g) for (const q of g.points) uv.push([q[0], q[1]])
+      }
+    }
+  }
+  if (!uv.length) return null
+  const lo = [Math.min(...uv.map((q) => q[0])), Math.min(...uv.map((q) => q[1]))]
+  const hi = [Math.max(...uv.map((q) => q[0])), Math.max(...uv.map((q) => q[1]))]
+  const c = [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2]
+  const size = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!) / 2
+  const at = [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * c[0]! + f.v[k]! * c[1]!) as V3
+  const off = Math.hypot(at[0] - start[0], at[1] - start[1], at[2] - start[2])
+  if (off <= Math.max(3 * size, 10)) return null
+  const mm = (n: number) => String(Math.round(n * 100) / 100)
+  return `profile: its loop sits ${mm(off)} mm from where the path starts (${start.map(mm).join(', ')}), and the profile is carried as it sits. Loop points are [u, v] from the profile frame's origin, so with the origin on the path's start a loop around it is centered at [0, 0].`
+}
+
+/** Where an open path loop starts, on the bed: its first point mapped through its frame. */
+function pathStartOf(frame: FaceFrame | undefined, l: SketchLoop): V3 | undefined {
+  const q = 'start' in l ? l.start : 'points' in l ? l.points[0] : undefined
+  if (!q) return undefined
+  const f = frame ?? { origin: [0, 0, 0] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
+  return [0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * q[0] + f.v[k]! * q[1]) as V3
+}
+
 /** Distance from a point to a triangle (closest point on the triangle, Ericson 5.1.5). */
 function distance(q: V3, [a, b, c]: [V3, V3, V3]): number {
   const ab = sub(b, a)
@@ -874,6 +915,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const profileLoops = prof?.loops as SketchLoop[] | undefined
       const pathLoops = pth?.loops as SketchLoop[] | undefined
       const points = pth?.points
+      const firstPath = pathLoops?.[0]
+      const pathStart = points?.[0] ?? (firstPath ? pathStartOf(frameOf(qf), firstPath) : undefined)
+      const away = profileLoops && pathStart ? profileOffPath(frameOf(pf), profileLoops, pathStart as V3) : null
+      if (away) throw new ToolInputError(away)
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
