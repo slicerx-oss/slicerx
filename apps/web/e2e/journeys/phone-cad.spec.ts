@@ -8,7 +8,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, height } from '../cad-helpers'
 import {
-  boxOf, boxesOverControls, emit, inputOf, labels, loops, phoneBox, phoneStudio, pushReady, rect, screenOf, settled, shot, shotBoth, shown, size, still, tapView, topMiddle,
+  boxOf, boxesOverControls, emit, grayPng, inputOf, labels, loops, phoneBox, phoneStudio, pushReady, rect, screenOf, settled, shot, shotBoth, shown, size, still, tapView, topMiddle,
   type W,
 } from './lib/cad'
 
@@ -171,6 +171,41 @@ test('Import SVG on a phone: the form fits the sheet and the loops land on the p
   expect(size((await loops(page))[0])).toEqual([20, 20])
   await expect(page.getByTestId('toast').filter({ hasText: 'Added ring' })).toBeVisible()
   await shotBoth(page, info, 'svg-sketch-added-390')
+})
+
+test('Trace image on a phone: a sheet with the image on top, and the loops land on the plane', async ({ page }, info) => {
+  await sketchOnPlane(page)
+  const sheet = page.getByRole('complementary', { name: 'Tool and transform' })
+  const open = sheet.getByTestId('sketch-trace-open')
+  await open.scrollIntoViewIfNeeded()
+  await open.tap()
+  const dialog = page.getByTestId('trace-dialog')
+  await expect(dialog).toBeVisible()
+  await shotBoth(page, info, 'trace-dialog-empty-390')
+  const art = grayPng(300, 200, (x, y) => x >= 40 && x < 260 && y >= 30 && y < 170 && Math.hypot(x + 0.5 - 150, y + 0.5 - 100) >= 40)
+  await dialog.getByTestId('trace-file').setInputFiles({ name: 'plate.png', mimeType: 'image/png', buffer: art })
+  await dialog.locator('#trace-value').fill('22')
+  await expect(dialog.getByTestId('trace-count')).toHaveText(/^2 loops \(1 hole\), 4 lines, 1 circle, 22 x 14 mm/)
+  const vw = page.viewportSize()!.width
+  const vh = page.viewportSize()!.height
+  const add = dialog.getByTestId('trace-add')
+  // the sheet spans the width, the image sits on top, and the actions stay in reach at the bottom
+  const box = (await dialog.boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(vw)
+  const a = (await add.boundingBox())!
+  expect(a.y + a.height).toBeLessThanOrEqual(vh)
+  expect(a.height).toBeGreaterThanOrEqual(44)
+  const img = (await dialog.getByTestId('trace-preview').boundingBox())!
+  expect(img.y).toBeLessThan((await dialog.locator('#trace-value').boundingBox())!.y)
+  await expect(dialog.locator('.trace-loops path')).toHaveCount(1)
+  await shotBoth(page, info, 'trace-dialog-preview-390')
+  await add.tap()
+  await expect(dialog).toBeHidden()
+  await expect.poll(async () => (await loops(page)).length).toBe(2)
+  expect(size((await loops(page))[0])).toEqual([22, 14])
+  await expect(page.getByTestId('toast').filter({ hasText: 'Added plate' })).toBeVisible()
+  await shotBoth(page, info, 'trace-sketch-added-390')
 })
 
 test('a box on the shape stays clear of the undo group and the other floating controls', async ({ page }) => {
