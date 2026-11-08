@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The app entry's view of upload-source: the code loads with the upload flow, not with the shell.
-import { allPlates } from '../plate/plates'
+import { allPlates } from '../plate/all-plates'
 import { get } from '../state/store'
 import type { CoverImage, ProjectUpload, UploadModel } from './upload-source'
 

@@ -4,17 +4,12 @@
 // bed type, print sequence and filament order. The active plate's objects stay in `plate` so the
 // rest of the app keeps working on one plate; the others wait in `plates`.
 import { hotendMapConfig, nozzleMapConfig } from '../filament/nozzle-map'
-import { fullPlate, get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
+import { get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
 import { quietly } from './history'
 import { plateTower } from './tower'
 import type { Mat4 } from './transform'
 
-/** The plates with the active one's objects filled in. */
-export function allPlates(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'historyEdit'>> = get()): PlateMeta[] {
-  // A history step open for editing shows an earlier mesh; saves write the object as it is.
-  const objects = fullPlate({ plate: s.plate, historyEdit: s.historyEdit ?? null })
-  return s.plates.map((p) => (p.id === s.activePlate ? { ...p, objects } : p))
-}
+export { allPlates } from './all-plates'
 
 export function activeMeta(s: Pick<AppState, 'plates' | 'activePlate'> = get()): PlateMeta | undefined {
   return s.plates.find((p) => p.id === s.activePlate)
