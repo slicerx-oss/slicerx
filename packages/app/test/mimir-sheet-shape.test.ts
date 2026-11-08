@@ -94,6 +94,12 @@ describe('the part on the sheet', () => {
     expect(viewsFor(dims, []).get('outside_height')).toContain('front')
   })
 
+  it('never places a count or an angle on an overall size, even one it matches', () => {
+    const shape = shapeOfMesh([boxMesh([0, 0, 0], [96, 68, 4])])
+    const dims = placeMissing([row('count', 4), row('lean_angle', 68), row('thickness', 4)], shape)
+    expect(dims.map((d) => d.at)).toEqual([undefined, undefined, { a: [0, 0, 0], b: [0, 0, 4], off: expect.any(Array) }])
+  })
+
   // The case's width, drawn on the base's right side and pushed out toward the lid beside it, keeps its callout off the
   // lid (the live Pi case sheet put it on the lid).
   it('keeps a callout off a second part its line points at', () => {

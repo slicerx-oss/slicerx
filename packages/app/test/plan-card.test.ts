@@ -62,6 +62,9 @@ async function shown(input: PlanInput = BOX, opts: { tools?: ReturnType<typeof m
 
 const field = (name: RegExp) => screen.getByRole('textbox', { name }) as HTMLInputElement
 
+/** A saved card's size rows as they read: the label, then the value with its unit. */
+const savedRows = () => within(screen.getByTestId('mimir-plan-feature')).getAllByRole('listitem').map((r) => `${r.querySelector('.sheet-rec-label')!.textContent} ${r.querySelector('.plan-rec-v')!.textContent}`)
+
 describe('the plan card', () => {
   it('the card shows each feature with its sizes and units', async () => {
     await shown()
@@ -243,6 +246,35 @@ describe('the plan card', () => {
     cleanup()
     render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...motor }, picked: null, actionable: false }))
     expect(within(screen.getByRole('region', { name: 'Holes' })).getByText(/4 x\s*3\.4\s*mm/)).toBeTruthy()
+  })
+
+  it('shows a count with no unit and an angle in degrees, live and saved, beside a length in mm', async () => {
+    const gear: PlanInput = { ...BOX, features: [{ name: 'Plate', kind: 'pattern', sizes: { count: 4, angle_deg: 30, width: 80 } }], overall: undefined, holes: undefined }
+    // the angle reads in degrees, so its label drops the deg its key ends in
+    render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))
+    const rows = savedRows()
+    expect(rows).toEqual(['Count 4', 'Angle 30°', 'Width 80 mm'])
+    cleanup()
+    await shown(gear)
+    const feature = screen.getByTestId('mimir-plan-feature')
+    expect(field(/^Plate, Count$/).value).toBe('4')
+    expect(field(/^Plate, Angle, degrees$/).value).toBe('30')
+    expect(field(/^Plate, Width, millimeters$/).value).toBe('80')
+    // one mm, for the width
+    expect(within(feature).getAllByText('mm')).toHaveLength(1)
+    expect(within(feature).getAllByText('°')).toHaveLength(1)
+  })
+
+  it('never converts a count or an angle in an inch plan', async () => {
+    const gear: PlanInput = { ...BOX, units: 'in', features: [{ name: 'Gear', sizes: { teeth: 20, draft: 1.5, thickness: 0.25 } }], overall: undefined, holes: undefined }
+    render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))
+    const rows = savedRows()
+    expect(rows).toEqual(['Teeth 20', 'Draft 1.5°', 'Thickness 0.25 in'])
+    cleanup()
+    await shown(gear)
+    expect(field(/^Gear, Teeth$/).value).toBe('20')
+    expect(field(/^Gear, Draft, degrees$/).value).toBe('1.5')
+    expect(field(/^Gear, Thickness, inches$/).value).toBe('0.25')
   })
 
   it('puts keys in plain words', () => {
