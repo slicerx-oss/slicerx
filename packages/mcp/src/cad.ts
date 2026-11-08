@@ -1003,7 +1003,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const BOOL = { union: 'union', subtract: 'difference', intersect: 'intersection' } as const
   const boolean = defineTool({
     name: 'geom.boolean',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description:

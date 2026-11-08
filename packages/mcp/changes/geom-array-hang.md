@@ -1,0 +1,4 @@
+### Fixed
+
+- `slicerx_geom_array` 1.1.1 joins a merged circular array of a round part around its own axis in milliseconds, such as a 100 sided cylinder in 12 copies or a hub with one tooth in 12 copies. Before, such a call could run for minutes. The merged body is cleaner (the 12 copy cylinder is one 432 triangle body); a faceted round on the array's axis may come back with a few more sides so the copies line up. A plain round keeps its corners on the same circle; a round joined to other shapes grows by at most 0.01 mm.
+- `slicerx_geom_boolean` 1.1.1, and the other tools that join bodies, stop a join that would hand the geometry engine more than 20 million triangles in all, with the message "this join is taking too long to finish; try fewer copies or join them in smaller groups", instead of running on.
