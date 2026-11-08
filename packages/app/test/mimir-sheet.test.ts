@@ -4,14 +4,18 @@
 // iso view, callouts stay in their cell and clear of each other, and the flat views can share one scale. The scripted
 // parts each come with a drawing that places every size but the ones that are not on the part, and a sheet the person
 // cancels ends the script with nothing built.
-import type { PilotDim, PilotEvent, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
+import type { Host, PilotDim, PilotEvent, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
+import { createApprovalBroker, DEFAULT_CONFIG } from '@slicerx/pilot'
+import type { LlmMessage } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { drawView, fitScale, readsIn, shapeOfSolids, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
-import { backplatePart, boxPart, SCRIPTS, standPart } from '../src/workspaces/mimir/scripts'
+import { backplatePart, boundWall, boxPart, SCRIPTS, standPart } from '../src/workspaces/mimir/scripts'
 import { mimirTools, scriptedMimir } from '../src/workspaces/mimir/scripted'
 import { setDraft, sheetMode, sheetUi, setShownSheet, typedValues } from '../src/workspaces/mimir/sheet-ui'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { sourceHost } from '../src/workspaces/mimir/sheet-view'
+import { bundledKb } from '../src/workspaces/mimir/kb'
+import { tabPilotOptions } from '../src/workspaces/mimir/session'
 
 const CUBE: PilotSheetSolid = { plane: 'xy', points: [[0, 0], [0, 10], [10, 10], [10, 0]], from: 0, to: 10 }
 
@@ -226,6 +230,31 @@ describe('the scripted sizes sheet of a part already built', () => {
     }
   })
 
+  it('shows the sizes when the message names the part as a design or a print, and builds when it asks for one', () => {
+    const route = (m: string) => SCRIPTS.find((s) => s.match.test(m))?.id
+    expect(route('Show the main sizes of my box design')).toBe('sizes')
+    expect(route('The dimension sheet for this design')).toBe('sizes')
+    expect(route('Main sizes of the print, please')).toBe('sizes')
+    expect(route('Make a box with a lid and show me the main sizes first')).toBe('box')
+    expect(route('Design a box and show me the size sheet')).toBe('box')
+    expect(route('Build a phone stand, main sizes first')).toBe('stand')
+  })
+
+  it('shows the wall of the sheet tied to this design only, never another design\'s', () => {
+    const sheet = (wall: number, k: number): LlmMessage[] => [
+      { role: 'assistant', content: '', toolCalls: [{ id: `s${k}`, name: 'pilot.sheet', arguments: '{}' }] },
+      { role: 'tool', callId: `s${k}`, content: JSON.stringify({ ok: true, result: { confirmed: true, values: { wall }, changed: [] } }) },
+    ]
+    const bind = (design: string, k: number): LlmMessage[] => [
+      { role: 'assistant', content: '', toolCalls: [{ id: `b${k}`, name: 'pilot.sheet_bind', arguments: JSON.stringify({ design, binds: [{ key: 'wall', step: 1 }] }) }] },
+      { role: 'tool', callId: `b${k}`, content: JSON.stringify({ ok: true, result: { bound: 1 } }) },
+    ]
+    const chat = [...sheet(2, 1), ...bind('obj_box', 1), ...sheet(3.5, 2), ...bind('obj_lid', 2)]
+    expect(boundWall(chat, 'obj_box')).toBe(2)
+    expect(boundWall(chat, 'obj_lid')).toBe(3.5)
+    expect(boundWall(chat, 'obj_other')).toBeUndefined()
+  })
+
   it('builds when the message asks to make a part and also mentions its main sizes', async () => {
     const out = await ask('Make a box with a lid and show me the main sizes first')
     expect(out.sheet?.design).toBeUndefined()
@@ -244,5 +273,38 @@ describe('setting a waiting sheet aside with words', () => {
     setDraft('width', 80)
     expect(typedValues(sheetUi.getState())).toBeNull()
     setShownSheet(null)
+  })
+
+  it('sends the typed sizes only to the sheet they were typed on, and a new sheet starts with none', () => {
+    const dims = [{ key: 'width', label: 'Width', value: 80, unit: 'mm' as const, source: 'guess' as const }]
+    setShownSheet({ sheet: { id: 'sheet_a', title: 'Box', views: ['iso'], dims }, answer: null, bound: null, replay: false })
+    setDraft('width', 90)
+    expect(typedValues(sheetUi.getState(), 'sheet_a')).toEqual({ width: 90 })
+    // the view has moved on to another sheet: the first sheet's draft is not this one's
+    expect(typedValues(sheetUi.getState(), 'sheet_b')).toBeNull()
+    setShownSheet({ sheet: { id: 'sheet_b', title: 'Box', views: ['iso'], dims }, answer: null, bound: null, replay: false })
+    expect(sheetUi.getState().draft).toEqual({})
+    expect(typedValues(sheetUi.getState(), 'sheet_b')).toBeNull()
+    setShownSheet(null)
+  })
+})
+
+// The tab tells pilot.sheet which built designs it can draw: one on the plate with a part that has geometry.
+describe('the tab\'s built designs for a sheet', () => {
+  it('names a design on the plate with geometry, never one with only empty parts or one not there', async () => {
+    const host = { kind: 'web', slicer: { loadParts: async () => { throw new Error('no parts') } }, printers: { list: async () => [], plugins: async () => [] }, approvals: createApprovalBroker(), capabilities: { threads: 1 } } as unknown as Host
+    const noLlm = { available: async () => true, stream: () => { throw new Error('scripted') } }
+    const known = tabPilotOptions(host, { llm: noLlm, config: DEFAULT_CONFIG, kb: await bundledKb(), tools: [] }).sheetDesign!
+    const before = get().plate
+    const part = (n: number) => ({ name: 'P', slot: 1, positions: new Float32Array(3 * n), indices: new Uint32Array(n) })
+    const at = { transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], colors: [], handle: {} }
+    set({ plate: [{ id: 'obj_full', name: 'Full', parts: [part(0), part(3)], ...at }, { id: 'obj_empty', name: 'Empty', parts: [part(0), part(0)], ...at }] as unknown as PlateEntry[] })
+    try {
+      expect(known('obj_full')).toBe(true)
+      expect(known('obj_empty')).toBe(false)
+      expect(known('obj_gone')).toBe(false)
+    } finally {
+      set({ plate: before })
+    }
   })
 })
