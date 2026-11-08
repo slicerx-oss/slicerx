@@ -291,6 +291,8 @@ export interface PilotSheet {
   dims: PilotDim[]
   /** The part drawn at the sheet's own sizes, for the drawing and its callouts. */
   part?: PilotSheetSolid[]
+  /** The built design the sheet changes: the drawing shows it as built, and the rows' places are in its frame. */
+  design?: string
 }
 
 /** A sheet row tied to the step it sets, so editing the row after the build edits that step's main number. */

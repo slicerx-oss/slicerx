@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The scripted turns mimir plays in the tab before a model is connected. Each one streams text and calls real tools,
 // so what it builds lands in the design's history like a person's edit.
+import { bakeMesh } from '@slicerx/cad-history'
 import type { LlmMessage, ScriptStep } from '@slicerx/pilot'
 import { get } from '../../state/store'
 import { mimirPlans } from './plans'
@@ -127,6 +128,8 @@ export function boxPart(v: Record<string, number>) {
       height: span([bx - w / 2, -d / 2, 0], [bx - w / 2, -d / 2, h], [-12, 0, 0]),
       wall: span([bx + w / 2 - wall, d / 2, h], [bx + w / 2, d / 2, h], [0, 12, 0]),
       lip: span([lx + iw / 2, -id / 2, wall], [lx + iw / 2, -id / 2, wall + lip], [w / 2 - iw / 2 + 12, 0, 0]),
+      // the gap between the lip and the wall it slides past: from the lip's side out to the wall's inside
+      lid_fit: span([lx + iw / 2, 0, wall + lip], [lx + iw / 2 + fit, 0, wall + lip], [0, 0, 10]),
     } as Record<string, { at: unknown }>,
   }
 }
@@ -288,13 +291,15 @@ export function standPart(v: Record<string, number>) {
   const [w, depth, lipH] = [v['stand_width']!, v['base_depth']!, v['lip_height']!]
   const x0 = -depth / 2
   const lipEnd = x0 + 6
-  const [t, room] = [v['phone_thickness']!, v['case_allowance']!]
+  const [t, room, pw] = [v['phone_thickness']!, v['case_allowance']!, v['phone_width']!]
   const foot = profile[3]!
   const lean = (v['lean']! * Math.PI) / 180
   const y = -w / 2
   return {
     part: [{ plane: 'xz', points: profile, from: -w / 2, to: w / 2 }],
     at: {
+      // the phone stands in the channel, across the stand: its width reads in Right, over the channel
+      phone_width: span([lipEnd + t / 2, -pw / 2, lipH], [lipEnd + t / 2, pw / 2, lipH], [0, 0, 30]),
       phone_thickness: span([lipEnd, y, lipH], [lipEnd + t, y, lipH], [0, 0, 14]),
       case_allowance: span([lipEnd + t, y, lipH], [lipEnd + t + room, y, lipH], [0, 0, 14]),
       lean: { at: { c: [foot[0], y, foot[1]], from: [1, 0, 0], to: [Math.cos(lean), 0, Math.sin(lean)], r: 18 } },
@@ -579,7 +584,46 @@ const fresh: ScriptStep[] = [
   (messages) => (lastResult(messages)?.['started'] === true ? { text: 'The new project is open and empty. Describe the first part.' } : { text: 'You kept the open project, so nothing changed.' }),
 ]
 
+/** The world bounds of a plate object, from its parts as placed. */
+function boundsOf(id: string): { lo: [number, number, number]; hi: [number, number, number] } | null {
+  const e = get().plate.find((p) => p.id === id)
+  if (!e) return null
+  const lo: [number, number, number] = [Infinity, Infinity, Infinity]
+  const hi: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+  for (const part of e.parts) {
+    const w = bakeMesh(part, e.transform as Parameters<typeof bakeMesh>[1])
+    for (let i = 0; i + 2 < w.positions.length; i += 3) for (let k = 0; k < 3; k++) ((lo[k] = Math.min(lo[k]!, w.positions[i + k]!)), (hi[k] = Math.max(hi[k]!, w.positions[i + k]!)))
+  }
+  return lo[0] === Infinity ? null : { lo, hi }
+}
+
+/**
+ * The sizes of a part already built, on a sheet that draws it as built: its overall length, depth and height, and the
+ * wall when the last sheet set one. The rows sit on the part where it stands on the plate.
+ */
+const sizesOf: ScriptStep[] = [
+  (messages) => {
+    const e = [...get().plate].reverse().find((p) => p.history)
+    const b = e ? boundsOf(e.id) : null
+    if (!e || !b) return { text: 'There is no part built yet to show the sizes of. Describe one and I will build it first.' }
+    const { lo, hi } = b
+    const r = (n: number) => Math.round(n * 10) / 10
+    const [x, y, z] = [r(hi[0] - lo[0]), r(hi[1] - lo[1]), r(hi[2] - lo[2])]
+    const wall = sheetValues(messages)?.['wall']
+    const rows = [
+      row('length', 'Overall length', x, 'asked', { at: { a: lo, b: [hi[0], lo[1], lo[2]], off: [0, 0, -10] } }),
+      row('depth', 'Overall depth', y, 'asked', { at: { a: [hi[0], lo[1], lo[2]], b: [hi[0], hi[1], lo[2]], off: [10, 0, 0] } }),
+      row('height', 'Overall height', z, 'asked', { at: { a: lo, b: [lo[0], lo[1], hi[2]], off: [-10, 0, 0] } }),
+      ...(wall ? [row('wall', 'Wall', wall, 'asked', { at: { a: [lo[0], (lo[1] + hi[1]) / 2, hi[2]], b: [lo[0] + wall, (lo[1] + hi[1]) / 2, hi[2]], off: [0, 0, 10] } })] : []),
+    ]
+    return { text: `Here are the main sizes of the ${e.name}, drawn as it is built. Change any of them and I will rebuild it to match.`, calls: [{ name: 'pilot.sheet', args: { title: `${e.name} main sizes`, views: ['front', 'top', 'side', 'iso'], dims: rows, design: e.id } }] }
+  },
+  (messages) => (lastResult(messages)?.['confirmed'] === true ? { text: 'Those are the sizes it has now.' } : { text: 'Okay, I left it as it is.' }),
+]
+
 export const SCRIPTS: MimirScript[] = [
+  // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another
+  { id: 'sizes', match: /\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b/i, steps: sizesOf },
   // first, so "check the backplate against its plan" checks rather than building another
   { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },

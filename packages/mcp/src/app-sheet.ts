@@ -26,7 +26,7 @@ async function call(link: AppLinkCaller, appName: string, method: string, args: 
 export function appSheetTools(link: AppLinkCaller, appName: string): PilotTool<never>[] {
   const ask = defineTool({
     name: 'app.sheet_ask',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description: `Before building a part in the open ${appName} app, show the person every size it is built from (width, length, height, wall, holes, clearance and so on), each with its value, unit and source (asked, lookup with its page, photo, or guess), so they can confirm them. Answers at once with a sheet id; read the answer with slicerx_app_sheet_get and build only once it is confirmed, from the values it returns. One sheet waits per client at a time.`,
