@@ -5,8 +5,8 @@
 // loops, a projection follows its body when that body changes and the bodies drawn on the sketch replay with it, in
 // the same undo step; a source that is gone keeps its curves and says why; projections save and open with the
 // project; an MCP client projects, switches and removes through the MCP tool on the app's host, reading back each time;
-// and an Extrude of a new sketch with a projection leaves no sketch behind when it fails and undoes in one step when
-// it lands.
+// an Extrude of a new sketch with a projection leaves no sketch behind when it fails and undoes in one step when it
+// lands; and an SVG sketch keeps its own loops in order with the projected ones last.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { BODY_GONE, featureParams, followProjections, historyOf, MAX_PROJECTION, nextProjectionId, TOO_MANY_PROJECTIONS, projectRequest, withHistory, parseTimeline, projectedOf, timelineFiles, withBodyIds, withProjection, withoutProjection, type FaceFrame, type FeatureItem, type HistoryMesh, type ProjectSource, type SketchItem, type SketchLoop, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { designToolset } from '@slicerx/mcp/toolset'
@@ -32,6 +32,13 @@ const widest = (m: { positions: ArrayLike<number> }) => {
   const xs = Array.from(m.positions).filter((_, i) => i % 3 === 0)
   return Math.max(...xs) - Math.min(...xs)
 }
+
+// what sketch.svg answers for a square, a round hole and a leaf of a line, an arc and a spline
+const ART: SketchLoop[] = [
+  { start: [80, 120], segments: [{ type: 'line', to: [120, 120] }, { type: 'line', to: [120, 80] }, { type: 'line', to: [80, 80] }, { type: 'line', to: [80, 120] }] },
+  { type: 'circle', center: [100, 100], diameterMm: 16 },
+  { start: [130, 80], segments: [{ type: 'line', to: [150, 80] }, { type: 'arc', to: [150, 100], through: [160, 90] }, { type: 'spline', points: [[140, 104], [133, 95]], to: [130, 80] }] },
+]
 
 /**
  * A stand-in engine: a projection is the square as wide as the source body along x, and an extrude of a sketch is a box as wide as its widest real loop (none is an error). A body 13 mm wide has lost its face.
@@ -63,6 +70,7 @@ const engine = {
       const box = boxMesh(w || 1, w || 1, (r['spec'] as { distanceMm: number }).distanceMm)
       return { mesh: { positions: Array.from(box.positions), indices: Array.from(box.indices) }, report: { touches: true } } as T
     }
+    if (op === 'sketch.svg') return { loops: ART, counts: { lines: 5, arcs: 1, splines: 1, circles: 1 }, sizeMm: [80, 40], mmPerUnit: 1, check: { ok: true, loops: [], issues: [] }, warnings: [] } as T
     throw new Error(`${op}: not in the stand-in engine`)
   },
 }
@@ -732,5 +740,66 @@ describe('a solid from a new sketch with a projection', () => {
     expect(r.warn).toBe(true)
     expect(kinds()).toEqual([])
     expect(undo.state().undo).toBe(0)
+  })
+})
+
+describe('projections in a sketch made from SVG', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><rect width="40" height="40"/></svg>'
+  const tools = (host = appDesignHost(loader)) => designToolset(host)
+  const run = (t: ReturnType<typeof tools>, name: string, input: Record<string, unknown>) => t.find((x) => x.name === name)!.run(input as never, {} as never)
+
+  it('projects into the id design.sketch_svg returns, through the app host', async () => {
+    set({ plate: [body('b', 10)] })
+    const t = tools()
+    const made = await run(t, 'design.sketch_svg', { svg })
+    const id = (made.output as { id: string }).id
+    const r = await run(t, 'design.sketch_project', { sketch: id, design: 'b', kind: 'silhouette' })
+    expect(r.output).toMatchObject({ sketch: id, projection: 'p1', projections: [{ id: 'p1', kind: 'silhouette', mode: 'real', loops: [square(10)] }] })
+    expect(sketchById(get().timeline, id)!.loops).toEqual([...ART, { ...square(10), projected: 'p1' }])
+  })
+
+  it('keep the artwork loops as they were and in order, the projected ones last, through project, follow, switch, remove, save and open', async () => {
+    set({ plate: [body('b', 10)] })
+    const host = appDesignHost(loader)
+    const t = tools(host)
+    const id = ((await run(t, 'design.sketch_svg', { svg })).output as { id: string }).id
+    const k = () => sketchById(get().timeline, id)!
+    const own = () => k().loops.filter((l) => l.projected === undefined)
+    const tags = () => k().loops.map((l) => l.projected ?? null)
+    const kept = () => {
+      expect(own()).toEqual(ART)
+      expect(k().loops.slice(0, ART.length)).toEqual(ART)
+    }
+    kept()
+    await run(t, 'design.sketch_project', { sketch: id, design: 'b', kind: 'silhouette' })
+    await run(t, 'design.sketch_project', { sketch: id, design: 'b', kind: 'face', face: { at: [5, 5, 5], normal: [0, 0, 1] }, mode: 'reference' })
+    kept()
+    expect(tags()).toEqual([null, null, null, 'p1', 'p2'])
+    expect(k().loops.map((l) => l.construction ?? false)).toEqual([false, false, false, false, true])
+    // the block grows: both projections follow it, the artwork stays put
+    set((st) => ({ plate: st.plate.map((e) => (e.id === 'b' ? { ...e, parts: [boxMesh(16, 16, 5)] } : e)) }))
+    await followBodies(loader, ['b'])
+    kept()
+    expect(projectedOf(k().loops, 'p1')).toEqual([{ ...square(16), projected: 'p1' }])
+    expect(tags()).toEqual([null, null, null, 'p1', 'p2'])
+    // switched each way, nothing moves
+    await run(t, 'design.sketch_project', { sketch: id, projection: 'p1', mode: 'reference' })
+    await run(t, 'design.sketch_project', { sketch: id, projection: 'p2', mode: 'real' })
+    kept()
+    expect(tags()).toEqual([null, null, null, 'p1', 'p2'])
+    expect(k().loops.map((l) => l.construction ?? false)).toEqual([false, false, false, true, false])
+    await run(t, 'design.sketch_project', { sketch: id, projection: 'p1', remove: true })
+    kept()
+    expect(tags()).toEqual([null, null, null, 'p2'])
+    // a body made from it, then saved and opened: the sketch comes back the same, its projection on the plate's id
+    const d = await host.create('Tab', [])
+    await run(t, 'geom.extrude', { design: d.id, sketch: id, distance_mm: 3, operation: 'new' })
+    kept()
+    const read = withBodyIds(parseTimeline(fileMap(get().timeline, [['b', 7], [d.id, 8]]), new Set(['7', '8']))!, (b) => (b === '7' ? 'b' : b === '8' ? d.id : undefined))
+    const back = read.items.find((i) => i.kind === 'sketch') as SketchItem
+    expect(back.loops).toEqual(k().loops)
+    expect(back.loops.slice(0, ART.length)).toEqual(ART)
+    expect(back.projections!.map((p) => [p.id, p.source.kind, p.source.body, p.mode])).toEqual([['p2', 'face', 'b', 'real']])
+    expect(back.nextProjection).toBe(2)
   })
 })
