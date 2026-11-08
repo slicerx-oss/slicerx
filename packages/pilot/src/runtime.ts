@@ -997,7 +997,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       for (const s of loaded) chatSets.used.set(s, { turn: chatSets.turn, calls: chatSets.used.get(s)?.calls ?? 0 })
       chatSets.lastCalled = used
       chatSets.lastNeeds = new Set(needs)
-      chatSets.lastOffer = turnNeeds(reply)
+      chatSets.lastOffer = turnNeeds(reply, { sliceToPrint: true })
     }
     void usageIn
     void usageOut
@@ -1139,7 +1139,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         let done: PilotEvent & { type: 'done' }
         try {
           const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId)) : undefined
-          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context }), startSet)
+          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet)
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })
           done = { type: 'done', stopReason: signal.aborted ? 'canceled' : 'error', ms: 0 }

@@ -101,14 +101,21 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
 ]
 
+/** Asking to print or send a part: "print it on Bay 2", "send this to my printer", "print the bracket". */
+const PRINT_IT = /\b(?:print|send|queue)\s+(?:it|this|that|them|these|those|the|my|a|an|one|two)\b/i
+
 /**
  * The toolsets a turn needs besides core: the tab's own (the design tools, where the host gives them), what the request
  * asks for, and what the plate holds (a printer it is assigned to, objects on it). Used only when tools must be left out.
+ * `sliceToPrint` (cloud models): a request to print or send a part needs the slicing tools as well.
  */
-export function turnNeeds(message: string, opts: { designs?: boolean; context?: PilotContext } = {}): Set<Toolset> {
+export function turnNeeds(message: string, opts: { designs?: boolean; context?: PilotContext; sliceToPrint?: boolean } = {}): Set<Toolset> {
   const needs = new Set<Toolset>()
   if (opts.designs) needs.add('cad')
   for (const [set, words] of NEEDS) if (words.test(message)) needs.add(set)
+  // a part goes to a printer sliced: on a capped cloud request, asking to print or send one needs the slicing tools too
+  // (a local model's turn sets already pick its slicing and send tools)
+  if (opts.sliceToPrint && PRINT_IT.test(message)) needs.add('settings')
   if (opts.context?.printerId) needs.add('printers')
   if (opts.context?.objects?.length) needs.add('project')
   return needs
