@@ -7,6 +7,8 @@ import type { Host } from '@slicerx/contracts'
 import { INPUTS, printed, slotsRead } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
 import { cancelSlice, STALE_SLICE } from '../state/actions'
+import { resolveSlots, usedSlots } from '../filament/slots'
+import { allPlates } from './all-plates'
 import { plateTower } from './tower'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
@@ -85,6 +87,13 @@ function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState, ids: ReadonlySet<str
 /** State outside INPUTS that picks a slot's filament preset, and so its tuned values (shrinkage moves layers). */
 export const KEY_SLOT_MATCH = ['slotMatch', 'fileSlotTypes', 'fileSlotVendors', 'printerModel'] as const satisfies readonly (keyof AppState)[]
 
+/**
+ * State outside INPUTS that goes into the slice's configuration: the nozzle volume and an opened project's flush
+ * volumes (the flush matrix), and the values its printer G-code names that no setting models (slice-plate.ts
+ * plateSliceConfig).
+ */
+export const KEY_CONFIG = ['printerNozzleVolume', 'projectFlush', 'projectScriptKeys'] as const satisfies readonly (keyof AppState)[]
+
 /** JSON with mesh arrays as their lengths (the handle hash names their content) and the shipped G-code left out. */
 const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${(v as { length?: number }).length ?? 0}` : key === 'shippedGcode' ? undefined : v)
 
@@ -96,12 +105,13 @@ const last = new Map<string, { refs: unknown[]; key: string }>()
  * layers, but not the ones KEY_LEAVES_OUT names: each object's layer inputs as the slice sees the plate, this plate's
  * own settings and calibration, the profile and its layer, the Easy choices, overrides, this plate's object settings,
  * filament slots and what matches them to presets, the printer's slots by filament, flush, the prime tower, tuned
- * filament presets, the slice printer's nozzles and extruders and the bed. A spool reload (new grams left or a new tag), a rename, a lock or a thumbnail leaves it as it was. Equal keys
+ * filament presets, the slice printer's nozzles and extruders, the bed, the slots every plate uses, the model's color for
+ * a slot nothing else colors and the config inputs outside INPUTS (KEY_CONFIG). A spool reload (new grams left or a new tag), a rename, a lock or a thumbnail leaves it as it was. Equal keys
  * mean a slice would plan the same layers. The last key is kept while none of these change.
  */
 export function sliceInputsKey(s: AppState): string {
   const meta = s.plates.find((p) => p.id === s.activePlate)
-  const refs: unknown[] = [s.plate, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k]), ...KEY_SLOT_MATCH.map((k) => s[k])]
+  const refs: unknown[] = [s.plate, s.plates, s.layerMarks, s.fileSlotColors, s.historyEdit, s.activePlate, meta?.settings, s.calibration[s.activePlate], ...KEY_INPUTS.map((k) => s[k]), ...KEY_SLOT_MATCH.map((k) => s[k]), ...KEY_CONFIG.map((k) => s[k])]
   const prev = last.get(s.activePlate)
   if (prev && prev.refs.length === refs.length && prev.refs.every((r, i) => r === refs[i])) return prev.key
   const entries = fullPlate(s)
@@ -109,7 +119,14 @@ export function sliceInputsKey(s: AppState): string {
   const ids = new Set(entries.flatMap((e) => [e.id, e.instanceOf ?? e.id]))
   const objects = entries.map(objectKey)
   const slots = KEY_SLOT_MATCH.map((k) => (k === 'printerModel' ? (s.printerModel?.id ?? null) : s[k]))
-  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s, ids)), slots], lean))
+  // The slots every plate uses: a multi-color plate's configuration lists the slots up to the highest one any plate
+  // uses, with their flush matrix and tower (filament/slot-config.ts slotConfig).
+  const used = [...usedSlots(s)].sort((a, b) => a - b)
+  // A slot no one set up and no printer reports takes the model's color (the file's, else its parts'), which the
+  // configuration writes as that filament's color. An object's colors count only then.
+  const colors = resolveSlots(s).map((r) => (r.source === 'model' ? r.color : null))
+  const config = KEY_CONFIG.map((k) => s[k] ?? null)
+  const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s, ids)), slots, used, colors, config], lean))
   if (last.size > 16) last.clear()
   last.set(s.activePlate, { refs, key })
   return key
@@ -120,7 +137,8 @@ export function plateInputsKey(s: AppState, plateId: string): string {
   if (plateId === s.activePlate) return sliceInputsKey(s)
   const meta = s.plates.find((p) => p.id === plateId)
   // What a plate switch swaps per plate (plates.ts switchPlate): its objects, and an opened project's tower spot.
-  return sliceInputsKey({ ...s, activePlate: plateId, plate: meta?.objects ?? [], historyEdit: null, tower: plateTower(s, plateId) })
+  // The shown plate's objects go into the plate list, so every plate's slots are read as they are.
+  return sliceInputsKey({ ...s, plates: allPlates(s), activePlate: plateId, plate: meta?.objects ?? [], historyEdit: null, tower: plateTower(s, plateId) })
 }
 
 /** One resume plan, as an id: the same plan stored again is the same id; a new plan or a changed one is another. */
