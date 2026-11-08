@@ -48,6 +48,18 @@ export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: (
   }
   const fullModule = () => (full ??= loadFull().then((m) => (fullReady = m), failed('full')))
   const coreModule = () => (core ??= loadCore().catch(failed('core')))
+  const module = async (op: string, request: unknown): Promise<EngineModule> => {
+    if (fullReady) return fullReady
+    const c = await coreModule()
+    if (c && c.operations.has(op) && !carriesFaces(request)) return c
+    const f = await fullModule()
+    if (f) return f
+    if (c) {
+      if (c.operations.has(op)) return c
+      throw new Error(`${op} is not in this build`)
+    }
+    throw new Error('The geometry engine did not start')
+  }
   return {
     /** Loads the core now (a worker started ahead of its first call). True when it is there. */
     async core(): Promise<boolean> {
@@ -57,17 +69,10 @@ export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: (
     async full(): Promise<boolean> {
       return (await fullModule()) !== null
     },
+    /** The build that takes `op`, loaded first when it is not yet. */
+    module,
     async run(op: string, request: unknown): Promise<unknown> {
-      if (fullReady) return fullReady.call(op, request)
-      const c = await coreModule()
-      if (c && c.operations.has(op) && !carriesFaces(request)) return c.call(op, request)
-      const f = await fullModule()
-      if (f) return f.call(op, request)
-      if (c) {
-        if (c.operations.has(op)) return c.call(op, request)
-        throw new Error(`${op} is not in this build`)
-      }
-      throw new Error('The geometry engine did not start')
+      return (await module(op, request)).call(op, request)
     },
   }
 }

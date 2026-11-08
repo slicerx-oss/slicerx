@@ -90,6 +90,14 @@ export function endIdleGeomWorker(): boolean {
   return endIfIdle?.() ?? true
 }
 
+/** A call for the worker. `gate`: it can be canceled, so the worker asks before it runs it (worker-loop.ts). */
+interface Call {
+  id: number
+  op: string
+  request: unknown
+  gate: boolean
+}
+
 function workerProvider(): GeomProvider {
   let worker: Worker | null = null
   let idle: ReturnType<typeof setTimeout> | null = null
@@ -97,16 +105,23 @@ function workerProvider(): GeomProvider {
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   // calls the worker said it started and has not answered yet
   const started = new Set<number>()
+  // calls sent and not started, kept to go to the next worker if this one ends; a replay until it answers, since it
+  // runs again from its start. A big mesh is held only that long.
+  const unstarted = new Map<number, Call>()
+  // calls the worker reached and was told to run
+  const going = new Set<number>()
   // canceled calls the worker has not answered yet, with the timer that ends the worker once one has started
   const canceled = new Map<number, ReturnType<typeof setTimeout> | null>()
   // calls made while a canceled one may still end the worker: sent once it answers, or to the next worker
-  let held: { id: number; op: string; request: unknown }[] = []
+  let held: Call[] = []
   const release = () => {
     if (idle) clearTimeout(idle)
     idle = null
     for (const t of canceled.values()) if (t) clearTimeout(t)
     canceled.clear()
     started.clear()
+    unstarted.clear()
+    going.clear()
     held = []
     const ended = worker
     worker = null
@@ -121,13 +136,14 @@ function workerProvider(): GeomProvider {
     for (const p of pending.values()) p.reject(error)
     pending.clear()
   }
-  const send = (id: number, op: string, request: unknown) => {
+  const send = (c: Call) => {
     // a request that cannot be sent fails the call
     try {
-      start().postMessage({ id, op, request })
+      start().postMessage(c.gate ? { id: c.id, op: c.op, request: c.request, gate: true } : { id: c.id, op: c.op, request: c.request })
+      unstarted.set(c.id, c)
     } catch (e) {
-      const p = pending.get(id)
-      pending.delete(id)
+      const p = pending.get(c.id)
+      pending.delete(c.id)
       p?.reject(e instanceof Error ? e : new Error(String(e)))
     }
   }
@@ -136,22 +152,20 @@ function workerProvider(): GeomProvider {
     if (ending()) return
     const waiting = held
     held = []
-    for (const c of waiting) if (pending.has(c.id)) send(c.id, c.op, c.request)
+    for (const c of waiting) if (pending.has(c.id)) send(c)
+  }
+  // Ends the worker. The calls it never started and the ones held back go to the next worker, in order; only a call
+  // that was running there and nobody canceled fails.
+  const interrupt = () => {
+    const again = [...unstarted.values(), ...held].filter((c) => pending.has(c.id)).sort((a, b) => a.id - b.id)
+    const keep = again.map((c) => [c, pending.get(c.id)] as const)
+    for (const [c] of keep) pending.delete(c.id)
+    failAll(new Error(INTERRUPTED))
+    for (const [c, p] of keep) if (p) pending.set(c.id, p)
+    for (const [c] of keep) send(c)
   }
   const interruptAfterGrace = (id: number) => {
-    canceled.set(
-      id,
-      setTimeout(() => {
-        // the held calls never reached this worker, so they go to the next one rather than fail
-        const waiting = held
-        const keep = waiting.map((c) => [c.id, pending.get(c.id)] as const)
-        for (const [k] of keep) pending.delete(k)
-        failAll(new Error(INTERRUPTED))
-        for (const [k, p] of keep) if (p) pending.set(k, p)
-        held = waiting
-        sendHeld()
-      }, CANCEL_GRACE_MS),
-    )
+    canceled.set(id, setTimeout(interrupt, CANCEL_GRACE_MS))
   }
   endIfIdle = () => {
     if (pending.size > 0) return false
@@ -165,18 +179,31 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
         return
       }
+      if ('ready' in e.data) {
+        // the worker reached a call it may skip: one canceled meanwhile never runs, whatever it was waiting behind
+        const id = e.data.ready
+        if (pending.has(id)) {
+          going.add(id)
+          current.postMessage({ go: id })
+        } else current.postMessage({ skip: id })
+        return
+      }
       if ('started' in e.data) {
-        started.add(e.data.started)
-        if (canceled.has(e.data.started)) interruptAfterGrace(e.data.started)
+        const id = e.data.started
+        started.add(id)
+        if (unstarted.get(id)?.op !== 'history.replay') unstarted.delete(id)
+        if (canceled.has(id)) interruptAfterGrace(id)
         return
       }
       started.delete(e.data.id)
+      unstarted.delete(e.data.id)
+      going.delete(e.data.id)
       const grace = canceled.get(e.data.id)
       if (grace) clearTimeout(grace)
       if (canceled.delete(e.data.id)) sendHeld()
@@ -206,17 +233,23 @@ function workerProvider(): GeomProvider {
           const p = pending.get(id)
           if (!p) return
           pending.delete(id)
+          unstarted.delete(id)
           p.reject(new DOMException('Canceled', 'AbortError'))
           if (held.some((c) => c.id === id)) {
             held = held.filter((c) => c.id !== id)
             return
           }
           // a synchronous kernel call cannot read a cancel message; ending its worker also releases kept bodies.
-          if (op === 'history.replay') return failAll(new Error(INTERRUPTED))
-          // any other call: skipped if it has not started, its worker ended if it is still running after the grace time
-          worker?.postMessage({ cancel: id })
-          if (started.has(id)) interruptAfterGrace(id)
-          else canceled.set(id, null)
+          if (op === 'history.replay') return interrupt()
+          // still running: its worker ends if it has not answered after the grace time
+          if (started.has(id)) {
+            worker?.postMessage({ cancel: id })
+            return interruptAfterGrace(id)
+          }
+          // told to run, maybe waiting for an engine build: the worker reads this before it starts the call
+          if (going.has(id)) worker?.postMessage({ cancel: id })
+          // not reached yet: the worker is told to skip it when it is
+          canceled.set(id, null)
         }
         // The abort listener goes once the call is answered: a signal that outlives the call (a fit check's lives
         // until the plate changes) would otherwise keep this closure, and what it can reach, alive.
@@ -238,8 +271,9 @@ function workerProvider(): GeomProvider {
       })
       // Posted outside the promise's closures, so none of them holds the request (it can be a big mesh); a held one is
       // kept only until the canceled call answers or its worker ends.
-      if (ending()) held.push({ id, op, request })
-      else send(id, op, request)
+      const c: Call = { id, op, request, gate: signal !== undefined && op !== 'history.replay' }
+      if (ending()) held.push(c)
+      else send(c)
       return answer
     },
   }

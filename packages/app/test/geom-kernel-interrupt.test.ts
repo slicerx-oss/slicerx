@@ -42,7 +42,8 @@ it('ends a busy real kernel worker and starts again without its body handles', a
     ctl.abort()
     expect(old.terminated).toBe(true)
     expect(await replay).toMatchObject({ name: 'AbortError' })
-    expect(await queued).toMatchObject({ message: expect.stringMatching(/interrupted.*retry/i) })
+    // it never started in the ended worker, so the next one answers it
+    expect(await queued).toEqual({ bodies: 0 })
     await old.exited
     await expect(api.call('brep.count', {})).resolves.toEqual({ bodies: 0 })
     expect(workers).toHaveLength(2)
