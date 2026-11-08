@@ -158,8 +158,9 @@ describe('the set a request picks', () => {
     // projecting a face or edges into a sketch needs a part already built, so it is an edit, beside the sketch tools
     // and edge picks it needs, and never a new part's step
     expect(turnSetsOf({ name: 'design.sketch_project' })).toEqual(new Set(['edit']))
-    // a print-in-place part is checked for its gaps while it is built
-    expect(turnSetsOf({ name: 'geom.fit_check' })).toEqual(new Set(['build']))
+    // a print-in-place part's gaps are measured with shape's tools: a local model's new part turn has no room for the
+    // fit check, so it loads on demand there
+    expect(turnSetsOf({ name: 'geom.fit_check' })).toEqual(new Set(['shape']))
     expect(turnSetsOf({ name: 'geom.mirror' })).toEqual(new Set(['shape']))
     expect(turnSetsOf({ name: 'design.timeline' })).toEqual(new Set(['edit']))
     // a design tool no list names yet still lands in a set
@@ -360,6 +361,26 @@ describe('a local model in the tab', () => {
     expect(sets.app).not.toContain('printer.history')
     expect(sets.print).toEqual(expect.arrayContaining(['printer.history', 'printer.queue', TURN_SET_TOOL]))
     expect(pilot.tools().map((t) => t.name)).toContain(TURN_SET_TOOL)
+  })
+})
+
+describe('the fit check on a local model', () => {
+  it('a new part turn sends the face list and not the fit check; calling the fit check loads it for the next step', async () => {
+    const tools = [...design, answering('geom.fit_check', { output: { gaps: [] } })]
+    const { pilot, client } = env('openai-compatible', [{ calls: [{ name: 'geom.fit_check', args: {} }] }, { text: 'Checked.' }], { tools })
+    const ev = await run(pilot, 's', 'A 30 mm cube with a fillet')
+    const first = names(client.requests[0]!)
+    expect(first).toEqual(expect.arrayContaining(['design.new', 'geom.fillet', 'geom.edge_pick', 'geom.faces', TURN_SET_TOOL]))
+    expect(first).not.toContain('geom.fit_check')
+    expect(ev.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, summary: 'geom.fit_check done' })
+    expect(names(client.requests[1]!)).toContain('geom.fit_check')
+  })
+
+  it('a cloud model gets the fit check and the face list on a new part turn', async () => {
+    const tools = [...design, answering('geom.fit_check', { output: { gaps: [] } })]
+    const { pilot, client } = env('anthropic', [{ text: 'Built.' }], { tools })
+    await run(pilot, 's', 'A 30 mm cube with a fillet')
+    expect(names(client.requests[0]!)).toEqual(expect.arrayContaining(['geom.fit_check', 'geom.faces', 'design.new']))
   })
 })
 
