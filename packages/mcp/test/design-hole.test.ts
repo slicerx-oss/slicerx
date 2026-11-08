@@ -88,9 +88,15 @@ describe('a hole made another size on a design', () => {
     const axis = await h.call('slicerx_geom_hole', { design: d, center: [5, 5, 5], axis: [0, 0, 1], diameter_mm: 4 })
     expect(axis.isError).toBe(true)
     expect(text(axis)).toMatch(/no round hole on that axis line; the nearest face to the point is a flat face/)
+    // a pick that finds no hole most often wanted a new one, which this tool does not make
+    expect(text(axis)).toMatch(/This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool \(operation cut\)/)
     const wall = await h.call('slicerx_geom_hole', { design: d, face: { at: [5, 5, 5], normal: [0, 0, 1] }, diameter_mm: 4 })
     expect(wall.isError).toBe(true)
     expect(text(wall)).toMatch(/no round hole there: the pick is on a flat face/)
+    expect(text(wall)).toMatch(/for a new hole, cut a circle loop with the extrude tool/)
+    // and the tool says so before it is called, so a new hole is cut the first time
+    const listed = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_geom_hole')
+    expect(listed?.description).toMatch(/^Change a round hole already in a model or a design.*It never makes a new hole; for one, cut a circle loop with the extrude tool\./)
     const nothing = await h.call('slicerx_geom_hole', { design: d, center: [5, 5, 5], axis: [0, 0, 1] })
     expect(text(nothing)).toMatch(/give what the hole becomes/)
     const both = await h.call('slicerx_geom_hole', { design: d, center: [5, 5, 5], axis: [0, 0, 1], face: { at: [5, 5, 5] }, diameter_mm: 4 })

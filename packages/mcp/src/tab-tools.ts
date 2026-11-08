@@ -114,9 +114,11 @@ export function createCardPlans(plans: PlanRegistry) {
    */
   function tieBuiltPart(tool: { name: string; permission: string }, input: unknown, out: ToolOutput): void {
     if (!unbuilt || out.ok === false) return
+    // the design id the step reports, so a design given by its name ties by its id; else the one it was given
+    const made = (out.output as { design?: unknown } | undefined)?.design
     let design: unknown
-    if (tool.name === 'design.new') design = (out.output as { design?: unknown } | undefined)?.design
-    else if (tool.name.startsWith('geom.') && tool.permission !== 'read') design = (input as { design?: unknown } | undefined)?.design
+    if (tool.name === 'design.new') design = made
+    else if (tool.name.startsWith('geom.') && tool.permission !== 'read') design = typeof made === 'string' && made ? made : (input as { design?: unknown } | undefined)?.design
     if (typeof design !== 'string' || !design) return
     if (plans.tie(unbuilt, design)) unbuilt = null
   }
