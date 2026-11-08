@@ -21,7 +21,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, madeAt, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { anchoredMove, appendStep, bakeMesh, claimSketches, designFrame, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOnSketch, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -148,14 +148,29 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   /** Where a stored design stands on the plate, waiting for its first body or not, as the app reads it. */
   const placeOf = (body: string): Mat4 | undefined => all.get(body)?.transform
   /**
-   * The steps drawn on sketch `id` in the order they were made, as the app's timeline lists its features (by when each
-   * step was made, its id's time and count, as timelineOf merges them), so the first is the same one the app anchors on.
+   * Every design's steps in the order the app's timeline lists their features (cad-history withHistory): a new or redone
+   * step goes at the end, or, when its design has later steps still in the list, between its own steps around it; an
+   * undone one leaves. A redone step so comes back after steps other designs made meanwhile, as in the app.
    */
-  const users = (id: string) => {
-    const at = (st: Step) => madeAt(st.id) ?? { time: Infinity, seq: 0 }
-    const used = [...all.values()].flatMap((x) => x.history.steps.flatMap((st) => (st.sketch === id ? [{ body: x.id, transform: st.transform, made: at(st) }] : [])))
-    return used.sort((a, b) => a.made.time - b.made.time || a.made.seq - b.made.seq).map(({ body, transform }) => ({ body, transform }))
+  let order: { body: string; step: string }[] = []
+  function follow(body: string, steps: readonly Step[]): void {
+    const ids = new Set(steps.map((st) => st.id))
+    const out = order.filter((o) => o.body !== body || ids.has(o.step))
+    const at = (id: string) => out.findIndex((o) => o.body === body && o.step === id)
+    steps.forEach((st, k) => {
+      if (at(st.id) >= 0) return
+      const before = k > 0 ? at(steps[k - 1]!.id) : -1
+      const later = steps.slice(k + 1).map((x) => at(x.id)).find((i) => i >= 0)
+      out.splice(later === undefined ? out.length : before >= 0 ? before + 1 : later, 0, { body, step: st.id })
+    })
+    order = out
   }
+  /** The steps drawn on sketch `id`, in timeline order (follow), so the first is the one the app anchors the sketch on. */
+  const users = (id: string) =>
+    order.flatMap((o) => {
+      const st = all.get(o.body)?.history.steps.find((x) => x.id === o.step)
+      return st?.sketch === id ? [{ body: o.body, transform: st.transform }] : []
+    })
   const sketchOf = (id: string) => timeline.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === id)
   /** How far sketch `id` moved since it was stored, by the same rule as the app (cad-history sketchAnchor). */
   const sketchMoved = (k: SketchItem): Mat4 => anchoredMove(k, users(k.id), placeOf)
@@ -172,6 +187,7 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   /** Keeps a replay on the stored design `s` and lands it; what the landing did. */
   function keep(s: Design, history: History, r: Awaited<ReturnType<typeof replayHistory>>): Landed | undefined {
     const before = { parts: s.parts, transform: s.transform }
+    follow(s.id, history.steps)
     // a step that broke keeps its sentence, as the app shows it
     Object.assign(s, { history: { ...history, steps: history.steps.map((st, i) => withBroken(st, r.status[i])) }, parts: r.parts, status: r.status, madeBy: r.madeBy ?? {} })
     const landed = land(s, before)

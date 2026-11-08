@@ -92,6 +92,17 @@ const SHARED_SKETCH: Call[] = [
   { name: 'design.list', args: {} },
 ]
 
+/**
+ * SHARED_SKETCH with Right's first cut undone and redone before the tab: the redone cut comes back after Left's in the
+ * timeline, so Left's cut is now the first drawn on the sketch and the sketch moves with Left, in the app and here.
+ */
+const SHARED_SKETCH_REDONE: Call[] = [
+  ...SHARED_SKETCH.slice(0, 7),
+  { name: 'design.undo', args: { design: 'd2' } },
+  { name: 'design.redo', args: { design: 'd2' } },
+  ...SHARED_SKETCH.slice(7),
+]
+
 const prompt = { id: 'landing', title: 'Landing', prompt: 'x', machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }, bodies: [1, 1] as [number, number] }
 
 const STEP_ID = /^s[0-9a-z]{8}[0-9a-z]+k?$/
@@ -267,6 +278,22 @@ describe('the creative eval lands a body as the app does', () => {
       expect(said[7]).toMatch(/did not fit on the bed where it stood, so it moved by/)
       expect(said[8]).toMatch(/"ok":true/)
       expect(said[8]).not.toMatch(/does not reach|no longer reaches|did not go through/)
+    } finally {
+      stop()
+    }
+  })
+
+  it('moves a shared sketch with the design whose step on it is first after an undo and redo of the other\'s, as the app does', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const stop = startTimeline()
+    try {
+      const { app, evalRun } = await both(SHARED_SKETCH_REDONE)
+      expect(evalRun.replies).toEqual(app.replies)
+      const said = app.replies.map((r) => JSON.stringify(r))
+      expect(said[8]).toMatch(/"ok":true/)
+      // Left landed again by its tab, and the sketch went with it: Right's deeper cut no longer meets Right
+      expect(said[9]).toMatch(/did not fit on the bed where it stood, so it moved by/)
+      expect(said[10]).toMatch(/does not reach|no longer reaches|did not go through/)
     } finally {
       stop()
     }
