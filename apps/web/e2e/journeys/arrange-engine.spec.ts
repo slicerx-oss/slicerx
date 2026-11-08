@@ -109,4 +109,44 @@ test.describe('Arrange in the engine', () => {
     expect(done.warnings.map((w) => w.code).filter((c) => /collision|clearance|gantry|wrap/.test(c))).toEqual([])
     await expect(page.getByTestId('slice-clearance-warning')).toHaveCount(0)
   })
+
+  test('stops a plate check still running when Arrange starts, and checks the arranged plate after', async ({ page }) => {
+    test.setTimeout(240_000)
+    interceptFileDialogs(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('slicerx.debug', '1')
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSlice: false }))
+    })
+    // Each check the page asks for, and the engine's answer once it comes.
+    const checks = new Map<string, { status: number; body: string } | null>()
+    page.on('request', (r) => {
+      if (/\/checks\/\d+$/.test(new URL(r.url()).pathname)) checks.set(r.url(), null)
+    })
+    page.on('response', async (r) => {
+      if (/\/checks\/\d+$/.test(new URL(r.url()).pathname)) checks.set(r.url(), { status: r.status(), body: await r.text().catch(() => '') })
+    })
+    // Sixteen tall posts on one spot: the check of the plate as it opens walks every post against all the others.
+    const posts = Array.from({ length: 16 }, (_, i) => ({ name: `Post ${i + 1}`, w: 20, d: 20, h: 200, x: 118, y: 118 }))
+    await page.goto('./')
+    await plateReady(page)
+    const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+    await chooser.setFiles({ name: 'Posts.3mf', mimeType: 'model/3mf', buffer: a1Project(posts) })
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.length), { timeout: 60_000 }).toBe(posts.length)
+    await expect.poll(() => [...checks.values()].some((a) => a === null), { timeout: 60_000 }).toBe(true)
+    const inFlight = [...checks].filter(([, a]) => a === null).map(([url]) => url)
+    const statuses: string[] = []
+    const watch = setInterval(() => {
+      void page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plateCheck.status).then((s) => statuses.push(s), () => undefined)
+    }, 100)
+    await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' }).click()
+    // The engine stops the check in flight with the desktop's answer, and the page takes it as no answer, not a failure.
+    for (const url of inFlight) await expect.poll(() => checks.get(url) ?? null, { timeout: 60_000 }).toEqual({ status: 409, body: 'plate check canceled: the plate is being arranged' })
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().arranging), { timeout: 120_000 }).toBeNull()
+    // The arranged plate gets a check of its own.
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plateCheck.status), { timeout: 150_000 }).toBe('done')
+    clearInterval(watch)
+    expect(statuses).not.toContain('error')
+  })
 })

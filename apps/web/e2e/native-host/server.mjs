@@ -52,6 +52,19 @@ const root = mkdtempSync(join(tmpdir(), 'sx-e2e-native-'))
 writeFileSync(join(root, 'owner.pid'), String(process.pid))
 /** Slices in flight, by session and job: the child process, so a cancel stops it. */
 const running = new Map()
+/** The desktop's answers for a check a newer check or an arrange stopped (slicing.rs CHECK_SKIPPED, CHECK_CANCELED). */
+const CHECK_SKIPPED = 'plate check skipped: a newer one was asked for'
+const CHECK_CANCELED = 'plate check canceled: the plate is being arranged'
+/** Why each stopped check was stopped, by its key in `running`: the answer it gives. */
+const stoppedBy = new Map()
+/** Stops the session's checks still running, each answering `why`. */
+function stopChecks(session, why) {
+  for (const [key, child] of running) {
+    if (!key.startsWith(`${session}/check-`)) continue
+    stoppedBy.set(key, why)
+    child.kill()
+  }
+}
 const safe = (s) => /^[A-Za-z0-9._-]{1,128}$/.test(s)
 
 function read(req) {
@@ -108,23 +121,28 @@ async function handle(req, res) {
     return r.code === 0 ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
   }
   // heimdall's plate check before a slice, as the desktop's check_plate runs it: a newer check of the session stops an
-  // older one still running, and both exit codes (0, and 3 for a sure strike) print the check
+  // older one still running (skipped), an arrange stops it too (canceled), and both exit codes (0, and 3 for a sure
+  // strike) print the check
   if (kind === 'checks' && id && req.method === 'POST') {
-    for (const [key, child] of running) if (key.startsWith(`${session}/check-`)) child.kill()
+    stopChecks(session, CHECK_SKIPPED)
     const body = JSON.parse((await read(req)).toString('utf8'))
     const ids = new Set(body.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
     body.meshes = Object.fromEntries([...ids].map((m) => [m, join(dir, `${m}.sxmp`)]))
     body.options = { ...body.options, configReport: false }
     const request = join(dir, `${id}.json`)
     writeFileSync(request, JSON.stringify(body))
-    const r = await run(['check', '--request', request], `${session}/check-${id}`)
+    const key = `${session}/check-${id}`
+    const r = await run(['check', '--request', request], key)
     rmSync(request, { force: true })
-    if (r.signal) return send(res, 499, 'canceled')
+    const why = stoppedBy.get(key)
+    stoppedBy.delete(key)
+    if (why || r.signal) return send(res, 409, why ?? 'canceled')
     return r.code === 0 || (r.code === 3 && r.stdout.trim().startsWith('{')) ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
   }
   // the plate's layout, as the desktop's arrange_plate runs it: `sx arrange` prints it with exit code 0, or 3 when some
   // objects have no room (notFit)
   if (kind === 'arranges' && id && req.method === 'POST') {
+    stopChecks(session, CHECK_CANCELED)
     const body = JSON.parse((await read(req)).toString('utf8'))
     const ids = new Set(body.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
     body.meshes = Object.fromEntries([...ids].map((m) => [m, join(dir, `${m}.sxmp`)]))
