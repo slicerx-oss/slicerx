@@ -75,7 +75,7 @@ const bedBox = () => screen.getByTestId('mimir-send-bed') as HTMLInputElement
 const checked = () => waitFor(() => expect(screen.getByTestId('mimir-send-status').textContent).not.toMatch(/^Checking/), { timeout: 45_000 })
 beforeAll(async () => void (await Promise.all([import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/state/slice-plate')])))
 
-beforeEach(() => set({ approval: null, plate: [], slice: { status: 'idle' } }))
+beforeEach(() => set({ approval: null, plate: [], slice: { status: 'idle' }, layerMarks: {} } as never))
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -142,6 +142,22 @@ describe('the send card', () => {
     act(() => set({ plate: [clip] }))
     await waitFor(() => expect(screen.getByText('The plate changed after this slice. Slice it again.')).toBeTruthy())
     expect(printButton().disabled).toBe(true)
+  })
+
+  it('a pause or a rename after the card shows turns Print off and says so, with no new run', async () => {
+    const handle: MeshHandle = { id: 'm1', hash: 'm1', name: 'Clip', triangles: 12, bboxMm: [30, 12, 8], openEdges: 0, parts: [] }
+    const clip: PlateEntry = { id: 'a', name: 'Clip', handle, parts: [{ ...boxMesh(30, 12, 8), name: 'Body', slot: 1 }], colors: ['#fff'], transform: compose({ position: [60, 60, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+    for (const edit of [() => set({ layerMarks: { [get().activePlate]: [{ id: 'm1', z: 2, kind: 'pause' }] } } as never), () => set({ plate: get().plate.map((e) => ({ ...e, name: `${e.name} v2` })) })]) {
+      set({ plate: [clip], layerMarks: {} } as never)
+      const { view } = await card()
+      await checked()
+      fireEvent.click(bedBox())
+      await waitFor(() => expect(printButton().disabled).toBe(false))
+      act(edit)
+      await waitFor(() => expect(screen.getByText('The plate changed after this slice. Slice it again.')).toBeTruthy())
+      expect(printButton().disabled).toBe(true)
+      view.unmount()
+    }
   })
 
   it('an answer the app cannot deliver says the card is no longer active, with no internal id, and turns it off', async () => {

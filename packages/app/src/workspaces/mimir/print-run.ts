@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The app's side of mimir's print run (PrintRunHost). The fingerprint says what a slice was made from: the plate's
-// objects, the printer, the settings, the filaments in use and what else goes into its G-code (layer marks, object
-// names). A slice keeps the fingerprint it was made with, and a
+// objects, the printer, the settings, the filaments and everything else the slice reads (the app's slice inputs key),
+// and what else goes into its G-code (layer marks, object names). A slice keeps the fingerprint it was made with, and a
 // different one now means the plate changed after slicing. The camera and the selection are not part of it. The target
 // is the printer and spools the chat picked: the plate points at the printer and each filament moves to its spool, the
 // same way a pick on the spools does.
@@ -14,7 +14,7 @@ import { effectiveSlot, mapSlot } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
 import { activeMeta } from '../../plate/plates'
-import { outputKey, planFor } from '../../plate/resume-tops'
+import { outputKey, planFor, plateInputsKey, sliceInputsKey } from '../../plate/resume-tops'
 import type { Mat4 } from '../../plate/transform'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../../state/store'
 
@@ -54,29 +54,22 @@ export function fnv1a(text: string): string {
 
 /**
  * What the fingerprint is made of, read from the store: plate `plate` (1 based), or the active plate. A plate that is
- * not active is read from its kept objects, so switching plates leaves each plate's fingerprint as it was.
+ * not active is read from its kept objects, so switching plates leaves each plate's fingerprint as it was. It is the
+ * app's own keys for what a slice reads, so it can never leave out a slice input the app's Print and Export check.
  */
 export function fingerprintInputs(s: AppState = get(), plate?: number) {
   const meta = plate === undefined ? activeMeta(s) : s.plates[plate - 1]
   const active = plate === undefined || meta?.id === s.activePlate
   const entries = active ? fullPlate(s) : (meta?.objects ?? [])
-  const used = new Set<number>()
-  for (const o of entries) if (o.printable !== false) for (const part of o.handle.parts) used.add(mapSlot(meta, effectiveSlot(o, part)))
-  const slots = [...used]
-    .sort((a, b) => a - b)
-    .map((index) => {
-      const spool = s.printerSlots[index - 1]
-      return { index, filament: s.slotSetup[index] ?? null, spool: spool ? { id: spool.id, material: spool.material ?? null, color: spool.color ?? null } : null }
-    })
   return {
     plate: meta?.id ?? (plate === undefined ? s.activePlate : null),
-    // the plate's own settings and each object's settings change the slice as much as a move does
-    plateSettings: meta?.settings ?? null,
-    entries: entries.map((e) => ({ id: e.id, transform: e.transform, steps: e.history?.steps.length ?? 0, printable: e.printable !== false, settings: s.objectSettings[e.id] ?? null })),
-    printerId: s.printerId,
-    overrides: s.overrides,
+    // Everything the slice reads that moves the plate's layers (plateInputsKey): each object as the slice sees it (its
+    // mesh, placement, filaments, paint, volumes and own settings), the plate's settings and calibration, the Easy
+    // choices, overrides, the printer, its slots by filament and color, flush, the prime tower, tuned presets and the
+    // bed. A spool reload that changes only the grams left or the tag, or a rename, leaves it as it was.
+    inputs: meta ? plateInputsKey(s, meta.id) : sliceInputsKey(s),
+    // the presets picked by name, which the key reads by their values
     profiles: { process: s.activePresets.process ?? null, filament: s.activePresets.filament ?? null },
-    slots,
     // The resume plan kept for this plate, by id, and whether it holds: keeping, clearing, replacing or voiding one
     // makes a slice from before it stale, so printer.queue never sends it into the part on the bed.
     resume: meta ? planFor(s, meta.id) : null,
