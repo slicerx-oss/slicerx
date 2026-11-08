@@ -107,6 +107,62 @@ describe('a request to print needs the slicing tools on a cloud model', () => {
     it(`not "${ask}"`, () => expect(turnNeeds(ask, { sliceToPrint: true }).has('settings')).toBe(false))
 })
 
+// Print requests as people write them. Each one needs the slicing tools on a cloud model, so its first capped request
+// can slice what it sends.
+const PRINT_ASKS = [
+  'Print bracket.stl on Bay 2',
+  'print 3 copies',
+  'print 3 copies on the farm',
+  'print 2 copies of the bracket',
+  'send to Printer 3',
+  'Send to the printer',
+  'go ahead and print',
+  'Go ahead and print on Bay 2',
+  'can you print it',
+  'print the lid',
+  'Print on Bay 2',
+  'Print bracket on Bay 2',
+  'print me a hook',
+  'start the print',
+  'queue it on Printer 1',
+  'send the bracket to my A1',
+  'please print',
+]
+// Questions about a print going, the printers or the settings, and other things to send. None of these asks for a print.
+const NOT_PRINT_ASKS = [
+  "How's the print on printer 3 going?",
+  'print quality looks bad',
+  'is my printer online',
+  'Is my printer online?',
+  'printer status',
+  'the print failed',
+  'Why did my print fail?',
+  'When will the print be done?',
+  'the print on Bay 2 stopped',
+  'what can I print?',
+  'Pause the printer',
+  'how does the printer heat up',
+  'print settings',
+  'print speed is too slow',
+  'send a bug report',
+  'send my feedback',
+  'send a photo from the camera',
+]
+
+describe('the print request pattern', () => {
+  for (const ask of PRINT_ASKS)
+    it(`"${ask}" asks to print`, () => {
+      const needs = turnNeeds(ask, { sliceToPrint: true })
+      expect(needs.has('settings')).toBe(true)
+      expect(needs.has('printers')).toBe(true)
+    })
+  for (const ask of NOT_PRINT_ASKS)
+    it(`"${ask}" does not ask to print`, () => {
+      // the print request adds nothing: the words alone decide
+      expect([...turnNeeds(ask, { sliceToPrint: true })]).toEqual([...turnNeeds(ask)])
+    })
+})
+
 describe('stickyCapTools', () => {
   const tools = manyTools()
 

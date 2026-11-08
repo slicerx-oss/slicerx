@@ -101,8 +101,28 @@ const NEEDS: readonly [Toolset, RegExp][] = [
   ['theme', /\b(theme|look|dark mode|light mode)\b/i],
 ]
 
-/** Asking to print or send a part: "print it on Bay 2", "send this to my printer", "print the bracket". */
-const PRINT_IT = /\b(?:print|send|queue)\s+(?:it|this|that|them|these|those|the|my|a|an|one|two)\b/i
+// Words after "print", "send" or "queue" that make it a question about a print or a printer, or something else to send:
+// "print quality looks bad", "print settings", "the print failed", "send a bug report".
+const NOT_A_PART = String.raw`(?:settings?|quality|speeds?|times?|status|jobs?|fail\w*|keeps|stopped|stops|is|was|went|looks?|looked|came|has|had|head|bed|profiles?|preview|history|logs?|progress|temperatures?|temps?|layers?|bug|feedback|reports?|photos?|pictures?|snapshots?|messages?|notes?|emails?|questions?|links?)\b`
+// The verb, not the noun: "print" after "the", "my" or "a" is a print already going ("how's the print on Bay 2 going?").
+const VERB = String.raw`(?<!\b(?:the|a|an|my|your|our|its|this|that|last|next|first|whole)\s+)\b(?:print|send|queue)`
+/**
+ * Asking to print or send a part: the verb and what goes ("print it", "print 3 copies", "print bracket.stl", "print the
+ * lid"), or where it goes ("send to Printer 3", "print on Bay 2"), a message that starts with the verb ("Print bracket
+ * on Bay 2"), the verb at the end ("go ahead and print"), and "start the print".
+ */
+const PRINT_IT = new RegExp(
+  [
+    String.raw`${VERB}\s+(?:(?:me|us|out|over)\s+)?(?:it|this|that|them|these|those|one|both|all|\d+|two|three|four|five|six|seven|eight|nine|ten)\b`,
+    String.raw`${VERB}\s+(?:(?:me|us|out|over)\s+)?[\w-]+\.(?:stl|3mf|step|stp|obj|gcode)\b`,
+    String.raw`${VERB}\s+(?:(?:me|us)\s+)?(?:the|my|a|an|another|some)\s+(?!${NOT_A_PART})\w`,
+    String.raw`${VERB}\s+(?:on|to)\s+(?:the\s+|my\s+)?(?:printers?|bay|farm|fleet|\w*\d\w*)\b`,
+    String.raw`^\W*(?:(?:please|ok|okay|now|then)\s+)?(?:print|send|queue)\s+(?!(?:(?:the|my|a|an|another|some|your)\s+)?${NOT_A_PART})\w`,
+    String.raw`\b(?:and|please|just|now|then|to)\s+print\s*(?:[.!,]|$)`,
+    String.raw`\bstart(?:ing)?\s+(?:the\s+|a\s+|my\s+)?print(?:ing)?\b(?!\s+${NOT_A_PART})`,
+  ].join('|'),
+  'i',
+)
 
 /**
  * The toolsets a turn needs besides core: the tab's own (the design tools, where the host gives them), what the request
