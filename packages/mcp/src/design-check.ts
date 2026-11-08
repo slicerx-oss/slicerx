@@ -12,8 +12,9 @@ const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
 const text = (max: number) => z.string().trim().min(1).max(max)
 
 /**
- * A part as planned before it is built. Every size is in `units`. The app's plan card (design.plan), design.put_plan and design.check
- * share this one shape; the card also needs at least one feature.
+ * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
+ * (sizeKind in size-kind.ts), which no inch plan converts. The app's plan card (design.plan), design.put_plan and
+ * design.check share this one shape; the card also needs at least one feature.
  */
 export const partPlanSchema = z.object({
   planId: text(64),
@@ -200,7 +201,8 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
  * Checks a body against its plan. Inch plans are compared in mm; the tolerances are in mm. The overall size is
  * compared axis by axis, since z is the print height: x and y swapped passes (the part turned on the bed prints the
  * same), and other swaps fail with a note to rotate it. With `holes` in the plan, a hole the plan does not have fails.
- * A nozzle that is not a positive finite number counts as 0.4 mm.
+ * A nozzle that is not a positive finite number counts as 0.4 mm. A feature's own sizes are never held to the body, so
+ * a count or an angle among them (size-kind.ts) never fails an item, in mm or inches.
  */
 export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): CheckResult {
   const scale = plan.units === 'in' ? MM_PER_IN : 1

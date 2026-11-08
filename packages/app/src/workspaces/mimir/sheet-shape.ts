@@ -6,6 +6,7 @@
 // given in the sheet's own frame move onto the built part when they miss it, and a row with no place whose value is one
 // of the part's overall sizes gets that size's line.
 import type { PilotDim, PilotDimAt, PilotSheet } from '@slicerx/contracts'
+import { sizeKind } from '@slicerx/mcp/toolset'
 import type { PlateEntry } from '../../state/store'
 import { shapeBounds, shapeOfMesh, shapeOfSolids, type Shape, type V3 } from './sheet-draw'
 
@@ -101,7 +102,7 @@ export function alignDims(dims: readonly PilotDim[], own: Shape | null, shape: S
 /**
  * A row with no place whose value is one of the part's overall sizes (within 2 percent, or half a millimeter) gets that
  * size's line along the part's front bottom edge (length and height, read in Front) or its right edge (depth, read in
- * Top), so its callout shows on the drawing. Each overall size is given once.
+ * Top), so its callout shows on the drawing. Each overall size is given once. A count or an angle is never placed.
  */
 export function placeMissing(dims: readonly PilotDim[], shape: Shape): PilotDim[] {
   const b = shapeBounds(shape)
@@ -116,7 +117,8 @@ export function placeMissing(dims: readonly PilotDim[], shape: Shape): PilotDim[
   }
   const used = new Set<number>()
   return dims.map((d) => {
-    if (d.at || d.unit !== 'mm') return d
+    // a count or an angle given in mm (sizeKind) is never one of the part's sizes
+    if (d.at || d.unit !== 'mm' || sizeKind(d.key) !== 'length') return d
     const axis = ([0, 1, 2] as const)
       .filter((k) => !used.has(k) && Math.abs(size[k] - d.value) <= Math.max(0.5, size[k] * 0.02))
       .sort((p, q) => Math.abs(size[p] - d.value) - Math.abs(size[q] - d.value))[0]

@@ -164,6 +164,16 @@ describe('designCheck', () => {
     expect(designCheck({ ...plate, units: 'mm' }, mm, 0.4).pass).toBe(false)
   })
 
+  it('never holds a count or an angle among the sizes to a size of the body, in mm or inches', () => {
+    // a count of 4 and a 30 degree draft beside the lengths: no item compares either to the body
+    const gear: PartPlan = { ...bracket, features: [...bracket.features, { name: 'teeth', kind: 'pattern', sizes: { count: 4, angle_deg: 30, teeth: 12 } }] }
+    const body = { ...built, features: 4 }
+    for (const plan of [gear, { ...gear, units: 'in' as const, overall: { x: 60 / 25.4, y: 30 / 25.4, z: 40 / 25.4 }, holes: bracket.holes!.map((h) => ({ ...h, diameter: h.diameter / 25.4 })) }]) {
+      const r = designCheck(plan, body, 0.4)
+      expect(failed(r), plan.units).toEqual([])
+      expect(r.items.map((i) => i.name)).toEqual(['overall size', 'mount hole', 'cable hole', 'feature count', 'watertight', 'minimum wall'])    }
+  })
+
   it('takes plans by planId, checked against the plan shape', () => {
     const plans = createPlanRegistry()
     expect(plans.latest()).toBeUndefined()

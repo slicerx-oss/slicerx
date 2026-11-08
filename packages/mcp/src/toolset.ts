@@ -16,6 +16,7 @@ export { brimEditInput, brimReadInput } from './brim-input'
 export { layerProfileEditInput, layerProfileReadInput } from './layer-profile-input'
 export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
 export type { DesignToolOptions } from './design-tools'
+export { sizeKind, sizeLabelKey, sizeText, sizeUnit, type SizeKind } from './size-kind'
 export { createCardPlans, mimirTabTools, PartPlanSchema, PLAN_CHANGE, PLAN_GO, PLAN_KEEP, planChoiceId, PlanInputSchema, samePlan, type CardPlans, type PlanAnswer, type PlanInput } from './tab-tools'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
