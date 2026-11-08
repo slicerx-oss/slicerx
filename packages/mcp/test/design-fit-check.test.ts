@@ -50,12 +50,15 @@ async function harness() {
   return { h, ok, design, check }
 }
 
-/** A 30 x 20 x 6 mm arm with a round hole of `hole` mm, and a pin of `pin` mm through it, each its own body. */
+/**
+ * A 30 x 20 x 6 mm arm with a round hole of `hole` mm, and a pin of `pin` mm through it, each its own body. Each step
+ * names the planned feature it builds (Arm, Bore, Pin), as a plan's steps do.
+ */
 async function pinInArm(hole: number, pin: number) {
   const t = await harness()
-  await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(30, 20, 60, 60), distance_mm: 6, name: 'Arm' })
-  await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(hole, 60, 60), frame: top(6), distance_mm: 6, operation: 'cut' })
-  await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(pin, 60, 60), distance_mm: 6, name: 'Pin' })
+  await t.ok('slicerx_geom_extrude', { design: t.design, ...rect(30, 20, 60, 60), distance_mm: 6, name: 'Arm', feature: 'Arm' })
+  await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(hole, 60, 60), frame: top(6), distance_mm: 6, operation: 'cut', feature: 'Bore' })
+  await t.ok('slicerx_geom_extrude', { design: t.design, ...circle(pin, 60, 60), distance_mm: 6, name: 'Pin', feature: 'Pin' })
   return t
 }
 
