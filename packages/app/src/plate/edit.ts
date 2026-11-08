@@ -543,7 +543,9 @@ export async function addPrimitive(host: Loader, shape: PrimitiveShape, as: 'obj
     const parts = [...src.parts, partMesh]
     const handle = await host.loadParts(src.name, parts)
     const history = src.history ? (await import('../cad/history/record')).withStep(src, -1, { op: 'parts.add', parts: [partMesh], label: `Add ${mesh.name.toLowerCase()}` }) : undefined
-    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors, p.colors[src.parts.findIndex((q) => q.slot === slot)] ?? p.colors[0] ?? brandAccent()], ...(history ? { history } : {}) } : p)) })
+    // with the landing moves the object has as it is written (placedNow)
+    const { placedNow } = await import('../cad/commit')
+    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors, p.colors[src.parts.findIndex((q) => q.slot === slot)] ?? p.colors[0] ?? brandAccent()], ...(history ? { history: placedNow(history, p) } : {}) } : p)) })
     markStale()
     return src.id
   }
