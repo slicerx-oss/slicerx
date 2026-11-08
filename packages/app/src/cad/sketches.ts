@@ -10,7 +10,7 @@ import { brandAccent } from '../edition'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
-import { history, openStep, withLast } from '../plate/history'
+import { newStep, withLast, type UndoStep } from '../plate/history'
 import { sketchNext } from './history/record'
 import { followBodies } from './project-sketch'
 
@@ -32,46 +32,44 @@ export interface SketchBody {
 const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}), ...(s.nextProjection ? { nextProjection: s.nextProjection } : {}) })
 
 /** Puts a finished sketch in the timeline at the marker and returns it. Undo takes it out again. */
-export function finishSketch(s: SketchBody): SketchItem {
-  const t = withSketch(get().timeline, { id: `${stepId()}k`, ...body(s) })
+export function finishSketch(s: SketchBody, id = `${stepId()}k`): SketchItem {
+  const t = withSketch(get().timeline, { id, ...body(s) })
   set({ timeline: t })
   return t.items[t.marker - 1] as SketchItem
 }
 
 /**
- * Extrude or Revolve of a new sketch that holds projections: the sketch goes in the timeline first so the solid can
- * name it (a projection's source stays on the sketch item), and both go in one undo step, as a plain extrude and its
- * sketch do. When no feature lands on it (the engine refuses, or a join misses the body), the sketch comes out again
- * and the undo history is as it was, so a retry makes it afresh instead of leaving the first one behind.
+ * Extrude or Revolve of a new sketch that holds projections: the solid names the sketch (a projection's source stays
+ * on the sketch item), so the sketch goes in the timeline as the solid lands, in the same undo step, as a plain
+ * extrude and its sketch do. `apply` hands `step` to the write that lands the solid; nothing else joins the step, so
+ * an edit made while the engine works keeps its own. When nothing lands (the engine refuses, or a join misses the
+ * body), the sketch never went in, so there is nothing to take back and the undo history is as it was.
  */
-export async function solidOnNewSketch<T>(s: SketchBody, apply: () => Promise<T>): Promise<T> {
-  const h = history()
-  const close = openStep()
-  let id: string | null = null
-  let after = ''
+export async function solidOnNewSketch<T>(s: SketchBody, apply: (step: UndoStep) => Promise<T>): Promise<T> {
+  const id = `${stepId()}k`
+  sketchNext(id)
   try {
-    id = finishSketch(s).id
-    after = h.state().revision
-    sketchNext(id)
-    const r = await apply()
-    takeBack(id, after)
-    return r
-  } catch (e) {
-    if (id) takeBack(id, after)
-    throw e
+    return await apply(newStep(() => void finishSketch(s, id)))
   } finally {
     sketchNext(null)
-    close()
   }
 }
 
-/** Takes a sketch made for a solid out again when no feature names it: by undo while its step holds nothing else. */
-function takeBack(id: string, after: string): void {
-  const t = get().timeline
-  if (!sketchById(t, id) || t.items.some((i) => i.kind === 'feature' && i.sketch === id)) return
-  if (history().state().revision === after && history().undo()) return
-  const at = t.items.findIndex((i) => i.kind === 'sketch' && i.id === id)
-  set({ timeline: { ...t, items: t.items.filter((_, i) => i !== at), marker: at < t.marker ? t.marker - 1 : t.marker } })
+/**
+ * Runs one press at a time: a second Enter in Distance or Angle while Extrude still works does nothing, where state
+ * set for the button would only apply after the next render. Resolves undefined for a press it skipped.
+ */
+export function oneAtATime(): <T>(run: () => Promise<T>) => Promise<T | undefined> {
+  let busy = false
+  return async (run) => {
+    if (busy) return undefined
+    busy = true
+    try {
+      return await run()
+    } finally {
+      busy = false
+    }
+  }
 }
 
 /** The sketch with this id, or null. */

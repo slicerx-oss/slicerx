@@ -41,7 +41,8 @@ import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
 import { bindNext, sketchNext } from './history/record'
 import { ProjectCard, type Projected } from './project-card'
-import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { defaultTarget, finishSketch, oneAtATime, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import type { UndoStep } from '../plate/history'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { goesIntoFace } from './extrude-direction'
@@ -1603,15 +1604,18 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
   const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
   // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
-  // timeline with the solid that names it (solidOnNewSketch), and a finished one takes changed projections first.
-  const onSketch = async <T,>(apply: () => Promise<T>): Promise<T> => {
+  // timeline as the solid that names it lands, in its undo step (solidOnNewSketch), and a finished one takes changed
+  // projections first.
+  const onSketch = async <T,>(apply: (step?: UndoStep) => Promise<T>): Promise<T> => {
     const id = init?.from?.id ?? null
     if (!stepEdit && !featureOnly && !id && projected.list.length) return solidOnNewSketch(sketchBody(), apply)
     if (!stepEdit && !featureOnly && id && JSON.stringify(projected.list) !== JSON.stringify(init?.projected?.list ?? [])) await updateSketch(host.slicer, id, sketchBody())
     sketchNext(id)
     return apply()
   }
-  const go = async () => {
+  // one press at a time: Enter in a number field runs Extrude again while the first is still working otherwise
+  const press = useMemo(oneAtATime, [])
+  const go = () => press(async () => {
     if (!ready) return
     setBusy(true)
     setNote(null)
@@ -1629,14 +1633,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (bad) throw new Error(bad)
         bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...into, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
-        r = await onSketch(() => (stepEdit ? saveSketch(extrudeParams(input)) : applyExtrude(host.slicer, input)))
+        r = await onSketch((step) => (stepEdit ? saveSketch(extrudeParams(input)) : applyExtrude(host.slicer, input, { step })))
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
-        r = await onSketch(() => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input)))
+        r = await onSketch((step) => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input, { step })))
       }
       toast(r.message, r.warn ? 'warn' : 'ok')
       set({ objectTool: null })
@@ -1646,10 +1650,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       sketchNext(null)
       setBusy(false)
     }
-  }
+  })
 
   // Finish sketch: the sketch goes in the timeline as it is, no solid; the camera stays where it is.
-  const finishOnly = async () => {
+  const finishOnly = () => press(async () => {
     if (busy || (!sketch.length && !projected.loops.length) || draft.points.length) return
     setBusy(true)
     setNote(null)
@@ -1665,7 +1669,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     } finally {
       setBusy(false)
     }
-  }
+  })
   const finishRef = useRef(finishOnly)
   finishRef.current = finishOnly
   finishable.current = !stepEdit && !featureOnly

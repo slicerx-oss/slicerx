@@ -13,10 +13,10 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
 import { addsTo, bodyOf, changeProjection, faceSource, followBodies, projectNow } from '../src/cad/project-sketch'
-import { finishSketch, sketchById, solidOnNewSketch, updateSketch } from '../src/cad/sketches'
+import { finishSketch, oneAtATime, sketchById, solidOnNewSketch, updateSketch } from '../src/cad/sketches'
 import { applyExtrude, applyRevolve, type ExtrudeInput } from '../src/cad/cad-ops'
 import { setGeomProvider } from '../src/geom/client'
-import { createHistory, history } from '../src/plate/history'
+import { createHistory, history, type UndoStep } from '../src/plate/history'
 import { stepWords } from '../src/workspaces/mimir/step-words'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { startTimeline } from '../src/plate/timeline'
@@ -33,7 +33,7 @@ const widest = (m: { positions: ArrayLike<number> }) => {
   return Math.max(...xs) - Math.min(...xs)
 }
 
-// what sketch.svg answers for a square, a round hole and a leaf of a line, an arc and a spline
+// what design.sketch_svg answers for a square, a round hole and a leaf of a line, an arc and a spline
 const ART: SketchLoop[] = [
   { start: [80, 120], segments: [{ type: 'line', to: [120, 120] }, { type: 'line', to: [120, 80] }, { type: 'line', to: [80, 80] }, { type: 'line', to: [80, 120] }] },
   { type: 'circle', center: [100, 100], diameterMm: 16 },
@@ -48,6 +48,8 @@ const calls: string[] = []
 let hold: Promise<void> | null = null
 /** The next shape.extrude refuses with this message, or misses the body it joins; used once. */
 let nextExtrude: { refuse: string } | 'miss' | null = null
+/** While set, shape.extrude waits for it: the engine still working when another edit or a second Enter comes. */
+let holdExtrude: Promise<void> | null = null
 const engine = {
   async call<T>(op: string, request: unknown): Promise<T> {
     calls.push(op)
@@ -60,6 +62,7 @@ const engine = {
       return { loops: [square(w)] } as T
     }
     if (op === 'shape.extrude') {
+      if (holdExtrude) await holdExtrude
       const next = nextExtrude
       nextExtrude = null
       if (next && next !== 'miss') throw new Error(next.refuse)
@@ -83,6 +86,7 @@ beforeEach(() => {
   calls.length = 0
   hold = null
   nextExtrude = null
+  holdExtrude = null
   setGeomProvider(engine)
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, timeline: { bodies: [], items: [], marker: 0 }, rollback: null, objectTool: null, bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
   stop = startTimeline()
@@ -711,10 +715,11 @@ describe('a solid from a new sketch with a projection', () => {
     undo.clear()
     const s = drawn()
     nextExtrude = { refuse: 'shape.extrude: the extrusion does not make one body' }
-    await expect(solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops)))).rejects.toThrow(/one body/)
-    expect(get().timeline.items).toEqual([])
+    await expect(solidOnNewSketch(s, (step) => applyExtrude(loader, input(s.loops), { step }))).rejects.toThrow(/one body/)
+    expect(get().timeline).toEqual({ bodies: [], items: [], marker: 0 })
+    expect(get().plate.map((e) => e.id)).toEqual(['b'])
     expect(undo.state().undo).toBe(0)
-    await solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops)))
+    await solidOnNewSketch(s, (step) => applyExtrude(loader, input(s.loops), { step }))
     const t = get().timeline
     expect(kinds()).toEqual(['sketch', 'feature'])
     const k = t.items[0] as SketchItem
@@ -722,24 +727,157 @@ describe('a solid from a new sketch with a projection', () => {
     expect(t.items[1]).toMatchObject({ sketch: k.id, projected: ['p1'] })
     // one undo takes the solid and its sketch together, as a plain extrude and its sketch go
     expect(undo.state().undo).toBe(1)
+    expect(t.marker).toBe(2)
     undo.undo()
     expect(get().timeline.items).toEqual([])
     expect(get().plate.map((e) => e.id)).toEqual(['b'])
+    // the step is closed: the next edits are steps of their own
+    set((st) => ({ plate: [...st.plate, body('x', 4)] }))
+    set((st) => ({ plate: [...st.plate, body('y', 4)] }))
+    expect(undo.state().undo).toBe(2)
   })
 
-  it('takes the sketch back out when a revolve is refused or a join misses the body', async () => {
-    set({ plate: [body('b', 10)] })
+  it('leaves no sketch when a revolve is refused or a join misses the body, and the body as it was', async () => {
+    const b = body('b', 10)
+    set({ plate: [b] })
     undo.clear()
     const s = drawn()
     // the stand-in engine has no revolve, so it refuses as a revolve whose axis crosses the profile does
     const axis = { point: [2, 0] as [number, number], direction: [0, 1] as [number, number] }
-    await expect(solidOnNewSketch(s, () => applyRevolve(loader, { frame: BED, loops: s.loops, axis, angleDeg: 360, operation: 'new', name: 'Revolved body' }))).rejects.toThrow(/sketch.revolve/)
+    await expect(solidOnNewSketch(s, (step) => applyRevolve(loader, { frame: BED, loops: s.loops, axis, angleDeg: 360, operation: 'new', name: 'Revolved body' }, { step }))).rejects.toThrow(/sketch.revolve/)
     expect(kinds()).toEqual([])
     nextExtrude = 'miss'
-    const r = await solidOnNewSketch(s, () => applyExtrude(loader, input(s.loops, { operation: 'join' }, 'b')))
+    const r = await solidOnNewSketch(s, (step) => applyExtrude(loader, input(s.loops, { operation: 'join' }, 'b'), { step }))
     expect(r.warn).toBe(true)
-    expect(kinds()).toEqual([])
+    expect(get().timeline).toEqual({ bodies: [], items: [], marker: 0 })
+    expect(get().plate).toEqual([b])
     expect(undo.state().undo).toBe(0)
+    set((st) => ({ plate: [...st.plate, body('x', 4)] }))
+    expect(undo.state().undo).toBe(1)
+  })
+
+  it('puts the sketch in at the marker beside a finished one, named next, when the timeline is rolled back', async () => {
+    set({ plate: [body('b', 10)] })
+    const before = finishSketch({ frame: BED, loops: [square(2)] })
+    const after = finishSketch({ frame: BED, loops: [square(3)] })
+    set((st) => ({ timeline: { ...st.timeline, marker: 1 } }))
+    undo.clear()
+    const s = drawn()
+    nextExtrude = { refuse: 'shape.extrude: the extrusion does not make one body' }
+    await expect(solidOnNewSketch(s, (step) => applyExtrude(loader, input(s.loops), { step }))).rejects.toThrow(/one body/)
+    expect(get().timeline.items.map((i) => i.id)).toEqual([before.id, after.id])
+    expect(get().timeline.marker).toBe(1)
+    await solidOnNewSketch(s, (step) => applyExtrude(loader, input(s.loops), { step }))
+    const t = get().timeline
+    expect(t.items.slice(0, 3).map((i) => [i.kind, i.kind === 'sketch' ? i.name : null])).toEqual([['sketch', 'Sketch 1'], ['sketch', 'Sketch 3'], ['feature', null]])
+    expect(t.items.at(-1)!.id).toBe(after.id)
+    expect(t.marker).toBe(3)
+    expect(undo.state().undo).toBe(1)
+    undo.undo()
+    expect(get().timeline.items.map((i) => i.id)).toEqual([before.id, after.id])
+    expect(get().timeline.marker).toBe(1)
+  })
+
+  /** Holds every shape.extrude until the returned release runs. */
+  const holding = () => {
+    let release!: () => void
+    holdExtrude = new Promise<void>((done) => (release = done))
+    return () => {
+      holdExtrude = null
+      release()
+    }
+  }
+  const extrudeOf = (s: ReturnType<typeof drawn>, over: Partial<ExtrudeInput['spec']> = {}, onto?: string) => (step?: UndoStep) => applyExtrude(loader, input(s.loops, over, onto), { step })
+  const ids = () => get().plate.map((e) => e.id)
+  const tick = () => new Promise<void>((done) => setTimeout(done, 0))
+
+  it('keeps an edit made while the engine works as its own undo step', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    const release = holding()
+    const solid = solidOnNewSketch(s, extrudeOf(s))
+    await tick()
+    set((st) => ({ plate: [...st.plate, body('c', 4)] }))
+    release()
+    await solid
+    expect(kinds()).toEqual(['sketch', 'feature'])
+    expect(undo.state().undo).toBe(2)
+    // the solid and its sketch go first, in one step; the other edit stays until its own undo
+    undo.undo()
+    expect(kinds()).toEqual([])
+    expect(ids()).toEqual(['b', 'c'])
+    undo.undo()
+    expect(ids()).toEqual(['b'])
+  })
+
+  it('leaves no sketch and adds no step when the engine refuses after another edit, and that edit keeps its own step', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    const release = holding()
+    nextExtrude = { refuse: 'shape.extrude: the extrusion does not make one body' }
+    const solid = solidOnNewSketch(s, extrudeOf(s))
+    await tick()
+    set((st) => ({ plate: [...st.plate, body('c', 4)] }))
+    release()
+    await expect(solid).rejects.toThrow(/one body/)
+    expect(get().timeline.items.filter((i) => i.kind === 'sketch')).toEqual([])
+    expect(get().timeline.marker).toBe(get().timeline.items.length)
+    expect(ids()).toEqual(['b', 'c'])
+    expect(undo.state().undo).toBe(1)
+    // neither undo nor redo brings a stray sketch back
+    undo.undo()
+    expect(ids()).toEqual(['b'])
+    expect(kinds()).toEqual([])
+    undo.redo()
+    expect(ids()).toEqual(['b', 'c'])
+    expect(get().timeline.items.filter((i) => i.kind === 'sketch')).toEqual([])
+    // and the next edit is a step of its own
+    set((st) => ({ plate: [...st.plate, body('d', 4)] }))
+    expect(undo.state().undo).toBe(2)
+  })
+
+  it('keeps one step each for two solids made at once, and later edits make their own', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    const release = holding()
+    const first = solidOnNewSketch(s, extrudeOf(s))
+    const second = solidOnNewSketch(s, extrudeOf(s))
+    await tick()
+    release()
+    await Promise.all([first, second])
+    const n = undo.state().undo
+    expect(n).toBe(2)
+    set((st) => ({ plate: [...st.plate, body('x', 4)] }))
+    expect(undo.state().undo).toBe(n + 1)
+    set((st) => ({ plate: [...st.plate, body('y', 4)] }))
+    expect(undo.state().undo).toBe(n + 2)
+    undo.undo()
+    expect(ids()).not.toContain('y')
+    expect(ids()).toContain('x')
+  })
+
+  it('makes one sketch and one solid from a second Enter while the first still works', async () => {
+    set({ plate: [body('b', 10)] })
+    undo.clear()
+    const s = drawn()
+    const gate = oneAtATime()
+    const release = holding()
+    const first = gate(() => solidOnNewSketch(s, extrudeOf(s)))
+    const second = gate(() => solidOnNewSketch(s, extrudeOf(s)))
+    await tick()
+    release()
+    await expect(second).resolves.toBeUndefined()
+    await first
+    expect(kinds()).toEqual(['sketch', 'feature'])
+    expect(get().plate).toHaveLength(2)
+    expect(calls.filter((c) => c === 'shape.extrude')).toHaveLength(1)
+    expect(undo.state().undo).toBe(1)
+    // once it is done, the next press runs
+    await gate(() => solidOnNewSketch(s, extrudeOf(s)))
+    expect(get().plate).toHaveLength(3)
   })
 })
 
@@ -758,7 +896,7 @@ describe('projections in a sketch made from SVG', () => {
     expect(sketchById(get().timeline, id)!.loops).toEqual([...ART, { ...square(10), projected: 'p1' }])
   })
 
-  it('keep the artwork loops as they were and in order, the projected ones last, through project, follow, switch, remove, save and open', async () => {
+  it('keeps the artwork loops as they were and in order, the projected ones last, through project, follow, switch, remove, save and open', async () => {
     set({ plate: [body('b', 10)] })
     const host = appDesignHost(loader)
     const t = tools(host)
