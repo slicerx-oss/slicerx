@@ -2004,7 +2004,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       </div>
     </div>
   ) : null
-  // edges, a face or a body projected onto the plane; a step opened from the history keeps what it has
+  // edges, a face or a body projected onto the plane; a step opened from the history keeps what it has. It sits after
+  // the Solid card, as Import SVG does, so Distance and Draft stay in view on a desktop panel.
   const projectCard = <ProjectCard frame={plane.frame} value={projected} onChange={setProjected} locked={stepEdit} {...(init?.from ? { sketch: init.from.id } : {})} />
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label} {...(change ? { action: change } : {})}>
@@ -2019,8 +2020,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {drawing}
           {messages}
           {picks}
-          {projectCard}
           {solid}
+          {projectCard}
           {svgImport}
         </>
       ) : (
@@ -2028,9 +2029,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           <Card title="Drawing" sub={familyName(familyOf(draft.tool))} state={dof ?? undefined} testId="sketch-drawing" dense>
             {drawing}
             {picks}
-          </Card>
-          <Card title="Project" {...(projected.list.length ? { sub: `${projected.list.length}` } : {})} testId="sketch-project-card" dense>
-            {projectCard}
           </Card>
           <Card
             title="Solid"
@@ -2043,6 +2041,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           >
             {messages}
             {solid}
+          </Card>
+          <Card title="Project" {...(projected.list.length ? { sub: `${projected.list.length}` } : {})} testId="sketch-project-card" dense>
+            {projectCard}
           </Card>
           {svgImport}
         </>
