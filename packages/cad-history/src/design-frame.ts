@@ -235,20 +235,25 @@ export function recordedOn(t: Timeline, id: string, plate: Mat4, params: StepPar
 }
 
 /**
- * A timeline from a project written before sketches moved with what they are drawn for or on: in it a sketch stayed
- * where it was stored, wherever its body went. Each sketch drawn for no design is made drawn for the body its anchor
- * would be (the first feature drawn on it whose body is in the project), at that body's transform as the project opens
- * (`standing`), so it opens where the app that wrote it showed it, and moves with that body from then on. Written once,
- * as the project opens; a sketch no feature uses is left as it is.
+ * A timeline from a project written before sketches moved with what they are drawn for or on. Each sketch drawn for no
+ * design is made drawn for the body its anchor would be (the first feature drawn on it whose body is in the project),
+ * written once, as the project opens, so it opens where the app that wrote it showed it and moves with that body from
+ * then on. A sketch no feature uses is left as it is.
+ *
+ * Where that app showed it depends on the file. A design file (version 3) without sketch anchors was written while a
+ * timeline sketch stayed where it was stored, wherever its body went: the sketch is pinned at the body's transform as
+ * the project opens (`standing`), so it reads at its stored frame. An object history file (version 1 or 2) had no
+ * timeline: the app drew a sketch through the step it is split out of, moved with the body since that step (nowOf),
+ * so with `followsStep` the sketch is pinned at the transform that step was recorded at, and reads moved with the body.
  */
-export function pinnedOlder(t: Timeline, standing: PlaceOf): Timeline {
+export function pinnedOlder(t: Timeline, standing: PlaceOf, followsStep = false): Timeline {
   if (!t.items.some((i) => i.kind === 'sketch' && !i.drawnFor?.length)) return t
   return {
     ...t,
     items: t.items.map((i) => {
       if (i.kind !== 'sketch' || i.drawnFor?.length) return i
       const a = sketchUsers(t, i.id).find((u) => standing(u.body) !== undefined)
-      return a ? { ...i, drawnFor: [{ design: a.body, transform: [...standing(a.body)!] }] } : i
+      return a ? { ...i, drawnFor: [{ design: a.body, transform: [...(followsStep ? a.transform : standing(a.body)!)] }] } : i
     }),
   }
 }
