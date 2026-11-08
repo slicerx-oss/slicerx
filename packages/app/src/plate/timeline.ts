@@ -4,6 +4,7 @@
 // changes, it is folded back into the timeline (withHistory), and an object that leaves takes its features with it.
 // Undo brings back the plate and the timeline together, so folding what undo restored changes nothing.
 import { syncTimeline, type History } from '@slicerx/cad-history'
+import { waits } from '../cad/waiting'
 import { appStore, fullPlate, get, type AppState, type PlateEntry } from '../state/store'
 import { quietly } from './history'
 
@@ -39,7 +40,8 @@ function every(s: Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'historyEd
 export function startTimeline(store = appStore): () => void {
   const seen = new WeakSet<History>()
   const run = (s: AppState) => {
-    const t = syncTimeline(s.timeline, every(s), seen)
+    // a sketch drawn for a design a design host keeps waiting for its body stays, under its id
+    const t = syncTimeline(s.timeline, every(s), seen, waits)
     // following the plates is part of their edit, not an undo step of its own
     if (t !== s.timeline) quietly(() => store.setState({ timeline: t }))
   }
