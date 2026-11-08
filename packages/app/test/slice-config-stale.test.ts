@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { needsSlice, sliceStamp, stampBlock } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
-import { STALE_SLICE } from '../src/state/actions'
+import { beginSlice, endSlice, STALE_SLICE } from '../src/state/actions'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
@@ -80,6 +80,47 @@ describe("a nozzle volume that lands after the slice", () => {
       expect(vi.getTimerCount()).toBeGreaterThan(0)
     } finally {
       stop()
+      vi.useRealTimers()
+    }
+  })
+
+  it('with auto slice on, a slice running when the nozzle volume changes stops, and a new one is scheduled', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    // an auto slice in flight, of the old nozzle volume
+    const abort = beginSlice()
+    set({ slice: { status: 'running' } } as never)
+    try {
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(abort.signal.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+    } finally {
+      stop()
+      endSlice(abort)
+      vi.useRealTimers()
+    }
+  })
+
+  it('a slice running on a single-color plate keeps going', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    const abort = beginSlice()
+    set({ slice: { status: 'running' } } as never)
+    try {
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(abort.signal.aborted).toBe(false)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      stop()
+      endSlice(abort)
       vi.useRealTimers()
     }
   })
