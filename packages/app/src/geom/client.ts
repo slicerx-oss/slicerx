@@ -135,6 +135,10 @@ function workerProvider(): GeomProvider {
     clearTimeout(deadlines.get(id))
     deadlines.delete(id)
   }
+  // each running replay's step: its operation and name. The worker runs other calls in a replay's pause between
+  // steps, and while one runs the replay's limit stops, so it counts only the replay's own engine time.
+  const steps = new Map<number, { op: string; name?: string }>()
+  const othersRunning = () => [...started].some((id) => !steps.has(id))
   const release = () => {
     if (idle) clearTimeout(idle)
     idle = null
@@ -142,6 +146,7 @@ function workerProvider(): GeomProvider {
     canceled.clear()
     for (const t of deadlines.values()) clearTimeout(t)
     deadlines.clear()
+    steps.clear()
     started.clear()
     unstarted.clear()
     going.clear()
@@ -239,17 +244,33 @@ function workerProvider(): GeomProvider {
         const op = unstarted.get(id)?.op
         started.add(id)
         if (op !== 'history.replay') unstarted.delete(id)
+        if (op === 'history.replay') {
+          if (canceled.has(id) || !pending.has(id)) return
+          steps.set(id, { op })
+          if (!othersRunning()) limit(id, op)
+          return
+        }
+        // another call runs: a replay waiting between its steps stops counting
+        for (const r of steps.keys()) unlimit(r)
         if (canceled.has(id)) interruptAfterGrace(id)
         else if (op !== undefined && pending.has(id)) limit(id, op)
         return
       }
       if ('step' in e.data) {
         // a replay's next step: its limit starts again, by that step's class
-        if (deadlines.has(e.data.step)) limit(e.data.step, e.data.op ?? 'history.replay', e.data.name)
+        const id = e.data.step
+        if (!steps.has(id)) return
+        const step = { op: e.data.op ?? 'history.replay', ...(e.data.name ? { name: e.data.name } : {}) }
+        steps.set(id, step)
+        if (!othersRunning()) limit(id, step.op, step.name)
         return
       }
+      const other = started.has(e.data.id) && !steps.has(e.data.id)
       unlimit(e.data.id)
       started.delete(e.data.id)
+      steps.delete(e.data.id)
+      // the last other call is done: a waiting replay's step gets a fresh limit
+      if (other && !othersRunning()) for (const [r, step] of steps) limit(r, step.op, step.name)
       unstarted.delete(e.data.id)
       going.delete(e.data.id)
       const grace = canceled.get(e.data.id)
