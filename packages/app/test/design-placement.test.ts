@@ -993,6 +993,16 @@ describe('room moves and what the person does after them', () => {
     expect(entry(planter).history?.placed).toEqual(placed)
   })
 
+  it('leaves the planter where it is when the person locked it after the room move and the saucer\'s step is undone', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer } = await landedPair(run)
+    set((s) => ({ plate: s.plate.map((e) => (e.id === planter ? { ...e, locked: true } : e)) }))
+    const locked = standing(planter)
+    await run('design.undo', { design: saucer })
+    expect(get().plate.map((e) => e.id)).toEqual([planter])
+    expect(standing(planter)).toEqual(locked)
+  })
+
   it('takes back the saucer\'s landing and the room move in one plate undo, and puts both back with redo', { timeout: 60_000 }, async () => {
     const run = toolsOn(appDesignHost(loader))
     const planter = String((await run('design.new', { name: 'Planter' })).output['design'])
