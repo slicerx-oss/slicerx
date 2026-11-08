@@ -63,7 +63,7 @@ describe('opening a project when its G-code check fails', () => {
   it.each(FAILURES)('still applies the project settings when the check %s', async (_name, review) => {
     let done = false
     let asked = false
-    const opening = openModelBytes(hostWith((inputs) => { asked = true; return review(inputs) }), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
+    const opening = openModelBytes(hostWith(() => { asked = true; return review() }), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
     // The open loads its modules first, and the first test of the file to open a project loads them cold, which takes
     // real time and any number of turns. So the clock stays still until the open has asked for the review, which is
     // when the check's own timer starts. Then fake time moves by the wait the open gives the review plus some slack, and
