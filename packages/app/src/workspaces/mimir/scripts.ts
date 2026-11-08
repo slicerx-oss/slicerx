@@ -437,6 +437,127 @@ const check: ScriptStep[] = [
   },
 ]
 
+/** The last design any tool returned, looking back past the runtime's own notes. */
+function designIn(messages: readonly LlmMessage[]): string | null {
+  for (let k = messages.length - 1; k >= 0; k--) {
+    const m = messages[k]!
+    if (m.role !== 'tool') continue
+    try {
+      const design = (JSON.parse(m.content) as { result?: { design?: unknown } }).result?.design
+      if (typeof design === 'string') return design
+    } catch {
+      // not a tool reply this script reads
+    }
+  }
+  return null
+}
+
+/** The mounting plate's sizes as its sheet suggests them: the plate, and four screw holes set in from its corners. */
+const MOUNT = { width: 80, depth: 50, thickness: 4, hole: 4.5, inset: 8 }
+
+/** The mounting plate's sizes from its confirmed sheet, with the sheet's suggestions for any it left out. */
+const mountSizes = (messages: readonly LlmMessage[]): typeof MOUNT => ({ ...MOUNT, ...sheetValues(messages) })
+
+/** The four screw hole centers of the mounting plate, around `c`. */
+const mountHoles = (c: [number, number], v: typeof MOUNT): [number, number][] =>
+  ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sy]) => [c[0] + sx * (v.width / 2 - v.inset), c[1] + sy * (v.depth / 2 - v.inset)])
+
+/** The mounting plate as its sheet draws it: the plate with its four screw holes, on the bed. */
+export function mountPart(v: Record<string, number>) {
+  const m = { ...MOUNT, ...v }
+  const holes = mountHoles([0, 0], m)
+  const [hx, hy] = holes[2]!
+  return {
+    part: [{ plane: 'xy', points: box2([0, 0], m.width, m.depth), holes: holes.map((h) => circle2(h, m.hole)), from: 0, to: m.thickness }],
+    at: {
+      width: span([-m.width / 2, -m.depth / 2, 0], [m.width / 2, -m.depth / 2, 0], [0, -12, 0]),
+      depth: span([m.width / 2, -m.depth / 2, 0], [m.width / 2, m.depth / 2, 0], [12, 0, 0]),
+      thickness: span([-m.width / 2, -m.depth / 2, 0], [-m.width / 2, -m.depth / 2, m.thickness], [0, -12, 0]),
+      hole: span([hx - m.hole / 2, hy, m.thickness], [hx + m.hole / 2, hy, m.thickness], [0, 0, 0]),
+      inset: span([m.width / 2 - m.inset, hy, m.thickness], [m.width / 2, hy, m.thickness], [0, 8, 0]),
+    } as Record<string, { at: unknown }>,
+  }
+}
+
+/**
+ * A mounting plate: its sizes on the sheet, then its plan on the card. After Go it builds the plate, then its reply
+ * stops to ask whether to add the screw holes the plan already has. The runtime goes on once instead (plan-left.ts) and
+ * the chat shows a line that says so; the script then builds the holes, each step tagged with its planned feature, and
+ * checks the part against the plan.
+ */
+const mountingPlate: ScriptStep[] = [
+  {
+    text: 'First the sizes. They are my guesses for a small mounting plate with four screw holes; change any that are off.',
+    calls: [
+      {
+        name: 'pilot.sheet',
+        args: {
+          title: 'Mounting plate sizes',
+          views: ['top', 'side'],
+          ...drawn(
+            [
+              row('width', 'Width', MOUNT.width, 'guess', { min: 20, max: 250 }),
+              row('depth', 'Depth', MOUNT.depth, 'guess', { min: 20, max: 250 }),
+              row('thickness', 'Thickness', MOUNT.thickness, 'guess', { min: 1.6, max: 12 }),
+              row('hole', 'Screw holes', MOUNT.hole, 'guess', { min: 2, max: 8, note: 'M4 screws' }),
+              row('inset', 'Hole inset from each edge', MOUNT.inset, 'guess', { min: 4, max: 30 }),
+            ],
+            mountPart,
+          ),
+        },
+      },
+    ],
+  },
+  (messages) => {
+    const v = mountSizes(messages)
+    return {
+      text: 'Here is the plan for the mounting plate. Change anything on the card, then press Go.',
+      calls: [
+        {
+          name: 'design.plan',
+          args: {
+            part: 'Mounting plate',
+            units: 'mm',
+            features: [
+              { name: 'Plate', kind: 'extrude', sizes: { width: v.width, depth: v.depth, thickness: v.thickness } },
+              { name: 'Screw holes', kind: 'hole', sizes: { diameter: v.hole, count: 4 } },
+            ],
+            assumptions: [`M4 screws, each hole ${v.inset} mm in from both edges`],
+            questions: [],
+          },
+        },
+      ],
+    }
+  },
+  (messages) => (lastResult(messages)?.['accepted'] === true ? { text: 'Starting the plate.', calls: [{ name: 'design.new', args: { name: 'Mounting plate' } }] } : { text: 'Okay, nothing is built. Tell me what to change in the plan.' }),
+  withDesign((design, mid, v) => {
+    const m = { ...MOUNT, ...v }
+    return { calls: [{ name: 'geom.extrude', args: { design, name: 'Plate', feature: 'Plate', shape: { type: 'rectangle', widthMm: m.width, heightMm: m.depth }, placement: { center: mid }, distance_mm: m.thickness } }] }
+  }),
+  // the reply would end here with the plan's screw holes still to build: the runtime sends its note instead
+  { text: 'The plate is built. Should I add the screw holes next?' },
+  (messages) => {
+    const design = designIn(messages)
+    if (!design) return { text: 'The design did not start, so I stopped here.' }
+    const v = mountSizes(messages)
+    const loops = mountHoles(bedMid(), v).map((center) => ({ type: 'circle', center, diameterMm: v.hole }))
+    return {
+      text: 'Adding the four screw holes from the plan.',
+      calls: [{ name: 'geom.extrude', args: { design, part: 0, name: 'Screw holes', feature: 'Screw holes', operation: 'cut', frame: { origin: [0, 0, v.thickness], normal: [0, 0, 1] }, shape: { type: 'sketch', loops }, distance_mm: v.thickness } }],
+    }
+  },
+  () => {
+    const plan = mimirPlans.latest('card')
+    return plan ? { calls: [{ name: 'design.check', args: { planId: plan.planId } }] } : { text: 'The mounting plate is built with its four screw holes.' }
+  },
+  (messages) => {
+    const r = lastResult(messages)
+    const v = mountSizes(messages)
+    const built = `${v.width} x ${v.depth} x ${v.thickness} mm with four ${v.hole} mm screw holes`
+    return { text: r?.['pass'] === true ? `Done: the mounting plate, ${built}. It matches the plan.` : `The mounting plate is built, ${built}, but the check does not pass yet.` }
+  },
+]
+
 /** What mimir says once the plate is sliced: the slice card in the chat has the figures. */
 const SLICED = 'Sliced. The card shows the print time and the filament it takes, and Open in Slice shows the layers.'
 
@@ -670,6 +791,8 @@ export const SCRIPTS: MimirScript[] = [
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
   { id: 'box', match: /\bbox\b|\blid\b/i, steps: box },
   { id: 'stand', match: /phone|stand/i, steps: stand },
+  // a planned part whose reply stops before the plan is done, so mimir goes on with it (the plan_left line)
+  { id: 'mounting-plate', match: /\bmounting plate\b/i, steps: mountingPlate },
   // after the parts and before the slice: "print it on my A1" models a clip, slices and sends it
   { id: 'print-run', match: /\bprint (?:it|this)\b.*\bon (?:my|the)\b/i, steps: printRun },
   // after the parts, so a part asked for with a slice in the same message is built first
