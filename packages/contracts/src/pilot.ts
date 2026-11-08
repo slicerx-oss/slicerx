@@ -286,12 +286,14 @@ export interface PilotSheetExtrude {
   to: number
 }
 
-/** A profile in a plane (as an extrude's), turned `angle` degrees (360 when left out) about an axis in that plane. */
+/**
+ * A profile in a plane (as an extrude's), turned `angle` degrees (360 when left out) about an axis in that plane. The
+ * profile is one outline: a bore is the room between it and the axis (a ring section off the axis turns into a collar).
+ */
 export interface PilotSheetRevolve {
   kind: 'revolve'
   plane: 'xy' | 'xz' | 'yz'
   points: [number, number][]
-  holes?: [number, number][][]
   /** A point on the axis and its direction, both in the plane's own two coordinates. */
   axis: { point: [number, number]; direction: [number, number] }
   angle?: number

@@ -64,10 +64,12 @@ const moved = (at: PilotDimAt, s: V3): PilotDimAt => ('c' in at ? { ...at, c: pl
 
 /**
  * Rows placed in another frame than the built part's: mimir often gives places around its own origin, while the built
- * part stands where it landed on the plate. Only the rows whose places miss the part move, all by the one shift that
- * puts the sheet's own solids on the part's lowest corner, and only those it lands on the part. Without solids the
- * missing places themselves stand for the part, but only when they span at least half of it along two axes; places
- * inside it (a hole and its spacing) say nothing of where its corner is, so they stay.
+ * part stands where it landed on the plate. The frame is chosen once for the whole sheet, by the one shift that puts the
+ * sheet's own solids on the part's lowest corner: when more rows land on the part only after that shift than only
+ * before it, the sheet is in its own frame and every row the shift lands moves, a hole that happened to fall inside the
+ * part unmoved included. Otherwise the sheet is in the part's frame and only rows that miss it and land after the shift
+ * move. Without solids the missing places themselves stand for the part, but only when they span at least half of it
+ * along two axes; places inside it (a hole and its spacing) say nothing of where its corner is, so they stay.
  */
 export function alignDims(dims: readonly PilotDim[], own: Shape | null, shape: Shape): PilotDim[] {
   const b = shapeBounds(shape)
@@ -88,7 +90,11 @@ export function alignDims(dims: readonly PilotDim[], own: Shape | null, shape: S
     from = lo
   }
   const shift: V3 = [b.lo[0] - from[0], b.lo[1] - from[1], b.lo[2] - from[2]]
-  const moves = new Set(misses.filter((d) => lands(d.at!, shift)))
+  const placed = dims.filter((d) => d.at)
+  const before = new Set(placed.filter((d) => lands(d.at!, [0, 0, 0])))
+  const after = new Set(placed.filter((d) => lands(d.at!, shift)))
+  const ownFrame = [...after].filter((d) => !before.has(d)).length > [...before].filter((d) => !after.has(d)).length
+  const moves = ownFrame ? after : new Set(misses.filter((d) => after.has(d)))
   return dims.map((d) => (moves.has(d) ? { ...d, at: moved(d.at!, shift) } : d))
 }
 
