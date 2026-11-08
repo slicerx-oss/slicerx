@@ -175,6 +175,55 @@ describe('a geometry call past its time limit', () => {
     expect(await refused).toMatchObject({ message: 'The step "Layer plan" ran past its 2 s limit and was stopped; try a smaller version: a coarser mesh' })
   })
 
+  it("stops a replay step's limit while another call runs between its steps, and starts it again after", async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const replay = api.call('history.replay', {})
+    const other = api.call('repair', {})
+    const w = workers[0]!
+    w.start(0)
+    const id = w.calls()[0]!.id
+    w.send({ step: id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(600)
+    // the worker runs the repair in the replay's pause before its next step
+    w.start(1)
+    vi.advanceTimersByTime(900)
+    expect(w.terminate).not.toHaveBeenCalled()
+    w.answer(1)
+    await expect(other).resolves.toEqual({ op: 'repair' })
+    // the replay's step gets a fresh limit once the repair is done
+    vi.advanceTimersByTime(999)
+    expect(w.terminate).not.toHaveBeenCalled()
+    w.send({ step: id, op: 'edge.chamfer', name: 'Chamfer 1 mm' })
+    vi.advanceTimersByTime(999)
+    w.answer(0)
+    await expect(replay).resolves.toEqual({ op: 'history.replay' })
+    vi.advanceTimersByTime(5000)
+    expect(w.terminate).not.toHaveBeenCalled()
+  })
+
+  it('sends a replay to a fresh worker from its start when another call there is stopped', async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const replay = api.call('history.replay', { steps: 3 })
+    const stuck = api.call('array', {}).catch((e: Error) => e)
+    const w = workers[0]!
+    w.start(0)
+    w.send({ step: w.calls()[0]!.id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    w.start(1)
+    vi.advanceTimersByTime(1000)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await stuck).toMatchObject({ message: expect.stringMatching(/^The step "Array" ran past its 1 s limit/) })
+    const fresh = workers[1]!
+    expect(fresh.calls().map((c) => [c.op, c.request])).toEqual([['history.replay', { steps: 3 }]])
+    fresh.start(0)
+    vi.advanceTimersByTime(999)
+    fresh.answer(0)
+    await expect(replay).resolves.toEqual({ op: 'history.replay' })
+  })
+
   it('gives a replay step the limit of its own class', async () => {
     const workers = manual()
     const api = geom()
