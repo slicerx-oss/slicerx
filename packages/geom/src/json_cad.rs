@@ -267,7 +267,7 @@ fn array_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     });
     if field_or(req, "merge", false)? {
         let opts: BooleanOptions = field_or_default(req, "options")?;
-        let (m, r) = array::merged(&world, &ts, &opts)?;
+        let (m, r) = array::merged(&world, &spec, &opts)?;
         let merged = mesh_report(&it.to_local(&m)?, enc);
         if let (Some(o), Value::Object(extra)) = (v.as_object_mut(), merged) {
             o.extend(extra);
