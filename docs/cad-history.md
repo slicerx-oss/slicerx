@@ -7,10 +7,11 @@ An object edited with the CAD tools keeps what was done to it as an ordered list
 `PlateEntry.history` (absent on objects nobody has modeled on):
 
 ```
-History = { version: 1, base: MeshPart[], steps: Step[], ended?: string }
+History = { version: 1, base: MeshPart[], steps: Step[], ended?: string, placed?: [x, y] }
 Step    = { id, op, part, transform: Mat4, params, follow?, suppressed?, broken? }
 ```
 
+- `placed` is how far the design hosts moved the object on the plate to land it on the bed, mm. The design tools give and read points in the design's own frame, the object's transform moved back by `placed`, so a step given in the frame the design was built in still meets its body after a landing. Steps and timeline sketches stay in plate coordinates: a step is moved into them when it is recorded, and a sketch is read in a design's frame through the move of the body that owns it and that design's landing (cad-history `design-frame.ts`).
 - `base` is the object's parts at the moment the first step was recorded (as imported or created). A body made by a sketch or a shape with "New body" has an empty base and the extrude as step 1, so its sketch stays editable.
 - `op` names the engine call; `params` are exactly the request that call took, in world millimeters as they were when the step ran. `transform` is the object's transform at that moment. Replay sends `{mesh: <current local mesh>, transform}` with the same params, and the engine answers in the part's local frame, so moving, turning or scaling the object later never disturbs a step.
 - `part` is the part index the step works on, or -1 for every part (hollow, repair, simplify, merged array).
@@ -106,7 +107,7 @@ A finished sketch can hold model geometry projected onto its plane (`project.ts`
 
 ## Storage
 
-- `Metadata/slicerx_history.json`, written only when an object has history: `{version: 2, objects: [{object, base, ended?, steps}]}`, `object` the 3MF object id as in slicerx_dimensions.json. Version 2 adds face keys to steps (below); version 1 files open the same way, and their steps get keys on their first replay. A file with a higher version opens without its histories and a message says a newer SlicerX saved it (SlicerX 0.1 ignores version 2 files silently: it predates the message). Version 3 is the design: `{version: 3, bodies: [{object, base, ended?}], items, marker}`, items as in the timeline with `body` the 3MF object id; each body's history is read as a version 2 object made from it, and a feature whose sketch is missing drops that body's history only. Objects that are missing are ignored; a project without the part opens as before; other slicers ignore it.
+- `Metadata/slicerx_history.json`, written only when an object has history: `{version: 2, objects: [{object, base, ended?, steps}]}`, `object` the 3MF object id as in slicerx_dimensions.json. Version 2 adds face keys to steps (below); version 1 files open the same way, and their steps get keys on their first replay. A file with a higher version opens without its histories and a message says a newer SlicerX saved it (SlicerX 0.1 ignores version 2 files silently: it predates the message). Version 3 is the design: `{version: 3, bodies: [{object, base, ended?, placed?}], items, marker}`, items as in the timeline with `body` the 3MF object id; each body's history is read as a version 2 object made from it, and a feature whose sketch is missing drops that body's history only. Objects that are missing are ignored; a project without the part opens as before; other slicers ignore it.
 - The model part keeps the current mesh, so the file prints the same anywhere and opening needs no replay.
 - Base meshes and `parts.add` meshes go in one binary part each, `Metadata/slicerx_history/<object>-<n>.bin` (little endian: magic `SXHM`, version, part count, then per part vertex count, triangle count, float32 positions, uint32 indices), named from the JSON. A binary part rather than a second model object, so no slicer can show or print the base. The size cost is measured in tests and reported with the commit.
 - Text steps store the font name, not the font: fonts may not allow embedding. A text step whose custom font is not loaded on this computer replays as broken ("Pick the font again: Foo is not loaded."), fixed by editing the step.

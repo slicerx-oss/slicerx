@@ -260,7 +260,13 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['feature'] === 'string' && s['feature'].trim() ? { feature: s['feature'].trim().slice(0, 60) } : {}),
     })
   }
-  return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }
+  return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}), ...placedOf(v['placed']) }
+}
+
+/** A body's landing moves (History.placed): two finite numbers within a bed's reach, else none. */
+function placedOf(v: unknown): Pick<History, 'placed'> {
+  if (!Array.isArray(v) || v.length !== 2 || !v.every((x) => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 100_000)) return {}
+  return v[0] === 0 && v[1] === 0 ? {} : { placed: [v[0] as number, v[1] as number] }
 }
 
 const MAX_ITEMS = 4000
@@ -429,7 +435,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     }
     if (i < (j['marker'] as number)) marker = items.length
   })
-  const bodies = [...histories].map(([id, h]) => ({ id, base: h.base, ...(h.exact ? { exact: true as const } : {}), ...(h.ended ? { ended: h.ended } : {}) }))
+  const bodies = [...histories].map(([id, h]) => ({ id, base: h.base, ...(h.exact ? { exact: true as const } : {}), ...(h.ended ? { ended: h.ended } : {}), ...(h.placed ? { placed: h.placed } : {}) }))
   return { bodies, items, marker }
 }
 

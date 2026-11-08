@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Runs one creative prompt through the whole mimir loop (a recorded reply, or a live model when the caller passes
 // one) on the mimir tab's tools, with the geometry engine as the host, then scores the last design it built.
-import { bakeMesh, type Design, type EngineCall } from '@slicerx/cad-history'
+import { bakeMesh, movedBy, type Design, type EngineCall } from '@slicerx/cad-history'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
 import type { Bed, CommandSpec, MeshPart, PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { neutralEdition, type EditionConfig } from '@slicerx/edition-config'
@@ -117,7 +117,7 @@ export const CREATIVE_TAB = { slices: true, edition: neutralEdition(), editionNa
 const NO_ENGINE = 'There is no geometry engine here: build packages/geom/wasm (scripts/build.sh) or sx-geom first.'
 
 /** The parts of a design in the plate's frame, as the project's object holds them. */
-const designParts = (d: Design): MeshPart[] => d.parts.map((m) => historyPart(bakeMesh(m, d.transform)))
+const designParts = (d: Design): MeshPart[] => d.parts.map((m) => historyPart(bakeMesh(m, movedBy(d.transform, d.placed))))
 
 function sizeOf(parts: readonly MeshPart[]): [number, number, number] {
   const lo = [Infinity, Infinity, Infinity]
@@ -161,7 +161,7 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
   // the machine's bed, which a body built off it lands on as on the app's plate
   const v = buildVolumeOf(p.machine)
   const bed: Bed = v.shape === 'circular' ? { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z, round: true } : { widthMm: v.x, depthMm: v.y, heightMm: v.z }
-  const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length)) })
+  const designs = headlessDesignHost(engine, { changed, bed: (id) => plainBed(bed, () => designs.list().filter((d) => d.id !== id && d.parts.length).map((d) => ({ parts: d.parts, transform: movedBy(d.transform, d.placed) }))) })
   let plans = 0
   const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}` })
   const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
