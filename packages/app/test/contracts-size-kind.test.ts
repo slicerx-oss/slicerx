@@ -27,9 +27,11 @@ describe('sizeKind', () => {
     for (const lead of ['number', 'num', 'n', 'count', 'qty']) for (const word of LENGTH_WORDS) expect(sizeKind(`${lead}_${word}`), `${lead}_${word}`).toBe('length')
   })
 
-  it('reads a key that starts with angle as an angle, whatever word it ends in', () => {
-    for (const key of ['angle_offset', 'angle_spacing', 'angle_gap', 'angle_pitch', 'angle_leg_length', 'angle_bracket_width']) expect(sizeKind(key), key).toBe('angle')
-    for (const word of LENGTH_WORDS) expect(sizeKind(`angle_${word}`), `angle_${word}`).toBe('angle')
+  it('reads a key that starts with angle as an angle, unless it ends in an extent such as a leg length or a width', () => {
+    for (const key of ['angle_offset', 'angle_spacing', 'angle_gap', 'angle_pitch', 'angle_step']) expect(sizeKind(key), key).toBe('angle')
+    for (const key of ['angle_leg_length', 'angle_bracket_width', 'angle_height', 'angle_thickness']) expect(sizeKind(key), key).toBe('length')
+    const steps = new Set(['offset', 'spacing', 'gap', 'pitch'])
+    for (const word of LENGTH_WORDS) expect(sizeKind(`angle_${word}`), `angle_${word}`).toBe(steps.has(word) ? 'angle' : 'length')
   })
 
   it('lets an explicit mm or in suffix win over every other word', () => {
