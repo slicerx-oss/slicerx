@@ -136,12 +136,21 @@ struct Object<'a> {
 
 /// The check of the by-object plate of `session`, whose collision model is `model` (as the slice builds it), with the
 /// run's settings `config`. The collisions are empty where the slice has no model to walk (a plate printed layer by
-/// layer, or with fewer than two objects), as its report is.
+/// layer, or with fewer than two objects), as its report is. `stop` is read between objects, bands and moves: once it
+/// says so, the check ends with [`crate::error::Error::Cancelled`] instead of a part of its answer.
 pub(crate) fn run(
     session: &SliceSession,
     mut model: Model,
     config: &PrintConfig,
+    stop: &(dyn Fn() -> bool + Sync),
 ) -> crate::error::Result<PlateCheck> {
+    let stopped = || {
+        if stop() {
+            Err(crate::error::Error::Cancelled)
+        } else {
+            Ok(())
+        }
+    };
     let stretched = model.stretch();
     let lift = super::lifts_over_print(config);
     let mut objects = Vec::new();
@@ -174,11 +183,21 @@ pub(crate) fn run(
     let n = objects.len().min(model.objects.len());
     let kept = objects.get(..n).unwrap_or_default();
     let indexed: Vec<(usize, &Object<'_>)> = kept.iter().enumerate().collect();
-    let bands = crate::par::map(&indexed, |&(k, o)| bands_of(model, k, o));
-    let walked = crate::par::map(&indexed, |&(k, o)| {
-        let layers = loops(model, k, o, bands.get(k).map_or(&[][..], Vec::as_slice));
-        walk::object_layers_with(model, k, &layers, o.cfg.travel_speed, lift, stretched, None)
+    let bands = crate::par::map(&indexed, |&(k, o)| {
+        if stop() {
+            return Vec::new();
+        }
+        bands_of(model, k, o)
     });
+    stopped()?;
+    let walked = crate::par::map(&indexed, |&(k, o)| {
+        if stop() {
+            return Hits::default();
+        }
+        let layers = loops(model, k, o, bands.get(k).map_or(&[][..], Vec::as_slice));
+        walk::object_layers_with(model, k, &layers, o.cfg.travel_speed, lift, stretched, None, stop)
+    });
+    stopped()?;
     let mut hits = Hits::default();
     for h in &walked {
         hits.merge(h.clone());
@@ -195,7 +214,7 @@ pub(crate) fn run(
         let mut only: Vec<usize> = reported.iter().map(|h| h.obstacle as usize).collect();
         only.sort_unstable();
         only.dedup();
-        if spans.is_empty() {
+        if spans.is_empty() || stop() {
             return Hits::default();
         }
         let hit: Vec<Band> = bands
@@ -209,8 +228,9 @@ pub(crate) fn run(
             .cloned()
             .collect();
         let layers = outlines(model, k, o, &hit);
-        walk::object_layers_with(model, k, &layers, o.cfg.travel_speed, lift, 0, Some(&only))
+        walk::object_layers_with(model, k, &layers, o.cfg.travel_speed, lift, 0, Some(&only), stop)
     });
+    stopped()?;
     let meta = model.meta.clone().with_run(config);
     let report = super::report(&meta, &hits.0, &[], 0.0);
     let index_of = |id: &str| meta.objects.iter().position(|o| o.id == id);
@@ -1239,5 +1259,43 @@ mod tests {
         assert!(!overlap(&a, &far));
         assert!((gap(&a, &far) - 3.0).abs() < 1e-9);
         assert!(gap(&a, &cross).abs() < 1e-12);
+    }
+
+    /// A check told to stop ends with no answer wherever it reads the stop (before the walk, between objects, bands and
+    /// moves, and between the passes), and one never told answers as the plain check does.
+    #[test]
+    fn a_stopped_check_ends_with_no_answer_and_an_unstopped_one_is_the_plain_check() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let mut walked = 0;
+        for p in golden::plates() {
+            let (req, meshes) = golden::request(&p);
+            let load = golden::loader(&p, meshes);
+            let mut plain =
+                crate::api::check_plate(&req, &load).unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            let reads = AtomicUsize::new(0);
+            let mut never = crate::api::check_plate_until(&req, &load, &|| {
+                reads.fetch_add(1, Ordering::Relaxed);
+                false
+            })
+            .unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            (plain.micros, never.micros) = (0, 0);
+            assert_eq!(plain, never, "{}", p.name);
+            let n = reads.load(Ordering::Relaxed);
+            if n > 2 {
+                walked += 1;
+            }
+            for at in [0, 1, n / 3, n / 2, n.saturating_sub(1)] {
+                let seen = AtomicUsize::new(0);
+                let stopped = crate::api::check_plate_until(&req, &load, &|| {
+                    seen.fetch_add(1, Ordering::Relaxed) >= at
+                });
+                assert!(
+                    matches!(stopped, Err(crate::error::Error::Cancelled)),
+                    "{}: told to stop at read {at} of {n}, it answered",
+                    p.name
+                );
+            }
+        }
+        assert!(walked >= 4, "only {walked} golden plates are walked");
     }
 }
