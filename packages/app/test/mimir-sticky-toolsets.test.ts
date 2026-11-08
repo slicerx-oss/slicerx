@@ -141,6 +141,17 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
         if (built) expect(names).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__fillet']))
       })
 
+  for (const ask of ['Print it on Printer 2 in green PLA', 'Print this on my Printer 6', 'Send it anyway'])
+    it(`"${ask}" as the first message gets the slicing tools beside the printer and design tools`, async () => {
+      const { say } = await chat([{ text: 'Slicing it now.' }])
+      const names = toolNames((await say(ask))[0]!)
+      expect(names.length).toBeLessThanOrEqual(CAP)
+      // what the print run calls first: where it goes, the slice and the queue, and the printer it names
+      expect(names).toEqual(expect.arrayContaining(['run__target', 'slice', 'app__slice', 'printer__queue', ...EVERY_PRINTER]))
+      // the tab's design tools stay
+      expect(names).toEqual(expect.arrayContaining(['design__new', 'geom__extrude', 'geom__fillet']))
+    })
+
   it('sends the same tools on every step of a turn and on the next turn on the same topic', async () => {
     const { say } = await chat([{ call: { name: 'printer__list' } }, { call: { name: 'printer__status', input: { printerId: 'p3' } } }, { text: 'Printer 3 is printing.' }, { call: { name: 'printer__list' } }, { text: 'Printer 3 is still printing.' }])
     const one = await say("How's the print on printer 3 going?")
