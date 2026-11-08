@@ -5,7 +5,7 @@
 // it was drawn for, else with the body of the first feature drawn on it (cad-history design-frame.ts). A step drawn on
 // it is recorded where the sketch is stored, so folding the step into the timeline writes the frame the sketch has, and
 // nothing a feature's undo, redo, deletion or a change of owner does rewrites it. Plain timelines, no engine.
-import { frameNow, historyOf, parseTimeline, recordedOn, sketchMove, syncTimeline, timelineFiles, withoutBody, withSketch, type DrawnFor, type FaceFrame, type History, type HistoryMesh, type Mat4, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { frameNow, historyFiles, historyOf, parseTimeline, pinnedOlder, recordedOn, sketchMove, syncTimeline, timelineFiles, withoutBody, withSketch, type DrawnFor, type FaceFrame, type History, type HistoryMesh, type Mat4, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
 
 const at = (x: number, y: number): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1]
@@ -195,5 +195,80 @@ describe('a project file with a malformed landing or drawn for', () => {
       intact(t)
       expect(sketch(t)).not.toHaveProperty('drawnFor')
     }
+  })
+})
+
+describe('pinnedOlder, for a project from before sketches moved with their bodies', () => {
+  const feature = (id: string, body: string, sketch: string, transform: Mat4) => ({ kind: 'feature' as const, id, body, part: 0, transform, params: cut(TOP), sketch })
+  const sketchItem = (id: string, drawnFor?: DrawnFor[]) => ({ kind: 'sketch' as const, id, name: id, frame: TOP, loops: RING, ...(drawnFor ? { drawnFor } : {}) })
+  const timeline = (items: Timeline['items']): Timeline => ({ bodies: [], items, marker: items.length })
+  const drawnOf = (t: Timeline, id: string) => {
+    const k = sketchOf(t, id)
+    return k?.kind === 'sketch' ? k.drawnFor : undefined
+  }
+
+  it('leaves a sketch already drawn for a design as it is, and pins the others in the same file', () => {
+    const drawn = sketchItem('k1', [{ design: 'D', transform: at(128, 128) }])
+    const t = timeline([drawn, sketchItem('k2'), feature('s1', 'E', 'k2', at(50, 128))])
+    const where = plate({ D: at(140, 128), E: at(60, 128) })
+    const opened = pinnedOlder(t, where)
+    expect(sketchOf(opened, 'k1')).toBe(drawn)
+    expect(drawnOf(opened, 'k2')).toEqual([{ design: 'E', transform: at(60, 128) }])
+    // from an object history file: at the step's own transform, so it reads moved with E since that step
+    const followed = pinnedOlder(t, where, true)
+    expect(sketchOf(followed, 'k1')).toBe(drawn)
+    expect(drawnOf(followed, 'k2')).toEqual([{ design: 'E', transform: at(50, 128) }])
+    expect(frameNow(followed, sketchOf(followed, 'k2') as never, where)?.origin).toEqual([138, 128, 10])
+  })
+
+  it('pins a sketch to the first body on it that is in the project, with that body\'s own step', () => {
+    // G's step on k is first, but G is not in the file; E's is second, recorded at a different transform
+    const t = timeline([sketchItem('k'), feature('s1', 'G', 'k', at(10, 10)), feature('s2', 'E', 'k', at(50, 128)), feature('s3', 'F', 'k', at(90, 128))])
+    const where = plate({ E: at(60, 128), F: at(95, 128) })
+    expect(drawnOf(pinnedOlder(t, where), 'k')).toEqual([{ design: 'E', transform: at(60, 128) }])
+    expect(drawnOf(pinnedOlder(t, where, true), 'k')).toEqual([{ design: 'E', transform: at(50, 128) }])
+  })
+
+  it('leaves a sketch no step uses as it is, and the timeline as it is when every sketch has its design', () => {
+    const unused = sketchItem('k')
+    const t = timeline([unused, sketchItem('j'), feature('s1', 'E', 'j', at(50, 128))])
+    for (const follows of [false, true]) {
+      const opened = pinnedOlder(t, plate({ E: at(60, 128) }), follows)
+      expect(sketchOf(opened, 'k')).toBe(unused)
+      expect(frameNow(opened, unused, plate({ E: at(60, 128) }))).toEqual(TOP)
+    }
+    const all = timeline([sketchItem('k', [{ design: 'D', transform: at(0, 0) }]), feature('s1', 'D', 'k', at(0, 0))])
+    expect(pinnedOlder(all, plate({ D: at(5, 0) }))).toBe(all)
+    const none = timeline([feature('s1', 'D', 'k', at(0, 0))])
+    expect(pinnedOlder(none, plate({ D: at(5, 0) }))).toBe(none)
+  })
+
+  /** An object history file of D (object 1) with one cut on a sketch at (128, 128), written as `version`. */
+  function historyFile(version: number) {
+    const h = history({ id: 's1', part: 0, transform: at(128, 128), params: cut(TOP) })
+    const files = new Map(historyFiles([{ id: 'D', history: h }], new Map([['D', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    const name = 'Metadata/slicerx_history.json'
+    const j = JSON.parse(new TextDecoder().decode(files.get(name)!)) as Record<string, unknown>
+    files.set(name, new TextEncoder().encode(JSON.stringify({ ...j, version })))
+    return files
+  }
+
+  it.each([1, 2])('opens a version %i file with its split out sketch moved with its body since the step', (version) => {
+    const where = (b: string) => (b === '1' ? at(158, 128) : undefined)
+    const t = parseTimeline(historyFile(version), new Set(['1']), where)!
+    const k = t.items.find((i) => i.kind === 'sketch')!
+    expect(k).toMatchObject({ frame: TOP, drawnFor: [{ design: '1', transform: at(128, 128) }] })
+    expect(frameNow(t, k as never, where)?.origin).toEqual([158, 128, 10])
+  })
+
+  it('opens a design file with sketch anchors and no sketches as it was written, with or without where its objects stand', () => {
+    const s1 = { id: 's1', part: 0, transform: at(128, 128), params: { op: 'face.push' as const, at: [128, 128, 10] as [number, number, number], normal: [0, 0, 1] as [number, number, number], distanceMm: 2 } }
+    const t = syncTimeline(EMPTY, [on('D', history(s1), at(128, 128))])
+    const files = new Map(timelineFiles(t, new Map([['D', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    expect(JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!))).toMatchObject({ version: 3, sketchAnchors: 1 })
+    const plain = parseTimeline(files, new Set(['1']))
+    const placed = parseTimeline(files, new Set(['1']), () => at(150, 128))
+    expect(placed).toEqual(plain)
+    expect(placed?.items.map((i) => i.kind)).toEqual(['feature'])
   })
 })
