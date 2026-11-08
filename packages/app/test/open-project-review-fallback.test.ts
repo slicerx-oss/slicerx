@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, MeshHandle, ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
 import { zip } from '../src/export/zip'
 import { startProjectPrinterSync } from '../src/project/project-printer'
+import { REVIEW_WAIT_MS } from '../src/project/script-review'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { openModelBytes } from '../src/state/actions'
 import { profileReady } from '../src/state/profile-sync'
@@ -15,8 +16,7 @@ const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles:
 const hostWith = (reviewScripts: (inputs: ScriptReviewInput[]) => Promise<ScriptReview[]>): Host =>
   ({ kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string) => handle(name), reviewScripts } }) as unknown as Host
 
-/** How long the open waits for the engine's script review (REVIEW_WAIT_MS in src/project/script-review.ts), and some slack. */
-const REVIEW_WAIT_MS = 15_000
+/** Fake time past the open's wait for the engine's script review. */
 const SLACK_MS = 1_000
 
 /** Real time, not fake: lets the open's module loads and promises run. Resolves when `until` is true or `ms` has passed. */
