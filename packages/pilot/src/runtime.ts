@@ -172,6 +172,8 @@ export function startsPart(name: string, input: unknown): boolean {
  */
 export const ONE_PART_NOTE = (name: string, id: string): string =>
   `Nothing was started. ${name} (${id}) is the part this reply builds, and this starts it again, so fix it there: a step that did not go through changed nothing, and design.undo takes back the last step that did. To add a separate part that the message or its plan names, start it with design.new under that part's own name.`
+/** The code on that refusal, so a replay of a reply recorded before it can tell (the creative eval). */
+export const SAME_PART = 'same_part'
 /** Words in a part's name that say nothing about which part it is: versions, retries and filler. */
 const PART_FILLER = new Set(['an', 'the', 'and', 'or', 'of', 'for', 'with', 'to', 'in', 'on', 'at', 'by', 'as', 'it', 'its', 'part', 'piece', 'design', 'new', 'version', 'copy', 'again', 'retry', 'redo', 'fixed', 'fix', 'clean', 'cleaner', 'separate', 'second', 'third', 'another', 'one', 'two', 'three', 'rev', 'try', 'attempt', 'final', 'updated', 'better', 'improved', 'sturdier', 'stronger'])
 /** The words of a part's name or a request that tell parts apart, lowercase and singular. */
@@ -701,7 +703,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         // the note names the started part this one repeats, or the first when no name says
         const words = partWords(typeof name === 'string' ? name : '')
         const same = began.findLast((b) => [...partWords(b.name)].some((w) => words.has(w))) ?? began[0]!
-        return { message: JSON.stringify({ ok: false, blocked: true, message: ONE_PART_NOTE(same.name, same.id) }), stop: false }
+        return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(same.name, same.id) }), stop: false }
       }
     }
     let starting = false

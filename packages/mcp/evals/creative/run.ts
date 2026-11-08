@@ -8,7 +8,7 @@ import type { Bed, CommandSpec, MeshPart, PilotEvent, PilotMachine } from '@slic
 import { neutralEdition, type EditionConfig } from '@slicerx/edition-config'
 import { modelById } from '@slicerx/printer-catalog'
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
-import type { LlmClient, ToolHost } from '@slicerx/pilot'
+import { SAME_PART, type LlmClient, type LlmMessage, type ToolHost } from '@slicerx/pilot'
 import { assessFit, createEvalEnv, createScriptedClient, noteApprovals, type EvalHosts, type ScriptStepData } from '@slicerx/pilot/evals'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/toolset'
 import { headlessDesignHost, plainBed } from './design-host'
@@ -217,21 +217,45 @@ export interface PromptRun {
 export const STALE_TOOLS = 'recorded before the eval had the tab\'s design tools (it called text_to_part or no tool), so a live run captures it again on design.* and geom.*'
 
 /**
+ * Why a recording whose reply starts the same part again is stale: it was captured before mimir refused a second
+ * design.new for the part a reply already started, so the replay meets a refusal the model never saw and its later steps
+ * go to a design that was never made.
+ */
+export const STALE_RESTART = 'recorded before a reply could start its part only once: it starts the same part again with a second design.new, which mimir now refuses, so a live run captures it again'
+
+/** Whether a request carries mimir's refusal of a design.new that starts the reply's part again. */
+function restartRefused(messages: readonly LlmMessage[]): boolean {
+  return messages.some((m) => {
+    if (m.role !== 'tool') return false
+    try {
+      const out = JSON.parse(m.content) as { blocked?: unknown; code?: unknown }
+      return out.blocked === true && out.code === SAME_PART
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
  * One prompt through mimir on the tab's tools. `client` is the live model; without it the recorded steps replay.
  * The eval stands in for the person: a design tool's approval is given, anything else is denied; a plan card gets Go,
  * a dimension sheet is confirmed as shown, and a question card (pilot.ask) gets the default answer as the person's own
  * words, once; any other card is dismissed. When the reply builds nothing and asks a question, the eval answers once
  * with DEFAULT_ANSWER and lets the model go on (`defaultAnswer`, on unless false; the card and the reply share the one
  * answer). A replay answers only when the recording was captured with the answer (`answerRecorded`); a recorded
- * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset).
+ * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset) and one whose
+ * reply starts the same part again (STALE_RESTART).
  */
 export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
+  // a replay that met the refusal of a restarted part: the recording's later steps no longer stand for a live run
+  let restarted = false
   // Records each request's reply as a step, the shape the scripted client replays.
   const client: LlmClient = {
     provider: inner.provider,
     async *stream(req, signal) {
+      if (!opts.client && restartRefused(req.messages)) restarted = true
       const step: ScriptStepData = {}
       try {
         for await (const ev of inner.stream(req, signal)) {
@@ -357,6 +381,7 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       error ??= `fit check: ${e instanceof Error ? e.message : String(e)}`
     }
   }
+  if (restarted) stale ??= STALE_RESTART
   if (stale) run.stale = stale
   if (error) run.error = error
   return run
