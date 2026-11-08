@@ -300,6 +300,8 @@ export interface EvalEnvOptions {
    * run's own. `scope` is then ignored.
    */
   tab?: { slices: boolean; edition: Pick<EditionConfig, 'ai'>; commands?: CommandSpec[] }
+  /** Whether the project holds a design to shape, as the app's design host says (CreatePilotOptions hasDesign). */
+  hasDesign?: () => boolean
 }
 
 export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport' | 'localNetwork'>>
@@ -379,6 +381,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
     ...(opts.scope && !opts.tab ? { scope: opts.scope } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.printRun ? { printRun: opts.printRun } : {}),
+    ...(opts.hasDesign ? { hasDesign: opts.hasDesign } : {}),
     now: () => {
       clock += 1
       return opts.realClock ? Date.now() : clock
