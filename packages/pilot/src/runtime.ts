@@ -589,6 +589,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // nothing at all for a plan the person did not approve.
   const printInPlace = new Map<string, boolean>()
   const endPrintInPlace = (sessionId: string): void => void printInPlace.delete(sessionId)
+  // Sessions in the run that approved their print-in-place plan: only there is a design started under another name the
+  // planned part's. The window ends with that run, so a part the person asks for in a later message is never held.
+  const claimWindow = new Set<string>()
   // Sessions that confirmed a sheet while a print-in-place plan was on: the sheet was the planned part's, so the next
   // run's sheets get no gap rows unless a new print-in-place plan is approved (a part the person asks for instead skips
   // the plan).
@@ -1136,6 +1139,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const part = typeof answered.edits?.part === 'string' ? answered.edits.part : (input as { part?: unknown }).part
       if (Array.isArray(pieces) && pieces.length >= 2) {
         printInPlace.set(sessionId, false)
+        claimWindow.add(sessionId)
         if (typeof answered.planId === 'string' && typeof part === 'string') planned.set(sessionId, { planId: answered.planId, part })
       } else printInPlace.delete(sessionId)
     }
@@ -1151,8 +1155,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       for (const d of Array.isArray(o?.designs) ? o.designs : []) if (typeof d.design === 'string' && typeof d.name === 'string') named.set(d.design, d.name)
     }
     // the design the planned part is started in: the first one started after its plan named as the part, else the first
-    // one started while the part is the one being built (before its building ends); a design named as the part later
-    // takes over from one named otherwise. Recorded with the plan, stale or not.
+    // one started while the part is the one being built (before its building ends) in the run that approved the plan; a
+    // design named as the part later takes over from one named otherwise. Recorded with the plan, stale or not.
     const p = planned.get(sessionId)
     if (tool.name === 'design.new' && out.ok !== false && p) {
       const design = (out.output as { design?: unknown } | undefined)?.design
@@ -1161,7 +1165,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         return name !== undefined && sameName(name, p.part)
       }
       const claimed = plans.get(p.planId)?.claimed
-      if (typeof design === 'string' && design && (claimed === undefined ? printInPlace.has(sessionId) || asPart(design) : !asPart(claimed) && asPart(design))) plans.claim(p.planId, design)
+      const building = printInPlace.has(sessionId) && claimWindow.has(sessionId)
+      if (typeof design === 'string' && design && (claimed === undefined ? building || asPart(design) : !asPart(claimed) && asPart(design))) plans.claim(p.planId, design)
     }
     if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
       if (printInPlace.get(sessionId)) endPrintInPlace(sessionId)
@@ -1687,6 +1692,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         try {
           await runChat(emit)
         } finally {
+          // the window for the planned part's design ends with the run that approved the plan
+          claimWindow.delete(sessionId)
           unwatch?.()
           runs.delete(emit)
           // a hold ends with the last run it held; the next message never starts held
