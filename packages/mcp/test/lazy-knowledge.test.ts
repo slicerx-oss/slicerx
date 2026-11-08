@@ -2,7 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A new server parses no knowledge file: the parse is most of what starting one costs, and a client that runs each call
 // in a fresh process pays it every time. The first tool or resource that reads the knowledge base parses it.
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { assistantText, DEFAULT_POLICY } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,11 +49,22 @@ describe('a new server and the knowledge base', () => {
     expect(parsed.calls).toBe(0)
   })
 
-  // The first test here to read the knowledge base: later ones find its files parsed already (data.ts parsedYaml).
+  // Later tests in a file find the knowledge files parsed already (data.ts parsedYaml, module state with no reset), so
+  // this one loads the server's modules again and reads the knowledge base as the first reader, in whatever order the
+  // file runs.
   it('parses the knowledge base on the first tool that reads it', async () => {
-    const h = await connect()
+    vi.resetModules()
+    const fresh = await import('../src/index')
+    const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-lazy-'))
+    const ctx = await fresh.createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY })
+    const server = fresh.createSlicerxServer(ctx)
+    const client = new Client({ name: 'test', version: '0.0.0' }, {})
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(a), client.connect(b)])
     parsed.calls = 0
-    const r = await h.call('slicerx_knowledge_lookup', { kind: 'filament', id: 'pla' })
+    const r = (await client.callTool({ name: 'slicerx_knowledge_lookup', arguments: { kind: 'filament', id: 'pla' } })) as CallToolResult
+    await client.close()
+    rmSync(dir, { recursive: true, force: true })
     expect(r.isError).toBeFalsy()
     expect(parsed.calls).toBeGreaterThan(10)
   })
