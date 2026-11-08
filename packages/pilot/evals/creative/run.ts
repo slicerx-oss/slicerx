@@ -159,10 +159,13 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       }
     },
   }
-  const env = creativeEnv(p, client, opts.geom ? { geom: opts.geom } : {})
-  const events: PilotEvent[] = []
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? (opts.client ? 300_000 : 60_000))
+  // every geometry call carries the prompt's deadline, also the ones that read the parts back after the run
+  const engine = opts.geom
+  const geom: ToolHost['geom'] = engine && { run: (op, input, signal) => engine.run(op, input, signal ? AbortSignal.any([signal, ac.signal]) : ac.signal) }
+  const env = creativeEnv(p, client, geom ? { geom } : {})
+  const events: PilotEvent[] = []
   let error: string | undefined
   /** One message to mimir in the prompt's chat; returns the reply's text. */
   const turn = async (message: string): Promise<string> => {
@@ -190,6 +193,12 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
+  }
+  const parts: MeshPart[] = []
+  try {
+    for (const o of env.project.objects()) parts.push(...((await o.mesh?.()) ?? []))
+  } catch (e) {
+    error ??= e instanceof Error ? e.message : String(e)
   } finally {
     clearTimeout(timer)
   }
@@ -199,8 +208,6 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const modelCalls = calls.filter((c) => MODEL_TOOLS.has(c.tool))
   const last = modelCalls.at(-1)
   const lastResult = last ? results.get(last.callId) : undefined
-  const parts: MeshPart[] = []
-  for (const o of env.project.objects()) parts.push(...((await o.mesh?.()) ?? []))
   let parsed: Check
   if (!last) parsed = { pass: false, detail: `no design tool was called: ${noBuild ?? 'none'}${answered ? ', after the default answer' : ''}` }
   else if (!lastResult || lastResult.ok === false) parsed = { pass: false, detail: `${last.tool}: ${lastResult?.summary ?? 'no result'}` }
