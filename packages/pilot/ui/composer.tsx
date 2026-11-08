@@ -36,9 +36,14 @@ export interface ComposerProps {
    */
   answering?: boolean
   onAnswer?: (text: string) => void
+  /**
+   * What the waiting card is: a question, or a dimension sheet, which the words set aside (they go to mimir in its
+   * place). The placeholder says so for a sheet, so Enter never looks like it does nothing.
+   */
+  answers?: 'choice' | 'sheet'
 }
 
-export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, placeholder = `Ask ${ASSISTANT_NAME}`, answering = false, onAnswer }: ComposerProps) {
+export function Composer({ attachments, onSend, running = false, onStop, sendOff = false, placeholder = `Ask ${ASSISTANT_NAME}`, answering = false, onAnswer, answers: kind = 'choice' }: ComposerProps) {
   const ids = useId()
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
@@ -86,7 +91,7 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
     e.currentTarget.form?.requestSubmit()
   }
   return (
-    <form className="composer sx-overlay" data-testid="mimir-composer" aria-label={`Ask ${ASSISTANT_NAME}`} autoComplete="off" onSubmit={submit}>
+    <form className="composer sx-overlay" data-testid="mimir-composer" data-answers={answers ? kind : undefined} aria-label={`Ask ${ASSISTANT_NAME}`} autoComplete="off" onSubmit={submit}>
       <AttachedFiles attachments={attachments} />
       <div className="composer-row">
         <AttachButton attachments={attachments} />
@@ -99,7 +104,7 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
           className="composer-text"
           rows={1}
           enterKeyHint="send"
-          placeholder={placeholder}
+          placeholder={answers && kind === 'sheet' ? `Or tell ${ASSISTANT_NAME} what to change` : placeholder}
           spellCheck={false}
           value={text}
           onChange={(e) => setText(e.currentTarget.value)}

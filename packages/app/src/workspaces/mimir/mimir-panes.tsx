@@ -481,9 +481,12 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           sendOff={ready === null || notice}
           onStop={run.cancel}
           onSend={(text, files) => send(text, files)}
-          answering={open !== null}
+          // a question card takes the words as its answer; a waiting sheet is set aside for them, and its record says so
+          answering={open !== null || waiting !== null}
+          answers={open === null && waiting !== null ? 'sheet' : 'choice'}
           onAnswer={(text) => {
-            if (open) pilot.answer?.(open.askId, null, text).catch((e: unknown) => console.warn('mimir: the written answer did not land', e))
+            const landed = open ? pilot.answer?.(open.askId, null, text) : waiting ? pilot.answerSheet?.(waiting, null, text) : undefined
+            landed?.catch((e: unknown) => console.warn('mimir: the written answer did not land', e))
           }}
         />
       </div>

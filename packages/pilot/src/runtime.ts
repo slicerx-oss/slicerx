@@ -260,8 +260,8 @@ function randomId(): string {
  * The person's answer to a sheet: each value they gave, kept inside its row's bounds, else the sheet's own; and the
  * keys they changed. A value for a key the sheet does not have is dropped. Null is a cancel: nothing is confirmed.
  */
-export function answerOf(sheet: PilotSheet, given: Record<string, number> | null): PilotSheetAnswer {
-  if (given === null) return { confirmed: false, values: Object.fromEntries(sheet.dims.map((d) => [d.key, d.value])), changed: [] }
+export function answerOf(sheet: PilotSheet, given: Record<string, number> | null, said?: string): PilotSheetAnswer {
+  if (given === null) return { confirmed: false, values: Object.fromEntries(sheet.dims.map((d) => [d.key, d.value])), changed: [], ...(said ? { said } : {}) }
   const values: Record<string, number> = {}
   const changed: string[] = []
   for (const d of sheet.dims) {
@@ -295,7 +295,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Questions waiting for the person's pick, by ask id, with the ids of their choices.
   const asks = new Map<string, { ids: Set<string>; resolve: (choiceId: string, said?: string) => void }>()
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
-  const sheets = new Map<string, (values: Record<string, number> | null) => void>()
+  const sheets = new Map<string, (values: Record<string, number> | null, said?: string) => void>()
   const lastSheet = new Map<string, PilotSheet>()
   // Sessions with a confirmed sheet no part has used yet: where pilot.sheet is offered, a new part waits for one. The
   // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
@@ -628,9 +628,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           sheets.delete(sheet.id)
           reject(new Error('Run canceled.'))
         }
-        sheets.set(sheet.id, (given) => {
+        sheets.set(sheet.id, (given, said) => {
           signal.removeEventListener('abort', onAbort)
-          const answer = answerOf(sheet, given)
+          const answer = answerOf(sheet, given, said)
           // the latest sheet's answer stands: a cancel takes back an earlier confirmation
           if (answer.confirmed) confirmed.add(sessionId)
           else confirmed.delete(sessionId)
@@ -1040,11 +1040,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (!p) throw new Error(`No pending approval ${requestId}`)
       p.resolve(decision)
     },
-    async answerSheet(sheetId: string, values: Record<string, number> | null): Promise<void> {
+    async answerSheet(sheetId: string, values: Record<string, number> | null, said?: string): Promise<void> {
       const done = sheets.get(sheetId)
       if (!done) throw new Error(`No open sheet ${sheetId}`)
       sheets.delete(sheetId)
-      done(values)
+      // words written while the sheet waited set it aside: they come only with no values, like a dismissed question's
+      const words = values === null && typeof said === 'string' ? said.trim().slice(0, ASK_SAID_MAX) : ''
+      done(values, words || undefined)
     },
     resume(sessionId: string, turns: readonly { user: string; reply: string }[]): void {
       if (history.has(sessionId) || turns.length === 0) return

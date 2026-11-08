@@ -111,6 +111,8 @@ export function sheetTool(): PilotTool<never> {
       // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw
       if (i.dims.length > 1 && !i.part?.length) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part, the part as extruded outlines, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
       const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}) })
+      // words written while it waited set it aside: they are the person's answer, as for a dismissed question
+      if (!answer.confirmed && answer.said) return { ok: false, summary: `Set aside; the person wrote instead: "${answer.said}". Build nothing from this sheet: do what they wrote, and show a new sheet if sizes still need confirming.`, output: answer }
       if (!answer.confirmed) return { ok: false, summary: 'Canceled; build nothing until the sizes are confirmed', output: answer }
       const n = answer.changed.length
       return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
