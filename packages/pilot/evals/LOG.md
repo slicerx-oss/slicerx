@@ -19,3 +19,4 @@ One row per eval run. `results.jsonl` has the per scenario scores.
 | 2026-11-07 16:28 | live | claude-haiku-5-5 | creative | 1 | 30 | 30% | 1.2 | 0 | creative prompts |
 | 2026-11-07 18:19 | live | claude-haiku-5-5 | creative | 1 | 45 | 45% | 11.1 | 0 | creative prompts; default answer on (9 answered); 3 built nothing (1 asked, 1 declined, 1 none): pip-chain asked, flexi-dragon declined, phone-stand none |
 | 2026-11-07 19:38 | live | claude-haiku-5-5 | creative | 1 | 60 | 60% | 13.1 | 0 | creative prompts; default answer on (8 answered); 1 built nothing (1 asked, 0 declined, 0 none): pip-chain asked |
+| 2026-11-08 14:47 | live | claude-haiku-5-5 | ship-hull | 1 | 100 | 100% | 16 | 0 | creative prompts; default answer on (0 answered) |

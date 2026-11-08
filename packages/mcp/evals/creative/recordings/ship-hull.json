@@ -2,397 +2,159 @@
  "status": "recorded",
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-07T19:29:19.897Z",
+ "capturedAt": "2026-11-08T14:47:52.131Z",
  "steps": [
   {
-   "text": "A true hull is a double-curved surface, which my modeling tools can't produce. They can only make outlines extruded straight, turned around one axis, lofted through flat sections, or swept along a path. Here are the closest versions I can build.",
-   "calls": [
-    {
-     "name": "pilot.ask",
-     "args": {
-      "title": "Hull section",
-      "question": "Which version of the hull section should I build?",
-      "choices": [
-       {
-        "id": "stacked_ribs",
-        "label": "Stacked flat ribs on a keel base"
-       },
-       {
-        "id": "turned_hull",
-        "label": "Turned hull outline, half-open to show ribs"
-       },
-       {
-        "id": "plaque",
-        "label": "Flat plaque with planking in relief"
-       },
-       {
-        "id": "nothing",
-        "label": "Nothing for now"
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "pilot.ask",
-     "args": {
-      "title": "Hull section",
-      "question": "Which version of the hull section should I build?",
-      "choices": [
-       {
-        "id": "stacked_ribs",
-        "label": "Stacked flat ribs and keel"
-       },
-       {
-        "id": "turned_hull",
-        "label": "Turned hull, half-open for ribs"
-       },
-       {
-        "id": "plaque",
-        "label": "Flat plaque, planking in relief"
-       },
-       {
-        "id": "nothing",
-        "label": "Nothing for now"
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "Your reply asked for defaults and a build, but it didn't name a version. The stacked-rib version is the closest match to ribs showing on the inside, so I'll plan that one with guessed sizes for you to edit. The curved planking can't be modeled, so the planking will be flat strips along the ribs.",
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "part": "Hull section diorama (stacked ribs)",
-      "units": "mm",
-      "features": [
-       {
-        "name": "Keel base",
-        "kind": "extrude",
-        "sizes": {
-         "length": 120,
-         "width": 50,
-         "thickness": 4
-        }
-       },
-       {
-        "name": "Rib frame",
-        "kind": "extrude",
-        "sizes": {
-         "thickness": 2,
-         "height": 36,
-         "half_width_top": 22,
-         "half_width_bottom": 8
-        }
-       },
-       {
-        "name": "Rib spacing",
-        "kind": "pattern",
-        "sizes": {
-         "count": 5,
-         "spacing": 25
-        }
-       },
-       {
-        "name": "Planking strips",
-        "kind": "extrude",
-        "sizes": {
-         "strip_width": 3,
-         "strip_thickness": 2,
-         "count": 2
-        }
-       }
-      ],
-      "assumptions": [
-       "Length 120 mm is from the request; all other sizes are guesses for a 1:48-ish diorama section",
-       "Ribs are flat frames stacked along X, with a V-like outline standing in for the hull curve",
-       "Planking is flat strips along the rib edges, not a curved surface",
-       "Ribs and planking are one material (PLA, 0.4 mm nozzle)",
-       "No holes, no text, no fillets"
-      ],
-      "questions": [
-       "Are the sizes right, or do you want a different height, width or rib count?",
-       "Should the ribs be open or fully outlined on the frame?"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "The plan was approved as shown. Building it now, starting with the keel base.",
-   "calls": [
-    {
-     "name": "design.new",
-     "args": {
-      "name": "Hull section diorama"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "placeholder",
-      "distance_mm": 4,
-      "extent": "oneSide",
-      "operation": "new",
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 120,
-       "heightMm": 50
-      },
-      "name": "Keel base"
-     }
-    }
-   ]
-  },
-  {
-   "text": "The sizes need your confirmation on a sheet before the first part is built.",
+   "text": "I'll show the dimension sheet first. Length is 120 mm from your request. The other sizes are my guesses for a 1:48-ish diorama hull, so please check them.",
    "calls": [
     {
      "name": "pilot.sheet",
      "args": {
-      "title": "Hull section sizes",
+      "title": "Wooden hull section",
       "views": [
        "front",
-       "top",
        "side",
        "iso"
       ],
       "part": [
        {
-        "plane": "xy",
-        "points": [
-         [
-          0,
-          0
-         ],
-         [
-          120,
-          0
-         ],
-         [
-          120,
-          50
-         ],
-         [
-          0,
-          50
-         ]
-        ],
-        "from": 0,
-        "to": 4
-       },
-       {
         "plane": "yz",
         "points": [
          [
-          -8,
-          0
-         ],
-         [
-          8,
-          0
-         ],
-         [
-          22,
+          -30,
           36
          ],
          [
-          -22,
+          -30,
+          20
+         ],
+         [
+          -27,
+          9
+         ],
+         [
+          -19,
+          2
+         ],
+         [
+          -10,
+          0
+         ],
+         [
+          10,
+          0
+         ],
+         [
+          19,
+          2
+         ],
+         [
+          27,
+          9
+         ],
+         [
+          30,
+          20
+         ],
+         [
+          30,
           36
          ]
         ],
-        "from": 58,
-        "to": 60
+        "from": 0,
+        "to": 120
        }
       ],
       "dims": [
        {
         "key": "length",
-        "label": "Length (from request)",
+        "label": "Length (along X)",
         "value": 120,
+        "unit": "mm",
         "min": 120,
         "max": 120,
-        "unit": "mm",
         "source": "asked",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          120,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          -8,
-          0
-         ]
-        }
+        "note": "From your request"
        },
        {
-        "key": "width",
-        "label": "Keel base width",
-        "value": 50,
+        "key": "beam",
+        "label": "Beam at deck",
+        "value": 60,
+        "unit": "mm",
         "min": 20,
-        "max": 120,
-        "unit": "mm",
+        "max": 200,
         "source": "guess",
         "at": {
          "a": [
           0,
-          0,
-          0
+          -30,
+          36
          ],
          "b": [
           0,
-          50,
-          0
+          30,
+          36
          ],
          "off": [
-          -8,
           0,
-          0
+          0,
+          5
          ]
         }
        },
        {
-        "key": "base_thickness",
-        "label": "Keel base thickness",
-        "value": 4,
-        "min": 2,
-        "max": 10,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          120,
-          50,
-          0
-         ],
-         "b": [
-          120,
-          50,
-          4
-         ],
-         "off": [
-          6,
-          0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "rib_height",
-        "label": "Rib height",
+        "key": "depth",
+        "label": "Depth, keel to deck",
         "value": 36,
-        "min": 20,
-        "max": 60,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          60,
-          0,
-          4
-         ],
-         "b": [
-          60,
-          0,
-          40
-         ],
-         "off": [
-          0,
-          -10,
-          0
-         ]
-        }
-       },
-       {
-        "key": "rib_half_width_top",
-        "label": "Rib half width at top",
-        "value": 22,
         "min": 10,
-        "max": 30,
-        "unit": "mm",
+        "max": 200,
         "source": "guess",
         "at": {
          "a": [
           0,
-          -22,
-          40
+          30,
+          0
          ],
          "b": [
           0,
-          22,
-          40
+          30,
+          36
          ],
          "off": [
           0,
-          0,
-          4
+          6,
+          0
          ]
         }
        },
        {
-        "key": "rib_thickness",
-        "label": "Rib thickness",
+        "key": "plank_thickness",
+        "label": "Planking wall thickness",
         "value": 2,
-        "min": 1,
-        "max": 4,
         "unit": "mm",
+        "min": 0.8,
+        "max": 6,
         "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          2,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          0,
-          -3
-         ]
-        }
+        "note": "Two perimeter walls at 0.4 nozzle"
        },
        {
         "key": "rib_spacing",
-        "label": "Rib spacing",
-        "value": 25,
-        "min": 10,
-        "max": 40,
+        "label": "Rib spacing (along X)",
+        "value": 20,
         "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          0
-         ],
-         "b": [
-          25,
-          0,
-          0
-         ],
-         "off": [
-          0,
-          10,
-          0
-         ]
-        }
+        "min": 5,
+        "max": 40,
+        "source": "guess"
+       },
+       {
+        "key": "rib_thickness",
+        "label": "Rib thickness (along X)",
+        "value": 2,
+        "unit": "mm",
+        "min": 1,
+        "max": 5,
+        "source": "guess"
        }
       ]
      }
@@ -400,287 +162,234 @@
    ]
   },
   {
-   "text": "The sizes are confirmed. Building the keel base first.",
+   "text": "The sizes are confirmed. Next I'll set out the build plan, since this part has several features.",
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Wooden hull section",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Hull body",
+        "kind": "extrude",
+        "sizes": {
+         "length": 120,
+         "beam": 60,
+         "depth": 36
+        }
+       },
+       {
+        "name": "Hollow planking",
+        "kind": "shell",
+        "sizes": {
+         "plank_thickness": 2
+        }
+       },
+       {
+        "name": "Ribs",
+        "kind": "extrude and array",
+        "sizes": {
+         "rib_spacing": 20,
+         "rib_thickness": 2,
+         "count": 6
+        }
+       }
+      ],
+      "assumptions": [
+       "Half-round hull profile in the YZ plane, extruded along X for 120 mm, deck open at the top",
+       "Shell wall 2 mm, open at the deck so the inside shows",
+       "Six ribs at 20 mm spacing, first at X 10 mm, 2 mm thick, following the inside of the planking",
+       "Curved planking is shown by the smooth hull outline; individual plank seams are not modelled",
+       "Units mm, bed at Z 0"
+      ],
+      "questions": [
+       "Are the guessed beam (60 mm), depth (36 mm) and rib spacing (20 mm) acceptable?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Wooden hull section"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -30,
+           36
+          ],
+          [
+           -30,
+           20
+          ],
+          [
+           -27,
+           9
+          ],
+          [
+           -19,
+           2
+          ],
+          [
+           -10,
+           0
+          ],
+          [
+           10,
+           0
+          ],
+          [
+           19,
+           2
+          ],
+          [
+           27,
+           9
+          ],
+          [
+           30,
+           20
+          ],
+          [
+           30,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 120,
+      "extent": "oneSide",
+      "operation": "new",
+      "feature": "Hull body",
+      "name": "Hull body"
+     }
+    }
+   ]
+  },
+  {
    "calls": [
     {
      "name": "geom.extrude",
      "args": {
       "design": "d1",
-      "distance_mm": 4,
-      "extent": "oneSide",
-      "operation": "new",
       "shape": {
-       "type": "rectangle",
-       "widthMm": 120,
-       "heightMm": 50
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -30,
+           36
+          ],
+          [
+           -30,
+           20
+          ],
+          [
+           -27,
+           9
+          ],
+          [
+           -19,
+           2
+          ],
+          [
+           -10,
+           0
+          ],
+          [
+           10,
+           0
+          ],
+          [
+           19,
+           2
+          ],
+          [
+           27,
+           9
+          ],
+          [
+           30,
+           20
+          ],
+          [
+           30,
+           36
+          ]
+         ]
+        }
+       ]
       },
-      "placement": {
-       "center": [
-        60,
-        25
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
        ],
-       "rotationDeg": 0
-      },
-      "name": "Keel base"
-     }
-    }
-   ]
-  },
-  {
-   "text": "Keel base is built (120 x 50 x 4 mm). Next, one rib frame, then I'll check its orientation before patterning.",
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Rib frame",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          -8,
-          0
-         ],
-         [
-          8,
-          0
-         ],
-         [
-          22,
-          36
-         ],
-         [
-          -22,
-          36
-         ]
-        ],
-        "origin": [
-         5,
-         25,
-         4
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "heightMm": 2
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "The rib came out rotated: it is 44 mm across Z and 36 mm across Y, the reverse of what I need. I'll undo that step and rebuild it with the axes swapped, placed at the origin so I can read the mapping.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Rib frame",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          0,
-          -8
-         ],
-         [
-          0,
-          8
-         ],
-         [
-          36,
-          22
-         ],
-         [
-          36,
-          -22
-         ]
-        ],
-        "origin": [
-         5,
-         0,
-         0
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "heightMm": 2
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "The rib is now oriented correctly (2 mm in X, 44 mm across Y, 36 mm tall). Undoing and rebuilding it at the right spot above the keel, then patterning it.",
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "d1"
-     }
-    },
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d1",
-      "name": "Rib frame",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          0,
-          -8
-         ],
-         [
-          0,
-          8
-         ],
-         [
-          36,
-          22
-         ],
-         [
-          36,
-          -22
-         ]
-        ],
-        "origin": [
-         5,
-         25,
-         4
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "heightMm": 2
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "The keel and rib ended up with different offsets after the bed-fit moves, so their relative position is wrong. Starting a clean design so both parts share one frame.",
-   "calls": [
-    {
-     "name": "design.new",
-     "args": {
-      "name": "Hull section diorama v2"
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d2",
-      "name": "Keel base",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         0,
-         0
-        ],
-        "max": [
-         120,
-         50,
-         4
-        ]
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "calls": [
-    {
-     "name": "geom.build",
-     "args": {
-      "design": "d2",
-      "name": "Rib frame",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "prism",
-        "points": [
-         [
-          0,
-          -8
-         ],
-         [
-          0,
-          8
-         ],
-         [
-          36,
-          22
-         ],
-         [
-          36,
-          -22
-         ]
-        ],
-        "origin": [
-         5,
-         25,
-         4
-        ],
-        "axis": [
-         1,
-         0,
-         0
-        ],
-        "heightMm": 2
-       }
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "text": "Keel and rib now share one frame. Patterning the rib five times at 25 mm spacing, then adding the two planking strips along the rib tops.",
-   "calls": [
-    {
-     "name": "geom.array",
-     "args": {
-      "design": "d2",
-      "part": 1,
-      "merge": true,
-      "spec": {
-       "kind": "linear",
-       "count": 5,
-       "step": [
-        25,
+       "normal": [
+        1,
         0,
         0
        ]
-      }
+      },
+      "distance_mm": 120,
+      "extent": "oneSide",
+      "operation": "new",
+      "feature": "Hull body",
+      "name": "Hull body"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The hull body is in place at 120 x 60 x 36 mm. Next I'll hollow it with the deck left open.",
+   "calls": [
+    {
+     "name": "geom.shell",
+     "args": {
+      "design": "d1",
+      "open": [
+       {
+        "at": [
+         0,
+         0,
+         36
+        ],
+        "normal": [
+         0,
+         0,
+         1
+        ]
+       }
+      ],
+      "wall_mm": 2,
+      "feature": "Hollow planking"
      }
     }
    ]
@@ -688,67 +397,574 @@
   {
    "calls": [
     {
-     "name": "geom.build",
+     "name": "geom.faces",
      "args": {
-      "design": "d2",
-      "name": "Planking strips",
-      "slot": 1,
-      "solids": [
-       {
-        "type": "box",
-        "min": [
-         0,
-         3,
-         38
-        ],
-        "max": [
-         120,
-         6,
-         40
-        ]
-       },
-       {
-        "type": "box",
-        "min": [
-         0,
-         44,
-         38
-        ],
-        "max": [
-         120,
-         47,
-         40
-        ]
-       }
-      ]
+      "design": "d1",
+      "limit": 10,
+      "format": "flat"
      }
     }
    ]
   },
   {
-   "text": "All features are built. Running the plan check against the approved plan.",
+   "calls": [
+    {
+     "name": "geom.shell",
+     "args": {
+      "design": "d1",
+      "open": [
+       {
+        "at": [
+         110.778,
+         116.704,
+         36
+        ],
+        "normal": [
+         0,
+         0,
+         1
+        ]
+       }
+      ],
+      "wall_mm": 2,
+      "feature": "Hollow planking"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The shell is done with the deck open. Next I'll add the first rib, joined to the planking, and then array it.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        10,
+        0,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The rib missed the hull because the design sits at plate coordinates (origin at X 68, Y 98). I'll place the rib frame at the hull's own origin.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        78,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    }
+   ]
+  },
+  {
+   "text": "The first rib joined cleanly. Since the array tool would copy the whole hull, I'll place the other five ribs directly at 20 mm steps.",
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        98,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        118,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        138,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        158,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    },
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "d1",
+      "shape": {
+       "type": "sketch",
+       "loops": [
+        {
+         "points": [
+          [
+           -28.5,
+           36
+          ],
+          [
+           -28.5,
+           20
+          ],
+          [
+           -25.5,
+           9.5
+          ],
+          [
+           -17.5,
+           3.5
+          ],
+          [
+           -9,
+           1.5
+          ],
+          [
+           9,
+           1.5
+          ],
+          [
+           17.5,
+           3.5
+          ],
+          [
+           25.5,
+           9.5
+          ],
+          [
+           28.5,
+           20
+          ],
+          [
+           28.5,
+           36
+          ]
+         ]
+        }
+       ]
+      },
+      "frame": {
+       "origin": [
+        178,
+        128,
+        0
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      },
+      "distance_mm": 2,
+      "extent": "oneSide",
+      "operation": "join",
+      "part": 0,
+      "feature": "Ribs"
+     }
+    }
+   ]
+  },
+  {
+   "text": "All six ribs are joined, at local X 10, 30, 50, 70, 90 and 110 mm. Now I'll run the plan check.",
    "calls": [
     {
      "name": "design.check",
      "args": {
       "planId": "plan_1",
-      "design": "d2"
+      "design": "d1"
      }
     }
    ]
   },
   {
-   "calls": [
-    {
-     "name": "design.check",
-     "args": {
-      "planId": "plan_1"
-     }
-    }
-   ]
-  },
-  {
-   "text": "I built a 120 mm stacked-rib hull section in a new design, but the planking is flat strips, not curved, because the tools can't model a double-curved hull.\n\nThe section has a 120 x 50 x 4 mm keel base, five 2 mm rib frames at 25 mm spacing (36 mm tall, wider at the top), and two 3 mm planking strips along the rib tops. The model is closed with a 2 mm minimum wall. The height, width, rib size and spacing are my guesses; only the 120 mm length came from you.\n\nThe formal plan check ran on an earlier draft that I abandoned, so it reported a feature-count failure. The new design has the four planned features, and I checked its size and closure by hand. Nothing is sliced or sent to the printer.\n\nNext step: I can save the design as a 3MF, or slice it for your P1S in PLA if you want it printed. Say which you'd like."
+   "text": "The hull section is built in the project as \"Wooden hull section\": 120 mm long, 60 mm wide, 36 mm deep, with a 2 mm planked shell open at the deck and six 2 mm ribs at 20 mm spacing. The sizes beyond the 120 mm length are my guesses (beam, depth, wall thickness, rib spacing and rib thickness), so tell me if you want them changed.\n\n**The plan check failed on one item: the minimum wall is 0.15 mm, and the printer needs at least 0.8 mm.** The shell is closed and the overall size is right. I haven't located the thin spot. My best guess is where the rib outlines sit close to the planking's inner surface at the curved bilge, since I used a polygon approximation for the hull curve. I haven't printed or sliced anything.\n\nTwo ways forward:\n- I rebuild the six ribs with a wider outline so they overlap the planking more, then check again.\n- I keep the current model and you accept the thin spot, or ask for a thicker planking wall.\n\nWhich would you like?"
   }
  ],
  "defaultAnswer": true,
