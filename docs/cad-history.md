@@ -54,6 +54,7 @@ A push or pull of a face that a fillet or chamfer in the history rounds does not
 | Hollow, repair, simplify | steps `hollow`, `repair`, `simplify` on every part (simplify ratio is editable) |
 | Merge objects, add a part | step `parts.add`: the added meshes, in this object's frame, are stored with the history; the other object's own history is not kept |
 | Clone a part | step `parts.add` with the copy, placed beside the original, so the timeline stays editable |
+| Array as separate copies | step `parts.add` with the copies and `arrayOf`, the name of the part copied; copy k of the list is the part's copy k + 2, the part itself copy 1 |
 | Reorder parts | step `parts.order` with the new order (part i after it is part `order[i]` before it); no geometry changes, and it replays the same on meshes and on exact solids. Parts a step before it added later (at a rolled-back marker) stay after the ordered ones. Steps name parts by index as they were when the step ran, so follows map indices through order steps (`partThrough`) |
 | Array merged into one object | step `array.merged`; copies (instances) are not mesh edits and record nothing |
 | Fillet, chamfer | steps `edge.fillet`, `edge.chamfer` with EdgeRefs; sketch corner fillets are part of the sketch |

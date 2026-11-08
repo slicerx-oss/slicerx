@@ -61,7 +61,8 @@ export type StepParams =
   | { op: 'repair' }
   | { op: 'simplify'; targetRatio: number }
   | { op: 'array.merged'; spec: ArraySpec }
-  | { op: 'parts.add'; parts: HistoryMesh[]; label: string }
+  /** Parts added; `arrayOf` when an array of separate copies made them: the name of the part copied, parts[k] being its copy k + 2 (the part itself is copy 1). */
+  | { op: 'parts.add'; parts: HistoryMesh[]; label: string; arrayOf?: string }
   /** The parts put in a new order, no geometry changed: part i after the step is part `order[i]` before it. */
   | { op: 'parts.order'; order: number[] }
   | { op: 'edge.fillet'; edges: EdgeRef[]; radiusMm: number; toleranceMm?: number }
