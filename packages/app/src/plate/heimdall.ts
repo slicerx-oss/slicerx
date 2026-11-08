@@ -95,7 +95,9 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
   // or replaced since, or the last slice put back stale when a reslice was canceled) is not this plate's G-code.
   if (s.slice.status === 'done') {
     const stamped = stampBlock(s as AppState, s.slice.stamp)
-    if (stamped) return stamped
+    // A G-code change (a rename, a layer mark) on a slice already marked stale adds nothing: it goes on as any stale
+    // slice does, so the footer shows its tag and no second line, and Export G-code stays there to say slice again.
+    if (stamped && !(stamped === STALE_SLICE && s.slice.stale)) return stamped
   }
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
