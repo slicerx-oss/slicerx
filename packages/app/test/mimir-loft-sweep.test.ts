@@ -244,8 +244,8 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
     // one body from the loft and the sweep, on the bed, at the sizes asked, with only the sheet and Go asked of the person
     const s = r.score
     expect({ ops: s.ops.pass, watertight: s.watertight?.pass, bodies: s.bodies?.pass, bed: s.bedFit?.pass, sizes: s.sizes?.pass, turns: s.turns.pass }, JSON.stringify(s)).toEqual({ ops: true, watertight: true, bodies: true, bed: true, sizes: true, turns: true })
-    // design.check passes the size, the steps and the closure. Left out until they are fixed: its wall measure reads
-    // 0.63 mm here where the eval reads 3 mm, and the eval finds non-manifold edges where the rod meets the stem
+    // design.check passes the size, the steps and the closure. Left out until it is fixed: its wall measure reads
+    // 0.63 mm here where the eval reads 3 mm
     const items = (check['items'] ?? []) as { name: string; pass: boolean }[]
     expect(items.map((i) => i.name)).toContain('minimum wall')
     expect(items.filter((i) => i.name !== 'minimum wall' && !i.pass), JSON.stringify(items)).toEqual([])
