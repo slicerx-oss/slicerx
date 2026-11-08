@@ -146,7 +146,7 @@ describe('the tool cap on OpenAI-style providers', () => {
     expect(sent.at(-1)).toBe('pilot.load_tools')
     expect(sent.filter((n) => n.startsWith('fleet.'))).toEqual(['fleet.t0', 'fleet.t1', 'fleet.t2', 'fleet.t3', 'fleet.t4', 'fleet.t5', 'fleet.t6'])
     expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
-    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 7, of: 15 }] })
+    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 7, of: 15 }], loader: 'pilot.load_tools' })
   })
 
   it('keeps a tool the chat already called, even from a toolset that is left out', async () => {
@@ -174,7 +174,7 @@ describe('the tool cap on OpenAI-style providers', () => {
     expect(sent.filter((n) => n.startsWith('fleet.'))).toHaveLength(15)
     expect(sent.filter((n) => n.startsWith('printer.'))).toHaveLength(12)
     expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
-    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'fleets'], leftOut: ['printers', 'theme'], partial: [{ toolset: 'printers', sent: 12, of: 20 }] })
+    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'fleets'], leftOut: ['printers', 'theme'], partial: [{ toolset: 'printers', sent: 12, of: 20 }], loader: 'pilot.load_tools' })
     expect(lines).toEqual(['mimir sent 128 of 150 tools (gpt-5.6-luna on openai takes at most 128); left out: printers (12 of 20 sent), theme'])
   })
 
@@ -267,6 +267,6 @@ describe('toolsets', () => {
     const tools = [tool('core.a', 'core'), tool('core.b', 'core'), tool('theme.a', 'theme'), tool('core.c', 'core')]
     const out = capTools(tools, { cap: 2, needs: new Set(), called: new Set(['theme.a']) })
     expect(out.tools.map((t) => t.name)).toEqual(['core.a', 'theme.a'])
-    expect(out.report).toEqual({ cap: 2, offered: 4, sent: 2, toolsets: ['theme'], leftOut: ['core'], partial: [{ toolset: 'core', sent: 1, of: 3 }] })
+    expect(out.report).toEqual({ cap: 2, offered: 4, sent: 2, toolsets: ['theme'], leftOut: ['core'], partial: [{ toolset: 'core', sent: 1, of: 3 }], loader: null })
   })
 })

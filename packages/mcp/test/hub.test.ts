@@ -758,6 +758,7 @@ describe('the mimir tab through a scripted hub', () => {
       { link: 'model', provider: 'mimir-cloud', model: 'claude-haiku-5-5', auto: null, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new'], capped },
       { link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: null, local: false, where: 'remote', tools: ['pilot.sheet'], capped: null },
       { link: 'scripted', provider: 'scripted', model: 'scripted', auto: null, tools: [], capped },
+      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b', auto: null, local: true, where: 'computer', tools: ['pilot.sheet'], capped: { cap: 128, offered: 140, sent: 128, toolsets: ['core'], leftOut: ['theme'], partial: [], loader: null } },
     ]
     const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
       if (method !== 'mimir.tab') throw { code: 'bad_request', message: `unknown method ${method}` }
@@ -776,6 +777,9 @@ describe('the mimir tab through a scripted hub', () => {
     // scripted replies have no model, so no limit
     const scripted = await h.call('slicerx_mimir_tab')
     expect(data<{ output: { capped: unknown } }>(scripted).output.capped).toBeNull()
+    // a capped request without the loader (a local model's) says so with a null loader
+    const local = await h.call('slicerx_mimir_tab')
+    expect(data<{ output: { capped: unknown } }>(local).output.capped).toEqual({ cap: 128, offered: 140, sent: 128, toolsets: ['core'], leftOut: ['theme'], partial: [], loader: null })
   })
 
   it('says how to reach the app without sx-link', async () => {
