@@ -26,6 +26,7 @@ import { heldBodies, startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 import { sketchScene } from '../src/workspaces/design/finished-sketches'
+import { unzipStored, zip } from '@slicerx/threemf'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('design-placement-replies', { compressed: true })
@@ -1463,5 +1464,59 @@ describe('where a sketch\'s body stands, wherever the body is', () => {
     expect(get().plate.some((e) => e.id === d)).toBe(false)
     expect(heldBodies().map((h) => h.entry.id)).toEqual([d])
     expect(sketchScene(sketchItem(k))!.frame).toEqual(shown)
+  })
+})
+
+describe('a project saved before sketches moved with their bodies', () => {
+  /** The project as an older app wrote it: its design file without what this one adds (who sketches move with). */
+  function older(bytes: Uint8Array): Uint8Array {
+    const files = unzipStored(bytes)
+    const name = 'Metadata/slicerx_history.json'
+    const j = JSON.parse(new TextDecoder().decode(files.get(name)!)) as { sketchAnchors?: unknown; bodies: { placed?: unknown }[]; items: { drawnFor?: unknown }[] }
+    delete j.sketchAnchors
+    for (const b of j.bodies) delete b.placed
+    for (const i of j.items) delete i.drawnFor
+    files.set(name, new TextEncoder().encode(JSON.stringify(j)))
+    return zip([...files].map(([n, data]) => ({ name: n, data: new Uint8Array(data) })))
+  }
+  /** Opens `bytes` onto an empty plate the way the app opens a project, its one object as 'opened'. */
+  async function open(bytes: Uint8Array) {
+    const bed = { widthMm: 256, depthMm: 256 }
+    readProjectsWithGeom(false)
+    const p = await readProject(bytes, bed).finally(() => readProjectsWithGeom(true))
+    const o = p.plates[0]!.objects[0]!
+    const { withBodyIds } = await import('@slicerx/cad-history')
+    stop?.()
+    appStore.setState({ plate: [{ id: 'opened', name: o.name, handle: handle('opened'), parts: o.parts, colors: ['#bd93f9'], transform: o.transform, history: p.histories.get(o.fileId)! }], timeline: withBodyIds(p.timeline!, (f) => (f === o.fileId ? 'opened' : undefined)) })
+    stop = startTimeline()
+  }
+
+  it('opens a sketch whose body was dragged after its step where the older app showed it, with the same body, and moves it with the body after', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const d = String((await run('design.new', { name: 'Block' })).output['design'])
+    // built where it prints, so it never lands, then a person's sketch on its top and a cut from it
+    expect((await run('geom.extrude', { design: d, ...block, placement: { center: [128, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const k = finishSketch({ frame: { origin: [128, 128, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: square(0, 0, 6) as never }).id
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    drag(d, 30, 0)
+    const cut = { volume: volume(entry(d).parts), plate: onPlate(d) }
+    const bytes = writeProject({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }], bed: { widthMm: 256, depthMm: 256 }, settings: {}, timeline: get().timeline })
+    // saved by this app: the sketch reads on the body, where it stood when saved
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([158, 128, 10])
+    await open(bytes)
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([158, 128, 10])
+    // saved by the older app, which left a sketch where it was drawn: it opens there
+    await open(older(bytes))
+    expect(sketchItem(k).frame?.origin).toEqual([128, 128, 10])
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([128, 128, 10])
+    expect(appDesignHost(loader).sketch!(k).frame?.origin).toEqual([128, 128, 10])
+    // the timeline builds the same body where it stands
+    const r = await runReplay({ history: historyOf(get().timeline, 'opened')! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(cut.volume, 0)
+    const b = bounds(r.parts.map(toPart), entry('opened').transform)!
+    expect({ min: b.min.map(r2), max: b.max.map(r2) }).toEqual(cut.plate)
+    // from here on it moves with the body
+    drag('opened', 0, 10)
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([128, 138, 10])
   })
 })
