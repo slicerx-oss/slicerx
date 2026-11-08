@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest'
 import { drawView, fitScale, readsIn, shapeOfSolids, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
 import { backplatePart, boxPart, SCRIPTS, standPart } from '../src/workspaces/mimir/scripts'
 import { mimirTools, scriptedMimir } from '../src/workspaces/mimir/scripted'
-import { sheetMode, sheetUi, setShownSheet } from '../src/workspaces/mimir/sheet-ui'
+import { setDraft, sheetMode, sheetUi, setShownSheet, typedValues } from '../src/workspaces/mimir/sheet-ui'
+import { get, set, type PlateEntry } from '../src/state/store'
 import { sourceHost } from '../src/workspaces/mimir/sheet-view'
 
 const CUBE: PilotSheetSolid = { plane: 'xy', points: [[0, 0], [0, 10], [10, 10], [10, 0]], from: 0, to: 10 }
@@ -172,5 +173,76 @@ describe('scripted sheets', () => {
     expect(events.some((e) => e.type === 'tool_call' && e.tool.startsWith('design.'))).toBe(false)
     const said = events.flatMap((e) => (e.type === 'text' ? [e.delta] : [])).join('')
     expect(said).toContain('Nothing is built')
+  })
+})
+
+describe('the scripted sizes sheet of a part already built', () => {
+  const box = (lo: [number, number, number], hi: [number, number, number]) => {
+    const c = (i: number) => [i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]]
+    const quads = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]]
+    return { name: 'Box', slot: 1, positions: new Float32Array(Array.from({ length: 8 }, (_, i) => c(i)).flat()), indices: new Uint32Array(quads.flatMap(([a, b, cc, d]) => [a!, b!, cc!, a!, cc!, d!])) }
+  }
+  const entry = { id: 'obj_box', name: 'Box', parts: [box([0, 0, 0], [80, 60, 30])], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 50, 0, 1], colors: [], handle: {}, history: { steps: [] } } as unknown as PlateEntry
+
+  async function ask(message: string, answer: (sheet: PilotSheet) => Record<string, number> | null = () => null) {
+    const p = scriptedMimir(SCRIPTS, mimirTools())
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', message)) {
+      events.push(e)
+      if (e.type === 'ask') void p.answer!(e.askId, e.choices[0]!.id)
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answer(e.sheet))
+    }
+    const sheet = (events.find((e) => e.type === 'sheet') as { sheet: PilotSheet } | undefined)?.sheet ?? null
+    return { sheet, said: events.flatMap((e) => (e.type === 'text' ? [e.delta] : [])).join('') }
+  }
+
+  it('says there is nothing built yet, and shows no sheet, on an empty plate', async () => {
+    const before = get().plate
+    set({ plate: [] })
+    try {
+      const out = await ask('Show me the dimension sheet')
+      expect(out.sheet).toBeNull()
+      expect(out.said).toContain('no part built yet')
+    } finally {
+      set({ plate: before })
+    }
+  })
+
+  it('shows the built part\'s overall sizes on it, each placed, and never promises a rebuild it cannot do', async () => {
+    const before = get().plate
+    set({ plate: [entry] })
+    try {
+      const out = await ask("Show me the dimension sheet for the box's main sizes", () => null)
+      expect(out.sheet).toMatchObject({ design: 'obj_box' })
+      expect(out.sheet!.dims.map((d) => [d.key, d.value])).toEqual([['length', 80], ['depth', 60], ['height', 30]])
+      expect(out.sheet!.dims.every((d) => d.at)).toBe(true)
+      expect(out.said).not.toContain('rebuild it to match')
+      const changed = await ask('Show me the main sizes', (sh) => ({ ...Object.fromEntries(sh.dims.map((d) => [d.key, d.value])), length: 100 }))
+      expect(changed.said).toContain('cannot rebuild it to new sizes here')
+      const same = await ask('Show me the main sizes', (sh) => Object.fromEntries(sh.dims.map((d) => [d.key, d.value])))
+      expect(same.said).toContain('Those are the sizes it has now.')
+    } finally {
+      set({ plate: before })
+    }
+  })
+
+  it('builds when the message asks to make a part and also mentions its main sizes', async () => {
+    const out = await ask('Make a box with a lid and show me the main sizes first')
+    expect(out.sheet?.design).toBeUndefined()
+    expect(out.sheet?.part?.length).toBeGreaterThan(0)
+  })
+})
+
+describe('setting a waiting sheet aside with words', () => {
+  it('takes the sizes typed on it along, and nothing when none were typed', () => {
+    const sheet = { id: 'sheet_t', title: 'Box', views: ['iso' as const], dims: [{ key: 'width', label: 'Width', value: 80, unit: 'mm' as const, source: 'guess' as const }, { key: 'depth', label: 'Depth', value: 60, unit: 'mm' as const, source: 'guess' as const }] }
+    setShownSheet({ sheet, answer: null, bound: null, replay: false })
+    expect(typedValues(sheetUi.getState())).toBeNull()
+    setDraft('width', 90)
+    expect(typedValues(sheetUi.getState())).toEqual({ width: 90, depth: 60 })
+    // typed back to what it was: nothing changed
+    setDraft('width', 80)
+    expect(typedValues(sheetUi.getState())).toBeNull()
+    setShownSheet(null)
   })
 })

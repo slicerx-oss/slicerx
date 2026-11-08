@@ -598,8 +598,30 @@ function boundsOf(id: string): { lo: [number, number, number]; hi: [number, numb
 }
 
 /**
+ * The wall of the sheet tied to `design` (its pilot.sheet_bind), so the sizes sheet of one part never shows the wall
+ * of another; undefined when no sheet in this chat was tied to it or that sheet had no wall.
+ */
+export function boundWall(messages: readonly LlmMessage[], design: string): number | undefined {
+  for (let k = messages.length - 1; k >= 0; k--) {
+    const m = messages[k]!
+    const binds = (c: { name: string; arguments: string }): boolean => {
+      if (c.name !== 'pilot.sheet_bind') return false
+      try {
+        return (JSON.parse(c.arguments) as { design?: unknown }).design === design
+      } catch {
+        return false
+      }
+    }
+    if (m.role !== 'assistant' || !m.toolCalls?.some(binds)) continue
+    return sheetValues(messages.slice(0, k))?.['wall']
+  }
+  return undefined
+}
+
+/**
  * The sizes of a part already built, on a sheet that draws it as built: its overall length, depth and height, and the
- * wall when the last sheet set one. The rows sit on the part where it stands on the plate.
+ * wall when the sheet it was built from set one. The rows sit on the part where it stands on the plate. Without a
+ * model nothing rebuilds from it, so the reply never promises that.
  */
 const sizesOf: ScriptStep[] = [
   (messages) => {
@@ -609,21 +631,29 @@ const sizesOf: ScriptStep[] = [
     const { lo, hi } = b
     const r = (n: number) => Math.round(n * 10) / 10
     const [x, y, z] = [r(hi[0] - lo[0]), r(hi[1] - lo[1]), r(hi[2] - lo[2])]
-    const wall = sheetValues(messages)?.['wall']
+    const wall = boundWall(messages, e.id)
     const rows = [
       row('length', 'Overall length', x, 'asked', { at: { a: lo, b: [hi[0], lo[1], lo[2]], off: [0, 0, -10] } }),
       row('depth', 'Overall depth', y, 'asked', { at: { a: [hi[0], lo[1], lo[2]], b: [hi[0], hi[1], lo[2]], off: [10, 0, 0] } }),
       row('height', 'Overall height', z, 'asked', { at: { a: lo, b: [lo[0], lo[1], hi[2]], off: [-10, 0, 0] } }),
       ...(wall ? [row('wall', 'Wall', wall, 'asked', { at: { a: [lo[0], (lo[1] + hi[1]) / 2, hi[2]], b: [lo[0] + wall, (lo[1] + hi[1]) / 2, hi[2]], off: [0, 0, 10] } })] : []),
     ]
-    return { text: `Here are the main sizes of the ${e.name}, drawn as it is built. Change any of them and I will rebuild it to match.`, calls: [{ name: 'pilot.sheet', args: { title: `${e.name} main sizes`, views: ['front', 'top', 'side', 'iso'], dims: rows, design: e.id } }] }
+    return { text: `Here are the main sizes of the ${e.name}, drawn as it is built.`, calls: [{ name: 'pilot.sheet', args: { title: `${e.name} main sizes`, views: ['front', 'top', 'side', 'iso'], dims: rows, design: e.id } }] }
   },
-  (messages) => (lastResult(messages)?.['confirmed'] === true ? { text: 'Those are the sizes it has now.' } : { text: 'Okay, I left it as it is.' }),
+  (messages) => {
+    const r = lastResult(messages)
+    const changed = Array.isArray(r?.['changed']) ? (r['changed'] as unknown[]).length : 0
+    if (r?.['confirmed'] === true && changed === 0) return { text: 'Those are the sizes it has now.' }
+    // a changed size needs the part's steps edited, which this preview cannot do from a sheet
+    if (r?.['confirmed'] === true) return { text: 'I cannot rebuild it to new sizes here without a model, so it is unchanged. Edit its steps in Model to change those sizes, or connect a model and ask me again.' }
+    return { text: 'Okay, I left it as it is.' }
+  },
 ]
 
 export const SCRIPTS: MimirScript[] = [
-  // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another
-  { id: 'sizes', match: /\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b/i, steps: sizesOf },
+  // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another; a message
+  // that also asks to make or build something is a build, and goes on to the scripts below
+  { id: 'sizes', match: /^(?![\s\S]*\b(?:make|build|design|create|print)\b)[\s\S]*(?:\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b)/i, steps: sizesOf },
   // first, so "check the backplate against its plan" checks rather than building another
   { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
