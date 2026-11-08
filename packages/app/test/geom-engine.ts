@@ -134,6 +134,10 @@ export function replayGeom(file: string, recorded?: Replies) {
   }
   return {
     stale,
+    /** The recorded calls of the running test that it has not made yet, as "call N (op)". */
+    unused(): string[] {
+      return (replies[key] ?? []).slice(next).map((r, i) => `call ${next + i + 1} (${r.op})`)
+    },
     /** Starts the running test's replies at its first one. */
     start(k: string = testKey()): void {
       key = k
@@ -174,6 +178,17 @@ export function replayGeom(file: string, recorded?: Replies) {
       return withIds(r.reply, ids) as T
     },
   }
+}
+
+/**
+ * Writes `recorded` to `file` (gzip when `compressed`). A run that recorded no call writes nothing, so a test file that
+ * makes no engine calls, or shares a fixture with one that does, cannot wipe it. Returns whether it wrote.
+ */
+export function writeRecording(file: string, recorded: Replies, compressed: boolean): boolean {
+  if (Object.values(recorded).every((list) => list.length === 0)) return false
+  const json = `${JSON.stringify(recorded)}\n`
+  writeFileSync(file, compressed ? gzipSync(json) : json)
+  return true
 }
 
 /**
@@ -218,15 +233,16 @@ export function useGeomEngine(name: string, options: { compressed?: boolean; fre
   })
   // A replayed call that did not match fails the test, even when the code under test caught the error and fell back.
   afterEach(() => {
-    if (!replay?.stale.length) return
-    throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
+    if (!replay) return
+    if (replay.stale.length) throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
+    // With freshCache a test replays its whole list, so a recorded call it did not make means the test dropped a call or
+    // the fixture holds one it no longer needs.
+    const left = options.freshCache ? replay.unused() : []
+    if (left.length) throw new ReplayMismatch(`${fixture} holds recorded calls that "${testKey()}" did not make: ${left.join(', ')}. Record it again with SX_GEOM_RECORD=1.`)
   })
   afterAll(() => {
     setGeomProvider(null)
-    if (record) {
-      const json = `${JSON.stringify(recorded)}\n`
-      writeFileSync(fixture, options.compressed ? gzipSync(json) : json)
-    }
+    if (record) writeRecording(fixture, recorded, !!options.compressed)
   })
   return { ops: () => ops }
 }
