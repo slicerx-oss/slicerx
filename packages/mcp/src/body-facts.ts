@@ -3,8 +3,8 @@
 // The facts design.check compares with a plan, read from a design's current body: its bounds (as geom.info gives
 // them), whether each part is closed (welded by position, as geom.info and the slicer read it), its round holes (the
 // inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
-// and geom.hole do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a
-// grid of the facets, within a budget).
+// and geom.hole do), its feature steps with the planned feature each was tagged with, and its thinnest wall (a ray
+// from each facet inward to the far side, through a grid of the facets, within a budget).
 import { bakeMesh, stepName, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import { notClosedWords, partClosure } from './closure'
 import type { BodyFacts } from './design-check'
@@ -59,7 +59,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
     features: shaping.length,
     steps: shaping.map((s) => stepName(s)),
-    free: shaping.map(freeStep),
+    tags: shaping.map((s) => s.feature?.trim() || null),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     watertight,
     ...(watertight ? {} : { openWhy: notClosedWords(open) }),
@@ -253,22 +253,6 @@ export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGE
     best = r
   }
   return { mm: Number.isFinite(best) ? Math.round(best * 1000) / 1000 : null }
-}
-
-/**
- * Steps that build shape: one with no name of its own may stand for any planned feature (design-check.ts). Every step
- * the history records is in this set or in FINISHES (body-facts-steps.test.ts reads the ops from the history's code).
- */
-export const BUILDS: ReadonlySet<string> = new Set(['face.push', 'shape.extrude', 'sketch.revolve', 'sketch.loft', 'sketch.sweep', 'boolean', 'array.merged', 'parts.add', 'subtract', 'hole.apply', 'mirror', 'plane.cut', 'shell', 'hollow'])
-/** Steps that round, tidy or reorder what was built, or paint it: never free, so a fillet never stands for a lid. */
-export const FINISHES: ReadonlySet<string> = new Set(['edge.fillet', 'edge.chamfer', 'thread.apply', 'repair', 'simplify', 'parts.order', 'split', 'paint'])
-/** The names geom.build, a separate geom.array, geom.subtract and geom.hole give their steps when none is given. */
-const DEFAULT_LABEL = /^(?:Add Solids \d+|Array of \d+, separate|Subtract \d+ solids?|Hole [\d.]+ mm)$/
-
-/** Whether a step may stand for any planned feature: it builds shape under no name of its own, only the tool's default. */
-function freeStep(s: { label?: string | undefined; params: { op: string; label?: unknown } }): boolean {
-  if (s.label?.trim() || !BUILDS.has(s.params.op)) return false
-  return typeof s.params.label !== 'string' || DEFAULT_LABEL.test(s.params.label)
 }
 
 /** A facet whose doubled area is under this share of its longest edge squared is a needle (about a 0.06 degree corner). */

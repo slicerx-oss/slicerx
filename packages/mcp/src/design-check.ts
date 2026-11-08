@@ -41,13 +41,10 @@ export interface BodyFacts {
   holes: { diameterMm: number }[]
   /** The steps in its history that shape it (paint and suppressed steps left out). */
   features: number
-  /** Those steps' names, in order, when known: a planned feature is matched to the steps named for it. */
+  /** Those steps' names, in order, when known: with no step tagged, a planned feature is matched to the steps named for it. */
   steps?: string[] | undefined
-  /**
-   * For each of those steps, true when it has no name of its own and builds shape (an extrude, cut, hole, pull, revolve,
-   * loft, sweep, join or array): such a step may stand for one planned feature no named step matches.
-   */
-  free?: boolean[] | undefined
+  /** For each of those steps, the planned feature it was tagged with when it was built (the tools' feature), or null. */
+  tags?: (string | null)[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
   /** True when every part is closed. */
@@ -89,13 +86,18 @@ function sizeMatch(got: number[], want: number[]): { pass: boolean; note: string
 }
 
 // words a step's own name carries whatever it builds ("Sketch extrude 5 mm"), which say nothing about the feature
-const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'add', 'solid', 'solids', 'subtract', 'separate', 'copy', 'wall', 'walls', 'array', 'merged', 'cut', 'keep', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
+const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
 
-/** A word made single: "holes" is "hole", "boxes" is "box", "assemblies" is "assembly"; "glass" stays. */
+/** Plurals the rules below get wrong: an f that turns to ves, and axes, the plural of axis. */
+const PLURALS: Record<string, string> = { shelves: 'shelf', halves: 'half', axes: 'axis' }
+
+/** A word made single: "holes" is "hole", "boxes" is "box", "assemblies" is "assembly", "shelves" is "shelf"; "glass", "axis" and "chassis" stay. */
 function single(w: string): string {
+  const odd = PLURALS[w]
+  if (odd) return odd
   if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`
   if (w.length > 4 && /(?:ch|sh|ss|x|z)es$/.test(w)) return w.slice(0, -2)
-  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w
+  return w.length > 3 && w.endsWith('s') && !/(?:ss|is)$/.test(w) ? w.slice(0, -1) : w
 }
 
 /** The words of a name that tell features apart: lower case, three letters or more, no numbers, plurals made single. */
@@ -103,51 +105,71 @@ function nameWords(name: string): Set<string> {
   return new Set(name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !STEP_WORDS.has(w)).map(single))
 }
 
+/** A feature name or tag as compared: lower case, words only, plurals made single ("Snap-fit lids" is "snap fit lid"). */
+function nameKey(name: string): string {
+  return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(single).join(' ')
+}
+
+const steps = (n: number): string => `${n} step${n === 1 ? '' : 's'}`
+
 /**
- * The planned features against the steps that built them. A feature may take several steps (four standoffs, five port
- * cutouts), so more steps than features is fine as long as each feature has a step: a step goes to the feature its name
- * shares the most words with (on a tie, the feature with fewer words left over). A feature no step matches by name
- * takes one free step, one with no name of its own that builds shape, or one named only by its numbers ("Sketch
- * extrude 5 mm"). A step named for something the plan does not have, or a fillet, never stands in for a missing
- * feature. Fewer steps than features, or a feature left with none, fails.
+ * The planned features against the steps that built them. Each modeling tool takes the planned feature its step builds
+ * (feature), recorded on the step as its tag. A feature may take several steps (four standoffs, five port cutouts), so
+ * more steps than features is fine as long as each feature has a step tagged with its name (case, punctuation and
+ * plurals aside). A step with no tag is finishing work, such as a fillet, and never stands in for a missing feature. A
+ * history with no tag at all (a client that does not pass feature) is matched by step names instead: a step goes to the
+ * feature its name shares the most words with (on a tie, the feature with fewer words left over), and a step whose name
+ * matches no feature stands for none. Fewer steps than features, or a feature left with none, fails by name.
  */
 function featureItem(features: string[], body: BodyFacts): CheckItem {
   const n = features.length
   const m = body.features
-  if (m < n) return { name: 'feature count', want: String(n), got: `${m} step${m === 1 ? '' : 's'} for ${n} planned features`, pass: false }
-  if (m === n && !body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
-  const fw = features.map(nameWords)
+  if (m < n) return { name: 'feature count', want: String(n), got: `${steps(m)} for ${n} planned features`, pass: false }
+  // nothing known about the steps but their count
+  if (!body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   const per = features.map(() => 0)
-  let free = m - (body.steps?.length ?? 0)
-  const unclaimed: string[] = []
-  ;(body.steps ?? []).forEach((step, i) => {
-    const sw = nameWords(step)
-    let best = -1
-    let bestShared = 0
-    let bestLeft = Infinity
-    fw.forEach((w, k) => {
-      const shared = [...sw].filter((x) => w.has(x)).length
-      const left = w.size - shared
-      if (shared > bestShared || (shared > 0 && shared === bestShared && left < bestLeft)) [best, bestShared, bestLeft] = [k, shared, left]
+  const tagged = (body.tags ?? []).some((t) => typeof t === 'string' && t.trim() !== '')
+  const loose: string[] = []
+  let untagged = 0
+  if (tagged) {
+    const keys = features.map(nameKey)
+    ;(body.tags ?? []).slice(0, body.steps.length).forEach((t) => {
+      if (typeof t !== 'string' || !t.trim()) return void untagged++
+      const key = nameKey(t)
+      let hit = false
+      keys.forEach((k, j) => {
+        if (k !== key) return
+        per[j]!++
+        hit = true
+      })
+      if (!hit && !loose.includes(t)) loose.push(t)
     })
-    if (best >= 0) per[best]!++
-    else if (body.free?.[i] === true || sw.size === 0) free++
-    else unclaimed.push(step)
-  })
-  const missing: string[] = []
-  per.forEach((c, k) => {
-    if (c > 0) return
-    if (free > 0) {
-      free--
-      per[k] = 1
-    } else missing.push(features[k]!)
-  })
+    untagged += Math.max(0, body.steps.length - (body.tags?.length ?? 0))
+  } else {
+    const fw = features.map(nameWords)
+    for (const step of body.steps) {
+      const sw = nameWords(step)
+      let best = -1
+      let bestShared = 0
+      let bestLeft = Infinity
+      fw.forEach((w, k) => {
+        const shared = [...sw].filter((x) => w.has(x)).length
+        const left = w.size - shared
+        if (shared > bestShared || (shared > 0 && shared === bestShared && left < bestLeft)) [best, bestShared, bestLeft] = [k, shared, left]
+      })
+      if (best >= 0) per[best]!++
+      else loose.push(step)
+    }
+  }
+  const missing = features.filter((_, k) => per[k] === 0)
   const groups = per.map((c, k) => (c > 1 ? `${features[k]} ${c}` : '')).filter(Boolean)
-  const others = unclaimed.length ? `; ${unclaimed.map((s) => `"${s}"`).join(', ')} match${unclaimed.length === 1 ? 'es' : ''} no planned feature` : ''
-  const got = missing.length
-    ? `${m} steps, none for ${missing.join(', ')}${others}`
-    : `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`
-  return { name: 'feature count', want: `${n} features, each built by one or more steps`, got, pass: missing.length === 0 }
+  const want = tagged ? `${n} features, each built by a step tagged with its name` : `${n} features, each built by one or more steps`
+  if (!missing.length) return { name: 'feature count', want, got: `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`, pass: true }
+  const quoted = loose.map((s) => `"${s}"`).join(', ')
+  const got = tagged
+    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}`
+    : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan`
+  return { name: 'feature count', want, got, pass: false }
 }
 
 /**
