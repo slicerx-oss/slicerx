@@ -18,6 +18,7 @@ import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, startNewChat, tabTools, useTabMimir } from './session'
 import { editRow } from './sheet-drive'
 import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
+import { useSheetPicture } from './sheet-view'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
@@ -582,7 +583,8 @@ export function MimirCaption() {
     return () => off?.()
   }, [])
   const step = useStepCaption()
-  const drawing = useSheetUi((s) => sheetMode(s) === 'confirm' && (s.shown?.sheet.part?.length ?? 0) > 0)
+  const waitingSheet = useSheetUi((s) => (sheetMode(s) === 'confirm' ? (s.shown?.sheet ?? null) : null))
+  const drawing = useSheetPicture(waitingSheet) !== null
   return (
     <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
       {drawing ? 'Drawing, four views' : (step ?? captionFor(preset))}

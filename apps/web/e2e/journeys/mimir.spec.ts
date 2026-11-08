@@ -621,8 +621,8 @@ test.describe('the dimension sheet', () => {
     await expect(rec.locator('.sheet-rec-n')).toHaveText(['1', '2', '3', '4', '5', '6', '7'])
     await expect(rec.getByTestId('mimir-sheet-confirm')).toHaveText('Confirm sizes and build')
     await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(4)
-    // six of the seven sizes sit on the stand (the phone's width is the phone's): each in one flat view and the iso
-    await expect(page.getByTestId('mimir-sheet-callout')).toHaveCount(12)
+    // all seven sizes sit on the stand (the phone's width over the channel it stands in): each in one flat view and the iso
+    await expect(page.getByTestId('mimir-sheet-callout')).toHaveCount(14)
     // every callout stays in its cell, clear of the others there
     const cells = await drawing.locator('.mimir-drawing-cell').evaluateAll((els) =>
       els.map((cell) => {
@@ -726,6 +726,41 @@ test.describe('the dimension sheet', () => {
     await expect.poll(async () => (await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)).then(() => el.getBoundingClientRect().right)))).toBeLessThanOrEqual((await panel.boundingBox())!.x)
     await page.getByTestId('mimir-sheet-close').click()
     await expect(panel).toHaveCount(0)
+  })
+
+  // A sheet for a part already built draws that part as it stands on the plate, in all four views, with every row's
+  // callout on it: the box's real walls and its lid beside it, not boxes standing in for them.
+  test('draws a built part as built, with a callout for every row', async ({ page }, info) => {
+    const composer = page.getByTestId('mimir-composer')
+    await composer.getByRole('textbox').fill('Make me a box with a lid')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    await page.getByTestId('mimir-sheet-confirm').click()
+    await expect(page.getByTestId('mimir-part').last()).toBeVisible({ timeout: 60_000 })
+    await expect(composer.getByRole('button', { name: 'Stop' })).toHaveCount(0, { timeout: 60_000 })
+    await composer.getByRole('textbox').fill("Show me the dimension sheet for the box's main sizes")
+    await composer.getByRole('button', { name: 'Send' }).click()
+    const drawing = page.getByTestId('mimir-sheet-drawing')
+    await expect(drawing).toBeVisible()
+    await expect(page.getByTestId('mimir-drawing-built')).toHaveText('As built')
+    const rows = await page.getByTestId('mimir-sheet-record').last().locator('.sheet-rec-row').count()
+    expect(rows).toBe(4)
+    // each row in a flat view and in the iso view
+    await expect(page.getByTestId('mimir-sheet-callout')).toHaveCount(rows * 2)
+    // the part is drawn in every view: its silhouette fills part of each cell, and its edges show
+    const inked = await drawing.locator('canvas.mimir-drawing-part').evaluateAll((cs) =>
+      cs.map((c) => {
+        const cv = c as HTMLCanvasElement
+        const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data
+        let n = 0
+        for (let i = 3; i < d.length; i += 4) if (d[i]! > 0) n++
+        return n / (cv.width * cv.height)
+      }),
+    )
+    expect(inked).toHaveLength(4)
+    for (const share of inked) expect(share).toBeGreaterThan(0.03)
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-sheet-built-dark.png` })
+    await page.getByTestId('mimir-sheet-record').last().getByTestId('mimir-sheet-cancel').click()
+    await expect(drawing).toHaveCount(0)
   })
 })
 

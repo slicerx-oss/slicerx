@@ -15,7 +15,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import { usePhoneKeyboardUp } from '../../shell/phone-keyboard'
-import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor } from './sheet-draw'
+import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor, type Raster } from './sheet-draw'
+import { sheetPicture, type SheetPicture } from './sheet-shape'
+import { useApp } from '../../state/store'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
 
@@ -50,6 +52,62 @@ function focusRow(sheetId: string, key: string): void {
   el?.scrollIntoView({ block: 'nearest' })
 }
 
+/** The drawing's part and rows for a waiting sheet: the design as built when it names one on the plate, else its solids. */
+export function useSheetPicture(sheet: PilotSheet | null): SheetPicture | null {
+  // only the named design's entry, so other objects moving leave the drawing alone
+  const entry = useApp((s) => (sheet?.design ? (s.plate.find((p) => p.id === sheet.design) ?? null) : null))
+  return useMemo(() => (sheet ? sheetPicture(sheet, entry ? [entry] : []) : null), [sheet, entry])
+}
+
+/** Device pixels per screen pixel the part is drawn at: twice, so its edges stay fine on any screen. */
+const DRAW_PX = 2
+
+/** The part's silhouette and edges in the drawing's own two inks, read from the stylesheet so they follow the theme. */
+function PartCanvas({ raster, w, h }: { raster: Raster; w: number; h: number }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [theme, setTheme] = useState(0)
+  // the inks change with the theme: the page's scheme, or the app's own light or dark on the root
+  useEffect(() => {
+    const again = () => setTheme((n) => n + 1)
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)')
+    mq?.addEventListener?.('change', again)
+    const mo = new MutationObserver(again)
+    mo.observe(document.documentElement, { attributes: true })
+    return () => {
+      mq?.removeEventListener?.('change', again)
+      mo.disconnect()
+    }
+  }, [])
+  useLayoutEffect(() => {
+    const c = ref.current
+    const ctx = c?.getContext('2d')
+    if (!c || !ctx) return
+    const ink = (cls: string): [number, number, number] => {
+      const probe = document.createElement('span')
+      probe.className = cls
+      c.parentElement!.appendChild(probe)
+      const m = getComputedStyle(probe).color.match(/[\d.]+/g)?.map(Number) ?? [128, 128, 128]
+      probe.remove()
+      // a color() value in 0 to 1 channels
+      return (m.length >= 3 && m.slice(0, 3).every((v) => v <= 1) ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3)) as [number, number, number]
+    }
+    const fill = ink('mimir-ink-part')
+    const line = ink('mimir-ink-edge')
+    const img = ctx.createImageData(raster.W, raster.H)
+    const px = img.data
+    for (let i = 0; i < raster.cover.length; i++) {
+      const c3 = raster.edge[i] ? line : raster.cover[i] ? fill : null
+      if (!c3) continue
+      px[4 * i] = c3[0]
+      px[4 * i + 1] = c3[1]
+      px[4 * i + 2] = c3[2]
+      px[4 * i + 3] = 255
+    }
+    ctx.putImageData(img, 0, 0)
+  }, [raster, theme])
+  return <canvas ref={ref} className="mimir-drawing-part" width={raster.W} height={raster.H} style={{ width: w, height: h }} aria-hidden="true" />
+}
+
 /** Room around a view's drawing for its view label and callouts, in px. */
 const PAD = 24
 /** On a phone the view's label has a band of its own over the drawing, so no callout can cover it. */
@@ -61,7 +119,8 @@ const PHONE_LABEL_H = 22
  * or Right (only those that draw a callout; with neither the header names the drawing instead), and a 44 px control
  * folds the drawing to its header (the view gives the chat the room).
  */
-function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: string | null; onPick: (key: string) => void }) {
+function SheetDrawing({ sheet, picture, editing, onPick }: { sheet: PilotSheet; picture: SheetPicture; editing: string | null; onPick: (key: string) => void }) {
+  const dims = picture.dims
   // a guess stays marked until its row is typed in or kept with Enter
   const draft = useSheetUi((s) => s.draft)
   const assumed = (key: string): boolean => sheet.dims.some((d) => d.key === key && d.source === 'guess') && !(key in draft)
@@ -73,7 +132,7 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
   const typing = phone && keyboardUp && editing !== null
   const folded = foldedByHand || typing
   // Front or Right with no callout of this sheet's would show nothing to edit, so the picker leaves it out
-  const offered = useMemo(() => panesFor(viewsFor(sheet.dims, sheet.views ?? [])), [sheet.dims, sheet.views])
+  const offered = useMemo(() => panesFor(viewsFor(dims, sheet.views ?? [])), [dims, sheet.views])
   const pane = paneOffered(picked, offered)
   const cols = phone ? PANE_VIEWS[pane].length : 2
   const ref = useRef<HTMLDivElement>(null)
@@ -92,20 +151,20 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
     ro.observe(el)
     return () => ro.disconnect()
   }, [phone, cols])
-  const part = sheet.part ?? []
+  const shape = picture.shape
   const views = useMemo(() => {
     if (!cell) return null
     const shownViews = phone ? PANE_VIEWS[pane] : SHEET_VIEWS
     // the flat views share one scale, as a print drawing does; the iso view fits its own cell
-    const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(part, sheet.dims, v, cell.w, cell.h, PAD, sheet.views)))
-    return shownViews.map((v) => ({ v, drawn: drawView(part, sheet.dims, v, cell.w, cell.h, { pad: PAD, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
-  }, [cell, part, sheet.dims, sheet.views, phone, pane])
+    const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(shape, dims, v, cell.w, cell.h, PAD, sheet.views)))
+    return shownViews.map((v) => ({ v, drawn: drawView(shape, dims, v, cell.w, cell.h, { pad: PAD, px: DRAW_PX, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
+  }, [cell, shape, dims, sheet.views, phone, pane])
   // a row picked on the record shows its callout: a phone moves to Top and iso when Front or Right does not draw it
   useEffect(() => {
     if (!phone || !editing) return
-    const has = viewsFor(sheet.dims, sheet.views ?? []).get(editing)
+    const has = viewsFor(dims, sheet.views ?? []).get(editing)
     if (has) showPane(sheet.id, paneShowing(pickFor(drawingPick.getState(), sheet.id).pane, (v) => has.includes(v)))
-  }, [phone, editing, sheet.id, sheet.dims, sheet.views])
+  }, [phone, editing, sheet.id, dims, sheet.views])
   // the choice picked is no longer offered (the sheet changed): the pick moves back to Top and iso as well
   useEffect(() => {
     if (phone && pane !== picked) showPane(sheet.id, pane, offered)
@@ -148,10 +207,8 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
       <div ref={ref} className="mimir-drawing-grid" hidden={folded}>
         {views?.map(({ v, drawn }) => (
           <div key={v} className="mimir-drawing-cell" data-view={v}>
+            <PartCanvas raster={drawn.part} w={cell!.w} h={cell!.h} />
             <svg width={cell!.w} height={cell!.h} viewBox={`0 0 ${cell!.w} ${cell!.h}`} role="img" aria-label={`${sheet.title}, ${VIEWS[v].label}`}>
-              {drawn.faces.map((f, i) => (
-                <path key={i} className="mimir-drawing-face" d={f.path} fillRule="evenodd" style={{ fill: `color-mix(in srgb, var(--sheet-part) ${f.light}%, var(--sheet-part-dark))` }} />
-              ))}
               {drawn.dims.map((d) => {
                 // a halo in the card's color first, so the lines read over the part as well as beside it
                 const strokes = (halo: boolean) => (
@@ -175,7 +232,7 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
                 )
               })}
               {drawn.dims.map((d) => {
-                const dim = sheet.dims.find((x) => x.key === d.key)!
+                const dim = dims.find((x) => x.key === d.key)!
                 return (
                   <g
                     key={d.key}
@@ -206,7 +263,7 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
       <div className="mimir-drawing-strip sx-mono" data-testid="mimir-drawing-status">
         <span>{sheet.title}</span>
         <span>mm</span>
-        <span>Not built yet</span>
+        <span data-testid="mimir-drawing-built">{picture.built ? 'As built' : 'Not built yet'}</span>
       </div>
       </div>
     </div>
@@ -409,6 +466,7 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
 export function MimirSheet() {
   const shown = useSheetUi((s) => s.shown)
   const mode = useSheetUi(sheetMode)
+  const picture = useSheetPicture(mode === 'confirm' ? (shown?.sheet ?? null) : null)
   const [editing, setEditing] = useState<string | null>(null)
   useEffect(() => setEditing(null), [shown?.sheet.id])
   // while the drawing is up, the record's rows are the fields: a focused row lights its callout
@@ -434,13 +492,13 @@ export function MimirSheet() {
   useEffect(() => {
     const vp = document.querySelector<HTMLElement>('.studio > .vp')
     if (!vp) return
-    if (mode) vp.dataset['mimirSheet'] = mode === 'confirm' && shown?.sheet.part?.length ? 'drawing' : 'panel'
+    if (mode) vp.dataset['mimirSheet'] = mode === 'confirm' && picture ? 'drawing' : 'panel'
     else delete vp.dataset['mimirSheet']
     return () => {
       delete vp.dataset['mimirSheet']
     }
-  }, [mode, shown?.sheet.part?.length])
-  const drawing = !!shown && mode === 'confirm' && (shown.sheet.part?.length ?? 0) > 0
+  }, [mode, picture])
+  const drawing = !!shown && mode === 'confirm' && picture !== null
   // On a phone the view is a strip over the chat and paints in a stacking context of its own, so a panel inside it sits
   // under the chat and its composer. There the panel takes the conversation's place in the chat column instead, between
   // its header and the composer, and the conversation comes back where it was once the panel closes.
@@ -449,7 +507,7 @@ export function MimirSheet() {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => setSlot(phone && panelUp ? document.querySelector<HTMLElement>('[data-testid="mimir-chat"] .mimir-sheet-slot') : null), [phone, panelUp])
   if (!shown || !mode) return null
-  if (drawing) return <SheetDrawing sheet={shown.sheet} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} />
+  if (drawing) return <SheetDrawing sheet={shown.sheet} picture={picture!} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} />
   const panel = <SheetPanel sheet={shown.sheet} mode={mode} editing={editing} setEditing={setEditing} />
   if (!phone) return panel
   return slot ? createPortal(panel, slot) : null
