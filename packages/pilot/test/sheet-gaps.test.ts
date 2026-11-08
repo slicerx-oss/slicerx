@@ -308,7 +308,8 @@ describe('the gaps on a print-in-place sheet', () => {
       sheetTool(),
       opts.plan ?? plan,
       tool('design.new', (i) => (ran.push(`new ${String(i.name)}`), { design: `d${++n}`, name: i.name })),
-      tool('design.open', () => { const id = `d${++n}`; ran.push(`open ${id}`); return { designs: [{ design: id, name: 'Lamp' }] } }),
+      // the file opened holds one design, named Lamp unless the call gives the name it is to have
+      tool('design.open', (i) => { const id = `d${++n}`; ran.push(`open ${id}`); return { designs: [{ design: id, name: typeof i.name === 'string' ? i.name : 'Lamp' }] } }),
       tool('geom.extrude', (i) => (ran.push(`${String(i.name)}@${String(i.design)}`), { design: i.design }), 'slice'),
       tool('geom.push_pull', (i) => (ran.push(`push@${String(i.design)}`), { design: i.design }), 'slice'),
     ]
@@ -316,15 +317,34 @@ describe('the gaps on a print-in-place sheet', () => {
     const watched = steps.map((s, k) => (k === 0 ? s : (m: { content?: string }[]) => (seen.push(m.at(-1)?.content ?? ''), typeof s === 'function' ? s(m as never) : s)))
     const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(watched as ScriptStep[], { chunk: false }), builtins: false, tools, ...(opts.plans ? { plans: opts.plans as never } : {}) })
     const summaries: string[] = []
+    const shown: string[][] = []
     const calls = new Map<string, string>()
     let k = 0
     for (const message of messages)
       for await (const e of p.run('s', message) as AsyncIterable<PilotEvent>) {
-        if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answers[k++] ?? {})
+        if (e.type === 'sheet') {
+          shown.push(e.sheet.dims.map((d) => d.key))
+          void p.answerSheet!(e.sheet.id, answers[k++] ?? {})
+        }
         if (e.type === 'tool_call') calls.set(e.callId, e.tool)
         if (e.type === 'tool_result' && calls.get(e.callId) !== 'design.plan') summaries.push(e.summary)
       }
-    return { ran, seen, summaries }
+    return { ran, seen, summaries, shown }
+  }
+  // the host's plans as a map of marks, as the tab's registry keeps them
+  const markedPlans = () => {
+    const marks = new Map<string, { stale?: true; superseded?: true; design?: string; claimed?: string }>()
+    const plans = {
+      stale: (id: string) => (marks.set(id, { ...marks.get(id), stale: true }), true),
+      supersede: (id: string) => {
+        const m = { ...marks.get(id), superseded: true as const }
+        delete m.stale
+        marks.set(id, m)
+      },
+      claim: (id: string, design: string) => void marks.set(id, { ...marks.get(id), claimed: design }),
+      get: (id: string) => marks.get(id),
+    }
+    return { marks, plans }
   }
   const HELD = `Nothing was built. ${PLAN_AGAIN_NOTE}`
   // a sheet with its own gap rows, as mimir may send for a print-in-place part, each row placed on the drawing
@@ -602,6 +622,39 @@ describe('the gaps on a print-in-place sheet', () => {
     )
     expect(seen.join(' ')).not.toContain('Nothing was built')
     expect(ran).toEqual(['new My box for the shelf', 'Box@d1'])
+  })
+
+  it('hold a change to a design opened under the planned part\'s name, with no part built under an earlier plan', async () => {
+    // the design is opened before any plan, so no plan before held it: it is the planned part's by its name alone
+    const push = { name: 'geom.push_pull', args: { design: 'd1' } }
+    const hinge = markedPlans()
+    const held = await talk([{ calls: [{ name: 'design.open', args: { path: 'hinge.3mf', name: 'Hinge' } }] }, { calls: [HINGE] }, { calls: [SHEET] }, { calls: [push] }, { text: 'Waiting for the plan.' }], ['A print-in-place hinge'], [{ width: 60 }], { plans: hinge.plans })
+    expect(held.seen[3]).toContain(HELD)
+    expect(held.ran).toEqual(['open d1'])
+    expect(hinge.marks.get('p')).toMatchObject({ stale: true, claimed: 'd1' })
+    // an unrelated design opened in the same chat is changed at once and claims nothing
+    const lamp = markedPlans()
+    const free = await talk([{ calls: [{ name: 'design.open', args: { path: 'lamp.3mf', name: 'Lamp' } }] }, { calls: [HINGE] }, { calls: [SHEET] }, { calls: [push] }, { text: 'Done.' }], ['A print-in-place hinge'], [{ width: 60 }], { plans: lamp.plans })
+    expect(free.seen[3]).not.toContain('Nothing was built')
+    expect(free.ran).toEqual(['open d1', 'push@d1'])
+    expect(lamp.marks.get('p')?.claimed).toBeUndefined()
+  })
+
+  it('show the gap rows on the sheet of a part asked for in the next message, and mark the plan stale when its size changes', async () => {
+    // known behavior: run 1 approves the hinge's plan and ends before any sheet; run 2 asks for a spacer, whose sheet still
+    // gets the fit rule's gaps, and a size changed there marks the hinge's plan stale. The spacer itself is built at once.
+    const { marks, plans } = markedPlans()
+    const { ran, seen, shown, summaries } = await talk(
+      [{ calls: [HINGE] }, { text: 'Shall I start on the hinge?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge', 'Forget the hinge, make me a 20 mm spacer'],
+      [{ height: 25 }],
+      { plans },
+    )
+    expect(shown).toEqual([['height', 'clearance', 'clearance_vertical']])
+    expect(marks.get('p')?.stale).toBe(true)
+    expect(summaries[0]).toContain(PLAN_AGAIN_NOTE)
+    expect(seen.join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Spacer', 'Spacer@d1'])
   })
 
   it('come from the fit rule profile of the run', () => {
