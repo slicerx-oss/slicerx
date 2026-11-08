@@ -141,6 +141,33 @@ describe('mesh checks on synthetic geometry', () => {
     expect(bodyCount(pair)).toBe(2)
   })
 
+  it('keeps a vertex at -0 apart from one at 0, as the slicer weld does', () => {
+    // the x = 0 face of a cube again on vertices of its own, at -0 or at 0: the slicer welds only the second
+    const seam = (zero: number): MeshPart => {
+      const b = box(0, 0, 0, 10, 10, 10)
+      const pos = [...b.positions]
+      const idx = [...b.indices]
+      const again = new Map<number, number>()
+      for (let t = 0; t < idx.length; t += 3) {
+        const tri = [idx[t]!, idx[t + 1]!, idx[t + 2]!]
+        if (!tri.every((v) => pos[v * 3] === 0)) continue
+        for (const [k, v] of tri.entries()) {
+          if (!again.has(v)) {
+            again.set(v, pos.length / 3)
+            pos.push(zero, pos[v * 3 + 1]!, pos[v * 3 + 2]!)
+          }
+          idx[t + k] = again.get(v)!
+        }
+      }
+      expect(again.size).toBeGreaterThan(0)
+      return { ...b, positions: new Float32Array(pos), indices: new Uint32Array(idx) }
+    }
+    expect(closure([seam(0)])).toEqual({ watertight: true, openEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 })
+    const apart = closure([seam(-0)])
+    expect(apart.watertight).toBe(false)
+    expect(apart.openEdges).toBeGreaterThan(0)
+  })
+
   it('counts separate bodies inside one mesh part', () => {
     expect(bodyCount([join([box(0, 0, 0, 10, 10, 10), box(20, 0, 0, 30, 10, 10), box(40, 0, 0, 50, 10, 10)])])).toBe(3)
     const s = scoreParts(prompt({ bodies: [1, 2] }), passing, [join([box(0, 0, 0, 10, 10, 10), box(20, 0, 0, 30, 10, 10), box(40, 0, 0, 50, 10, 10)])])
