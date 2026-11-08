@@ -1330,8 +1330,10 @@ test.describe('sketch-panel-cards', () => {
       }
       await panel.locator('#sk-dist').fill('5')
       await panel.getByTestId('model-tool-apply').click()
-      await expect(panel).toHaveCount(0, { timeout: 30_000 })
-      // out of the top face it grows 5 mm; flipped it goes into the box and the height stays
+      // out of the top face it grows 5 mm and the editor closes; flipped it goes into the box, where a join changes
+      // nothing, so the editor stays open with why and the height stays
+      if (flipped) await expect(panel).toContainText('nothing changed', { timeout: 30_000 })
+      else await expect(panel).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => height(page, id), { timeout: 30_000 }).toBe(flipped ? 20 : 25)
     }
   })
