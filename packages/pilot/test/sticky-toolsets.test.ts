@@ -5,11 +5,11 @@
 // toolset goes only when the limit forces it and never one a tool was called from in the last turn, and pilot.load_tools
 // loads a toolset that was left out. Every capped request stays at the limit or under, pilot.load_tools included. A
 // provider without a limit, and a local model, send what they sent before.
-import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PrinterHost } from '@slicerx/contracts'
+import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PilotMachine, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
-import { capTools, LOAD_TOOLS_TOOL, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets } from '../src/toolsets'
+import { capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from '../src/toolsets'
 
 const tool = (name: string, toolset: Toolset): PilotTool<never> =>
   defineTool({ name, version: '1.0.0', description: `${name} does one thing`, source: 'command', permission: 'read', toolset, input: z.object({}).passthrough(), run: async () => ({ summary: `${name} ran` }) }) as PilotTool<never>
@@ -28,7 +28,7 @@ function manyTools(): PilotTool<never>[] {
 }
 
 const enc = new TextEncoder()
-type Step = { call?: string; args?: unknown; text?: string }
+type Step = { call?: string; args?: unknown; text?: string; calls?: { call: string; args?: unknown }[] }
 
 /** One reply in the provider's own wire format: a tool call, or a line of text. */
 function wire(kind: Kind, step: Step): Uint8Array {
@@ -42,6 +42,21 @@ function wire(kind: Kind, step: Step): Uint8Array {
     )
   }
   const ev = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`
+  if (step.calls) {
+    // several tool calls in one step, one content block each
+    const blocks = step.calls.map(
+      (c, i) =>
+        ev('content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: `toolu_${i}_${c.call}`, name: c.call.replaceAll('.', '__'), input: {} } }) +
+        ev('content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: JSON.stringify(c.args ?? {}) } }) +
+        ev('content_block_stop', { type: 'content_block_stop', index: i }),
+    )
+    return enc.encode(
+      ev('message_start', { type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 0 } } }) +
+        blocks.join('') +
+        ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 1 } }) +
+        ev('message_stop', { type: 'message_stop' }),
+    )
+  }
   const block = step.call
     ? ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `toolu_${step.call}`, name: step.call.replaceAll('.', '__'), input: {} } }) +
       ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(step.args ?? {}) } })
@@ -80,18 +95,24 @@ function toolsOf(req: LlmHttpRequest): string[] {
 }
 const inSet = (names: string[], prefix: string): number => names.filter((n) => n.startsWith(prefix)).length
 
-function setup(kind: Kind, steps: Step[] = [], tools = manyTools()) {
+function setup(kind: Kind, steps: Step[] = [], tools = manyTools(), extra: Partial<Parameters<typeof createPilot>[0]> = {}) {
   const llm = provider(kind, steps)
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
   const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-5-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
   const { models: _tiers, ...base } = DEFAULT_CONFIG
-  const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools })
+  const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 6 }, policy: DEFAULT_POLICY, builtins: false, tools, ...extra })
   const say = async (message: string, session = 's1'): Promise<LlmHttpRequest[]> => {
     const at = llm.sent.length
     for await (const _ of pilot.run(session, message)) void _
     return llm.sent.slice(at)
   }
-  return { llm, pilot, say }
+  /** Runs a message and returns each tool's result as the chat shows it. */
+  const results = async (message: string, signal?: AbortSignal): Promise<{ ok: boolean; summary: string }[]> => {
+    const out: { ok: boolean; summary: string }[] = []
+    for await (const e of pilot.run('s1', message, signal ? { signal } : {})) if (e.type === 'tool_result') out.push({ ok: e.ok, summary: e.summary })
+    return out
+  }
+  return { llm, pilot, say, results }
 }
 
 const state = (over: Partial<StickyToolsets> = {}): StickyToolsets => ({ ...stickyToolsets(), ...over })
@@ -165,6 +186,22 @@ describe('the print request pattern', () => {
 
 describe('stickyCapTools', () => {
   const tools = manyTools()
+
+  it('fills a toolset loaded this turn first, ahead of the other protected toolsets', () => {
+    // cad, settings and printers were called from (120 with core); theme was loaded and must go whole
+    const got = stickyCapTools(tools, {
+      cap: 128,
+      needs: new Set(),
+      called: new Set(),
+      protect: new Set(['cad', 'settings', 'printers', 'theme']),
+      loaded: new Set(['theme']),
+      state: state({ sets: ['core', 'cad', 'settings', 'printers'], lastCalled: new Set(['cad', 'settings', 'printers']) }),
+    })
+    expect(got.sets).toContain('theme')
+    expect(got.tools.filter((t) => toolsetOf(t) === 'theme')).toHaveLength(15)
+    expect(got.report!.partial.map((p) => p.toolset)).not.toContain('theme')
+    expect(got.tools.length + 1).toBeLessThanOrEqual(128)
+  })
 
   it('sends every tool in order with no report under the cap', () => {
     const got = stickyCapTools(tools.slice(0, 128), { cap: 128, needs: new Set(), called: new Set(), protect: new Set(), state: state() })
@@ -270,6 +307,82 @@ describe('a capped chat keeps its tools', () => {
     expect(toolsJson(two[0]!)).toBe(toolsJson(one[1]!))
     // pilot.load_tools is not one of the offered tools the read-backs list
     expect(pilot.tools().some((t) => t.name === LOAD_TOOLS_TOOL)).toBe(false)
+  })
+})
+
+describe('pilot.load_tools answers only what it does', () => {
+  const report: ToolCapReport = { cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 7, of: 15 }], loader: LOAD_TOOLS_TOOL }
+  const ask = async (hooks: { fits?: boolean; loaded?: Toolset[]; queued?: Toolset[] }, toolset: Toolset) => {
+    const asked: Toolset[] = []
+    const t = loadToolsTool(report, { load: (s) => void asked.push(s), fits: () => hooks.fits ?? true, loaded: new Set(hooks.loaded ?? []), queued: () => new Set(hooks.queued ?? []) })
+    const out = await t.run({ toolset } as never, {} as never)
+    return { out, asked }
+  }
+
+  it('refuses a toolset that cannot go whole beside the ones just used, and loads nothing', async () => {
+    const { out, asked } = await ask({ fits: false }, 'theme')
+    expect(out.ok).toBe(false)
+    expect(out.summary).toMatch(/no room/i)
+    expect(asked).toEqual([])
+  })
+
+  it('refuses a second load of a toolset loaded this turn that still went only in part', async () => {
+    const { out, asked } = await ask({ loaded: ['fleets'] }, 'fleets')
+    expect(out.ok).toBe(false)
+    expect(asked).toEqual([])
+  })
+
+  it('answers a load already asked for in this step without asking again', async () => {
+    const { out, asked } = await ask({ queued: ['theme'] }, 'theme')
+    expect(out.ok).not.toBe(false)
+    expect(asked).toEqual([])
+  })
+
+  it('loads a toolset that fits', async () => {
+    const { out, asked } = await ask({}, 'theme')
+    expect(out.ok).not.toBe(false)
+    expect(out.summary).toMatch(/^Loaded/)
+    expect(asked).toEqual(['theme'])
+  })
+
+  it('in a chat, a refused load leaves the next request byte for byte as it was', async () => {
+    // core, cad, settings and printers fill 120 and are called from; theme's 15 tools cannot go whole beside them
+    const { llm, pilot, results } = setup('mimir-cloud', [{ call: 'geom.t1' }, { call: 'settings.t1' }, { call: 'printer.t1' }, { call: LOAD_TOOLS_TOOL, args: { toolset: 'theme' } }, { text: 'No room for those.' }])
+    const got = await results('hello')
+    expect(llm.sent).toHaveLength(5)
+    expect(got.at(-1)).toMatchObject({ ok: false })
+    expect(got.at(-1)!.summary).toMatch(/no room/i)
+    expect(new Set(llm.sent.map(toolsJson)).size).toBe(1)
+    expect(inSet(toolsOf(llm.sent[4]!), 'theme.')).toBe(0)
+    expect(pilot.toolCap('s1')?.leftOut).toContain('theme')
+  })
+
+  it('a run that did not offer pilot.load_tools cannot call it, and the next turn sends what it would have', async () => {
+    const planner = { plan: (from: PilotMachine, to: PilotMachine) => ({ from, to, changes: [], warnings: [] }) }
+    const { pilot, say } = setup('mimir-cloud', [{ text: 'Hi.' }, { call: LOAD_TOOLS_TOOL, args: { toolset: 'theme' } }, { text: 'Explained.' }, { text: 'Here.' }], manyTools(), { planner })
+    const one = await say('hello')
+    const cap = pilot.toolCap('s1')
+    const narrated: { ok: boolean; summary: string }[] = []
+    const a1 = { printer: 'A1', material: 'PLA', nozzle: 0.4 }
+    for await (const e of pilot.switchMachine('s1', a1, { ...a1, material: 'PETG' }, { narrate: true })) if (e.type === 'tool_result') narrated.push({ ok: e.ok, summary: e.summary })
+    expect(narrated).toEqual([{ ok: false, summary: `Unknown tool ${LOAD_TOOLS_TOOL}` }])
+    // the run limited to some tools leaves the chat's report alone
+    expect(pilot.toolCap('s1')).toEqual(cap)
+    const two = await say('and now?')
+    expect(inSet(toolsOf(two[0]!), 'theme.')).toBe(0)
+    expect(toolsJson(two[0]!)).toBe(toolsJson(one[0]!))
+  })
+
+  it('a load asked for in a turn canceled before its next step does not carry into the next turn', async () => {
+    const stop = new AbortController()
+    const halt = defineTool({ name: 'core.halt', version: '1.0.0', description: 'core.halt stops', source: 'command', permission: 'read', toolset: 'core', input: z.object({}).passthrough(), run: async () => (stop.abort(), { summary: 'stopped' }) }) as PilotTool<never>
+    const { results, say, llm } = setup('mimir-cloud', [{ calls: [{ call: LOAD_TOOLS_TOOL, args: { toolset: 'theme' } }, { call: 'core.halt' }] }, { text: 'Here.' }], [...manyTools(), halt])
+    const got = await results('hello', stop.signal)
+    expect(got[0]).toMatchObject({ ok: true })
+    expect(llm.sent).toHaveLength(1)
+    const next = await say('and now?')
+    expect(inSet(toolsOf(next[0]!), 'theme.')).toBe(0)
+    expect(toolsJson(next[0]!)).toBe(toolsJson(llm.sent[0]!))
   })
 })
 

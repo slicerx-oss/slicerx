@@ -268,7 +268,8 @@ export function stickyToolsets(): StickyToolsets {
  * the request has room for cap - 1 tools and pilot.load_tools. It takes the union of what the chat wants: core, the
  * toolsets the last request sent whole, what this message needs, what mimir's last reply named, what the last message
  * needed, the toolsets of every tool the chat called, and `protect` (called from or loaded in the last turn or this
- * one). While that is over the room, one toolset goes at a time, the least wanted first: never core or a protected one;
+ * one). `loaded` (pilot.load_tools asked for it this turn) ranks above every other protected toolset, so it goes whole
+ * first. While that is over the room, one toolset goes at a time, the least wanted first: never core or a protected one;
  * then a toolset nothing asks for, one only an older call asks for, one the last message needed, one the last reply
  * named, and one this message needs, in that order; among
  * those a toolset the last request did not send goes before one it sent, then the one called longest ago and least,
@@ -278,7 +279,7 @@ export function stickyToolsets(): StickyToolsets {
  */
 export function stickyCapTools<T extends SetTool>(
   tools: readonly T[],
-  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; state: Readonly<StickyToolsets> },
+  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; loaded?: ReadonlySet<Toolset>; state: Readonly<StickyToolsets> },
 ): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
   const bySet = new Map<Toolset, T[]>()
   for (const t of tools) {
@@ -290,7 +291,9 @@ export function stickyCapTools<T extends SetTool>(
   if (cap === undefined || tools.length <= cap) return { tools: [...tools], sets: present, report: null }
   const room = cap - 1
   const st = opts.state
-  const tier = (s: Toolset): number => (opts.protect.has(s) ? 5 : opts.needs.has(s) ? 4 : st.lastOffer.has(s) ? 3 : st.lastNeeds.has(s) ? 2 : st.used.has(s) ? 1 : 0)
+  const loaded = opts.loaded ?? new Set<Toolset>()
+  const kept = (s: Toolset): boolean => opts.protect.has(s) || loaded.has(s)
+  const tier = (s: Toolset): number => (loaded.has(s) ? 6 : opts.protect.has(s) ? 5 : opts.needs.has(s) ? 4 : st.lastOffer.has(s) ? 3 : st.lastNeeds.has(s) ? 2 : st.used.has(s) ? 1 : 0)
   const order = (s: Toolset): number => TOOLSET_PRIORITY.indexOf(s)
   // lower first: the toolset that goes first
   const key = (s: Toolset): number[] => [tier(s), st.sets.includes(s) ? 1 : 0, st.used.get(s)?.turn ?? -1, st.used.get(s)?.calls ?? 0, -order(s)]
@@ -305,7 +308,7 @@ export function stickyCapTools<T extends SetTool>(
   const size = (sets: ReadonlySet<Toolset>): number => new Set([...calledTools, ...[...sets].flatMap((s) => bySet.get(s) ?? [])]).size
   const evicted: Toolset[] = []
   while (size(chosen) > room) {
-    const out = [...chosen].filter((s) => s !== 'core' && !opts.protect.has(s)).sort(less)[0]
+    const out = [...chosen].filter((s) => s !== 'core' && !kept(s)).sort(less)[0]
     if (!out) break
     chosen.delete(out)
     evicted.push(out)
@@ -348,11 +351,38 @@ export function stickyCapTools<T extends SetTool>(
 }
 
 /**
- * pilot.load_tools for a capped request: its description names what `report` left out, and `load` takes the toolset the
- * model asks for, which comes with its next step (stickyCapTools keeps it in as a protected toolset). A toolset this
- * request already sends whole, or one this chat does not have, is answered as such and nothing changes.
+ * Whether `set` can go whole on a capped request beside core, the tools the chat called and every `protect` toolset,
+ * so loading it leaves out none of the tools just used.
  */
-export function loadToolsTool(report: ToolCapReport, load: (set: Toolset) => void): PilotTool<never> {
+export function loadFits<T extends SetTool>(tools: readonly T[], opts: { cap: number | undefined; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; set: Toolset }): boolean {
+  if (opts.cap === undefined) return true
+  const goes = tools.filter((t) => {
+    const s = toolsetOf(t)
+    return opts.called.has(t.name) || s === 'core' || s === opts.set || opts.protect.has(s)
+  })
+  return goes.length <= opts.cap - 1
+}
+
+/** What pilot.load_tools needs from the turn it runs in. */
+export interface LoadHooks {
+  /** Takes the toolset for the next step. */
+  load: (set: Toolset) => void
+  /** Whether the toolset can go whole beside the ones just used (loadFits). */
+  fits: (set: Toolset) => boolean
+  /** The toolsets loaded this turn that a request already carried. */
+  loaded: ReadonlySet<Toolset>
+  /** The toolsets asked for that the next step takes. */
+  queued: () => ReadonlySet<Toolset>
+}
+
+/**
+ * pilot.load_tools for a capped request: its description names what `report` left out, and `hooks.load` takes the
+ * toolset the model asks for, which comes whole with its next step (stickyCapTools fills it first). A toolset this
+ * request already sends whole, one asked for in this step, or one this chat does not have, is answered as such and
+ * nothing changes. A toolset that cannot go whole beside the ones just used is refused, and so is a second load of one
+ * that still went only in part, so mimir never reads "Loaded" for tools it does not get.
+ */
+export function loadToolsTool(report: ToolCapReport, hooks: LoadHooks): PilotTool<never> {
   const out = report.leftOut.map((s) => {
     const p = report.partial.find((x) => x.toolset === s)
     return p ? `${s} (${p.sent} of ${p.of} tools sent)` : s
@@ -364,13 +394,16 @@ export function loadToolsTool(report: ToolCapReport, load: (set: Toolset) => voi
     source: 'command',
     permission: 'read',
     toolset: 'core',
-    description: `Load a toolset that was left out of your tools to stay under the provider's tool limit. Its tools come with your next step; others may be left out to make room, never the ones you used last. Left out now: ${out.join(', ') || 'none'}. Toolsets: ${LOADABLE_TOOLSETS.map((s) => `${s}: ${TOOLSET_WORDS[s]}`).join('; ')}.`,
+    description: `Load a toolset that was left out of your tools to stay under the provider's tool limit. Its tools come whole with your next step; others may be left out to make room, never the ones you used last, and a toolset that cannot fit beside those is refused. Left out now: ${out.join(', ') || 'none'}. Toolsets: ${LOADABLE_TOOLSETS.map((s) => `${s}: ${TOOLSET_WORDS[s]}`).join('; ')}.`,
     input: z.object({ toolset: z.enum(LOADABLE_TOOLSETS) }),
     args: (i) => i.toolset,
     async run(i) {
       if (!offered.has(i.toolset)) return { ok: false, summary: `This chat has no ${i.toolset} tools`, output: { loaded: null, toolset: i.toolset } }
       if (report.toolsets.includes(i.toolset)) return { summary: `The ${i.toolset} tools are already loaded`, output: { loaded: i.toolset, already: true } }
-      load(i.toolset)
+      if (hooks.queued().has(i.toolset)) return { summary: `The ${i.toolset} tools come with the next step`, output: { loaded: i.toolset, already: true } }
+      if (hooks.loaded.has(i.toolset)) return { ok: false, summary: `The ${i.toolset} tools were loaded once and still went only in part`, output: { loaded: null, toolset: i.toolset, reason: 'partial' } }
+      if (!hooks.fits(i.toolset)) return { ok: false, summary: `No room for the ${i.toolset} tools without leaving out tools you just used`, output: { loaded: null, toolset: i.toolset, reason: 'no_room' } }
+      hooks.load(i.toolset)
       return { summary: `Loaded the ${i.toolset} tools for the next step`, output: { loaded: i.toolset, already: false } }
     },
   }) as PilotTool<never>
