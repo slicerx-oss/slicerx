@@ -16,7 +16,7 @@ import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 import { designToolset } from '@slicerx/mcp/toolset'
 
-useGeomEngine('design-host-replies')
+useGeomEngine('design-host-replies', { freshCache: true })
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
 const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(name) }
