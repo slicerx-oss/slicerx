@@ -6,6 +6,7 @@
 // client, three waiting at most, so no client can stack questions on the person.
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
 import { createStore, useStore } from 'zustand'
+import { get } from '../state/store'
 import { LinkError } from './methods-error'
 
 export interface ClientSheet {
@@ -34,6 +35,8 @@ export async function askSheet(args: Record<string, unknown>, client: { id: stri
   if (all.some((x) => x.state === 'waiting' && x.client.id === client.id)) throw new LinkError('busy', 'this client already has a sheet waiting for the person; read it back with sheet.get')
   if (all.filter((x) => x.state === 'waiting').length >= MAX_WAITING) throw new LinkError('busy', 'the person has sheets waiting already; try again after they answer')
   const data = parsed.data as unknown as Omit<PilotSheet, 'id'>
+  // a design not on the plate would show the sheet with no drawing, so the client hears of it instead
+  if (data.design && !get().plate.some((p) => p.id === data.design && p.parts.some((q) => q.indices.length > 0))) throw new LinkError('not_found', `no built design ${data.design} on the plate; use the id the design tools give, or send part instead`)
   const sheet: PilotSheet = { id: `csheet_${Date.now().toString(36)}${(++seq).toString(36)}`, title: data.title, views: data.views, dims: data.dims, ...(data.part ? { part: data.part } : {}), ...(data.design ? { design: data.design } : {}) }
   // A client's answered sheets go once it asks again; the newest is the one it reads.
   clientSheets.setState((s) => ({ sheets: [...s.sheets.filter((x) => x.client.id !== client.id || x.state === 'waiting'), { sheet, client, state: 'waiting' }] }))

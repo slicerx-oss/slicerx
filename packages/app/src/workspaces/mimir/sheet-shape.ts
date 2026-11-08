@@ -5,7 +5,6 @@
 // standing in for it). A sheet for a new part draws its own solids. Each row's place is put on the part it draws: places
 // given in the sheet's own frame move onto the built part when they miss it, and a row with no place whose value is one
 // of the part's overall sizes gets that size's line.
-import { bakeMesh } from '@slicerx/cad-history'
 import type { PilotDim, PilotDimAt, PilotSheet } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { shapeBounds, shapeOfMesh, shapeOfSolids, type Shape, type V3 } from './sheet-draw'
@@ -29,14 +28,31 @@ export function sheetDesign(sheet: PilotSheet, plate: readonly PlateEntry[]): Pl
 export function sheetPicture(sheet: PilotSheet, plate: readonly PlateEntry[]): SheetPicture | null {
   const e = sheetDesign(sheet, plate)
   if (e) {
-    const t = e.transform as Parameters<typeof bakeMesh>[1]
-    const shape = shapeOfMesh(e.parts.map((p) => bakeMesh(p, t)))
+    // straight from the engine's typed arrays, moved by the entry's transform: no copy per part, no object per triangle
+    const shape = shapeOfMesh(e.parts, e.transform as ArrayLike<number>)
     const own = sheet.part?.length ? shapeOfSolids(sheet.part) : null
     return { shape, dims: placeMissing(alignDims(sheet.dims, own, shape), shape), built: true }
   }
   if (!sheet.part?.length) return null
   const shape = shapeOfSolids(sheet.part)
   return { shape, dims: placeMissing(sheet.dims, shape), built: false }
+}
+
+/** True when the sheet has a drawing, without building it: its own solids, or a built design on the plate. */
+export function hasPicture(sheet: PilotSheet | null, plate: readonly PlateEntry[]): boolean {
+  return !!sheet && ((sheet.part?.length ?? 0) > 0 || sheetDesign(sheet, plate) !== null)
+}
+
+// One picture per sheet and plate entry, shared by everything that draws it, so a sheet's mesh is shaped once.
+const pictures = new WeakMap<PilotSheet, { entry: PlateEntry | null; picture: SheetPicture | null }>()
+
+/** The sheet's picture, made once for the sheet and the design's entry as it stands, then shared. */
+export function sharedPicture(sheet: PilotSheet, entry: PlateEntry | null): SheetPicture | null {
+  const hit = pictures.get(sheet)
+  if (hit && hit.entry === entry) return hit.picture
+  const picture = sheetPicture(sheet, entry ? [entry] : [])
+  pictures.set(sheet, { entry, picture })
+  return picture
 }
 
 const plus = (a: V3, s: V3): V3 => [a[0] + s[0], a[1] + s[1], a[2] + s[2]]
@@ -48,24 +64,32 @@ const moved = (at: PilotDimAt, s: V3): PilotDimAt => ('c' in at ? { ...at, c: pl
 
 /**
  * Rows placed in another frame than the built part's: mimir often gives places around its own origin, while the built
- * part stands where it landed on the plate. When most places miss the part, they all move by the one shift that puts
- * the sheet's own solids (or, without them, the places themselves) on the part's lowest corner, if that lands more of
- * them on it. Places already on the part stay where they are.
+ * part stands where it landed on the plate. Only the rows whose places miss the part move, all by the one shift that
+ * puts the sheet's own solids on the part's lowest corner, and only those it lands on the part. Without solids the
+ * missing places themselves stand for the part, but only when they span at least half of it along two axes; places
+ * inside it (a hole and its spacing) say nothing of where its corner is, so they stay.
  */
 export function alignDims(dims: readonly PilotDim[], own: Shape | null, shape: Shape): PilotDim[] {
   const b = shapeBounds(shape)
-  const placed = dims.filter((d) => d.at)
-  if (!b || !placed.length) return [...dims]
+  if (!b) return [...dims]
   const diag = Math.hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2])
   const tol = Math.max(1, diag * 0.03)
   const on = (p: V3): boolean => p.every((v, k) => v >= b.lo[k]! - tol && v <= b.hi[k]! + tol)
-  const hits = (s: V3): number => placed.reduce((n, d) => n + (pinsOf(d.at!).every((p) => on(plus(p, s))) ? 1 : 0), 0)
-  const now = hits([0, 0, 0])
-  if (now * 2 > placed.length) return [...dims]
-  const from = (own ? shapeBounds(own) : null)?.lo ?? placed.flatMap((d) => pinsOf(d.at!)).reduce<V3>((lo, p) => [Math.min(lo[0], p[0]), Math.min(lo[1], p[1]), Math.min(lo[2], p[2])], [Infinity, Infinity, Infinity])
+  const lands = (at: PilotDimAt, s: V3): boolean => pinsOf(at).every((p) => on(plus(p, s)))
+  const misses = dims.filter((d) => d.at && !lands(d.at, [0, 0, 0]))
+  if (!misses.length) return [...dims]
+  let from = own ? (shapeBounds(own)?.lo ?? null) : null
+  if (!from) {
+    const pins = misses.flatMap((d) => pinsOf(d.at!))
+    const lo: V3 = [0, 1, 2].map((k) => Math.min(...pins.map((p) => p[k]!))) as V3
+    const hi: V3 = [0, 1, 2].map((k) => Math.max(...pins.map((p) => p[k]!))) as V3
+    const spans = [0, 1, 2].filter((k) => b.hi[k]! - b.lo[k]! > 0 && hi[k]! - lo[k]! >= (b.hi[k]! - b.lo[k]!) / 2).length
+    if (spans < 2) return [...dims]
+    from = lo
+  }
   const shift: V3 = [b.lo[0] - from[0], b.lo[1] - from[1], b.lo[2] - from[2]]
-  if (hits(shift) <= now) return [...dims]
-  return dims.map((d) => (d.at ? { ...d, at: moved(d.at, shift) } : d))
+  const moves = new Set(misses.filter((d) => lands(d.at!, shift)))
+  return dims.map((d) => (moves.has(d) ? { ...d, at: moved(d.at!, shift) } : d))
 }
 
 /**

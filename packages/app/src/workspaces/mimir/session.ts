@@ -212,6 +212,8 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     store: mimirLogs,
     // a turn that leaves toolsets out to stay under the provider's tool limit says so in the app log
     log: note,
+    // a sheet that names a built design draws it from the plate, so one that is not there is refused (pilot.sheet)
+    sheetDesign: (id: string) => get().plate.some((p) => p.id === id && p.parts.some((q) => q.indices.length > 0)),
     printRun: appPrintRun(host),
   }
 }

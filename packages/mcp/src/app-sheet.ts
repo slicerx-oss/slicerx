@@ -29,7 +29,7 @@ export function appSheetTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Before building a part in the open ${appName} app, show the person every size it is built from (width, length, height, wall, holes, clearance and so on), each with its value, unit and source (asked, lookup with its page, photo, or guess), so they can confirm them. Answers at once with a sheet id; read the answer with slicerx_app_sheet_get and build only once it is confirmed, from the values it returns. One sheet waits per client at a time.`,
+    description: `Before building a part in the open ${appName} app, show the person every size it is built from (width, length, height, wall, holes, clearance and so on), each with its value, unit and source (asked, lookup with its page, photo, or guess), so they can confirm them. With several sizes, give each its at (where it sits on the part, in mm) and either part (the part as it will be built: extruded outlines, or a revolve, sweep or loft) or design (the id of a design already built that the sheet changes; at is then in that design's coordinates), so the sheet draws the part with a numbered callout per size. Answers at once with a sheet id; read the answer with slicerx_app_sheet_get and build only once it is confirmed, from the values it returns. One sheet waits per client at a time.`,
     input: sheetTool().input as z.ZodType<Record<string, unknown>>,
     async run(i) {
       const out = await call(link, appName, 'sheet.ask', i)

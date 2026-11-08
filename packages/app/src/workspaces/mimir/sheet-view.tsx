@@ -15,8 +15,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import { usePhoneKeyboardUp } from '../../shell/phone-keyboard'
-import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor, type Raster } from './sheet-draw'
-import { sheetPicture, type SheetPicture } from './sheet-shape'
+import { arrowHead, drawPx, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor, type Raster } from './sheet-draw'
+import { sharedPicture, type SheetPicture } from './sheet-shape'
 import { useApp } from '../../state/store'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
@@ -52,51 +52,66 @@ function focusRow(sheetId: string, key: string): void {
   el?.scrollIntoView({ block: 'nearest' })
 }
 
-/** The drawing's part and rows for a waiting sheet: the design as built when it names one on the plate, else its solids. */
+/**
+ * The drawing's part and rows for a waiting sheet: the design as built when it names one on the plate, else its solids.
+ * Made once per sheet and design entry and shared (sharedPicture), however many parts of the tab ask for it.
+ */
 export function useSheetPicture(sheet: PilotSheet | null): SheetPicture | null {
   // only the named design's entry, so other objects moving leave the drawing alone
   const entry = useApp((s) => (sheet?.design ? (s.plate.find((p) => p.id === sheet.design) ?? null) : null))
-  return useMemo(() => (sheet ? sheetPicture(sheet, entry ? [entry] : []) : null), [sheet, entry])
+  return useMemo(() => (sheet ? sharedPicture(sheet, entry) : null), [sheet, entry])
 }
 
-/** Device pixels per screen pixel the part is drawn at: twice, so its edges stay fine on any screen. */
-const DRAW_PX = 2
+/** The theme attributes the app sets on the root; nothing else there changes the drawing's inks. */
+const THEME_ATTRS = ['data-scheme', 'data-theme', 'class']
+
+/** A computed color as 0 to 255 channels, read by its function: rgb() and rgba() in 0 to 255, color() in 0 to 1. */
+export function inkOf(css: string): [number, number, number] {
+  const m = css.match(/^\s*(rgba?|color)\((.*)\)\s*$/i)
+  if (!m) return [128, 128, 128]
+  const nums = (m[2] ?? '').match(/-?[\d.]+/g)?.map(Number) ?? []
+  const rgb = m[1]!.toLowerCase() === 'color' ? nums.slice(0, 3).map((v) => Math.round(v * 255)) : nums.slice(0, 3)
+  return rgb.length === 3 ? (rgb as [number, number, number]) : [128, 128, 128]
+}
 
 /** The part's silhouette and edges in the drawing's own two inks, read from the stylesheet so they follow the theme. */
 function PartCanvas({ raster, w, h }: { raster: Raster; w: number; h: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const [theme, setTheme] = useState(0)
-  // the inks change with the theme: the page's scheme, or the app's own light or dark on the root
-  useEffect(() => {
-    const again = () => setTheme((n) => n + 1)
+  // the inks as text, so a change on the root that leaves them alone repaints nothing
+  const [inks, setInks] = useState('')
+  useLayoutEffect(() => {
+    const c = ref.current
+    if (!c) return
+    const read = () => {
+      const ink = (cls: string): [number, number, number] => {
+        const probe = document.createElement('span')
+        probe.className = cls
+        c.parentElement!.appendChild(probe)
+        const v = inkOf(getComputedStyle(probe).color)
+        probe.remove()
+        return v
+      }
+      setInks(JSON.stringify([ink('mimir-ink-part'), ink('mimir-ink-edge')]))
+    }
+    read()
+    // the inks change with the theme: the page's scheme, or the app's own light or dark on the root
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)')
-    mq?.addEventListener?.('change', again)
-    const mo = new MutationObserver(again)
-    mo.observe(document.documentElement, { attributes: true })
+    mq?.addEventListener?.('change', read)
+    const mo = new MutationObserver(read)
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: THEME_ATTRS })
     return () => {
-      mq?.removeEventListener?.('change', again)
+      mq?.removeEventListener?.('change', read)
       mo.disconnect()
     }
   }, [])
   useLayoutEffect(() => {
-    const c = ref.current
-    const ctx = c?.getContext('2d')
-    if (!c || !ctx) return
-    const ink = (cls: string): [number, number, number] => {
-      const probe = document.createElement('span')
-      probe.className = cls
-      c.parentElement!.appendChild(probe)
-      const m = getComputedStyle(probe).color.match(/[\d.]+/g)?.map(Number) ?? [128, 128, 128]
-      probe.remove()
-      // a color() value in 0 to 1 channels
-      return (m.length >= 3 && m.slice(0, 3).every((v) => v <= 1) ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3)) as [number, number, number]
-    }
-    const fill = ink('mimir-ink-part')
-    const line = ink('mimir-ink-edge')
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx || !inks) return
+    const [fill, line] = JSON.parse(inks) as [number, number, number][]
     const img = ctx.createImageData(raster.W, raster.H)
     const px = img.data
     for (let i = 0; i < raster.cover.length; i++) {
-      const c3 = raster.edge[i] ? line : raster.cover[i] ? fill : null
+      const c3 = raster.edge[i] ? line! : raster.cover[i] ? fill! : null
       if (!c3) continue
       px[4 * i] = c3[0]
       px[4 * i + 1] = c3[1]
@@ -104,9 +119,12 @@ function PartCanvas({ raster, w, h }: { raster: Raster; w: number; h: number }) 
       px[4 * i + 3] = 255
     }
     ctx.putImageData(img, 0, 0)
-  }, [raster, theme])
+  }, [raster, inks])
   return <canvas ref={ref} className="mimir-drawing-part" width={raster.W} height={raster.H} style={{ width: w, height: h }} aria-hidden="true" />
 }
+
+/** How long the drawing's cell must hold still before the views are drawn again at its new size, in ms. */
+const SETTLE_MS = 120
 
 /** Room around a view's drawing for its view label and callouts, in px. */
 const PAD = 24
@@ -142,14 +160,26 @@ function SheetDrawing({ sheet, picture, editing, onPick }: { sheet: PilotSheet; 
     if (!el) return
     // a phone draws its views in one row of the whole frame, under their labels' band
     const [rows, band] = phone ? [1, PHONE_LABEL_H] : [2, 0]
-    const measure = () => {
+    const size = () => {
       const r = el.getBoundingClientRect()
-      setCell({ w: Math.max(80, Math.floor(r.width / cols)), h: Math.max(60, Math.floor(r.height / rows) - band) })
+      return { w: Math.max(80, Math.floor(r.width / cols)), h: Math.max(60, Math.floor(r.height / rows) - band) }
     }
-    measure()
-    const ro = new ResizeObserver(measure)
+    setCell(size())
+    // a drag of the pane's edge, a turned phone or the keyboard going up resizes it many times a second: the views are
+    // drawn again once it holds still, not on every step
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const ro = new ResizeObserver(() => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const next = size()
+        setCell((c) => (c && c.w === next.w && c.h === next.h ? c : next))
+      }, SETTLE_MS)
+    })
     ro.observe(el)
-    return () => ro.disconnect()
+    return () => {
+      clearTimeout(timer)
+      ro.disconnect()
+    }
   }, [phone, cols])
   const shape = picture.shape
   const views = useMemo(() => {
@@ -157,7 +187,9 @@ function SheetDrawing({ sheet, picture, editing, onPick }: { sheet: PilotSheet; 
     const shownViews = phone ? PANE_VIEWS[pane] : SHEET_VIEWS
     // the flat views share one scale, as a print drawing does; the iso view fits its own cell
     const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(shape, dims, v, cell.w, cell.h, PAD, sheet.views)))
-    return shownViews.map((v) => ({ v, drawn: drawView(shape, dims, v, cell.w, cell.h, { pad: PAD, px: DRAW_PX, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
+    // the screen's own pixel ratio up to 2, kept under a pixel budget per view so a big cell never makes a huge canvas
+    const px = drawPx(cell.w, cell.h, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
+    return shownViews.map((v) => ({ v, drawn: drawView(shape, dims, v, cell.w, cell.h, { pad: PAD, px, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
   }, [cell, shape, dims, sheet.views, phone, pane])
   // a row picked on the record shows its callout: a phone moves to Top and iso when Front or Right does not draw it
   useEffect(() => {
