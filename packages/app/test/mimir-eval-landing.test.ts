@@ -25,9 +25,10 @@ const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(n
 type Call = { name: string; args: Record<string, unknown> }
 
 /**
- * A desk cable organizer as a model built it in a live run: a hook below and in front of the bed's front left corner,
- * then five slots cut in plate millimeters, then the list of designs. The extrude names the design by its name, which
- * both hosts refuse.
+ * A desk cable organizer as a model built it in a live run: a top plate extruded around the origin, then a hook below
+ * and in front of the bed's front left corner, five slots cut in plate millimeters, and the list of designs. The extrude
+ * names the design by its name, which both hosts take, so the top plate is the first body: built off the bed, it lands
+ * on it. The hook, given in plate millimeters, reaches past the bed's front edge, so that edit lands the part again.
  */
 const CABLE_ORGANIZER: Call[] = [
   { name: 'design.new', args: { name: 'Desk cable organizer' } },
@@ -114,10 +115,13 @@ describe('the creative eval lands a body as the app does', () => {
   it('builds the cable organizer into the same body on the same spot, with the same replies', async () => {
     const { app, evalRun, a, e } = await both(CABLE_ORGANIZER)
     expect(evalRun.replies).toEqual(app.replies)
-    // the hook was built off the bed and moved onto it before its slots were cut, and only that call says so
+    // the top plate, taken by the design's name, was built off the bed and moved onto it, and only that call says so
     const said = app.replies.map((r) => JSON.stringify(r))
-    expect(said[2]).toMatch(/moved to the plate/)
+    expect(said[1]).toMatch(/"ok":true.*moved to the plate/)
     expect(said.filter((s) => /moved to the plate/.test(s))).toHaveLength(1)
+    // the hook past the front edge moved the part again before its slots were cut, and the reads after it say nothing
+    expect(said[2]).toMatch(/did not fit on the bed where it stood, so it moved by/)
+    expect(said.filter((s) => /moved by/.test(s))).toHaveLength(1)
     expect(e.transform).toEqual(a.transform)
     expect(body(e)).toEqual(body(a))
     expect(e.history.steps.map((s) => s.params.op)).toEqual(a.history.steps.map((s) => s.params.op))
