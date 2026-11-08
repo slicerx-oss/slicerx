@@ -146,7 +146,7 @@ export function ProjectCard({ frame, value, onChange, locked = false, sketch }: 
           <Seg label="Project" size="sm" full className="sketch-project-kinds" value={picking ?? ('' as Kind)} onChange={start} options={KINDS} />
           {picking ? (
             <p className="cad-hint" role="status" data-testid="sketch-project-hint">
-              {busy ? 'Projecting...' : HINTS[picking]}
+              {busy ? 'Projecting…' : HINTS[picking]}
             </p>
           ) : null}
           {picking === 'edges' && edges ? (
