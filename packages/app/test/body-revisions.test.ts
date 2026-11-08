@@ -9,7 +9,7 @@ import { identity } from '../src/plate/transform'
 import { useGeomEngine } from './geom-engine'
 import { toPart } from '../src/cad/history/ops'
 
-useGeomEngine('design-host-replies')
+useGeomEngine('body-revisions-replies', { freshCache: true })
 
 const entry = (): PlateEntry => ({
   id: 'body', name: 'Body', parts: [], colors: [], transform: identity(),
