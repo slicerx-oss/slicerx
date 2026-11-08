@@ -3,8 +3,8 @@
 // A client names a design by its title where its id goes, and a join or cut by its part's name in target: the design
 // of that name is the one changed, a name two designs share is refused with both ids, and a target lands on the part
 // it names (or is refused when it names no part, two parts, or a part other than the one given as part).
-import { designNamed, noDesignMessage } from '@slicerx/cad-history'
-import { describe, expect, it } from 'vitest'
+import { clearReplayCache, designNamed, noDesignMessage } from '@slicerx/cad-history'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
 
@@ -16,6 +16,11 @@ interface Summary {
 
 const geom = useGeomEngine('design-by-name')
 const engine = (op: string, request: unknown): Promise<unknown> => geom.engine(op, request)
+
+// Each test builds the same design first, so a warm replay cache would answer the next test's first steps without the
+// engine and its recorded replies would hold only what the first test left. Every test starts cold, so each one replays
+// alone, in any order.
+beforeEach(() => clearReplayCache())
 
 describe('designNamed and noDesignMessage', () => {
   const tools = { start: 'design.new', list: 'design.list' }
