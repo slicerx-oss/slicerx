@@ -120,7 +120,7 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
     return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part), ...(array ? { array } : {}) }
   })
   const flatsOf = new Map<Mesh, Facing>()
-  const facing = (m: Mesh): Facing => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false), leaningUp: flats(m, true, LEANS), leaning: flats(m, false, LEANS) }).get(m)!
+  const facing = (m: Mesh): Facing => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false), leaningUp: flats(m, true, WALL), leaning: flats(m, false, WALL) }).get(m)!
   const all = r.gaps.map((g): FitGap => {
     const [a, b] = g.parts
     const ma = meshes[r.parts[a]?.item ?? 0]!
@@ -192,11 +192,11 @@ const pairKey = ([a, b]: readonly [number, number]): string => `${Math.min(a, b)
 
 /**
  * A facet facing straight up or down: its height, its corners seen from above, and their box for a quick test; `lo` and
- * `hi` are its lowest and highest corners, for a leaning one.
+ * `hi` are its lowest and highest corners, for a leaning one, and `toward` how straight up (or down) it faces (a cosine).
  */
-type Flat = { z: number; lo: number; hi: number; xy: [[number, number], [number, number], [number, number]]; min: [number, number]; max: [number, number] }
+type Flat = { z: number; lo: number; hi: number; toward: number; xy: [[number, number], [number, number], [number, number]]; min: [number, number]; max: [number, number] }
 
-/** A body's level facets facing up and down, and those leaning a few degrees from up (leaningUp) and from down (leaning). */
+/** A body's level facets facing up and down, and those leaning from up (leaningUp) and from down (leaning), walls included. */
 type Facing = { up: Flat[]; down: Flat[]; leaningUp: Flat[]; leaning: Flat[] }
 
 /**
@@ -206,11 +206,27 @@ type Facing = { up: Flat[]; down: Flat[]; leaningUp: Flat[]; leaning: Flat[] }
 const LEVEL = 1 - 1e-6
 
 /**
- * How far from straight up or down the facets beside a level strip may lean for the strip to be the top or bottom of a
- * round face: its next facet turns 360/n degrees, 30 at 12 sides, a hair past it allowed so 12 sides never sit on the
- * line by float error. A flat face meets a wall, a steeper chamfer, nothing, or a rounded edge that turns away faster.
+ * How far from straight up or down the facet a level strip ends on may lean for the strip to be the top or bottom of a
+ * round face: its next facet turns 360/n degrees, 45 at 8 sides, a hair past it allowed so 8 sides never sit on the
+ * line by float error. Leaning alone does not make it round: a chamfer leans too (see CURVE_MM).
  */
-const LEANS = Math.cos((30 * Math.PI) / 180) - 1e-4
+const LEANS = Math.cos((45 * Math.PI) / 180) - 1e-4
+
+/** How far past facing sideways a facet counts as leaning, for the facets beside a strip: a wall faces sideways to float error. */
+const WALL = -1e-6
+
+/**
+ * How far past a level strip's end, seen from above, a facet leaning further than the one the strip ends on must come
+ * for the strip to be the top or bottom of a round face: a round face keeps turning, facet by facet, while a chamfer is
+ * one plane. The first leaning facet of a face drawn in n sides at radius r is r (sin 3a - sin a) wide seen from above,
+ * a = 180/n degrees: 1.57 mm for a 2.9 mm bore in 8 sides, the widest of the pins and bores of 2.5 to 5.4 mm the fit
+ * tests draw (1.35 for a 2.5 mm pin in 8, 1.30 in 12, 1.05 in 16, 1.31 for a 5.4 mm bore in 25), and up to 4% more along
+ * the way across it that the six ways come nearest to. 2 mm takes each with room, so one round end alone is seen. A
+ * chamfer wider than this ends a strip that stays flat whatever lies past it, as does one that ends on nothing, on a
+ * level face, or on a shallower one; a narrower one that meets a steeper face or a wall reads as round, as the 45 degree
+ * facets and the walls of 8 sides do.
+ */
+const CURVE_MM = 2
 
 /**
  * How wide a disc of level facets near a gap's end must be for it to be on a flat face. A pin lying flat in its bore
@@ -221,7 +237,7 @@ const FLAT_SPAN_MM = 1
 
 /**
  * The mesh's facets that face straight up (or down), each as its height and its corners seen from above; with `leans`,
- * the ones that face down at least that much (a cosine) without facing straight down.
+ * the ones that face that way at least that much (a cosine) without facing straight up (or down).
  */
 function flats(m: Mesh, up: boolean, leans?: number): Flat[] {
   const out: Flat[] = []
@@ -237,7 +253,7 @@ function flats(m: Mesh, up: boolean, leans?: number): Flat[] {
     const xs = [at(i, 0), at(j, 0), at(k, 0)]
     const ys = [at(i, 1), at(j, 1), at(k, 1)]
     const zs = [at(i, 2), at(j, 2), at(k, 2)]
-    out.push({ z: (zs[0]! + zs[1]! + zs[2]!) / 3, lo: Math.min(...zs), hi: Math.max(...zs), xy: [[xs[0]!, ys[0]!], [xs[1]!, ys[1]!], [xs[2]!, ys[2]!]], min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
+    out.push({ z: (zs[0]! + zs[1]! + zs[2]!) / 3, lo: Math.min(...zs), hi: Math.max(...zs), toward, xy: [[xs[0]!, ys[0]!], [xs[1]!, ys[1]!], [xs[2]!, ys[2]!]], min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
   }
   return out
 }
@@ -300,23 +316,38 @@ function around(p: V3, all: readonly Flat[], leaning: readonly Flat[]) {
   const level = all.filter((f) => Math.abs(f.z - p[2]) <= ON_FACE_MM && near(f))
   // the leaning facets that meet the strip: a corner at its height, the rest above it or below it (a pin's bottom, the
   // floor of a bore) by however much the round face turns
-  const beside = leaning.filter((f) => f.lo <= p[2] + ON_FACE_MM && f.hi >= p[2] - ON_FACE_MM && near(f))
-  const inside = (fs: readonly Flat[], x: number, y: number): boolean => fs.some((f) => x >= f.min[0] - ON_EDGE_MM && x <= f.max[0] + ON_EDGE_MM && y >= f.min[1] - ON_EDGE_MM && y <= f.max[1] + ON_EDGE_MM && apart(f, x, y) <= ON_EDGE_MM)
+  const beside = leaning.filter((f) => f.toward >= LEANS && f.lo <= p[2] + ON_FACE_MM && f.hi >= p[2] - ON_FACE_MM && near(f))
+  // the facets a round face turns on to past the one beside the strip: within CURVE_MM across, and within as much above
+  // or below, since that one leans 45 degrees at most
+  const past = room + CURVE_MM
+  const further = beside.length === 0 ? [] : leaning.filter((f) => f.lo <= p[2] + CURVE_MM + ON_FACE_MM && f.hi >= p[2] - CURVE_MM - ON_FACE_MM && f.min[0] <= p[0] + past && f.max[0] >= p[0] - past && f.min[1] <= p[1] + past && f.max[1] >= p[1] - past)
+  const covers = (f: Flat, x: number, y: number, by: number): boolean => x >= f.min[0] - by && x <= f.max[0] + by && y >= f.min[1] - by && y <= f.max[1] + by && apart(f, x, y) <= by
+  const inside = (fs: readonly Flat[], x: number, y: number, by = ON_EDGE_MM): boolean => fs.some((f) => covers(f, x, y, by))
   const on = (x: number, y: number): boolean => inside(level, x, y)
-  // where the level facets end going one way from (x, y), within STRIP_MM, and whether a leaning facet is there
-  const endsLeaning = (x: number, y: number, c: number, s: number): boolean => {
-    for (let d = SAMPLE_MM; d <= STRIP_MM; d += SAMPLE_MM) if (!on(x + d * c, y + d * s)) return inside(beside, x + (d + SAMPLE_MM) * c, y + (d + SAMPLE_MM) * s)
+  // where the level facets end going one way from (x, y), within STRIP_MM, whether a leaning facet is there, and whether
+  // one leaning further comes within CURVE_MM past the end: seen from above, within a sample of the way, so a wall,
+  // which is a line from above, is seen too
+  const endsRound = (x: number, y: number, c: number, s: number): boolean => {
+    for (let d = SAMPLE_MM; d <= STRIP_MM; d += SAMPLE_MM) {
+      if (on(x + d * c, y + d * s)) continue
+      const first = beside.filter((f) => covers(f, x + (d + SAMPLE_MM) * c, y + (d + SAMPLE_MM) * s, ON_EDGE_MM))
+      if (first.length === 0) return false
+      const leans = Math.max(...first.map((f) => f.toward))
+      const steeper = further.filter((f) => f.toward < leans - 1e-4)
+      for (let e = d + SAMPLE_MM; e <= d + CURVE_MM + 1e-9; e += SAMPLE_MM) if (inside(steeper, x + e * c, y + e * s, SAMPLE_MM)) return true
+      return false
+    }
     return false
   }
   const ways = turns(TURNS)
-  // a strip that ends on leaning facets on both sides, one way across: the top or bottom of a round face
-  const round = (x: number, y: number): boolean => beside.length > 0 && ways.slice(0, TURNS / 2).some(([c, s]) => endsLeaning(x, y, c, s) && endsLeaning(x, y, -c, -s))
+  // a strip that ends on both sides, one way across, on facets that keep turning: the top or bottom of a round face
+  const round = (x: number, y: number): boolean => beside.length > 0 && ways.slice(0, TURNS / 2).some(([c, s]) => endsRound(x, y, c, s) && endsRound(x, y, -c, -s))
   return { r, on, round, ways }
 }
 
 const turns = (n: number) => Array.from({ length: n }, (_, k): [number, number] => [Math.cos((2 * Math.PI * k) / n), Math.sin((2 * Math.PI * k) / n)])
 
-/** Whether the point lies on the level strip along the top or bottom of a round face: it ends on leaning facets both ways. */
+/** Whether the point lies on the level strip along the top or bottom of a round face: it ends both ways on facets that keep turning. */
 function roundAt(p: V3, all: readonly Flat[], leaning: readonly Flat[]): boolean {
   return around(p, all, leaning).round(p[0], p[1])
 }
@@ -325,8 +356,8 @@ function roundAt(p: V3, all: readonly Flat[], leaning: readonly Flat[]): boolean
  * Whether the level facets at the point's height hold a disc FLAT_SPAN_MM across that the point reaches over level
  * facets: a flat face, not one strip of facets along a round one. Each disc is tested at its center and points on its
  * rim SAMPLE_MM apart, each inside an actual facet seen from above, so the answer does not depend on how the part is
- * turned. A disc on a strip that ends on facets leaning a few degrees on both sides (`leaning`) is the top of a
- * bore or the bottom of a pin, however wide the strip a round face drawn with few sides has there.
+ * turned. A disc on a strip that ends on both sides on facets that keep turning (`leaning`) is the top of a bore or
+ * the bottom of a pin, however wide the strip a round face drawn with few sides has there.
  */
 function wide(p: V3, all: readonly Flat[], leaning: readonly Flat[] = []): boolean {
   const { r, on, round, ways } = around(p, all, leaning)
