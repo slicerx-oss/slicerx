@@ -34,6 +34,11 @@ export interface CapturedRecording {
    * live run captures them again.
    */
   tabTools?: boolean
+  /**
+   * Captured since mimir refuses a design.new that starts the same part again (same_part), so a refusal in its replay is
+   * one the model saw and answered. Recordings from before leave it out and replay as stale when they meet it.
+   */
+  samePart?: boolean
 }
 
 export type Recording = PendingRecording | CapturedRecording
@@ -62,10 +67,11 @@ export function parseRecording(text: string, where = 'recording'): Recording {
     }
     return step
   })
-  for (const k of ['defaultAnswer', 'tabTools'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
+  for (const k of ['defaultAnswer', 'tabTools', 'samePart'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
   const rec: CapturedRecording = { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
   if (v['defaultAnswer'] === true) rec.defaultAnswer = true
   if (v['tabTools'] === true) rec.tabTools = true
+  if (v['samePart'] === true) rec.samePart = true
   return rec
 }
 

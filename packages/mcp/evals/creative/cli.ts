@@ -21,7 +21,8 @@
 // once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that off. A replay answers only for a
 // recording captured with the answer, and marks a recorded question without one stale. A recording from before the
 // tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again, and so does
-// one whose reply starts the same part again with a second design.new, which mimir now refuses. The log
+// one whose reply starts the same part again with a second design.new, which mimir now refuses, unless it was captured
+// since that refusal (a live capture stamps samePart, so a refusal the model saw replays as recorded). The log
 // rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
@@ -118,7 +119,7 @@ const skipped: string[] = []
 const stale: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   if (mode === 'live' && flag('record') && run.steps.length && !run.error) {
-    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true })
+    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true, samePart: true })
   }
   const sc = scoreParts(p, run.parsed, run.parts, run.gaps)
   scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
@@ -145,7 +146,7 @@ if (client) {
       console.log(`SKIP ${p.id.padEnd(28)} recorded (${rec.model}), but there is no geometry engine to build it`)
       continue
     }
-    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true }))
+    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true }))
   }
 }
 
