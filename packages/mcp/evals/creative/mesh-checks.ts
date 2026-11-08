@@ -6,10 +6,12 @@ import type { MeshPart } from '@slicerx/contracts'
 
 type V3 = [number, number, number]
 
-/** Vertices closer than this are the same vertex, mm. */
-const WELD_MM = 1e-4
-
-/** A part's triangles with welded vertex ids, so seams in the vertex list do not read as open edges. */
+/**
+ * A part's triangles with welded vertex ids, so seams in the vertex list do not read as open edges. Only vertices at
+ * the same single-precision point are welded, as the slicer welds a part when it loads it (packages/core session.rs
+ * weld): a tolerance would fold the sub-micron edges a boolean leaves where two surfaces meet into edges with four
+ * triangles that the slicer never sees.
+ */
 interface Welded {
   /** xyz per welded vertex. */
   pos: number[]
@@ -26,7 +28,7 @@ function weld(part: MeshPart): Welded {
     const x = P[v * 3] ?? 0
     const y = P[v * 3 + 1] ?? 0
     const z = P[v * 3 + 2] ?? 0
-    const key = `${Math.round(x / WELD_MM)},${Math.round(y / WELD_MM)},${Math.round(z / WELD_MM)}`
+    const key = `${Math.fround(x)},${Math.fround(y)},${Math.fround(z)}`
     let id = ids.get(key)
     if (id === undefined) {
       id = pos.length / 3
@@ -168,6 +170,11 @@ function split(parts: MeshPart[]): Split {
 /** Separate solid bodies across all parts: what a person counts as pieces on the plate. */
 export function bodyCount(parts: MeshPart[]): number {
   return split(parts).bodies.length
+}
+
+/** The bounding box of each separate solid body across all parts, mm. */
+export function bodyBoxes(parts: MeshPart[]): { min: V3; max: V3 }[] {
+  return split(parts).bodies.map((b) => ({ min: b.min, max: b.max }))
 }
 
 // ---------------------------------------------------------------------------
