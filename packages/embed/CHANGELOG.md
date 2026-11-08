@@ -4,6 +4,8 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-11-08
+
 ### Added
 
 - `Viewport` and `<sx-viewport>` take SXPV v2 previews as well as v1 (through `readPreview`), such as `slicerx_slice_file` writes with `preview_format: "v2"`: the same toolpaths in about a fifth of the bytes.
