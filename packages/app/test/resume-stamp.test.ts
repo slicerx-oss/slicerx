@@ -14,6 +14,7 @@ import { createPageBridge, installCapture, sliceSummary, type Capture } from '..
 import { EditionContext, NEUTRAL } from '../src/edition'
 import { exportAllPlates, exportGcode3mf } from '../src/export/actions'
 import { HostContext } from '../src/host'
+import { builtinCommands } from '../src/commands/builtin'
 import { plateCommands } from '../src/plate/commands'
 import { printBlock } from '../src/plate/heimdall'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -23,7 +24,7 @@ import { HELD_NOT_CURRENT, QUEUED_NOT_CURRENT, queuedBlock, type QueueItem } fro
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate, STALE_SLICE, startQueued } from '../src/state/actions'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { inputsChanged } from '../src/state/slice-inputs'
-import { get, set, type PlateEntry } from '../src/state/store'
+import { get, markStale, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { ExportMenu } from '../src/workspaces/prepare/object-actions'
 import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
@@ -998,5 +999,36 @@ describe('round 19: the footer, the plate badges and the kept slices read the on
     } finally {
       stop()
     }
+  })
+})
+
+describe('round 21: a slice already marked stale reads as before, whatever else changed in its G-code', () => {
+  it('keeps Export G-code in the palette for a stale slice whose marks changed too, and running it says to slice again', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    set({ layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'color_change', slot: 2 }] } } as never)
+    await slicePlate(e.host)
+    // Removing the mark changes what goes into the G-code and marks the slice stale, as the layer slider does.
+    set({ layerMarks: { 'plate-1': [] } } as never)
+    markStale()
+    expect(get().slice).toMatchObject({ status: 'done', stale: true })
+    expect(printBlock(get())).toBeNull()
+    const cmd = builtinCommands(e.host, []).find((c) => c.id === 'export-gcode')!
+    expect(cmd.enabled?.()).toBe(true)
+    await cmd.run(undefined)
+    expect(get().toast?.text).toBe(STALE_SLICE)
+    expect(e.exported).toEqual([])
+  })
+
+  it('shows no red line in the footer for a stale slice after an object is added, only the tag', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    set({ plate: [...get().plate, other] })
+    markStale()
+    render(wrap(e.host, createElement(SliceBlock, {})))
+    const footer = screen.getByTestId('slice-estimate')
+    expect(footer.querySelector('.app-tag.stale')?.textContent).toBe('Settings changed')
+    expect([...footer.querySelectorAll('.app-err')].map((p) => p.textContent)).toEqual([])
   })
 })
