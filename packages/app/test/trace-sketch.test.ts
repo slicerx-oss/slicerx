@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Trace image in the sketch tool (cad/trace-sketch.ts, cad/trace-dialog.tsx): the form becomes the engine's
 // sketch.trace options, problems are named before anything runs, the preview traces the small image after a pause, a
-// click in the color mode picks the color under it, and Add traces the file at the full size and hands the loops over.
+// click in the color mode picks the color under it, and Add traces the file at the full size and hands the loops over,
+// unless the dialog is canceled or closed first.
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -10,6 +11,8 @@ import type { SketchLoop } from '@slicerx/cad-history'
 import type { SketchTrace, SketchTraceImage, SketchTraceOptions } from '../src/geom/cad'
 import { defaultTraceForm, mmToImage, readImageFile, toBase64, traceCounts, traceImage, traceNote, traceOptions, traceProblem } from '../src/cad/trace-sketch'
 import { fromLoops } from '../src/cad/sketch-model'
+import { mimirTools } from '../src/workspaces/mimir/scripted'
+import type { PilotTool } from '@slicerx/pilot'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -115,6 +118,13 @@ describe('Trace image: the form', () => {
 
   it('gives loops the sketch can hold', () => {
     expect(fromLoops(reply().loops)).toHaveLength(2)
+  })
+
+  it("stays out of the assistant tab's tools, where the person traces with the dialog", () => {
+    const tool = (name: string) => ({ name }) as PilotTool<never>
+    const names = mimirTools([tool('design.trace_image'), tool('design.sketch_svg'), tool('design.sketch')]).map((t) => t.name)
+    expect(names).not.toContain('design.trace_image')
+    expect(names).toEqual(expect.arrayContaining(['design.sketch_svg', 'design.sketch']))
   })
 })
 
@@ -225,5 +235,94 @@ describe('Trace image: the dialog', () => {
     await act(async () => canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 150 })))
     await wait(PREVIEW_DELAY_MS + 50)
     expect(e.calls.at(-1)!.options).toMatchObject({ mode: 'color', colors: ['#ff0000'], colorTolerance: 12 })
+  })
+
+  /** A stand-in for the engine whose replies come when the test says. */
+  function held() {
+    const calls: { image: SketchTraceImage; options: SketchTraceOptions; signal: AbortSignal | undefined; done: (r: SketchTrace) => void; fail: (e: Error) => void }[] = []
+    const run = (image: SketchTraceImage, options: SketchTraceOptions, signal?: AbortSignal) =>
+      new Promise<SketchTrace>((done, fail) => void calls.push({ image, options, signal, done, fail }))
+    return { calls, run }
+  }
+  const typeInto = async (id: string, v: string) => {
+    const input = document.querySelector<HTMLInputElement>(id)!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, v)
+    await act(async () => input.dispatchEvent(new Event('input', { bubbles: true })))
+  }
+  const cancel = () => [...document.querySelectorAll<HTMLButtonElement>('.trace-foot button')].find((b) => b.textContent === 'Cancel')!
+
+  it('previews a pixel size at the size Add makes, by sending the file size with the small pixels', async () => {
+    const e = engine()
+    el = document.createElement('div')
+    document.body.appendChild(el)
+    root = createRoot(el)
+    // the browser shrank a 4000 x 2000 file to 4 x 2
+    const big = async () => ({ ...(await decode()), fileWidth: 4000, fileHeight: 2000 })
+    await act(async () => root!.render(createElement(TraceImageDialog, { open: true, onClose: () => undefined, center: [0, 0], onAdd: () => undefined, run: e.run, decode: big })))
+    await choose('logo.png', PNG)
+    expect(e.calls[0]!.image).toMatchObject({ width: 4, height: 2, fileWidth: 4000, fileHeight: 2000 })
+  })
+
+  it('adds nothing when Cancel is pressed or the dialog closes while Add runs', async () => {
+    for (const how of ['cancel', 'close'] as const) {
+      const e = held()
+      const added: { name: string; r: SketchTrace }[] = []
+      const closed = { n: 0 }
+      await show(e.run, added, closed)
+      await choose('logo.png', PNG)
+      await act(async () => e.calls[0]!.done(reply()))
+      await act(async () => add().click())
+      const adding = e.calls[1]!
+      expect(adding.options.maxSidePx).toBe(2048)
+      if (how === 'cancel') await act(async () => cancel().click())
+      else act(() => root!.unmount())
+      expect(adding.signal?.aborted, how).toBe(true)
+      await act(async () => adding.done(reply()))
+      expect(added, how).toEqual([])
+      if (how === 'cancel') {
+        expect(closed.n).toBe(1)
+        act(() => root!.unmount())
+      }
+      root = null
+      el?.remove()
+    }
+  })
+
+  it('keeps the dialog open with the reason when Add fails, and drops a preview overtaken by a newer change', async () => {
+    const e = held()
+    const added: { name: string; r: SketchTrace }[] = []
+    const closed = { n: 0 }
+    await show(e.run, added, closed)
+    await choose('logo.png', PNG)
+    // a slow first preview, then a change whose preview answers first
+    await typeInto('#trace-speck', '2')
+    await wait(PREVIEW_DELAY_MS + 50)
+    expect(e.calls).toHaveLength(2)
+    expect(e.calls[0]!.signal?.aborted).toBe(true)
+    await act(async () => e.calls[1]!.done(reply({ sizeMm: [12, 12] })))
+    await act(async () => e.calls[0]!.done(reply({ sizeMm: [99, 99] })))
+    expect(count()).toContain('12 x 12 mm')
+    await act(async () => add().click())
+    await act(async () => e.calls[2]!.fail(new Error('image: more than 2000 loops; raise Remove specks under, or use a simpler image')))
+    expect(document.querySelector('[data-testid="trace-note"]')!.textContent).toContain('More than 2000 loops; raise Remove specks under')
+    expect(added).toEqual([])
+    expect(closed.n).toBe(0)
+    expect(add().disabled).toBe(false)
+  })
+
+  it('stops saying Tracing once a form problem stops the preview', async () => {
+    const e = held()
+    await show(e.run, [], { n: 0 })
+    await choose('logo.png', PNG)
+    expect(count()).toBe('Tracing…')
+    await typeInto('#trace-speck', '-1')
+    await wait(PREVIEW_DELAY_MS + 50)
+    expect(count()).toBe('')
+  })
+
+  it('refuses a file over 30 MB before reading it', async () => {
+    const f = new File([PNG], 'huge.png')
+    Object.defineProperty(f, 'size', { value: 30 * 1024 * 1024 + 1 })
+    await expect(readImageFile(f)).rejects.toThrow('The image is larger than 30 MB. Export it smaller first.')
   })
 })

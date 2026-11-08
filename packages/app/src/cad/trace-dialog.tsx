@@ -12,18 +12,22 @@ import { Choice, type ChoiceOption, errorText, Message, num, Num } from './panel
 import { defaultTraceForm, hexOf, MAX_PICKS, mmToImage, PREVIEW_SIDE, readImageFile, toBase64, traceCounts, traceImage, traceProblem, WORKING_SIDE, type TraceFit, type TraceForm, type TraceMode, type TraceRunner, type TraceSize } from './trace-sketch'
 import './trace-dialog.css'
 
-/** The preview's pixels: at most PREVIEW_SIDE a side, row by row from the top, 4 bytes each. */
+/** The preview's pixels: at most PREVIEW_SIDE a side, row by row from the top, 4 bytes each, shrunk from a file of
+ * `fileWidth` x `fileHeight` upright. */
 export interface PreviewPixels {
   data: Uint8ClampedArray
   width: number
   height: number
+  fileWidth?: number
+  fileHeight?: number
 }
 
 export type PreviewDecoder = (bytes: Uint8Array, side: number) => Promise<PreviewPixels>
 
-/** The browser's own decoder, turned upright from the file's orientation and shrunk to `side`. */
+/** The browser's own decoder, turned upright from the file's orientation and shrunk to `side`. Its pixels are the
+ * file's own, with no color profile, gamma or premultiplied alpha applied, as the engine reads them for Add. */
 const decodeInBrowser: PreviewDecoder = async (bytes, side) => {
-  const bmp = await createImageBitmap(new Blob([bytes as BlobPart]), { imageOrientation: 'from-image' })
+  const bmp = await createImageBitmap(new Blob([bytes as BlobPart]), { imageOrientation: 'from-image', colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
   const s = Math.min(1, side / Math.max(bmp.width, bmp.height))
   const [width, height] = [Math.max(1, Math.round(bmp.width * s)), Math.max(1, Math.round(bmp.height * s))]
   const c = document.createElement('canvas')
@@ -32,8 +36,9 @@ const decodeInBrowser: PreviewDecoder = async (bytes, side) => {
   const g = c.getContext('2d')
   if (!g) throw new Error('The image could not be shown.')
   g.drawImage(bmp, 0, 0, width, height)
+  const file = { fileWidth: bmp.width, fileHeight: bmp.height }
   bmp.close()
-  return { data: g.getImageData(0, 0, width, height).data, width, height }
+  return { data: g.getImageData(0, 0, width, height).data, width, height, ...file }
 }
 
 /** How long the preview waits after a change before it traces again. */
@@ -149,8 +154,23 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
   const [room, setRoom] = useState({ width: 0, height: 0 })
   const form = useMemo(() => formOf(f), [f])
   const problem = file ? traceProblem(form) : null
-  // the preview's pixels as the engine takes them, encoded once per image
-  const image = useMemo<SketchTraceImage | null>(() => (px ? { rgba: toBase64(new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength)), width: px.width, height: px.height } : null), [px])
+  // the preview's pixels as the engine takes them, encoded once per image, with the file's size so a pixel size
+  // previews at the size Add makes
+  const image = useMemo<SketchTraceImage | null>(
+    () =>
+      px
+        ? {
+            rgba: toBase64(new Uint8Array(px.data.buffer, px.data.byteOffset, px.data.byteLength)),
+            width: px.width,
+            height: px.height,
+            ...(px.fileWidth && px.fileHeight ? { fileWidth: px.fileWidth, fileHeight: px.fileHeight } : {}),
+          }
+        : null,
+    [px],
+  )
+  // the running Add, stopped when the dialog is canceled or closed so nothing lands after
+  const addRun = useRef<AbortController | null>(null)
+  useEffect(() => () => addRun.current?.abort(), [])
 
   const pick = async (chosen: File) => {
     setNote(null)
@@ -171,6 +191,7 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
   useEffect(() => {
     if (!image || problem) {
       setResult(null)
+      setTracing(false)
       return
     }
     const stop = new AbortController()
@@ -192,6 +213,7 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
     return () => {
       clearTimeout(timer)
       stop.abort()
+      setTracing(false)
     }
   }, [image, form, problem, run])
 
@@ -213,17 +235,25 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
 
   const add = async () => {
     if (!file || adding) return
+    const stop = new AbortController()
+    addRun.current = stop
     setAdding(true)
     setNote(null)
     try {
-      const r = await traceImage({ base64: toBase64(file.bytes) }, form, WORKING_SIDE, run)
+      const r = await traceImage({ base64: toBase64(file.bytes) }, form, WORKING_SIDE, run, stop.signal)
+      if (stop.signal.aborted) return
       onAdd(file.name, r)
       onClose()
     } catch (e) {
-      setNote(errorText(e))
+      if (!stop.signal.aborted) setNote(errorText(e))
     } finally {
-      setAdding(false)
+      if (addRun.current === stop) addRun.current = null
+      if (!stop.signal.aborted) setAdding(false)
     }
+  }
+  const cancel = () => {
+    addRun.current?.abort()
+    onClose()
   }
 
   // a click on the image picks the color under it, in the color mode
@@ -241,7 +271,7 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
 
   const set = <K extends keyof Fields>(k: K) => (v: Fields[K]) => setF((o) => ({ ...o, [k]: v }))
   const said = problem ?? note
-  const line = result ? traceCounts(result) : tracing ? 'Tracing...' : ''
+  const line = result ? traceCounts(result) : tracing ? 'Tracing…' : ''
 
   const chooser = (
     <Field htmlFor="trace-file" label="Image">
@@ -332,7 +362,7 @@ function Body({ center, onAdd, onClose, run, decode }: Omit<TraceImageDialogProp
         {settings}
       </div>
       <div className="trace-foot">
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={cancel}>
           Cancel
         </Button>
         <Button variant="primary" data-testid="trace-add" disabled={!file || problem !== null || adding || !result} onClick={() => void add()}>
