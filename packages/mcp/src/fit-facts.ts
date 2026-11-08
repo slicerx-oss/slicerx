@@ -119,15 +119,15 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
     const array = named.get(nameOf(part)) === 1 ? copies.get(nameOf(part)) : undefined
     return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part), ...(array ? { array } : {}) }
   })
-  const flatsOf = new Map<Mesh, { up: Flat[]; down: Flat[] }>()
-  const facing = (m: Mesh) => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false) }).get(m)!
+  const flatsOf = new Map<Mesh, { up: Flat[]; down: Flat[]; leaning: Flat[] }>()
+  const facing = (m: Mesh) => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false), leaning: flats(m, false, LEANS) }).get(m)!
   const all = r.gaps.map((g): FitGap => {
     const [a, b] = g.parts
     const ma = meshes[r.parts[a]?.item ?? 0]!
     const mb = meshes[r.parts[b]?.item ?? 0]!
     // which body, if either, lies under the other with a top face and a bottom face at the gap's own points
     const flatGap = g.kind === 'fused' ? 0 : g.gapMm
-    const under = g.kind === 'horizontal' ? null : restsOn(facing(ma).up, facing(mb).down, flatGap, g.from, g.to) ? a : restsOn(facing(mb).up, facing(ma).down, flatGap, g.to, g.from) ? b : null
+    const under = g.kind === 'horizontal' ? null : restsOn(facing(ma).up, facing(mb), flatGap, g.from, g.to) ? a : restsOn(facing(mb).up, facing(ma), flatGap, g.to, g.from) ? b : null
     // a gap above or below with both ends on flat faces is measured exactly; any other gap gets the facet tolerance
     const flat = under !== null && fitDirection(g.kind, g.from, g.to, true) === 'z'
     // the engine judged the gap against the bare limit; one within the tolerance of it clears
@@ -187,14 +187,24 @@ type Flat = { z: number; xy: [[number, number], [number, number], [number, numbe
 const LEVEL = 1 - 1e-6
 
 /**
+ * How far from straight down the facets beside a level strip may lean for the strip to be the top of a bore: a round
+ * face's next facet turns 360/n degrees, 30 at 12 sides, and drops below the strip. A flat face meets a wall, a
+ * chamfer, nothing, or a rounded edge that rises from it.
+ */
+const LEANS = Math.cos((30 * Math.PI) / 180)
+
+/**
  * How wide a disc of level facets near a gap's end must be for it to be on a flat face. A pin lying flat in its bore
  * can have a level facet strip along its top; the strip is one chord wide (0.6 mm on a 2.5 mm pin drawn in 25 sides,
  * less on finer ones), so it is no flat face, whichever way the pin runs.
  */
 const FLAT_SPAN_MM = 1
 
-/** The mesh's facets that face straight up (or down), each as its height and its corners seen from above. */
-function flats(m: Mesh, up: boolean): Flat[] {
+/**
+ * The mesh's facets that face straight up (or down), each as its height and its corners seen from above; with `leans`,
+ * the ones that face down at least that much (a cosine) without facing straight down.
+ */
+function flats(m: Mesh, up: boolean, leans?: number): Flat[] {
   const out: Flat[] = []
   const at = (i: number, k: number): number => m.positions[i * 3 + k]!
   for (let t = 0; t + 2 < m.indices.length; t += 3) {
@@ -203,7 +213,8 @@ function flats(m: Mesh, up: boolean): Flat[] {
     const e2 = [at(k, 0) - at(i, 0), at(k, 1) - at(i, 1), at(k, 2) - at(i, 2)] as const
     const nz = e1[0] * e2[1] - e1[1] * e2[0]
     const l = Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], nz)
-    if (l < 1e-12 || (up ? nz : -nz) / l < LEVEL) continue
+    const toward = l < 1e-12 ? -1 : (up ? nz : -nz) / l
+    if (leans === undefined ? toward < LEVEL : toward < leans || toward >= LEVEL) continue
     const xs = [at(i, 0), at(j, 0), at(k, 0)]
     const ys = [at(i, 1), at(j, 1), at(k, 1)]
     out.push({ z: (at(i, 2) + at(j, 2) + at(k, 2)) / 3, xy: [[xs[0]!, ys[0]!], [xs[1]!, ys[1]!], [xs[2]!, ys[2]!]], min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
@@ -235,12 +246,13 @@ const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM &&
  * flat face (wide); the lower end needs only a level facet, so a rail or rib narrower than FLAT_SPAN_MM under a flat
  * bottom is still a gap between flat faces.
  */
-function restsOn(tops: readonly Flat[], bottoms: readonly Flat[], gapMm: number, low: V3, high: V3): boolean {
+function restsOn(tops: readonly Flat[], upper: { down: readonly Flat[]; leaning: readonly Flat[] }, gapMm: number, low: V3, high: V3): boolean {
+  const bottoms = upper.down
   if (high[2] - low[2] < gapMm - ON_FACE_MM) return false
   const t = tops.filter((f) => holds(f, low))
   if (!t.length) return false
   const u = bottoms.filter((b) => holds(b, high) && t.some((f) => Math.abs(b.z - f.z - gapMm) <= ON_FACE_MM))
-  return u.length > 0 && wide(high, bottoms)
+  return u.length > 0 && wide(high, bottoms, upper.leaning)
 }
 
 /** How close to a facet, seen from above, a sample point must be to lie on it: the facets of one face share their edges. */
@@ -251,23 +263,51 @@ const TURNS = 12
 const REACH_MM = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5]
 
 /**
- * Whether the level facets at the point's height hold a disc FLAT_SPAN_MM across that the point reaches over level
- * facets: a flat face, not one strip of facets along a round one. Each disc is tested at its center and TURNS points on
- * its rim, each inside an actual facet seen from above, so the answer does not depend on how the part is turned.
+ * How finely the way to a disc and its rim are sampled: a groove or slot this wide or wider between two level faces at
+ * one height is always seen, so a narrow face beside it is not taken for part of the wide one.
  */
-function wide(p: V3, all: readonly Flat[]): boolean {
+const SAMPLE_MM = 0.05
+
+/** How far across from a disc's center a level strip is looked at for the leaning facets of a round face beside it. */
+const STRIP_MM = 3
+
+/** How far below the level strip the leaning facets beside it may lie, seen at their middles. */
+const LEAN_DROP_MM = 0.5
+
+/**
+ * Whether the level facets at the point's height hold a disc FLAT_SPAN_MM across that the point reaches over level
+ * facets: a flat face, not one strip of facets along a round one. Each disc is tested at its center and points on its
+ * rim SAMPLE_MM apart, each inside an actual facet seen from above, so the answer does not depend on how the part is
+ * turned. A disc on a strip that ends on facets leaning a few degrees on both sides (`leaning`) is the top of a
+ * bore, however wide the strip a bore drawn with few sides has there.
+ */
+function wide(p: V3, all: readonly Flat[], leaning: readonly Flat[] = []): boolean {
   const r = FLAT_SPAN_MM / 2
-  const room = REACH_MM.at(-1)! + r + ON_FACE_MM
-  const level = all.filter((f) => Math.abs(f.z - p[2]) <= ON_FACE_MM && f.min[0] <= p[0] + room && f.max[0] >= p[0] - room && f.min[1] <= p[1] + room && f.max[1] >= p[1] - room)
-  const on = (x: number, y: number): boolean => level.some((f) => x >= f.min[0] - ON_EDGE_MM && x <= f.max[0] + ON_EDGE_MM && y >= f.min[1] - ON_EDGE_MM && y <= f.max[1] + ON_EDGE_MM && apart(f, x, y) <= ON_EDGE_MM)
-  const rim = Array.from({ length: TURNS }, (_, k): [number, number] => [Math.cos((2 * Math.PI * k) / TURNS), Math.sin((2 * Math.PI * k) / TURNS)])
+  const room = REACH_MM.at(-1)! + Math.max(r, STRIP_MM) + 2 * SAMPLE_MM + ON_FACE_MM
+  const near = (f: Flat): boolean => f.min[0] <= p[0] + room && f.max[0] >= p[0] - room && f.min[1] <= p[1] + room && f.max[1] >= p[1] - room
+  const level = all.filter((f) => Math.abs(f.z - p[2]) <= ON_FACE_MM && near(f))
+  const beside = leaning.filter((f) => f.z < p[2] + ON_FACE_MM && f.z > p[2] - LEAN_DROP_MM && near(f))
+  const inside = (fs: readonly Flat[], x: number, y: number): boolean => fs.some((f) => x >= f.min[0] - ON_EDGE_MM && x <= f.max[0] + ON_EDGE_MM && y >= f.min[1] - ON_EDGE_MM && y <= f.max[1] + ON_EDGE_MM && apart(f, x, y) <= ON_EDGE_MM)
+  const on = (x: number, y: number): boolean => inside(level, x, y)
+  const turns = (n: number) => Array.from({ length: n }, (_, k): [number, number] => [Math.cos((2 * Math.PI * k) / n), Math.sin((2 * Math.PI * k) / n)])
+  const ways = turns(TURNS)
+  const rim = turns(Math.ceil((Math.PI * FLAT_SPAN_MM) / SAMPLE_MM))
   const disc = (x: number, y: number): boolean => on(x, y) && rim.every(([c, s]) => on(x + r * c, y + r * s))
-  for (const [c, s] of rim)
-    for (const d of REACH_MM) {
+  // where the level facets end going one way from (x, y), within STRIP_MM, and whether a leaning facet is there
+  const endsLeaning = (x: number, y: number, c: number, s: number): boolean => {
+    for (let d = SAMPLE_MM; d <= STRIP_MM; d += SAMPLE_MM) if (!on(x + d * c, y + d * s)) return inside(beside, x + (d + SAMPLE_MM) * c, y + (d + SAMPLE_MM) * s)
+    return false
+  }
+  const round = (x: number, y: number): boolean => beside.length > 0 && ways.slice(0, TURNS / 2).some(([c, s]) => endsLeaning(x, y, c, s) && endsLeaning(x, y, -c, -s))
+  for (const [c, s] of ways)
+    for (const [k, d] of REACH_MM.entries()) {
       // the way from the point (which holds() found on a facet) to the disc's center stays on level facets, so the
       // disc is on the point's own face
-      if (d > 0 && !on(p[0] + d * c, p[1] + d * s)) break
-      if (disc(p[0] + d * c, p[1] + d * s)) return true
+      let joined = true
+      for (let e = (REACH_MM[k - 1] ?? 0) + SAMPLE_MM; e <= d + 1e-9 && joined; e += SAMPLE_MM) joined = on(p[0] + e * c, p[1] + e * s)
+      if (!joined) break
+      const [x, y] = [p[0] + d * c, p[1] + d * s]
+      if (disc(x, y) && !round(x, y)) return true
     }
   return false
 }
