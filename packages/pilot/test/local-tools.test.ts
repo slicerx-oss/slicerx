@@ -3,7 +3,8 @@
 // The form of each tool a local model gets (tool.ts, localToolDef), for every tool this package defines. Its
 // description stays within a per-tool cap, so a new or longer tool cannot quietly eat the room context.test.ts keeps for
 // the conversation; a shorter local description still names the tool's required arguments; and the schema loses only
-// keywords that say nothing, so the tool takes and checks the same input as before.
+// keywords that say nothing, and writes a tuple of one kind (a point) as the plain array it equals, so the tool takes and
+// checks the same input as before.
 import type { PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -44,6 +45,17 @@ async function everyTool(): Promise<PilotTool<never>[]> {
 
 const tokens = (text: string): number => estimateTokens(text, 4.5)
 
+/** `v` with each tuple whose places all take one schema written as `items` that schema, as the local form writes it. */
+function plainTuples(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(plainTuples)
+  if (v === null || typeof v !== 'object') return v
+  const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plainTuples(x)]))
+  const p = o.prefixItems
+  if (!Array.isArray(p) || !p.length || o.items !== false || o.minItems !== p.length || o.maxItems !== p.length || p.some((x) => JSON.stringify(x) !== JSON.stringify(p[0]))) return o
+  const { prefixItems: _p, items: _i, ...rest } = o
+  return { ...rest, items: p[0] }
+}
+
 /** The keyword paths of a schema, such as properties.plate.minimum. */
 function paths(v: unknown, at = ''): string[] {
   if (Array.isArray(v)) return v.flatMap((x, i) => paths(x, `${at}[${i}]`))
@@ -70,7 +82,7 @@ describe('the local form of every tool', () => {
 
   it('drops only keywords that say nothing from the schema, and keeps a strict object closed', async () => {
     for (const t of await everyTool()) {
-      const full = new Set(paths(toolSpec(t).inputSchema))
+      const full = new Set(paths(plainTuples(toolSpec(t).inputSchema)))
       const local = paths(localToolDef(t).parameters)
       // nothing new and nothing changed: every local keyword and value is in the published schema
       expect(local.filter((p) => !full.has(p)), t.name).toEqual([])
@@ -82,7 +94,7 @@ describe('the local form of every tool', () => {
       source: 'plugin',
       permission: 'read',
       description: 'Probe.',
-      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]) }),
+      input: z.object({ n: z.number().int().optional(), open: z.object({ a: z.string() }), shut: z.strictObject({ b: z.boolean().optional() }), any: z.looseObject({}), map: z.record(z.string(), z.number()), list: z.array(z.string()).default([]), point: z.tuple([z.number(), z.number()]), pair: z.tuple([z.string(), z.number()]) }),
       async run() {
         return { summary: 'ok' }
       },
@@ -96,8 +108,11 @@ describe('the local form of every tool', () => {
         any: { type: 'object', properties: {} },
         map: { type: 'object', additionalProperties: { type: 'number' } },
         list: { default: [], type: 'array', items: { type: 'string' } },
+        // a point takes the same two numbers written as a plain array; a tuple of mixed places stays a tuple
+        point: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
+        pair: { type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }], items: false, minItems: 2, maxItems: 2 },
       },
-      required: ['open', 'shut', 'any', 'map', 'list'],
+      required: ['open', 'shut', 'any', 'map', 'list', 'point', 'pair'],
     })
     // the published schema is as it was: closed objects and the safe integer range
     expect(toolSpec(probe).inputSchema).toMatchObject({ additionalProperties: false, properties: { n: { maximum: Number.MAX_SAFE_INTEGER }, open: { additionalProperties: false } } })
