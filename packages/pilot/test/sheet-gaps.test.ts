@@ -562,6 +562,25 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new Hinge', 'Leaf@d1'])
   })
 
+  it("hold a new design started under the planned part's name after a held change to the part built under the last plan", async () => {
+    // run 1 builds the hinge in d1; run 2 plans it again, a size changes on the sheet and a change to d1 is held. mimir
+    // then starts the part over in a new design named as the part: that design waits for the plan too, and so does d1
+    for (const name of ['Hinge', 'Door leaf']) {
+      const push = { name: 'geom.push_pull', args: { design: 'd1' } }
+      const { ran, seen } = await talk(
+        [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Done.' }, { calls: [HINGE] }, { calls: [SHEET] }, { calls: [push] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd2' } }] }, { calls: [push] }, { text: 'Waiting for the plan.' }],
+        ['A print-in-place hinge', 'Make it wider'],
+        [{}, { width: 60 }],
+        { plan: counted() },
+      )
+      expect(seen[7]).toContain(HELD)
+      expect(seen[8]).not.toContain('Nothing was built')
+      expect(seen[9]).toContain(HELD)
+      expect(seen[10]).toContain(HELD)
+      expect(ran).toEqual([`new ${name}`, 'Leaf@d1', 'new Hinge'])
+    }
+  })
+
   it('come from the fit rule profile of the run', () => {
     expect(clearanceProfileOf({})).toEqual({ nozzleMm: undefined, material: undefined })
     expect(clearanceProfileOf({ machine: { nozzle: 0.6, material: 'TPU' }, overrides: { layer_height: 'x' } })).toEqual({ nozzleMm: 0.6, material: 'TPU' })

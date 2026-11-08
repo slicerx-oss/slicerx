@@ -621,14 +621,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const p = planned.get(sessionId)
     return p !== undefined && plans.get(p.planId)?.stale === true && findTool('design.plan') !== undefined
   }
-  // whether a step on `design` waits for the plan to be made again: only the planned part's own design, by id (the one
-  // this chat started for it, else the one the host tied the plan to). A step that names no design (a model), and a
-  // design this chat did not start for the part, such as one already open from the CAD workspace, never wait.
+  // whether a step on `design` waits for the plan to be made again: only the planned part's own designs, by id (the one
+  // this chat started for it, else the one the host tied the plan to, and the one the plan before it held) or by the
+  // name this chat started or opened it under, when it is the part's. A step that names no design (a model), and
+  // a design this chat did not start for the part, such as one already open from the CAD workspace, never wait.
   const waitsForPlan = (sessionId: string, design: unknown): boolean => {
     if (!isStale(sessionId) || typeof design !== 'string') return false
-    const marks = plans.get(planned.get(sessionId)!.planId)
+    const p = planned.get(sessionId)!
+    const marks = plans.get(p.planId)
     const own = marks?.claimed ?? marks?.design
-    return own !== undefined && design === own
+    return (own !== undefined && design === own) || design === p.prior || namedAsPart(sessionId, design, p.part)
   }
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
@@ -1174,16 +1176,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (typeof o?.design === 'string' && typeof (o.name ?? name) === 'string') named.set(o.design, String(o.name ?? name))
       for (const d of Array.isArray(o?.designs) ? o.designs : []) if (typeof d.design === 'string' && typeof d.name === 'string') named.set(d.design, d.name)
     }
-    // the design the planned part is started in: the first one started after its plan named as the part, else the first
-    // one started while the part is the one being built (before its building ends) in the run that approved the plan; a
-    // design named as the part later takes over from one named otherwise. Recorded with the plan, stale or not.
+    // the design the planned part is started in: one started after its plan named as the part, in any run and even
+    // after a held change claimed an older design, else the first one started while the part is the one being built
+    // (before its building ends) in the run that approved the plan. Recorded with the plan, stale or not.
     const p = planned.get(sessionId)
     if (tool.name === 'design.new' && out.ok !== false && p) {
       const design = (out.output as { design?: unknown } | undefined)?.design
       const asPart = (id: string): boolean => namedAsPart(sessionId, id, p.part)
       const claimed = plans.get(p.planId)?.claimed
       const building = printInPlace.has(sessionId) && claimWindow.has(sessionId)
-      if (typeof design === 'string' && design && (claimed === undefined ? building || asPart(design) : !asPart(claimed) && asPart(design))) plans.claim(p.planId, design)
+      if (typeof design === 'string' && design && (asPart(design) || (claimed === undefined && building))) plans.claim(p.planId, design)
     }
     if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
       if (printInPlace.get(sessionId)) endPrintInPlace(sessionId)
