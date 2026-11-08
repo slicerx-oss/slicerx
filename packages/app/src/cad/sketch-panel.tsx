@@ -41,7 +41,7 @@ import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
 import { bindNext, sketchNext } from './history/record'
 import { ProjectCard, type Projected } from './project-card'
-import { defaultTarget, finishSketch, oneAtATime, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { afterSolid, defaultTarget, finishSketch, oneAtATime, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import type { UndoStep } from '../plate/history'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
@@ -1621,7 +1621,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     setNote(null)
     try {
       const into = op !== 'new' && target ? { target } : {}
-      let r: { message: string; warn: boolean }
+      let r: { message: string; warn: boolean; missed?: true | undefined }
       if (finish === 'extrude') {
         const d = num(distance)
         const d2 = num(distance2)
@@ -1642,8 +1642,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
         r = await onSketch((step) => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input, { step })))
       }
-      toast(r.message, r.warn ? 'warn' : 'ok')
-      set({ objectTool: null })
+      afterSolid(r, setNote)
     } catch (e) {
       setNote(sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined))
     } finally {

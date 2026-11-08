@@ -105,7 +105,7 @@ describe('a shape on a face that misses the body', () => {
     const before = get().plate[0]!
     const r = await run()
     expect(calls).toEqual(['shape.extrude'])
-    expect(r).toEqual({ message: 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.', warn: true })
+    expect(r).toEqual({ message: 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.', warn: true, missed: true })
     expect(get().plate[0]).toBe(before)
     expect(get().plate[0]!.parts[0]!.indices.length).toBe(36)
     expect(get().plate[0]!.history).toBeUndefined()
