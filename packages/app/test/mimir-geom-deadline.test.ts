@@ -4,8 +4,9 @@
 // A mimir run nobody watches: a step whose geometry call is stuck in the engine is refused at the call's time limit
 // (client.ts, @slicerx/contracts geom-limits.ts), the run reports it plainly and goes on with its next step, and the
 // stuck call is not sent again. A modeling step stopped for good is not run again with the same input on the same
-// design in that turn, until a geometry change to that design goes through (a geom.* step that is not a read, or an
-// edit, undo, redo or roll); a quick step's refusal says to try it again, and it can be. The run is the tab's runtime
+// target in that turn (the design it names by id or name, else the mesh model it names, else the part the run started
+// last), until a geometry change to that target goes through (a geom.* step that is not a read, or an edit, undo or
+// redo); a quick step's refusal says to try it again, and it can be. The run is the tab's runtime
 // as session.ts makes it, on scripted turns, with the engine a stand-in in a real thread that spins forever in `array`
 // and `face.pick`.
 import type { Host, PermissionClass, PilotEvent } from '@slicerx/contracts'
@@ -24,6 +25,7 @@ const noLlm = { available: async () => true, stream: () => { throw new Error('sc
 
 const INPUT = z.object({
   design: z.string().optional(),
+  model: z.string().optional(),
   copies: z.number().optional(),
   at: z.record(z.string(), z.number()).optional(),
   list: z.array(z.record(z.string(), z.number())).optional(),
@@ -64,7 +66,26 @@ function writeTool(name: string, runs: string[], outcome: 'ok' | 'fail' | 'throw
   }) as PilotTool<never>
 }
 
+/** design.new: starts p1, p2 and on with the name it is given, each with a body. */
+function newTool(runs: string[]) {
+  let n = 0
+  return defineTool({
+    name: 'design.new',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'design.new',
+    input: z.object({ name: z.string() }),
+    run: async (i) => {
+      runs.push(`design.new ${i.name}`)
+      const design = `p${++n}`
+      return { summary: `Started ${i.name} (${design})`, output: { design, name: i.name, parts: [{ index: 0 }] } }
+    },
+  }) as PilotTool<never>
+}
+
 type Call = { name: string; args: Record<string, unknown> }
+type Outcome = 'ok' | 'fail' | 'throw'
 
 afterEach(() => {
   endIdleGeomWorker()
@@ -77,16 +98,18 @@ afterEach(() => {
  * The tab's runtime as session.ts makes it, on scripted turns of `calls` (one a step, then "Done."), each its own
  * pilot.run of the same runtime. A card is approved.
  */
-async function scriptedTurns(turns: Call[][], runs: string[]) {
+async function scriptedTurns(turns: Call[][], runs: string[], outcomes: Partial<Record<string, Outcome>> = {}) {
   const tools = [
     geomTool('geom.array', 'array', runs),
     geomTool('geom.pattern', 'array', runs),
     geomTool('geom.info', 'measure', runs),
     geomTool('geom.pick', 'face.pick', runs),
     geomTool('geom.fillet', 'array', runs, 'slice'),
+    geomTool('geom.extrude', 'measure', runs, 'slice'),
+    newTool(runs),
     writeTool('design.edit_step', runs),
-    writeTool('design.undo', runs, 'fail'),
-    writeTool('design.redo', runs, 'throw'),
+    writeTool('design.undo', runs, outcomes['design.undo'] ?? 'fail'),
+    writeTool('design.redo', runs, outcomes['design.redo'] ?? 'throw'),
     writeTool('design.save', runs),
     writeTool('prefs.set', runs),
     writeTool('geom.mixed', runs, 'ok', (i) => (i.apply ? 'slice' : 'read')),
@@ -127,12 +150,12 @@ async function stuckEngine(body: (workers: { ops: string[] }[]) => Promise<void>
  * A turn that stops geom.array on design d1, runs `between`, and asks for the same array again: the results of
  * `between` and of the repeat, and how many arrays reached the engine.
  */
-async function stopThen(between: Call[]) {
+async function stopThen(between: Call[], outcomes: Partial<Record<string, Outcome>> = {}) {
   let out: { between: (readonly [boolean, string])[]; repeat: readonly [boolean, string]; arrays: number; runs: string[] } | undefined
   await stuckEngine(async (workers) => {
     const runs: string[] = []
     const array = { name: 'geom.array', args: { design: 'd1', copies: 12 } }
-    const r = results(await scriptedTurns([[array, ...between, array]], runs))
+    const r = results(await scriptedTurns([[array, ...between, array]], runs, outcomes))
     expect(r[0]).toEqual([false, STUCK])
     out = { between: r.slice(1, -1), repeat: r.at(-1)!, arrays: arrays(workers), runs }
   })
@@ -269,6 +292,110 @@ describe('a mimir run with a stuck geometry step', () => {
       // at most the first call asked; the repeat was refused before any approval
       const calls = events.flatMap((e, i) => (e.type === 'tool_call' ? [i] : []))
       expect(events.slice(calls[1]! - 1).some((e) => e.type === 'approval_request')).toBe(false)
+    }), 20_000)
+
+  it.each(['design.undo', 'design.redo'])('runs a stopped step again once a %s of its design went through', async (name) => {
+    const r = await stopThen([{ name, args: { design: 'd1' } }], { [name]: 'ok' })
+    expect([r.between[0]![0], r.repeat]).toEqual([true, [false, STUCK]])
+    expect(r.arrays).toBe(2)
+  }, 20_000)
+
+  it('does not count a refused repeat as a change', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const array = { name: 'geom.array', args: { design: 'd1', copies: 12 } }
+      const fillet = { name: 'geom.fillet', args: { design: 'd1', copies: 12 } }
+      const events = await scriptedTurns([[array, fillet, fillet, array]], runs)
+      expect(results(events)).toEqual([
+        [false, STUCK],
+        [false, STUCK],
+        [false, STOPPED_AGAIN_LINE],
+        [false, STOPPED_AGAIN_LINE],
+      ])
+      expect(arrays(workers)).toBe(2)
+    }), 20_000)
+
+  it('keys a design given by its name to its id', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const events = await scriptedTurns(
+        [
+          [
+            { name: 'design.new', args: { name: 'Box' } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+            { name: 'geom.array', args: { design: ' box ', copies: 12 } },
+            { name: 'design.edit_step', args: { design: 'Box' } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+          ],
+        ],
+        runs,
+      )
+      expect(results(events).slice(1)).toEqual([
+        [false, STUCK],
+        [false, STOPPED_AGAIN_LINE],
+        [true, 'changed'],
+        [false, STUCK],
+      ])
+      expect(arrays(workers)).toBe(2)
+    }), 20_000)
+
+  it('keys a step with no design named to the part started last, the same when it stops and when it is asked again', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const events = await scriptedTurns(
+        [
+          [
+            { name: 'design.new', args: { name: 'Box' } },
+            { name: 'geom.array', args: { copies: 12 } },
+            { name: 'geom.array', args: { copies: 12 } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+            { name: 'geom.extrude', args: { design: 'p1' } },
+            { name: 'geom.array', args: { copies: 12 } },
+          ],
+        ],
+        runs,
+      )
+      expect(results(events).slice(1)).toEqual([
+        [false, STUCK],
+        [false, STOPPED_AGAIN_LINE],
+        [false, STOPPED_AGAIN_LINE],
+        [true, JSON.stringify({ op: 'measure' })],
+        [false, STUCK],
+      ])
+      expect(arrays(workers)).toBe(2)
+    }), 20_000)
+
+  it('runs a step with no design named again on a part started after it stopped', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const array = { name: 'geom.array', args: { copies: 12 } }
+      const events = await scriptedTurns([[array, array, { name: 'design.new', args: { name: 'Lid' } }, array, array]], runs)
+      expect(results(events)).toEqual([
+        [false, STUCK],
+        [false, STOPPED_AGAIN_LINE],
+        [true, 'Started Lid (p1)'],
+        [false, STUCK],
+        [false, STOPPED_AGAIN_LINE],
+      ])
+      expect(arrays(workers)).toBe(2)
+    }), 20_000)
+
+  it('keys a step on a mesh model to that model', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const array = { name: 'geom.array', args: { model: 'm1', copies: 12 } }
+      const events = await scriptedTurns(
+        [[array, { name: 'geom.extrude', args: { model: 'm2' } }, array, { name: 'geom.extrude', args: { model: 'm1' } }, array]],
+        runs,
+      )
+      expect(results(events)).toEqual([
+        [false, STUCK],
+        [true, JSON.stringify({ op: 'measure' })],
+        [false, STOPPED_AGAIN_LINE],
+        [true, JSON.stringify({ op: 'measure' })],
+        [false, STUCK],
+      ])
+      expect(arrays(workers)).toBe(2)
     }), 20_000)
 
   it('runs a quick step again when its refusal says to try it again', () =>
