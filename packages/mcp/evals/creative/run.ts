@@ -221,7 +221,7 @@ export const STALE_TOOLS = 'recorded before the eval had the tab\'s design tools
  * design.new for the part a reply already started, so the replay meets a refusal the model never saw and its later steps
  * go to a design that was never made.
  */
-export const STALE_RESTART = 'recorded before a reply could start its part only once: it starts the same part again with a second design.new, which mimir now refuses, so a live run captures it again'
+export const STALE_RESTART = 'recorded before mimir refused a design.new that starts the same part again (same_part): the replay met that refusal, so a live run captures it again'
 
 /** Whether a request carries mimir's refusal of a design.new that starts the reply's part again. */
 function restartRefused(messages: readonly LlmMessage[]): boolean {
