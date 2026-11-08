@@ -9,8 +9,11 @@ import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
 /** A question about sizes, which belongs on the dimension sheet with suggested values rather than on a card of buttons. */
 const SIZE_QUESTION = /\b(?:dimensions?|sizes?|measurements?|how (?:big|wide|tall|long|thick|deep|high|large))\b/i
-/** A question about the person's own things (how thick your shelf is, which phone you have): theirs to answer on a card. */
-const THEIR_THINGS = /\b(?:your|yours|which)\b|\byou (?:have|own|use|got)\b/i
+/**
+ * A question about the person's own things, as they are now (how thick is your shelf, which phone do you have): theirs
+ * to answer on a card. "What size should your case be?" asks about the part being designed, so it is not one.
+ */
+const THEIR_THINGS = /\b(?:is|are|does|do) your\b|\byour \w+ (?:is|are)\b|\byou (?:have|own|use|got)\b/i
 
 /** An open question about sizes, with no subject the person owns, goes to the sheet. */
 function sheetQuestion(text: string): boolean {
