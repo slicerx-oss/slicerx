@@ -133,7 +133,8 @@ function solidProblems(x: SolidIn, n: number): Issue[] {
   if (kind === 'sweep') {
     const p = x.profile
     const round = p?.d !== undefined && p.points === undefined && p.d >= 0.1 && p.d <= MM && (p.hole === undefined || (p.hole >= 0.1 && p.hole < p.d))
-    const shaped = p?.points !== undefined && p.d === undefined && outlineOk(p.points)
+    // an outline carries no bore, so its hole is dropped, but one out of range is still refused
+    const shaped = p?.points !== undefined && p.d === undefined && outlineOk(p.points) && (p.hole === undefined || (p.hole >= 0.1 && p.hole <= MM))
     if (!round && !shaped) need('profile', SHAPE.profile)
     if (!x.path || x.path.length < 2 || x.path.length > 100 || !x.path.every((q) => pt(q, 3))) need('path', SHAPE.path)
     if (x.round !== undefined && (x.round < 0 || x.round > MM)) need('round', 'a bend radius in mm, 0 or more')
