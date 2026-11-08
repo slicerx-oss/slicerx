@@ -287,13 +287,17 @@ export { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX }
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
 /**
  * A modeling or mesh step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked
- * for again with the same input in the same turn, with nothing changed in between: it would stop the same way, so it is
- * not run again.
+ * for again with the same input in the same turn while its design is unchanged: it would stop the same way, so it is
+ * not run again. Only a geometry change to that design that goes through (a geom.* step that is not a read, or
+ * design.edit_step, undo, redo or roll) lets it run again (CHANGES_GEOMETRY).
  */
 export const STOPPED_AGAIN_LINE = 'This exact step was stopped at its time limit earlier in this turn, so it was not run again. Try a smaller version, or say what stopped.'
 /** Said for the model when it ends a run without a word, even after being asked. */
 export const NO_REPLY_LINE = 'I stopped before I had an answer. Try the request again with fewer details at once, or split it into steps.'
 const STOPPED_LINE = 'I stopped there, and nothing else was changed.'
+
+/** The design tools that change a design's geometry besides its geom.* steps: an edit, an undo, a redo or a roll. */
+const CHANGES_GEOMETRY: ReadonlySet<string> = new Set(['design.edit_step', 'design.undo', 'design.redo', 'design.roll'])
 
 /** A value as JSON with its object keys in order, so the same input sent with its keys in another order reads the same. */
 function sortedJson(v: unknown): string {
@@ -750,7 +754,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, timedOut: Set<string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, timedOut: Map<string, string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
     // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
     // call to it from a step that did not carry it is an unknown tool
     const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
@@ -784,9 +788,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
-    // the same step with the same input, after its geometry call was stopped at its time limit this turn
+    // the same step with the same input, after its geometry call was stopped at its time limit this turn, on the same
+    // design: the one it names, or with no design named, a geom.* step's part started last (as stepOn reads it)
     const again = `${tool.name} ${sortedJson(input)}`
-    if (timedOut.has(again)) {
+    const named = (input as { design?: unknown } | null)?.design
+    const design = typeof named === 'string' ? named : tool.name.startsWith('geom.') ? (runPart.get(sessionId)?.at(-1)?.id ?? '') : ''
+    if (timedOut.get(again) === design) {
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: STOPPED_AGAIN_LINE })
       return { message: JSON.stringify({ ok: false, blocked: true, message: STOPPED_AGAIN_LINE }), stop: false }
@@ -911,10 +918,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
-    // a step stopped for good is not run again as it was; a change that went through (an edit, an undo, a smaller
-    // part) may be the smaller version it asked for, so every stopped step may run again after one
-    if (out.ok === false && isGeomStuckFinal(out.summary)) timedOut.add(again)
-    else if (out.ok !== false && (tool.permissionFor?.(input) ?? tool.permission) !== 'read') timedOut.clear()
+    // A step stopped for good is not run again as it was on that design. A geometry change to the design that goes
+    // through (a geom.* step that is not a read, or an edit, undo, redo or roll) may be the smaller version the refusal
+    // asked for, so the steps stopped on that design may run again after it; nothing else lets them.
+    const geometry = (tool.name.startsWith('geom.') && (tool.permissionFor?.(input) ?? tool.permission) !== 'read') || CHANGES_GEOMETRY.has(tool.name)
+    if (out.ok === false && isGeomStuckFinal(out.summary)) timedOut.set(again, design)
+    else if (out.ok !== false && geometry) for (const [key, on] of timedOut) if (on === design) timedOut.delete(key)
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -954,9 +963,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
-    // modeling and mesh steps stopped at a geometry time limit this turn and not changed since, by tool and input
-    // (STOPPED_AGAIN_LINE)
-    const timedOut = new Set<string>()
+    // modeling and mesh steps stopped at a geometry time limit this turn, by tool and input, with the design each was
+    // on; one leaves once a geometry change to its design goes through (STOPPED_AGAIN_LINE)
+    const timedOut = new Map<string, string>()
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
     let usageIn = 0
