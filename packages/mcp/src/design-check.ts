@@ -121,8 +121,11 @@ export interface FitGap {
 /** The bodies of a design and the gaps between them. */
 export interface FitFacts {
   limits: FitLimits
-  /** Each body, with the part it is in, the name it goes by and its part's name. */
-  bodies: { part: number; name: string; partName?: string | undefined }[]
+  /**
+   * Each body, with the part it is in, the name it goes by and its part's name; `array` when an array of separate
+   * copies made its part (n 2 and up) or copied it (n 1), with the name of the part copied.
+   */
+  bodies: { part: number; name: string; partName?: string | undefined; array?: { of: string; n: number } | undefined }[]
   /** Bodies that touch print as one piece: how many separate pieces print. */
   pieces: number
   /** Touches and gaps under the limits, then the closest gap of each two pieces within NEAR_MM. */
@@ -372,7 +375,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const fused = fit.gaps.filter((g) => g.kind === 'fused')
 
   // pieces: the plan's count, each a body of its own, by the plan's names
-  const { missing, free, answered } = unmatched(pieces, fit.bodies)
+  const { missing, free, answered, copied } = unmatched(pieces, fit.bodies)
   // bodies of one part (a mirrored leaf, an arrayed link) go by their part's name with a number, and no tool names a
   // body on its own: with the count right, names left over are read as such bodies, one each, when every body left over
   // is one and its part answers no other name (else a piece merged into another would pass as a mirrored body)
@@ -381,13 +384,16 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const shared = missing.length > 0 && free.length === missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1 && !answered.has(fit.bodies[b]!.part))
   const named = fit.pieces === pieces.length && (!missing.length || shared)
   let got: string
+  // names an array copy answers by its place in the row, said so, as the bodies of one part are
+  const sources = [...new Set(copied.map(([, b]) => fit.bodies[b]!.array!.of))]
+  const byCopy = copied.length ? `${listAnd(copied.map(([p]) => p))} ${copied.length === 1 ? 'is' : 'are'} ${listAnd(copied.map(([, b]) => name(b)))}, in the array of ${listAnd(sources)}` : ''
   if (fit.pieces === pieces.length && shared) {
     const of = new Set(free.map((b) => fit.bodies[b]!.part)).size === 1 ? 'bodies of one part' : 'bodies of parts that hold several'
-    got = `${fit.pieces} pieces (${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} ${listAnd(free.map(name))}, ${of})`
+    got = `${fit.pieces} pieces (${byCopy ? `${byCopy}; ` : ''}${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} ${listAnd(free.map(name))}, ${of})`
   } else if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
-  else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces`
+  else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces${byCopy ? ` (${byCopy})` : ''}`
   else if (fit.pieces < pieces.length) {
-    const known = new Set(fit.bodies.map((b) => b.name.trim().toLowerCase()))
+    const known = new Set(fit.bodies.flatMap((b) => [b.name, ...(b.array ? [copyName(b.array)] : [])]).map((n) => n.trim().toLowerCase()))
     const merged = pieces.filter((p) => !known.has(p.trim().toLowerCase()))
     const told = fused.map((g) => `${pair(g)} touch${g.where ? ` ${g.where}` : ''}, so they print as one piece; leave the planned gap between them`)
     if (merged.length && fit.pieces === 1) told.push(`${listAnd([...merged, ...pieces.filter((p) => !merged.includes(p))])} are one piece; keep them as separate bodies`)
@@ -395,7 +401,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     got = `${fit.pieces} ${fit.pieces === 1 ? 'piece' : 'pieces'}${told.length ? `: ${told.join('; ')}` : `; keep each piece as a separate body`}`
   } else {
     const planned = new Set(pieces.map((p) => p.trim().toLowerCase()))
-    const extra = fit.bodies.map((b) => b.name).filter((n) => !planned.has(n.trim().toLowerCase()))
+    const extra = fit.bodies.filter((b) => !planned.has(b.name.trim().toLowerCase()) && !(b.array && planned.has(copyName(b.array).toLowerCase()))).map((b) => b.name)
     got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
   }
   const items: CheckItem[] = [{ name: 'pieces', want, got, pass: named }]
@@ -427,23 +433,39 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
 }
 
 /**
- * The plan's piece names no body answers to, one body per name: a body's own name ("Pin 2", "Pin (part 3)") first, then
- * its part's name, without regard to case; the bodies no name took; and the parts whose bodies took a name.
+ * The name an array copy answers by its place in the row: the part copied ends in a number (Segment 1, Planet 1), so
+ * its copy n is that number plus n - 1 (Segment 2, Planet 3); else the part's name and n (Foot 1 for the part itself,
+ * Foot 2 for the copy geom.array named so).
  */
-function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[]; answered: Set<number> } {
+export function copyName(a: { of: string; n: number }): string {
+  const m = /^(.*\S)\s+(\d+)$/.exec(a.of.trim())
+  return m ? `${m[1]} ${Number(m[2]) + a.n - 1}` : `${a.of.trim()} ${a.n}`
+}
+
+/**
+ * The plan's piece names no body answers to, one body per name: a body's own name ("Pin 2", "Pin (part 3)") first, then
+ * its part's name, then the name its place in an array gives it (copyName), without regard to case; the bodies no name
+ * took; the parts whose bodies took a name; and the names taken by place in an array, with their bodies.
+ */
+function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[]; answered: Set<number>; copied: [string, number][] } {
   const key = (v: string): string => v.trim().toLowerCase()
   const free = new Set(bodies.map((_, b) => b))
   const answered = new Set<number>()
-  const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): boolean => {
+  const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): number | undefined => {
     const b = [...free].find((k) => of(bodies[k]!) !== undefined && key(of(bodies[k]!)!) === key(p))
-    if (b === undefined) return false
+    if (b === undefined) return undefined
     free.delete(b)
     answered.add(bodies[b]!.part)
-    return true
+    return b
   }
-  const left = pieces.filter((p) => !take(p, (b) => b.name))
-  const missing = left.filter((p) => !take(p, (b) => b.partName))
-  return { missing, free: [...free], answered }
+  const left = pieces.filter((p) => take(p, (b) => b.name) === undefined).filter((p) => take(p, (b) => b.partName) === undefined)
+  const copied: [string, number][] = []
+  const missing = left.filter((p) => {
+    const b = take(p, (x) => (x.array ? copyName(x.array) : undefined))
+    if (b !== undefined) copied.push([p, b])
+    return b === undefined
+  })
+  return { missing, free: [...free], answered, copied }
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */

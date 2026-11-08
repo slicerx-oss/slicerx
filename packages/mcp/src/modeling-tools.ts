@@ -180,14 +180,15 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
           await ds.add(d, i.part ?? -1, { op: 'array.merged', spec }, undefined, withFeature(i.feature))
           return added(d, `Arrayed ${copies} copies`)
         }
-        // Separate copies are new parts, placed where the engine puts each copy; the first is the part itself.
+        // Separate copies are new parts, placed where the engine puts each copy; the first is the part itself. The step
+        // records the part copied, so a plan can name copy k as the part's own number plus k - 1 (design.check).
         const part = i.part ?? 0
         const src = d.parts[part]
         if (!src) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
         const r = (await ds.call('array', { mesh: item(d, part), spec })) as { transforms: number[][] }
         const back = invert(d.transform)
         const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
-        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate` }, undefined, withFeature(i.feature))
+        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, arrayOf: src.name }, undefined, withFeature(i.feature))
         return added(d, `Arrayed ${copies} separate copies`)
       }
       const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: i.merge })
