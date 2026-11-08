@@ -36,9 +36,12 @@ export const autoSlicePending = (): boolean => pending()
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
-  // A slice it has started that is not running yet (it waits on the profile first): set until it runs or gives up.
-  let starting = false
-  const isPending = (): boolean => timer !== null || waiting !== null || starting
+  // The run of the slice it has started that is not running yet (it waits on the profile first), 0 for none: set until
+  // that run's slice runs or gives up. Each run has its own number, so a canceled run that ends late, or still shows
+  // as running, never clears a newer run's start.
+  let starting = 0
+  let runs = 0
+  const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0
   pending = isPending
   const clear = (): void => {
     if (timer) clearTimeout(timer)
@@ -81,12 +84,17 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     }
     waiting?.()
     waiting = null
-    starting = true
+    const mine = ++runs
+    starting = mine
+    // A slice that runs from now on is this run's: one still running from before (canceled, not yet unwound) keeps
+    // the start it had.
+    const before = appStore.getState().slice
+    const was = before.status === 'running' ? before.startedAt : null
     const off = appStore.subscribe((now) => {
-      if (now.slice.status === 'running') settle()
+      if (now.slice.status === 'running' && now.slice.startedAt !== was) settle()
     })
     const settle = (): void => {
-      starting = false
+      if (starting === mine) starting = 0
       off()
     }
     void slicePlate(host, { auto: true }).finally(settle)
