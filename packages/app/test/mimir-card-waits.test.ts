@@ -81,4 +81,13 @@ describe('the waiting sheet a linked client reads', () => {
     const t = run([{ type: 'sheet', sheet: { id: 'sh_2', title: 'Gear sizes', views: ['iso'], dims } } as unknown as PilotEvent])
     expect(openSheetCard(t)?.sizes.map((s) => [s.key, s.unit])).toEqual([['teeth', 'count'], ['draft_angle', 'deg'], ['lean', 'deg'], ['width', 'mm']])
   })
+
+  it('names a row by the kind it gives, over its key', () => {
+    const dims = [
+      { key: 'width', label: 'Width', value: 4, unit: 'mm', kind: 'count', source: 'asked' },
+      { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'asked' },
+    ]
+    const t = run([{ type: 'sheet', sheet: { id: 'sh_3', title: 'Odd sizes', views: ['iso'], dims } } as unknown as PilotEvent])
+    expect(openSheetCard(t)?.sizes.map((s) => [s.key, s.unit])).toEqual([['width', 'count'], ['teeth', 'mm']])
+  })
 })
