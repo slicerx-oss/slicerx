@@ -87,6 +87,29 @@ describe('mimir sessions over the app link', () => {
     expect(out.turns[2]).not.toHaveProperty('route')
   })
 
+  it('say which error lines were free mimir waiting out its limit and going on, with their code', async () => {
+    const s = createMemorySessionStore()
+    const notice = 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.'
+    const line = 'Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
+    const events: PilotEvent[] = [
+      start('mimir_w', '2026-10-12T12:00:00Z'),
+      { type: 'error', message: notice, retryable: false, code: 'slow_down', waiting: true },
+      { type: 'tool_call', callId: 'c1', tool: 'geom.extrude', source: 'command', input: {} },
+      { type: 'tool_result', callId: 'c1', ok: true, summary: 'Extruded: step 1, Base' },
+      { type: 'error', message: notice, retryable: false, code: 'slow_down', waiting: true },
+      { type: 'error', message: line, retryable: true, code: 'slow_down' },
+      { type: 'done', stopReason: 'max_steps', ms: 5 },
+    ]
+    for (const e of events) await s.append('mimir_w', e)
+    setSessionSource({ store: s })
+    const out = (await runCall('mimir.session', { id: 'mimir_w' })) as { turns: { steps: Record<string, unknown>[] }[] }
+    expect(out.turns[0]!.steps).toEqual([
+      { kind: 'error', message: notice, code: 'slow_down', waiting: true },
+      { kind: 'tool', tool: 'geom.extrude', state: 'ok', summary: 'Extruded: step 1, Base' },
+      { kind: 'error', message: line, code: 'slow_down' },
+    ])
+  })
+
   it('refuse a missing or odd id', async () => {
     setSessionSource({ store: await store() })
     for (const id of [undefined, '', 5, 'mimir_nope', 'x'.repeat(201)]) {
