@@ -63,6 +63,12 @@ describe('the sheet record', () => {
     expect(edits).toEqual([['magnets', 0]])
   })
 
+  it('reads a row by the kind it gives, over its key', () => {
+    const odd: PilotSheet = { id: 'sheet_odd', title: 'Odd sizes', views: ['iso'], dims: [{ key: 'width', label: 'Width', value: 4, unit: 'mm', kind: 'count', source: 'asked' }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'asked' }] }
+    render(<SheetRecord sheet={odd} answer={{ confirmed: true, values: { width: 4, teeth: 20 }, changed: [] }} />)
+    expect(['width', 'teeth'].map((k) => row(k).querySelector('.sheet-rec-v')!.textContent)).toEqual(['4', '20 mm'])
+  })
+
   it('rounds a fraction typed into a count row to a whole number of at least one', () => {
     const gear: PilotSheet = { id: 'sheet_gear', title: 'Gear sizes', views: ['iso'], dims: [{ key: 'teeth', label: 'Teeth', value: 18, unit: 'mm', source: 'asked' }, { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] }
     const edits: [string, number][] = []

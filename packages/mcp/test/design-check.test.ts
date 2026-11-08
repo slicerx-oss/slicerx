@@ -8,6 +8,7 @@ import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
+import { createCardPlans } from '../src/tab-tools'
 import { designToolset } from '../src/toolset'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -172,6 +173,23 @@ describe('designCheck', () => {
       const r = designCheck(plan, body, 0.4)
       expect(failed(r), plan.units).toEqual([])
       expect(r.items.map((i) => i.name)).toEqual(['overall size', 'mount hole', 'cable hole', 'feature count', 'watertight', 'minimum wall'])    }
+  })
+
+  it('takes a kind for each size, count, angle or length, and leaves a plan without kinds as it was', () => {
+    const withKinds = { ...bracket, features: [{ name: 'base', sizes: { width: 60, holes: 4, rake: 15 }, kinds: { holes: 'count', rake: 'angle', width: 'length' } }] }
+    expect(partPlanSchema.parse(withKinds)).toEqual(withKinds)
+    expect(partPlanSchema.parse(bracket)).toEqual(bracket)
+    expect('kinds' in partPlanSchema.parse(bracket).features[0]!).toBe(false)
+    for (const bad of ['deg', 'mm', 'number', '', 3]) expect(partPlanSchema.safeParse({ ...withKinds, features: [{ name: 'base', sizes: { width: 60 }, kinds: { width: bad } }] }).success, String(bad)).toBe(false)
+    // design.check is the same with or without kinds: no feature size is held to the body
+    expect(designCheck({ ...bracket, features: bracket.features.map((f) => ({ ...f, kinds: { width: 'count' as const } })) }, built, 0.4)).toEqual(designCheck(bracket, built, 0.4))
+  })
+
+  it('design.plan is 1.1.0 and tells the model to give a kind for each count and angle, locally too', () => {
+    const t = createCardPlans(createPlanRegistry()).planTool()
+    expect(t.version).toBe('1.1.0')
+    expect(t.description).toMatch(/kinds/)
+    expect(t.localDescription).toMatch(/kinds/)
   })
 
   it('takes plans by planId, checked against the plan shape', () => {
