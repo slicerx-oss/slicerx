@@ -944,6 +944,19 @@ describe('room for a second design', () => {
     expect(gapOf('peg', planter)).toBeGreaterThanOrEqual(getArrangeOptions().gapMm - 0.01)
   })
 
+  it('works the room out again when the person locks a design it would move while it is worked out, and leaves it where it is', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucerStep } = await planterAndSaucer(run)
+    const t = [...entry(planter).transform]
+    const nests = whileNesting(() => set((s) => ({ plate: s.plate.map((e) => (e.id === planter ? { ...e, locked: true } : e)) })), 1)
+    const made = await saucerStep()
+    expect(entry(planter).transform).toEqual(t)
+    expect(entry(planter).history?.placed).toEqual([128, 128])
+    expect(made.summary).not.toMatch(/to make room/)
+    // the room worked out with the planter free to move went stale, so it was worked out again with it locked
+    expect(nests()).toBeGreaterThan(2)
+  })
+
   it('works the room out again when a design it would move is deleted while it is worked out, and lands in the middle', { timeout: 60_000 }, async () => {
     const run = toolsOn(appDesignHost(loader))
     const { planter, saucer, saucerStep } = await planterAndSaucer(run)
