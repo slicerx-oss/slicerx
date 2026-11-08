@@ -17,8 +17,8 @@ async function output(name: string, args: Record<string, unknown>): Promise<Body
   expect(JSON.stringify(reply)).not.toMatch(/positions|indices/)
   return reply.output
 }
-/** A body built around the origin lands in the middle of the 256 mm bed as a whole: its coordinates stay around the origin. */
-const MID = 0
+/** A body built around the origin lands in the middle of the 256 mm bed: from then on its coordinates are the plate's. */
+const MID = 128
 async function box(empty = false) {
   const { design } = await output('design.new', { name: 'Modeling block' })
   if (!empty) await output('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 8 })
@@ -61,8 +61,7 @@ it('lands a body built by the bed corner in the middle of the plate and says it 
   const { design } = await output('design.new', { name: 'Corner block' })
   const reply = await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 8 }) as { summary: string; output: Body & { landed?: string } }
   expect(reply.summary).toContain('moved to the plate by (128, 128) mm')
-  expect(reply.output).toMatchObject({ minMm: [MID - 10, MID - 5, 0], landed: expect.stringContaining("coordinates stay the design's own") })
-  expect(get().plate[0]!.transform.slice(12, 14)).toEqual([128, 128])
+  expect(reply.output).toMatchObject({ minMm: [MID - 10, MID - 5, 0], landed: expect.stringContaining("coordinates are now the plate's") })
   const listed = await runCall('design.list', {}) as { output: { designs: (Body & { landed?: string })[] } }
   expect(listed.output.designs[0]).toMatchObject({ minMm: [MID - 10, MID - 5, 0] })
   expect(listed.output.designs[0]!.landed).toBeUndefined()
@@ -70,8 +69,7 @@ it('lands a body built by the bed corner in the middle of the plate and says it 
 
 it('places separate array copies and built solids in world coordinates on a moved body', async () => {
   const design = await box()
-  // a body a person put at (50, 50), with no landing move kept: its coordinates are the plate's
-  const { placed: _landed, ...entry } = get().plate[0]!
+  const entry = get().plate[0]!
   const transform = [...entry.transform]
   transform[12] = 50
   transform[13] = 50

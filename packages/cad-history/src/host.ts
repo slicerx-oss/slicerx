@@ -12,17 +12,8 @@ export interface Design {
   id: string
   name: string
   history: History
-  /**
-   * The design's frame: every point a client gives and gets is in it. It is where the object stands on the plate, less
-   * any move a host made to land it on the bed (`placed`), so steps given in the frame the design was built in stay on
-   * its body after a landing.
-   */
+  /** The object's transform: the frame of every point a client gives and gets. */
   transform: Mat4
-  /**
-   * How far the host's landings moved the object on the plate, mm in X and Y: it stands at `transform` moved by this
-   * (placement). Absent when no landing moved it.
-   */
-  placed?: [number, number]
   /** The parts after the last replay, in the object's own frame. */
   parts: HistoryMesh[]
   status: StepStatus[]
@@ -35,7 +26,7 @@ export interface Design {
 }
 
 /**
- * A first body built off the bed: moved by (dxMm, dyMm) onto it as a whole, its coordinates staying the design's own;
+ * A first body built off the bed: moved by (dxMm, dyMm) onto it, after which the design's coordinates are the plate's;
  * or offBed when no spot on the bed holds it, so it stays where it was built. Off the bed counts what prints around the
  * part (brim, skirt) and the excluded areas. `edit` marks a part an edit left off the bed, landed again the same way;
  * `locked` one that stayed, and `parked` one that was off the bed before the edit and stays there.
@@ -65,11 +56,8 @@ export interface DesignHost {
   replay(d: Design, opts?: { expectedRevision?: string }): Promise<void>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
-  /**
-   * A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. Given `design`, the
-   * sketch comes in that design's frame (a sketch drawn on the plate moves back by the design's landing).
-   */
-  sketch?(id: string, design?: string): SketchItem
+  /** A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. */
+  sketch?(id: string): SketchItem
   /** Puts a finished sketch in the design timeline at its marker. No frame is the bed. */
   addSketch?(s: { frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[] }): SketchItem
   /** The bed's size, mm, for placing on the bed; only a host with a printer (the app) knows it. */

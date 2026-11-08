@@ -3,8 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A part made in the tab stands on the bed with room for its skirt. A tab joined to it through the tab's geom.extrude
 // pushes the skirt past the bed edge, so the part lands again the way a new part lands, and the step says how far it
-// moved. The move is the part's placement: its coordinates stay the design's, so a hole made another size through
-// geom.hole finds the hole where the design put it, wherever the part went on the plate. Runs against the geometry
+// moved; a hole made another size through geom.hole then finds the hole where the part went. Runs against the geometry
 // engine (live wasm when built, recorded replies otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
@@ -49,11 +48,10 @@ describe('a step through the tools of the tab that pushes the skirt of a part of
     expect(printsOnBed(e(), get().bed)).toBe(true)
     const b = bounds(e().parts, e().transform)!
     expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]).toEqual([128, 128])
-    // on the plate the hole moved with the part, from (215, 115) to (118, 128); in the design's coordinates it is where
-    // it was made. A step that keeps the part on the bed moves nothing
-    const r = await run<{ landed?: string; after: { center: number[]; diameterMm: number } }>('geom.hole', { design: d, center: [215, 115, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
+    // the hole moved with the part, from (215, 115) to (118, 128); a step that keeps the part on the bed moves nothing
+    const r = await run<{ landed?: string; after: { center: number[]; diameterMm: number } }>('geom.hole', { design: d, center: [118, 128, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
     expect(r.output.landed).toBeUndefined()
-    r.output.after.center.forEach((v, k) => expect(v).toBeCloseTo([215, 115, 5][k]!, 3))
+    r.output.after.center.forEach((v, k) => expect(v).toBeCloseTo([118, 128, 5][k]!, 3))
     expect(r.output.after.diameterMm).toBeCloseTo(3.4, 3)
   })
 })
