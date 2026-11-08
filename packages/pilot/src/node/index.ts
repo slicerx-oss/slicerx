@@ -3,9 +3,9 @@
 // Node-only pieces: the LLM transport for evals and CLI runs (the Node twin
 // of sx-llm) and a JSONL session store. Not for the browser bundle.
 import { execFile, spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
 import type { LlmHttpRequest, LlmTransport, PilotEvent, SessionStore } from '@slicerx/contracts'
 import type { GeomHost } from '../hosts'
 import { scrub, summarize } from '../session'
@@ -184,42 +184,82 @@ export function createGeomCli(opts: { binary?: string; timeoutMs?: number } = {}
   }
 }
 
-interface GeomWasmExports {
-  memory: WebAssembly.Memory
-  geom_input(len: number): number
-  geom_call(): number
-  geom_out_ptr(): number
-  geom_out_len(): number
-  geom_error_ptr(): number
-  geom_error_len(): number
-}
+/** Runs in the engine's worker thread: one request in, its reply text or error out. */
+const ENGINE_THREAD = `
+const { parentPort, workerData } = require('node:worker_threads')
+const x = new WebAssembly.Instance(new WebAssembly.Module(require('node:fs').readFileSync(workerData.wasm)), {}).exports
+const text = (ptr, len) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
+parentPort.on('message', ({ op, input }) => {
+  const bytes = new TextEncoder().encode(op + '\\0' + JSON.stringify(input))
+  const at = x.geom_input(bytes.length)
+  new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
+  if (x.geom_call() === 0) parentPort.postMessage({ out: text(x.geom_out_ptr(), x.geom_out_len()) })
+  else parentPort.postMessage({ error: text(x.geom_error_ptr(), x.geom_error_len()) })
+})
+`
 
 /**
- * Geometry through the sx-geom web build (packages/geom/wasm), in this process. Its replies match the
- * command's byte for byte; errors read like the command's, `sx-geom <op>: <message>`.
+ * Geometry through the sx-geom web build (packages/geom/wasm), in a worker thread of this process. Its replies match
+ * the command's byte for byte; errors read like the command's, `sx-geom <op>: <message>`. A call that is canceled or
+ * runs past `timeoutMs` (5 minutes by default) ends its worker, since a synchronous engine call reads no messages, and
+ * the next call starts a fresh one. Calls run one at a time, in order.
  */
-export function createGeomWasm(opts: { wasm: string }): GeomHost {
-  let exports: GeomWasmExports | null = null
-  const load = (): GeomWasmExports => {
-    if (!exports) exports = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(opts.wasm)), {}).exports as unknown as GeomWasmExports
-    return exports
+export function createGeomWasm(opts: { wasm: string; timeoutMs?: number }): GeomHost {
+  const timeoutMs = opts.timeoutMs ?? 5 * 60_000
+  let worker: Worker | null = null
+  let queue: Promise<unknown> = Promise.resolve()
+  const call = (op: string, input: unknown, signal?: AbortSignal): Promise<unknown> => {
+    signal?.throwIfAborted()
+    const w = (worker ??= new Worker(ENGINE_THREAD, { eval: true, workerData: { wasm: opts.wasm } }))
+    // the call's own timer keeps the process alive meanwhile; an idle worker does not
+    w.unref()
+    return new Promise((resolve, reject) => {
+      const done = (): void => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        w.off('message', onMessage).off('error', onError).off('exit', onExit)
+      }
+      const fail = (message: string): void => {
+        done()
+        reject(new Error(`sx-geom ${op}: ${message}`))
+      }
+      const stop = (message: string): void => {
+        if (worker === w) worker = null
+        void w.terminate()
+        fail(message)
+      }
+      const onAbort = (): void => stop('canceled, so the engine was stopped')
+      const onMessage = (m: { out?: string; error?: string }): void => {
+        if (m.out !== undefined) {
+          done()
+          resolve(JSON.parse(m.out) as unknown)
+          return
+        }
+        let message = m.error ?? 'no reply'
+        try {
+          message = (JSON.parse(message) as { error?: string }).error ?? message
+        } catch {
+          // A plain message stays as it is.
+        }
+        fail(message)
+      }
+      const onError = (e: Error): void => stop(e.message)
+      const onExit = (code: number): void => {
+        if (worker === w) worker = null
+        fail(`the engine stopped (exit ${code})`)
+      }
+      const timer = setTimeout(() => stop(`took longer than ${timeoutMs / 1000} s, so the engine was stopped`), timeoutMs)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      w.on('message', onMessage).on('error', onError).on('exit', onExit)
+      w.postMessage({ op, input })
+    })
   }
   return {
-    async run(op, input, signal) {
-      signal?.throwIfAborted()
-      const x = load()
-      const text = (ptr: number, len: number) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
-      const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(input)}`)
-      const at = x.geom_input(bytes.length)
-      new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
-      if (x.geom_call() === 0) return JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as unknown
-      let message = text(x.geom_error_ptr(), x.geom_error_len())
-      try {
-        message = (JSON.parse(message) as { error?: string }).error ?? message
-      } catch {
-        // A plain message stays as it is.
-      }
-      throw new Error(`sx-geom ${op}: ${message}`)
+    run(op, input, signal) {
+      const next = (): Promise<unknown> => call(op, input, signal)
+      const answer = queue.then(next, next)
+      queue = answer.catch(() => undefined)
+      return answer
     },
   }
 }

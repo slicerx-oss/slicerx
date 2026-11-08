@@ -253,10 +253,13 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
       }
     },
   }
-  const env = creativeEnv(p, client, opts.geom ? { geom: opts.geom } : {})
-  const events: PilotEvent[] = []
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? (opts.client ? 300_000 : 60_000))
+  // every geometry call carries the prompt's deadline, also the ones that read the parts back after the run
+  const engine = opts.geom
+  const geom: ToolHost['geom'] = engine && { run: (op, input, signal) => engine.run(op, input, signal ? AbortSignal.any([signal, ac.signal]) : ac.signal) }
+  const env = creativeEnv(p, client, geom ? { geom } : {})
+  const events: PilotEvent[] = []
   let error: string | undefined
   let text = ''
   let answered = false
@@ -308,6 +311,17 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
+  }
+  // the designs with a body, as their objects in the project hold them. A reply that builds a design again as a new one
+  // (a second try after a failed check) leaves the first on the plate too; the last design is the answer it gives, so
+  // that one alone is scored, as a person would print it.
+  const built3d = env.designs.list().filter((d) => d.parts.length)
+  const scored = built3d.at(-1)
+  const parts: MeshPart[] = []
+  try {
+    for (const o of env.project.objects()) if (o.id === scored?.id) parts.push(...((await o.mesh?.()) ?? []))
+  } catch (e) {
+    error ??= e instanceof Error ? e.message : String(e)
   } finally {
     clearTimeout(timer)
   }
@@ -318,13 +332,6 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const last = designCalls.at(-1)
   // the last design call that did not go through, said in the tool's words when nothing was built
   const failed = designCalls.map((c) => ({ c, r: results.get(c.callId) })).filter(({ r }) => !r || r.ok === false).at(-1)
-  // the designs with a body, as their objects in the project hold them. A reply that builds a design again as a new one
-  // (a second try after a failed check) leaves the first on the plate too; the last design is the answer it gives, so
-  // that one alone is scored, as a person would print it.
-  const built3d = env.designs.list().filter((d) => d.parts.length)
-  const scored = built3d.at(-1)
-  const parts: MeshPart[] = []
-  for (const o of env.project.objects()) if (o.id === scored?.id) parts.push(...((await o.mesh?.()) ?? []))
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
   const builtLine = (d: Design): string => `${plural(d.history.steps.length, 'feature step')}, ${plural(parts.length, 'mesh part')}`
   let parsed: Check
