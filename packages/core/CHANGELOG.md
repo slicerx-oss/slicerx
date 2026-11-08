@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-11-08
+
 ### Added
 
 - `RequestOptions::layer_tops_exact` (`layerTopsExact`): with `layerTopsMm`, the tops are exact, a plate's own layer heights. A plate that prints two or more filaments keeps them as given, where sleipnir's tops keep fixed layers wherever a fixed layer prints two filaments, and no `varyLayerCost` is reported. A Z shrinkage compensation (`filament_shrinkage_compensation_z`) stretches them above the first layer so the last lands on the scaled model top, each layer kept inside the strictest `min_layer_height` and `max_layer_height` over the extruders (0.07 mm and three quarters of each nozzle when 0) unless it was drawn outside them; when they leave no room every layer stretches evenly, as before, and the slice warns (`unsupported_setting`) naming the limit it passes. Before, such a plate was refused with tops ending under the model top. `RequestOptions::layer_tops_sliced` (`layerTopsSliced`) marks exact tops as a sliced job's own layers, sent back for a resume: they are already stretched and are kept as given. `PrintConfig::layer_tops_exact` and `layer_tops_sliced` carry the two options; a library caller that sets only `layer_tops_exact` gets the stretch.

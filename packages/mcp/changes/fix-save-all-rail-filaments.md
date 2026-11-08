@@ -1,3 +1,0 @@
-### Fixed
-
-- `slicerx_slice_file` 1.10.0 writes a `.gcode.3mf` whose project_settings.config has one entry per filament in every per-filament list (the filament settings, `filament_ids` and `filament_settings_id`), as many as the slice names in `filament_colour`. A list the settings give shorter takes its last entry for the other filaments, which is the value the engine sliced them with. Before, a project of several filaments wrote its colors and types for each filament but most filament settings once, so a reader that takes the lists together by index found the later filaments without settings.
