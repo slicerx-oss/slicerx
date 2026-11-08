@@ -125,6 +125,8 @@ export interface CreatePilotOptions {
   log?: (line: string) => void
   now?: () => number
   newId?: () => string
+  /** Waits `ms` or until `signal` aborts; tests pass one that returns at once. */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>
 }
 
 type AnyTool = PilotTool<unknown>
@@ -195,6 +197,17 @@ export function planLimits(call: Pick<LlmToolCall, 'name' | 'arguments'>, result
 }
 
 export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in two to four sentences: what you did, what is left, and what you need from them to go on (ask one short question if something is missing). Do not leave the reply empty.'
+/**
+ * Free mimir's slow_down (429): the install's or the address's calls in the last minute are at their limit (20 a minute
+ * per desktop install, 10 per person on the web, 60 per address). The proxy gives no retry time, and its window is one
+ * rolling minute, so the run waits SLOW_DOWN_WAIT_MS and sends the same step again. Waits in a row add up to at most
+ * SLOW_DOWN_GIVE_UP_MS, one whole window: by then none of this run's calls are left in it, so a refusal after that comes
+ * from other traffic on the install or the address, and the run stops cut short with the sheet kept for "keep going".
+ */
+export const SLOW_DOWN_WAIT_MS = 20_000
+export const SLOW_DOWN_GIVE_UP_MS = 60_000
+/** What the person sees when slow_down refusals outlast SLOW_DOWN_GIVE_UP_MS. */
+export const SLOW_DOWN_LINE = 'The model service asked me to slow down, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
 /** A step cut off at the output limit before it said or called anything. */
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
 /** The messages the runtime itself adds as the user's turn, so a scripted client can tell them from the person's. */
@@ -313,6 +326,18 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   toolCap(sessionId: string): ToolCapReport | null
 } {
   const now = opts.now ?? (() => Date.now())
+  const sleep =
+    opts.sleep ??
+    ((ms: number, signal: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer)
+          signal.removeEventListener('abort', done)
+          resolve()
+        }
+        const timer = setTimeout(done, ms)
+        signal.addEventListener('abort', done, { once: true })
+      }))
   const newId = opts.newId ?? randomId
   const kb = opts.kb ?? createKnowledgeBase(EMPTY_KB_INDEX)
   let policy = normalizePolicy(opts.policy ?? DEFAULT_POLICY)
@@ -810,7 +835,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return out
     }
     // the run stopped at its tool call limit: it ends as denied, but like a run out of steps the part is unfinished
+    // the run stopped at its tool call limit (it ends as denied) or waited out its slow_down refusals: like a run out of
+    // steps, the part is unfinished
     let callLimited = false
+    // how long the run has waited on slow_down refusals in a row
+    let slowed = 0
     // the run's limits; an approved plan raises them to fit its features (planLimits)
     let maxSteps = opts.config.maxSteps
     let maxToolCalls = opts.config.maxToolCalls
@@ -947,11 +976,32 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       }
       if (thinkingStart !== null) emit({ type: 'thinking_done', ms: now() - thinkingStart })
       if (text) emit({ type: 'text_done' })
+      if (failed !== null && failedCode === 'slow_down' && !text && toolCalls.length === 0) {
+        // the proxy's rate window is full: wait and send the same step again, or stop cut short after a whole window
+        if (slowed + SLOW_DOWN_WAIT_MS <= SLOW_DOWN_GIVE_UP_MS) {
+          slowed += SLOW_DOWN_WAIT_MS
+          await sleep(SLOW_DOWN_WAIT_MS, signal)
+          if (signal.aborted) {
+            stopReason = 'canceled'
+            break
+          }
+          step--
+          continue
+        }
+        emit({ type: 'text', delta: SLOW_DOWN_LINE })
+        emit({ type: 'text_done' })
+        messages.push({ role: 'assistant', content: SLOW_DOWN_LINE })
+        said = true
+        callLimited = true
+        stopReason = 'max_steps'
+        break
+      }
       if (failed !== null) {
         emit({ type: 'error', message: failed, retryable: true, ...(failedCode ? { code: failedCode } : {}) })
         stopReason = 'error'
         break
       }
+      slowed = 0
       const spoke = text.trim() !== ''
       if (spoke) {
         said = true
