@@ -28,6 +28,7 @@ import type {
 } from '@slicerx/contracts'
 import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoads } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
+import { isGeomStuck } from '@slicerx/contracts/geom-limits'
 import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
 import { plainRefusal } from './engine-words'
@@ -279,6 +280,12 @@ export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
 /** The answer to a tool call cut off at the output limit. */
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
 /** Said for the model when it ends a run without a word, even after being asked. */
+/**
+ * A step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked for again with the
+ * same input in the same turn: it would stop the same way, so it is not run again.
+ */
+export const STOPPED_AGAIN_LINE = 'This exact step was stopped at its time limit earlier in this turn, so it was not run again. Try a smaller version, or say what stopped.'
+
 export const NO_REPLY_LINE = 'I stopped before I had an answer. Try the request again with fewer details at once, or split it into steps.'
 const STOPPED_LINE = 'I stopped there, and nothing else was changed.'
 
@@ -722,7 +729,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, timedOut: Set<string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
     // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
     // call to it from a step that did not carry it is an unknown tool
     const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
@@ -756,6 +763,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
+    // the same step with the same input, after its geometry call was stopped at its time limit this turn
+    const again = `${tool.name} ${JSON.stringify(input)}`
+    if (timedOut.has(again)) {
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
+      emit({ type: 'tool_result', callId: call.id, ok: false, summary: STOPPED_AGAIN_LINE })
+      return { message: JSON.stringify({ ok: false, blocked: true, message: STOPPED_AGAIN_LINE }), stop: false }
+    }
     const began = tool.name === 'design.new' ? runPart.get(sessionId) : undefined
     if (began?.length) {
       // the part started last must have a body and its last step must have gone through before another part starts,
@@ -876,6 +890,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
+    if (out.ok === false && isGeomStuck(out.summary)) timedOut.add(again)
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -913,6 +928,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
+    // steps stopped at a geometry time limit this turn, by tool and input (STOPPED_AGAIN_LINE)
+    const timedOut = new Set<string>()
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
     let usageIn = 0
@@ -1222,7 +1239,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
-        const res = await execute(call, sessionId, context, watch, signal, citations, cards, loader)
+        const res = await execute(call, sessionId, context, watch, signal, citations, cards, timedOut, loader)
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
