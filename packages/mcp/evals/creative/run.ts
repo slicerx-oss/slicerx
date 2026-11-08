@@ -244,9 +244,9 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
  * with DEFAULT_ANSWER and lets the model go on (`defaultAnswer`, on unless false; the card and the reply share the one
  * answer). A replay answers only when the recording was captured with the answer (`answerRecorded`); a recorded
  * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset) and one whose
- * reply starts the same part again (STALE_RESTART).
+ * reply met the refusal of a restarted part though it was captured before that refusal (STALE_RESTART, `samePart` unset).
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
   // a replay that met the refusal of a restarted part: the recording's later steps no longer stand for a live run
@@ -255,7 +255,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   const client: LlmClient = {
     provider: inner.provider,
     async *stream(req, signal) {
-      if (!opts.client && restartRefused(req.messages)) restarted = true
+      // a recording captured since the refusal (samePart) saw it live, so meeting it again is the recorded reply
+      if (!opts.client && opts.samePart !== true && restartRefused(req.messages)) restarted = true
       const step: ScriptStepData = {}
       try {
         for await (const ev of inner.stream(req, signal)) {
