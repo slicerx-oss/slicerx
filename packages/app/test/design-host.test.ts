@@ -113,7 +113,7 @@ describe('the app design host', () => {
     expect(volume(get().plate[0]!.parts)).toBeCloseTo(150.4 * 110.4 * 3, -1)
   })
 
-  it('moves a part built by the bed\'s corner to the middle of the plate once, and says so; from then on its coordinates are the plate\'s', async () => {
+  it('moves a part built by the bed\'s corner to the middle of the plate once, and says so; its coordinates stay the design\'s own', async () => {
     const host = appDesignHost(loader)
     // built around the origin, as a model sketches it: 7.5 mm past the bed's front left edges
     const d = await host.create('Peg', [box([-7.5, -7.5, 0], [7.5, 7.5, 20])])
@@ -122,12 +122,15 @@ describe('the app design host', () => {
     expect(placedOnBed(e, get().bed)).toBe(true)
     expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.min[2]]).toEqual([128, 128, 0])
     expect(d.landed).toEqual({ dxMm: 128, dyMm: 128 })
-    // one frame: the design reports the plate's transform, and only the call that moved it says so
+    // the landing moves the design as a whole: it keeps the frame it was built in, its history keeps the move, and only
+    // the call that moved it says so
     const seen = host.get(d.id)
-    expect(seen.transform).toEqual(e.transform)
-    expect(bounds(seen.parts.map(toPart), seen.transform)).toEqual({ min: [120.5, 120.5, 0], max: [135.5, 135.5, 20] })
+    expect(seen.transform).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    expect(seen.placed).toEqual([128, 128])
+    expect(e.history?.placed).toEqual([128, 128])
+    expect(bounds(seen.parts.map(toPart), seen.transform)).toEqual({ min: [-7.5, -7.5, 0], max: [7.5, 7.5, 20] })
     expect(seen.landed).toBeUndefined()
-    expect(host.list().find((x) => x.id === d.id)!.transform).toEqual(e.transform)
+    expect(host.list().find((x) => x.id === d.id)!.transform).toEqual(seen.transform)
   })
 
   it('lands it beside what is on the plate when the middle is taken, and leaves a part built on the bed where it is', async () => {
@@ -259,7 +262,9 @@ describe('an edit that leaves a design off the bed', () => {
       // the landing a new part gets: the middle of the bed
       expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]).toEqual([128, 128])
       expect(d.landed).toEqual({ dxMm: -97, dyMm: 13, edit: true })
-      expect(d.transform).toEqual(entry(d.id).transform)
+      // the design's frame stays where it was built; the move is kept as its landing
+      expect(d.transform).toEqual(was)
+      expect(d.placed).toEqual([-97, 13])
       // one undo takes back the edit and the move together
       history.undo()
       expect(entry(d.id).transform).toEqual(was)
