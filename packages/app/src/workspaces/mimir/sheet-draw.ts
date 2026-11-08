@@ -618,7 +618,7 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
   const cover = new Uint8Array(n)
   const edge = new Uint8Array(n)
   for (let i = 0; i < n; i++) cover[i] = owner[i]! >= 0 ? 1 : 0
-  // how far depth may stray from the nearer pixel's plane before it is another surface: a pixel and a half, or 0.05 mm
+  // how far depth may stray from what the two faces explain before it is another surface: a pixel and a half, or 0.05 mm
   const tol = Math.max(0.05, 1.5 / S)
   const differs = (i: number, j: number, ddx: number, ddy: number): boolean => {
     const a = owner[i]!
@@ -626,7 +626,16 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
     if (a < 0 && b < 0) return false
     if (a < 0 || b < 0 || a === b) return a !== b
     if (Math.abs(normals[3 * a]! * normals[3 * b]! + normals[3 * a + 1]! * normals[3 * b + 1]! + normals[3 * a + 2]! * normals[3 * b + 2]!) < EDGE_COS) return true
-    return Math.abs(depth[j]! - (depth[i]! + grad[2 * a]! * ddx + grad[2 * a + 1]! * ddy)) > tol
+    // Two faces that meet between the pixels change depth by no less than the one's slope and no more than the other's
+    // over the step, so only a step past both is a surface passing in front of another. A face that grazes the view
+    // slopes steeply, and a round's facets near its outline did: judged by one face's slope alone, the next facet of
+    // the same surface read as one behind it, drawing clusters and a second line beside the outline. The margin of two
+    // pixels of the steeper slope leaves out where a round folds behind itself by less than that, as at a bend's inside.
+    const ga = grad[2 * a]! * ddx + grad[2 * a + 1]! * ddy
+    const gb = grad[2 * b]! * ddx + grad[2 * b + 1]! * ddy
+    const step = depth[j]! - depth[i]!
+    const room = Math.max(tol, 2 * Math.max(Math.abs(ga), Math.abs(gb)))
+    return step < Math.min(ga, gb) - room || step > Math.max(ga, gb) + room
   }
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -645,21 +654,57 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
   return { W, H, px, cover, edge, depth }
 }
 
+/** A group of touching edge pixels less than this many screen px across and down is a speck, not a line. */
+export const SPECK_PX = 3
+
+/**
+ * The edge pixels that belong to a line: each group of touching edge pixels (by side or corner) that spans at least
+ * SPECK_PX screen px across or down. A smaller group (a speck or a short dash where a round's facets graze the view)
+ * is left out, so curves stay clean.
+ */
+export function lineEdges(r: Raster): Uint8Array {
+  const out = new Uint8Array(r.edge.length)
+  const seen = new Uint8Array(r.edge.length)
+  const span = SPECK_PX * r.px
+  const group: number[] = []
+  for (let s = 0; s < r.edge.length; s++) {
+    if (!r.edge[s] || seen[s]) continue
+    group.length = 0
+    group.push(s)
+    seen[s] = 1
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+    for (let g = 0; g < group.length; g++) {
+      const i = group[g]!
+      const x = i % r.W
+      const y = (i - x) / r.W
+      ;[x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)]
+      for (let j = -1; j <= 1; j++) {
+        for (let k = -1; k <= 1; k++) {
+          const n = i + j * r.W + k
+          if (x + k >= 0 && y + j >= 0 && x + k < r.W && y + j < r.H && r.edge[n] && !seen[n]) {
+            seen[n] = 1
+            group.push(n)
+          }
+        }
+      }
+    }
+    if (Math.max(x1 - x0, y1 - y0) + 1 >= span) for (const i of group) out[i] = 1
+  }
+  return out
+}
+
 /**
  * The edges as they are painted: about 1.5 screen px wide (2 device px at the least, so a 1x screen gets more than a
- * hairline), grown right and down into the part only, so the silhouette keeps its size over the card. A lone edge
- * pixel with no edge beside it (a speck where a round's facets graze the view) is left out, so curves stay clean.
+ * hairline), grown right and down into the part only, so the silhouette keeps its size over the card. Specks are left
+ * out (lineEdges).
  */
 export function paintedEdges(r: Raster): Uint8Array {
   const grow = Math.max(2, Math.round(1.5 * r.px)) - 1
   const out = new Uint8Array(r.edge.length)
-  const lone = (x: number, y: number): boolean => {
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if ((i || j) && x + i >= 0 && y + j >= 0 && x + i < r.W && y + j < r.H && r.edge[(y + j) * r.W + x + i]) return false
-    return true
-  }
+  const line = lineEdges(r)
   for (let y = 0; y < r.H; y++) {
     for (let x = 0; x < r.W; x++) {
-      if (!r.edge[y * r.W + x] || lone(x, y)) continue
+      if (!line[y * r.W + x]) continue
       for (let j = 0; j <= grow && y + j < r.H; j++) {
         for (let i = 0; i <= grow && x + i < r.W; i++) {
           const k = (y + j) * r.W + x + i
