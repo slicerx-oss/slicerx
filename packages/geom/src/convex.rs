@@ -52,6 +52,22 @@ impl ConvexSolid {
         Self::prism(frame, &poly2d::circle([0.0, 0.0], r, segments), h0, h1)
     }
 
+    /// the solid as a closed mesh, its faces cut from squares `size` across about `center`
+    #[allow(clippy::cast_possible_truncation, reason = "a convex solid has few corners")]
+    pub fn to_mesh(&self, center: V3, size: f64) -> TriMesh {
+        let mut out = TriMesh::default();
+        for f in self.faces(center, size) {
+            let ring = &f.rings[0];
+            let base = out.positions.len() as u32;
+            out.positions.extend(ring);
+            for i in 1..ring.len() as u32 - 1 {
+                out.triangles.push([base, base + i, base + i + 1]);
+            }
+        }
+        // each face clips its corners on its own: the same corner a few float steps apart
+        out.weld(size * 1e-9)
+    }
+
     pub fn faces(&self, center: V3, size: f64) -> Vec<Face> {
         let mut out = Vec::new();
         for (i, pl) in self.planes.iter().enumerate() {
