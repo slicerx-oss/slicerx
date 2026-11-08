@@ -215,7 +215,7 @@ describe('design.trace_image: reading and refusing', () => {
   })
 
   it('refuses a loop longer than a sketch loop takes in its own option names, and a dry run says so', async () => {
-    // 600 short lines round one outline: well under the bytes the link carries, over the 512 pieces a loop takes
+    // 600 short lines around one outline: well under the bytes the link carries, over the 512 pieces a loop takes
     const segments = Array.from({ length: 600 }, (_, k) => {
       const a = ((k + 1) / 600) * 2 * Math.PI
       return { type: 'line', to: [Math.round(100 * Math.cos(a)) / 10, Math.round(100 * Math.sin(a)) / 10] }
@@ -231,6 +231,31 @@ describe('design.trace_image: reading and refusing', () => {
     expect(traceLoopTooLong([{ start: [0, 0], segments: segments.slice(0, 512) }] as never)).toBeUndefined()
     expect(traceLoopTooLong([{ points: Array.from({ length: 4097 }, () => [0, 0]) }] as never)).toBe('loop 1 has 4097 points and a sketch loop takes 4096')
     expect(traceLoopTooLong([{ start: [0, 0], segments: [{ type: 'spline', to: [1, 1], points: Array.from({ length: 513 }, () => [0, 0]) }] }] as never)).toBe('loop 1 has a spline through 513 points and a sketch spline takes 512')
+  })
+
+  it('reports every refusal on a dry run, at the limits design.sketch keeps, and says a file too large is not helped by max_side_px', async () => {
+    const dry = async (loops: unknown[], issues: unknown[] = []) => {
+      const { run, sketches } = host(reply({ loops, check: { ok: issues.length === 0, polygons: [], areaMm2: 0, loops: [], issues } }))
+      const out = await run('design.trace_image', { image: { base64: 'AA' }, dry_run: true })
+      expect(sketches).toHaveLength(0)
+      return { summary: out.summary, refused: (out.output as { refused?: string }).refused }
+    }
+    const many = await dry(Array.from({ length: 257 }, () => LOOPS[0]))
+    expect(many.refused).toMatch(/^image: the trace has 257 loops and a sketch takes 256\. Raise speck_mm2/)
+    expect(many.summary).toMatch(/Adding it would be refused: the trace has 257 loops/)
+    const wavy = [{ start: [0, 0], segments: [{ type: 'spline', to: [10, 0], points: [[5, 0], [5, 0]] }, { type: 'line', to: [0, 0] }] }]
+    const undrawable = await dry(wavy, [{ loop: 0, kind: 'tooDense', message: 'Loop 1: spline segment 1 bends too sharply to draw within 0.01 mm; spread its points out.' }])
+    expect(undrawable.refused).toMatch(/^image: Loop 1: spline segment 1 bends too sharply.*Raise smoothing_mm or speck_mm2\.$/)
+    expect(undrawable.summary).toMatch(/Adding it would be refused: Loop 1: spline segment 1/)
+    const wide = await dry(Array.from({ length: 250 }, () => ({ start: [0.123456, 0.123456], segments: Array.from({ length: 8 }, () => ({ type: 'line', to: [10.123456, 10.123456] })) })))
+    expect(wide.refused).toMatch(/^image: the trace's loops come to \d+(\.\d)? KB, and the app link takes 63\.5 KB/)
+    expect(wide.summary).toMatch(/Adding it would be refused: the trace's loops come to/)
+    // the exact limits pass
+    expect(traceLoopTooLong([{ points: Array.from({ length: 4096 }, () => [0, 0]) }] as never)).toBeUndefined()
+    expect(traceLoopTooLong([{ start: [0, 0], segments: [{ type: 'spline', to: [1, 1], points: Array.from({ length: 512 }, () => [0, 0]) }] }] as never)).toBeUndefined()
+    // the engine's too large names what to change, and this tool adds that its working size cannot help
+    const big = traceRefusal(new Error('image: the file is too large to read; save it smaller or as a baseline JPEG (a JPEG reads up to 8192 px a side)')) as Error
+    expect(big.message).toBe('image: the file is too large to read; save it smaller or as a baseline JPEG (a JPEG reads up to 8192 px a side). max_side_px shrinks the image only after it is read, so it does not help here')
   })
 
   it('sends colors in lowercase, and gives engine refusals in its own option names', async () => {
