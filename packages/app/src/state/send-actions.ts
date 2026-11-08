@@ -74,6 +74,9 @@ function plateBoundsOf(st: AppState, bounds: (parts: PlateEntry['parts'], t: num
  * person's click. The token is granted on that click and bound to the
  * exact upload and start parameters. Remote, mimir, queued and scheduled starts keep the approval card.
  */
+/** The toast when the plate's slice changed while its file uploaded: the file is on the printer, not started. */
+export const notStarted = (printer: string, file: string): string => `${printer} has ${file}, but it did not start: the slice changed while it uploaded. Don't start it from the printer. Slice the plate again, then print.`
+
 export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<void> {
   // Restart to update waits while a print is on its way (updates/updates.ts).
   const release = holdUpdates()
@@ -348,7 +351,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       // The upload is a wait too: a plan kept, cleared or voided, or another plate shown meanwhile, and it does not start.
       const afterUpload = start ? stillSendable() : null
       if (afterUpload) {
-        toast(`${afterUpload} ${file.name} is on ${printer.name}, but it did not start.`, 'error')
+        toast(notStarted(printer.name, file.name), 'error')
         return 'done'
       }
       if (start) {

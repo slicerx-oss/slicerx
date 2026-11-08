@@ -9,5 +9,12 @@ export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'o
 /** The layer marks as the engine gets them, as one string to compare: a color change's slot is a note in the project, not part of the print. */
 export const printed = (marks: AppState['layerMarks']): string => JSON.stringify(Object.entries(marks).map(([plate, list]) => [plate, list.map((m) => [m.z, m.kind, m.gcode ?? '', ...(m.kind === 'tool_change' ? [m.slot ?? 0, m.skip ?? ''] : [])])]))
 
-/** True when any slice input differs between the two states. A note on a layer mark alone changes nothing printed. */
-export const inputsChanged = (a: AppState, b: AppState): boolean => INPUTS.some((k) => a[k] !== b[k] && !(k === 'layerMarks' && printed(a.layerMarks) === printed(b.layerMarks)))
+/** The printer's slots as a slice reads them: by filament and color, not what is left on a spool or its tag. */
+export const slotsRead = (slots: AppState['printerSlots']): string => JSON.stringify(slots.map((slot) => [slot.id, slot.material ?? null, slot.color ?? null]))
+
+/**
+ * True when any slice input differs between the two states. A note on a layer mark alone changes nothing printed, and
+ * neither does a spool reload that only changes the grams left or the tag (slotsRead).
+ */
+export const inputsChanged = (a: AppState, b: AppState): boolean =>
+  INPUTS.some((k) => a[k] !== b[k] && !(k === 'layerMarks' && printed(a.layerMarks) === printed(b.layerMarks)) && !(k === 'printerSlots' && slotsRead(a.printerSlots) === slotsRead(b.printerSlots)))
