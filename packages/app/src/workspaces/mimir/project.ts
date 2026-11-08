@@ -222,6 +222,9 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
         const { output } = (await import('../../app-link/project-settings')).readProjectSettings({ keys: [...keys] })
         return { plate: output.plate, overrides: output.overrides, effective: output.effective, shadowed: output.shadowed }
       },
+      async ready(): Promise<void> {
+        await (await import('../../state/profile-sync')).profileReady()
+      },
       async plate(plateIndex: number): Promise<Plate> {
         // The printer, filament and process layer must match the printer and the plate's slots before the plate and its
         // configuration are read (a printer just picked, or a part moved to another slot, rebuilds it), as the app's
