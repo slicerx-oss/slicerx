@@ -60,10 +60,10 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
   })
   const session = defineTool({
     name: 'mimir.session',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
-    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups (a question answered on the person's paired phone carries answeredOn with the phone's name), and waiting: the question mimir waits on now (its askId, title, question and choices), or null. Without an id, the newest conversation.`,
+    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups (a question answered on the person's paired phone carries answeredOn with the phone's name), and waiting: the question mimir waits on now (its askId, title, question and choices), or the size sheet it waits on (its sheetId, title and sizes), or null. Without an id, the newest conversation.`,
     input: z.object({ id: z.string().min(1).max(200).optional().describe('A session id from slicerx_mimir_ask; the newest when left out') }),
     async run(i) {
       let id = i.id
@@ -79,20 +79,23 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
   })
   const dismiss = defineTool({
     name: 'mimir.dismiss',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. Give the askId from waiting so a question that has already changed is refused instead of the next one being turned down.`,
+    description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. When mimir waits on a size sheet instead, it sets the sheet aside the way the person typing to mimir does: mimir reads said in its place, with any sizes typed on the sheet, and builds nothing from it (with no said the sheet is canceled); it never confirms a sheet. Give the askId or sheetId from waiting so a card that has already changed is refused instead of the next one being turned down.`,
     input: z.object({
       askId: z.string().min(1).max(200).optional().describe('The waiting question to turn down, from slicerx_mimir_session (waiting.askId); the one waiting now when left out'),
-      said: z.string().max(ASK_SAID_MAX).optional().describe('Words mimir reads in place of an answer, such as why the question does not fit'),
+      sheetId: z.string().min(1).max(200).optional().describe('The waiting size sheet to set aside, from slicerx_mimir_session (waiting.sheetId)'),
+      said: z.string().max(ASK_SAID_MAX).optional().describe('Words mimir reads in place of an answer, such as why the question does not fit or what to change on the sheet'),
     }),
     async run(i) {
       const args: Record<string, unknown> = {}
       if (i.askId !== undefined) args['askId'] = i.askId
+      if (i.sheetId !== undefined) args['sheetId'] = i.sheetId
       if (i.said !== undefined) args['said'] = i.said
       const out = await call(link, appName, 'mimir.dismiss', args)
-      return { summary: `Turned down mimir's question in ${appName}; mimir carries on. Read what it does next with slicerx_mimir_session (session ${String(out['sessionId'])}).`, output: out }
+      const what = out['sheetId'] ? (out['setAside'] ? "Set mimir's size sheet aside" : "Canceled mimir's size sheet") : "Turned down mimir's question"
+      return { summary: `${what} in ${appName}; mimir carries on. Read what it does next with slicerx_mimir_session (session ${String(out['sessionId'])}).`, output: out }
     },
   })
   return [ask, session, dismiss] as PilotTool<never>[]

@@ -5,14 +5,14 @@
 // its place), the run carries on to its end, and the session reads the question back as dismissed. A stale question id
 // is refused so a late call cannot turn down the next one, and the words are held to their limit.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
-import { askTool, createPilot, createScriptedClient, DEFAULT_CONFIG, type ScriptStep } from '@slicerx/pilot'
+import { askTool, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '@slicerx/pilot'
 import { emptyTranscript, foldEvents, startTurn, type Transcript } from '@slicerx/pilot/ui'
 import { afterEach, describe, expect, it } from 'vitest'
 import { APP_LINK_METHODS, LinkError, runCall } from '../src/app-link/methods'
 import { setMimirAsker } from '../src/app-link/mimir-ask'
 import { setMimirCards } from '../src/app-link/mimir-dismiss'
 import { setSessionSource } from '../src/app-link/sessions'
-import { openChoice } from '../src/workspaces/mimir/card-waits'
+import { openChoice, openSheetCard } from '../src/workspaces/mimir/card-waits'
 import { mimirLogs, mimirMessages, noteMessage } from '../src/workspaces/mimir/session'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -124,5 +124,51 @@ describe('mimir.dismiss over the app link', () => {
 
   it('says so when the mimir tab has not been opened', async () => {
     expect(await code('mimir.dismiss', {})).toBe('not_ready')
+  })
+})
+
+// A size sheet waiting is set aside the way Return in the message box sets it aside: mimir reads the words in its place
+// and builds nothing from it. The read-back shows the sheet as waiting, then counts it as set aside.
+describe('mimir.dismiss on a waiting size sheet', () => {
+  const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
+
+  function sheetChat(sessionId: string) {
+    const seen: { ok: boolean; summary?: string; result: unknown }[] = []
+    const reader: ScriptStep = (messages) => {
+      const last = messages.at(-1)
+      if (last?.role === 'tool') seen.push(JSON.parse(last.content) as { ok: boolean; result: unknown })
+      return { text: 'Adding the hole.' }
+    }
+    const pilot = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [SHEET] }, reader], { chunk: false }), builtins: false, tools: [sheetTool()], store: mimirLogs })
+    let transcript: Transcript = startTurn(emptyTranscript(), { user: 'a cable clip' }, 0)
+    let shownSheet: () => void = () => undefined
+    const shown = new Promise<void>((r) => (shownSheet = r))
+    noteMessage(sessionId, 'a cable clip', [])
+    const run = (async () => {
+      for await (const e of pilot.run(sessionId, 'a cable clip')) {
+        transcript = foldEvents([e as PilotEvent], transcript)
+        if (e.type === 'sheet') shownSheet()
+      }
+    })()
+    setSessionSource({ store: mimirLogs, messages: (id) => mimirMessages.get(id) ?? [] })
+    setMimirCards({ sessionId: () => sessionId, open: () => openChoice(transcript), dismiss: (askId, said) => pilot.answer!(askId, null, said), sheet: () => openSheetCard(transcript), setAside: (sheetId, said) => pilot.answerSheet!(sheetId, null, said) })
+    return { shown, run, seen }
+  }
+
+  it('shows the sheet as waiting, sets it aside with the words, and counts it as set aside', async () => {
+    const c = sheetChat('s_sheet')
+    await c.shown
+    const before = (await runCall('mimir.session', { id: 's_sheet' })) as { waiting: { sheetId: string; title: string; sizes: unknown[] } | null }
+    expect(before.waiting).toMatchObject({ title: 'Clip sizes', sizes: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm' }] })
+    const sheetId = before.waiting!.sheetId
+    expect(await code('mimir.dismiss', { sheetId: 'sheet_gone', said: 'x' })).toBe('not_found')
+    const out = await runCall('mimir.dismiss', { sheetId, said: '  also add a cable hole  ' })
+    expect(out).toEqual({ sessionId: 's_sheet', sheetId, setAside: true, said: 'also add a cable hole' })
+    await c.run
+    expect(c.seen[0]).toMatchObject({ ok: false, result: { confirmed: false, said: 'also add a cable hole' } })
+    const after = (await runCall('mimir.session', { id: 's_sheet' })) as { waiting: unknown; stats: { sheetsSetAside: number; sheetsConfirmed: number } }
+    expect(after.waiting).toBeNull()
+    expect(after.stats).toMatchObject({ sheetsSetAside: 1, sheetsConfirmed: 0 })
+    expect(await code('mimir.dismiss', {})).toBe('not_found')
   })
 })
