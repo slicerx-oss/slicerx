@@ -1526,7 +1526,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description:
-      "Measure the gaps between a design's bodies for print-in-place parts (hinges, pins, chains): every pair that touches or sits closer than the printer keeps open, how many separate pieces print, and per gap fuses, binds or slides. Limits come from the nozzle, layer height and material.",
+      "Measure the gaps between a design's bodies for print-in-place parts (hinges, pins, chains): every pair that touches or sits closer than the printer keeps open, how many separate pieces print, and per gap fuses, binds or slides. Limits come from the nozzle, layer height and material. slicerx_design_check of a plan with printInPlace waits for this check on the design as it is now.",
     input: z.object({
       design: designArg,
       part: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('Only these parts, by index, each once; default all'),

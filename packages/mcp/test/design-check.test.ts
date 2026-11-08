@@ -11,7 +11,7 @@ import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
-import { designToolset } from '../src/toolset'
+import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
 
@@ -698,8 +698,15 @@ describe('a plan whose sizes changed after it was approved', () => {
       (e: Error) => e.message,
     )
     expect(refused).toContain('The person changed sizes after the plan for Spacer was approved')
-    expect(refused).toContain('design.plan')
-    expect(refused).not.toMatch(/box-1|d1/)
+    expect(refused).toContain('Make the plan again with the confirmed sizes and the same moving pieces')
+    expect(refused).not.toMatch(/box-1|d1|design\.plan|printInPlace/)
+    // off the card's side the tool and field names stay, for an integrator to act on
+    const client = designToolset(hostOf([boxDesign('d1', 'Spacer')]), {}, { plans }).find((t) => t.name === 'design.check')!
+    const told = await client.run(client.input.parse({ planId: 'box-1' }), {} as ToolContext).then(
+      () => null,
+      (e: Error) => e.message,
+    )
+    expect(told).toContain('Call design.plan again with the confirmed sizes and the same printInPlace')
     expect(plans.get('box-1')?.failedChecks).toBeUndefined()
     // a later plan answered, approved or declined: the sizes the person rejected are never checked against
     plans.supersede('box-1')
@@ -803,20 +810,31 @@ describe('a print-in-place plan', () => {
     const { run, refusal } = tools(d, plans)
     const first = await refusal('design.check', { planId: 'hinge-1' })
     expect(first).toContain('Nothing was checked')
-    expect(first).toContain('geom.fit_check')
-    expect(first).not.toMatch(/hinge-1|\bd1\b/)
+    expect(first).toContain('run the fit check on the design Hinge as it is now')
+    expect(first).not.toMatch(/hinge-1|\bd1\b|geom\.fit_check|printInPlace/)
     expect(plans.get('hinge-1')?.failedChecks).toBeUndefined()
     // a fit check of one piece alone is not one of the planned pieces
     await run('geom.fit_check', { design: 'd1', part: [0] })
-    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('geom.fit_check')
+    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('run the fit check')
     await run('geom.fit_check', { design: 'd1' })
     const r = await run('design.check', { planId: 'hinge-1' })
     expect((r.output as { pass: boolean }).pass, r.summary).toBe(true)
     // the pin moved after the fit check: it is checked again first
     d.parts = [d.parts[0]!, { ...d.parts[1]!, positions: Array.from(d.parts[1]!.positions, (v, k) => (k % 3 === 0 ? v + 1 : v)) }]
-    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('geom.fit_check')
+    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('run the fit check')
     await run('geom.fit_check', { design: 'd1', part: [1, 0] })
     expect((await run('design.check', { planId: 'hinge-1' })).output).toMatchObject({ pass: true })
+  })
+
+  it('names the fit check tool and the design id to an integrator off the card side', async () => {
+    const plans = createPlanRegistry()
+    plans.put(pip, 'd1', 'card')
+    const t = designToolset(fitHost([hinge()]), {}, { plans }).find((x) => x.name === 'design.check')!
+    const told = await t.run(t.input.parse({ planId: 'hinge-1' }), {} as ToolContext).then(
+      () => '',
+      (e: Error) => e.message,
+    )
+    expect(told).toContain('run geom.fit_check on design d1 as it is now')
   })
 
   it('is not built again as a new design once its part passed its check, and says which design has it', async () => {
@@ -832,6 +850,23 @@ describe('a print-in-place plan', () => {
     expect(again).not.toMatch(/\bd1\b|hinge-1/)
     // another part starts as usual
     expect(await refusal('design.new', { name: 'Spacer' })).toBe('not here')
+  })
+})
+
+describe('the tool list says when the design tools refuse', () => {
+  const all = designToolset(NO_ENGINE_HOST)
+  const tool = (name: string) => all.find((t) => t.name === name)!
+
+  it('design.new, at 1.2.0, says a name whose part already passed its check is refused', () => {
+    expect(tool('design.new').version).toBe('1.2.0')
+    expect(tool('design.new').description).toContain('A name of an open design whose part already passed slicerx_design_check against its plan is refused')
+  })
+
+  it('design.check says a print-in-place plan waits for the fit check, and a plan changed after approval is refused', () => {
+    const d = tool('design.check').description
+    expect(d).toContain('is checked only after slicerx_geom_fit_check has run on the design as it is now')
+    expect(d).toContain('whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer')
+    expect(tool('geom.fit_check').description).toContain('slicerx_design_check of a plan with printInPlace waits for this check')
   })
 })
 

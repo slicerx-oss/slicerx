@@ -597,9 +597,12 @@ export interface FitCheckRun {
 export const supersededPlanNote = (part: string): string =>
   `Nothing was checked. The person changed sizes after the plan for ${part} was approved, and a newer plan has been answered since, so this plan no longer says what to build and is not checked. Check the part against the newer plan, or if the person turned it down, make a new plan with the confirmed sizes first.`
 
-/** design.check's answer for a plan whose sizes changed after it was approved (PlanEntry.stale), naming no id. */
-export const stalePlanNote = (part: string): string =>
-  `Nothing was checked. The person changed sizes after the plan for ${part} was approved, so the part is not checked against it. Call design.plan again with the confirmed sizes and the same printInPlace, build from that plan and check against it.`
+/**
+ * design.check's answer for a plan whose sizes changed after it was approved (PlanEntry.stale), naming no id. On the
+ * card's side (`card`, the mimir card's step row) it names no tool or plan field either.
+ */
+export const stalePlanNote = (part: string, card = false): string =>
+  `Nothing was checked. The person changed sizes after the plan for ${part} was approved, so the part is not checked against it. ${card ? 'Make the plan again with the confirmed sizes and the same moving pieces' : 'Call design.plan again with the confirmed sizes and the same printInPlace'}, build from that plan and check against it.`
 
 /**
  * Fix rounds a plan gets after a failed design.check: one. The check after it that fails too is the last; it says to
