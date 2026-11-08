@@ -9,7 +9,7 @@ use crate::fm::Fm;
 use crate::mesh::{Aabb, TriMesh, weld_tolerance};
 use crate::poly2d::{self, Polygon};
 use crate::vec3::{self, Frame, Plane, V2, V3};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConvexSolid {
@@ -272,9 +272,7 @@ pub fn intersect(mesh: &TriMesh, region: &Region) -> Result<TriMesh> {
     };
     let eps = weld_tolerance(Some(bounds)) * 10.0;
     let mut work = Imprint::new(mesh);
-    // each plane only needs to split triangles near its faces: a triangle that
-    // touches a face's box lies within one edge length of it
-    let reach = work.max_edge() + eps;
+    // each plane only needs to split triangles whose cut line reaches its faces
     let mut planes: Vec<(Plane, Aabb)> = Vec::new();
     for f in &region.faces {
         let Some(fb) = ring_bounds(&f.rings) else {
@@ -286,7 +284,7 @@ pub fn intersect(mesh: &TriMesh, region: &Region) -> Result<TriMesh> {
         }
     }
     for (p, b) in &planes {
-        work.split(p, eps, Some(&grow(b, reach)));
+        work.split(p, eps, Some(&grow(b, eps)));
     }
     Ok(extract(&work, mesh, region, eps))
 }
@@ -350,14 +348,6 @@ impl Imprint {
         }
     }
 
-    fn max_edge(&self) -> f64 {
-        self.tris
-            .iter()
-            .flat_map(|t| (0..3).map(move |k| (t[k], t[(k + 1) % 3])))
-            .map(|(a, b)| vec3::len(vec3::sub(self.pos[a as usize], self.pos[b as usize])))
-            .fold(0.0, f64::max)
-    }
-
     #[allow(clippy::cast_possible_truncation, reason = "vertex counts stay below 2^32")]
     fn split(&mut self, plane: &Plane, eps: f64, limit: Option<&Aabb>) {
         let d: Vec<f64> = self
@@ -368,15 +358,42 @@ impl Imprint {
                 if d.abs() <= eps { 0.0 } else { d }
             })
             .collect();
+        let side = |i: u32| d[i as usize].partial_cmp(&0.0).map_or(0, |o| o as i8);
+        let at = |a: u32, b: u32| {
+            let (da, db) = (d[a as usize], d[b as usize]);
+            vec3::lerp(self.pos[a as usize], self.pos[b as usize], da / (da - db))
+        };
+        // with a limit, a triangle splits only where its cut line meets the limit box; the edges it splits are
+        // split in its neighbors too, so the mesh stays closed
+        let marked: Option<HashSet<(u32, u32)>> = limit.map(|l| {
+            let mut m = HashSet::new();
+            for &t in &self.tris {
+                let s = t.map(side);
+                if !(s.contains(&-1) && s.contains(&1)) {
+                    continue;
+                }
+                let mut ends = Vec::with_capacity(2);
+                let mut crossed = Vec::with_capacity(2);
+                for k in 0..3 {
+                    let (a, b) = (t[k], t[(k + 1) % 3]);
+                    if s[k] == 0 {
+                        ends.push(self.pos[a as usize]);
+                    } else if s[k] * s[(k + 1) % 3] == -1 {
+                        ends.push(at(a, b));
+                        crossed.push((a.min(b), a.max(b)));
+                    }
+                }
+                let [p, q] = [ends[0], ends[ends.len() - 1]];
+                if (0..3).all(|k| p[k].min(q[k]) <= l.max[k] && p[k].max(q[k]) >= l.min[k]) {
+                    m.extend(crossed);
+                }
+            }
+            m
+        });
         let mut cache: HashMap<(u32, u32), u32> = HashMap::new();
         let mut out = Vec::with_capacity(self.tris.len() + self.tris.len() / 8);
         let pos = &mut self.pos;
-        let allowed = |pos: &[V3], a: u32, b: u32| {
-            limit.is_none_or(|l| {
-                let (p, q) = (pos[a as usize], pos[b as usize]);
-                (0..3).all(|k| p[k].min(q[k]) <= l.max[k] && p[k].max(q[k]) >= l.min[k])
-            })
-        };
+        let allowed = |a: u32, b: u32| marked.as_ref().is_none_or(|m| m.contains(&(a.min(b), a.max(b))));
         let mut cross = |pos: &mut Vec<V3>, a: u32, b: u32| -> u32 {
             let key = (a.min(b), a.max(b));
             *cache.entry(key).or_insert_with(|| {
@@ -388,7 +405,7 @@ impl Imprint {
             })
         };
         for &t in &self.tris {
-            let s = t.map(|i| d[i as usize].partial_cmp(&0.0).map_or(0, |o| o as i8));
+            let s = t.map(side);
             let has_neg = s.contains(&-1);
             let has_pos = s.contains(&1);
             if !(has_neg && has_pos) {
@@ -400,7 +417,7 @@ impl Imprint {
                 .unwrap_or(0);
             let (a, b, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
             if s[k] == 0 {
-                if allowed(pos, b, c) {
+                if allowed(b, c) {
                     let x = cross(pos, b, c);
                     out.push([a, b, x]);
                     out.push([a, x, c]);
@@ -409,7 +426,7 @@ impl Imprint {
                 }
                 continue;
             }
-            match (allowed(pos, a, b), allowed(pos, c, a)) {
+            match (allowed(a, b), allowed(c, a)) {
                 (true, true) => {
                     let xab = cross(pos, a, b);
                     let xca = cross(pos, c, a);
@@ -991,6 +1008,20 @@ mod tests {
         assert!((m.volume() - (2000.0 - hex.area() * 5.0)).abs() < 1e-6);
         let e = m.triangles.len() * 3 / 2;
         assert_eq!(m.positions.len() + m.triangles.len(), e);
+    }
+
+    #[test]
+    fn a_hole_splits_only_the_triangles_it_reaches() {
+        // each top and bottom is two long triangles: a cutter plane used to split them right across the slab, far
+        // from its own face, and the next plane split every piece again
+        let slab = build::box_mesh([0.0; 3], [30.0, 20.0, 5.0]);
+        let f = Frame::from_normal([15.0, 10.0, 0.0], [0.0, 0.0, 1.0], None).unwrap();
+        let hole = ConvexSolid::cylinder(&f, 3.0, -1.0, 6.0, 48).unwrap();
+        let m = subtract(&slab, &hole).unwrap();
+        assert!(m.edge_report().is_watertight(), "{:?}", m.edge_report());
+        let ring = poly2d::Polygon::simple(poly2d::circle([0.0, 0.0], 3.0, 48));
+        assert!((m.volume() - (3000.0 - ring.area() * 5.0)).abs() < 1e-6);
+        assert!(m.triangles.len() < 1000, "{}", m.triangles.len());
     }
 
     #[test]
