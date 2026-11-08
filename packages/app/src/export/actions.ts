@@ -13,9 +13,9 @@ import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates
 import { printBlock } from '../plate/heimdall'
 import { heldBodies } from '../plate/timeline'
 import { markClean } from '../project/unsaved'
-import { slicePlate } from '../state/actions'
+import { slicePlate, STALE_SLICE } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
-import { exportAllBlock } from '../plate/resume-tops'
+import { exportAllBlock, stampBlock } from '../plate/resume-tops'
 import { appName } from '../edition'
 import { exportingUserId } from './identity'
 import { savedPaintNote } from './paint-check'
@@ -166,13 +166,22 @@ export async function saveProject(host: Host, opts: { as?: boolean } = {}): Prom
   return true
 }
 
-async function gcodeText(host: Host): Promise<string | null> {
-  // A slice made for another plate or resume plan is not this plate's G-code (stampBlock).
-  if (printBlock(get())) return null
-  const slice = get().slice
-  if (slice.status !== 'done') return null
+const NOT_SLICED = 'It did not slice.'
+
+/**
+ * The shown plate's G-code, or why there is none: no slice, a stale one, or one made for another plate or resume plan
+ * (stampBlock). Collisions and the other print checks are the caller's.
+ */
+async function gcodeText(host: Host): Promise<{ text: string } | { reason: string }> {
+  const s = get()
+  const slice = s.slice
+  if (slice.status === 'error') return { reason: slice.message }
+  if (slice.status !== 'done') return { reason: NOT_SLICED }
+  if (slice.stale) return { reason: STALE_SLICE }
+  const stamped = stampBlock(s, slice.stamp)
+  if (stamped) return { reason: stamped }
   const out = await exportPlateGcode(host, slice.result.id)
-  return out.blob ? await out.blob.text() : null
+  return out.blob ? { text: await out.blob.text() } : { reason: 'The slicer returned no G-code.' }
 }
 
 /** Print output: the sliced active plate as .gcode.3mf, the file Bambu Lab printers take. Slices first when needed. */
@@ -185,11 +194,14 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
     toast(unsafe, 'error')
     return false
   }
-  const text = await gcodeText(host)
-  if (text === null) {
-    toast('Slice the plate first.', 'info')
+  // A reslice that was canceled or waits on a question leaves the last slice, stale: it is not the plate's file.
+  const got = await gcodeText(host)
+  if ('reason' in got) {
+    const unsliced = got.reason === STALE_SLICE || got.reason === NOT_SLICED
+    toast(unsliced ? 'Slice the plate first.' : got.reason, unsliced ? 'info' : 'error')
     return false
   }
+  const text = got.text
   const index = Math.max(0, s.plates.findIndex((p) => p.id === s.activePlate))
   const plates = allPlates(get())
   const bytes = await (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: printSettings(await loadSettings()), gcode: { [index]: text }, ...(await printMarks(plates)) })
@@ -226,13 +238,12 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
       switchPlate(p.id)
       if (get().plate.length === 0) continue
       await slicePlate(host)
-      const text = await gcodeText(host)
-      if (text === null) {
-        const cur = get().slice
-        toast(`${p.name} did not slice${cur.status === 'error' ? `: ${cur.message}` : ''}`, 'error')
+      const got = await gcodeText(host)
+      if ('reason' in got) {
+        toast(`${p.name}: ${got.reason}`, 'error')
         return false
       }
-      gcode[i] = text
+      gcode[i] = got.text
     }
   } finally {
     switchPlate(start)

@@ -90,9 +90,9 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
     const voided = resumeVoid(s as AppState)
     if (voided) return voided
   }
-  // A current slice made for another plate, another resume plan or other inputs (one that landed after a plate switch,
-  // or a plan kept, cleared or replaced while it ran) is not this plate's G-code. A stale one says so on its own.
-  if (s.slice.status === 'done' && !s.slice.stale) {
+  // A slice made for another plate or another resume plan (one that landed after a plate switch, a plan kept, cleared
+  // or replaced since, or the last slice put back stale when a reslice was canceled) is not this plate's G-code.
+  if (s.slice.status === 'done') {
     const stamped = stampBlock(s as AppState, s.slice.stamp)
     if (stamped) return stamped
   }

@@ -49,7 +49,7 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
     case 'running':
       return { status: 'running', ...auto, startedAt: new Date(sl.startedAt).toISOString(), ...(sl.progress ? { progress: sl.progress } : {}) }
     case 'error':
-      // `code` names a refusal an agent acts on: resume_void (the kept resume plan no longer matches the plate).
+      // `code` names a refusal the bridge's clients act on: resume_void (the kept resume plan no longer matches the plate).
       return { status: 'error', ...auto, message: sl.message, ...(sl.code ? { code: sl.code } : {}) }
     case 'done': {
       const r = sl.result

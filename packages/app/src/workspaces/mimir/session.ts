@@ -110,6 +110,9 @@ export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[
 /** app.slice's reply when no slice ran and the one on screen no longer matches the plate. */
 export const STALE_REPLY = 'The slice on screen is out of date because the plate changed after it. Slice the plate again.'
 
+/** app.slice's reply when another plate showed while the slice ran, so the plate asked for has no new slice. */
+export const SWITCHED_REPLY = 'Another plate was shown while this one sliced, so its slice was dropped. Show the plate and slice it again.'
+
 /** What mimir's tool for a command is made from: id, title, section, workspace, permission and input schema. */
 function commandSignature(c: CommandSpec): string {
   return JSON.stringify([c.id, c.title, c.section, c.workspace ?? null, c.tool?.permission ?? null, c.tool?.inputSchema ?? null])
@@ -159,6 +162,8 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
               return { status: 'error', message: s.message }
             }
             if (s.status !== 'done') return { status: s.status }
+            // Another plate showed while it sliced: its slice was dropped, and the one on screen is that plate's.
+            if (after.slicesDone === before.slicesDone && after.activePlate !== before.activePlate) return { status: 'stale', message: SWITCHED_REPLY }
             // a slice that did not run leaves the last one, which an edit since has made stale: it is not this plate's
             if (s.stale) return { status: 'stale', message: STALE_REPLY }
             const r = s.result
