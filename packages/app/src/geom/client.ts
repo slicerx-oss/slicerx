@@ -27,6 +27,15 @@ export const BIG_IDLE_MS = 2_000
 export const BIG_BYTES = 256 * 1024 * 1024
 
 /**
+ * A canceled call still running in the engine this long ends the shared worker: a synchronous engine call (a merged
+ * array can run for minutes) cannot read a cancel message, and every later call would wait behind it. A quick call
+ * canceled mid-way (a preview) answers well within it, so its worker, and the bodies it keeps, stay.
+ */
+export const CANCEL_GRACE_MS = 500
+
+const INTERRUPTED = 'The geometry engine was interrupted by a canceled edit. Retry the operation.'
+
+/**
  * The app's own geometry worker: its answers and failures so far, by operation, the last failure's message, and the
  * last engine build that did not load.
  */
@@ -86,9 +95,19 @@ function workerProvider(): GeomProvider {
   let idle: ReturnType<typeof setTimeout> | null = null
   let seq = 0
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+  // calls the worker said it started and has not answered yet
+  const started = new Set<number>()
+  // canceled calls the worker has not answered yet, with the timer that ends the worker once one has started
+  const canceled = new Map<number, ReturnType<typeof setTimeout> | null>()
+  // calls made while a canceled one may still end the worker: sent once it answers, or to the next worker
+  let held: { id: number; op: string; request: unknown }[] = []
   const release = () => {
     if (idle) clearTimeout(idle)
     idle = null
+    for (const t of canceled.values()) if (t) clearTimeout(t)
+    canceled.clear()
+    started.clear()
+    held = []
     const ended = worker
     worker = null
     ended?.terminate()
@@ -102,6 +121,38 @@ function workerProvider(): GeomProvider {
     for (const p of pending.values()) p.reject(error)
     pending.clear()
   }
+  const send = (id: number, op: string, request: unknown) => {
+    // a request that cannot be sent fails the call
+    try {
+      start().postMessage({ id, op, request })
+    } catch (e) {
+      const p = pending.get(id)
+      pending.delete(id)
+      p?.reject(e instanceof Error ? e : new Error(String(e)))
+    }
+  }
+  const ending = () => [...canceled.values()].some((t) => t !== null)
+  const sendHeld = () => {
+    if (ending()) return
+    const waiting = held
+    held = []
+    for (const c of waiting) if (pending.has(c.id)) send(c.id, c.op, c.request)
+  }
+  const interruptAfterGrace = (id: number) => {
+    canceled.set(
+      id,
+      setTimeout(() => {
+        // the held calls never reached this worker, so they go to the next one rather than fail
+        const waiting = held
+        const keep = waiting.map((c) => [c.id, pending.get(c.id)] as const)
+        for (const [k] of keep) pending.delete(k)
+        failAll(new Error(INTERRUPTED))
+        for (const [k, p] of keep) if (p) pending.set(k, p)
+        held = waiting
+        sendHeld()
+      }, CANCEL_GRACE_MS),
+    )
+  }
   endIfIdle = () => {
     if (pending.size > 0) return false
     release()
@@ -114,12 +165,21 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
         return
       }
+      if ('started' in e.data) {
+        started.add(e.data.started)
+        if (canceled.has(e.data.started)) interruptAfterGrace(e.data.started)
+        return
+      }
+      started.delete(e.data.id)
+      const grace = canceled.get(e.data.id)
+      if (grace) clearTimeout(grace)
+      if (canceled.delete(e.data.id)) sendHeld()
       workerAnswered(current, e.data.memoryBytes)
       const p = pending.get(e.data.id)
       if (pending.size <= 1) {
@@ -147,8 +207,16 @@ function workerProvider(): GeomProvider {
           if (!p) return
           pending.delete(id)
           p.reject(new DOMException('Canceled', 'AbortError'))
+          if (held.some((c) => c.id === id)) {
+            held = held.filter((c) => c.id !== id)
+            return
+          }
           // a synchronous kernel call cannot read a cancel message; ending its worker also releases kept bodies.
-          if (op === 'history.replay') failAll(new Error('The geometry engine was interrupted by a canceled edit. Retry the operation.'))
+          if (op === 'history.replay') return failAll(new Error(INTERRUPTED))
+          // any other call: skipped if it has not started, its worker ended if it is still running after the grace time
+          worker?.postMessage({ cancel: id })
+          if (started.has(id)) interruptAfterGrace(id)
+          else canceled.set(id, null)
         }
         // The abort listener goes once the call is answered: a signal that outlives the call (a fit check's lives
         // until the plate changes) would otherwise keep this closure, and what it can reach, alive.
@@ -168,15 +236,10 @@ function workerProvider(): GeomProvider {
         })
         signal?.addEventListener('abort', onAbort, { once: true })
       })
-      // Posted outside the promise's closures, so none of them holds the request (it can be a big mesh). A request
-      // that cannot be sent fails the call, as before.
-      try {
-        start().postMessage({ id, op, request })
-      } catch (e) {
-        const p = pending.get(id)
-        pending.delete(id)
-        p?.reject(e instanceof Error ? e : new Error(String(e)))
-      }
+      // Posted outside the promise's closures, so none of them holds the request (it can be a big mesh); a held one is
+      // kept only until the canceled call answers or its worker ends.
+      if (ending()) held.push({ id, op, request })
+      else send(id, op, request)
       return answer
     },
   }

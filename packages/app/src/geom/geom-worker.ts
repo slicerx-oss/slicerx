@@ -75,6 +75,13 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
     return
   }
   const { id, op, request } = e.data
+  // canceled while it waited behind another call
+  if (canceled.delete(id)) {
+    self.postMessage({ id, error: 'Canceled', memoryBytes: memoryBytes() })
+    return
+  }
+  // the page ends this worker when a canceled call is still running here (client.ts, CANCEL_GRACE_MS)
+  self.postMessage({ started: id })
   try {
     if (op === 'history.replay') {
       // a replay with exact solids calls the kernel's ops too
