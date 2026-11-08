@@ -60,3 +60,11 @@ export function closeCommandBar(): void {
 export function commandPlaceholder(): string {
   return hostSlices() ? 'Type a command, a setting or a printer' : 'Type a command'
 }
+
+/**
+ * Whether the bar may open now. A modal dialog sits in the top layer over the bar and keeps everything behind it inert, so
+ * a bar opened under one would be unseen and could not take the focus; the key does nothing until the dialog has gone.
+ */
+export function commandBarMayOpen(doc: Document = document): boolean {
+  return doc.querySelector('dialog[open]') === null
+}
