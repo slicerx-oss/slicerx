@@ -47,6 +47,83 @@ async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, materi
   return { fit, gap: fit.gaps[0]!, limits }
 }
 
+// A cylinder as the engine draws one (build::cylinder through Frame::from_normal): n sides, vertex i at 2 pi i / n from
+// the frame's u axis, which is z for a cylinder along x and -z along y. Its side faces outward, or inward for a bore.
+function cylinder(axis: 'x' | 'y', r: number, n: number, center: V3, lengthMm: number, inner = false): { mesh: HistoryMesh; ring: [number, number][] } {
+  const w: V3 = axis === 'x' ? [1, 0, 0] : [0, 1, 0]
+  const u: V3 = axis === 'x' ? [0, 0, 1] : [0, 0, -1]
+  const v: V3 = axis === 'x' ? [0, -1, 0] : [-1, 0, 0]
+  const ring = Array.from({ length: n }, (_, i): [number, number] => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)])
+  const at = ([a, b]: [number, number], h: number): number[] => [0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * h)
+  const positions = [...ring.flatMap((p) => at(p, 0)), ...ring.flatMap((p) => at(p, lengthMm))]
+  const indices: number[] = []
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const quad = [i, j, n + j, i, n + j, n + i]
+    // wind each pair outward (inward for a bore): the normal against the way from the axis to the side
+    const p = (k: number): V3 => [positions[k * 3]!, positions[k * 3 + 1]!, positions[k * 3 + 2]!]
+    const [a, b, c] = [p(quad[0]!), p(quad[1]!), p(quad[2]!)]
+    const nrm = [(b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]), (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]), (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])]
+    const out = [0, 1, 2].reduce((t, k) => t + nrm[k]! * ((a[k]! + b[k]!) / 2 - center[k]! - w[k]! * ((a[k]! + b[k]!) / 2 - center[k]!)), 0)
+    indices.push(...((out > 0) !== inner ? quad : [quad[0]!, quad[2]!, quad[1]!, quad[3]!, quad[5]!, quad[4]!]))
+  }
+  return { mesh: { name: inner ? 'Knuckle' : 'Pin', slot: 0, positions, indices }, ring }
+}
+
+/**
+ * fitFacts over a pin lying in its bore, the engine's reply built from the two outlines: the closest gap between them
+ * across the axis (the pin's corners against the bore's sides and the other way), above the pin, as fit.check reports
+ * a gap under the limit there.
+ */
+async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR: number, boreSides: number) {
+  const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
+  const center: V3 = [0, 0, 5]
+  const pin = cylinder(axis, pinR, pinSides, center, 10)
+  const bore = cylinder(axis, boreR, boreSides, center, 10, true)
+  // closest points of two outlines in the frame's (u, v) plane; z is the first coordinate along u, up along x and down along y
+  const height = (p: [number, number]): number => (axis === 'x' ? p[0] : -p[0])
+  const closest = (pts: [number, number][], ring: [number, number][]) => {
+    let best = { d: Infinity, p: [0, 0] as [number, number], q: [0, 0] as [number, number] }
+    for (const p of pts)
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i]!
+        const b = ring[(i + 1) % ring.length]!
+        const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)))
+        const q: [number, number] = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+        const d = Math.hypot(p[0] - q[0], p[1] - q[1])
+        // of pairs that tie, the one nearest the top
+        if (d < best.d - 1e-9 || (d <= best.d + 1e-9 && height(p) > height(best.p))) best = { d, p, q }
+      }
+    return best
+  }
+  // the gap over the top of the pin, from the corners within 10 degrees of it: the engine reports the closest pair
+  // running up and down, which is there when it is the closest of all, as with the same number of sides on pin and
+  // bore, where every side ties
+  const up = (p: [number, number]): boolean => height(p) > Math.cos((10 * Math.PI) / 180) * Math.hypot(p[0], p[1])
+  const one = closest(pin.ring.filter(up), bore.ring)
+  const other = closest(bore.ring.filter(up), pin.ring)
+  const g = one.d <= other.d ? one : { d: other.d, p: other.q, q: other.p }
+  const u: V3 = axis === 'x' ? [0, 0, 1] : [0, 0, -1]
+  const v: V3 = axis === 'x' ? [0, -1, 0] : [-1, 0, 0]
+  const w: V3 = axis === 'x' ? [1, 0, 0] : [0, 1, 0]
+  const at = ([a, b]: [number, number]): V3 => [0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * 5) as V3
+  const from = at(g.p)
+  const to = at(g.q)
+  // the gap runs more up than across, as the engine's fit check sorts a gap above or below
+  expect(to[2] - from[2]).toBeGreaterThan(Math.hypot(to[0] - from[0], to[1] - from[1]))
+  const report = {
+    parts: [
+      { bounds: { min: [-boreR, -boreR, 5 - boreR], max: [boreR, boreR, 5 + boreR] }, item: 0 },
+      { bounds: { min: [-pinR, -pinR, 5 - pinR], max: [pinR, pinR, 5 + pinR] }, item: 1 },
+    ],
+    gaps: [{ parts: [1, 0], gapMm: g.d, limitMm: limits.verticalMm, kind: 'vertical', from, to }],
+    pieces: 2,
+  }
+  const host = { call: async () => report } as unknown as DesignHost
+  const fit = await fitFacts(host, designOf([bore.mesh, pin.mesh]), limits)
+  return { fit, gap: fit.gaps[0]!, limits, readMm: g.d }
+}
+
 const gapsItem = (fit: FitFacts) => fitItems(['Arm', 'Pin'], { fit } as BodyFacts).find((i) => i.name === 'gaps')!
 
 describe('the fit tolerance', () => {
@@ -90,6 +167,50 @@ describe('the fit tolerance', () => {
     const { fit, gap } = await oneGap('vertical', 0.4 - 0.0201, 'PLA', 'curved')
     expect(gap.kind).toBe('vertical')
     expect(gapsItem(fit).pass).toBe(false)
+  })
+
+  it('a pin of 2.5 mm radius lying in a 2.9 mm bore clears its 0.4 mm gap, drawn in the sides the engine draws it in', async () => {
+    // geom.build draws a cylinder in circle_segments(r, 0.02) sides, 48 at most: 25 for the pin and 27 for the bore.
+    // Along x a corner of each sits at the top, and the facets beside it lean 7.2 and 6.7 degrees; along y a facet sits
+    // level at the top, one 0.63 mm strip; with 25 sides on both, the gap runs from one level strip to the other. The
+    // engine's own test cylinder has 96 sides. None is a flat face.
+    for (const [axis, pinSides, boreSides] of [['x', 25, 27], ['y', 25, 27], ['y', 25, 25], ['x', 96, 96], ['y', 97, 97]] as const) {
+      const { fit, gap, limits, readMm } = await pinInBore(axis, 2.5, pinSides, 2.9, boreSides)
+      const what = `${pinSides} sides along ${axis}, read ${readMm.toFixed(4)} mm`
+      expect(readMm, what).toBeGreaterThan(0.38)
+      expect(readMm, what).toBeLessThan(0.4)
+      expect(gap.flat, what).toBeUndefined()
+      expect(gap.direction, what).toBe('z')
+      expect(gap.kind, what).toBe('apart')
+      expect(fitVerdict(gap, limits), what).toBe('slides')
+      expect(gapsItem(fit).pass, what).toBe(true)
+    }
+  })
+
+  it('a gap with one end on a flat face and the other on a round one gets the facet allowance, either way up', async () => {
+    const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
+    const flatTop: HistoryMesh = { name: 'Arm', slot: 0, positions: [-1, -1, 5, 1, -1, 5, 0, 1, 5], indices: [0, 1, 2] }
+    const flatUnder = (z: number): HistoryMesh => ({ name: 'Pin', slot: 0, positions: [-1, -1, z, 0, 1, z, 1, -1, z], indices: [0, 1, 2] })
+    const leaningTop: HistoryMesh = curvedPair(0.385)[0]!
+    const leaningUnder = curvedPair(0.385)[1]!
+    for (const [parts, what] of [
+      [[flatTop, leaningUnder], 'a flat top under a round bottom'],
+      [[leaningTop, flatUnder(5.385)], 'a round top under a flat bottom'],
+    ] as const) {
+      const report = {
+        parts: [
+          { bounds: { min: [0, 0, 0], max: [1, 1, 5] }, item: 0 },
+          { bounds: { min: [0, 0, 5.385], max: [1, 1, 6] }, item: 1 },
+        ],
+        gaps: [{ parts: [0, 1], gapMm: 0.385, limitMm: limits.verticalMm, kind: 'vertical', from: [0, 0, 5], to: [0, 0, 5.385] }],
+        pieces: 2,
+      }
+      const fit = await fitFacts({ call: async () => report } as unknown as DesignHost, designOf([...parts]), limits)
+      const gap = fit.gaps[0]!
+      expect(gap.flat, what).toBeUndefined()
+      expect(gap.kind, what).toBe('apart')
+      expect(fitVerdict(gap, limits), what).toBe('slides')
+    }
   })
 
   it('a flat gap above and below and its verdict agree at float error under the limit', async () => {
