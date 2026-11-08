@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The facts design.check compares with a plan, read from a design's current body: its bounds (as geom.info gives
-// them), whether each part is closed (the engine's info, as geom.info asks it), its round holes (the inner loops of
-// its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure and geom.hole
-// do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a grid of the
-// facets, within a budget).
+// them), whether each part is closed (welded by position, as geom.info and the slicer read it), its round holes (the
+// inner loops of its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure
+// and geom.hole do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a
+// grid of the facets, within a budget).
 import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
+import { closureByPosition, notClosedWords } from './closure'
 import type { BodyFacts } from './design-check'
 
 type V3 = [number, number, number]
@@ -23,10 +24,14 @@ const corners = (m: Mesh, t: number): [V3, V3, V3] => [vertex(m, m.indices[t * 3
 /** The facts about the design's body now. */
 export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFacts> {
   const world = d.parts.map((p) => bakeMesh(p, d.transform))
-  let watertight = d.parts.length > 0
-  for (const w of world) {
-    const info = await host.call('info', { mesh: { positions: Array.from(w.positions), indices: Array.from(w.indices) } })
-    if ((info as { watertight?: unknown }).watertight !== true) watertight = false
+  // closed as geom.info and the slicer read it: corners at the same point are one vertex, whatever their indices
+  const shut = world.map((w) => closureByPosition(w.positions, w.indices))
+  const watertight = shut.length > 0 && shut.every((c) => c.watertight)
+  const open = { boundaryEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 }
+  for (const c of shut) {
+    open.boundaryEdges += c.boundaryEdges
+    open.nonManifoldEdges += c.nonManifoldEdges
+    open.flippedEdges += c.flippedEdges
   }
   const holes: { part: number; at: V3; axis: V3; diameterMm: number }[] = []
   for (const [part, w] of world.entries()) {
@@ -52,6 +57,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
     features: d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint').length,
     watertight,
+    ...(watertight ? {} : { openWhy: notClosedWords(open) }),
     minWallMm: wall.mm,
     ...(wall.why ? { minWallWhy: wall.why } : {}),
   }

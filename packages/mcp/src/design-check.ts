@@ -43,6 +43,8 @@ export interface BodyFacts {
   features: number
   /** True when every part is closed. */
   watertight: boolean
+  /** What keeps it from being closed, when it is not: "5 edges where more than two faces meet". */
+  openWhy?: string | undefined
   /** The thinnest wall, or null when it was not measured. */
   minWallMm: number | null
   /** Why the wall was not measured, when that was on purpose: "part too dense" past the measuring budget. */
@@ -112,12 +114,22 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   if (plan.holes) for (const h of extra) items.push({ name: `extra hole, ${mm(h.diameterMm)}`, want: 'no hole (not in the plan)', got: `${mm(h.diameterMm)} diameter`, pass: false })
 
   items.push({ name: 'feature count', want: String(plan.features.length), got: String(body.features), pass: body.features === plan.features.length })
-  items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : 'open', pass: body.watertight })
+  items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : openWords(body.openWhy), pass: body.watertight })
   const wall = 2 * nozzle
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
   items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
 
   return { pass: items.every((i) => i.pass), items }
+}
+
+/**
+ * Why a body is not closed, in words that say what to do: surfaces that touch without joining leave edges where more
+ * than two faces meet, and gaps leave open edges.
+ */
+function openWords(why: string | undefined): string {
+  if (!why) return 'open'
+  if (/more than two faces/.test(why)) return `open: ${why} (surfaces that touch without joining); repair the part or rebuild that join`
+  return `open: ${why}; repair the part or rebuild the step that left it open`
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
