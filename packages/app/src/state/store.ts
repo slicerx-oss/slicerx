@@ -137,6 +137,8 @@ export interface HistoryEdit {
   original: PlateEntry
   /** Only looking: the part shows the result right after step `index`, and no tool is open. */
   view?: boolean
+  /** The object is off the plate while the step is open: a body's first step edits on the bed with it hidden. */
+  hidden?: true
 }
 
 /**

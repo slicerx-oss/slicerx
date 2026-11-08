@@ -3,7 +3,7 @@
 // Committing a modeling job's result. A job reads an object, waits on the engine, and only then writes; meanwhile the
 // person may move, recolor, rename, lock or delete the object, or open another project. So the commit reads the object
 // as it is now: a deleted object takes nothing, and every field the job did not make keeps its current value.
-import { set, type PlateEntry } from '../state/store'
+import { get, set, type PlateEntry } from '../state/store'
 
 /** What a modeling job makes: the geometry and, when it changes them, the history, kept dimensions, colors and placement. */
 export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform'>>
@@ -25,6 +25,15 @@ export function commitMade(objectId: string, made: (latest: PlateEntry) => Made,
     return { plate: s.plate.map((p) => (p.id === objectId ? next : o.others?.has(p.id) ? { ...p, ...o.others.get(p.id) } : p)) }
   })
   return done
+}
+
+/**
+ * Why a job's write found no object: the object is off the plate while its first step is open for editing (it comes
+ * back when that edit ends), or it is gone. `gone` is the caller's own words for the second.
+ */
+export function goneError(objectId: string, gone = 'That object is gone.'): Error {
+  const ed = get().historyEdit
+  return new Error(ed?.objectId === objectId && ed.hidden ? `The first step of ${ed.original.name} is open for editing, so nothing changed. Finish or cancel that edit, then try again.` : gone)
 }
 
 /** Colors for a new set of parts: each part keeps its slot's color, and new parts take the last one. */

@@ -137,8 +137,9 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     // A step open for editing closes: the rollback goes away outside undo, the result is the edit.
     guard?.()
     const still = get().historyEdit
-    // a body the edit hid comes back for the commit; one deleted while this ran stays gone
-    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: hidden ? fullPlate(s) : s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
+    // a body the edit hid comes back for the commit, the edit open when this started or one opened while it ran; one
+    // deleted while this ran stays gone
+    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: hidden || still.hidden ? fullPlate(s) : s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
     // checked before the write, so a step's first change never lands without it: the object is there, and did not
@@ -201,7 +202,7 @@ export async function beginEdit(host: Loader, objectId: string, index: number): 
   const r = await runReplay({ history: e.history, before: index })
   if (!r.before || r.before.length === 0) {
     // A body made by this step has nothing before it: edit on the bed with the object hidden.
-    quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e }, plate: s.plate.filter((p) => p.id !== objectId), objectTool: toolFor(step.params), ...designFor(step.params) })))
+    quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e, hidden: true }, plate: s.plate.filter((p) => p.id !== objectId), objectTool: toolFor(step.params), ...designFor(step.params) })))
     return
   }
   const parts = r.before.map(toPart)
