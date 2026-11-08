@@ -216,9 +216,10 @@ export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in
 /**
  * Free mimir's slow_down (429): the install's or the address's calls in the last minute are at their limit (20 a minute
  * per desktop install, 10 per person on the web, 60 per address). The proxy gives no retry time, and its window is one
- * rolling minute, so the run waits SLOW_DOWN_WAIT_MS and sends the same step again. Waits in a row add up to at most
- * SLOW_DOWN_GIVE_UP_MS, one whole window: by then none of this run's calls are left in it, so a refusal after that comes
- * from other traffic on the install or the address, and the run stops cut short with the sheet kept for "keep going".
+ * rolling minute, so the run shows the refusal's line at once (the first of a streak only), waits SLOW_DOWN_WAIT_MS and
+ * sends the same step again. Waits in a row add up to at most SLOW_DOWN_GIVE_UP_MS, one whole window: by then none of
+ * this run's calls are left in it, so a refusal after that comes from other traffic on the install or the address, and
+ * the run stops cut short with the sheet kept for "keep going".
  */
 export const SLOW_DOWN_WAIT_MS = 20_000
 export const SLOW_DOWN_GIVE_UP_MS = 60_000
@@ -1040,6 +1041,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (failed !== null && failedCode === 'slow_down' && !text && toolCalls.length === 0) {
         // the proxy's rate window is full: wait and send the same step again, or stop cut short after a whole window
         if (slowed + SLOW_DOWN_WAIT_MS <= SLOW_DOWN_GIVE_UP_MS) {
+          // the first refusal of a streak shows the proxy's line (with See usage) at once, so the person knows why
+          // nothing happens while the run waits; the refusals after it in the same streak add nothing
+          if (slowed === 0) emit({ type: 'error', message: failed, retryable: true, code: failedCode })
           slowed += SLOW_DOWN_WAIT_MS
           await sleep(SLOW_DOWN_WAIT_MS, signal)
           if (signal.aborted) {
