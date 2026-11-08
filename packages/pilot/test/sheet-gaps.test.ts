@@ -581,6 +581,29 @@ describe('the gaps on a print-in-place sheet', () => {
     }
   })
 
+  it('hold a design started in the next message under a name that shares a word with the planned part', async () => {
+    // run 1 approves the plan and ends before any sheet; run 2 is the person saying yes, the width changes on the sheet,
+    // and the part is started under another form of its name
+    for (const name of ['Hinge v2', 'Hinge 2', 'New hinge', 'hinge (fixed)', 'Hinge, print-in-place']) {
+      const { ran, seen } = await talk(
+        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
+        ['A print-in-place hinge', 'yes'],
+        [{ width: 60 }],
+      )
+      expect(seen[3], name).not.toContain('Nothing was built')
+      expect(seen[4], name).toContain(HELD)
+      expect(ran, name).toEqual([`new ${name}`])
+    }
+    // words such as my, for and the are no part's name: a box for the same door is built at once
+    const { ran, seen } = await talk(
+      [{ calls: [{ name: 'design.plan', args: { part: 'Hinge for my door', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'My box for the shelf' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge', 'Actually make me a box first'],
+      [{ width: 60 }],
+    )
+    expect(seen.join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new My box for the shelf', 'Box@d1'])
+  })
+
   it('come from the fit rule profile of the run', () => {
     expect(clearanceProfileOf({})).toEqual({ nozzleMm: undefined, material: undefined })
     expect(clearanceProfileOf({ machine: { nozzle: 0.6, material: 'TPU' }, overrides: { layer_height: 'x' } })).toEqual({ nozzleMm: 0.6, material: 'TPU' })
