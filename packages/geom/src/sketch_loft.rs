@@ -125,7 +125,8 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
         rings.push((frame_of(p)?, ring_of(k, p)?));
     }
     let marked = landmarked(profiles)?;
-    let flats: Vec<Vec<V2>> = if marked {
+    // the rings, and whether every one's way came from its landmarks
+    let (flats, set): (Vec<Vec<V2>>, bool) = if marked {
         // which way each plane faces along the loft, and each profile's middle, from its points as drawn
         let centers: Vec<V3> = rings
             .iter()
@@ -140,7 +141,7 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
         by_landmarks(profiles, &rings, open, &facing, &centers)?
     } else {
         let n = rings.iter().map(|(_, r)| r.len()).max().unwrap_or(0);
-        rings.iter().map(|(_, r)| resample(r, n, !open)).collect()
+        (rings.iter().map(|(_, r)| resample(r, n, !open)).collect(), false)
     };
     let mut sections: Vec<Section> = rings
         .iter()
@@ -182,9 +183,8 @@ pub fn loft_with(profiles: &[Profile], opts: &Options) -> Result<TriMesh> {
     } else {
         orient(&mut sections, &along, &facing, open);
     }
-    // open chains joined end to end around a ring must meet the first the same way when they come back to it; two or
-    // more landmarks set every chain's way, so there the person has said how the ring closes
-    let set = marked && profiles[0].landmarks.len() >= 2;
+    // open chains joined end to end around a ring must meet the first the same way when they come back to it; when the
+    // landmarks set every chain's way, the person has said how the ring closes
     if open
         && opts.closed
         && !set
@@ -425,10 +425,11 @@ impl<'a> Measured<'a> {
 /// most that run has on any profile.
 ///
 /// The landmarks' order sets the way each ring runs when it can: three or more on a closed ring, two or more on an open
-/// chain, ends included. A ring with fewer runs the way the others do: a closed one winds about the loft as they do
-/// (`facing`: each plane's normal along the loft), and an open one starts at the end nearest its neighbor's start,
-/// each taken about its middle (`centers`) as the planes turn between them. Closed rings whose landmarks wind opposite
-/// ways are refused, and so are open chains whose landmarks are not at the same ends or between them.
+/// chain, ends included, or one at either end of it, which the chain then starts from. A ring with fewer runs the way
+/// the others do: a closed one winds about the loft as they do (`facing`: each plane's normal along the loft), and an
+/// open one starts at the end nearest its neighbor's start, each taken about its middle (`centers`) as the planes turn
+/// between them. Closed rings whose landmarks wind opposite ways are refused, and so are open chains whose landmarks
+/// are not at the same ends or between them. Also says whether every ring's way came from its landmarks.
 #[allow(
     clippy::too_many_lines,
     reason = "find the landmarks, settle each ring's way, count each run, then spread it"
@@ -439,7 +440,7 @@ fn by_landmarks(
     open: bool,
     facing: &[V3],
     centers: &[V3],
-) -> Result<Vec<Vec<V2>>> {
+) -> Result<(Vec<Vec<V2>>, bool)> {
     let count = rings.len();
     let lines: Vec<Measured<'_>> = rings.iter().map(|(_, pts)| Measured::new(pts, !open)).collect();
     // each landmark's place along its profile, in the order given
@@ -475,7 +476,10 @@ fn by_landmarks(
         let rising = |v: &[f64]| v.windows(2).all(|w| w[1] - w[0] > eps);
         if open {
             let back: Vec<f64> = at.iter().rev().copied().collect();
-            ways.push(if at.len() < 2 {
+            ways.push(if at.len() == 1 && (at[0] <= 0.0 || at[0] >= line.total) {
+                // a lone landmark at an end says which end the chain starts from
+                Some(at[0] <= 0.0)
+            } else if at.len() < 2 {
                 None
             } else if rising(at) {
                 Some(true)
@@ -498,6 +502,7 @@ fn by_landmarks(
             ways.push((at.len() >= 3).then_some(f));
         }
     }
+    let set = ways.iter().all(Option::is_some);
     let mut way = vec![true; count];
     if open {
         // a ring whose landmarks do not set its way starts at the end nearest its neighbor's start
@@ -659,7 +664,7 @@ fn by_landmarks(
         }
         out.push(ring);
     }
-    Ok(out)
+    Ok((out, set))
 }
 
 /// Turns section `k` end for end when that lines it up better with section `to`; see [`crossed`].
@@ -1494,7 +1499,7 @@ mod tests {
             .collect();
         let centers: Vec<V3> = profiles.iter().map(|p| frame_of(p).unwrap().origin).collect();
         let facing = vec![[0.0, 0.0, 1.0]; profiles.len()];
-        by_landmarks(profiles, &rings, open, &facing, &centers)
+        by_landmarks(profiles, &rings, open, &facing, &centers).map(|(r, _)| r)
     }
 
     #[test]
