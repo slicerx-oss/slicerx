@@ -348,7 +348,8 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const want = `${pieces.length} separate pieces (${pieces.join(', ')})`
   const fit = body.fit
   if (!fit) {
-    const got = `not measured${body.fitWhy ? ` (${body.fitWhy})` : ''}`
+    // the engine's or the link's own words stay in body.fitWhy, for logs; the item says it plainly
+    const got = 'not measured (the gap check could not run)'
     return [
       { name: 'pieces', want, got, pass: false },
       { name: 'gaps', want: 'the gaps between moving pieces measured', got, pass: false },

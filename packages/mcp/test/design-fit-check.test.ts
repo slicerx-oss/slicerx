@@ -237,8 +237,8 @@ describe('the fit rule limits', () => {
   it('printInPlace is part of the plan, at least two named pieces', () => {
     expect(partPlanSchema.parse(planOf(['Lid', 'Tray'])).printInPlace).toEqual(['Lid', 'Tray'])
     expect(partPlanSchema.safeParse(planOf(['Lid'])).success).toBe(false)
-    // a fit that could not be measured says so on both items
+    // a fit that could not be measured says so on both items, plainly; the engine's words stay in the body read back
     const r = designCheck(planOf(['Lid', 'Tray']), { size: { x: 1, y: 1, z: 1 }, holes: [], features: 2, watertight: true, minWallMm: 1, fitWhy: 'engine down' }, 0.4)
-    expect(r.items.filter((i) => i.name === 'pieces' || i.name === 'gaps').map((i) => i.got)).toEqual(['not measured (engine down)', 'not measured (engine down)'])
+    expect(r.items.filter((i) => i.name === 'pieces' || i.name === 'gaps').map((i) => i.got)).toEqual(['not measured (the gap check could not run)', 'not measured (the gap check could not run)'])
   })
 })

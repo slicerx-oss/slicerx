@@ -902,6 +902,15 @@ describe('design.put_plan', () => {
     return { plans, run, set }
   }
 
+  it('says plainly that the gaps were not measured, keeping the engine\'s own words out of the items', () => {
+    const body: BodyFacts = { size: { x: 40, y: 20, z: 5 }, holes: [], features: 0, watertight: true, minWallMm: 2, fitWhy: 'geom.fit_check: unexpected token < in JSON at position 0' }
+    const r = designCheck({ ...boxPlan, printInPlace: ['Lid', 'Tray'] }, body, 0.4)
+    expect(r.items.filter((i) => i.name === 'pieces' || i.name === 'gaps').map((i) => [i.got, i.pass])).toEqual([
+      ['not measured (the gap check could not run)', false],
+      ['not measured (the gap check could not run)', false],
+    ])
+  })
+
   it('gives printInPlace examples beyond a two-piece box', () => {
     expect(partPlanSchema.shape.printInPlace.description).toContain('(such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8)')
   })
