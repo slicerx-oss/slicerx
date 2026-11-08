@@ -122,7 +122,7 @@ function summaryOf(run: RunState, appName: string): string {
 export function mimirRunTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const run = defineTool({
     name: 'mimir.run',
-    version: '1.0.0',
+    version: '1.0.1',
     source: 'command',
     permission: 'read',
     description: assistantText(`Read back mimir's print run in the open ${appName} app for one chat (the chat the mimir tab has open, else the newest mimir session, unless sessionId names another), never the file, its SHA-256, a card's token or request id, an access code or a serial: each step (design, plate, target, slice, send, print) as done, now, todo or off; the last slice's time, grams, cost, warnings and whether the plate, printer or slots changed after it (stale); what was sent (the printer's name, the file name and which slot feeds each filament); and the print as the printer last reported it (state, layer, time left, progress and how it ended). Null before the tab first opens. Starting a print stays with slicerx_printer_queue, which waits for the person in the app.`),
