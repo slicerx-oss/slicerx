@@ -4,10 +4,11 @@
 // plate, and the history keeps the move (History.placed), so the frame the design tools give and read points in, the
 // object's transform moved back by that move, stays where the design was built. What is stored stays in plate
 // coordinates: a recorded step keeps the object's transform when it ran and world values at it, and a timeline sketch
-// keeps the frame of the step that owns it (the first feature drawn on it), or the plate's when no feature uses it.
-// The conversion happens only where a design tool meets the host: a step is moved into plate coordinates before it is
-// recorded, and a sketch is moved into the design's frame when a tool reads it. Every offset comes from what the
-// store holds (the history, the timeline and the objects' transforms), so any number of hosts read the same.
+// keeps the frame it was drawn on, written once. Where a sketch stands now is read from what never changes once
+// written: the design it was drawn for with that design's transform then, or the first feature drawn on it with the
+// transform it was recorded at (sketchAnchor), against where that body stands now (frameNow). A step drawn on a
+// sketch is recorded where the sketch is stored (recordedOn), so no change of owner, undo or redo rewrites a frame.
+// Every offset comes from what the store holds, so any number of hosts, and the app's own tools, read the same.
 import type { SketchItem, Timeline } from './design'
 import { direction, IDENTITY, invert, multiply, point, type History, type Mat4, type PaintTarget, type SolidSpec, type StepParams } from './model'
 import type { ArraySpec, EdgeRef, FaceFrame, Vec3 } from './types'
@@ -158,25 +159,88 @@ export function movedSketch(k: SketchItem, m: Mat4): SketchItem {
   return { ...rest, frame: movedFrame(frame, m) }
 }
 
-/**
- * The feature that owns a timeline sketch: the first one drawn on it. Its frame is in plate coordinates at that
- * feature's transform. Undefined when no feature uses the sketch, whose frame is then the plate's as it stands.
- */
-export function sketchOwner(t: Timeline, id: string): { body: string; transform: Mat4 } | undefined {
-  const f = t.items.find((i) => i.kind === 'feature' && i.sketch === id)
-  return f?.kind === 'feature' ? { body: f.body, transform: f.transform } : undefined
+/** Where a body stands on the plate now: its transform, or undefined when it stands nowhere (deleted, never made). */
+export type PlaceOf = (body: string) => Mat4 | undefined
+
+/** A body a sketch can move with, and the body's transform at which the sketch's stored frame is right for it. */
+export interface SketchAnchor {
+  body: string
+  transform: Mat4
+}
+
+/** The features drawn on sketch `id`, in timeline order, each as its body and the transform it was recorded at. */
+export function sketchUsers(t: Timeline, id: string): SketchAnchor[] {
+  return t.items.flatMap((i) => (i.kind === 'feature' && i.sketch === id ? [{ body: i.body, transform: i.transform }] : []))
 }
 
 /**
- * How far sketch `id` has moved on the plate since its frame was stored: the move of the body that owns it since its
- * owning feature ran (a landing, a person's move), or none for a sketch no feature uses. `plateOf` gives a body's
- * transform as it stands, undefined when the body is not there.
+ * What sketch `k` moves with, read from what never changes once written: the design it was drawn for (drawnFor, with
+ * its transform then), else the first of the features drawn on it (`users`, each with the transform it was recorded
+ * at), the first of those whose body stands somewhere. Undefined for a sketch with neither, whose stored frame is
+ * where it stands. Nothing here is written back: an undo, redo, deletion or change of owner never rewrites a frame.
  */
-export function sketchMove(t: Timeline, id: string, plateOf: (body: string) => Mat4 | undefined): Mat4 {
-  const owner = sketchOwner(t, id)
-  if (!owner) return [...IDENTITY]
-  const now = plateOf(owner.body)
-  return now ? multiply(now, invert(owner.transform)) : [...IDENTITY]
+export function sketchAnchor(k: SketchItem, users: readonly SketchAnchor[], placeOf: PlaceOf): SketchAnchor | undefined {
+  const f = k.drawnFor?.length === 1 ? k.drawnFor[0]! : undefined
+  return [...(f ? [{ body: f.design, transform: f.transform }] : []), ...users].find((a) => placeOf(a.body) !== undefined)
+}
+
+/** How far sketch `k` has moved on the plate since its frame was stored, by its anchor (sketchAnchor): none without one. */
+export function anchoredMove(k: SketchItem, users: readonly SketchAnchor[], placeOf: PlaceOf): Mat4 {
+  const a = sketchAnchor(k, users, placeOf)
+  return a ? multiply(placeOf(a.body)!, invert(a.transform)) : [...IDENTITY]
+}
+
+/** How far timeline sketch `id` has moved on the plate since its frame was stored (anchoredMove); none for no sketch. */
+export function sketchMove(t: Timeline, id: string, placeOf: PlaceOf): Mat4 {
+  const k = t.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === id)
+  return k ? anchoredMove(k, sketchUsers(t, id), placeOf) : [...IDENTITY]
+}
+
+/**
+ * Where a timeline sketch stands on the plate now: its stored frame moved by sketchMove. Every reader draws, projects
+ * and reads it here: the sketch panel and the view in Model, projections, and the design hosts. The move is rigid, so
+ * its loops in the plane stay as stored. Undefined for a sketch on the bed that has not moved.
+ */
+export function frameNow(t: Timeline, k: SketchItem, placeOf: PlaceOf): FaceFrame | undefined {
+  const m = sketchMove(t, k.id, placeOf)
+  return isIdentity(m) ? k.frame : movedFrame(k.frame, m)
+}
+
+/** A step drawn on sketch `k`, its plane put back exactly as the sketch keeps it when the move left it the same. */
+function keepPlane(p: StepParams, k: SketchItem): StepParams {
+  if (p.op !== 'shape.extrude' && p.op !== 'sketch.revolve') return p
+  const same = (a: FaceFrame, b: FaceFrame) => (['origin', 'normal', 'u', 'v'] as const).every((f) => a[f].every((v, i) => Math.abs(v - b[f][i]!) < 1e-6))
+  if (!same(p.frame ?? BED_FRAME, k.frame ?? BED_FRAME)) return p
+  const { frame: _f, ...rest } = p
+  return (k.frame ? { ...rest, frame: k.frame } : rest) as StepParams
+}
+
+/**
+ * The one way a step drawn on a timeline sketch is recorded: `params` given in plate coordinates now (on the plane
+ * where the sketch stands now), on an object standing at `plate`, kept where the sketch is stored, at transform
+ * inv(move) * plate with its values moved back by the move, and with the sketch's own plane when the step left it
+ * unchanged. Replay then puts it where it was made, and folding it into the timeline writes the frame the sketch
+ * already has. A step that is no extrude or revolve, or no move, stays as given.
+ */
+export function recordedOnSketch(k: SketchItem, move: Mat4, plate: Mat4, params: StepParams): { transform: Mat4; params: StepParams } {
+  if (params.op !== 'shape.extrude' && params.op !== 'sketch.revolve') return { transform: [...plate], params }
+  const back = invert(move)
+  return { transform: multiply(back, plate), params: keepPlane(movedParams(params, back), k) }
+}
+
+/** recordedOnSketch for timeline sketch `id`, moved as the timeline and `placeOf` say; as given when there is no such sketch. */
+export function recordedOn(t: Timeline, id: string, plate: Mat4, params: StepParams, placeOf: PlaceOf): { transform: Mat4; params: StepParams } {
+  const k = t.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === id)
+  return k ? recordedOnSketch(k, sketchMove(t, id, placeOf), plate, params) : { transform: [...plate], params }
+}
+
+/**
+ * `t` with the sketches drawn for design `id` while designs waited claimed by it as it gets its body: each then moves
+ * with it alone, so a sketch drawn for several waiting designs is the first one's. The same timeline when none is.
+ */
+export function claimSketches(t: Timeline, id: string): Timeline {
+  if (!t.items.some((i) => i.kind === 'sketch' && (i.drawnFor?.length ?? 0) > 1 && i.drawnFor!.some((f) => f.design === id))) return t
+  return { ...t, items: t.items.map((i) => (i.kind === 'sketch' && (i.drawnFor?.length ?? 0) > 1 && i.drawnFor!.some((f) => f.design === id) ? { ...i, drawnFor: i.drawnFor!.filter((f) => f.design === id) } : i)) }
 }
 
 /**

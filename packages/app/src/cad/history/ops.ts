@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, withPlaced, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, recordedOnSketch, replayHistory, withPlaced, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type SketchItem, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -107,10 +107,11 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * A newer call for the same object cancels this one.
  * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; a transform it returns
  * is written with the result, with the history's landing moves it gives (History.placed), in the same store update, so
- * the edit and the move are one undo step.
+ * the edit and the move are one undo step. Without one, the history keeps the landing moves the object has at the
+ * commit, not the ones `next` started with.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => { transform: Mat4; placed: [number, number] | undefined } | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => (Pick<PlateEntry, 'landedAt'> & { transform: Mat4; placed: [number, number] | undefined }) | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -150,7 +151,10 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (now.history?.exact && !next.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     const write = () => commitMade(objectId, (latest) => {
       const moved = land?.(latest, parts)
-      return { handle, parts, history: moved ? withPlaced(history, moved.placed) : history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform } : {}) }
+      // the landing moves are the object's as it is now (a landing elsewhere may have moved it while this ran), plus
+      // this commit's own
+      const placed = moved ? moved.placed : latest.history?.placed
+      return { handle, parts, history: withPlaced(history, placed), colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform, ...(moved.landedAt ? { landedAt: moved.landedAt } : {}) } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()
@@ -286,7 +290,11 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
   const typed = takeBind(params)
   const n = mainNumber(params)
   const kept = !typed.bind && old && n && bindFor(old, n.value, currentValues()) ? { bind: old } : {}
-  const step: Step = { ...keep, params, transform: [...ed.entry.transform], ...typed, ...kept }
+  // a step drawn on a finished sketch keeps the transform it was recorded at, its values moved back to it, so the plane
+  // it gives the sketch is still the one the sketch is stored on (cad-history recordedOn); the rest are recorded anew
+  const k = keep.sketch !== undefined ? get().timeline.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === keep.sketch) : undefined
+  const at = k ? recordedOnSketch(k, multiply(ed.entry.transform, invert(ed.step.transform)), ed.entry.transform, params) : { params, transform: [...ed.entry.transform] }
+  const step: Step = { ...keep, params: at.params, transform: at.transform, ...typed, ...kept }
   const follow = followFor(before, step)
   const steps = h.steps.map((s, i) => (i === ed.index ? (follow ? { ...step, follow } : step) : s))
   // A body that was hidden while its step was open comes back for the replay, and the edit no longer hides it: a body
