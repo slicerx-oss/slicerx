@@ -67,8 +67,7 @@ export function appDesignHost(loader: Loader): DesignHost {
   const host: DesignHost = {
     call: (op, request) => geom().call(op, request),
     revision(id) {
-      host.get(id)
-      return bodyRevisions.current(id)
+      return bodyRevisions.current(host.get(id).id)
     },
 
     get(id) {

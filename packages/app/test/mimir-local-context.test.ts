@@ -97,7 +97,7 @@ const TWIN_RULES: Record<string, string[]> = {
   'geom.boolean': ['removes', 'keeps what they share'],
   'geom.chamfer': ["edge's own face", 'distance2_mm'],
   'geom.fillet': ['edge_pick'],
-  'geom.hole': ['counterbore', 'countersink'],
+  'geom.hole': ['counterbore', 'countersink', 'never makes a new hole'],
   'geom.shell': ['outward normal'],
 }
 

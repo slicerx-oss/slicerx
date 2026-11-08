@@ -3,7 +3,7 @@
 // A built part checked against its plan: first the comparison on fixture bodies (the size tolerance, each named
 // hole, the feature count, a closed body, the thinnest wall for the nozzle, an inch plan), then slicerx_design_check
 // on real designs, whose facts are read from the body the steps made.
-import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
+import { designNamed, type Design as HostDesign, type DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { afterAll, describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
@@ -356,6 +356,25 @@ describe('design.check picks the design it checks', () => {
     const { out, plans } = await checkOn([a, b], card, { planId: 'box-1', design: 'd1' })
     expect(out).toMatchObject({ design: 'd1', chosen: 'tied to the plan' })
     expect(plans.get('box-1')?.design).toBe('d1')
+  })
+
+  it('a design given by its name is the design it names: a card plan tied to its id checks, and a client plan ties to the id', async () => {
+    const named = (all: HostDesign[]): DesignHost => {
+      const h = hostOf(all)
+      return { ...h, get: (id: string) => all.find((x) => x.id === id) ?? designNamed(all, id) ?? h.get(id) }
+    }
+    const check = async (setup: (p: ReturnType<typeof createPlanRegistry>) => void, args: Record<string, unknown>) => {
+      const plans = createPlanRegistry()
+      setup(plans)
+      const tool = designToolset(named([a, b]), {}, { plans }).find((t) => t.name === 'design.check')!
+      const r = await tool.run(tool.input.parse(args), {} as ToolContext)
+      return { out: r.output as { design: string; chosen: string }, plans }
+    }
+    const card = await check((p) => p.put(boxPlan, 'd1', 'card'), { planId: 'box-1', design: 'bracket' })
+    expect(card.out).toMatchObject({ design: 'd1', chosen: 'tied to the plan' })
+    const client = await check((p) => p.put(boxPlan), { planId: 'box-1', design: 'Clip' })
+    expect(client.out).toMatchObject({ design: 'd2', chosen: 'tied to the plan' })
+    expect(client.plans.get('box-1')?.design).toBe('d2')
   })
 
   it("checks a client's given design for an untied card plan without tying it; the card side ties it", async () => {
