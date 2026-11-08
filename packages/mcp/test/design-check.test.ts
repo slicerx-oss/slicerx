@@ -505,8 +505,8 @@ const geom = useGeomEngine('design-check-replies')
 const engine = (op: string, request: unknown): Promise<unknown> => geom.engine(op, request)
 const top = (z: number) => ({ origin: [0, 0, z], normal: [0, 0, 1] })
 
-/** A 40 x 20 plate `t` mm thick with one through hole of `d` mm, planned with a 6 mm hole. */
-async function plate(t: number, d: number, plan: Partial<PartPlan> = {}) {
+/** A 40 x 20 plate `t` mm thick with one through hole of `d` mm, planned with a 6 mm hole; each step tagged with its feature, as `tags` says. */
+async function plate(t: number, d: number, plan: Partial<PartPlan> = {}, tags: [string | undefined, string | undefined] = ['plate', 'hole']) {
   const plans = createPlanRegistry()
   const h = await connect({ geomEngine: engine, plans })
   const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
@@ -515,8 +515,9 @@ async function plate(t: number, d: number, plan: Partial<PartPlan> = {}) {
     return data<{ output: T }>(r).output
   }
   const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
-  await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: t })
-  await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: d }, frame: top(t), placement: { center: [12, 10] }, distance_mm: t, operation: 'cut' })
+  const tag = (k: 0 | 1) => (tags[k] ? { feature: tags[k] } : {})
+  await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: t, ...tag(0) })
+  await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: d }, frame: top(t), placement: { center: [12, 10] }, distance_mm: t, operation: 'cut', ...tag(1) })
   plans.put({ planId: 'plate-1', part: 'Plate', units: 'mm', features: [{ name: 'plate', kind: 'extrude', sizes: { width: 40, depth: 20, thickness: t } }, { name: 'hole', kind: 'cut', sizes: { diameter: 6 } }], overall: { x: 40, y: 20, z: t }, holes: [{ name: 'mount hole', diameter: 6 }], assumptions: [], questions: [], ...plan })
   return { h, ok, design }
 }
@@ -538,44 +539,60 @@ describe('slicerx_design_check', () => {
     expect(r.pass).toBe(true)
   })
 
-  it("answers with each shaping step's name, which steps may stand for any feature, and no parts for one body", async () => {
+  it("answers with each shaping step's name, the plan feature it was tagged with, and no parts for one body", async () => {
     const { ok } = await plate(5, 6)
     const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
     expect(r.body.steps).toEqual(['Rectangle extrude 5 mm', 'Hole 6 mm'])
-    expect(r.body.free).toEqual([true, true])
+    expect(r.body.tags).toEqual(['plate', 'hole'])
     expect(r.body.parts).toBeUndefined()
   })
 
-  it('a step renamed for something the plan lacks is no longer free and leaves its feature unbuilt', async () => {
-    const { ok, design } = await plate(5, 6)
-    await ok('slicerx_design_edit_step', { design, step: 1, label: 'Fillet edges' })
+  it('a step built without its feature leaves that feature unbuilt, until design.edit_step tags it', async () => {
+    const { ok, design } = await plate(5, 6, {}, [undefined, 'hole'])
     const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
-    expect(r.body.steps).toEqual(['Fillet edges', 'Hole 6 mm'])
-    expect(r.body.free).toEqual([false, true])
-    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: false })
+    expect(r.body.tags).toEqual([null, 'hole'])
+    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: false, got: expect.stringContaining('none tagged for plate') })
+    const edited = await ok<{ steps: { feature?: string }[] }>('slicerx_design_edit_step', { design, step: 1, feature: 'plate' })
+    expect(edited.steps.map((s) => s.feature)).toEqual(['plate', 'hole'])
+    const again = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(again.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
   })
 
-  // geom.build, geom.subtract, geom.mirror, a separate geom.array, geom.cut and geom.hollow all build shape, and their
-  // own default names ("Add Solids 1", "Subtract 1 solid", "Mirror copy") say nothing about the feature
-  it('a base plate built with geom.build and a cable notch cut with geom.subtract, both unnamed, pass the feature check', async () => {
-    const plans = createPlanRegistry()
-    const h = await connect({ geomEngine: engine, plans })
-    const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
-      const r = await h.call(name, args)
-      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
-      return data<{ output: T }>(r).output
+  it('an untagged plate falls back to step names: the default extrude name stands for no feature', async () => {
+    const { ok } = await plate(5, 6, {}, [undefined, undefined])
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(r.body.tags).toEqual([null, null])
+    const got = r.items.find((i) => i.name === 'feature count')!
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain('none for plate')
+  })
+
+  // geom.build and geom.subtract name their steps "Add Solids 1" and "Subtract 1 solid", which say nothing about the
+  // feature: the feature argument ties them to the plan
+  it('a base plate from geom.build and a cable notch from geom.subtract pass when tagged, and fail untagged', async () => {
+    const run = async (tagged: boolean) => {
+      const plans = createPlanRegistry()
+      const h = await connect({ geomEngine: engine, plans })
+      const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+        const r = await h.call(name, args)
+        expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+        return data<{ output: T }>(r).output
+      }
+      const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
+      await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 5] }], ...(tagged ? { feature: 'Base plate' } : {}) })
+      await ok('slicerx_geom_subtract', { design, solids: [{ type: 'box', min: [15, -1, -1], max: [25, 5, 6] }], ...(tagged ? { feature: 'Cable notch' } : {}) })
+      plans.put({ planId: 'notch-1', part: 'Plate', units: 'mm', features: [{ name: 'Base plate', sizes: { width: 40 } }, { name: 'Cable notch', sizes: { width: 10 } }], assumptions: [], questions: [] })
+      return ok<Check>('slicerx_design_check', { planId: 'notch-1' })
     }
-    const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
-    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 5] }] })
-    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'box', min: [15, -1, -1], max: [25, 5, 6] }] })
-    plans.put({ planId: 'notch-1', part: 'Plate', units: 'mm', features: [{ name: 'Base plate', sizes: { width: 40 } }, { name: 'Cable notch', sizes: { width: 10 } }], assumptions: [], questions: [] })
-    const r = await ok<Check>('slicerx_design_check', { planId: 'notch-1' })
-    expect(r.body.steps).toEqual(['Add Solids 1', 'Subtract 1 solid'])
-    expect(r.body.free).toEqual([true, true])
-    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
+    const tagged = await run(true)
+    expect(tagged.body.steps).toEqual(['Add Solids 1', 'Subtract 1 solid'])
+    expect(tagged.body.tags).toEqual(['Base plate', 'Cable notch'])
+    expect(tagged.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
+    const untagged = await run(false)
+    expect(untagged.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: false })
   })
 
-  it('every shaping tool records a free step under its own default name', async () => {
+  it('every modeling tool records the feature it is given on its step', async () => {
     const plans = createPlanRegistry()
     const h = await connect({ geomEngine: engine, plans })
     const ok = async (name: string, args: Record<string, unknown>): Promise<void> => {
@@ -583,16 +600,27 @@ describe('slicerx_design_check', () => {
       expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
     }
     const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Tools' })).output.design
-    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 10] }] })
-    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'cylinder', origin: [10, 10, -1], axis: [0, 0, 1], diameterMm: 3, heightMm: 12 }] })
-    await ok('slicerx_geom_mirror', { design, plane: { axis: 'x', at: 0 }, copy: true })
-    await ok('slicerx_geom_array', { design, part: 0, spec: { kind: 'linear', count: 2, step: [0, 60, 0] }, merge: false })
-    await ok('slicerx_geom_cut', { design, plane: { axis: 'z', at: 8 }, keep: 'below' })
-    await ok('slicerx_geom_hollow', { design, wall_mm: 2 })
+    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 10] }], feature: 'Block' })
+    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'cylinder', origin: [10, 10, -1], axis: [0, 0, 1], diameterMm: 3, heightMm: 12 }], feature: 'Pin hole' })
+    await ok('slicerx_geom_mirror', { design, plane: { axis: 'x', at: 0 }, copy: true, feature: 'Mirror half' })
+    await ok('slicerx_geom_array', { design, part: 0, spec: { kind: 'linear', count: 2, step: [0, 60, 0] }, merge: false, feature: 'Copies' })
+    await ok('slicerx_geom_cut', { design, plane: { axis: 'z', at: 8 }, keep: 'below', feature: 'Trim' })
+    await ok('slicerx_geom_hollow', { design, wall_mm: 2, feature: 'Shell' })
     plans.put({ planId: 'tools-1', part: 'Tools', units: 'mm', features: [{ name: 'Block', sizes: { width: 40 } }], assumptions: [], questions: [] })
     const r = data<{ output: Check }>(await h.call('slicerx_design_check', { planId: 'tools-1' })).output
     expect(r.body.steps).toEqual(['Add Solids 1', 'Hole 3 mm', 'Mirror copy', 'Array of 2, separate', 'Cut, keep below', 'Hollow, 2 mm walls'])
-    expect(r.body.free).toEqual([true, true, true, true, true, true])
+    expect(r.body.tags).toEqual(['Block', 'Pin hole', 'Mirror half', 'Copies', 'Trim', 'Shell'])
+    const steps = data<{ output: { steps: { feature?: string }[] } }>(await h.call('slicerx_design_steps', { design })).output.steps
+    expect(steps.map((s) => s.feature)).toEqual(['Block', 'Pin hole', 'Mirror half', 'Copies', 'Trim', 'Shell'])
+  })
+
+  it('offers feature on every tool that makes or changes a body, and on no read', async () => {
+    const h = await connect({ geomEngine: engine })
+    const tools = (await h.client.listTools()).tools
+    const has = (name: string) => Object.keys((tools.find((t) => t.name === name)?.inputSchema.properties ?? {}) as Record<string, unknown>).includes('feature')
+    const modeling = ['extrude', 'revolve', 'loft', 'sweep', 'push_pull', 'boolean', 'fillet', 'chamfer', 'shell', 'hole', 'cut', 'split', 'mirror', 'array', 'repair', 'hollow', 'emboss', 'build', 'subtract'].map((n) => `slicerx_geom_${n}`)
+    for (const name of modeling) expect(has(name), name).toBe(true)
+    for (const name of ['slicerx_geom_info', 'slicerx_geom_measure', 'slicerx_geom_faces', 'slicerx_design_check']) expect(has(name), name).toBe(false)
   })
 
   it('a 6 mm hole built at 5 mm fails that item only', async () => {

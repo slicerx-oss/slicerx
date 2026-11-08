@@ -19,10 +19,16 @@ describe('the prompt builds what was asked in one plan', () => {
     })
   }
 
-  it('says neither where design.plan is not offered', () => {
+  for (const scope of ['full', 'cad'] as const)
+    it(`${scope}: every step of a planned feature names that feature, so the check ties it to the plan`, () => {
+      expect(systemPrompt(scope)).toContain('- On every step of a planned feature, pass feature with its name exactly as the plan has it. Leave it off finishing steps the plan does not list.')
+    })
+
+  it('says none of it where design.plan is not offered', () => {
     const has = (n: string) => n !== 'design.plan'
     const text = systemPrompt('full', has)
     expect(text).not.toContain('one plan with every feature')
     expect(text).not.toContain('prints open and flat')
+    expect(text).not.toContain('pass feature')
   })
 })

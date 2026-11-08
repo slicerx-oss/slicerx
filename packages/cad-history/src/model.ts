@@ -135,6 +135,8 @@ export interface Step {
   bind?: string
   /** A name the person gave the step, shown instead of the one made from its numbers. */
   label?: string
+  /** The planned feature the step builds, by its name in the plan, as the tool that made it was told (design.check). */
+  feature?: string
   /** The timeline sketch an extrude or revolve draws on, by id; its plane and loops are copied into params. */
   sketch?: string
 }
