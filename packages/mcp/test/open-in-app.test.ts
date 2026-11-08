@@ -95,6 +95,8 @@ describe('open in the app', () => {
 
   it('leaves STEP out of the model tools, which take meshes only', async () => {
     const step = join(dir, 'bracket.step')
+    // The file is made here: another test of the file writes one with this name, and this one must not depend on it running first.
+    writeFileSync(step, 'ISO-10303-21;')
     const policy = { allowDirs: [dir], outDir: join(dir, 'out'), allowUrls: false }
     await expect(resolveModel(policy, step)).rejects.toMatchObject({ code: 'unsupported_format' })
     expect(await resolveModel(policy, step, APP_OPENS)).toBe(realpathSync(step))
