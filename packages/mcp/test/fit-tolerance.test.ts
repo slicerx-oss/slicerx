@@ -92,9 +92,11 @@ async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR:
         const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)))
         const q: [number, number] = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
         const d = Math.hypot(p[0] - q[0], p[1] - q[1])
-        // of pairs that tie, the one nearest the top (the bottom for a gap below)
+        // of pairs that tie, the one nearest the top (the bottom for a gap below); from one corner, the one that runs
+        // most up and down, as from a corner of 8 sides to the level side rather than the 45 degree one beside it
         const toward = (z: number): number => (side === 'above' ? z : -z)
-        if (d < best.d - 1e-9 || (d <= best.d + 1e-9 && toward(height(p)) > toward(height(best.p)))) best = { d, p, q }
+        const higher = toward(height(p)) - toward(height(best.p))
+        if (d < best.d - 1e-9 || (d <= best.d + 1e-9 && (higher > 1e-9 || (higher >= -1e-9 && toward(height(q)) > toward(height(best.q)) + 1e-9)))) best = { d, p, q }
       }
     return best
   }
@@ -241,6 +243,25 @@ describe('the fit tolerance', () => {
         expect(fitVerdict(gap, limits), what).toBe('slides')
         expect(gapsItem(fit).pass, what).toBe(true)
       }
+  })
+
+  it('a pin lying in its bore in 8, 12, 16, 25 or 27 sides is a round face above and below, and a 5 mm pin in 25 or 27', async () => {
+    // a level side at the end the gap is read from, with the facets beside it turning further facet by facet: 45 degrees
+    // then a wall in 8 sides, 30 then 60 in 12, down to 13.3 then 26.7 in 27. Each gets the facet allowance, so a gap
+    // within it of the limit clears; 8 sides read 0.37 mm, more than the allowance under, and stays tight.
+    const cases = [...([8, 12, 16, 25, 27] as const).map((n) => [2.5, 2.9, n] as const), [5, 5.4, 25], [5, 5.4, 27]] as const
+    for (const [pinR, boreR, n] of cases)
+      for (const side of ['above', 'below'] as const)
+        for (const turnDeg of [0, 45]) {
+          const phase = n % 2 === 0 ? 0.5 : side === 'above' ? 0 : 0.5
+          const { gap, limits, readMm } = await pinInBore('y', pinR, n, boreR, n, turnDeg, side, phase)
+          const what = `${pinR} mm pin in a ${boreR} mm bore, ${n} sides, the gap ${side} it, turned ${turnDeg}, read ${readMm.toFixed(4)} mm`
+          expect(gap.flat, what).toBeUndefined()
+          expect(gap.direction, what).toBe('z')
+          const clears = readMm + FIT_TOLERANCE_MM >= limits.verticalMm
+          expect(clears, what).toBe(n !== 8)
+          expect(gap.kind, what).toBe(clears ? 'apart' : 'vertical')
+        }
   })
 
   it('a gap with one end on a flat face and the other on a round one gets the facet allowance, either way up', async () => {
@@ -415,6 +436,31 @@ describe('the fit tolerance', () => {
     const fit = await fitFacts({ call: async () => report } as unknown as DesignHost, designOf([lower, upper]), limits)
     return { gap: fit.gaps[0]!, limits }
   }
+
+  it('a level strip 1.5 and 2.5 mm wide with a 10 or 20 degree chamfer on both sides stays a flat face', async () => {
+    // a drafted rib or a lead-in this shallow is a real flat face, not the top of a round one
+    for (const strip of [1.5, 2.5])
+      for (const deg of [10, 20])
+        for (const turnDeg of [0, 30]) {
+          const { gap, limits } = await chamfered(strip, deg, deg, 0.38, turnDeg)
+          const what = `${strip} mm strip, ${deg} degrees both sides, turned ${turnDeg}`
+          expect(gap.flat, what).toBe(true)
+          expect(gap.kind, what).toBe('vertical')
+          expect(fitVerdict(gap, limits), what).toBe('fuses')
+        }
+  })
+
+  it('a level strip with a chamfer of 29 or exactly 30 degrees on both sides stays a flat face: one plane each side is no round face', async () => {
+    for (const strip of [1.5, 2.5])
+      for (const deg of [29, 30])
+        for (const turnDeg of [0, 30, 45]) {
+          const { gap, limits } = await chamfered(strip, deg, deg, 0.38, turnDeg)
+          const what = `${strip} mm strip, ${deg} degrees both sides, turned ${turnDeg}`
+          expect(gap.flat, what).toBe(true)
+          expect(gap.kind, what).toBe('vertical')
+          expect(fitVerdict(gap, limits), what).toBe('fuses')
+        }
+  })
 
   it('a level strip with a chamfer on one side only, or on both sides steeper than 30 degrees, stays a flat face', async () => {
     for (const strip of [1.5, 2.5]) {
