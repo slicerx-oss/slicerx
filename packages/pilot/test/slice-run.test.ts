@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The slice skill records its slice in the chat's print run: the time, filament, cost and warnings of the run's plate
-// (the first plate sliced when that one was not), with the plate's fingerprint from before the slice. Slicing again
-// replaces the slice and clears stale.
+// (the first plate sliced when that one was not), with the plate's fingerprint read once the host has the plate ready
+// and before its geometry loads or the engine slices. Slicing again replaces the slice and clears stale.
 import { DEFAULT_POLICY, type ApprovalHost, type CommandSpec, type LlmTransport, type PilotEvent, type Plate, type PrinterHost, type SliceResult } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { createSlice } from '../skills/slice/index'
@@ -33,7 +33,7 @@ function fakeSlicer(stats: Partial<Pick<SliceResult, 'stats' | 'warnings'>>[]) {
   }
 }
 
-function project(plates: number[]): PilotProject {
+function project(plates: number[], extra: Partial<PilotProject> = {}): PilotProject {
   return {
     name: 'Clip',
     machine: () => undefined,
@@ -44,6 +44,7 @@ function project(plates: number[]): PilotProject {
     setOverrides: () => undefined,
     plate: async () => ({ objects: [] }) as unknown as Plate,
     config: () => ({}),
+    ...extra,
   } as unknown as PilotProject
 }
 
@@ -53,14 +54,14 @@ function fakeHost(fp: string): PrintRunHost & { fp: string } {
   return h
 }
 
-function pilot(steps: ScriptStep[], printRun: PrintRunHost, slicer: ReturnType<typeof fakeSlicer>, plates = [1], extra: PilotTool<never>[] = []) {
+function pilot(steps: ScriptStep[], printRun: PrintRunHost, slicer: ReturnType<typeof fakeSlicer>, plates = [1], extra: PilotTool<never>[] = [], hooks: Partial<PilotProject> = {}) {
   return createPilot({
     host: { printers, approvals: {} as ApprovalHost, llm: {} as LlmTransport, slicer: slicer as never },
     config: DEFAULT_CONFIG,
     policy: DEFAULT_POLICY,
     client: createScriptedClient(steps, { chunk: false }),
     builtins: false,
-    project: () => project(plates),
+    project: () => project(plates, hooks),
     tools: [createSlice(createShared()), ...extra] as never[],
     printRun,
   })
@@ -105,6 +106,29 @@ describe('the slice in the print run', () => {
     expect(p.printRun!('s')!.slice!.stale).toBe(true)
     await collect(p.run('s', 'slice it again'))
     expect(p.printRun!('s')!.slice).toMatchObject({ sliceId: 'sl_2', timeS: 600, grams: 3, cost: 0.08, warnings: [], fingerprint: 'fp2', stale: false })
+  })
+
+  it('the fingerprint is the plate once the host has it ready: a profile rebuilt while it waits leaves the slice current', async () => {
+    const h = fakeHost('fp1')
+    const order: string[] = []
+    const hooks: Partial<PilotProject> = {
+      ready: async () => void (order.push('ready'), (h.fp = 'fp-rebuilt')),
+      config: () => (order.push('config'), {}) as never,
+      plate: async () => (order.push('plate'), { objects: [] }) as unknown as Plate,
+    }
+    const p = pilot([{ calls: [{ name: 'slice', args: {} }] }, { text: 'Done.' }], h, fakeSlicer([{}]), [1], [], hooks)
+    await collect(p.run('s', 'slice it'))
+    expect(order).toEqual(['ready', 'config', 'plate'])
+    expect(p.printRun!('s')!.slice).toMatchObject({ sliceId: 'sl_1', fingerprint: 'fp-rebuilt', stale: false })
+  })
+
+  it('a plate edited while its geometry loads: the slice records the plate from before and reads stale', async () => {
+    const h = fakeHost('fp1')
+    // the geometry is read first, then a drag lands while a part's copy loads
+    const hooks: Partial<PilotProject> = { plate: async () => ((h.fp = 'fp-dragged'), { objects: [] }) as unknown as Plate }
+    const p = pilot([{ calls: [{ name: 'slice', args: {} }] }, { text: 'Done.' }], h, fakeSlicer([{}]), [1], [], hooks)
+    await collect(p.run('s', 'slice it'))
+    expect(p.printRun!('s')!.slice).toMatchObject({ sliceId: 'sl_1', fingerprint: 'fp1', stale: true })
   })
 
   it('an app command gets only update and fingerprint of the run', async () => {
