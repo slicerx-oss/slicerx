@@ -321,8 +321,10 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'sketch.loft':
       case 'sketch.sweep': {
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
-        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean } }
-        if (!r.report.touches) throw new Broken('The shape no longer reaches the part.')
+        const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; volumeChangeMm3?: number } }
+        // a join off the part always adds a piece, so one that adds no volume sits inside it
+        const joins = (p.op === 'shape.extrude' ? p.spec.operation : p.operation) === 'join'
+        if (!r.report.touches) throw new Broken(joins && r.report.volumeChangeMm3 !== undefined && Math.abs(r.report.volumeChangeMm3) <= 1e-6 ? 'The shape is already inside the part, so it adds nothing.' : 'The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
         break
       }
