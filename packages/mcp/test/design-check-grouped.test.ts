@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A plan groups steps into features ("four standoffs", "port cutouts") and a part may be laid out as several bodies
-// (a case and its lid lying flat beside it). design.check matches each planned feature to the steps that build it and
-// holds the overall size to the assembled part, not to the bounds of everything on the bed.
+// (a case and its lid lying flat beside it). design.check ties each planned feature to the steps tagged with its name
+// (the modeling tools' feature argument), falls back to step names only when no step is tagged, and holds the overall
+// size to the assembled part, not to the bounds of everything on the bed.
 import { describe, expect, it } from 'vitest'
 import { designCheck, type BodyFacts, type PartPlan } from '../src/design-check'
 
@@ -80,79 +81,131 @@ describe('design.check with grouped features', () => {
   })
 })
 
-// A step stands in for a missing feature only when it carries no name of its own and builds shape ("Sketch extrude 5
-// mm", "Rectangle extrude 20 mm"). A step named for something else, or a finishing step such as a fillet, does not.
-describe('design.check matches steps to the feature they build', () => {
-  const noLid = steps.filter((s) => s !== 'Lid')
+// Each modeling tool takes the plan feature its step builds (feature), recorded on the step. A feature with no step
+// tagged with its name fails by name; an untagged step is finishing work and never stands in for a missing feature.
+describe('design.check ties steps to features by their tag', () => {
+  const featureOf: Record<string, string> = { 'Base box': 'Base box', 'Base hollow': 'Base box', 'Vent slots': 'Vents', Lid: 'Snap-fit lid' }
+  const tags = steps.map((s) => featureOf[s] ?? (s.startsWith('Standoff') ? 'Standoffs' : 'Port cutouts'))
+  const tagged: BodyFacts = { ...body, tags }
 
-  it('a step named for nothing in the plan does not stand in for an unbuilt lid', () => {
-    const wrong = [...noLid, 'Fillet edges']
-    const r = designCheck(piCase, { ...body, steps: wrong, features: wrong.length }, 0.4)
+  it('passes 12 tagged steps for 5 features and says how they group', () => {
+    const got = item(designCheck(piCase, tagged, 0.4), 'feature count')
+    expect(got).toMatchObject({ pass: true })
+    expect(got.want).toBe('5 features, each built by a step tagged with its name')
+    expect(got.got).toContain('Standoffs 4')
+  })
+
+  it('fails a feature with no tagged step by name, even when an untagged step is named for it', () => {
+    const r = designCheck(piCase, { ...tagged, tags: tags.map((t, k) => (steps[k] === 'Lid' ? null : t)) }, 0.4)
+    expect(item(r, 'feature count')).toMatchObject({ pass: false })
+    expect(item(r, 'feature count').got).toContain('none tagged for Snap-fit lid')
+    expect(item(r, 'feature count').got).toContain('1 untagged step is finishing work')
+  })
+
+  it("untagged steps under a tool's own name never stand in for a missing feature", () => {
+    const noLid = steps.filter((s) => s !== 'Lid')
+    const extra = ['Add Solids 1', 'Mirror copy', 'Cut, keep below', 'Sketch extrude 4 mm']
+    const r = designCheck(piCase, { ...body, steps: [...noLid, ...extra], features: noLid.length + extra.length, tags: [...tags.filter((_, k) => steps[k] !== 'Lid'), null, null, null, null] }, 0.4)
     expect(item(r, 'feature count')).toMatchObject({ pass: false })
     expect(item(r, 'feature count').got).toContain('Snap-fit lid')
-    expect(item(r, 'feature count').got).toContain('Fillet edges')
   })
 
-  it("a fillet under the engine's own name does not stand in for the lid either", () => {
-    const wrong = [...noLid, 'Fillet 1 mm, 4 edges']
-    const free = wrong.map(() => false)
-    expect(item(designCheck(piCase, { ...body, steps: wrong, features: wrong.length, free }, 0.4), 'feature count').pass).toBe(false)
-  })
-
-  it('a step with no name of its own that builds shape still fills one missing feature', () => {
-    const withFree = [...noLid, 'Rectangle extrude 4 mm']
-    const free = withFree.map((s) => s === 'Rectangle extrude 4 mm')
-    const r = designCheck(piCase, { ...body, steps: withFree, features: withFree.length, free }, 0.4)
+  it('untagged finishing steps beside a fully tagged plan pass', () => {
+    const r = designCheck(piCase, { ...body, steps: [...steps, 'Fillet 1 mm, 4 edges', 'Chamfer 0.5 mm'], features: steps.length + 2, tags: [...tags, null, null] }, 0.4)
     expect(item(r, 'feature count')).toMatchObject({ pass: true })
   })
 
-  it('a step named only by its numbers still fills one missing feature', () => {
-    const withFree = [...noLid, 'Sketch extrude 4 mm']
-    expect(item(designCheck(piCase, { ...body, steps: withFree, features: withFree.length }, 0.4), 'feature count').pass).toBe(true)
+  it('a tag matches its feature whatever the case, punctuation or plural', () => {
+    const r = designCheck(piCase, { ...tagged, tags: tags.map((t) => (t === 'Snap-fit lid' ? 'snap fit lids' : t)) }, 0.4)
+    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+  })
+
+  it('a tag for something the plan lacks fills nothing and is named', () => {
+    const r = designCheck(piCase, { ...tagged, tags: tags.map((t) => (t === 'Snap-fit lid' ? 'Lid' : t)) }, 0.4)
+    expect(item(r, 'feature count')).toMatchObject({ pass: false })
+    expect(item(r, 'feature count').got).toContain('Snap-fit lid')
+    expect(item(r, 'feature count').got).toContain('"Lid"')
+  })
+
+  it('ties by tag alone: a step named for one feature but tagged for another counts for its tag', () => {
+    const plan: PartPlan = { ...piCase, features: [{ name: 'Base', sizes: {} }, { name: 'Lid', sizes: {} }], overall: undefined }
+    const r = designCheck(plan, { ...body, steps: ['Lid', 'Lid 2'], features: 2, tags: ['Base', 'Lid'] }, 0.4)
+    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+  })
+})
+
+// With no step tagged (a client that does not pass feature), steps are matched to features by name alone. A step whose
+// name matches no feature never stands in for one, whatever tool made it.
+describe('design.check by step names, when no step is tagged', () => {
+  const noLid = steps.filter((s) => s !== 'Lid')
+  const plain = (plan: PartPlan, names: string[]) => item(designCheck(plan, { ...body, steps: names, features: names.length }, 0.4), 'feature count')
+  const plan = (...names: string[]): PartPlan => ({ ...piCase, features: names.map((name) => ({ name, sizes: {} })), overall: undefined })
+
+  it('a step named for nothing in the plan does not stand in for an unbuilt lid', () => {
+    const got = plain(piCase, [...noLid, 'Fillet edges'])
+    expect(got).toMatchObject({ pass: false })
+    expect(got.got).toContain('Snap-fit lid')
+    expect(got.got).toContain('Fillet edges')
+  })
+
+  for (const stray of ["Fillet 1 mm, 4 edges", 'Rectangle extrude 4 mm', 'Sketch extrude 4 mm', 'Add Solids 1', 'Mirror copy', 'Cut, keep below', 'Hollow, 2 mm walls'])
+    it(`"${stray}" does not stand in for an unbuilt lid`, () => {
+      expect(plain(piCase, [...noLid, stray]).pass).toBe(false)
+    })
+
+  it('says to tag each step with its feature when a feature has no step', () => {
+    expect(plain(piCase, noLid).got).toContain('pass feature on each step')
+  })
+
+  it('a flip-only mirror does not stand in for a cable notch', () => {
+    expect(plain(plan('Base plate', 'Cable notch'), ['Add Solids 1', 'Mirror']).pass).toBe(false)
+  })
+
+  it('two steps named for the walls do not stand in for the lid', () => {
+    const got = plain(plan('Base', 'Walls', 'Lid'), ['Base', 'Walls', 'Walls 2'])
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain('none for Lid')
+  })
+
+  it('a step the model named "Wall cut" does not stand in for a missing lid', () => {
+    expect(plain(plan('Base', 'Lid'), ['Base', 'Wall cut']).pass).toBe(false)
+  })
+
+  it('features named for walls or a cut are matched by those words', () => {
+    expect(plain(plan('Base', 'Side walls', 'Cable cut'), ['Base', 'Side walls', 'Cable cut']).pass).toBe(true)
+    expect(plain(plan('Base', 'Walls'), ['Base', 'Walls']).pass).toBe(true)
   })
 
   it('as many steps as features are matched by name too: a lid never built fails', () => {
-    const five = ['Base box', 'Standoff 1', 'Standoff 2', 'USB cutout', 'Vent slots']
-    const r = designCheck(piCase, { ...body, steps: five, features: 5 }, 0.4)
-    expect(item(r, 'feature count')).toMatchObject({ pass: false })
-    expect(item(r, 'feature count').got).toContain('Snap-fit lid')
+    const got = plain(piCase, ['Base box', 'Standoff 1', 'Standoff 2', 'USB cutout', 'Vent slots'])
+    expect(got).toMatchObject({ pass: false })
+    expect(got.got).toContain('Snap-fit lid')
   })
 
   it('twelve steps all named for the base fail every other feature by name', () => {
-    const all = Array.from({ length: 12 }, (_, k) => `Base box ${k + 1}`)
-    const got = item(designCheck(piCase, { ...body, steps: all, features: 12 }, 0.4), 'feature count')
+    const got = plain(piCase, Array.from({ length: 12 }, (_, k) => `Base box ${k + 1}`))
     expect(got.pass).toBe(false)
     for (const f of ['Standoffs', 'Port cutouts', 'Vents', 'Snap-fit lid']) expect(got.got).toContain(f)
   })
 
   it('an extra named step no feature claims passes when every feature is built', () => {
-    const extra = [...steps, 'Fillet edges']
-    expect(item(designCheck(piCase, { ...body, steps: extra, features: extra.length }, 0.4), 'feature count').pass).toBe(true)
+    expect(plain(piCase, [...steps, 'Fillet edges']).pass).toBe(true)
   })
 
   it('a step sharing only a generic word goes to the feature it shares the most with', () => {
-    const plan: PartPlan = { ...piCase, features: [{ name: 'Mounting holes', sizes: {} }, { name: 'Vent holes', sizes: {} }], overall: undefined }
-    const r = designCheck(plan, { ...body, steps: ['Mounting hole 1', 'Mounting hole 2', 'Vent hole 1'], features: 3 }, 0.4)
-    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+    expect(plain(plan('Mounting holes', 'Vent holes'), ['Mounting hole 1', 'Mounting hole 2', 'Vent hole 1'])).toMatchObject({ pass: true })
   })
 
   it('a plural feature name matches its singular steps ("holes" and "hole")', () => {
-    const plan: PartPlan = { ...piCase, features: [{ name: 'Mounting plate', sizes: {} }, { name: 'Mounting holes', sizes: {} }], overall: undefined }
-    const r = designCheck(plan, { ...body, steps: ['Mounting plate', 'Mounting hole', 'Mounting hole', 'Mounting hole', 'Mounting hole'], features: 5 }, 0.4)
-    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+    expect(plain(plan('Mounting plate', 'Mounting holes'), ['Mounting plate', 'Mounting hole', 'Mounting hole', 'Mounting hole', 'Mounting hole'])).toMatchObject({ pass: true })
   })
 
   it('on a tie, the feature with fewer words left over takes the step ("Hole" goes to Hole, not Mounting hole)', () => {
-    const plan: PartPlan = { ...piCase, features: [{ name: 'Mounting hole', sizes: {} }, { name: 'Hole', sizes: {} }], overall: undefined }
-    const r = designCheck(plan, { ...body, steps: ['Mounting hole', 'Hole'], features: 2 }, 0.4)
-    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+    expect(plain(plan('Mounting hole', 'Hole'), ['Mounting hole', 'Hole'])).toMatchObject({ pass: true })
   })
 
-  for (const [feature, step] of [['Boxes', 'Box'], ['Assemblies', 'Assembly'], ['Switches', 'Switch'], ['Glass', 'Glass'], ['Holes', 'Hole'], ['Slots', 'Slot'], ['Bosses', 'Boss']] as const)
+  for (const [feature, step] of [['Boxes', 'Box'], ['Assemblies', 'Assembly'], ['Switches', 'Switch'], ['Glass', 'Glass'], ['Holes', 'Hole'], ['Slots', 'Slot'], ['Bosses', 'Boss'], ['Shelves', 'Shelf'], ['Halves', 'Half'], ['Axes', 'Axis'], ['Chassis', 'Chassis'], ['Curves', 'Curve'], ['Valves', 'Valve']] as const)
     it(`the plural "${feature}" matches a step named "${step}"`, () => {
-      const plan: PartPlan = { ...piCase, features: [{ name: 'Base', sizes: {} }, { name: feature, sizes: {} }], overall: undefined }
-      const r = designCheck(plan, { ...body, steps: ['Base', step], features: 2 }, 0.4)
-      expect(item(r, 'feature count')).toMatchObject({ pass: true })
+      expect(plain(plan('Base', feature), ['Base', step])).toMatchObject({ pass: true })
     })
 })
-
