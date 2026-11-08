@@ -83,7 +83,7 @@ export async function applyEdges(host: Loader, objectId: string, partIndex: numb
   if (params.op !== 'edge.fillet' && params.op !== 'edge.chamfer') throw new Error('Not an edge step.')
   const e = get().plate.find((p) => p.id === objectId)
   const part = e?.parts[partIndex]
-  if (!e || !part) throw new Error('That object is gone.')
+  if (!e || !part) throw goneError(objectId)
   const profile = params.op === 'edge.fillet' ? { kind: 'fillet' as const, radiusMm: params.radiusMm } : { kind: 'chamfer' as const, distanceMm: params.distanceMm, ...(params.distance2Mm !== undefined ? { distance2Mm: params.distance2Mm } : {}) }
   reserveStepId()
   const r = await edgeOp({ mesh: { mesh: toGeom(part), transform: e.transform }, edges: params.edges, profile })

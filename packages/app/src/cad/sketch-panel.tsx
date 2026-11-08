@@ -1664,7 +1664,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       }
       afterSolid(r, setNote, () => alive.current)
     } catch (e) {
-      setNote(sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined))
+      const text = sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined)
+      // an editor that closed while the engine worked has no note to show it in
+      if (alive.current && get().objectTool === 'sketch') setNote(text)
+      else toast(text, 'warn')
     } finally {
       setBusy(false)
     }

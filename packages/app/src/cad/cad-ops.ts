@@ -174,6 +174,9 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const entry = t ? get().plate.find((p) => p.id === t.objectId) : undefined
   const part = entry?.parts[t?.partIndex ?? 0]
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
+  // a result for a body that left the plate while the engine worked (deleted, or off it for an edit of its first step)
+  // has nowhere to go: it never becomes a new body
+  if (t && r.frame === 'target' && (!entry || !part)) throw goneError(t.objectId)
   if (r.frame === 'target' && entry && part && t) {
     // A shape that misses the body changes nothing and is not a step: the body keeps its mesh too. A join that
     // would leave pieces floating off the body (text running past the face) counts as a miss, and so does one that

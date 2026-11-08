@@ -128,7 +128,7 @@ export function throughThickness(part: Pick<MeshPart, 'positions' | 'indices'>, 
 export async function pickPushFace(objectId: string, partIndex: number, pick: HitPick, signal?: AbortSignal): Promise<PushFace> {
   const e = get().plate.find((p) => p.id === objectId)
   const part = e?.parts[partIndex]
-  if (!e || !part) throw new Error('That object is gone. Pick a face again.')
+  if (!e || !part) throw goneError(objectId, 'That object is gone. Pick a face again.')
   const f = await pickFace({ mesh: toGeom(part), transform: e.transform }, pick, signal)
   return { objectId, partIndex, pick, frame: f.frame, outline: f.outline, thicknessMm: throughThickness(part, e.transform, pick.at, f.frame.normal) }
 }
@@ -211,7 +211,7 @@ async function pushBeforeRound(host: Loader, entry: PlateEntry, face: PushFace, 
 export async function applyPush(host: Loader, face: PushFace, distanceMm: number): Promise<{ message: string; warn: boolean; moved: MovedFace }> {
   const entry = get().plate.find((p) => p.id === face.objectId)
   const part = entry?.parts[face.partIndex]
-  if (!entry || !part) throw new Error('That object is gone. Pick a face again.')
+  if (!entry || !part) throw goneError(face.objectId, 'That object is gone. Pick a face again.')
   // The step names the face by its key too, so it finds it after an earlier step changes (docs/cad-history.md).
   const faceKey = keyOfTriangle(part, face.pick.triangle)
   const params: PushParams = { op: 'face.push', at: face.pick.at, normal: face.frame.normal, distanceMm, ...(faceKey ? { faceKey } : {}) }
