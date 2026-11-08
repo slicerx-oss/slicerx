@@ -114,6 +114,19 @@ describe('the part a reply made', () => {
     expect(screen.queryByRole('button', { name: 'Resize' })).toBeNull()
   })
 
+  // The first click answers at once: the size row opens with the cursor in its first axis, from a box that had focus.
+  it('puts the cursor in the new size on the first click of Change size', () => {
+    render(
+      <>
+        <textarea aria-label="Ask mimir" />
+        <TranscriptView transcript={reply()} showThinking={false} approvals={approvals} parts={handlers()} />
+      </>,
+    )
+    screen.getByRole('textbox', { name: 'Ask mimir' }).focus()
+    fireEvent.click(screen.getByRole('button', { name: 'Change size' }))
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: /New size of the 20 mm cube X/ }))
+  })
+
   it('binds each reply\'s steps to the part that reply made', () => {
     const h = handlers()
     render(<TranscriptView transcript={twoCubes()} showThinking={false} approvals={approvals} parts={h} />)
