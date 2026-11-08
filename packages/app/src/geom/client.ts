@@ -135,10 +135,24 @@ function workerProvider(): GeomProvider {
     clearTimeout(deadlines.get(id))
     deadlines.delete(id)
   }
-  // each running replay's step: its operation and name. The worker runs other calls in a replay's pause between
-  // steps, and while one runs the replay's limit stops, so it counts only the replay's own engine time.
-  const steps = new Map<number, { op: string; name?: string }>()
+  // Each running replay's step: its operation and name, whether the replay is between steps (it said {yielded}), and
+  // what is left of the step's limit while it is stopped. The worker runs other calls, another replay's steps among
+  // them, while a replay waits between its steps or for a load inside one, so a replay's limit counts only its own
+  // engine time: it is off between steps, stops while another call runs, and goes on with what was left after.
+  const steps = new Map<number, { op: string; name?: string; between?: boolean; left?: number; since?: number }>()
   const othersRunning = () => [...started].some((id) => !steps.has(id))
+  const armStep = (id: number) => {
+    const step = steps.get(id)
+    if (!step || step.between || othersRunning() || !pending.has(id)) return
+    step.since = Date.now()
+    limit(id, step.op, step.name, step.left)
+  }
+  const stopStep = (id: number) => {
+    const step = steps.get(id)
+    if (!step || !deadlines.has(id)) return
+    step.left = Math.max(0, (step.left ?? limitOf(step.op)) - (Date.now() - (step.since ?? Date.now())))
+    unlimit(id)
+  }
   const release = () => {
     if (idle) clearTimeout(idle)
     idle = null
@@ -197,7 +211,8 @@ function workerProvider(): GeomProvider {
   }
   // A call still running at its limit is refused and its worker ends, as for a cancel: nobody may be there to cancel
   // it (a mimir run), and every call queued behind it would wait for good.
-  const limit = (id: number, op: string, name?: string) => {
+  // `wait`: what is left of the limit, for a replay's step that went on after a stop; the refusal names the whole limit
+  const limit = (id: number, op: string, name?: string, wait?: number) => {
     unlimit(id)
     const ms = limitOf(op)
     deadlines.set(
@@ -209,7 +224,7 @@ function workerProvider(): GeomProvider {
         unstarted.delete(id)
         p?.reject(stuck(op, ms, name))
         interrupt()
-      }, ms),
+      }, wait ?? ms),
     )
   }
   endIfIdle = () => {
@@ -224,7 +239,7 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number; op?: string; name?: string }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number; op?: string; name?: string } | { yielded: number }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
@@ -247,30 +262,37 @@ function workerProvider(): GeomProvider {
         if (op === 'history.replay') {
           if (canceled.has(id) || !pending.has(id)) return
           steps.set(id, { op })
-          if (!othersRunning()) limit(id, op)
+          armStep(id)
           return
         }
-        // another call runs: a replay waiting between its steps stops counting
-        for (const r of steps.keys()) unlimit(r)
+        // another call runs: every replay's limit stops until it is done
+        for (const r of steps.keys()) stopStep(r)
         if (canceled.has(id)) interruptAfterGrace(id)
         else if (op !== undefined && pending.has(id)) limit(id, op)
         return
       }
+      if ('yielded' in e.data) {
+        // a replay between its steps: no limit until its next step starts
+        const step = steps.get(e.data.yielded)
+        if (!step) return
+        step.between = true
+        unlimit(e.data.yielded)
+        return
+      }
       if ('step' in e.data) {
-        // a replay's next step: its limit starts again, by that step's class
+        // a replay's next step: a whole limit of that step's class
         const id = e.data.step
         if (!steps.has(id)) return
-        const step = { op: e.data.op ?? 'history.replay', ...(e.data.name ? { name: e.data.name } : {}) }
-        steps.set(id, step)
-        if (!othersRunning()) limit(id, step.op, step.name)
+        steps.set(id, { op: e.data.op ?? 'history.replay', ...(e.data.name ? { name: e.data.name } : {}) })
+        armStep(id)
         return
       }
       const other = started.has(e.data.id) && !steps.has(e.data.id)
       unlimit(e.data.id)
       started.delete(e.data.id)
       steps.delete(e.data.id)
-      // the last other call is done: a waiting replay's step gets a fresh limit
-      if (other && !othersRunning()) for (const [r, step] of steps) limit(r, step.op, step.name)
+      // the last other call is done: each replay in a step goes on with what was left of its limit
+      if (other && !othersRunning()) for (const r of steps.keys()) armStep(r)
       unstarted.delete(e.data.id)
       going.delete(e.data.id)
       const grace = canceled.get(e.data.id)
