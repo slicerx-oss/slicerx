@@ -3,7 +3,7 @@
 // pilot.ask, pilot.sheet and lookup.show: a question with fixed answers that waits for the person's pick, a sheet of
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
-import type { PilotDim, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
+import type { PilotDim, PilotDimAt, PilotSheet, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
@@ -57,49 +57,169 @@ export function lookupTool(): PilotTool<never> {
   }) as PilotTool<never>
 }
 
-const mm = z.number().min(-10_000).max(10_000)
-const vec = z.tuple([mm, mm, mm])
+// The sheet's part and places as one compact object each, not a union per kind: a model reads the kinds and their
+// fields from the descriptions, and a missing field is refused with its name and the shape it needs (sheetProblems).
+// Bounds are checked there too, so the schema a model reads carries no bound on every coordinate.
+const num = z.number()
+// coordinates as plain lists: their lengths are checked with the rest (sheetProblems), which keeps the schema short
+const xyz = z.array(num)
+const xy = z.array(num)
+const outline = z.array(xy)
+const plane = z.enum(['xy', 'xz', 'yz'])
 const at = z
-  .union([z.object({ a: vec, b: vec, off: vec }), z.object({ c: vec, from: vec, to: vec, r: z.number().min(0.1).max(10_000) })])
-  .describe('Where the size sits on the drawing, in the part\'s own mm (Z up): a straight size from a to b drawn moved out by off, or an angle at c from direction from to direction to with an arc r out')
-const outline = z.array(z.tuple([mm, mm])).min(3).max(200)
-const plane = z.enum(['xy', 'xz', 'yz']).describe('xy: points are (x, y), extruded along Z; xz: (x, z) along Y; yz: (y, z) along X')
-const pt2 = z.tuple([mm, mm])
-const size = z.number().min(0.1).max(10_000)
-const extrude = z.object({
-  kind: z.literal('extrude').optional(),
-  plane,
-  points: outline,
-  holes: z.array(outline).max(20).optional(),
-  from: mm,
-  to: mm,
-})
-// a pipe bend, a round stem or a vase, drawn as it will be built where no extruded outline can be
-const flatPlane = z.enum(['xy', 'xz', 'yz'])
-const revolve = z.object({ kind: z.literal('revolve'), plane: flatPlane, points: outline, axis: z.object({ point: pt2, direction: pt2 }), angle: z.number().min(-360).max(360).optional() })
-const sweep = z.object({
-  kind: z.literal('sweep'),
-  // round of diameter d with an optional bore, or an outline
-  profile: z.object({ d: size.optional(), hole: size.optional(), points: outline.optional() }).refine((p) => (p.d === undefined) !== (p.points === undefined), 'give d or points'),
-  path: z.array(vec).min(2).max(100),
-  round: z.number().min(0).max(10_000).optional(),
-})
-const loft = z.object({ kind: z.literal('loft'), plane: flatPlane, sections: z.array(z.object({ at: mm, d: size.optional(), points: outline.optional() }).refine((x) => (x.d === undefined) !== (x.points === undefined), 'give d or points')).min(2).max(20) })
-const solid = z.union([revolve, sweep, loft, extrude])
+  .object({ a: xyz.optional(), b: xyz.optional(), off: xyz.optional(), c: xyz.optional(), from: xyz.optional(), to: xyz.optional(), r: num.optional() })
+  .describe('Where the size sits, in the part\'s mm, Z up. A length: a and b its ends, off the move out to draw it, e.g. {"a":[0,0,0],"b":[80,0,0],"off":[0,-10,0]}. An angle: corner c, directions from and to, arc radius r.')
+const solid = z
+  .object({
+    kind: z.enum(['extrude', 'revolve', 'sweep', 'loft']).optional(),
+    plane: plane.optional(),
+    points: outline.optional(),
+    holes: z.array(outline).optional(),
+    from: num.optional(),
+    to: num.optional(),
+    axis: z.object({ point: xy, direction: xy }).optional(),
+    angle: num.optional(),
+    profile: z.object({ d: num.optional(), hole: num.optional(), points: outline.optional() }).optional(),
+    path: z.array(xyz).optional(),
+    round: num.optional(),
+    sections: z.array(z.object({ at: num, d: num.optional(), points: outline.optional() })).optional(),
+  })
+  .describe(
+    'One solid, in mm, Z up. Plane xy: points are (x, y), built along Z; xz: (x, z) along Y; yz: (y, z) along X. By kind: ' +
+      'extrude (the default): plane, points (outline), from, to, holes optional, e.g. {"plane":"xy","points":[[0,0],[80,0],[80,60],[0,60]],"from":0,"to":30}. ' +
+      'revolve: plane, points (the profile on one side of the axis), axis {point, direction} in the plane, angle optional (360), e.g. {"kind":"revolve","plane":"xz","points":[[5,0],[20,0],[20,40],[5,40]],"axis":{"point":[0,0],"direction":[0,1]}}. ' +
+      'sweep: profile {d, hole optional} or {points}, path [[x,y,z],...], round optional (bend radius), e.g. {"kind":"sweep","profile":{"d":20,"hole":16},"path":[[0,0,0],[0,0,50],[50,0,50]],"round":25}. ' +
+      'loft: plane, sections (2 or more, each at and d or points, along the plane\'s third axis), e.g. {"kind":"loft","plane":"xy","sections":[{"at":0,"d":60},{"at":100,"d":30}]}.',
+  )
+
+type SolidIn = z.infer<typeof solid>
+type AtIn = z.infer<typeof at>
+type Issue = { path: (string | number)[]; message: string }
+type V2 = [number, number]
+type V3 = [number, number, number]
+
+const MM = 10_000
+const SHAPE = {
+  plane: '"xy", "xz" or "yz"',
+  points: '[[x, y], ...] in mm, 3 or more',
+  num: 'a number in mm',
+  axis: '{"point": [x, y], "direction": [x, y]}',
+  profile: '{"d": diameter in mm} (with "hole" for a bore) or {"points": [[x, y], ...]}',
+  path: '[[x, y, z], ...] in mm, 2 or more',
+  sections: '[{"at": mm, "d": mm} or {"at": mm, "points": [[x, y], ...]}, ...], 2 or more',
+  at: '{"a": [x, y, z], "b": [x, y, z], "off": [x, y, z]} in mm, or {"c", "from", "to", "r"} for an angle',
+}
+const inMm = (v: number): boolean => Number.isFinite(v) && Math.abs(v) <= MM
+/** A point of `n` coordinates, each in range. */
+const pt = (p: readonly number[] | undefined, n: number): boolean => !!p && p.length === n && p.every(inMm)
+const outlineOk = (o: readonly (readonly number[])[] | undefined): boolean => !!o && o.length >= 3 && o.length <= 200 && o.every((p) => pt(p, 2))
+
+/** What a part's solid is missing or has wrong, each named with the shape it needs. */
+function solidProblems(x: SolidIn, n: number): Issue[] {
+  const kind = x.kind ?? 'extrude'
+  const name = `part ${n + 1} (${kind})`
+  const out: Issue[] = []
+  const need = (field: string, shape: string): void => void out.push({ path: ['part', n, field], message: `${name} needs ${field}: ${shape}` })
+  if (kind !== 'sweep' && !x.plane) need('plane', SHAPE.plane)
+  if (kind === 'extrude' || kind === 'revolve') if (!outlineOk(x.points)) need('points', SHAPE.points)
+  if (kind === 'extrude') {
+    for (const f of ['from', 'to'] as const) if (x[f] === undefined || !inMm(x[f])) need(f, SHAPE.num)
+    if (x.holes && (x.holes.length > 20 || !x.holes.every(outlineOk))) need('holes', `up to 20 outlines, each ${SHAPE.points}`)
+  }
+  if (kind === 'revolve') {
+    if (!x.axis || !pt(x.axis.point, 2) || !pt(x.axis.direction, 2) || (x.axis.direction[0] === 0 && x.axis.direction[1] === 0)) need('axis', SHAPE.axis)
+    if (x.angle !== undefined && Math.abs(x.angle) > 360) need('angle', 'degrees from -360 to 360')
+  }
+  if (kind === 'sweep') {
+    const p = x.profile
+    const round = p?.d !== undefined && p.points === undefined && p.d >= 0.1 && p.d <= MM && (p.hole === undefined || (p.hole >= 0.1 && p.hole < p.d))
+    const shaped = p?.points !== undefined && p.d === undefined && outlineOk(p.points)
+    if (!round && !shaped) need('profile', SHAPE.profile)
+    if (!x.path || x.path.length < 2 || x.path.length > 100 || !x.path.every((q) => pt(q, 3))) need('path', SHAPE.path)
+    if (x.round !== undefined && (x.round < 0 || x.round > MM)) need('round', 'a bend radius in mm, 0 or more')
+  }
+  if (kind === 'loft') {
+    if (!x.sections || x.sections.length < 2 || x.sections.length > 20) need('sections', SHAPE.sections)
+    else
+      x.sections.forEach((sec, k) => {
+        const ok = inMm(sec.at) && (sec.d !== undefined ? sec.points === undefined && sec.d >= 0.1 && sec.d <= MM : outlineOk(sec.points))
+        if (!ok) out.push({ path: ['part', n, 'sections', k], message: `${name} section ${k + 1} needs at (mm) and either d (a diameter in mm) or points [[x, y], ...], not both` })
+      })
+  }
+  return out
+}
+
+const atOk = (a: AtIn): boolean => {
+  const v = (p: readonly number[] | undefined): boolean => pt(p, 3)
+  if (a.c !== undefined || a.from !== undefined || a.to !== undefined || a.r !== undefined) return v(a.c) && v(a.from) && v(a.to) && a.r !== undefined && a.r >= 0.1 && a.r <= MM
+  return v(a.a) && v(a.b) && v(a.off)
+}
+
+/** A row's place as the sheet carries it: a straight size or an angle, nothing else. */
+function placeOf(a: AtIn): PilotDimAt {
+  const v = (p: number[] | undefined) => p as V3
+  return a.c ? { c: v(a.c), from: v(a.from), to: v(a.to), r: a.r! } : { a: v(a.a), b: v(a.b), off: v(a.off) }
+}
+
+/** A part's solid as the sheet carries it: only its own kind's fields. */
+function solidOf(x: SolidIn): PilotSheetSolid {
+  const o = (p: number[][] | undefined) => p as V2[]
+  const opt = <K extends string, V>(k: K, v: V | undefined): Partial<Record<K, V>> => (v === undefined ? {} : ({ [k]: v } as Record<K, V>))
+  switch (x.kind) {
+    case 'revolve':
+      return { kind: 'revolve', plane: x.plane!, points: o(x.points), axis: { point: x.axis!.point as V2, direction: x.axis!.direction as V2 }, ...opt('angle', x.angle) }
+    case 'sweep': {
+      const p = x.profile!
+      return { kind: 'sweep', profile: p.d !== undefined ? { d: p.d, ...opt('hole', p.hole) } : { points: o(p.points) }, path: x.path as V3[], ...opt('round', x.round) }
+    }
+    case 'loft':
+      return { kind: 'loft', plane: x.plane!, sections: x.sections!.map((sec) => (sec.d !== undefined ? { at: sec.at, d: sec.d } : { at: sec.at, points: o(sec.points) })) }
+    default:
+      return { ...opt('kind', x.kind), plane: x.plane!, points: o(x.points), ...opt('holes', x.holes?.map(o)), from: x.from!, to: x.to! }
+  }
+}
 
 const dim = z.object({
   key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
   label: z.string().min(1).max(60),
-  value: z.number().min(-100_000).max(100_000),
+  value: num,
   unit: z.enum(['mm', 'deg', '%']),
-  min: z.number().min(-100_000).max(100_000).optional(),
-  max: z.number().min(-100_000).max(100_000).optional(),
+  min: num.optional(),
+  max: num.optional(),
   source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle and sourceUrl); photo: measured from their photo; guess: your best guess'),
   sourceTitle: z.string().min(1).max(80).optional(),
   sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
   note: z.string().max(160).optional(),
   at: at.optional(),
 })
+
+type SheetIn = { title: string; views: PilotSheet['views']; dims: z.infer<typeof dim>[]; part?: SolidIn[] | undefined; design?: string | undefined }
+
+/** Every field the sheet's part and places are missing or have wrong, with the row or part named. */
+export function sheetProblems(i: SheetIn): Issue[] {
+  const out: Issue[] = []
+  if (i.part && (i.part.length < 1 || i.part.length > 40)) out.push({ path: ['part'], message: 'part takes 1 to 40 solids' })
+  i.part?.forEach((x, n) => out.push(...solidProblems(x, n)))
+  i.dims.forEach((d, n) => {
+    for (const f of ['value', 'min', 'max'] as const) if (d[f] !== undefined && !(Math.abs(d[f]) <= 100_000)) out.push({ path: ['dims', n, f], message: `row ${n + 1} (${d.label}) ${f} is outside -100000 to 100000` })
+    if (d.at && !atOk(d.at)) out.push({ path: ['dims', n, 'at'], message: `row ${n + 1} (${d.label}) needs at: ${SHAPE.at}` })
+  })
+  return out
+}
+
+/** The checked input as the sheet carries it: each row's place and each solid with only its own fields. */
+export function sheetOf(i: SheetIn): Omit<PilotSheet, 'id'> {
+  return {
+    title: i.title,
+    views: i.views,
+    dims: i.dims.map(({ at: a, ...d }) => ({ ...d, ...(a ? { at: placeOf(a) } : {}) }) as PilotDim),
+    ...(i.part ? { part: i.part.map(solidOf) } : {}),
+    ...(i.design ? { design: i.design } : {}),
+  }
+}
+
+/** A row with no place, as a refusal names it. */
+const unplacedRow = (d: { label: string }, n: number): string => `row ${n + 1} (${d.label}) needs at: ${SHAPE.at}`
 
 export function sheetTool(): PilotTool<never> {
   return defineTool({
@@ -110,29 +230,32 @@ export function sheetTool(): PilotTool<never> {
     description:
       'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
-      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for them to confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit and source. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at, where it sits on the part. New part: part as built (hollow walls as outline plus hole, posts, lid beside base; revolve, sweep or loft for round, bent or tapered bodies), never stand-in boxes. Built part: design, its id, with at in its coordinates.',
+      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for them to confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit and source. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
     input: z
       .object({
         title: z.string().min(2).max(60),
         views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['top', 'front', 'side', 'iso']),
         dims: z.array(dim).min(1).max(30),
-        part: z.array(solid).min(1).max(40).optional(),
-        design: z.string().min(1).max(80).optional().describe('The id of a design already built that this sheet changes: the drawing shows it as built, and at is in its coordinates'),
+        part: z.array(solid).optional(),
+        design: z.string().min(1).max(80).optional().describe('Id of a built design the sheet shows; at is then in its coordinates'),
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
-      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined), 'a looked-up value needs its sourceUrl'),
+      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined), 'a looked-up value needs its sourceUrl')
+      .superRefine((i, ctx) => {
+        for (const p of sheetProblems(i)) ctx.addIssue({ code: 'custom', path: p.path, message: p.message })
+      }),
     args: (i) => `"${i.title}", ${i.dims.length} sizes`,
     async run(i, ctx) {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
       // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw, and a place on it for
       // every row, so each row has its callout
-      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part, the part as it will be built (extruded outlines, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
+      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part: [solid, ...], the part as it will be built (each solid an extrude {"plane", "points", "from", "to"}, or a revolve, sweep or loft for a round, bent or tapered body), or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
       // a design that is not on the plate would show the sheet with no drawing, so mimir hears of it instead
       if (i.design && ctx.sheetDesign && !ctx.sheetDesign(i.design)) return { ok: false, summary: `Not shown: no built design ${i.design} on the plate; use the design id geom.info gives, or give part instead.` }
-      const unplaced = i.dims.length > 1 ? i.dims.filter((d) => !d.at).map((d) => d.key) : []
-      if (unplaced.length) return { ok: false, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing; ${unplaced.join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} none. Send it again with them.` }
-      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}), ...(i.design ? { design: i.design } : {}) })
+      const unplaced = i.dims.length > 1 ? i.dims.flatMap((d, n) => (d.at ? [] : [unplacedRow(d, n)])) : []
+      if (unplaced.length) return { ok: false, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. ${unplaced.join('; ')}. Send it again with them.` }
+      const answer = await ctx.sheet(sheetOf(i))
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question
       if (!answer.confirmed && answer.said) {
         // sizes they had typed on the sheet before writing come along, so they are not lost
