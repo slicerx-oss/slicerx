@@ -7,7 +7,7 @@ import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from
 import { pinnedOlder, type PlaceOf } from './design-frame'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
-import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
+import { followField, keepsArrayOf, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
@@ -245,9 +245,9 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
     if (params.op === 'parts.add') {
       const parts = readStored(s['params']['parts'], files)
       if (!parts) return null
-      // the part an array copied, by name: kept only as a name a part could have (the tools take 120 characters)
+      // the part an array copied, by name: kept only as a name a part could have
       const { arrayOf, ...rest } = params
-      params = { ...rest, parts, ...(typeof arrayOf === 'string' && arrayOf.trim() && arrayOf.length <= 120 ? { arrayOf } : {}) }
+      params = { ...rest, parts, ...(keepsArrayOf(arrayOf) ? { arrayOf } : {}) }
     }
     steps.push({
       id: s['id'],
