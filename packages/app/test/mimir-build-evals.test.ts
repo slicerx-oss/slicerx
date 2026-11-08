@@ -239,7 +239,8 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
   afterAll(() => setGeomProvider(null))
   for (const c of BUILD_CASES) {
     const rec = loadRecording(c.id)
-    it.skipIf(!rec)(`${c.id} scores as it did live`, async () => {
+    // a lofted vase with a shell takes about a minute to rebuild in the engine; the drive stops a replay at 120 s
+    it.skipIf(!rec)(`${c.id} scores as it did live`, { timeout: 180_000 }, async () => {
       const r = await driveCase(c, { steps: rec!.steps })
       console.log(line(c.id, r))
       expect(summary(r)).toEqual(rec!.score)
