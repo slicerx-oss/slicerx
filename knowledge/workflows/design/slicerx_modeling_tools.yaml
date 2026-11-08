@@ -1,0 +1,22 @@
+kind: guide
+schema_version: 1
+id: slicerx_modeling_tools
+name: Modeling tools for SlicerX designs (start, shell, fillet, chamfer, boolean, read back)
+aliases: [modeling tools, design tools, design.new, start a design, geom.shell, shell tool, geom.fillet, fillet, round edges, geom.chamfer, chamfer, bevel, geom.boolean, boolean, union, intersect, geom.info, read back a part]
+applies_to: [all]
+summary: >
+  A design is a part built step by step with the geom tools, each step landing
+  in an editable history the app keeps for a person. This entry has the
+  details the tools' short descriptions leave out.
+facts:
+  - {text: "design.new starts a design. The modeling tools that take its design id include extrude, revolve, loft, sweep, push_pull, fillet, chamfer, hole, build, subtract, hollow, emboss and repair. Every step lands in the design's editable history, the same one SlicerX keeps for a person, so design.save writes a 3MF that opens with every step editable.", src: [slicerx_app_design]}
+  - {text: "A design starts empty, where its first step makes a body, or from an STL path, URL or sample: name (from). Units are mm, Z up, with the bed at Z = 0.", src: [slicerx_app_design]}
+  - {text: "geom.shell hollows a closed body to a wall thickness. A body whose faces are all flat gets exact walls. Each open face is a point on it and its outward normal, as geom.faces lists them. With design the shell step keeps the open faces by their keys, and its wall is an editable number; with a model it writes the new STL and reports the walls.", src: [slicerx_app_cad]}
+  - {text: "geom.fillet rounds straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. geom.edge_pick gives the edges, and its chain or loop picks several.", src: [slicerx_app_cad]}
+  - {text: "geom.chamfer sets each edge back by distance_mm on both faces, or distance_mm on the edge's own face and distance2_mm on the other.", src: [slicerx_app_cad]}
+  - {text: "geom.boolean with a model: union joins model and every model in with, subtract removes them from model, intersect keeps what they share, written as one manifold STL. With design: part is combined with the parts in with_parts, which go away as their own parts.", src: [slicerx_app_cad]}
+  - {text: "geom.info reads bounds (min, max and size in mm), volume, surface area, triangle count, whether the body is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step (an index from 1, a step id or its name).", src: [slicerx_app_cad]}
+  - {text: "design.plan comes before the first geometry step of a part with two or more features. Several holes of one size are one row with a count. The person edits sizes on the card and presses Go; the answer has the plan id, whether it was accepted, and the edited plan when they changed anything.", src: [slicerx_app_design]}
+pilot_actions:
+  - "Read the part back with geom.info after the last feature and check the main sizes against the request."
+src: [slicerx_app_cad, slicerx_app_design]
