@@ -9,8 +9,10 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { sendLedger } from '../src/plate/send-ledger'
 import { compose } from '../src/plate/transform'
 import { profileReady } from '../src/state/profile-sync'
-import { get, set, type PlateEntry } from '../src/state/store'
+import { removePlate } from '../src/plate/plates'
+import { appStore, get, set, type PlateEntry } from '../src/state/store'
 import { bundledKb } from '../src/workspaces/mimir/kb'
+import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { tabPilotOptions } from '../src/workspaces/mimir/session'
 
 /** A one-layer SXPV preview, enough for a slice to land. */
@@ -103,12 +105,41 @@ describe("mimir's real slice is current when it lands", () => {
   it('a filament change just before the slice: the slice is current and printer.queue sends it', async () => {
     const { options, uploaded } = await tab()
     const profileBefore = get().profile
-    const r = await sliceThenQueue(options, () => set({ slotSetup: { 1: { type: 'PETG', brand: 'Generic', color: '#ff0000' } } } as never))
-    // the profile layer was rebuilt for the new filament while the slice waited for it
+    let early = ''
+    const r = await sliceThenQueue(options, () => {
+      set({ slotSetup: { 1: { type: 'PETG', brand: 'Generic', color: '#ff0000' } } } as never)
+      // the fingerprint a read before the profile rebuilt would take
+      early = plateFingerprint(get(), 1)
+    })
+    // the profile layer was rebuilt for the new filament while the slice waited for it, and the slice records the plate
+    // as it was once rebuilt
     expect(get().profile).not.toBe(profileBefore)
+    expect(r.sliced?.fingerprint).not.toBe(early)
     expect(r.sliced).toMatchObject({ sliceId: 'r1', stale: false })
     expect(r.cards).toHaveLength(1)
     expect(uploaded).toEqual(['r1.gcode'])
+  })
+
+  it('plate 1 deleted while plate 2 waits for its profile: the slice is recorded as the plate it is, and an edit to it reads stale', async () => {
+    // three plates, the second shown
+    set({ plates: [{ id: 'p1', name: 'Plate 1', objects: [part('x', 60, 1)], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [], settings: {} }, { id: 'p3', name: 'Plate 3', objects: [part('z', 60, 1)], settings: {} }], activePlate: 'p2', plate: [part('a', 60, 1)] })
+    const { options } = await tab()
+    const steps = [{ calls: [{ name: 'app.slice', args: {} }] }, { text: 'Sliced.' }]
+    const pilot = createPilot({ ...options, client: createScriptedClient(steps, { chunk: false }) })
+    // when the rebuilt profile lands (the slice is waiting for it), plate 1 is deleted: plate 2 becomes plate 1
+    let deleted = false
+    const off = appStore.subscribe((st, prev) => {
+      if (!deleted && st.profile !== prev.profile && st.slice.status !== 'running') deleted = removePlate('p1')
+    })
+    set({ slotSetup: { 1: { type: 'PETG', brand: 'Generic', color: '#ff0000' } } } as never)
+    for await (const ev of pilot.run('tab', 'go', {})) if (ev.type === 'approval_request') await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+    off()
+    expect(deleted).toBe(true)
+    expect(get().plates.map((p) => p.id)).toEqual(['p2', 'p3'])
+    expect(pilot.printRun?.('tab')?.slice).toMatchObject({ sliceId: 'r1', plate: 1, stale: false })
+    // the shown plate (once plate 2) changes: its slice reads stale, so printer.queue would refuse it
+    set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [90, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
+    expect(pilot.printRun?.('tab')?.slice?.stale).toBe(true)
   })
 
   it('a two-color plate with an auto tower: the slice is current after it lands and printer.queue sends it', async () => {
