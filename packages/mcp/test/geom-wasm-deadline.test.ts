@@ -119,7 +119,7 @@ describe('the Node geometry host', () => {
     const geom = createGeomWasm({ wasm })
     const p = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
     const t = performance.now()
-    const run = await runPrompt(p, { geom, timeoutMs: 1000, steps: [{ calls: [{ name: 'make_model', args: { name: 'Cable organizer', parts: [{ kind: 'box', name: 'base', sizeMm: [100, 30, 20], color: 'blue' }] } }] }, { text: 'Done.' }] })
+    const run = await runPrompt(p, { geom, timeoutMs: 1000, tabTools: true, answerRecorded: true, steps: [{ calls: [{ name: 'pilot.sheet', args: { title: 'Size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }, { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] }, { calls: [{ name: 'geom.build', args: { design: 'd1', name: 'base', solids: [{ type: 'box', min: [0, 0, 0], max: [100, 30, 20] }] } }] }, { text: 'Done.' }] })
     expect(performance.now() - t).toBeLessThan(10_000)
     expect(run.parsed.pass).toBe(false)
     expect(`${run.parsed.detail} ${run.error ?? ''}`).toMatch(/build/)
