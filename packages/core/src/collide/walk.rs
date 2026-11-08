@@ -19,11 +19,18 @@ pub(crate) fn object_layers(
     travel_speed: f64,
     lift_over_print: bool,
 ) -> Hits {
-    object_layers_with(model, k, layers, travel_speed, lift_over_print, 0, None)
+    object_layers_with(model, k, layers, travel_speed, lift_over_print, 0, None, &|| {
+        false
+    })
 }
 
 /// [`object_layers`] with the heads `heads` on from the machine's own (0 for them, the offset
 /// [`super::Model::stretch`] returns for its stretched copies), against only the objects `only` lists when it is given.
+/// Once `stop` says so, the moves left are not walked: what comes back is then part of the answer only.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the walk's own settings, and the stop read between layers"
+)]
 pub(crate) fn object_layers_with(
     model: &Model,
     k: usize,
@@ -32,6 +39,7 @@ pub(crate) fn object_layers_with(
     lift_over_print: bool,
     heads: usize,
     only: Option<&[usize]>,
+    stop: &dyn Fn() -> bool,
 ) -> Hits {
     let mut w = Walker {
         m: model,
@@ -41,6 +49,7 @@ pub(crate) fn object_layers_with(
         reach: model.reach(),
         travel_speed: travel_speed.max(1.0),
         lift_over_print,
+        stop,
         hits: Hits::default(),
         near: Vec::new(),
         inside: Memo::default(),
@@ -49,6 +58,9 @@ pub(crate) fn object_layers_with(
         tally: None,
     };
     for l in layers {
+        if stop() {
+            break;
+        }
         w.layer(l);
     }
     w.hits
@@ -93,6 +105,8 @@ struct Walker<'a> {
     travel_speed: f64,
     /// The change G-code lifts over the highest layer printed so far.
     lift_over_print: bool,
+    /// Read between layers and between the moves of one: once it says so, the rest is not walked.
+    stop: &'a dyn Fn() -> bool,
     hits: Hits,
     near: Vec<Near>,
     /// Per layer, what [`super::grid::material_in`] answered and how far the probe stood from an object's rim, by
@@ -223,6 +237,9 @@ impl Walker<'_> {
         #[allow(clippy::cast_possible_truncation, reason = "a share of 0 to 1")]
         let share = |t: f64| (t / total).clamp(0.0, 1.0) as f32;
         for p in &l.paths {
+            if (self.stop)() {
+                return;
+            }
             let pts = l.path_points(p);
             let Some(first) = pts.first().map(|q| {
                 let q = mm(*q);
