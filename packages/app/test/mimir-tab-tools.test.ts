@@ -22,6 +22,7 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { placedOnBed } from '../src/plate/arrange'
 import { bounds, compose, identity } from '../src/plate/transform'
 import { setHostSlices } from '../src/state/model-mode'
+import { resetProfileReady } from '../src/state/profile-sync'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 const handle: MeshHandle = { id: 'm1', hash: 'm1', name: 'Bracket', triangles: 12, bboxMm: [40, 20, 10], openEdges: 0, parts: [] }
@@ -57,6 +58,8 @@ async function rig(calls: { name: string; args: Record<string, unknown> }[] | { 
 describe('the mimir tab works on the open project', () => {
   beforeEach(() => {
     set({ plate: [bracket], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'p1', overrides: {}, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null })
+    // each test builds the P1S layer it reads, whatever ran before it
+    resetProfileReady()
   })
 
   it('reads the project and the bundled guides', async () => {
@@ -84,6 +87,14 @@ describe('the mimir tab works on the open project', () => {
     expect(sliced[0]!.config['wall_loops']).toBe(4)
     // The slice waits for the P1S's profile, as the app's own slice does, so its shipped G-code is trusted as there.
     expect(sliced[0]!.options?.trustedGcode).toBe(true)
+  })
+
+  it("slices with the checks on when the project's printer G-code is edited", async () => {
+    set({ overrides: { machine_start_gcode: 'M104 S0' } })
+    const { results, sliced } = await rig([{ name: 'slice', args: {} }])
+    expect(results.get('slice')).toMatchObject({ ok: true })
+    expect(sliced[0]!.config['machine_start_gcode']).toBe('M104 S0')
+    expect(sliced[0]!.options?.trustedGcode).toBeUndefined()
   })
 
   it('starts a new project only through the command, which asks the person first and says what they chose', async () => {
