@@ -107,12 +107,16 @@ async function rebuild(): Promise<void> {
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
   // The excluded areas and the nozzle wrap check corner (keepOutBoxes): the slice holds a print to both.
   setAvoidAreas(keepOutBoxes(layer.values).map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })))
+  // The printer's nozzle volume, the base of every flush volume, is set with its layer, so a slice waiting for the
+  // profile (profileReady) reads the new printer's (Prepare sets the same value when it shows the printer).
+  const [{ printerBase }, { printerMinFlush }] = await Promise.all([import('../workspaces/prepare/printer-base'), import('@slicerx/settings/flush')])
+  const printerNozzleVolume = printerMinFlush((printerBase({ vendor: model.vendor, model: model.model }) as Record<string, SettingValue>)['nozzle_volume'])
   const bed = get().bed
   const same = bed.widthMm === layer.bed.widthMm && bed.depthMm === layer.bed.depthMm && bed.heightMm === layer.bed.heightMm && !bed.round === !layer.bed.round
   // A new overrides object makes every panel that reads the resolved configuration read it again. Following the
   // printer is not an edit of the project, so a plate that was clean stays clean.
   withoutDirtying(() =>
-    set({ profile: { printerId: layer.printerId, nozzle: layer.nozzle, nozzles: layer.nozzles, nozzleFrom: layer.nozzleFrom, tier: layer.tier, source: layer.source, shippedGcode: layer.shippedGcode, gcodeKeys: layer.gcodeKeys, limits: layer.limits, filamentIds: layer.filamentIds, materialType: layer.materialType, goalValues: layer.goalValues }, ...(same ? {} : { bed: layer.bed }), overrides: { ...get().overrides } }),
+    set({ printerNozzleVolume, profile: { printerId: layer.printerId, nozzle: layer.nozzle, nozzles: layer.nozzles, nozzleFrom: layer.nozzleFrom, tier: layer.tier, source: layer.source, shippedGcode: layer.shippedGcode, gcodeKeys: layer.gcodeKeys, limits: layer.limits, filamentIds: layer.filamentIds, materialType: layer.materialType, goalValues: layer.goalValues }, ...(same ? {} : { bed: layer.bed }), overrides: { ...get().overrides } }),
   )
   markStale()
 }
