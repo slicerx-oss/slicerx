@@ -235,6 +235,25 @@ export function recordedOn(t: Timeline, id: string, plate: Mat4, params: StepPar
 }
 
 /**
+ * A timeline from a project written before sketches moved with what they are drawn for or on: in it a sketch stayed
+ * where it was stored, wherever its body went. Each sketch drawn for no design is made drawn for the body its anchor
+ * would be (the first feature drawn on it whose body is in the project), at that body's transform as the project opens
+ * (`standing`), so it opens where the app that wrote it showed it, and moves with that body from then on. Written once,
+ * as the project opens; a sketch no feature uses is left as it is.
+ */
+export function pinnedOlder(t: Timeline, standing: PlaceOf): Timeline {
+  if (!t.items.some((i) => i.kind === 'sketch' && !i.drawnFor?.length)) return t
+  return {
+    ...t,
+    items: t.items.map((i) => {
+      if (i.kind !== 'sketch' || i.drawnFor?.length) return i
+      const a = sketchUsers(t, i.id).find((u) => standing(u.body) !== undefined)
+      return a ? { ...i, drawnFor: [{ design: a.body, transform: [...standing(a.body)!] }] } : i
+    }),
+  }
+}
+
+/**
  * `t` with the sketches drawn for design `id` while designs waited claimed by it as it gets its body: each then moves
  * with it alone, so a sketch drawn for several waiting designs is the first one's. The same timeline when none is.
  */

@@ -9,6 +9,9 @@
 // Version 3 is one design timeline for the plate (design.ts); versions 1 and 2 open as one.
 export const HISTORY_FILE_VERSION = 2
 export const DESIGN_FILE_VERSION = 3
+// A version 3 file written since sketches move with what they are drawn for or on (design-frame.ts sketchAnchor) says
+// so with this; one without it opens with its sketches where the app that wrote it showed them (pinnedOlder).
+export const SKETCH_ANCHORS = 1
 import type { Timeline } from './design'
 import type { History, HistoryMesh, PaintTexts, PrimitiveSpec } from './model'
 import { BODY_GONE } from './project'
@@ -115,5 +118,5 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
     }
     if (i < d.marker) marker = items.length
   })
-  return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: DESIGN_FILE_VERSION, bodies, items, marker }) }, ...files]
+  return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: DESIGN_FILE_VERSION, sketchAnchors: SKETCH_ANCHORS, bodies, items, marker }) }, ...files]
 }
