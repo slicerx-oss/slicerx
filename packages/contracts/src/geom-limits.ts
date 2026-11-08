@@ -32,9 +32,10 @@ export const GEOM_CALL_LIMIT_MS: Readonly<Record<GeomOpClass, number>> = {
  * Each operation's class and the name a person knows its step by (the tool's label in the app): the engine's operations
  * (packages/geom/src/json.rs), the app worker's own (engine start, history replay) and those of the history steps a
  * replay runs. A test checks every engine operation is listed here, so a new one gets its class on purpose. An
- * operation not listed is a model call with no name of its own.
+ * operation not listed is a model call with no name of its own; one a person never runs as a step (the engine's own
+ * start) has a class and no name, so its refusal says "This step".
  */
-const STEPS: Readonly<Record<string, readonly [GeomOpClass, string]>> = {
+const STEPS: Readonly<Record<string, readonly [GeomOpClass, string?]>> = {
   // answers at the pointer
   info: ['quick', 'Mesh info'],
   section: ['quick', 'Section'],
@@ -72,8 +73,8 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string]>> = {
   'nest.end': ['quick', 'Arrange'],
   'brep.count': ['quick', 'Solid info'],
   'brep.info': ['quick', 'Solid info'],
-  'engine.core': ['quick', 'Engine start'],
-  'engine.full': ['quick', 'Engine start'],
+  'engine.core': ['quick'],
+  'engine.full': ['quick'],
   // building and joining solids
   build: ['model', 'Build'],
   subtract: ['model', 'Subtract'],
@@ -96,6 +97,8 @@ const STEPS: Readonly<Record<string, readonly [GeomOpClass, string]>> = {
   'thread.apply': ['model', 'Thread'],
   shell: ['model', 'Shell'],
   mirror: ['model', 'Mirror'],
+  'parts.add': ['model', 'Add parts'],
+  'parts.order': ['model', 'Reorder parts'],
   'brep.box': ['model', 'Solid shape'],
   'brep.cylinder': ['model', 'Solid shape'],
   'brep.primitive': ['model', 'Solid shape'],
@@ -171,5 +174,14 @@ export function geomStuckMessage(op: string, limitMs: number, name: string | und
 
 /** Whether a refusal (an error's or a failed tool's words) is one of geomStuckMessage's. */
 export function isGeomStuck(text: string): boolean {
-  return /(ran past its [0-9.]+ (s|min) limit and was stopped|took too long \(over its [0-9.]+ (s|min) limit\) and was stopped)/.test(text)
+  return isGeomStuckFinal(text) || /took too long \(over its [0-9.]+ (s|min) limit\) and was stopped; try it again/.test(text)
+}
+
+/**
+ * Whether a refusal is geomStuckMessage's for model or mesh work: the same call would stop the same way, so only a
+ * smaller version, or the same call on a part made smaller, is worth running. A quick step's refusal says to try it
+ * again.
+ */
+export function isGeomStuckFinal(text: string): boolean {
+  return /ran past its [0-9.]+ (s|min) limit and was stopped; try a smaller version/.test(text)
 }

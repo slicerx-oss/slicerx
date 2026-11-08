@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A stand-in for geom-worker.ts in a real thread, with its protocol (worker-loop.ts): a call that can be canceled
-// waits for the page's go, the worker says when a call starts, and `array` spins forever, as a join stuck in the
-// engine does. Tests of the time limit (geom-client-deadline.test.ts, mimir-geom-deadline.test.ts) use it.
+// waits for the page's go, the worker says when a call starts, and `array` and `face.pick` spin forever, as a join
+// stuck in the engine does. Tests of the time limit (geom-client-deadline.test.ts, mimir-geom-deadline.test.ts) use it.
 import { Worker as Thread } from 'node:worker_threads'
 import { vi } from 'vitest'
 
@@ -18,7 +18,7 @@ parentPort.on('message', (m) => {
   }
   if ('go' in m) m = waiting.get(m.go)
   parentPort.postMessage({ started: m.id })
-  if (m.op === 'array') for (;;) {}
+  if (m.op === 'array' || m.op === 'face.pick') for (;;) {}
   parentPort.postMessage({ id: m.id, result: { op: m.op } })
 })
 `
