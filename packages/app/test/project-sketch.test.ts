@@ -4,7 +4,7 @@
 // Projecting into a sketch (cad-history project.ts, cad/project-sketch.ts): the curves sit in the sketch as tagged
 // loops, a projection follows its body when that body changes and the bodies drawn on the sketch replay with it, in
 // the same undo step; a source that is gone keeps its curves and says why; projections save and open with the
-// project; and an agent projects, switches and removes through the MCP tool on the app's host, reading back each time.
+// project; and an MCP client projects, switches and removes through the MCP tool on the app's host, reading back each time.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { BODY_GONE, featureParams, followProjections, historyOf, MAX_PROJECTION, nextProjectionId, TOO_MANY_PROJECTIONS, projectRequest, withHistory, parseTimeline, projectedOf, timelineFiles, withBodyIds, withProjection, withoutProjection, type FaceFrame, type FeatureItem, type HistoryMesh, type ProjectSource, type SketchItem, type SketchLoop, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { designToolset } from '@slicerx/mcp/toolset'
