@@ -17,7 +17,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { appendStep, bakeMesh, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, noDesignMessage, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { appendStep, bakeMesh, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, noDesignMessage, placedAfter, placement, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -124,13 +124,15 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     if (!opts.bed || !d.parts.length) return undefined
     if (!d.history.steps.length && before.parts.length) return undefined
     const bed = opts.bed(d.id)
+    // the bed reads where the design stands; a landing moves that and keeps the design's frame (cad-history landing.ts)
+    const at = placement(d)
     if (!before.parts.length) {
-      const l = landNew(d.parts, d.transform, bed)
-      d.transform = l.transform
+      const l = landNew(d.parts, at, bed)
+      if (l.moved && 'dxMm' in l.moved) d.placed = placedAfter(d.placed, at, l.transform)
       return l.moved
     }
-    const r = landEdit(before, d.parts, bed)
-    if (r.to) d.transform = r.to
+    const r = landEdit({ parts: before.parts, transform: placement({ transform: before.transform, placed: d.placed }) }, d.parts, bed)
+    if (r.to) d.placed = placedAfter(d.placed, at, r.to)
     return r.landed
   }
 

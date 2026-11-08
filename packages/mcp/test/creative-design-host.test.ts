@@ -4,7 +4,7 @@
 // each step replayed on the geometry engine as CAD history. A part built through design.new and geom.extrude replays
 // from its history alone to the same body, and a recorded reply that builds with the design tools replays through the
 // eval and is scored on that body.
-import { IDENTITY, replayHistory, type DesignHost, type HistoryMesh, type Mat4 } from '@slicerx/cad-history'
+import { IDENTITY, placement, replayHistory, type DesignHost, type HistoryMesh, type Mat4 } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
 import { headlessDesignHost, plainBed } from '../evals/creative/design-host'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
@@ -204,7 +204,7 @@ describe('the eval bed (plainBed)', () => {
 describe('the eval host lands bodies on the bed', () => {
   const BED = { widthMm: 256, depthMm: 256, heightMm: 256 }
   function landing() {
-    const host: DesignHost = headlessDesignHost(engine, { bed: (id) => plainBed(BED, () => host.list().filter((d) => d.id !== id && d.parts.length)) })
+    const host: DesignHost = headlessDesignHost(engine, { bed: (id) => plainBed(BED, () => host.list().filter((d) => d.id !== id && d.parts.length).map((d) => ({ parts: d.parts, transform: placement(d) }))) })
     return { host, tools: tabToolset(host, createCardPlans(createPlanRegistry())) }
   }
   const rect = (design: string, w: number, h: number, center: [number, number], more: Record<string, unknown> = {}) => ({ design, shape: { type: 'rectangle', widthMm: w, heightMm: h }, placement: { center }, distance_mm: 5, ...more })
@@ -216,7 +216,9 @@ describe('the eval host lands bodies on the bed', () => {
     expect(landedOf(await call(tools, 'geom.extrude', rect('d1', 20, 20, [128, 128])))).toBeUndefined()
     const joined = await call(tools, 'geom.extrude', rect('d1', 140, 20, [200, 128], { operation: 'join', part: 0 }))
     expect(landedOf(joined)).toBe('Block did not fit on the bed where it stood, so it moved by (-66, 0) mm.')
-    expect(host.get('d1').transform).toEqual(at(-66, 0))
+    // the move is the design's placement: its frame stays where it was built
+    expect(host.get('d1').transform).toEqual([...IDENTITY])
+    expect(placement(host.get('d1'))).toEqual(at(-66, 0))
     expect(host.get('d1').landed).toBeUndefined()
     const listed = (await call(tools, 'design.list', {})) as { output: { designs: { landed?: string }[] } }
     expect(listed.output.designs[0]!.landed).toBeUndefined()
@@ -248,11 +250,12 @@ describe('the eval host lands bodies on the bed', () => {
     const made = await host.create('Plate', [box([100, 100, 0], [120, 120, 5])])
     expect(made.landed).toBeUndefined()
     await call(tools, 'geom.extrude', rect(made.id, 140, 20, [200, 110]))
-    const moved = host.get(made.id).transform
+    const moved = placement(host.get(made.id))
     expect(moved).not.toEqual([...IDENTITY])
+    expect(host.get(made.id).transform).toEqual([...IDENTITY])
     const undone = await call(tools, 'design.undo', { design: made.id })
     expect(landedOf(undone)).toBeUndefined()
-    expect(host.get(made.id).transform).toEqual(moved)
+    expect(placement(host.get(made.id))).toEqual(moved)
     expect(host.get(made.id).history.steps).toHaveLength(0)
   })
 })
