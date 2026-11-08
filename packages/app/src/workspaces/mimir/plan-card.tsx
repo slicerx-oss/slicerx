@@ -29,9 +29,10 @@ const UNIT_WORD = { mm: 'millimeters', in: 'inches' } as const
 /** The smallest size a field takes: one step of its last digit, so a size is always more than 0. */
 const SIZE_MIN = { mm: 0.01, in: 0.001 } as const
 
-/** How a size's field reads and steps: a count in whole steps with no unit, an angle in degrees, a length in the plan's units. */
-function fieldOf(kind: SizeKind, unit: 'mm' | 'in'): { unit: string; word: string; digits: number; step: number; min: number } {
-  if (kind === 'count') return { unit: sizeUnit(kind, unit), word: '', digits: 0, step: 1, min: 1 }
+/** How a size's field reads and steps: a count in whole steps with no unit (its own decimals when the plan gave a fraction), an angle in degrees, a length in the plan's units. */
+function fieldOf(kind: SizeKind, unit: 'mm' | 'in', value: number): { unit: string; word: string; digits: number; step: number; min: number } {
+  // a fraction that came in the plan shows its own decimals, so the field reads what Go sends
+  if (kind === 'count') return { unit: sizeUnit(kind, unit), word: '', digits: Number.isInteger(value) ? 0 : 2, step: 1, min: 1 }
   if (kind === 'angle') return { unit: sizeUnit(kind, unit), word: 'degrees', digits: 2, step: 1, min: SIZE_MIN.mm }
   return { unit: sizeUnit(kind, unit), word: UNIT_WORD[unit], digits: unit === 'in' ? 3 : 2, step: unit === 'in' ? 0.05 : 0.5, min: SIZE_MIN[unit] }
 }
@@ -104,7 +105,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   // `times` is how many holes a hole row stands for: more than one reads "4 x 3.4 mm"
   // `kind` is what the size measures: a count reads "4", an angle "30°", a length "80 mm"; a count typed as a fraction is kept whole
   const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1, kind: SizeKind = 'length'): ReactNode => {
-    const f = fieldOf(kind, unit)
+    const f = fieldOf(kind, unit, value)
     return (
       <li key={id} className="sheet-rec-row plan-rec-row">
         <label className="sheet-rec-label" htmlFor={live ? id : undefined}>

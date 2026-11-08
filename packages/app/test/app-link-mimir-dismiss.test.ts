@@ -133,14 +133,14 @@ describe('mimir.dismiss over the app link', () => {
 describe('mimir.dismiss on a waiting size sheet', () => {
   const SHEET = { name: 'pilot.sheet', args: { title: 'Clip sizes', dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'asked' }] } }
 
-  function sheetChat(sessionId: string) {
+  function sheetChat(sessionId: string, sheet: { name: string; args: Record<string, unknown> } = SHEET) {
     const seen: { ok: boolean; summary?: string; result: unknown }[] = []
     const reader: ScriptStep = (messages) => {
       const last = messages.at(-1)
       if (last?.role === 'tool') seen.push(JSON.parse(last.content) as { ok: boolean; result: unknown })
       return { text: 'Adding the hole.' }
     }
-    const pilot = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [SHEET] }, reader], { chunk: false }), builtins: false, tools: [sheetTool()], store: mimirLogs })
+    const pilot = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [sheet] }, reader], { chunk: false }), builtins: false, tools: [sheetTool()], store: mimirLogs })
     let transcript: Transcript = startTurn(emptyTranscript(), { user: 'a cable clip' }, 0)
     let shownSheet: () => void = () => undefined
     const shown = new Promise<void>((r) => (shownSheet = r))
@@ -198,6 +198,16 @@ describe('mimir.dismiss on a waiting size sheet', () => {
     const refused = (await runCall('mimir.dismiss', {}).catch((e: unknown) => e)) as LinkError
     expect(refused.message).toBe(`mimir is waiting on size sheet ${now.waiting!.sheetId}, not a question; give its sheetId to set it aside`)
     await runCall('mimir.dismiss', { sheetId: now.waiting!.sheetId, said: 'done' })
+    await c.run
+  })
+
+  it('gives each waiting size the unit the sheet shows it in: count for a count, deg for an angle given in mm', async () => {
+    const gear = { name: 'pilot.sheet', args: { title: 'Gear sizes', dims: [{ key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', source: 'asked' }] } }
+    const c = sheetChat('s_units', gear)
+    await c.shown
+    const one = (await runCall('mimir.session', { id: 's_units' })) as { waiting: { sizes: { key: string; unit: string }[] } | null }
+    expect(one.waiting?.sizes.map((s) => [s.key, s.unit])).toEqual([['teeth', 'count']])
+    await runCall('mimir.dismiss', { sheetId: (one.waiting as unknown as { sheetId: string }).sheetId, said: 'done' })
     await c.run
   })
 
