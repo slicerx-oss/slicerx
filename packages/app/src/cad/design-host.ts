@@ -455,13 +455,13 @@ function same(a: readonly number[], b: readonly number[]): boolean {
 
 /**
  * The plate with the designs a landing moved over to make room moved back where they stood, each with its landing
- * moves as they were, when it still stands where the room move put it; one the person moved since stays.
+ * moves as they were, when it still stands where the room move put it; one the person moved or locked since stays.
  */
 function movedBack(plate: PlateEntry[], moves: readonly { id: string; from: number[]; to: number[] }[]): PlateEntry[] {
   if (!moves.length) return plate
   return plate.map((e) => {
     const m = moves.find((x) => x.id === e.id)
-    if (!m || !e.history || !same(e.transform, m.to)) return e
+    if (!m || !e.history || e.locked || !same(e.transform, m.to)) return e
     return { ...e, transform: [...m.from], landedAt: [...m.from], history: withPlaced(e.history, placedAfter(e.history.placed, e.transform, m.from)) }
   })
 }
