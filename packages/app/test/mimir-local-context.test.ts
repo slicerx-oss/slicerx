@@ -16,7 +16,7 @@ import { registerCommands } from '../src/commands/registry'
 import { NEUTRAL } from '../src/edition'
 import { setupCommands } from '../src/first-run/look'
 import { get, set, type PlateEntry } from '../src/state/store'
-import { resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
+import { hasDesign, resetTabMimir, tabMimir, tabTools } from '../src/workspaces/mimir/session'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
 
@@ -68,22 +68,28 @@ const CONVERSATION_ROOM = 1500
 const LOCAL = { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } as const
 const CLOUD = { mode: 'on', provider: 'anthropic' } as const
 
-/** Each kind of turn: the message, and the message before it in the same chat when the kind follows from it. */
-const TURNS: { kind: string; before?: string; message: string }[] = [
+/**
+ * Each kind of turn: the message, the message before it in the same chat when the kind follows from it, and whether a
+ * design is on the plate (shaping needs one; with none, the same words start a part).
+ */
+const TURNS: { kind: string; before?: string; message: string; design?: true }[] = [
   { kind: 'build', message: 'A 30 mm cube with a fillet' },
-  { kind: 'shape', before: 'A 30 mm cube with a fillet', message: 'Mirror it and add a pattern of four holes' },
+  { kind: 'shape', before: 'A 30 mm cube with a fillet', message: 'Mirror it and add a pattern of four holes', design: true },
   { kind: 'edit', before: 'A 30 mm cube with a fillet', message: 'Make the base thicker' },
   { kind: 'app', message: 'Slice the plate and send it to my printer' },
   { kind: 'app', before: 'A wall hook for a 6 mm screw', message: 'What layer height and infill should I print it with?' },
   { kind: 'print', message: "How's my print going?" },
 ]
 
+/** A design on the plate: an object with a history. */
+const DESIGN: PlateEntry = { id: 'obj_cube', name: 'Cube', handle: handle('obj_cube'), parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], history: { version: HISTORY_VERSION, base: [], steps: [] } }
+
 const hostWith = (llm: LlmTransport): Host => ({ kind: 'desktop', capabilities: { secureStorage: true }, slicer: { loadParts: async (n: string) => handle(n) }, build: { version: '0.0.0-test' }, llm }) as unknown as Host
 
 /** The first request of `message`'s turn in a fresh chat, after `before` when given. */
-async function turn(pref: typeof LOCAL | typeof CLOUD, message: string, before?: string): Promise<LlmHttpRequest> {
+async function turn(pref: typeof LOCAL | typeof CLOUD, message: string, before?: string, design?: boolean): Promise<LlmHttpRequest> {
   resetTabMimir()
-  set({ pilot: pref })
+  set({ pilot: pref, ...(design ? { plate: [DESIGN] } : {}) })
   const llm = transport()
   const pilot = await tabMimir(hostWith(llm), NEUTRAL)
   if (before) for await (const _ of pilot.run('s', before)) void _
@@ -93,7 +99,7 @@ async function turn(pref: typeof LOCAL | typeof CLOUD, message: string, before?:
 }
 
 describe('the mimir tab on a local model', () => {
-  const was = { pilot: get().pilot }
+  const was = { pilot: get().pilot, plate: get().plate }
   let off: () => void = () => undefined
   beforeAll(() => {
     // the commands the app registers at startup (app.tsx): the built-in ones over the default tabs, and the setup ones
@@ -110,8 +116,10 @@ describe('the mimir tab on a local model', () => {
   })
   afterAll(() => off())
 
-  it.each(TURNS)('fits a $kind turn ($message) in the context with the whole system prompt', async ({ message, before }) => {
-    const local = await turn(LOCAL, message, before)
+  it.each(TURNS)('fits a $kind turn ($message) in the context with the whole system prompt', async ({ kind, message, before, design }) => {
+    const local = await turn(LOCAL, message, before, design)
+    // the turn sends the set it is named for
+    if (kind === 'shape') expect(read(local).tools.map((t) => t.name)).toContain('geom__mirror')
     expect(local.url).toContain('127.0.0.1:11434')
     const c = cost(local)
     // the headroom in the failure message: what the turn uses, the limit and what is spare
@@ -157,6 +165,23 @@ describe('the mimir tab on a local model', () => {
       set({ plate: [] })
     }
     expect(await tools('Make a circular pattern of six holes')).toContain('design__new')
+  })
+
+  // a design that is still waiting for its first body (every extrude failed, or every step was undone) is no body on
+  // the plate: a new chat, or a new project, starts a part
+  it('builds in a new chat while a design is still waiting for its first body', async () => {
+    resetTabMimir()
+    set({ pilot: LOCAL, plate: [] })
+    const llm = transport()
+    const pilot = await tabMimir(hostWith(llm), NEUTRAL)
+    const made = await tabTools().find((t) => t.name === 'design.new')!.run({ name: 'Desk lid' } as never, {} as never)
+    expect(made.ok).not.toBe(false)
+    expect(hasDesign()).toBe(false)
+    const at = llm.sent.length
+    for await (const _ of pilot.run('other', 'Make a circular pattern of six holes')) void _
+    const sent = read(llm.sent[at]!).tools.map((t) => t.name)
+    expect(sent).toContain('design__new')
+    expect(sent).not.toContain('geom__array')
   })
 
   it('lists each set for clients, and every set together is every tool the tab offers', async () => {
