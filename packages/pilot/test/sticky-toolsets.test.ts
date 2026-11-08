@@ -148,6 +148,8 @@ const PRINT_ASKS = [
   'queue it on Printer 1',
   'send the bracket to my A1',
   'please print',
+  'send us the bracket to the printer',
+  'Print the bracket on Printer 3',
 ]
 // Questions about a print going, the printers or the settings, and other things to send. None of these asks for a print.
 const NOT_PRINT_ASKS = [
@@ -168,6 +170,11 @@ const NOT_PRINT_ASKS = [
   'send a bug report',
   'send my feedback',
   'send a photo from the camera',
+  'send me the logs',
+  'send to cloud',
+  'print farm status',
+  'print volume',
+  'Print stuck at layer 40',
 ]
 
 describe('the print request pattern', () => {
