@@ -9,7 +9,7 @@
 // prints around it, off the bed or into an excluded area lands it again the same way, in the same undo step, and says
 // so. A part that still prints where it stands stays put; one parked off the bed before the step, or a locked one,
 // stays where it is, and the step says it is off the bed.
-import { HISTORY_VERSION, appendStep, landEdit, landNew, stepId, type BedLanding, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, designNamed, landEdit, landNew, noDesignMessage, stepId, type BedLanding, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -76,7 +76,11 @@ export function appDesignHost(loader: Loader): DesignHost {
       if (e) return fromEntry(e)
       const w = empty.get(id)
       if (w) return { id, name: w.name, history: w.history, transform: [...w.transform], parts: [], status: [], madeBy: {}, redo: redo.get(id) ?? [] }
-      throw new DesignNotFound(`design: no design ${id}; design.list lists them`)
+      // a design given by its name where its id goes: the one design of that name, else the ids there are
+      const all = host.list()
+      const named = designNamed(all, id)
+      if (named) return named
+      throw new DesignNotFound(noDesignMessage(id, all, { start: 'design.new', list: 'design.list' }))
     },
 
     list() {
