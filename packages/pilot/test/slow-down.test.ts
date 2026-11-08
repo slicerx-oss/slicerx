@@ -110,6 +110,34 @@ describe('a slow_down from the proxy mid-build', () => {
     expect(done(events)?.stopReason).toBe('end')
   })
 
+  it('a second streak after a step that went through says it is waiting again and sends that same step again', async () => {
+    // every request the model gets, refused or not, so a step sent again can be told from the next one
+    const sent: unknown[] = []
+    const inner = proxied([{ calls: [SHEET] }, x('Base'), x('Vents'), { text: 'Built.' }], (n) => n === 1 || n === 3)
+    const client: LlmClient = {
+      provider: 'mimir-cloud',
+      stream(req, signal) {
+        sent.push(structuredClone(req.messages))
+        return inner.stream(req, signal)
+      },
+    }
+    const s = setup(client)
+    const events = await s.say('A Pi 5 case')
+    // two streaks of one refusal each: a notice and a wait for each, not once for the run
+    expect(slowNotices(events)).toEqual([
+      { type: 'error', message: SLOW_DOWN_NOTICE, retryable: false, code: 'slow_down', waiting: true },
+      { type: 'error', message: SLOW_DOWN_NOTICE, retryable: false, code: 'slow_down', waiting: true },
+    ])
+    expect(s.waits).toEqual([SLOW_DOWN_WAIT_MS, SLOW_DOWN_WAIT_MS])
+    expect(s.log).toEqual(['Base', 'Vents'])
+    // four answers and two refusals: each refused step went out again, with the same messages
+    expect(sent).toHaveLength(6)
+    expect(sent[2]).toEqual(sent[1])
+    expect(sent[4]).toEqual(sent[3])
+    expect(sent[3]).not.toEqual(sent[2])
+    expect(done(events)?.stopReason).toBe('end')
+  })
+
   it('a refusal after each wait for a whole rate window stops the run cut short, with the sheet kept for "keep going"', async () => {
     let refusing = true
     const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base'), x('Base hollow'), x('Lid'), { text: 'The lid is built.' }]
