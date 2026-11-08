@@ -291,6 +291,37 @@ function denseWithThinPlate(thick = 0.5) {
   return meshOf(tris)
 }
 
+/**
+ * A closed tube that tapers, its inner and outer radii at the foot and the top, in `sides` sides: with `needle`, one
+ * facet of its top face is split around a point that far from the bore's edge, leaving a needle facet along the edge.
+ */
+function taperedTube(o: { foot: [number, number]; top: [number, number]; height: number; sides: number; needle?: number }) {
+  const positions: number[] = []
+  const at = (r: number, k: number, z: number): number => (positions.push(r * Math.cos((2 * Math.PI * k) / o.sides), r * Math.sin((2 * Math.PI * k) / o.sides), z), positions.length / 3 - 1)
+  const ring = (r: number, z: number) => Array.from({ length: o.sides }, (_, k) => at(r, k, z))
+  const [fi, fo, ti, to] = [ring(o.foot[0], 0), ring(o.foot[1], 0), ring(o.top[0], o.height), ring(o.top[1], o.height)]
+  const indices: number[] = []
+  const quad = (a: number, b: number, c: number, d: number) => indices.push(a, b, c, a, c, d)
+  for (let k = 0; k < o.sides; k++) {
+    const j = (k + 1) % o.sides
+    quad(fo[k]!, fo[j]!, to[j]!, to[k]!) // outside, facing out
+    // the bore, facing in; by the needle, its top facet split at the top edge's middle, a corner the needle does not
+    // share, as a cut leaves it
+    if (k === 0 && o.needle) {
+      const mid = at(o.top[0] * Math.cos(Math.PI / o.sides), 0.5, o.height)
+      indices.push(fi[j]!, fi[k]!, ti[k]!, fi[j]!, ti[k]!, mid, fi[j]!, mid, ti[j]!)
+    } else quad(fi[j]!, fi[k]!, ti[k]!, ti[j]!)
+    quad(fi[k]!, fi[j]!, fo[j]!, fo[k]!) // the foot, facing down
+    if (k === 0 && o.needle) {
+      // the top's triangle on the bore's edge, split around a point just off the edge's middle
+      const m = o.top[0] * Math.cos(Math.PI / o.sides) + o.needle
+      const p = at(m, 0.5, o.height)
+      indices.push(to[k]!, to[j]!, ti[j]!, to[k]!, ti[j]!, p, ti[j]!, ti[k]!, p, ti[k]!, to[k]!, p)
+    } else quad(to[k]!, to[j]!, ti[j]!, ti[k]!) // the top, facing up
+  }
+  return { positions, indices }
+}
+
 describe('minWall', () => {
   it('reads a thin plate among more than 6000 facets that casting from every second facet misses', () => {
     const m = denseWithThinPlate()
@@ -325,6 +356,16 @@ describe('minWall', () => {
     // a lid with knuckles around a 3.8 mm bore, as a build left it: its thinnest wall is the knuckle around the bore
     const lid = JSON.parse(gunzipSync(readFileSync(join(__dirname, 'fixtures', 'knuckle-lid.json.gz'))).toString('utf8')) as { positions: number[]; indices: number[] }
     expect(minWall([lid]).mm).toBeCloseTo(1.102, 3)
+  })
+
+  it('a needle facet on the rim of a bore that narrows to the top does not read the rim as a wall a hair thick', () => {
+    // a stem 2 mm thick around a bore 36 mm across at the foot and 18 mm at the top, as a loft cut leaves it, with a
+    // needle facet along the bore's top edge: a ray down from it leaves the solid a few thousandths in, grazing the
+    // bore's side, which leans 3.5 degrees, through a facet that shares no edge with it. The thinnest wall is the
+    // stem's 2 mm.
+    const stem = taperedTube({ foot: [18, 20], top: [9, 11], height: 150, sides: 48, needle: 0.01 })
+    expect(minWall([stem]).mm).toBeGreaterThan(1.8)
+    expect(minWall([stem]).mm).toBeLessThanOrEqual(2)
   })
 })
 
