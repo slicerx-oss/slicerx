@@ -39,7 +39,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
-import { bindNext, sketchNext } from './history/record'
+import { bindNext } from './history/record'
 import { ProjectCard, type Projected } from './project-card'
 import { afterSolid, defaultTarget, finishSketch, oneAtATime, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import type { UndoStep } from '../plate/history'
@@ -1605,16 +1605,16 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
   // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
   // timeline as the solid that names it lands, in its undo step (solidOnNewSketch), and a finished one takes changed
-  // projections first.
-  const onSketch = async <T,>(apply: (step?: UndoStep) => Promise<T>): Promise<T> => {
+  // projections first. The sketch's id goes to the solid's step by name, never through a slot another tool's solid
+  // could take while the engine works.
+  const onSketch = async <T,>(apply: (step?: UndoStep, sketch?: string) => Promise<T>): Promise<T> => {
     const id = init?.from?.id ?? null
     if (!stepEdit && !featureOnly && !id && projected.list.length) return solidOnNewSketch(sketchBody(), apply)
     if (!stepEdit && !featureOnly && id && JSON.stringify(projected.list) !== JSON.stringify(init?.projected?.list ?? [])) await updateSketch(host.slicer, id, sketchBody())
-    sketchNext(id)
-    return apply()
+    return apply(undefined, id ?? undefined)
   }
   // one press at a time: Enter in a number field runs Extrude again while the first is still working otherwise
-  const press = useMemo(oneAtATime, [])
+  const [press] = useState(oneAtATime)
   const go = () => press(async () => {
     if (!ready) return
     setBusy(true)
@@ -1633,20 +1633,19 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (bad) throw new Error(bad)
         bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...into, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
-        r = await onSketch((step) => (stepEdit ? saveSketch(extrudeParams(input)) : applyExtrude(host.slicer, input, { step })))
+        r = await onSketch((step, sketch) => (stepEdit ? saveSketch(extrudeParams(input)) : applyExtrude(host.slicer, input, { step, sketch })))
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
-        r = await onSketch((step) => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input, { step })))
+        r = await onSketch((step, sketch) => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input, { step, sketch })))
       }
       afterSolid(r, setNote)
     } catch (e) {
       setNote(sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined))
     } finally {
-      sketchNext(null)
       setBusy(false)
     }
   })

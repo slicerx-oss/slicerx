@@ -79,9 +79,14 @@ export interface Landed {
   missed?: true
 }
 
-/** Where a solid lands: `step`, when given, is the undo step its edit joins (plate/history.ts newStep). */
+/**
+ * Where a solid lands: `step`, when given, is the undo step its edit joins (plate/history.ts newStep), and `sketch` the
+ * timeline sketch the solid draws on, named here so another tool's solid that lands while the engine works never
+ * takes it.
+ */
 export interface LandIn {
   step?: UndoStep | undefined
+  sketch?: string | undefined
 }
 
 /** Runs a landing write in its step, or as an ordinary edit. */
@@ -95,11 +100,11 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn 
   if (target?.entry.history?.exact || (!target && exactSolids())) {
     const params = extrudeParams(input)
     if (target && input.target) {
-      const next = withStep(target.entry, input.target.partIndex, params, undefined, true)
+      const next = withStep(target.entry, input.target.partIndex, params, undefined, true, o.sketch)
       await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id, undefined, undefined, undefined, o.step)
       return { message: `${operation === 'cut' ? 'Cut' : 'Joined'} ${input.name} ${operation === 'cut' ? 'from' : 'to'} ${target.entry.name}.`, warn: false }
     }
-    const history: History = { ...bodyHistory(params, identity()), exact: true }
+    const history: History = { ...bodyHistory(params, identity(), o.sketch), exact: true }
     const result = await runReplay({ history })
     if (result.parts.length !== 1) throw new Error('The exact extrusion did not produce one body. Nothing was added.')
     const world = result.parts.map(toPart)
@@ -184,9 +189,12 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     }
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
-    const history = withStep(entry, t.partIndex, params)
-    // checked before the write, so a step's first change never lands without the solid
-    if (!get().plate.some((e) => e.id === entry.id)) throw new Error('That object is gone.')
+    const history = withStep(entry, t.partIndex, params, undefined, false, o.sketch)
+    // checked before the write, so a step's first change never lands without the solid: the object is there, and did
+    // not take an exact history meanwhile that this result would drop (commitMade refuses that)
+    const now = get().plate.find((e) => e.id === entry.id)
+    if (!now) throw new Error('That object is gone.')
+    if (now.history?.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     if (!writeIn(o, () => commitMade(entry.id, () => ({ handle, parts, ...historyField(history) })))) throw new Error('That object is gone.')
     markStale()
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
@@ -200,7 +208,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const handle = await host.loadParts(name, [local])
   const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
   // The body's history starts with the step that made it, so its sketch or shape stays editable.
-  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(params, transform) }
+  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(params, transform, o.sketch) }
   writeIn(o, () => set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
   markStale()
   return { message: `Added ${name}, ${volume}.`, warn: false }
