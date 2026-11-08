@@ -81,19 +81,50 @@ interface GapRow {
   note: string
 }
 
-/**
- * The gap rows a print-in-place part's sheet gets from the fit rule, shown as guesses for the person to confirm or
- * change: between moving pieces side by side, and above and below. A row whose key the sheet already has is left out,
- * so a gap mimir or the person gave stands.
- */
-export function gapRows(have: readonly { key: string }[], p: ClearanceProfile = {}): GapRow[] {
+/** The fit rule's two gap rows for a profile, as guesses. */
+function ruleRows(p: ClearanceProfile): GapRow[] {
   const c = printInPlaceClearance(p)
   const note = `The fit rule's gap for ${c.material.toUpperCase()}, ${mm(c.nozzleMm)} mm nozzle, ${mm(c.layerHeightMm)} mm layers`
-  const rows: GapRow[] = [
+  return [
     { key: GAP_ROW_KEYS.side, label: 'Gap between moving pieces, side by side', value: c.sideMm, unit: 'mm', min: 0, max: 5, source: 'guess', note },
     { key: GAP_ROW_KEYS.vertical, label: 'Gap between moving pieces, above and below', value: c.verticalMm, unit: 'mm', min: 0, max: 5, source: 'guess', note },
   ]
-  return rows.filter((r) => !have.some((d) => d.key === r.key))
+}
+
+/**
+ * The gap rows a print-in-place part's sheet gets from the fit rule, shown as guesses for the person to confirm or
+ * change: between moving pieces side by side, and above and below. A row whose key the sheet already has is left out
+ * (withGapRows sets its value).
+ */
+export function gapRows(have: readonly { key: string }[], p: ClearanceProfile = {}): GapRow[] {
+  return ruleRows(p).filter((r) => !have.some((d) => d.key === r.key))
+}
+
+/** A sheet row as far as withGapRows reads it. */
+interface SheetRow {
+  key: string
+  value: number
+  unit: string
+  source: string
+  max?: number | undefined
+  sourceTitle?: string | undefined
+  sourceUrl?: string | undefined
+}
+
+/**
+ * A print-in-place part's sheet with the fit rule's gaps: the gap rows the sheet lacks are added, and a gap row mimir
+ * sent takes the rule's gap when mimir guessed it, or when it is under the rule and the person did not give it (looked
+ * up or read from a photo). A gap the person gave stands; design.check holds the gaps to the rule.
+ */
+export function withGapRows<D extends SheetRow>(dims: readonly D[], p: ClearanceProfile = {}): (D | GapRow)[] {
+  const rows = ruleRows(p)
+  const own = dims.map((d): D | GapRow => {
+    const r = rows.find((x) => x.key === d.key)
+    if (!r || d.unit !== 'mm' || d.source === 'asked' || (d.source !== 'guess' && d.value >= r.value - 1e-9)) return d
+    const { sourceTitle: _t, sourceUrl: _u, ...rest } = d
+    return { ...rest, value: r.value, source: 'guess', note: r.note, ...(d.max !== undefined && d.max < r.value ? { max: r.max } : {}) } as unknown as D
+  })
+  return [...own, ...rows.filter((r) => !dims.some((d) => d.key === r.key))]
 }
 
 /** The fit rule's profile from what a run sees of the print: the machine's nozzle and material, and the layer height set. */

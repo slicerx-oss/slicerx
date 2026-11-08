@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A print-in-place plan's dimension sheet: after design.plan names pieces that print assembled and move
 // (printInPlace), the next sheet shows the fit rule's gaps for the printer as guesses, side by side and above and
-// below, unless it has its own. A plan without printInPlace, and a sheet before any plan, are as before.
+// below, over any gap mimir guessed; a gap the person gave stands. A plan without printInPlace, and a sheet before any
+// plan, are as before.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotContext, type PilotDim, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -120,6 +121,39 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(mine!.map((d) => [d.key, d.value])).toEqual([['width', 40], ['clearance', 0.5], ['clearance_vertical', 0.4]])
     const [plain] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Box' } }] }, { calls: [SHEET] }, { text: 'Done.' }])
     expect(plain!.map((d) => d.key)).toEqual(['width'])
+  })
+
+  it("take the fit rule's gaps over the ones mimir guessed: 0.3 mm above or below is 0.4 mm and 0.2 mm side by side 0.3 mm", async () => {
+    const note = "The fit rule's gap for PLA, 0.4 mm nozzle, 0.2 mm layers"
+    const guessed = (side: string, vertical: string) => ({
+      ...SHEET,
+      args: {
+        ...SHEET.args,
+        dims: [
+          { ...SHEET.args.dims[0]!, at: { a: [0, 0, 0], b: [40, 0, 0], off: [0, -5, 0] } },
+          { key: 'clearance', label: 'Joint gap', value: 0.2, unit: 'mm', source: side, at: { a: [40, 0, 0], b: [40.2, 0, 0], off: [0, -5, 0] } },
+          { key: 'clearance_vertical', label: 'Gap under the cap', value: 0.3, unit: 'mm', source: vertical, at: { a: [0, 0, 5], b: [0, 0, 5.3], off: [-5, 0, 0] } },
+        ],
+        part: [{ plane: 'xy', points: [[0, 0], [40, 0], [40, 10]], from: 0, to: 5 }],
+      },
+    })
+    const row = (d: PilotDim) => ({ key: d.key, label: d.label, value: d.value, unit: d.unit, source: d.source, note: d.note })
+    const p1s = { machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 } }
+    const pip = { name: 'design.plan', args: { part: 'Fidget spinner', printInPlace: ['Hub', 'Spinner'] } }
+    const [dims] = await sheets([{ calls: [pip] }, { calls: [guessed('guess', 'guess')] }, { text: 'Done.' }], p1s)
+    expect(dims!.slice(1).map(row)).toEqual([
+      { key: 'clearance', label: 'Joint gap', value: 0.3, unit: 'mm', source: 'guess', note },
+      { key: 'clearance_vertical', label: 'Gap under the cap', value: 0.4, unit: 'mm', source: 'guess', note },
+    ])
+    // a gap the person gave stands, under the rule or not; one read from a photo under the rule takes the rule's
+    const [mixed] = await sheets([{ calls: [pip] }, { calls: [guessed('asked', 'photo')] }, { text: 'Done.' }], p1s)
+    expect(mixed!.slice(1).map((d) => [d.key, d.value, d.source])).toEqual([
+      ['clearance', 0.2, 'asked'],
+      ['clearance_vertical', 0.4, 'guess'],
+    ])
+    // before a print-in-place plan the sheet is as mimir sent it
+    const [plain] = await sheets([{ calls: [guessed('guess', 'guess')] }, { text: 'Done.' }], p1s)
+    expect(plain!.slice(1).map((d) => d.value)).toEqual([0.2, 0.3])
   })
 
   it('belong to the planned part: a later part with no plan gets none', async () => {
