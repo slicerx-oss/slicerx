@@ -14,7 +14,7 @@ import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { nozzleOr } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
+import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
@@ -666,7 +666,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.3.1',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -684,6 +684,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       operation,
       target: modelArg.optional().describe('The model to join to or cut from'),
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
@@ -701,7 +702,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
         return stepOut(d, verb)
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
@@ -713,7 +714,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.3.1',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -726,6 +727,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       operation,
       target: modelArg.optional(),
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
@@ -740,7 +742,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
         const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, withFeature(i.feature, k ? { sketch: k.id } : undefined))
         return stepOut(d, 'Revolved')
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
@@ -772,7 +774,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop on a plane, as for slicerx_geom_revolve; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -786,6 +788,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       operation,
       target: modelArg.optional().describe('The model to join to or cut from'),
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg,
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
@@ -799,7 +802,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const d = designOf(i.design)
         const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
@@ -816,7 +819,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.1.1',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
@@ -829,6 +832,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       operation: z.enum(['new', 'join', 'cut']).default('new'),
       target: z.string().optional().describe('STL to join or cut'),
       design: z.string().optional(),
+      feature: featureArg,
       part: z.number().int().min(0).optional(),
       name: z.string().optional(),
     }),
@@ -854,7 +858,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const j = i.path_sketch ? finished(i.path_sketch) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
         const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
@@ -1115,11 +1119,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
     description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef, distance_mm: z.number().min(-10_000).max(10_000).refine((d) => d !== 0, 'must not be zero') }),
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, face: faceRef, distance_mm: z.number().min(-10_000).max(10_000).refine((d) => d !== 0, 'must not be zero') }),
     async run(i) {
       oneOf(i)
       const verb = i.distance_mm > 0 ? 'Pulled' : 'Pushed'
@@ -1144,8 +1148,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           const host = designs()
           if (i.face.topology) {
             if (!host.addWithReceipt) throw new ToolInputError('This host cannot return an atomic edit receipt.', 'not_supported')
-            commit = await host.addWithReceipt(d, f.part, params, undefined, { expectedRevision: i.face.topology.revision })
-          } else await host.add(d, f.part, params)
+            commit = await host.addWithReceipt(d, f.part, params, undefined, withFeature(i.feature, { expectedRevision: i.face.topology.revision }))
+          } else await host.add(d, f.part, params, undefined, withFeature(i.feature))
         } catch (e) {
           if (!i.face.topology) throw e
           const rawCode = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : e instanceof Error && 'code' in e && e.code === 'not_found' ? 'not_found' : 'internal_error'
@@ -1182,7 +1186,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const BOOL = { union: 'union', subtract: 'difference', intersect: 'intersection' } as const
   const boolean = defineTool({
     name: 'geom.boolean',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1194,6 +1198,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       model: modelOrDesign,
       with: z.array(modelArg).min(1).max(32).optional(),
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg,
       with_parts: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('With a design: the other parts, from 0'),
     }),
@@ -1202,7 +1207,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         if (!i.with_parts) throw new ToolInputError('with_parts: name the parts to combine with, from 0')
         const d = designOf(i.design)
-        await designs().add(d, i.part ?? 0, { op: 'boolean', kind: BOOL[i.op], with: i.with_parts })
+        await designs().add(d, i.part ?? 0, { op: 'boolean', kind: BOOL[i.op], with: i.with_parts }, undefined, withFeature(i.feature))
         return stepOut(d, `${i.op[0]?.toUpperCase()}${i.op.slice(1)}`)
       }
       if (!i.with) throw new ToolInputError('with: give the models to combine with')
@@ -1219,19 +1224,19 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
       'Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
     localDescription:
       'Round straight edges between flat faces to radius_mm; take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL. More: kb.search "modeling tools".',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
     async run(i) {
       oneOf(i)
       if (i.design) {
         const d = designOf(i.design)
-        await designs().add(d, edgePart(d, i), { op: 'edge.fillet', edges: plain(i.edges), radiusMm: i.radius_mm, ...(i.tolerance_mm !== undefined ? { toleranceMm: i.tolerance_mm } : {}) })
+        await designs().add(d, edgePart(d, i), { op: 'edge.fillet', edges: plain(i.edges), radiusMm: i.radius_mm, ...(i.tolerance_mm !== undefined ? { toleranceMm: i.tolerance_mm } : {}) }, undefined, withFeature(i.feature))
         return stepOut(d, 'Filleted')
       }
       const { model, design: _d, part: _p, ...rest } = i
@@ -1242,19 +1247,19 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
       "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
     localDescription:
       "Bevel straight edges between flat faces, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL. More: kb.search \"modeling tools\".",
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), feature: featureArg, part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
       oneOf(i)
       if (i.design) {
         const d = designOf(i.design)
-        await designs().add(d, edgePart(d, i), { op: 'edge.chamfer', edges: plain(i.edges), distanceMm: i.distance_mm, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}) })
+        await designs().add(d, edgePart(d, i), { op: 'edge.chamfer', edges: plain(i.edges), distanceMm: i.distance_mm, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}) }, undefined, withFeature(i.feature))
         return stepOut(d, 'Chamfered')
       }
       const { model, design: _d, part: _p, ...rest } = i
@@ -1265,7 +1270,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const shell = defineTool({
     name: 'geom.shell',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1275,6 +1280,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg,
       open: z.array(z.object({ at: vec3.describe('A point on the face, mm'), normal: vec3.describe('Its outward normal') })).max(64).default([]).describe('Faces to leave open, such as the top of a box'),
       wall_mm: z.number().min(0.2).max(100),
@@ -1286,7 +1292,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const picks = i.open.map((f) => faceAt(d, f.at as V3, f.normal as V3))
         const part = i.part ?? picks[0]?.part ?? 0
         if (picks.some((p) => p.part !== part)) throw new ToolInputError('open: every open face must be on the part being shelled')
-        await designs().add(d, part, { op: 'shell', open: i.open.map((f, k) => ({ at: f.at as V3, normal: f.normal as V3, ...(picks[k]?.key ? { key: picks[k]!.key } : {}) })), wallMm: i.wall_mm })
+        await designs().add(d, part, { op: 'shell', open: i.open.map((f, k) => ({ at: f.at as V3, normal: f.normal as V3, ...(picks[k]?.key ? { key: picks[k]!.key } : {}) })), wallMm: i.wall_mm }, undefined, withFeature(i.feature))
         return stepOut(d, 'Shelled')
       }
       const out = await call('shell', { mesh: { stlPath: await path(i.model!) }, open: i.open, wallMm: i.wall_mm })
@@ -1437,7 +1443,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeTool = defineTool({
     name: 'geom.hole',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1447,6 +1453,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
+      feature: featureArg,
       part: partArg.describe('With a design: the part the hole is in (default: the part picked, or the first part with a hole on that axis)'),
       face: faceRef.optional().describe('A point on the hole\'s wall: {"at":[x,y,z]} (with "normal" on an edge) or {"triangle":n}'),
       center: vec3.optional().describe('With axis: a point on the hole\'s axis line, mm, such as its center on the face it starts at; the end nearest it is the entry'),
@@ -1515,8 +1522,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           let commit: DesignCommit | undefined
           try {
             const params = plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` })
-            if (reference) commit = await host.addWithReceipt!(d, part, params, undefined, { expectedRevision: reference.revision })
-            else await host.add(d, part, params)
+            if (reference) commit = await host.addWithReceipt!(d, part, params, undefined, withFeature(i.feature, { expectedRevision: reference.revision }))
+            else await host.add(d, part, params, undefined, withFeature(i.feature))
           } catch (e) {
             if (e instanceof StaleBody) throw new ToolInputError(e.message, 'stale_body', { bodyId: e.bodyId, currentRevision: e.currentRevision })
             throw e
