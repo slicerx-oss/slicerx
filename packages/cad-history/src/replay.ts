@@ -341,9 +341,11 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       }
       case 'subtract': {
         // as the tool sends it: the part with its transform, answered in the part's frame with the cut's faces
-        const r = (await call('subtract', { mesh: item(part), solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number }
+        const r = (await call('subtract', { mesh: item(part), solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number; watertight?: boolean }
         if (!(r.removedVolumeMm3 > 0)) throw new Broken('The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
+        // a cut the same size as a wall it meets can leave the part open: it lands, and says so, as a join does
+        if (r.watertight === false) found.notes[s.id] = found.notes[s.id] ? `${found.notes[s.id]} ${NOT_CLOSED}` : NOT_CLOSED
         break
       }
       case 'hollow':
