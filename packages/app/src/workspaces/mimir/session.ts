@@ -7,10 +7,10 @@
 import { type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { nozzleOr, tabToolset } from '@slicerx/mcp/toolset'
-import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
+import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, LOAD_TOOLS_TOOL, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
-import { setSessionSource } from '../../app-link/sessions'
+import { currentTabChat, setSessionSource } from '../../app-link/sessions'
 import { note } from '../../bugs/log'
 import { appDesignHost } from '../../cad/design-host'
 import { commandsLoaded, commandsLoading, getCommand, isEnabled, listCommands, useCommands } from '../../commands/registry'
@@ -74,17 +74,34 @@ export function tabModel(): TabModel | null {
   return current?.model ?? null
 }
 
+/** What the tab's open chat sent when it left toolsets out to stay under the provider's tool limit (see tabState). */
+export interface TabToolCap {
+  cap: number
+  offered: number
+  sent: number
+  toolsets: string[]
+  leftOut: string[]
+  partial: { toolset: string; sent: number; of: number }[]
+  /** The tool the capped request carries for loading a toolset that was left out. */
+  loader: string
+}
+
 /**
  * `mimir.tab` over the app link: what answers in the tab (none before it first opens, scripted, or model), the model
  * and Auto's pair, whether it is a local model, where the model's server is (this computer, the person's network, or
  * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). A
  * local model gets one set of those tools per message, picked from what it asks (build, shape, edit, app or print): `turns`
- * lists each set's tools, null where every message gets them all. No key or token.
+ * lists each set's tools, null where every message gets them all. Over the provider's tool limit, `capped` says what the
+ * open chat's last request sent: the toolsets in and left out, and pilot.load_tools, which mimir calls to load one; null
+ * where every tool went. No key or token.
  */
-export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[]; turns: Record<string, string[]> | null } {
-  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [], turns: null }
+export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[]; turns: Record<string, string[]> | null; capped: TabToolCap | null } {
+  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [], turns: null, capped: null }
   const m = current.model
-  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name), turns: current.pilot.turnSets?.() ?? null }
+  const chat = currentTabChat()
+  const cap = chat ? (current.pilot.toolCap?.(chat) ?? null) : null
+  const capped = cap ? { cap: cap.cap, offered: cap.offered, sent: cap.sent, toolsets: [...cap.toolsets], leftOut: [...cap.leftOut], partial: cap.partial.map((p) => ({ ...p })), loader: LOAD_TOOLS_TOOL } : null
+  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name), turns: current.pilot.turnSets?.() ?? null, capped }
 }
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
