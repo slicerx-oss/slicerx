@@ -851,3 +851,42 @@ describe('printer line tools never send in process', () => {
     expect(calls).toEqual([])
   })
 })
+
+describe('design.trace_image through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+  const LOOP = { start: [118, 112], segments: [{ type: 'line', to: [138, 112] }, { type: 'line', to: [138, 88] }, { type: 'line', to: [118, 88] }, { type: 'line', to: [118, 112] }] }
+  const traced = {
+    loops: [LOOP],
+    counts: { lines: 4, arcs: 0, splines: 0, circles: 0 },
+    sizeMm: [20, 24],
+    mmPerPx: 0.2,
+    imagePx: [100, 120],
+    workingPx: [100, 120],
+    dropped: { specks: 0, holes: 0 },
+    check: { ok: true, polygons: [], areaMm2: 480, loops: [{ index: 0, role: 'outer', areaMm2: 480, lengthMm: 88 }], issues: [] },
+    warnings: [],
+    mode: 'dark',
+    pxToMm: [0.2, 118, 88],
+  }
+
+  it("traces on this server and adds the loops to the open app's project, centered on its bed", async () => {
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method === 'plate.list') return { bed: { shape: 'rectangle', widthMm: 256, depthMm: 200, heightMm: 250 }, objects: [] }
+      if (method === 'design.sketch') return { summary: 'Sketch 3', output: { id: 'k3', name: 'Sketch 3' } }
+      throw { code: 'bad_request', message: `unknown method ${method}` }
+    })
+    const engine = async (op: string, request: unknown) => {
+      expect(op).toBe('sketch.trace')
+      expect((request as { options: { center: number[] } }).options.center).toEqual([128, 100])
+      return traced
+    }
+    // no sx-geom program here, so the trace runs on the engine given and the sketch goes through the link
+    const h = await connect({ ...link(hub), sxGeomBin: '', geomEngine: engine })
+    const r = await h.call('slicerx_design_trace_image', { image: { base64: 'AA' } })
+    expect(r.isError, text(r)).toBeFalsy()
+    const calls = hub.sent().filter((s) => s.method === 'app.call').map((s) => s.params)
+    expect(calls).toEqual(expect.arrayContaining([expect.objectContaining({ method: 'plate.list' })]))
+    expect(calls.at(-1)).toMatchObject({ method: 'design.sketch', args: { loops: [LOOP] } })
+    expect(data<{ output: { id: string; in: string } }>(r).output).toMatchObject({ id: 'k3', in: 'app' })
+  })
+})
