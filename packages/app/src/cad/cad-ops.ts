@@ -94,11 +94,13 @@ export interface LandIn {
 const writeIn = <T,>(o: LandIn, fn: () => T): T => (o.step ? o.step.write(fn) : fn())
 
 /** Extrudes the shape: a join or a cut replaces the picked part, a new body becomes an object where it was drawn. One sentence on what happened. */
-export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn = {}): Promise<Landed> {
+export async function applyExtrude(host: Loader, given: ExtrudeInput, o: LandIn = {}): Promise<Landed> {
+  // where the sketch and the body stand as the engine starts: the step is worked out on that plane and recorded against
+  // the same read (onSketch), whatever plane the sketch panel opened with
+  const record = onSketch(o.sketch)
+  const input = record.frame ? { ...given, frame: record.frame } : given
   const operation = input.spec.operation ?? 'new'
   const target = targetOf(input.target, operation)
-  // where the sketch and the body stand as the engine starts: the step is recorded against them (onSketch)
-  const record = onSketch(o.sketch)
   const at = target ? [...target.entry.transform] : undefined
   reserveStepId()
   if (target?.entry.history?.exact || (!target && exactSolids())) {
@@ -159,11 +161,13 @@ export interface RevolveInput extends Omit<RevolveRequest, 'target'> {
 }
 
 /** Revolves sketch loops about an axis; lands like an extrude. */
-export async function applyRevolve(host: Loader, input: RevolveInput, o: LandIn = {}): Promise<Landed> {
+export async function applyRevolve(host: Loader, given: RevolveInput, o: LandIn = {}): Promise<Landed> {
+  // on the plane the sketch stands on as the engine starts, recorded against the same read, as applyExtrude
+  const record = onSketch(o.sketch)
+  const input = record.frame ? { ...given, frame: record.frame } : given
   const operation = input.operation ?? 'new'
   const target = targetOf(input.target, operation)
   const { target: _t, name, ...req } = input
-  const record = onSketch(o.sketch)
   const at = target ? [...target.entry.transform] : undefined
   reserveStepId()
   const r = await revolveSketch({ ...req, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
