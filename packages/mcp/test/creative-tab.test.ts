@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { CREATIVE_PROMPTS } from '../evals/creative/prompts'
 import { loadRecording, parseRecording } from '../evals/creative/recordings'
 import { CREATIVE_TAB, classifyNoBuild, creativeEnv, DEFAULT_ANSWER, runPrompt } from '../evals/creative/run'
-import { createPilot, createScriptedClient, editionToolGroups, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
+import { createPilot, createScriptedClient, editionToolGroups, isRuntimeNote, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain } from '@slicerx/pilot'
 import { CAD_TOOLS } from '@slicerx/pilot/evals'
 
 const P = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
@@ -114,15 +114,18 @@ describe('a reply that builds nothing', () => {
     const choices = [{ id: 'segmented_fish', label: 'Segmented fish with flopping fin' }, { id: 'chain_no_fin', label: 'Jointed chain, no fin' }, { id: 'nothing', label: 'Nothing for now' }]
     const ask = { name: 'pilot.ask', args: { title: 'Fish version', question: 'Which version should I build?', choices } }
     const card = { name: 'design.plan', args: { part: 'Segmented fish', units: 'mm', features: [{ name: 'Body segments', kind: 'extrude', sizes: { segment_length: 16, segment_height: 24, segment_width: 12, count: 6 } }, { name: 'Hinge pins and sockets', kind: 'hole', sizes: { pin_diameter: 2, socket_diameter: 2.4 } }], assumptions: [], questions: [] } }
-    const client = createScriptedClient([{ text: offer, calls: [ask] }, { calls: [ask] }, { text: plan, calls: [card] }, { text: next }], { chunk: false })
+    // mimir is told once that the approved plan has no body yet, and the model stops a second time without building
+    const client = createScriptedClient([{ text: offer, calls: [ask] }, { calls: [ask] }, { text: plan, calls: [card] }, { text: next }, { text: next }], { chunk: false })
     const run = await runPrompt(FISH, { geom: undefined, client })
     expect(run.calls).toEqual(['pilot.ask', 'pilot.ask', 'design.plan'])
     expect(run.answered).toBe(true)
     expect(JSON.stringify(client.requests[3]?.messages)).toContain('\\"accepted\\":true')
     expect(run.noBuild).toBe('stopped')
     expect(run.parsed.pass).toBe(false)
-    // it was not asked again, so the eval did not answer a second time
-    expect(client.requests).toHaveLength(4)
+    // it was not asked again, so the eval did not answer a second time: the fifth request is mimir's own note
+    expect(client.requests).toHaveLength(5)
+    const note = client.requests[4]?.messages.at(-1)
+    expect(note?.role === 'user' && isRuntimeNote(note.content)).toBe(true)
   })
 
   it('is scored with its reason instead of a plain parse failure', async () => {

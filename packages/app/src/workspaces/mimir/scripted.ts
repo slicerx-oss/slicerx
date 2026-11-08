@@ -5,7 +5,7 @@
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
 import { assistantText } from '@slicerx/contracts'
 import { mimirTabTools } from '@slicerx/mcp/toolset'
-import { DEFAULT_CONFIG, RUNTIME_NOTES, createPilot, createScriptedClient, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
+import { DEFAULT_CONFIG, createPilot, createScriptedClient, isRuntimeNote, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
 import { planTool } from './plan-tool'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
@@ -54,7 +54,7 @@ export function scriptRouter(scripts: readonly MimirScript[], opts: { delayMs?: 
       // A sheet the person canceled ends the script: nothing builds from sizes nobody confirmed.
       if (current !== null && canceledSheet(req.messages.at(-1))) current = createScriptedClient(CANCELED, { delayMs: opts.delayMs ?? 0 })
       // the runtime asking for a reply is not a new message: the script carries on
-      else if (current === null || (req.messages.at(-1)?.role === 'user' && !RUNTIME_NOTES.has(lastUser(req.messages)))) {
+      else if (current === null || (req.messages.at(-1)?.role === 'user' && !isRuntimeNote(lastUser(req.messages)))) {
         const script = scripts.find((s) => s.match.test(lastUser(req.messages)))
         current = createScriptedClient(script?.steps ?? UNKNOWN, { delayMs: opts.delayMs ?? 0, callDelayMs: opts.callDelayMs ?? 0 })
         runs++

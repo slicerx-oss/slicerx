@@ -55,6 +55,7 @@ import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
+import { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX, planLeft, planLeftNote, planLeftNotice, unsettledQuestion } from './plan-left'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -276,6 +277,11 @@ export { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE }
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
 /** The messages the runtime itself adds as the user's turn, so a scripted client can tell them from the person's. */
 export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
+/** Whether a user turn is the runtime's own: one of RUNTIME_NOTES, or the note that an approved plan is not finished. */
+export function isRuntimeNote(text: string): boolean {
+  return RUNTIME_NOTES.has(text) || text.startsWith(PLAN_LEFT_PREFIX)
+}
+export { PLAN_LEFT_CODE, PLAN_LEFT_PREFIX }
 /** The answer to a tool call cut off at the output limit. */
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
 /** Said for the model when it ends a run without a word, even after being asked. */
@@ -920,6 +926,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done'; capped?: true }> {
     runPart.delete(sessionId)
+    // this run's messages start here: an approved plan is read from them (plan-left.ts)
+    const runStart = messages.length
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
@@ -961,6 +969,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // what it did and what it needs; a step cut off at the output limit before it said anything is asked again once.
     let wrap = false
     let nudged = false
+    // the run went on once from a reply that would have ended with its approved plan unfinished
+    let planNudged = false
     let said = false
     let reply = ''
     let looked = false
@@ -998,6 +1008,19 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // the run stopped at its tool call limit (it ends as denied) or waited out its slow_down refusals: like a run out of
     // steps, the part is unfinished
     let callLimited = false
+    /**
+     * Whether a reply that would end here goes on once, and what the plan approved in this run still needs: features
+     * with no tagged step, or a part with no body (planLeft). It goes on only when the run has steps and tool calls left,
+     * was not canceled, declined or stopped at its limit, and did not end on the slow_down line or an error (those break
+     * out before a reply is read). It ends as it would have with no approved plan, with design.check's stop in force (the
+     * fix round is used, so mimir says what is off), or when the reply's last words ask the person for a decision the
+     * plan does not settle (unsettledQuestion): "should I go on?" or "shall I add the clearance the plan has?" go on, a
+     * size the plan lacks or a choice between two options waits for the person.
+     */
+    const planGoesOn = (text: string) => {
+      const left = planLeft(messages, runStart)
+      return left && unsettledQuestion(text) === undefined ? left : null
+    }
     // how long the run has waited on slow_down refusals in a row
     let slowed = 0
     // the run's limits; an approved plan raises them to fit its features (planLimits)
@@ -1196,6 +1219,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (!spoke && !wrap && !stopped) {
           wrap = true
           messages.push({ role: 'user', content: WRAP_NOTE })
+          continue
+        }
+        // A reply that would end with the plan approved in this run unfinished goes on once instead (planGoesOn).
+        const left = !planNudged && !stopped && !wrap && spoke && toolCalls.length === 0 && !signal.aborted && step + 1 < maxSteps && calls < maxToolCalls ? planGoesOn(text) : null
+        if (left) {
+          planNudged = true
+          emit({ type: 'error', message: planLeftNotice(left, ASSISTANT_NAME), retryable: false, code: PLAN_LEFT_CODE, waiting: true })
+          messages.push({ role: 'user', content: planLeftNote(left, { editStep: findTool('design.edit_step') !== undefined, check: findTool('design.check') !== undefined }) })
           continue
         }
         stopReason = stopped ? 'denied' : step >= maxSteps ? 'max_steps' : 'end'
