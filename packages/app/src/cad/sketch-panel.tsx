@@ -1651,6 +1651,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     setNote(null)
     try {
       const into = op !== 'new' && target ? { target } : {}
+      // A finished sketch's plane is read again as the solid starts (cad-ops onSketch), from the same move its step is
+      // recorded against: the plane the panel opened with is stale once the body it moves with moved while it was open.
       let r: { message: string; warn: boolean; missed?: true | undefined }
       if (finish === 'extrude') {
         const d = num(distance)
