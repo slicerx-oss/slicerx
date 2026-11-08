@@ -675,6 +675,85 @@ describe('a plan whose sizes changed after it was approved', () => {
   })
 })
 
+describe('a print-in-place plan', () => {
+  const pip: PartPlan = { planId: 'hinge-1', part: 'Hinge', units: 'mm', features: [], printInPlace: ['Leaf', 'Pin'], assumptions: [], questions: [] }
+  // a leaf and a pin, two closed boxes 0.5 mm apart, on a host whose fit check finds that gap clear of the limit
+  const hinge = (): HostDesign => {
+    const leaf = meshOf(boxTris([0, 0, 0], [20, 10, 5]))
+    const pin = meshOf(boxTris([20.5, 0, 0], [30, 10, 5]))
+    return { id: 'd1', name: 'Hinge', history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [{ name: 'Leaf', slot: 0, ...leaf }, { name: 'Pin', slot: 0, ...pin }], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
+  }
+  const fitHost = (all: HostDesign[]): DesignHost => ({
+    ...hostOf(all),
+    call: async (op: string, req: { meshes?: unknown[] }) => {
+      if (op === 'info') return { watertight: true }
+      // one piece measured alone has no gap
+      if (op === 'fit.check' && req.meshes?.length === 1) return { parts: [{ bounds: { min: [0, 0, 0], max: [20, 10, 5] }, item: 0 }], gaps: [], pieces: 1 }
+      if (op === 'fit.check')
+        return {
+          parts: [
+            { bounds: { min: [0, 0, 0], max: [20, 10, 5] }, item: 0 },
+            { bounds: { min: [20.5, 0, 0], max: [30, 10, 5] }, item: 1 },
+          ],
+          gaps: [{ parts: [0, 1], gapMm: 0.5, limitMm: 0.3, kind: 'apart', from: [20, 5, 2.5], to: [20.5, 5, 2.5] }],
+          pieces: 2,
+        }
+      throw new Error('no hole there')
+    },
+  })
+  const tools = (d: HostDesign, plans: ReturnType<typeof createPlanRegistry>) => {
+    const all = designToolset(fitHost([d]), {}, { plans, cardSide: true })
+    const run = (name: string, args: Record<string, unknown>) => {
+      const t = all.find((x) => x.name === name)!
+      return t.run(t.input.parse(args), {} as ToolContext)
+    }
+    const refusal = (name: string, args: Record<string, unknown>) =>
+      run(name, args).then(
+        () => '',
+        (e: Error) => e.message,
+      )
+    return { run, refusal }
+  }
+
+  it('is checked only once geom.fit_check has run on its pieces as built, and again after the part changes', async () => {
+    const plans = createPlanRegistry()
+    plans.put(pip, 'd1', 'card')
+    const d = hinge()
+    const { run, refusal } = tools(d, plans)
+    const first = await refusal('design.check', { planId: 'hinge-1' })
+    expect(first).toContain('Nothing was checked')
+    expect(first).toContain('geom.fit_check')
+    expect(first).not.toMatch(/hinge-1|\bd1\b/)
+    expect(plans.get('hinge-1')?.failedChecks).toBeUndefined()
+    // a fit check of one piece alone is not one of the planned pieces
+    await run('geom.fit_check', { design: 'd1', part: [0] })
+    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('geom.fit_check')
+    await run('geom.fit_check', { design: 'd1' })
+    const r = await run('design.check', { planId: 'hinge-1' })
+    expect((r.output as { pass: boolean }).pass, r.summary).toBe(true)
+    // the pin moved after the fit check: it is checked again first
+    d.parts = [d.parts[0]!, { ...d.parts[1]!, positions: Array.from(d.parts[1]!.positions, (v, k) => (k % 3 === 0 ? v + 1 : v)) }]
+    expect(await refusal('design.check', { planId: 'hinge-1' })).toContain('geom.fit_check')
+    await run('geom.fit_check', { design: 'd1', part: [1, 0] })
+    expect((await run('design.check', { planId: 'hinge-1' })).output).toMatchObject({ pass: true })
+  })
+
+  it('is not built again as a new design once its part passed its check, and says which design has it', async () => {
+    const plans = createPlanRegistry()
+    plans.put(pip, 'd1', 'card')
+    const { run, refusal } = tools(hinge(), plans)
+    // before its check passes a second design of that name may start (the host here starts none)
+    expect(await refusal('design.new', { name: 'Hinge' })).toBe('not here')
+    await run('geom.fit_check', { design: 'd1' })
+    await run('design.check', { planId: 'hinge-1' })
+    const again = await refusal('design.new', { name: ' hinge' })
+    expect(again).toContain('Hinge is already built and passed its check against its plan, in the open design Hinge')
+    expect(again).not.toMatch(/\bd1\b|hinge-1/)
+    // another part starts as usual
+    expect(await refusal('design.new', { name: 'Spacer' })).toBe('not here')
+  })
+})
+
 describe('design.check gives a plan one fix round', () => {
   // a spacer built 5 mm tall, planned 6 mm: every check of it fails on the overall size
   const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }

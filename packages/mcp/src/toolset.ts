@@ -6,6 +6,7 @@
 import type { DesignHost } from '@slicerx/cad-history'
 import type { PilotTool } from '@slicerx/pilot'
 import { cadTools, type CadFiles } from './cad'
+import { createPlanRegistry } from './design-check'
 import { designTools, type DesignFiles, type DesignToolOptions } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
@@ -54,7 +55,9 @@ function noEngine(): never {
 
 /** The design tools and the CAD tools on `host`, with the files the caller has. */
 export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}, opts: DesignToolOptions = {}): PilotTool<never>[] {
-  return [...designTools(host, files.design ?? NO_DESIGN_FILES, opts), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
+  // one registry for design.check and geom.fit_check, which records the fit checks design.check asks for
+  const plans = opts.plans ?? createPlanRegistry()
+  return [...designTools(host, files.design ?? NO_DESIGN_FILES, { ...opts, plans }), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, plans }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
 }
 
 /**
