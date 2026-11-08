@@ -9,7 +9,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, command, facePick, freshBox, height, openStudio, pick, sketchAt, steps, toolPanel } from '../cad-helpers'
 import {
-  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, grayPng, inputOf, labels, looking, loops, r2, rect, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
+  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, grayPng, inputOf, labels, looking, loops, r2, rect, rgbaPng, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio, withOrientation,
   type V2, type W,
 } from './lib/cad'
 
@@ -2402,7 +2402,8 @@ test.describe('sketch-svg', () => {
 
 // ---- sketch-trace
 // Trace image in the sketch: a PNG's dark area lands on the bed as loops to edit, sized and centered by the dialog, the
-// hole kept as a circle, and it extrudes like a drawn sketch. The dialog shows the image with the trace over it.
+// hole kept as a circle, and it extrudes like a drawn sketch. The dialog shows the image with the trace over it, and
+// what it shows is what Add makes, for a color PNG with a gamma chunk and soft edges and for a JPEG shown turned.
 test.describe('sketch-trace', () => {
   // a 220 x 140 px dark plate with a round hole 80 px across, in a 300 x 200 px image
   const ART = grayPng(300, 200, (x, y) => x >= 40 && x < 260 && y >= 30 && y < 170 && Math.hypot(x + 0.5 - 150, y + 0.5 - 100) >= 40)
@@ -2475,5 +2476,85 @@ test.describe('sketch-trace', () => {
     await expect.poll(() => volume(page)).toBeGreaterThan(want * 0.99)
     expect(await volume(page)).toBeLessThan(want * 1.01)
     await shotBoth(page, info, 'trace-sketch-extruded-1440')
+  })
+
+  test('a color PNG with a gamma chunk and soft edges, and a JPEG shown turned, add what the preview shows', async ({ page }) => {
+    const panel = await bedSketch(page)
+    const dialog = page.getByTestId('trace-dialog')
+    const count = dialog.getByTestId('trace-count')
+    // the counts and the size the preview line or the toast gives
+    const said = (text: string) => {
+      const m = /^(\d+) loops?.*?, ([\d.]+) x ([\d.]+) mm/.exec(text)
+      expect(m, text).not.toBeNull()
+      return { loops: Number(m![1]), w: Number(m![2]), h: Number(m![3]) }
+    }
+    const agree = (a: ReturnType<typeof said>, b: ReturnType<typeof said>) => {
+      expect(b.loops).toBe(a.loops)
+      expect(Math.abs(b.w - a.w)).toBeLessThanOrEqual(a.w * 0.01)
+      expect(Math.abs(b.h - a.h)).toBeLessThanOrEqual(a.h * 0.01)
+    }
+    const added = async (name: string) => {
+      const toast = page.getByTestId('toast').filter({ hasText: `Added ${name}: ` })
+      await expect(toast).toBeVisible()
+      return said((await toast.textContent())!.replace(/^.*?Added [^:]+: /, ''))
+    }
+
+    // a red badge with a soft, half clear edge and a blue dot, on clear, in a PNG whose gamma chunk says 1.0: a color
+    // managed decode would lighten the red past the tolerance
+    const BADGE = rgbaPng(
+      240,
+      160,
+      (x, y) => {
+        const d = Math.hypot(x + 0.5 - 90, y + 0.5 - 80)
+        if (Math.hypot(x + 0.5 - 200, y + 0.5 - 40) < 14) return [30, 60, 200, 255]
+        const a = Math.max(0, Math.min(1, 60 - d))
+        return a > 0 ? [200, 40, 40, Math.round(255 * Math.max(a, 0.5))] : [255, 255, 255, 0]
+      },
+      [['gAMA', Buffer.from([0x00, 0x01, 0x86, 0xa0])]],
+    )
+    await panel.getByTestId('sketch-trace-open').click()
+    await dialog.getByTestId('trace-file').setInputFiles({ name: 'badge.png', mimeType: 'image/png', buffer: BADGE })
+    await expect(count).toHaveText(/ mm/)
+    const what = dialog.getByRole('radiogroup', { name: 'What to trace' })
+    if (await what.count()) await what.getByRole('radio', { name: 'Color' }).click()
+    else await dialog.getByLabel('What to trace').selectOption('color')
+    const img = (await dialog.getByTestId('trace-preview').boundingBox())!
+    await page.mouse.click(img.x + img.width * (90 / 240), img.y + img.height * 0.5)
+    // the picked color is the file's own, as the engine reads it for Add
+    await expect(dialog.getByText('#c82828')).toBeVisible()
+    await expect(count).toHaveText(/^1 loop, .* mm/)
+    const badge = said((await count.textContent())!)
+    // the badge is 120 px of the image's 240: the width given is the badge's, its height the same
+    expect(badge.h).toBeCloseTo(badge.w, 0)
+    await dialog.getByTestId('trace-add').click()
+    await expect(dialog).toBeHidden()
+    agree(badge, await added('badge'))
+
+    // a 60 x 20 px bar at the top of a JPEG that says it is shown a quarter turn right: upright it is 20 x 60
+    const plain = Buffer.from(
+      await page.evaluate(async () => {
+        const c = document.createElement('canvas')
+        c.width = 120
+        c.height = 80
+        const g = c.getContext('2d')!
+        g.fillStyle = '#fff'
+        g.fillRect(0, 0, 120, 80)
+        g.fillStyle = '#000'
+        g.fillRect(10, 10, 60, 20)
+        return c.toDataURL('image/jpeg', 0.95).split(',')[1]!
+      }),
+      'base64',
+    )
+    await panel.getByTestId('sketch-trace-open').click()
+    await dialog.getByTestId('trace-file').setInputFiles({ name: 'turned.jpg', mimeType: 'image/jpeg', buffer: withOrientation(plain, 6) })
+    await dialog.locator('#trace-value').fill('20')
+    await expect(count).toHaveText(/^1 loop, .* mm/)
+    const turned = said((await count.textContent())!)
+    // the engine and the browser both turn it upright
+    expect(turned.w).toBe(20)
+    expect(turned.h).toBeCloseTo(60, 0)
+    await dialog.getByTestId('trace-add').click()
+    await expect(dialog).toBeHidden()
+    agree(turned, await added('turned'))
   })
 })
