@@ -12,7 +12,7 @@ import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { currentTabChat, setSessionSource } from '../../app-link/sessions'
 import { note } from '../../bugs/log'
-import { appDesignHost } from '../../cad/design-host'
+import { appDesignHost, type AppDesignHost } from '../../cad/design-host'
 import { commandsLoaded, commandsLoading, getCommand, isEnabled, listCommands, useCommands } from '../../commands/registry'
 import { useEdition } from '../../edition'
 import { projectExportHost } from '../../export/actions'
@@ -61,6 +61,8 @@ export interface TabModel {
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 let tools: PilotTool<never>[] = []
+/** The design host those tools run on, let go when they are made again. */
+let tabHost: AppDesignHost | null = null
 let current: { key: string; pilot: Pilot & { forgetRun?(sessionId: string): void }; model: TabModel } | null = null
 let building: { key: string; done: Promise<Pilot> } | null = null
 
@@ -111,7 +113,9 @@ export function toolsFor(loader: Loader): PilotTool<never>[] {
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
   // is left out of the tab. The creative eval makes its tools with the same tabToolset (@slicerx/mcp toolset.ts).
   if (tools.length === 0) {
-    tools = tabToolset(appDesignHost(loader), cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
+    tabHost?.dispose()
+    tabHost = appDesignHost(loader)
+    tools = tabToolset(tabHost, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
   }
   return tools
 }
@@ -440,5 +444,7 @@ export function resetTabMimir(): void {
   current = null
   building = null
   tools = []
+  tabHost?.dispose()
+  tabHost = null
   setMimirLink('none')
 }
