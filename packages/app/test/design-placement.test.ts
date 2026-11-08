@@ -1166,3 +1166,25 @@ describe('a landed design held off the plate by a roll back', () => {
     expect(at(host.get(d))).toEqual([0, 0])
   })
 })
+
+describe('a sketch drawn for a design in one step', () => {
+  it('goes in with the design it is drawn for in one plate undo step, and goes out whole with one undo', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const has = (k: string) => get().timeline.items.some((i) => i.kind === 'sketch' && i.id === k)
+    const undo = createHistory(appStore)
+    try {
+      const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+      expect(sketchItem(k).drawnFor?.map((f) => f.design)).toEqual([d])
+      undo.undo()
+      expect(has(k)).toBe(false)
+      expect(entry(d).history?.steps).toHaveLength(1)
+      undo.redo()
+      expect(sketchItem(k).drawnFor?.map((f) => f.design)).toEqual([d])
+      expect(host.sketch!(k, d).frame?.origin).toEqual([0, 0, 10])
+    } finally {
+      undo.dispose()
+    }
+  })
+})
