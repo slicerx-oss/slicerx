@@ -30,7 +30,7 @@ const SOURCE: Record<PilotDim['source'], { label: string; icon: IconName }> = {
 }
 
 /** How a row's value reads: its unit (unitOf: a count given in mm has none), the word a screen reader says, and the field's step. */
-function dimUnit(d: Pick<PilotDim, 'key' | 'unit'>): { unit: string; word: string; step: number } {
+function dimUnit(d: Pick<PilotDim, 'key' | 'unit' | 'kind'>): { unit: string; word: string; step: number } {
   const unit = unitOf(d)
   if (unit === '') return { unit, word: '', step: 1 }
   if (unit === '°') return { unit, word: 'degrees', step: 1 }

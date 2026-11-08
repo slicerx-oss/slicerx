@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // mimir runtime, tools, permissions and the LLM transport.
 import type { PluginManifest, PrinterInfo, PrinterState } from './printers'
+import type { SizeKind } from './size-kind'
 
 export const PERMISSION_CLASSES = ['read', 'slice', 'queue', 'start', 'profile', 'printer_config', 'share'] as const
 export type PermissionClass = (typeof PERMISSION_CLASSES)[number]
@@ -250,6 +251,8 @@ export interface PilotDim {
   label: string
   value: number
   unit: 'mm' | 'deg' | '%'
+  /** What the row measures, when the sheet says: it sets the unit shown over the key (size-kind.ts). */
+  kind?: SizeKind
   min?: number
   max?: number
   source: DimSource

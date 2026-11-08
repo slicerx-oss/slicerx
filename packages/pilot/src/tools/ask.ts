@@ -4,7 +4,7 @@
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
 import type { PilotDim, PilotDimAt, PilotSheet, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
-import { dimText } from '@slicerx/contracts/size-kind'
+import { dimText, SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
@@ -194,6 +194,7 @@ const dim = z.object({
   label: z.string().min(1).max(60),
   value: num,
   unit: z.enum(['mm', 'deg', '%']),
+  kind: z.enum(SIZE_KINDS).optional(),
   min: num.optional(),
   max: num.optional(),
   source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle and sourceUrl); photo: measured from their photo; guess: your best guess'),
@@ -234,13 +235,13 @@ const unplacedRow = (d: { label: string }, n: number): string => `row ${n + 1} (
 export function sheetTool(): PilotTool<never> {
   return defineTool({
     name: 'pilot.sheet',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
-      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
-      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for them to confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit and source. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
+      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for them to confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
     input: z
       .object({
         title: z.string().min(2).max(60),

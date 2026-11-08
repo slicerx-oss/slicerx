@@ -4,6 +4,7 @@
 // thinnest wall the nozzle can print. The comparison is pure; the facts about the body come from body-facts.ts. Plans
 // wait in a registry under their planId until design.check reads them. Only zod here, so any package can import the
 // plan and result shapes.
+import { SIZE_KINDS } from '@slicerx/contracts/size-kind'
 import { z } from 'zod'
 
 /** The largest size a plan takes, in its own units. */
@@ -13,14 +14,16 @@ const text = (max: number) => z.string().trim().min(1).max(max)
 
 /**
  * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
- * (sizeKind in @slicerx/contracts/size-kind), which no inch plan converts. The app's plan card (design.plan), design.put_plan and
- * design.check share this one shape; the card also needs at least one feature.
+ * (the kind its kinds entry states, else kindOf in @slicerx/contracts/size-kind), which no inch plan converts. The
+ * app's plan card (design.plan), design.put_plan and design.check share this one shape; the card also needs at least
+ * one feature.
  */
 export const partPlanSchema = z.object({
   planId: text(64),
   part: text(80),
   units: z.enum(['mm', 'in']),
-  features: z.array(z.object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size) })).max(30),
+  /** `kinds` says what a size measures (count, angle or length); a size it leaves out is read by its name (kindOf). */
+  features: z.array(z.object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size), kinds: z.record(text(40), z.enum(SIZE_KINDS)).optional() })).max(30),
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
   holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),

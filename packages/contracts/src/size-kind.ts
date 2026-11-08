@@ -8,6 +8,9 @@
 
 export type SizeKind = 'count' | 'angle' | 'length'
 
+/** The kinds a plan's size or a sheet's row may state; when it states one, its key is never read for it. */
+export const SIZE_KINDS = ['count', 'angle', 'length'] as const satisfies readonly SizeKind[]
+
 /** Words that make a key an angle wherever they stand in it ("lean_deg", "twist_degrees"). */
 const ANGLE_UNITS = new Set(['deg', 'degs', 'degree', 'degrees'])
 /** Words that make a key a length: last, over every other word ("angle_offset_mm"), and anywhere but "in", which in the middle of a key is a word of it ("n_in_row"). */
@@ -63,6 +66,11 @@ export function sizeKind(key: string): SizeKind {
   return 'length'
 }
 
+/** What a size measures: the kind it states, else what its key says (sizeKind), for plans and sheets made without one. */
+export function kindOf(key: string, given?: SizeKind): SizeKind {
+  return given ?? sizeKind(key)
+}
+
 /** A count as typed, kept whole: rounded to the nearest whole number inside the row's own bounds, at least 1 when it gives none. */
 export function wholeCount(v: number, min = 1, max = Infinity): number {
   return Math.min(Math.floor(max), Math.max(Math.ceil(min), Math.round(v)))
@@ -80,20 +88,25 @@ export function sizeText(kind: SizeKind, value: number, units: 'mm' | 'in'): str
 }
 
 /** The key to name a size by: an angle's key without the degree word it ends in, since its unit says it ("angle_deg" is "angle"). */
-export function sizeLabelKey(key: string): string {
-  if (sizeKind(key) !== 'angle') return key
+export function sizeLabelKey(key: string, kind: SizeKind = sizeKind(key)): string {
+  if (kind !== 'angle') return key
   const bare = key.replace(/(?:[_\-.\s]+(?:deg|degs|degrees?)|(?<=[a-z0-9])(?:Deg|Degs|Degrees?))$/, '')
   return bare && bare !== key ? bare : key
 }
 
-/** A sheet row's unit and key, as pilot.sheet carries them. */
+/** A sheet row's unit, key and the kind it states, as pilot.sheet carries them. */
 export interface SizedRow {
   key: string
   unit: 'mm' | 'deg' | '%'
+  kind?: SizeKind | undefined
 }
 
-/** The unit a sheet row shows with: a row given in mm whose key is a count shows none, one whose key is an angle °. */
+/**
+ * The unit a sheet row shows with. A stated kind decides: none for a count, ° for an angle, and for a length its own
+ * percent or else mm. Without one, a row given in mm whose key is a count shows none, and one whose key is an angle °.
+ */
 export function dimUnit(d: SizedRow): '' | '°' | '%' | 'mm' {
+  if (d.kind) return d.kind === 'count' ? '' : d.kind === 'angle' ? '°' : d.unit === '%' ? '%' : 'mm'
   if (d.unit === 'deg') return '°'
   if (d.unit === '%') return '%'
   const kind = sizeKind(d.key)

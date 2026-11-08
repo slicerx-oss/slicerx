@@ -369,6 +369,25 @@ describe('pilot.sheet', () => {
     expect(out.summary).toContain('They had typed on it: Teeth 20 (was 18), Draft 2° (was 1), Width 42 mm (was 40); keep those.')
   })
 
+  it('takes a kind on a row, count, angle or length, and names typed sizes by it', async () => {
+    const dims = (kind: unknown) => [{ key: 'width', label: 'Width', value: 4, unit: 'mm', kind, source: 'guess' }]
+    expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims('count') }).success).toBe(true)
+    expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: [{ key: 'width', label: 'Width', value: 4, unit: 'mm', source: 'guess' }] }).success).toBe(true)
+    for (const bad of ['deg', 'number', 2]) expect(sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: dims(bad) }).success, String(bad)).toBe(false)
+    expect(sheetTool().version).toBe('1.2.0')
+    const seen: string[] = []
+    const p = pilot([
+      { calls: [{ name: 'pilot.sheet', args: { title: 'Odd sizes', views: ['front'], dims: [{ ...dims('count')[0], at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } }, { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', kind: 'length', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } }], part: PART } }] },
+      (messages) => {
+        const last = messages.at(-1)
+        seen.push(last?.role === 'tool' ? last.content : '')
+        return { text: 'OK.' }
+      },
+    ])
+    for await (const e of p.run('s', 'odd')) if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, { width: 5, teeth: 21 }, 'later')
+    expect((JSON.parse(seen[0]!) as { summary: string }).summary).toContain('They had typed on it: Width 5 (was 4), Teeth 21 mm (was 20); keep those.')
+  })
+
   // A pipe bend, a round stem and a tapered vase cannot be extruded outlines; the sheet takes them as they will be built.
   it('shows a sheet whose part is a revolve, a sweep or a loft', async () => {
     const at = { a: [-16, 0, 0], b: [16, 0, 0], off: [0, 0, -8] }

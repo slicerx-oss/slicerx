@@ -4,8 +4,9 @@
 // overall size and holes when it knows them, what it assumed and what it still needs to know. While the plan waits,
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
 // keep their places and the status keeps its height once answered, so nothing moves under the chat. A count among a
-// feature's sizes shows with no unit and an angle in degrees (sizeKind), in an inch plan too.
-import { sizeKind, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
+// feature's sizes shows with no unit and an angle in degrees, in an inch plan too: by the kind the plan gives it, else
+// by its name (kindOf).
+import { kindOf, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
@@ -155,7 +156,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
               <span>{f.name}</span>
               {f.kind ? <small className="sheet-rec-tag">{plainLabel(f.kind).toLowerCase()}</small> : null}
             </span>
-            {Object.keys(f.sizes).length ? <ul className="sheet-rec-rows">{Object.entries(f.sizes).map(([k, v]) => row(`${base}-f${i}-${k}`, plainLabel(sizeLabelKey(k)), v, { kind: 'feature', index: i, key: k }, f.name, 1, sizeKind(k)))}</ul> : null}
+            {Object.keys(f.sizes).length ? <ul className="sheet-rec-rows">{Object.entries(f.sizes).map(([k, v]) => row(`${base}-f${i}-${k}`, plainLabel(sizeLabelKey(k, kindOf(k, f.kinds?.[k]))), v, { kind: 'feature', index: i, key: k }, f.name, 1, kindOf(k, f.kinds?.[k])))}</ul> : null}
           </li>
         ))}
       </ol>
