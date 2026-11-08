@@ -165,7 +165,7 @@ export function creativeEnv(p: CreativePrompt, client: LlmClient, hosts: EvalHos
   const tools = tabToolset(designs, createCardPlans(createPlanRegistry()), { nozzleMm: () => p.machine.nozzle, newPlanId: () => `plan_${++plans}` })
   const env = createEvalEnv({ client, machine: p.machine, objects: [], hosts: () => hosts, tools, tab: { slices: tab.slices, edition: tab.edition ?? CREATIVE_TAB.edition, ...(tab.commands ? { commands: [...tab.commands] } : {}) } })
   project = env.project
-  return { ...env, designs }
+  return { ...env, designs, tools }
 }
 
 /**
@@ -225,7 +225,7 @@ export const STALE_TOOLS = 'recorded before the eval had the tab\'s design tools
  * answer). A replay answers only when the recording was captured with the answer (`answerRecorded`); a recorded
  * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset).
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
   // Records each request's reply as a step, the shape the scripted client replays.
@@ -254,6 +254,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     },
   }
   const env = creativeEnv(p, client, opts.geom ? { geom: opts.geom } : {})
+  // what was on the plate before the prompt's message, such as a part an earlier message built (tests)
+  await opts.before?.(env)
   const events: PilotEvent[] = []
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? (opts.client ? 300_000 : 60_000))

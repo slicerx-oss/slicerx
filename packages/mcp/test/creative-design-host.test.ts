@@ -120,11 +120,14 @@ describe('a reply that builds the part again as a new design', () => {
     'The first attempt (the plan\'s formal check, plan_1) failed. The groove on the core came out at the wrong radius, so the band\'s lip touched the core at one point and the two printed fused. ' +
     'I rebuilt both bodies as turned profiles with the same sizes. The fit check on the rebuilt version passes: two pieces, 0.40 mm clearance at the narrowest point, and the band slides freely. ' +
     'The original "Spinner ring" design is still open in the project and should be deleted, since it has the bad groove.'
+  // the first try, left on the plate by an earlier message: the band overlaps the core, so the two print as one piece.
+  // One reply starts one part (a second design.new in the same reply is refused), so the first try comes before the run.
+  const firstTry = async (env: { tools: ReturnType<typeof tabToolset> }) => {
+    await call(env.tools, 'design.new', { name: 'Spinner ring' })
+    for (const t of [tube('d1', 'Core', 24, 19, [128, 128]), tube('d1', 'Band', 29.8, 23, [128, 128])]) await call(env.tools, t.name, t.args)
+  }
   const steps = [
     { calls: [{ name: 'pilot.sheet', args: { title: 'Spinner ring', dims: [{ key: 'inner', label: 'Inner diameter', value: 19, unit: 'mm', source: 'asked' }] } }] },
-    // the first try: the band overlaps the core, so the two print as one piece
-    { calls: [{ name: 'design.new', args: { name: 'Spinner ring' } }, tube('d1', 'Core', 24, 19, [128, 128])] },
-    { calls: [tube('d1', 'Band', 29.8, 23, [128, 128])] },
     // the second try, a new design beside it: the band clears the core by 0.4 mm
     { calls: [{ name: 'design.new', args: { name: 'Spinner ring v2' } }, tube('d2', 'Core', 24, 19, [60, 60])] },
     { calls: [tube('d2', 'Band', 29.8, 24.8, [60, 60])] },
@@ -132,7 +135,7 @@ describe('a reply that builds the part again as a new design', () => {
   ]
 
   it('scores only the last design, not the first try left beside it', async () => {
-    const run = await runPrompt(P, { geom: { run: (op, input) => engine(op, input) }, steps, answerRecorded: true, tabTools: true })
+    const run = await runPrompt(P, { geom: { run: (op, input) => engine(op, input) }, steps, answerRecorded: true, tabTools: true, before: firstTry })
     expect(run.error).toBeUndefined()
     expect(run.reply).toContain('Spinner ring v2')
     expect(run.parsed).toEqual({ pass: true, detail: '2 designs, scored the last (d2): 2 feature steps, 2 mesh parts' })
