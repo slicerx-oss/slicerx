@@ -93,7 +93,7 @@ export interface FitGap {
   where?: string | undefined
   /** Which way the gap runs: xy between side walls, z above and below. */
   direction: 'xy' | 'z'
-  /** A gap above or below whose ends both lie on flat faces (a top face under a bottom face): no facet allowance. */
+  /** A gap above or below under a flat bottom face, over a level top face (one as narrow as a rail counts): no facet allowance. */
   flat?: true | undefined
 }
 
