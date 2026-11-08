@@ -20,7 +20,7 @@ import type {
   ToolDisplay,
   ToolSource,
 } from '@slicerx/contracts'
-import { SLOW_DOWN_LINE } from '../src/slow-down-lines'
+import { SLOW_DOWN_CANCELED, SLOW_DOWN_LINE, SLOW_DOWN_WENT_ON } from '../src/slow-down-lines'
 
 export interface ToolRowModel {
   callId: string
@@ -62,8 +62,8 @@ export type Block =
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
-  /** `waiting`: the run waits and goes on by itself; the next error with the same code takes its place while it is the turn's last block. */
-  | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string; waiting?: boolean }
+  /** `waiting`: the run waits and goes on by itself; the next error with the same code takes its place while it is the turn's last block. `settled`: the wait is over (the run went on, or was canceled) and the line says so in past tense. */
+  | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string; waiting?: boolean; settled?: boolean }
   /**
    * A place for the print run's card: the slice it made, or the print it started. The card reads `Transcript.printRun`
    * while it is the latest of its kind; `run` is the run as it was when the card was made, which a card keeps once a
@@ -344,6 +344,16 @@ function foldRunNote(state: Transcript, text: string): Transcript {
   return append(s, (id) => ({ kind: 'say', id, text, streaming: false }), false)
 }
 
+/**
+ * The waiting lines of free mimir's per-minute limit that are still open turn to what happened: the run went on, or the
+ * person canceled during the wait. They keep `waiting`, so a client can still tell the wait from other errors.
+ */
+function settleWaits(s: Transcript, canceled: boolean): Transcript {
+  return mapBlocks(s, (b) =>
+    b.kind === 'error' && b.waiting === true && b.code === 'slow_down' && b.settled !== true ? { ...b, message: canceled ? SLOW_DOWN_CANCELED : SLOW_DOWN_WENT_ON, settled: true } : b,
+  )
+}
+
 /** Folds one PilotEvent into the transcript. `now` is the local clock in ms (used for times shown to the person). */
 export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0): Transcript {
   // the print run arrives between runs too, so it never opens a run's turn
@@ -352,6 +362,8 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
   // a hold is about the run going, not a line in it, and a run that is over is never held
   if (event.type === 'held') return { ...state, held: event.on && state.status === 'running' }
   let s = ensureTurn(state, now)
+  // any event but a line about the limit means the wait is over: the run went on, or (done as canceled) was canceled
+  if (!(event.type === 'error' && event.code === 'slow_down')) s = settleWaits(s, event.type === 'done' && event.stopReason === 'canceled')
   switch (event.type) {
     case 'start': {
       const t = lastTurn(s)
@@ -474,7 +486,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       // it is the reply's last block: the current streak's wait. A wait from an earlier streak, with work done since,
       // stays where it was, and the new line goes at the end.
       const last = lastTurn(s)?.blocks.at(-1)
-      const waited = event.code && last?.kind === 'error' && last.waiting === true && last.code === event.code ? last : undefined
+      const waited = event.code && last?.kind === 'error' && last.waiting === true && last.settled !== true && last.code === event.code ? last : undefined
       if (waited) return withLastTurn(settleStreams(s), (t) => ({ ...t, blocks: t.blocks.map((b) => (b.id === waited.id ? line(b.id) : b)) }))
       return append(settleStreams(s), line, false)
     }

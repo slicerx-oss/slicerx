@@ -131,7 +131,7 @@ describe('a setup answer that waited out free mimir\'s per-minute limit', () => 
     const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client, sleep: async () => undefined })
     const onboarding = createSkillPilot(pilot, 's1')
     const reply = await onboarding.ask({ step: 'printer', text: 'Which nozzle?', form: {} })
-    expect(reply.text).toMatch(/^Free mimir is still at its limit for this minute/)
+    expect(reply.text).toMatch(/^Free mimir is still at its limit, so mimir stopped here/)
     expect(reply.unsure).toBe(true)
     expect(onboarding.status()).toBe('rate-limited')
   })
