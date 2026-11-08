@@ -114,3 +114,79 @@ describe('"keep going" after a run cut off at its step limit', () => {
     expect(log).toEqual(['Base', 'Base hollow', 'Lid'])
   })
 })
+
+// The tab sends two calls on many steps (a sketch and its feature, a feature and its sheet tie), so a plan's Go raises
+// the tool call limit with the step limit, and a run that still stops at the call limit keeps the sheet like one that
+// stops at the step limit.
+describe('the tool call limit', () => {
+  it('a Go on a plan raises the call limit too, so a plan that needs more calls than the run had is built', async () => {
+    const t = tools(true)
+    const steps: ScriptStepData[] = [{ calls: [{ name: 'design.plan', args: { part: 'Pi 5 case', features: FEATURES.map((name) => ({ name })) } }] }]
+    // three steps of two calls each per feature: 36 steps fit the plan's step room, 72 calls only a raised call limit
+    for (const name of FEATURES) for (const k of [1, 2, 3]) steps.push({ calls: [{ name: 'geom.extrude', args: { name: `${name} sketch ${k}` } }, { name: 'geom.extrude', args: { name: `${name} ${k}` } }] })
+    steps.push({ text: 'Built.' })
+    const pilot = createPilot({ host: { printers: { list: async () => [], plugins: async () => [] }, approvals: { register: async () => undefined, deny: async () => undefined }, llm: {} as LlmTransport } as never, config: { ...DEFAULT_CONFIG, maxSteps: 10, maxToolCalls: 8 }, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: t.list as never[] })
+    const events: PilotEvent[] = []
+    for await (const e of pilot.run('s', 'A Pi 5 case')) events.push(e)
+    expect(t.built).toHaveLength(FEATURES.length * 6)
+    expect(events.find((e) => e.type === 'done')).toMatchObject({ stopReason: 'end' })
+  })
+})
+
+describe('a sheet kept after a cut-off run', () => {
+  const extrude = (log: string[]) =>
+    defineTool<{ name: string; operation?: string | undefined; design?: string | undefined }>({
+      name: 'geom.extrude',
+      version: '1',
+      description: 'One feature',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ name: z.string(), operation: z.string().optional(), design: z.string().optional() }),
+      async run(i) {
+        log.push(i.name)
+        return { summary: `Built ${i.name}` }
+      },
+    })
+  const SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes', dims: [{ key: 'length', label: 'Length', value: 96, unit: 'mm', source: 'guess' }] } }
+  const x = (name: string, design: string, operation?: string) => ({ calls: [{ name: 'geom.extrude', args: { name, design, ...(operation ? { operation } : {}) } }] })
+
+  async function chat(steps: ScriptStep[], messages: string[], limits: { maxSteps: number; maxToolCalls: number }) {
+    const log: string[] = []
+    const { sheetTool } = await import('../src/index')
+    const client = createScriptedClient(steps, { chunk: false })
+    const p = createPilot({ host: { printers: { list: async () => [], plugins: async () => [] }, approvals: { register: async () => undefined, deny: async () => undefined }, llm: {} as LlmTransport } as never, config: { ...DEFAULT_CONFIG, ...limits }, policy: DEFAULT_POLICY, client, builtins: false, tools: [sheetTool(), extrude(log)] as never[] })
+    const ends: unknown[] = []
+    for (const message of messages) {
+      for await (const e of p.run('s', message)) {
+        if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
+        if (e.type === 'done') ends.push(e.stopReason)
+      }
+    }
+    const blocked = client.requests.flatMap((r) => r.messages).filter((m) => m.role === 'tool' && m.content.includes('"blocked":true')).length
+    return { log, ends, blocked }
+  }
+
+  it('a run stopped at the tool call limit keeps the sheet for "keep going", like the step limit', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Vents', 'd1', 'cut'), x('Lid', 'd1'), { text: 'The lid is built.' }]
+    const r = await chat(steps, ['A Pi 5 case with a lid', 'keep going'], { maxSteps: 20, maxToolCalls: 3 })
+    expect(r.ends).toEqual(['denied', 'end'])
+    expect(r.log).toEqual(['Base', 'Base hollow', 'Lid'])
+    expect(r.blocked).toBe(0)
+  })
+
+  it('a different part after a cut-off run needs a sheet of its own', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Stand', 'd2'), { text: 'I need its sizes first.' }]
+    const r = await chat(steps, ['A Pi 5 case with a lid', 'now a phone stand'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends[0]).toBe('max_steps')
+    expect(r.log).toEqual(['Base', 'Base hollow'])
+    expect(r.blocked).toBe(1)
+  })
+
+  it('the kept sheet lasts until a run finishes: the message after that needs a new sheet', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Lid', 'd1'), { text: 'Done.' }, x('Another lid', 'd1'), { text: 'I need the sizes again.' }]
+    const r = await chat(steps, ['A Pi 5 case with a lid', 'keep going', 'one more lid'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends).toEqual(['max_steps', 'end', 'end'])
+    expect(r.log).toEqual(['Base', 'Base hollow', 'Lid'])
+    expect(r.blocked).toBe(1)
+  })
+})
