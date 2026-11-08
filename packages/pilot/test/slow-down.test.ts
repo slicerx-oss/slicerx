@@ -5,10 +5,10 @@
 // instead of ending the run as an error; past a full rate window of waiting it stops like a run cut off at its limit,
 // with the sheet kept, so "keep going" builds the rest. No test here really waits: the runtime's sleep is replaced.
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, sheetTool, type LlmClient, type ScriptStep } from '../src/index'
-import { SLOW_DOWN_GIVE_UP_MS, SLOW_DOWN_LINE, SLOW_DOWN_WAIT_MS } from '../src/runtime'
+import { abortableSleep, SLOW_DOWN_GIVE_UP_MS, SLOW_DOWN_LINE, SLOW_DOWN_WAIT_MS } from '../src/runtime'
 
 const SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes', dims: [{ key: 'length', label: 'Length', value: 96, unit: 'mm', source: 'guess' }] } }
 const x = (name: string) => ({ calls: [{ name: 'geom.extrude', args: { name, design: 'd1' } }] })
@@ -122,5 +122,31 @@ describe('a slow_down from the proxy mid-build', () => {
     const events = await s.say('A Pi 5 case')
     expect(s.waits).toEqual([])
     expect(done(events)?.stopReason).toBe('error')
+  })
+})
+
+describe('the wait before a step is sent again', () => {
+  it('ends at once for a run already canceled, and on cancel otherwise', async () => {
+    vi.useFakeTimers()
+    try {
+      const gone = new AbortController()
+      gone.abort()
+      let done = false
+      void abortableSleep(SLOW_DOWN_WAIT_MS, gone.signal).then(() => (done = true))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(done).toBe(true)
+      const live = new AbortController()
+      let later = false
+      void abortableSleep(SLOW_DOWN_WAIT_MS, live.signal).then(() => (later = true))
+      await Promise.resolve()
+      expect(later).toBe(false)
+      live.abort()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(later).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
