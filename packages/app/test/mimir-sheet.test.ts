@@ -240,6 +240,15 @@ describe('the scripted sizes sheet of a part already built', () => {
       'Show me the size sheet for the design',
       'The main sizes of the print',
       'What are the main sizes of my phone stand design?',
+      // a noun with a clause after it: the part already printed or designed
+      'Show me the size sheet for the box design that I printed',
+      'Show the main sizes of the print that failed',
+      'Main sizes of the print my brother made',
+      'main sizes of the print my printer made',
+      'The size sheet for the print, please',
+      'Show main sizes of my last print, a lid',
+      'show the size sheet of the print: the lid',
+      'the size sheet of this print, the lid',
     ])
       expect(route(m), m).toBe('sizes')
     // "design" and "print" asking for a part, at the start of a clause or before a determiner: a build

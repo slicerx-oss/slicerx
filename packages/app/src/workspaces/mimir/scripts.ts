@@ -652,9 +652,11 @@ const sizesOf: ScriptStep[] = [
 
 /**
  * "Design" or "print" asking for a part: at the start of a clause ("Design two lids, ...", "please print ...") or before
- * a determiner ("design the lid", "print my bracket"). As nouns ("my box design", "the print") they ask for nothing.
+ * a determiner ("design the lid", "print the bracket"). As nouns ("my box design", "the print") they ask for nothing,
+ * also when a clause follows: one up to two words after a determiner ("the box design that I printed", "the print my
+ * brother made") is a noun, and "print" before "that", "it" or "my" is read as one too ("the print that failed").
  */
-const BUILD_VERB = String.raw`(?:(?:^|[.!?,;:]|\b(?:please|can you|could you|would you|let's|lets))\s*(?:design|print)\b|\b(?:design|print)\s+(?:the|my|a|an|this|that|its|your|me|it|another|one|two|some)\b)`
+const BUILD_VERB = String.raw`(?:(?:^|[.!?,;:]|\b(?:please|can you|could you|would you|let's|lets))\s*(?:design|print)\b|(?<!\b(?:the|a|an|my|this|that|your|its)\s+(?:[\w-]+\s+){0,2})\b(?:design\s+(?:the|my|a|an|this|that|its|your|me|it|another|one|two|some)|print\s+(?:the|a|an|this|its|your|me|another|one|two|some))\b)`
 
 export const SCRIPTS: MimirScript[] = [
   // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another; a message
