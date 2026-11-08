@@ -398,8 +398,9 @@ export async function phoneBox(page: Page): Promise<string> {
   return id
 }
 
-/** A grayscale PNG, `w` x `h`, black where `inside` says and white elsewhere, for Trace image. */
-export function grayPng(w: number, h: number, inside: (x: number, y: number) => boolean): Buffer {
+/** A PNG file of `w` x `h` 8 bit pixels of color type `kind` (0 gray, 6 RGBA), `channels` bytes each from `at`,
+ * with `extra` chunks before the pixels. */
+function pngFile(w: number, h: number, kind: number, channels: number, at: (x: number, y: number) => number[], extra: [string, Buffer][] = []): Buffer {
   const table = Array.from({ length: 256 }, (_, n) => {
     let c = n
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
@@ -422,7 +423,36 @@ export function grayPng(w: number, h: number, inside: (x: number, y: number) => 
   head.writeUInt32BE(w, 0)
   head.writeUInt32BE(h, 4)
   head[8] = 8
-  const rows = Buffer.alloc((w + 1) * h)
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) rows[y * (w + 1) + 1 + x] = inside(x, y) ? 0 : 255
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', head), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))])
+  head[9] = kind
+  const line = w * channels + 1
+  const rows = Buffer.alloc(line * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) Buffer.from(at(x, y)).copy(rows, y * line + 1 + x * channels)
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', head), ...extra.map(([t, b]) => chunk(t, b)), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))])
+}
+
+/** A grayscale PNG, `w` x `h`, black where `inside` says and white elsewhere, for Trace image. */
+export function grayPng(w: number, h: number, inside: (x: number, y: number) => boolean): Buffer {
+  return pngFile(w, h, 0, 1, (x, y) => [inside(x, y) ? 0 : 255])
+}
+
+/** An RGBA PNG, `w` x `h`, each pixel from `color`, with `extra` chunks (a gamma or color profile chunk) before the pixels. */
+export function rgbaPng(w: number, h: number, color: (x: number, y: number) => [number, number, number, number], extra: [string, Buffer][] = []): Buffer {
+  return pngFile(w, h, 6, 4, color, extra)
+}
+
+/** `jpeg` with an EXIF block right after its start that says it is shown turned by `orientation` (1 to 8). */
+export function withOrientation(jpeg: Buffer, orientation: number): Buffer {
+  const tiff = Buffer.alloc(26)
+  tiff.write('II*\0', 0, 'latin1')
+  tiff.writeUInt32LE(8, 4)
+  tiff.writeUInt16LE(1, 8)
+  // one entry: tag 0x0112, a short, one of it
+  tiff.writeUInt16LE(0x0112, 10)
+  tiff.writeUInt16LE(3, 12)
+  tiff.writeUInt32LE(1, 14)
+  tiff.writeUInt16LE(orientation, 18)
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff])
+  const len = Buffer.alloc(2)
+  len.writeUInt16BE(body.length + 2)
+  return Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1]), len, body, jpeg.subarray(2)])
 }
