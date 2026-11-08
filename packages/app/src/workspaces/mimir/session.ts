@@ -150,17 +150,21 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
             const before = get()
             const plate = Math.max(1, before.plates.findIndex((p) => p.id === before.activePlate) + 1)
             const fingerprint = cx?.run?.fingerprint(plate)
-            await slicePlate(host)
+            // Only the plate asked for slices: another plate shown before it starts slices nothing (slicePlate `plate`).
+            await slicePlate(host, { plate: before.activePlate })
             const after = get()
             const s = after.slice
+            // Another plate showed before or while it sliced: the plate asked for has no new slice, and whatever is on
+            // screen (or refused) is that other plate's.
+            if (after.activePlate !== before.activePlate) return { status: 'stale', message: SWITCHED_REPLY }
             if (s.status === 'error') {
               // the engine refused: no slice for this plate is recorded or kept, so none can be sent
               cx?.refused?.(plate)
               return { status: 'error', message: s.message }
             }
             if (s.status !== 'done') return { status: s.status }
-            // Another plate showed while it sliced: its slice was dropped, and the one on screen is that plate's.
-            if (after.slicesDone === before.slicesDone && after.activePlate !== before.activePlate) return { status: 'stale', message: SWITCHED_REPLY }
+            // The slice on screen is not of the plate asked for: nothing of it is recorded as this plate's.
+            if (s.stamp !== undefined && s.stamp.plate !== before.activePlate) return { status: 'stale', message: SWITCHED_REPLY }
             // a slice that did not run leaves the last one, which an edit since has made stale: it is not this plate's
             if (s.stale) return { status: 'stale', message: STALE_REPLY }
             const r = s.result

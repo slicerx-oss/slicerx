@@ -4,7 +4,7 @@
 // once a plan stored them for this plate as it is; otherwise (a reopened project, a resume from the printer list) the
 // engine works them out from the plate as the job sliced it, so the plan never counts in layers of its own making.
 import type { Host } from '@slicerx/contracts'
-import { INPUTS } from '../state/slice-inputs'
+import { INPUTS, printed } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
 import { cancelSlice } from '../state/actions'
 import { plateTower } from './tower'
@@ -139,16 +139,30 @@ export function planFor(s: AppState, plateId: string): string | null {
   return r.inputs !== undefined && r.inputs === plateInputsKey(s, plateId) ? planId(r) : `void:${planId(r)}`
 }
 
-/** What a slice was made for: its plate, the resume plan it used (planFor) and the plate's slice inputs key. */
+/**
+ * What a slice was made for: its plate, the resume plan it used (planFor), the plate's slice inputs key, and `output`:
+ * what the key leaves out because it does not move layers but still goes into the G-code (outputKey).
+ */
 export interface SliceStamp {
   plate: string
   plan: string | null
   inputs: string
+  output: string
+}
+
+/**
+ * What goes into the shown plate's G-code beside its layers, and so is not in sliceInputsKey: the plate's layer marks
+ * (pauses, color changes and G-code at a height, as printed), the objects' names (the labels a printer skips objects
+ * by) and the profile's own start and end G-code.
+ */
+export function outputKey(s: AppState): string {
+  const marks = printed({ [s.activePlate]: s.layerMarks[s.activePlate] ?? [] })
+  return hash(JSON.stringify([marks, fullPlate(s).map((e) => [e.id, e.name]), s.profile?.shippedGcode ?? null]))
 }
 
 /** The stamp of a slice of the shown plate starting now. */
 export function sliceStamp(s: AppState): SliceStamp {
-  return { plate: s.activePlate, plan: planFor(s, s.activePlate), inputs: sliceInputsKey(s) }
+  return { plate: s.activePlate, plan: planFor(s, s.activePlate), inputs: sliceInputsKey(s), output: outputKey(s) }
 }
 
 /** Why a slice no longer sends, exports or queues: its plate, its resume plan or the plate's inputs changed since. */
