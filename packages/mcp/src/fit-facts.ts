@@ -107,12 +107,17 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
   const seen = new Map<number, number>()
   const perPart = new Map<number, number>()
   for (const p of r.parts) perPart.set(p.item, (perPart.get(p.item) ?? 0) + 1)
+  // a part an array of separate copies made, or the part it copied, by its name; only a name no other part has
+  const copies = arrayCopies(d)
+  const named = new Map<string, number>()
+  for (const k of parts.keys()) named.set(nameOf(k), (named.get(nameOf(k)) ?? 0) + 1)
   const bodies = r.parts.map((p, b) => {
     const part = partOf(b)
     const n = (seen.get(p.item) ?? 0) + 1
     seen.set(p.item, n)
     const base = (count.get(nameOf(part)) ?? 0) > 1 ? `${nameOf(part)} (part ${part + 1})` : nameOf(part)
-    return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part) }
+    const array = named.get(nameOf(part)) === 1 ? copies.get(nameOf(part)) : undefined
+    return { part, name: (perPart.get(p.item) ?? 0) > 1 ? `${base} ${n}` : base, partName: nameOf(part), ...(array ? { array } : {}) }
   })
   const flatsOf = new Map<Mesh, { up: Flat[]; down: Flat[] }>()
   const facing = (m: Mesh) => flatsOf.get(m) ?? flatsOf.set(m, { up: flats(m, true), down: flats(m, false) }).get(m)!
@@ -146,6 +151,28 @@ export async function fitFacts(host: DesignHost, d: HostDesign, limits: FitLimit
   }
   const gaps = all.filter((g) => g.kind !== 'apart' || closest.get(pairKey(g.bodies)) === g)
   return { limits, bodies, pieces: r.pieces, gaps }
+}
+
+/**
+ * What the design's array steps recorded (geom.array with separate copies): each copy's name with the part it copied
+ * and its place in the row, and the part copied as place 1. Steps that did not go through are left out, and so is a
+ * name two of them give different places.
+ */
+function arrayCopies(d: HostDesign): Map<string, { of: string; n: number }> {
+  const out = new Map<string, { of: string; n: number } | null>()
+  const put = (name: string, v: { of: string; n: number }, only = false) => {
+    const was = out.get(name)
+    if (was === undefined) out.set(name, v)
+    else if (!only && (was === null || was.of !== v.of || was.n !== v.n)) out.set(name, null)
+  }
+  d.history.steps.forEach((s, k) => {
+    const p = s.params
+    if (p.op !== 'parts.add' || typeof p.arrayOf !== 'string' || s.suppressed || (d.status[k] && d.status[k].state !== 'done')) return
+    const of = p.arrayOf
+    p.parts.forEach((m, j) => put(m.name.trim(), { of, n: j + 2 }))
+    put(of.trim(), { of, n: 1 }, true)
+  })
+  return new Map([...out].filter((e): e is [string, { of: string; n: number }] => e[1] !== null))
 }
 
 const pairKey = ([a, b]: readonly [number, number]): string => `${Math.min(a, b)} ${Math.max(a, b)}`
