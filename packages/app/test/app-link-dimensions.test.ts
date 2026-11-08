@@ -12,7 +12,7 @@ import { get, set, type PlateEntry } from '../src/state/store'
 import { liveEngine, useGeomEngine } from './geom-engine'
 
 if (process.env['SX_TEST_GEOM_REQUIRE'] === '1' && !liveEngine) throw new Error('Build the real geometry WASM before running this suite')
-useGeomEngine('app-dimensions')
+useGeomEngine('app-dimensions', { freshCache: true })
 vi.spyOn(Date, 'now').mockReturnValue(1_790_000_000_000)
 const test = it
 const top = { object: 'box', part: 0, triangle: 2, at: [100, 100, 20] }

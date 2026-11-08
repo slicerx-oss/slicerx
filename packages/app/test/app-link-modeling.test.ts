@@ -7,7 +7,7 @@ import { runCall, useDesignHost } from '../src/app-link/methods'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
-useGeomEngine('app-link-modeling-replies', { compressed: true })
+useGeomEngine('app-link-modeling-replies', { compressed: true, freshCache: true })
 beforeAll(() => useDesignHost({ loadParts: async (id: string): Promise<MeshHandle> => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 10, 8], openEdges: 0, parts: [] }) }))
 beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
 

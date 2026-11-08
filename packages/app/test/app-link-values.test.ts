@@ -11,7 +11,7 @@ import { refreshBound, setValue } from '../src/cad/value-ops'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
-useGeomEngine('app-link-values-replies')
+useGeomEngine('app-link-values-replies', { freshCache: true })
 const handle = (name: string): MeshHandle => ({ id: name, hash: name, name, triangles: 12, bboxMm: [20, 10, 3], openEdges: 0, parts: [] })
 const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(name) }
 beforeAll(() => useDesignHost(loader))
