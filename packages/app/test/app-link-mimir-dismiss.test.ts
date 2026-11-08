@@ -13,6 +13,7 @@ import { setMimirAsker } from '../src/app-link/mimir-ask'
 import { setMimirCards } from '../src/app-link/mimir-dismiss'
 import { setSessionSource } from '../src/app-link/sessions'
 import { openChoice, openSheetCard } from '../src/workspaces/mimir/card-waits'
+import { setDraft, setSheetAside, setShownSheet } from '../src/workspaces/mimir/sheet-ui'
 import { mimirLogs, mimirMessages, noteMessage } from '../src/workspaces/mimir/session'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -147,13 +148,55 @@ describe('mimir.dismiss on a waiting size sheet', () => {
     const run = (async () => {
       for await (const e of pilot.run(sessionId, 'a cable clip')) {
         transcript = foldEvents([e as PilotEvent], transcript)
-        if (e.type === 'sheet') shownSheet()
+        if (e.type === 'sheet') {
+          // the chat shows it in the view, where the person types sizes on it
+          setShownSheet({ sheet: e.sheet, answer: null, bound: null, replay: false })
+          shownSheet()
+        }
       }
     })()
     setSessionSource({ store: mimirLogs, messages: (id) => mimirMessages.get(id) ?? [] })
-    setMimirCards({ sessionId: () => sessionId, open: () => openChoice(transcript), dismiss: (askId, said) => pilot.answer!(askId, null, said), sheet: () => openSheetCard(transcript), setAside: (sheetId, said) => pilot.answerSheet!(sheetId, null, said) })
-    return { shown, run, seen }
+    // the chat's own set-aside, as the tab registers it
+    setMimirCards({ sessionId: () => sessionId, open: () => openChoice(transcript), dismiss: (askId, said) => pilot.answer!(askId, null, said), sheet: () => openSheetCard(transcript), setAside: (sheetId, said) => setSheetAside(pilot, sheetId, said) })
+    return { shown, run, seen, pilot }
   }
+
+  afterEach(() => setShownSheet(null))
+
+  it('carries the sizes typed on the sheet to mimir when a client sets it aside', async () => {
+    const c = sheetChat('s_typed')
+    await c.shown
+    const sheetId = ((await runCall('mimir.session', { id: 's_typed' })) as { waiting: { sheetId: string } }).waiting.sheetId
+    setDraft('bore', 7)
+    await runCall('mimir.dismiss', { sheetId, said: 'and a cable hole' })
+    await c.run
+    expect(c.seen[0]).toMatchObject({ ok: false, result: { confirmed: false, said: 'and a cable hole', values: { bore: 7 }, changed: ['bore'] } })
+    expect((c.seen[0] as { summary: string }).summary).toContain('Cable bore 7 mm (was 6.2)')
+  })
+
+  it('carries the sizes typed on the sheet to mimir when the person writes while it waits', async () => {
+    const c = sheetChat('s_typed_words')
+    await c.shown
+    const sheetId = ((await runCall('mimir.session', { id: 's_typed_words' })) as { waiting: { sheetId: string } }).waiting.sheetId
+    setDraft('bore', 8)
+    // Return in the message box while the sheet waits
+    await setSheetAside(c.pilot, sheetId, 'make it a clip for two cables')
+    await c.run
+    expect(c.seen[0]).toMatchObject({ result: { confirmed: false, said: 'make it a clip for two cables', values: { bore: 8 }, changed: ['bore'] } })
+  })
+
+  // A 1.0 client sends dismiss with no ids (askId undefined) whenever something waits; it never meant a sheet.
+  it('leaves a waiting sheet alone when no sheetId is given, as 1.0 did', async () => {
+    const c = sheetChat('s_old_client')
+    await c.shown
+    setDraft('bore', 9)
+    expect(await code('mimir.dismiss', {})).toBe('not_found')
+    expect(await code('mimir.dismiss', { said: 'never mind' })).toBe('not_found')
+    const now = (await runCall('mimir.session', { id: 's_old_client' })) as { waiting: { sheetId: string } | null }
+    expect(now.waiting?.sheetId).toMatch(/^sheet_/)
+    await runCall('mimir.dismiss', { sheetId: now.waiting!.sheetId, said: 'done' })
+    await c.run
+  })
 
   it('shows the sheet as waiting, sets it aside with the words, and counts it as set aside', async () => {
     const c = sheetChat('s_sheet')

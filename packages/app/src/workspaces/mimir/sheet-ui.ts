@@ -3,7 +3,7 @@
 // The dimension sheet the view shows. The chat writes the conversation's latest sheet here, with what answering it
 // does; the view turns into the drawing and its sizes panel while the sheet waits, and after the build the panel
 // comes back on request, where editing a tied row edits its step.
-import type { PilotSheet, PilotSheetAnswer, PilotSheetBind } from '@slicerx/contracts'
+import type { Pilot, PilotSheet, PilotSheetAnswer, PilotSheetBind } from '@slicerx/contracts'
 import { createStore, useStore } from 'zustand'
 
 export interface ShownSheet {
@@ -55,13 +55,21 @@ export function setShownSheet(shown: ShownSheet | null): void {
 
 /**
  * The waiting sheet's values with the sizes typed on it, for setting it aside with words: the typed sizes go along so
- * mimir hears of them. Null when nothing was typed, or no sheet waits.
+ * mimir hears of them. Null when nothing was typed, or no sheet waits, or the view shows another sheet than `sheetId`.
  */
-export function typedValues(s: SheetUiState): Record<string, number> | null {
-  if (sheetMode(s) !== 'confirm' || !s.shown) return null
+export function typedValues(s: SheetUiState, sheetId?: string): Record<string, number> | null {
+  if (sheetMode(s) !== 'confirm' || !s.shown || (sheetId !== undefined && s.shown.sheet.id !== sheetId)) return null
   const keys = new Set(s.shown.sheet.dims.map((d) => d.key))
   const typed = Object.entries(s.draft).filter(([k, v]) => keys.has(k) && s.shown!.sheet.dims.find((d) => d.key === k)!.value !== v)
   return typed.length ? { ...Object.fromEntries(s.shown.sheet.dims.map((d) => [d.key, d.value])), ...Object.fromEntries(typed) } : null
+}
+
+/**
+ * Sets the waiting sheet aside for `said` with the sizes typed on it, as Return in the message box and a client's
+ * mimir.dismiss both do; with no words it is canceled.
+ */
+export function setSheetAside(pilot: Pick<Pilot, 'answerSheet'>, sheetId: string, said?: string): Promise<void> {
+  return pilot.answerSheet?.(sheetId, said ? typedValues(sheetUi.getState(), sheetId) : null, said) ?? Promise.reject(new Error('No sheet here'))
 }
 
 export function setSheetActions(actions: SheetActions | null): void {
