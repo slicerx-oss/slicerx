@@ -41,6 +41,10 @@ export interface BodyFacts {
   holes: { diameterMm: number }[]
   /** The steps in its history that shape it (paint and suppressed steps left out). */
   features: number
+  /** Those steps' names, in order, when known: a planned feature is matched to the steps named for it. */
+  steps?: string[] | undefined
+  /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
+  parts?: { x: number; y: number; z: number }[] | undefined
   /** True when every part is closed. */
   watertight: boolean
   /** The thinnest wall, or null when it was not measured. */
@@ -69,6 +73,63 @@ export function nozzleOr(v: unknown): number {
 
 const sizeOk = (got: number, want: number): boolean => Math.abs(got - want) <= Math.max(SIZE_MM, SIZE_SHARE * want)
 
+/** Whether a size matches axis by axis, x and y swapped passing (turned on the bed), with a note on a swap. */
+function sizeMatch(got: number[], want: number[]): { pass: boolean; note: string } {
+  if (want.every((w, k) => sizeOk(got[k]!, w))) return { pass: true, note: '' }
+  if (sizeOk(got[1]!, want[0]!) && sizeOk(got[0]!, want[1]!) && sizeOk(got[2]!, want[2]!)) return { pass: true, note: ' (x and y swapped: turned on the bed, it prints the same)' }
+  const [gs, ws] = [[...got].sort((a, b) => a - b), [...want].sort((a, b) => a - b)]
+  return { pass: false, note: ws.every((w, k) => sizeOk(gs[k]!, w)) ? ' (same size, axes swapped: rotate it)' : '' }
+}
+
+// words a step's own name carries whatever it builds ("Sketch extrude 5 mm"), which say nothing about the feature
+const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
+
+/** The words of a name that tell features apart: lower case, three letters or more, no numbers, plurals made single. */
+function nameWords(name: string): Set<string> {
+  const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !STEP_WORDS.has(w))
+  return new Set(words.map((w) => (w.length > 4 && w.endsWith('es') && !w.endsWith('ves') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w)))
+}
+
+/**
+ * The planned features against the steps that built them. A feature may take several steps (four standoffs, five port
+ * cutouts), so more steps than features is fine as long as each feature has a step: a step goes to the feature its name
+ * shares the most words with, and a feature no named step matches takes one of the steps no feature claimed (steps
+ * named only by their numbers, "Sketch extrude 5 mm"). Fewer steps than features, or a feature left with none, fails.
+ */
+function featureItem(features: string[], body: BodyFacts): CheckItem {
+  const n = features.length
+  const m = body.features
+  if (m === n) return { name: 'feature count', want: String(n), got: String(m), pass: true }
+  if (m < n) return { name: 'feature count', want: String(n), got: `${m} step${m === 1 ? '' : 's'} for ${n} planned features`, pass: false }
+  const fw = features.map(nameWords)
+  const per = features.map(() => 0)
+  let free = m - (body.steps?.length ?? 0)
+  for (const step of body.steps ?? []) {
+    const sw = nameWords(step)
+    let best = -1
+    let bestShared = 0
+    fw.forEach((w, k) => {
+      const shared = [...sw].filter((x) => w.has(x)).length
+      if (shared > bestShared) [best, bestShared] = [k, shared]
+    })
+    if (best >= 0) per[best]!++
+    else free++
+  }
+  const missing: string[] = []
+  per.forEach((c, k) => {
+    if (c > 0) return
+    if (free > 0) {
+      free--
+      per[k] = 1
+    } else missing.push(features[k]!)
+  })
+  const groups = per.map((c, k) => (c > 1 ? `${features[k]} ${c}` : '')).filter(Boolean)
+  const got = missing.length
+    ? `${m} steps, none for ${missing.join(', ')}`
+    : `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`
+  return { name: 'feature count', want: `${n} features, each built by one or more steps`, got, pass: missing.length === 0 }
+}
+
 /**
  * Checks a body against its plan. Inch plans are compared in mm; the tolerances are in mm. The overall size is
  * compared axis by axis, since z is the print height: x and y swapped passes (the part turned on the bed prints the
@@ -83,18 +144,15 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   if (plan.overall) {
     const axes = ['x', 'y', 'z'] as const
     const want = axes.map((a) => plan.overall![a] * scale)
-    const got = axes.map((a) => body.size[a])
     const inches = plan.units === 'in' ? ` (${axes.map((a) => plan.overall![a]).join(' x ')} in)` : ''
-    let note = ''
-    let pass = axes.every((_, k) => sizeOk(got[k]!, want[k]!))
-    if (!pass && sizeOk(got[1]!, want[0]!) && sizeOk(got[0]!, want[1]!) && sizeOk(got[2]!, want[2]!)) {
-      pass = true
-      note = ' (x and y swapped: turned on the bed, it prints the same)'
-    } else if (!pass) {
-      const [gs, ws] = [[...got].sort((a, b) => a - b), [...want].sort((a, b) => a - b)]
-      if (ws.every((w, k) => sizeOk(gs[k]!, w))) note = ' (same size, axes swapped: rotate it)'
-    }
-    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got: `${got.map(r2).join(' x ')} mm${note}`, pass })
+    const whole = sizeMatch(axes.map((a) => body.size[a]), want)
+    // parts laid out side by side (a lid flat beside its base) are held to the largest part, the assembled part's size
+    const largest = !whole.pass && body.parts && body.parts.length > 1 ? [...body.parts].sort((a, b) => b.x * b.y * b.z - a.x * a.y * a.z)[0]! : undefined
+    const part = largest ? sizeMatch(axes.map((a) => largest[a]), want) : undefined
+    const got = part?.pass
+      ? `${axes.map((a) => r2(largest![a])).join(' x ')} mm, the largest part, with the other ${body.parts!.length === 2 ? 'part' : `${body.parts!.length - 1} parts`} laid out beside it${part.note}`
+      : `${axes.map((a) => r2(body.size[a])).join(' x ')} mm${whole.note}`
+    items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got, pass: whole.pass || part?.pass === true })
   }
 
   const { rows, extra } = matchHoles(plan.holes ?? [], body.holes, scale)
@@ -111,7 +169,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   // a plan that lists its holes has no others; one without the list says nothing about holes
   if (plan.holes) for (const h of extra) items.push({ name: `extra hole, ${mm(h.diameterMm)}`, want: 'no hole (not in the plan)', got: `${mm(h.diameterMm)} diameter`, pass: false })
 
-  items.push({ name: 'feature count', want: String(plan.features.length), got: String(body.features), pass: body.features === plan.features.length })
+  items.push(featureItem(plan.features.map((f) => f.name), body))
   items.push({ name: 'watertight', want: 'closed', got: body.watertight ? 'closed' : 'open', pass: body.watertight })
   const wall = 2 * nozzle
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'

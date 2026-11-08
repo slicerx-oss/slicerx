@@ -63,7 +63,7 @@ describe('designCheck', () => {
     expect(r.items.find((i) => i.name === 'watertight')).toMatchObject({ want: 'closed', got: 'open' })
   })
 
-  it('holds sizes to 0.2 mm or 1 percent, whichever is larger, holes to 0.1 mm and the feature count exactly', () => {
+  it('holds sizes to 0.2 mm or 1 percent, whichever is larger, holes to 0.1 mm, and fails fewer steps than planned features', () => {
     const small: PartPlan = { ...bracket, overall: { x: 10, y: 10, z: 10 }, holes: [{ name: 'pin', diameter: 3 }] }
     const body = (size: BodyFacts['size'], d = 3): BodyFacts => ({ ...built, size, holes: [{ diameterMm: d }] })
     expect(designCheck(small, body({ x: 10.2, y: 9.8, z: 10 }), 0.4).pass).toBe(true)
@@ -73,7 +73,7 @@ describe('designCheck', () => {
     expect(failed(designCheck(bracket, { ...built, size: { x: 60.65, y: 30, z: 40 } }, 0.4))).toEqual(['overall size'])
     expect(designCheck(small, body({ x: 10, y: 10, z: 10 }, 3.09), 0.4).pass).toBe(true)
     expect(failed(designCheck(small, body({ x: 10, y: 10, z: 10 }, 3.15), 0.4))).toEqual(['pin'])
-    expect(failed(designCheck(bracket, { ...built, features: 4 }, 0.4))).toEqual(['feature count'])
+    expect(failed(designCheck(bracket, { ...built, features: 2 }, 0.4))).toEqual(['feature count'])
   })
 
   it('a planned hole the body lacks fails as no hole', () => {
