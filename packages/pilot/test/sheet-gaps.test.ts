@@ -164,6 +164,71 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(early.built).toEqual(['geom.extrude'])
   })
 
+  // every call that starts a design or builds a body, in the order they ran, and the replies the model saw
+  async function building(steps: ScriptStep[], answers: Record<string, number>[]) {
+    const ran: string[] = []
+    const tool = (name: string) =>
+      defineTool({
+        name,
+        version: '1.0.0',
+        source: 'command',
+        permission: 'read',
+        description: 'test',
+        input: z.object({}).passthrough(),
+        async run() {
+          ran.push(name)
+          return { summary: 'Done', output: { design: 'd1' } }
+        },
+      }) as PilotTool<never>
+    const seen: string[] = []
+    const watched = steps.map((s, k) => (k === 0 ? s : (m: { content?: string }[]) => (seen.push(m.at(-1)?.content ?? ''), typeof s === 'function' ? s(m as never) : s)))
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(watched as ScriptStep[], { chunk: false }), builtins: false, tools: [sheetTool(), plan, tool('design.new'), tool('design.open'), tool('geom.extrude'), tool('geom.build')] })
+    const sheet: string[] = []
+    const calls = new Map<string, string>()
+    let k = 0
+    for await (const e of p.run('s', 'A print-in-place hinge') as AsyncIterable<PilotEvent>) {
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answers[k++] ?? {})
+      if (e.type === 'tool_call') calls.set(e.callId, e.tool)
+      if (e.type === 'tool_result' && calls.get(e.callId) === 'pilot.sheet') sheet.push(e.summary)
+    }
+    return { ran, seen, sheet }
+  }
+
+  it('hold a new design for the planned part until the plan is made again, and its first body after that', async () => {
+    const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+    const start = { name: 'design.new', args: { name: 'Hinge' } }
+    const build = { name: 'geom.extrude', args: { name: 'Leaf' } }
+    // the person types 60 for the 40 mm width, and the model starts the design before it plans again
+    const { ran, seen, sheet } = await building([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [start] }, { calls: [build] }, { calls: [SHEET] }, { calls: [hinge] }, { calls: [start] }, { calls: [build] }, { text: 'Done.' }], [{ width: 60 }, { width: 60 }])
+    expect(seen[2]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+    expect(seen[3]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+    // a sheet shown while the plan waits still says to plan again
+    expect(sheet[1]).toContain(PLAN_AGAIN_NOTE)
+    expect(ran).toEqual(['design.new', 'geom.extrude'])
+  })
+
+  it('ask for the plan again when the size changes on a sheet shown after the planned part\'s design was started', async () => {
+    const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+    const start = { name: 'design.new', args: { name: 'Hinge' } }
+    for (const build of [{ name: 'geom.extrude', args: { name: 'Leaf' } }, { name: 'geom.build', args: { name: 'Hinge' } }]) {
+      const { ran, seen, sheet } = await building([{ calls: [hinge] }, { calls: [start] }, { calls: [SHEET] }, { calls: [build] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], [{ width: 60 }])
+      expect(sheet[0]).toContain(PLAN_AGAIN_NOTE)
+      expect(seen[3]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+      expect(ran).toEqual(['design.new', build.name])
+    }
+    // the sizes as shown: the design's first body is built at once
+    const same = await building([{ calls: [hinge] }, { calls: [start] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf' } }] }, { text: 'Done.' }], [{}])
+    expect(same.ran).toEqual(['design.new', 'geom.extrude'])
+  })
+
+  it('hold a design opened from a file while the plan waits to be made again', async () => {
+    const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+    const open = { name: 'design.open', args: { path: 'hinge.3mf' } }
+    const { ran, seen } = await building([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [open] }, { calls: [hinge] }, { calls: [open] }, { text: 'Done.' }], [{ width: 60 }])
+    expect(seen[2]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+    expect(ran).toEqual(['design.open'])
+  })
+
   // the hinge's plan and a spacer's sheet, and a run of messages in one chat with each sheet answered in turn: the tool
   // replies other than design.plan's, and the names geom.extrude built
   const HINGE = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
