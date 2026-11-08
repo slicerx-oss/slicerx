@@ -23,7 +23,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, saveRecording, type ScoreSummary } from './mimir-build-evals/recordings'
-import { classifyNoBuild, extraTurns, hookCheck, okSteps, scoreCase, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, classifyNoBuild, extraTurns, hookCheck, okSteps, scoreCase, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 /** Haiku 5.5's published price per million tokens, and per hosted web search. */
@@ -92,9 +92,33 @@ describe('build eval scoring', () => {
     // the hinged box: an 80 by 50 by 35 mm box and its lid laid flat 10 mm in front of it, as parts print apart
     const apart = scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 80, 110, 4)])
     expect(apart.sizes, JSON.stringify(apart.sizes)).toMatchObject({ pass: true })
-    // a lid sitting on its box is one assembly, sized as one
-    const stacked = scored('pi5-case', [box(0, 0, 0, 94, 65, 26), box(0, 0, 26, 94, 65, 30)])
+  })
+
+  // the Pi case held to a height only the box and its lid together reach (28 to 32 mm), or only together pass (16 to 32 mm)
+  const tall = (minMm: number, maxMm: number, parts: MeshPart[]) => {
+    const c = BUILD_CASES.find((x) => x.id === 'pi5-case')!
+    return scoreCase({ ...c, sizes: [{ axis: 'z', minMm, maxMm }] }, { events: [], turns: [{ kind: 'message', text: '' }], parts, firstReply: '', firstBuilt: true, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
+  }
+
+  it('sizes a lid sitting on its box as one assembly: the box 26 mm high and the lid on top read 30', () => {
+    const stacked = tall(28, 32, [box(0, 0, 0, 94, 65, 26), box(0, 0, 26, 94, 65, 30)])
     expect(stacked.sizes, JSON.stringify(stacked.sizes)).toMatchObject({ pass: true })
+    expect(stacked.sizes?.detail).toBe('94 by 65 by 30 mm')
+    expect(assemblySizes([box(0, 0, 0, 94, 65, 26), box(0, 0, 26, 94, 65, 30)])).toEqual([[94, 65, 30]])
+  })
+
+  it('fails a box and lid that are each under the size but over it together', () => {
+    const over = tall(16, 32, [box(0, 0, 0, 94, 65, 20), box(0, 0, 20, 94, 65, 34)])
+    expect(over.sizes, JSON.stringify(over.sizes)).toMatchObject({ pass: false })
+    expect(over.sizes?.detail).toMatch(/z 34 \(want 16 to 32\)/)
+  })
+
+  it('groups bodies 0.09 mm apart and keeps bodies 0.11 mm apart separate', () => {
+    expect(assemblySizes([box(0, 0, 0, 94, 65, 26), box(0, 0, 26.09, 94, 65, 30)])).toEqual([[94, 65, 30]])
+    expect(assemblySizes([box(0, 0, 0, 94, 65, 26), box(0, 0, 26.11, 94, 65, 30)])).toEqual([
+      [94, 65, 26],
+      [94, 65, 3.9],
+    ])
   })
 
   it('still fails a part when one body is past the size, or none reaches it', () => {
