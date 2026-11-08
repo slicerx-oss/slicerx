@@ -1,3 +1,0 @@
-### Added
-
-- `slicerx_cloud_access` 1.0.0 reads back the cloud token before slicing: `invited`, `slicesPerDay`, `slicesToday`, `slicesLeft`, `maxUploadBytes` and `maxUpload`, and for a partner app token `partnerApp` (the app's name the person issued it to) with `jobsVisible` `own` (`account` for the person's own token). `canSendToPrinter` is always false. A partner app token slices on the person's account and daily limits, and the cloud shows it only the jobs it queued. A 401 from the cloud service (an unknown, expired or revoked token) now says to ask the person for a new token, a partner app token from Settings, Account, Partner apps included.
