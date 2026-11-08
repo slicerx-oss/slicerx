@@ -54,6 +54,7 @@ import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
+import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE } from './slow-down-lines'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -268,10 +269,7 @@ export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in
  */
 export const SLOW_DOWN_WAIT_MS = 20_000
 export const SLOW_DOWN_GIVE_UP_MS = 60_000
-/** What the person sees while the run waits on a slow_down refusal; the proxy's own line says to try again. */
-export const SLOW_DOWN_NOTICE = 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.'
-/** What the person sees in place of SLOW_DOWN_NOTICE when slow_down refusals outlast SLOW_DOWN_GIVE_UP_MS. */
-export const SLOW_DOWN_LINE = 'Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
+export { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE }
 /** A step cut off at the output limit before it said or called anything. */
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
 /** The messages the runtime itself adds as the user's turn, so a scripted client can tell them from the person's. */
