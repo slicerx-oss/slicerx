@@ -3,6 +3,7 @@
 // Every plate keeps its slice. Leaving a plate puts its slice and preview aside; coming back puts them in Preview
 // again, marked stale when anything the slice read has changed since. So switching plates in Preview flips
 // between finished slices instead of starting over, the way Bambu Studio's multi-plate preview does.
+import { plateTower } from '../../plate/tower'
 import { INPUTS } from '../../state/auto-slice'
 import { printed, slotsRead } from '../../state/slice-inputs'
 import { appStore, type AppState, type SliceState } from '../../state/store'
@@ -49,7 +50,8 @@ export function keptSlice(plateId: string, s: AppState = appStore.getState()): {
   const k = kept.get(plateId)
   if (!k) return null
   const meta = s.plates.find((p) => p.id === plateId)
-  const now = { ...inputsOf(s), plate: meta?.objects, settings: meta?.settings }
+  // The tower that plate slices with: an opened project's own spot for it, as a switch to it sets (switchPlate).
+  const now = { ...inputsOf(s), plate: meta?.objects, settings: meta?.settings, tower: plateTower(s, plateId) }
   return { stale: k.slice.stale || !same(k.inputs, now) }
 }
 
