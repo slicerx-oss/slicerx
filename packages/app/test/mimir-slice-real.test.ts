@@ -9,7 +9,9 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { sendLedger } from '../src/plate/send-ledger'
 import { compose } from '../src/plate/transform'
 import { profileReady } from '../src/state/profile-sync'
+import { printerMinFlush } from '../src/filament/flush'
 import { removePlate } from '../src/plate/plates'
+import { printerBase } from '../src/workspaces/prepare/printer-base'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 import { bundledKb } from '../src/workspaces/mimir/kb'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
@@ -163,6 +165,31 @@ describe("mimir's real slice is current when it lands", () => {
     // no slice was kept for plate 2 (now plate 3), so none goes to the printer
     expect(results[1]).toMatchObject({ ok: false })
     expect(uploaded).toEqual([])
+  })
+
+  it("a printer change just before the slice of a two-color plate: the slice stays current once Prepare sets the printer's nozzle volume", async () => {
+    const H2D = { id: 'h2d', vendor: 'Bambu Lab', model: 'H2D' }
+    const P1S = { id: 'p1s', vendor: 'Bambu Lab', model: 'P1S' }
+    const volume = (m: { vendor: string; model: string }) => printerMinFlush((printerBase(m) as unknown as Record<string, never>)['nozzle_volume'])
+    set({ printerModel: H2D, plate: [part('a', 60, 1), part('b', 120, 2)], slotSetup: { 1: { type: 'PLA', brand: 'Generic', color: '#ffffff' }, 2: { type: 'PLA', brand: 'Generic', color: '#000000' } } } as never)
+    await profileReady()
+    set({ printerNozzleVolume: volume(H2D) })
+    // the two printers' nozzle volumes differ, so the flush volumes in the G-code do
+    expect(volume(P1S)).not.toBe(volume(H2D))
+    // Prepare's printer panel sets the printer's nozzle volume a moment after the printer changes
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const off = appStore.subscribe((st, prev) => {
+      if (st.printerModel !== prev.printerModel && st.printerModel) timers.push(setTimeout(() => set({ printerNozzleVolume: volume(st.printerModel!) }), 30))
+    })
+    const { options } = await tab()
+    const pilot = createPilot({ ...options, client: createScriptedClient([{ calls: [{ name: 'app.slice', args: {} }] }, { text: 'Sliced.' }], { chunk: false }) })
+    set({ printerModel: P1S } as never)
+    for await (const ev of pilot.run('printer-change', 'go', {})) if (ev.type === 'approval_request') await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+    await new Promise((done) => setTimeout(done, 100))
+    off()
+    timers.forEach(clearTimeout)
+    expect(get().printerNozzleVolume).toBe(volume(P1S))
+    expect(pilot.printRun?.('printer-change')?.slice).toMatchObject({ sliceId: 'r1', stale: false })
   })
 
   it('a two-color plate with an auto tower: the slice is current after it lands and printer.queue sends it', async () => {
