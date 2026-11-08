@@ -66,6 +66,19 @@ describe('which size questions go to the sheet', () => {
     })
   }
 
+  // the part being designed is often "your case": a question about what it should be is still open, so it goes to the sheet
+  for (const [title, question] of [
+    ['Case size', 'What size should your case be?'],
+    ['Organizer', 'How big do you want your organizer?'],
+    ['Box', 'Which dimensions should the case have?'],
+  ] as const) {
+    it(`sends "${question}" to the sheet`, async () => {
+      const r = await run(card(title, question) as typeof SIZE_CARD, true)
+      expect(r.events.some((e) => e.type === 'ask')).toBe(false)
+      expect(r.seen[0]!.summary).toContain('pilot.sheet')
+    })
+  }
+
   it('an open size question redirects without a failed step or a move to the larger model', async () => {
     const steps: ScriptStep[] = [{ calls: [SIZE_CARD] }, { calls: [card('Sizes', 'How big should the case be?')] }, { text: 'Here is the sheet.' }]
     const client = createScriptedClient(steps, { chunk: false })
