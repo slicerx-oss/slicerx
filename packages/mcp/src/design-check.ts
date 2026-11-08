@@ -355,6 +355,12 @@ export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
   return `${name(g.bodies[0])} and ${name(g.bodies[1])} ${what}; ${needs} ${mm(need)} or more`
 }
 
+/** Pieces items that failed only on how a part holding several pieces is named (fitItems): a miss that is not the part's fault. */
+const NAMING_MISS = new WeakSet<CheckItem>()
+
+/** Whether a failed item failed only on a part's name, which a model can fix by naming it, not by changing the part. */
+export const isNamingMiss = (item: CheckItem): boolean => NAMING_MISS.has(item)
+
 /**
  * The print-in-place items: pieces (as many separate bodies as the plan names, none fused or merged into another)
  * and gaps (every gap between moving pieces at least the fit rule's limit, and every piece near another).
@@ -375,7 +381,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const fused = fit.gaps.filter((g) => g.kind === 'fused')
 
   // pieces: the plan's count, each a body of its own, by the plan's names
-  const { missing, free, answered, copied } = unmatched(pieces, fit.bodies)
+  const { missing, free, answered, copied, answeredBy } = unmatched(pieces, fit.bodies)
   // bodies of one part (a mirrored leaf, an arrayed link) go by their part's name with a number, and no tool names a
   // body on its own: with the count right, names left over are read as such bodies, one each, when every body left over
   // is one and its part answers no other name (else a piece merged into another would pass as a mirrored body)
@@ -383,6 +389,9 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   for (const b of fit.bodies) bodiesIn.set(b.part, (bodiesIn.get(b.part) ?? 0) + 1)
   const shared = missing.length > 0 && free.length === missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1 && !answered.has(fit.bodies[b]!.part))
   const named = fit.pieces === pieces.length && (!missing.length || shared)
+  // the same bodies with their part answering a name too: a mirrored leaf whose part is named for one leaf, or a piece
+  // merged into another beside a mirrored part. The names cannot tell them apart, so it fails, saying how to name it
+  const standIn = fit.pieces === pieces.length && !shared && missing.length > 0 && free.length === missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1 && answered.has(fit.bodies[b]!.part))
   let got: string
   // names an array copy answers by its place in the row, said so, as the bodies of one part are
   const sources = [...new Set(copied.map(([, b]) => fit.bodies[b]!.array!.of))]
@@ -390,6 +399,10 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   if (fit.pieces === pieces.length && shared) {
     const of = new Set(free.map((b) => fit.bodies[b]!.part)).size === 1 ? 'bodies of one part' : 'bodies of parts that hold several'
     got = `${fit.pieces} pieces (${byCopy ? `${byCopy}; ` : ''}${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} ${listAnd(free.map(name))}, ${of})`
+  } else if (standIn) {
+    const parts = [...new Set(free.map((b) => fit.bodies[b]!.part))]
+    const whose = parts.map((k) => `${fit.bodies.find((b) => b.part === k)!.partName ?? `part ${k + 1}`} (${listAnd(answeredBy.get(k) ?? [])})`)
+    got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them: ${listAnd(free.map(name))} ${free.length === 1 ? 'is another body' : 'are other bodies'} of ${listAnd(whose)}, which already ${parts.length === 1 ? 'answers' : 'answer'} a piece's name. Bodies of one part take the plan's names only when the part's own name is none of them: build that part under a name that is no piece's and check again, or make each piece a part of its own`
   } else if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
   else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces${byCopy ? ` (${byCopy})` : ''}`
   else if (fit.pieces < pieces.length) {
@@ -405,6 +418,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
   }
   const items: CheckItem[] = [{ name: 'pieces', want, got, pass: named }]
+  if (standIn) NAMING_MISS.add(items[0]!)
 
   // gaps: every touch and tight gap, then pieces that meet no other piece
   const gapsWant = `at least ${mm(limits.sideMm)} side by side and ${mm(limits.verticalMm)} above or below between moving pieces (${limits.material.toUpperCase()}, ${mm(limits.nozzleMm)} nozzle, ${mm(limits.layerHeightMm)} layers)`
@@ -447,15 +461,17 @@ export function copyName(a: { of: string; n: number }): string {
  * its part's name, then the name its place in an array gives it (copyName), without regard to case; the bodies no name
  * took; the parts whose bodies took a name; and the names taken by place in an array, with their bodies.
  */
-function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[]; answered: Set<number>; copied: [string, number][] } {
+function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { missing: string[]; free: number[]; answered: Set<number>; copied: [string, number][]; answeredBy: Map<number, string[]> } {
   const key = (v: string): string => v.trim().toLowerCase()
   const free = new Set(bodies.map((_, b) => b))
   const answered = new Set<number>()
+  const answeredBy = new Map<number, string[]>()
   const take = (p: string, of: (b: FitFacts['bodies'][number]) => string | undefined): number | undefined => {
     const b = [...free].find((k) => of(bodies[k]!) !== undefined && key(of(bodies[k]!)!) === key(p))
     if (b === undefined) return undefined
     free.delete(b)
     answered.add(bodies[b]!.part)
+    answeredBy.set(bodies[b]!.part, [...(answeredBy.get(bodies[b]!.part) ?? []), p])
     return b
   }
   const left = pieces.filter((p) => take(p, (b) => b.name) === undefined).filter((p) => take(p, (b) => b.partName) === undefined)
@@ -465,7 +481,7 @@ function unmatched(pieces: readonly string[], bodies: FitFacts['bodies']): { mis
     if (b !== undefined) copied.push([p, b])
     return b === undefined
   })
-  return { missing, free: [...free], answered, copied }
+  return { missing, free: [...free], answered, copied, answeredBy }
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
@@ -529,6 +545,8 @@ export interface PlanEntry {
   replaceable?: true
   /** The designs open when its last check failed: a rebuild to fix that check is a design none of these. */
   openAtFail?: string[]
+  /** A check failed only on how a part was named, once, without using the fix round (waiveNaming). */
+  namingWaived?: true
 
   /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
   closed?: { summary: string; output: Record<string, unknown> }
@@ -565,6 +583,12 @@ export interface PlanRegistry {
    * then, which a rebuild is none of. A pass ends that.
    */
   checked(planId: string, pass: boolean, open?: readonly string[]): number
+  /**
+   * A check that failed only on how a part holding several pieces is named: the first one per plan leaves the fix round
+   * alone and lets the part be rebuilt as a new design started after it (as a failed check does), and returns true.
+   * False when there is no such plan or it had its one.
+   */
+  waiveNaming(planId: string, open: readonly string[]): boolean
   /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
   close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
   get(planId: string): PlanEntry | undefined
@@ -591,7 +615,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -625,6 +649,14 @@ export function createPlanRegistry(): PlanRegistry {
         else delete entry.openAtFail
       }
       return entry.failedChecks ?? 0
+    },
+    waiveNaming(planId, open) {
+      const entry = plans.get(planId)
+      if (!entry || entry.namingWaived) return false
+      entry.namingWaived = true
+      entry.replaceable = true
+      entry.openAtFail = [...open]
+      return true
     },
     close(planId, last) {
       const entry = plans.get(planId)
