@@ -2024,9 +2024,9 @@ mod tests {
 
         #[test]
         fn a_bore_down_a_flared_turned_stem_stays_light_and_joins_after_it_store() {
-            // a tube whose wall flares out at the foot, its hole the bore's own size: on main the bore split every long
-            // facet of the stem and the disc (14776 triangles became 64180), and each rod after it was refused for
-            // collapsed triangles
+            // a tube whose wall flares out at the foot, its hole the bore's own size: before the cut lines were kept to
+            // their faces, the bore split every long facet of the stem and the disc (14776 became 64180 triangles), and
+            // each rod after it was refused for collapsed triangles
             let mut profile = vec![[12.2, 5.99]];
             profile.extend((0..=16).map(|i| {
                 let z = 5.99 + 154.01 * f64::from(i) / 16.0;
@@ -2039,7 +2039,8 @@ mod tests {
                 stem["triangles"].as_u64().unwrap(),
                 b["triangles"].as_u64().unwrap(),
             );
-            assert!(after < before + 1000, "{before} became {after}");
+            // 15234 now
+            assert!(after * 20 < before * 21, "{before} became {after}");
             assert_eq!(b["watertight"], true);
             // through the outer wall into the bore, and from inside the wall
             rods_join(&b, 124.0, 20.0);
@@ -2050,17 +2051,53 @@ mod tests {
         fn a_bore_down_a_solid_turned_stem_takes_the_cutter_s_volume() {
             let stem = turned_stem(&[[0.0, 5.99], [16.0, 5.99], [16.0, 160.0], [0.0, 160.0]]);
             let b = bored(&stem);
-            let (before, after) = (
-                stem["triangles"].as_u64().unwrap(),
-                b["triangles"].as_u64().unwrap(),
-            );
-            assert!(after < before + 1000, "{before} became {after}");
             // the cutter is a 48 sided prism, 140 mm of it inside the stem
             let r = 12.2f64;
             let want = 0.5 * 48.0 * r * r * (std::f64::consts::TAU / 48.0).m_sin() * 140.0;
             let removed = b["removedVolumeMm3"].as_f64().unwrap();
             assert!((removed - want).abs() < 1e-3, "{removed} vs {want}");
             rods_join(&b, 124.0, 20.0);
+        }
+
+        #[test]
+        fn a_notch_leaves_the_faces_it_never_reached_as_they_were() {
+            // a d110 disc's top and bottom are filled finely; a notch in its rim reaches neither
+            let disc = faced(
+                "shape.extrude",
+                &json!({ "frame": { "origin": [150, 0, 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                    "shape": { "type": "circle", "diameterMm": 110 }, "spec": { "distanceMm": 6 } }),
+            )
+            .unwrap();
+            let cut = faced(
+                "subtract",
+                &json!({ "mesh": part(&disc), "solids": [{ "type": "box", "min": [200, -3, 2], "max": [210, 3, 4] }] }),
+            )
+            .unwrap();
+            assert_eq!(cut["watertight"], true);
+            assert!(cut["removedVolumeMm3"].as_f64().unwrap() > 0.0);
+            let caps = |v: &Value| {
+                let p: Vec<f64> = serde_json::from_value(v["mesh"]["positions"].clone()).unwrap();
+                let i: Vec<u32> = serde_json::from_value(v["mesh"]["indices"].clone()).unwrap();
+                let at = |k: u32| [0, 1, 2].map(|c| p[k as usize * 3 + c].to_bits());
+                let mut out: Vec<[[u64; 3]; 3]> = i
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|t| {
+                        let mut c = t.map(at);
+                        c.sort_unstable();
+                        c
+                    })
+                    .filter(|c| {
+                        c.iter().all(|q| [0.0, 6.0].contains(&f64::from_bits(q[2]))) && c[0][2] == c[2][2]
+                    })
+                    .collect();
+                out.sort_unstable();
+                out
+            };
+            let (before, after) = (caps(&disc), caps(&cut));
+            assert!(before.len() > 100, "{}", before.len());
+            assert_eq!(before, after);
         }
 
         #[test]
@@ -2090,7 +2127,8 @@ mod tests {
                 cavity["triangles"].as_u64().unwrap(),
                 ch["triangles"].as_u64().unwrap(),
             );
-            assert!(after < before + 1000, "{before} became {after}");
+            // 27644 before the cut lines were kept to their faces, 4608 now
+            assert!(after * 20 < before * 21, "{before} became {after}");
             assert_eq!(ch["watertight"], true);
             rods_join(&ch, 100.0, 30.0);
         }

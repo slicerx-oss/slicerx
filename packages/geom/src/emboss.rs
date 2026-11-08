@@ -955,12 +955,20 @@ mod tests {
         let drilled = subtract(&cube, &hole).unwrap();
         let merged = merge_coplanar(&drilled).unwrap();
         assert!(merged.edge_report().is_watertight());
-        // the cut splits only near the hole, so there is less to merge than there was
+        // the top and bottom, where the cut lines fan out, each fill again with under half their triangles (305 and
+        // 261 become 127 and 97); the hole's wall and the sides keep theirs
+        let caps = |m: &TriMesh| {
+            [0.0, 10.0].map(|z| {
+                m.triangles
+                    .iter()
+                    .filter(|&&t| m.corners(t).iter().all(|p| (p[2] - z).abs() < 1e-9))
+                    .count()
+            })
+        };
+        let (before, after) = (caps(&drilled), caps(&merged));
         assert!(
-            merged.triangles.len() < drilled.triangles.len(),
-            "{} vs {}",
-            merged.triangles.len(),
-            drilled.triangles.len()
+            after[0] * 2 < before[0] && after[1] * 2 < before[1],
+            "{before:?} became {after:?}"
         );
         assert!((merged.volume() - drilled.volume()).abs() < 1e-6);
         assert_eq!(merged.bounds(), drilled.bounds());
