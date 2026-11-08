@@ -846,7 +846,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.1.1',
     source: 'command',
     permission: 'slice',
-    description: 'Sweep a sketch profile along an open path (a hook, a handle, a bent rod or pipe), as a new body, joined or cut; a join or cut must overlap the part. With "design" it adds a step.',
+    description: 'Sweep a sketch profile along an open path (a hook, a handle, a bent rod or pipe), as a new body, joined or cut; a join or cut must overlap the part. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
     input: z.object({
       profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("One loop and its frame, as revolve takes them; its plane crosses the path's start and it is carried as it sits there; open: an open chain"),
       path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]'),
