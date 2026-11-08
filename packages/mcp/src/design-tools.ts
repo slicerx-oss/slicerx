@@ -504,8 +504,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         }
         if (id !== entry.design && opts.cardSide && !designs.list().some((d) => d.id === entry.design))
           throw new ToolInputError(`design: the plan for ${entry.plan.part} was made in the mimir tab for a design that is no longer open. It is not moved to another design; make a new plan for the part and check it against that.`)
+        // the card's own side shows the refusal in the mimir card's step row, so it names no plan or design id there
         if (id !== entry.design)
-          throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
+          throw new ToolInputError(
+            opts.cardSide
+              ? `design: the plan for ${entry.plan.part} was made in the mimir tab and is already tied to its own design. It is not tied again; check it without design, or check another plan.`
+              : `design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`,
+          )
         return { design: designs.get(entry.design), how: 'tied to the plan' }
       }
       // a design given by its name is the design it names, so it is compared and tied by its id
