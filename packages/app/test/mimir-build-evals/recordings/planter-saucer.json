@@ -1118,6 +1118,14 @@
   "geometry": false,
   "built": true,
   "refused": false,
-  "extra": 0
+  "extra": 0,
+  "checks": {
+   "ops": true,
+   "watertight": true,
+   "bodies": false,
+   "minWall": true,
+   "bedFit": true,
+   "sizes": false
+  }
  }
 }

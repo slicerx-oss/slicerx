@@ -905,6 +905,14 @@
   "geometry": true,
   "built": true,
   "refused": false,
-  "extra": 0
+  "extra": 0,
+  "checks": {
+   "ops": true,
+   "watertight": true,
+   "bodies": true,
+   "minWall": true,
+   "bedFit": true,
+   "sizes": true
+  }
  }
 }
