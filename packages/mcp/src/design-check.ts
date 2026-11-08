@@ -21,6 +21,10 @@ const feature = z
       if (!sizes.includes(k)) ctx.addIssue({ code: 'custom', path: ['kinds', k], message: `kinds names ${k}, which is not a size of ${f.name}; ${sizes.length ? `its sizes are ${sizes.join(', ')}` : 'it has no sizes'}` })
   })
 
+/** The assumptions a plan is given with; the card keeps one more, its own line for pieces that print together (PRINTS_TOGETHER). */
+export const ASSUMPTIONS_MAX = 12
+export const assumptionsInput = z.array(text(200)).max(ASSUMPTIONS_MAX)
+
 /**
  * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
  * (the kind its kinds entry states, else kindOf in @slicerx/contracts/size-kind), which no inch plan converts. The
@@ -39,10 +43,16 @@ export const partPlanSchema = z.object({
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
   holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),
-  assumptions: z.array(text(200)).max(12),
+  assumptions: z.array(text(200)).max(ASSUMPTIONS_MAX + 1),
   questions: z.array(text(200)).max(6),
-  /** Marks a print-in-place part: design.check then measures its pieces and the gaps between them. */
-  printInPlace: z.array(text(60)).min(2).max(30).optional().describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8)'),
+  /**
+   * Marks a print-in-place part: design.check then measures its pieces and the gaps between them. false says the pieces
+   * print separately, so the card never reads the plan as print-in-place (printsTogether).
+   */
+  printInPlace: z
+    .union([z.array(text(60)).min(2).max(30), z.literal(false)])
+    .optional()
+    .describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8); false when the pieces print separately'),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 
@@ -277,9 +287,11 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
  * compared axis by axis, since z is the print height: x and y swapped passes (the part turned on the bed prints the
  * same), and other swaps fail with a note to rotate it. With `holes` in the plan, a hole the plan does not have fails.
  * A nozzle that is not a positive finite number counts as 0.4 mm. A feature's own sizes are never held to the body, so
- * a count or an angle among them (@slicerx/contracts/size-kind) never fails an item, in mm or inches.
+ * a count or an angle among them (@slicerx/contracts/size-kind) never fails an item, in mm or inches. `together` marks a
+ * plan whose pieces print together without printInPlace naming them (printsTogether): its planned gaps are held to
+ * `limits` too.
  */
-export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, limits?: FitLimits): CheckResult {
+export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, limits?: FitLimits, together = false): CheckResult {
   const scale = plan.units === 'in' ? MM_PER_IN : 1
   const nozzle = nozzleOr(nozzleMm)
   const items: CheckItem[] = []
@@ -318,9 +330,10 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, l
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
   items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
-  // the gaps the plan sets, held to the same limits as the gaps measured
+  // the gaps the plan sets, held to the same limits as the gaps measured; a plan whose pieces print together without
+  // naming them (printsTogether) gets this item alone, as it names no pieces to measure
   const gapLimits = limits ?? body.fit?.limits
-  if (plan.printInPlace && gapLimits) {
+  if ((plan.printInPlace || together) && gapLimits) {
     const gaps = plannedGaps(plan, gapLimits)
     const under = gaps.filter((g) => !g.pass)
     if (gaps.length) items.push({ name: 'planned gaps', want: `every gap the plan sets ${gapLimitsText(gapLimits)}`, got: under.length ? under.map((g) => g.text).join('; ') : gaps.map((g) => g.text).join(', '), pass: !under.length })
@@ -362,22 +375,90 @@ export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
   return `${name(g.bodies[0])} and ${name(g.bodies[1])} ${what}; ${needs} ${mm(need)} or more`
 }
 
-/** The words that name a size as a gap, and those that say which way it runs; a gap named neither way is on every face. */
-const GAP_WORDS: ReadonlySet<string> = new Set(['gap', 'gaps', 'clearance', 'clearances'])
+/** A size key's words: print_gap, printGap and print-gap all read print, gap. */
+const keyWords = (key: string): string[] => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+
+/**
+ * The words that say which way a gap runs (a gap named neither way is on every face), and those that make a size with
+ * gap or clearance in its name no gap: a screw's clearance hole, a bore, a count. The long way words also count inside
+ * a word run together, such as verticalgap.
+ */
 const UP_WORDS: ReadonlySet<string> = new Set(['vertical', 'z', 'above', 'below', 'top', 'bottom', 'under', 'over', 'cap'])
 const SIDE_WORDS: ReadonlySet<string> = new Set(['side', 'sides', 'xy', 'horizontal', 'radial', 'lateral'])
+const NOT_GAP_WORDS: ReadonlySet<string> = new Set(['hole', 'holes', 'diameter', 'dia', 'bore', 'count'])
 
 /**
  * Which way a planned size named as a gap runs, by its name: xy side by side, z above or below, both when the name
- * says neither (such a gap is on every face where pieces meet), or null for a size that is no gap. The sheet's gap
- * rows' keys read as they mean: clearance side by side, clearance_vertical above or below.
+ * says neither (such a gap is on every face where pieces meet, so print_gap and joint_gap are held to the larger gap),
+ * or null for a size that is no gap. A size is a gap when its key has gap or clearance in it (print_gap, jointGap,
+ * hinge_clearance), unless a word of it says it is a hole, bore or count (hole_clearance is a screw's hole). The
+ * sheet's gap rows' keys read as they mean: clearance side by side, clearance_vertical above or below.
  */
 export function gapWay(key: string): 'xy' | 'z' | 'both' | null {
-  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
-  if (!words.some((w) => GAP_WORDS.has(w))) return null
-  if (words.some((w) => UP_WORDS.has(w))) return 'z'
-  if (words.some((w) => SIDE_WORDS.has(w)) || key.trim().toLowerCase() === 'clearance') return 'xy'
+  const flat = key.trim().toLowerCase()
+  const words = keyWords(key)
+  if (!/gap|clearance/.test(flat) || words.some((w) => NOT_GAP_WORDS.has(w))) return null
+  if (words.some((w) => UP_WORDS.has(w)) || /vertical|above|below/.test(flat)) return 'z'
+  if (words.some((w) => SIDE_WORDS.has(w)) || /horizontal|radial|lateral/.test(flat) || flat === 'clearance') return 'xy'
   return 'both'
+}
+
+/** The line the card puts first among the assumptions of a plan whose pieces print together without printInPlace. */
+export const PRINTS_TOGETHER = 'These pieces print together, so their gaps follow the fit rule'
+
+/** The words that name pieces, and those that count them. */
+const PIECE_WORDS: ReadonlySet<string> = new Set(['segment', 'segments', 'link', 'links', 'piece', 'pieces', 'part', 'parts', 'body', 'bodies', 'planet', 'planets', 'gear', 'gears'])
+const COUNT_WORDS: ReadonlySet<string> = new Set(['count', 'number', 'num'])
+
+/**
+ * How many pieces a planned size counts: its value, a whole number of 2 or more, when its key names pieces and counts
+ * them (segment_count, number_of_links, planet_count) or names them in the plural as its last word (tail_segments,
+ * links); else 0. A count of anything else on one piece (count, fin_count, slot_count, teeth) counts no pieces.
+ */
+export function pieceCount(key: string, value: number): number {
+  if (!Number.isInteger(value) || value < 2) return 0
+  const words = keyWords(key)
+  if (!words.some((w) => PIECE_WORDS.has(w))) return 0
+  const last = words[words.length - 1]!
+  return words.some((w) => COUNT_WORDS.has(w)) || (PIECE_WORDS.has(last) && last.endsWith('s')) ? value : 0
+}
+
+/** Printing the pieces separately, as a plan says it: printed separately, print them separately, printed as separate pieces. */
+const SEPARATELY = /\b(?:print|prints|printed|printing)\s+(them\s+)?(?:separately|as\s+separate\s+(?:pieces|parts|bodies))\b/g
+/** Words before it that make it the pieces': they, each, all, the pieces. */
+const MANY_WORDS: ReadonlySet<string> = new Set([...[...PIECE_WORDS].filter((w) => w.endsWith('s')), 'they', 'them', 'all', 'each', 'every', 'both'])
+/** Words just before it that make it no statement: not printed separately, could be printed separately. */
+const HEDGE_WORDS: ReadonlySet<string> = new Set(['not', 'never', 'no', 'without', 'cannot', 'can', 'could', 'may', 'might', 'or', 'if', 'whether', 'instead'])
+
+/**
+ * True when a plan's text says its pieces print separately: "The links are printed separately", "Each segment is
+ * printed separately", "Print them separately", "All pieces print as separate pieces". Read in its own clause: one of
+ * they, them, each, all, every, both or a plural piece word (links, segments) comes before it, and none of not, never,
+ * no, without, can, could, may, might, or, if, whether or a word ending in n't is among the three words just before
+ * it. So "the end cap is printed separately", "the links are not printed separately", "could be printed separately"
+ * and "each segment is a separate piece" say nothing of the kind.
+ */
+export function saysSeparately(text: string): boolean {
+  const t = text.toLowerCase()
+  for (const m of t.matchAll(SEPARATELY)) {
+    const before = (t.slice(0, m.index).split(/[.;:,!?()]/).pop() ?? '').split(/\s+/).filter(Boolean)
+    if (before.slice(-3).some((w) => HEDGE_WORDS.has(w) || /n['\u2019]t$/.test(w))) continue
+    if (m[1] || before.some((w) => MANY_WORDS.has(w))) return true
+  }
+  return false
+}
+
+/**
+ * Whether a plan's pieces print together though printInPlace does not name them, read from the plan's fields: two or
+ * more pieces, counted by a size (pieceCount), and a size that is a gap (gapWay). A plan with printInPlace false, or
+ * whose part name or an assumption says the pieces print separately (saysSeparately), is not; its questions are not
+ * read, since a question says nothing yet. A plan whose printInPlace names its pieces prints in place anyway.
+ */
+export function printsTogether(plan: Pick<PartPlan, 'part' | 'features' | 'assumptions' | 'printInPlace'>): boolean {
+  if (plan.printInPlace !== undefined) return false
+  const sizes = plan.features.flatMap((f) => Object.entries(f.sizes))
+  if (!sizes.some(([k, v]) => pieceCount(k, v) >= 2) || !sizes.some(([k]) => gapWay(k))) return false
+  return ![plan.part, ...plan.assumptions].some(saysSeparately)
 }
 
 /** The limits in words: "at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)". */
