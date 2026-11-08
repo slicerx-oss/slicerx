@@ -39,6 +39,13 @@ export interface DesignCommit {
   design: Design
 }
 
+/** How a step is added: the timeline sketch it draws on, the body revision it was picked on, and the planned feature it builds. */
+export interface AddOptions {
+  sketch?: string
+  expectedRevision?: string
+  feature?: string
+}
+
 export interface DesignHost {
   /** Opaque body revision for scoped topology reads; absent on legacy hosts. */
   revision?(id: string): string
@@ -47,10 +54,13 @@ export interface DesignHost {
   list(): Design[]
   /** A new design: empty (its first step makes the body) or from parts, with a history to replay when given. */
   create(name: string, base: HistoryMesh[], history?: History, transform?: Mat4, options?: { exact?: boolean }): Promise<Design>
-  /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through; else throws its reason. */
-  add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }): Promise<Step>
+  /**
+   * Adds a step on part `part` (-1 for every part) and keeps it only when it goes through; else throws its reason.
+   * `feature` records the planned feature the step builds on it.
+   */
+  add(d: Design, part: number, params: StepParams, label?: string, opts?: AddOptions): Promise<Step>
   /** Scoped edits require an atomic receipt rather than a later read of the host. */
-  addWithReceipt?(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }): Promise<DesignCommit>
+  addWithReceipt?(d: Design, part: number, params: StepParams, label?: string, opts?: AddOptions): Promise<DesignCommit>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
   replay(d: Design, opts?: { expectedRevision?: string }): Promise<void>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
