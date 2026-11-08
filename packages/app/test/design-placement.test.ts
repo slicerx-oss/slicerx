@@ -12,7 +12,7 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyExtrude } from '../src/cad/cad-ops'
 import { appDesignHost } from '../src/cad/design-host'
-import { runReplay, toPart } from '../src/cad/history/ops'
+import { beginEdit, cancelEdit, nowOf, runReplay, saveEdit, toPart } from '../src/cad/history/ops'
 import { rollTo } from '../src/cad/history/rollback'
 import { finishSketch } from '../src/cad/sketches'
 import { geom, setGeomProvider } from '../src/geom/client'
@@ -1355,5 +1355,113 @@ describe('a Model extrude on a finished sketch while its design is dragged', () 
     expect(volume(r.parts.map(toPart))).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
     const step = historyOf(get().timeline, d)!.steps.at(-1)!
     expect([step.transform[12], step.transform[13]]).toEqual([128, 128])
+  })
+})
+
+describe('the history panel\'s step edit on a moved body', () => {
+  /** A step's params given in its object's world now, its depth changed: what the step's tool hands saveEdit. */
+  function editedNow(id: string, index: number, depth: number) {
+    const st = entry(id).history!.steps[index]!
+    const p = st.params
+    if (p.op !== 'shape.extrude') throw new Error('not an extrude')
+    return { ...p, ...(p.frame ? { frame: nowOf(st, entry(id).transform).frame(p.frame) } : {}), spec: { ...p.spec, distanceMm: depth } }
+  }
+  const onTop: FaceFrame = { origin: [128, 128, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+
+  it('keeps the step and the sketch where they are stored when a step on a sketch drawn for the design is edited after a drag', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    drag(d, 20, 0)
+    const frame = structuredClone(sketchItem(k).frame)
+    const before = structuredClone(entry(d).history!.steps[1]!)
+    await beginEdit(loader, d, 1)
+    await saveEdit(loader, editedNow(d, 1, 4))
+    const after = entry(d).history!.steps[1]!
+    expect(after.transform).toEqual(before.transform)
+    expect(after.params.op === 'shape.extrude' && after.params.frame).toEqual(before.params.op === 'shape.extrude' && before.params.frame)
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(volume(entry(d).parts)).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
+    expect(host.sketch!(k, d).frame?.origin).toEqual([20, 0, 10])
+  })
+
+  it('leaves another body on the same sketch as it is, and keeps the edited body\'s cut on it when another body moves the sketch', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const bar = String((await run('design.new', { name: 'Bar' })).output['design'])
+    await run('geom.extrude', { design: bar, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [50, 128] }, distance_mm: 10 })
+    // one sketch across both, drawn on the plate: the block's cut is first, so the block carries it
+    const k = finishSketch({ frame: { ...onTop, origin: [94, 128, 10] }, loops: [{ points: [[-80, -2], [80, -2], [80, 2], [-80, 2]] }] }).id
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    expect((await run('geom.extrude', { design: bar, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    const frame = structuredClone(sketchItem(k).frame)
+    const kept1 = (id: string) => structuredClone(historyOf(get().timeline, id)!.steps.map(kept))
+    // the block is dragged: the sketch moves with it, and the block's cut is edited
+    drag(d, 0, 20)
+    const barSteps = kept1(bar)
+    const barVolume = volume(entry(bar).parts)
+    const blockStep = structuredClone(kept(entry(d).history!.steps[1]))
+    await beginEdit(loader, d, 1)
+    await saveEdit(loader, editedNow(d, 1, 4))
+    expect(kept(entry(d).history!.steps[1])!.transform).toEqual(blockStep!.transform)
+    expect(volume(entry(d).parts)).toBeCloseTo(BLOCK_MM3 - 20 * 4 * 4, 0)
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(kept1(bar)).toEqual(barSteps)
+    expect(volume(entry(bar).parts)).toBeCloseTo(barVolume, 3)
+    // the bar is dragged and its cut edited: the sketch stays with the block, its anchor, and the bar's cut stays on the
+    // bar, where it was made, as the step panel showed it (moved with the bar)
+    drag(bar, 0, -15)
+    const barStep = structuredClone(kept(entry(bar).history!.steps[1]))
+    const blockSteps = kept1(d)
+    await beginEdit(loader, bar, 1)
+    await saveEdit(loader, editedNow(bar, 1, 5))
+    expect(kept(entry(bar).history!.steps[1])!.transform).toEqual(barStep!.transform)
+    expect(volume(entry(bar).parts)).toBeCloseTo(40 * 20 * 10 - 40 * 4 * 5, 0)
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(kept1(d)).toEqual(blockSteps)
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([94, 148, 10])
+  })
+})
+
+describe('where a sketch\'s body stands, wherever the body is', () => {
+  /** A landed block dragged, with a sketch drawn for it on its top: the plane Model draws it on. */
+  async function draggedWithSketch() {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+    drag(d, 20, -10)
+    const shown = sketchScene(sketchItem(k))!.frame
+    expect(shown.origin).toEqual([148, 118, 10])
+    return { d, k, shown }
+  }
+
+  it('reads it with its design on another plate', async () => {
+    const { d, k, shown } = await draggedWithSketch()
+    const e = entry(d)
+    set((s) => ({ plate: [], plates: [...s.plates, { id: 'plate-2', name: 'Plate 2', objects: [e], settings: {} }] }))
+    expect(get().plate).toHaveLength(0)
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(shown)
+  })
+
+  it('reads it with its design while the design\'s first step is open for editing and the design is hidden', async () => {
+    const { d, k, shown } = await draggedWithSketch()
+    await beginEdit(loader, d, 0)
+    expect(get().plate.some((e) => e.id === d)).toBe(false)
+    expect(get().historyEdit?.hidden).toBe(true)
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(shown)
+    cancelEdit()
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(shown)
+  })
+
+  it('reads it with its design while a roll back holds the design off the plate', async () => {
+    const { d, k, shown } = await draggedWithSketch()
+    await rollTo(loader, 0)
+    expect(get().plate.some((e) => e.id === d)).toBe(false)
+    expect(heldBodies().map((h) => h.entry.id)).toEqual([d])
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(shown)
   })
 })
