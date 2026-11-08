@@ -8,7 +8,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearReplayCache, type Step, type StepStatus } from '@slicerx/cad-history'
 import { applyExtrude, BED_FRAME } from '../src/cad/cad-ops'
 import { CadPanel } from '../src/cad/cad-panel'
@@ -188,9 +188,21 @@ describe('fillet and shell', () => {
     block()
     const pk = await pickEdge({ mesh: toGeom(entry().parts[0]!), transform: T }, { triangle: 2, at: [110, 109.5, 10] })
     await applyEdges(slicer, 'a', 0, edgeParams('fillet', [pk.edge], 1, null))
-    await open('a', 0)
-    const t = await save('edge-size', '1.5', 'Round')
-    expect(t).toMatchObject({ tone: 'ok', text: 'Changed step 1 and ran the steps after it.' })
+    // The tool's live preview waits 120 ms after the last change before it asks the engine. The recording was made with
+    // the radius typed inside that wait, so it holds no preview call. On a busy machine the wait can run out first and
+    // the tool previews the radius it opened with, a call the recording lacks. The 120 ms timers are swapped for ones
+    // that never fire, so the edit saves with no preview, as recorded, however late the test runs.
+    const real = globalThis.setTimeout
+    const hold = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => (ms === 120 ? real(() => {}, 0) : real(fn, ms, ...rest))) as typeof setTimeout)
+    try {
+      await open('a', 0)
+      const t = await save('edge-size', '1.5', 'Round')
+      expect(t).toMatchObject({ tone: 'ok', text: 'Changed step 1 and ran the steps after it.' })
+      expect(hold.mock.calls.some(([, ms]) => ms === 120)).toBe(true)
+    } finally {
+      hold.mockRestore()
+    }
+    expect(engine.ops()).not.toContain('edge.fillet.preview')
   })
 })
 
