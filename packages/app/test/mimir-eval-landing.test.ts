@@ -73,43 +73,64 @@ const SKETCH_AFTER_LANDING: Call[] = [
   { name: 'design.list', args: {} },
 ]
 
+/**
+ * Two blocks built where they print, so neither lands, and a sketch drawn on the plate across both for no design: a
+ * square over each. The second design made (Right) is cut from it first, then the first (Left), so Right's cut is the
+ * first drawn on it and the sketch moves with Right. A tab past the bed's left edge lands Left again, and Right is cut
+ * again from the sketch, which stayed with Right. d2 stands for the second id design.new gave.
+ */
+const SHARED_SKETCH: Call[] = [
+  { name: 'design.new', args: { name: 'Left' } },
+  { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [40, 128] }, distance_mm: 10 } },
+  { name: 'design.new', args: { name: 'Right' } },
+  { name: 'geom.extrude', args: { design: 'd2', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [200, 128] }, distance_mm: 10 } },
+  { name: 'design.sketch', args: { frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: [[40, 128], [200, 128]].map(([x, y]) => ({ points: [[x! - 3, y! - 3], [x! + 3, y! - 3], [x! + 3, y! + 3], [x! - 3, y! + 3]] })) } },
+  { name: 'geom.extrude', args: { design: 'd2', sketch: 'k1', distance_mm: 2, operation: 'cut' } },
+  { name: 'geom.extrude', args: { design: 'd1', sketch: 'k1', distance_mm: 2, operation: 'cut' } },
+  { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 60, heightMm: 20 }, placement: { center: [10, 128] }, distance_mm: 10, operation: 'join', part: 0 } },
+  { name: 'geom.extrude', args: { design: 'd2', sketch: 'k1', distance_mm: 4, operation: 'cut' } },
+  { name: 'design.list', args: {} },
+]
+
 const prompt = { id: 'landing', title: 'Landing', prompt: 'x', machine: { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }, bodies: [1, 1] as [number, number] }
 
 const STEP_ID = /^s[0-9a-z]{8}[0-9a-z]+k?$/
 
-/** `v` with the host's own ids put aside: its design id, its step and sketch ids, and its body revisions. */
-function plain(v: unknown, id: string): unknown {
+/** `v` with the host's own ids put aside: its design ids, its step and sketch ids, and its body revisions. */
+function plain(v: unknown, ids: readonly string[]): unknown {
+  const named = (i: number) => (i ? `<design${i + 1}>` : '<design>')
   if (typeof v === 'string') {
-    if (v === id) return '<design>'
+    const i = ids.indexOf(v)
+    if (i >= 0) return named(i)
     if (STEP_ID.test(v)) return '<step>'
-    return v.split(id).join('<design>')
+    return ids.reduce((t, id, k) => t.split(id).join(named(k)), v)
   }
-  if (Array.isArray(v)) return v.map((x) => plain(x, id))
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, /revision/i.test(k) && typeof x === 'string' ? '<revision>' : plain(x, id)]))
+  if (Array.isArray(v)) return v.map((x) => plain(x, ids))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, /revision/i.test(k) && typeof x === 'string' ? '<revision>' : plain(x, ids)]))
   return v
 }
 
 /**
- * Runs the calls on `tools`, with the design id d1 as the id design.new gave and k1 as the id design.sketch gave; each
- * call's whole reply, or its error.
+ * Runs the calls on `tools`, with d1 and d2 as the ids design.new gave, in order, and k1 as the id design.sketch gave;
+ * each call's whole reply, or its error.
  */
 async function build(tools: readonly PilotTool<never>[], calls: readonly Call[]): Promise<{ id: string; replies: unknown[] }> {
-  let id = 'd1'
+  const ids: string[] = []
   let sketch = 'k1'
   const replies: unknown[] = []
   for (const c of calls) {
     const tool = tools.find((t) => t.name === c.name)!
-    const args = JSON.parse(JSON.stringify(c.args).split('"d1"').join(JSON.stringify(id)).split('"k1"').join(JSON.stringify(sketch))) as never
+    const args = JSON.parse(JSON.stringify(c.args).split('"d1"').join(JSON.stringify(ids[0] ?? 'd1')).split('"d2"').join(JSON.stringify(ids[1] ?? 'd2')).split('"k1"').join(JSON.stringify(sketch))) as never
     try {
       const out = await tool.run(args, {} as never)
-      if (c.name === 'design.new') id = (out.output as { design: string }).design
+      if (c.name === 'design.new') ids.push((out.output as { design: string }).design)
       if (c.name === 'design.sketch') sketch = (out.output as { id: string }).id
       replies.push({ call: c.name, ok: out.ok !== false, summary: out.summary, output: out.output })
     } catch (e) {
       replies.push({ call: c.name, error: e instanceof Error ? e.message : String(e) })
     }
   }
-  return { id, replies: replies.map((r) => plain(r, id)) }
+  return { id: ids[0] ?? 'd1', replies: replies.map((r) => plain(r, ids)) }
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100
@@ -230,6 +251,22 @@ describe('the creative eval lands a body as the app does', () => {
       // one 6 mm square hole 4 mm deep, 2 mm off the block's middle in the design's frame
       for (const d of [a, e]) expect(d.history.steps).toHaveLength(2)
       expect(body(e)).toEqual(body(a))
+    } finally {
+      stop()
+    }
+  })
+
+  it('moves a sketch shared by two designs with the one whose step was drawn on it first, as the app does', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const stop = startTimeline()
+    try {
+      const { app, evalRun } = await both(SHARED_SKETCH)
+      expect(evalRun.replies).toEqual(app.replies)
+      const said = app.replies.map((r) => JSON.stringify(r))
+      // Left landed again by its tab; Right did not move, and neither did the sketch, so the deeper cut meets Right
+      expect(said[7]).toMatch(/did not fit on the bed where it stood, so it moved by/)
+      expect(said[8]).toMatch(/"ok":true/)
+      expect(said[8]).not.toMatch(/does not reach|no longer reaches|did not go through/)
     } finally {
       stop()
     }
