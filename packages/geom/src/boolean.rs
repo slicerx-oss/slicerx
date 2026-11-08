@@ -53,6 +53,23 @@ thread_local! {
     static SPENT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+/// the solid through the robust engine, cut by a box around it; none unless that comes out clean
+fn cleaned(s: &Solid, opts: BooleanOptions, work: &Work) -> Option<Solid> {
+    let b = s.m.bounding_box();
+    let around = crate::build::box_mesh(
+        [b.min.x - 1.0, b.min.y - 1.0, b.min.z - 1.0],
+        [b.max.x + 1.0, b.max.y + 1.0, b.max.z + 1.0],
+    );
+    let robust = BooleanOptions {
+        engine: Engine::Robust,
+        ..opts
+    };
+    let (r, _) = s
+        .apply(&Solid::new(&around).ok()?, OpType::Intersect, robust, true, work)
+        .ok()?;
+    (!r.self_intersects()).then_some(r)
+}
+
 fn too_long() -> Error {
     Error::geometry(
         "boolean",
@@ -451,6 +468,7 @@ pub(crate) fn boolean_within(
     let unclean = flags.iter().filter(|&&u| u).count();
     let (fa, fb) = flags.split_at(a.len());
     let mut robust = false;
+    let mut ended_exact = false;
     let mut fold = |items: Vec<(&Solid, bool)>, op: OpType| -> Result<Option<(Solid, bool)>> {
         let mut it = items.into_iter();
         let Some((first, mut dirty)) = it.next() else {
@@ -461,6 +479,7 @@ pub(crate) fn boolean_within(
             dirty |= u;
             let (r, used) = acc.apply(s, op, opts, dirty, &work)?;
             robust |= used;
+            ended_exact = !used;
             // a robust step's result is clean
             dirty &= !used;
             acc = r;
@@ -478,13 +497,25 @@ pub(crate) fn boolean_within(
                 (Some((x, ux)), Some((y, uy))) => {
                     let (r, used) = x.apply(&y, OpType::Subtract, opts, ux || uy, &work)?;
                     robust |= used;
+                    ended_exact = !used;
                     Some((r, false))
                 }
                 (x, _) => x,
             }
         }
     };
-    let result = result.map(|(s, _)| s);
+    let mut result = result.map(|(s, _)| s);
+    // one look at the end of a longer exact fold, not one a step: crossing slivers get one robust pass
+    if opts.engine == Engine::Auto
+        && ended_exact
+        && a.len() + b.len() >= 3
+        && let Some(s) = &result
+        && s.self_intersects()
+        && let Some(clean) = cleaned(s, opts, &work)
+    {
+        result = Some(clean);
+        robust = true;
+    }
     #[cfg(test)]
     SPENT.set(work.done.load(Ordering::Relaxed));
     let Some(result) = result else {
@@ -816,5 +847,14 @@ mod tests {
         let spent = SPENT.get();
         assert!(r.watertight, "{r:?}");
         assert!(spent < WORK_BUDGET / 20, "{spent}");
+    }
+
+    #[test]
+    fn four_turned_cylinders_join_into_a_body_that_stores() {
+        let copies: Vec<TriMesh> = turned_copies(12).iter().take(4).map(Solid::to_mesh).collect();
+        let (u, mut r) = boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default()).unwrap();
+        let u = tidy(u, &mut r);
+        assert!(!Solid::new(&u).unwrap().self_intersects());
+        assert!(storage_mesh(&u).is_ok());
     }
 }
