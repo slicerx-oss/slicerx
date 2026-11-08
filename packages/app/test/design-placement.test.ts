@@ -1089,6 +1089,31 @@ describe('a replay that meets a landing made meanwhile', () => {
   })
 })
 
+describe('a Model join or cut that meets a landing made meanwhile', () => {
+  it('keeps the landing moves of a room move made while the result loads, with the transform it made', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    // as the cut's mesh loads, another host moves the design over to make room: transform and landing move together
+    let during: (() => void) | null = () => set((s) => ({ plate: s.plate.map((e) => (e.id === d ? { ...e, transform: e.transform.map((v, i) => (i === 12 ? v + 10 : v)), history: { ...e.history!, placed: [138, 128] } } : e)) }))
+    const loading = { loadParts: async (name: string, _parts: MeshPart[]) => {
+      const f = during
+      during = null
+      f?.()
+      return handle(name)
+    } }
+    const top: FaceFrame = { origin: [128, 128, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+    const made = await applyExtrude(loading, { frame: top, shape: { type: 'rectangle', widthMm: 6, heightMm: 6 }, placement: {}, spec: { distanceMm: 4, extent: 'oneSide', operation: 'cut' }, target: { objectId: d, partIndex: 0 }, name: 'Cut' })
+    expect(made.missed).toBeUndefined()
+    expect(during).toBeNull()
+    expect(volume(entry(d).parts)).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
+    expect(entry(d).transform[12]).toBe(138)
+    expect(entry(d).history?.placed).toEqual([138, 128])
+    // the design's frame stays where it was built, so mimir's next point still meets the body
+    expect(at(host.get(d))).toEqual([0, 0])
+  })
+})
+
 describe('the design tools on a landed design', () => {
   const top = { origin: [0, 0, 10], normal: [0, 0, 1] }
 
