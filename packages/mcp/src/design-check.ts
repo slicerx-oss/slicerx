@@ -12,6 +12,15 @@ export const PLAN_SIZE_MAX = 10_000
 const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
 const text = (max: number) => z.string().trim().min(1).max(max)
 
+/** A planned feature: its name, its operation (kind), its sizes, and what each size measures (kinds) when it says. */
+const feature = z
+  .object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size), kinds: z.record(text(40), z.enum(SIZE_KINDS)).optional() })
+  .superRefine((f, ctx) => {
+    const sizes = Object.keys(f.sizes)
+    for (const k of Object.keys(f.kinds ?? {}))
+      if (!sizes.includes(k)) ctx.addIssue({ code: 'custom', path: ['kinds', k], message: `kinds names ${k}, which is not a size of ${f.name}; ${sizes.length ? `its sizes are ${sizes.join(', ')}` : 'it has no sizes'}` })
+  })
+
 /**
  * A part as planned before it is built. Every size is in `units`, except a count or an angle among a feature's sizes
  * (the kind its kinds entry states, else kindOf in @slicerx/contracts/size-kind), which no inch plan converts. The
@@ -22,8 +31,11 @@ export const partPlanSchema = z.object({
   planId: text(64),
   part: text(80),
   units: z.enum(['mm', 'in']),
-  /** `kinds` says what a size measures (count, angle or length); a size it leaves out is read by its name (kindOf). */
-  features: z.array(z.object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size), kinds: z.record(text(40), z.enum(SIZE_KINDS)).optional() })).max(30),
+  /**
+   * `kinds` says what a size measures (count, angle or length); a size it leaves out is read by its name (kindOf). Each
+   * of its keys names one of the feature's sizes. An empty map is taken and dropped (tidyPlan).
+   */
+  features: z.array(feature).max(30),
   overall: z.object({ x: size, y: size, z: size }).optional(),
   /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
   holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),
@@ -31,6 +43,12 @@ export const partPlanSchema = z.object({
   questions: z.array(text(200)).max(6),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
+
+/** The plan with each empty kinds map left out, so a plan that says nothing about kinds is kept the same as one without them. */
+export function tidyPlan<P extends PartPlan>(plan: P): P {
+  if (!plan.features.some((f) => f.kinds && !Object.keys(f.kinds).length)) return plan
+  return { ...plan, features: plan.features.map(({ kinds, ...f }) => (kinds && Object.keys(kinds).length ? { ...f, kinds } : f)) }
+}
 
 export const checkItemSchema = z.object({ name: z.string(), want: z.string(), got: z.string(), pass: z.boolean() })
 export const checkResultSchema = z.object({ pass: z.boolean(), items: z.array(checkItemSchema) })
@@ -365,7 +383,7 @@ export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
   return {
     put(plan, design, origin = 'client') {
-      const p = partPlanSchema.parse(plan)
+      const p = tidyPlan(partPlanSchema.parse(plan))
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)

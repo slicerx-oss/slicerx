@@ -100,6 +100,13 @@ describe('the part on the sheet', () => {
     expect(dims.map((d) => d.at)).toEqual([undefined, undefined, { a: [0, 0, 0], b: [0, 0, 4], off: expect.any(Array) }])
   })
 
+  it('places a row by the kind it states over its key, both ways', () => {
+    const shape = shapeOfMesh([boxMesh([0, 0, 0], [96, 68, 4])])
+    const dims = placeMissing([{ ...row('width', 96), kind: 'count' }, { ...row('teeth', 68), kind: 'length' }], shape)
+    expect(dims[0]!.at).toBeUndefined()
+    expect(dims[1]!.at).toMatchObject({ a: [96, 0, 0], b: [96, 68, 0] })
+  })
+
   // The case's width, drawn on the base's right side and pushed out toward the lid beside it, keeps its callout off the
   // lid (the live Pi case sheet put it on the lid).
   it('keeps a callout off a second part its line points at', () => {
