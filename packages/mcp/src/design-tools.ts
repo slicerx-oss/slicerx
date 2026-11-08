@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, stalePlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -571,7 +571,9 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     async run(i) {
       const entry = plans.get(i.planId)
       if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
-      // sizes changed after the plan was approved: it no longer says what the part should be
+      // sizes changed after the plan was approved: it no longer says what the part should be, and once a newer plan was
+      // answered it never will
+      if (entry.superseded) throw new ToolInputError(supersededPlanNote(entry.plan.part))
       if (entry.stale) throw new ToolInputError(stalePlanNote(entry.plan.part))
       // the fix round is used: the same answer again, with no new geometry work
       if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
