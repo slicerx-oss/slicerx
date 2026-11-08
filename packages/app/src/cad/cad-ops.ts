@@ -3,7 +3,7 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import type { History, Pattern, SketchConstraint, StepParams } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, type History, type Pattern, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
@@ -179,7 +179,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     // would leave pieces floating off the body (text running past the face) counts as a miss, and so does one that
     // adds nothing: a join off the body always adds a piece, so one that adds no volume sits inside it.
     if (!r.report.touches) {
-      const adds = Math.abs(r.report.volumeChangeMm3) > 1e-6
+      const adds = Math.abs(r.report.volumeChangeMm3) > ADDS_NOTHING_MM3
       return {
         message: operation !== 'join'
           ? 'The shape does not reach the body, so nothing changed. Check the distance and the direction.'
