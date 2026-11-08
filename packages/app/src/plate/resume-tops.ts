@@ -7,6 +7,7 @@ import type { Host } from '@slicerx/contracts'
 import { INPUTS } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
 import { cancelSlice } from '../state/actions'
+import { plateTower } from './tower'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
 export function sliceState(s: AppState): AppState {
@@ -118,7 +119,8 @@ export function sliceInputsKey(s: AppState): string {
 export function plateInputsKey(s: AppState, plateId: string): string {
   if (plateId === s.activePlate) return sliceInputsKey(s)
   const meta = s.plates.find((p) => p.id === plateId)
-  return sliceInputsKey({ ...s, activePlate: plateId, plate: meta?.objects ?? [], historyEdit: null })
+  // What a plate switch swaps per plate (plates.ts switchPlate): its objects, and an opened project's tower spot.
+  return sliceInputsKey({ ...s, activePlate: plateId, plate: meta?.objects ?? [], historyEdit: null, tower: plateTower(s, plateId) })
 }
 
 /** One resume plan, as an id: the same plan stored again is the same id; a new plan or a changed one is another. */
@@ -153,17 +155,16 @@ export function sliceStamp(s: AppState): SliceStamp {
 export const SLICE_NOT_CURRENT = 'This slice was made for another plate, resume plan or setup, so it does not print or export. Slice the plate again.'
 
 /**
- * SLICE_NOT_CURRENT when the slice stamped `stamp` is not of the shown plate as it is: another plate, another resume
- * plan (kept, cleared, replaced or voided since), or, where a resume plan is in play, other inputs. A slice with no
- * plan either side keeps the app's own stale rule for edits (a slot report from the printer does not hold it back). A
- * slice with no stamp passes only while no plan is kept, so a slice from before a plan never prints into the part.
+ * SLICE_NOT_CURRENT when the slice stamped `stamp` is not of the shown plate as it is: another plate, or another resume
+ * plan (kept, cleared, replaced or voided since: planFor reads the plate's inputs, so an edit voids a plan that held).
+ * Edits with no plan in play follow the app's stale rule, and a slice that lands after an edit made while it ran
+ * lands stale (slice-plate.ts). A slice with no stamp passes only while no plan is kept, so a slice from before a plan
+ * never prints into the part on the bed. It applies to a stale slice too.
  */
 export function stampBlock(s: AppState, stamp: SliceStamp | undefined): string | null {
   if (!stamp) return s.resume ? SLICE_NOT_CURRENT : null
   if (stamp.plate !== s.activePlate) return SLICE_NOT_CURRENT
-  const plan = planFor(s, stamp.plate)
-  if (stamp.plan !== plan) return SLICE_NOT_CURRENT
-  return plan !== null && stamp.inputs !== sliceInputsKey(s) ? SLICE_NOT_CURRENT : null
+  return stamp.plan !== planFor(s, stamp.plate) ? SLICE_NOT_CURRENT : null
 }
 
 /**

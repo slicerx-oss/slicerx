@@ -6,7 +6,7 @@ import type { ApprovalHost, Host, JobFile, PrinterHost, PrinterInfo, PrinterStat
 import { developerModeSure, followsSlotMap, grantApproval, pluginHas, slotMapLine, TUNNEL_PROBLEM_TEXT, tunnelProblemOf } from '@slicerx/contracts'
 import { formatDuration } from '../lib/preview-stats'
 import { resolveSlots, usedSlots } from '../filament/slots'
-import type { QueueItem } from '../queue/queue'
+import { HELD_NOT_CURRENT, queuedBlock, type QueueItem } from '../queue/queue'
 import type { PrintSheetAsk } from '../send/print-sheet'
 import { EXTERNAL_SLOT, matchSlots, mergeOptions, printEnding, withEnding, optionLines, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap, type SendChoice, type SendOptions } from '../send/options'
 import { bounds } from '../plate/transform'
@@ -211,6 +211,11 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const plainSha = project ? await sha256Hex(data) : sha256
   const result = s.result
   const stamp = s.stamp
+  /** Why this slice may no longer go now: another slice on screen, a stale one, or printBlock (its stamp among it). */
+  const stillSendable = (): string | null => {
+    const now = get()
+    return now.slice.status !== 'done' || now.slice.result.id !== result.id || now.slice.stale ? STALE_SLICE : printBlock(now)
+  }
   let picked = await choice
   for (;;) {
     if (!picked) {
@@ -219,8 +224,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     }
     // The sheet stayed open while the plate could change: the slice must still be this plate's, for its resume plan
     // as it is now (a plan kept, cleared or voided meanwhile, or another plate shown), when the file goes.
-    const now = get()
-    const late = now.slice.status !== 'done' || now.slice.result.id !== result.id || now.slice.stale ? STALE_SLICE : printBlock(now)
+    const late = stillSendable()
     if (late) {
       set({ printSheet: null })
       toast(late, 'error')
@@ -306,7 +310,14 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
         // Bambu Lab printers cannot list the objects of their print; the hub keeps the plate's so they can be skipped.
         const { plateObjectsFromGcode } = await import('../features/fleet/device')
         const objects = plateObjectsFromGcode(new TextDecoder().decode(data))
-        const go = async (plateOk: boolean) => {
+        // `held`: the plate guard held the start and the person started it later from the Printers tab. By then another
+        // slice may be on screen, so the check is the plan this file was sliced under, as for a queued plate.
+        const go = async (plateOk: boolean, held = false) => {
+          const blocked = held ? queuedBlock(get(), { ...(stamp ? { plate: stamp.plate, plan: stamp.plan } : {}) }, HELD_NOT_CURRENT) : stillSendable()
+          if (blocked) {
+            toast(blocked, 'error')
+            return
+          }
           await hub.printLocal(printer.id, file, opts, bed !== 'clear', objects.length ? objects : undefined, plateOk)
           toast(`${plateName} started on ${printer.name}`, 'ok')
           void rememberStartedUse(printer, file.name)
@@ -318,7 +329,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
           // The camera guard saw something on the plate. Its card on the Printers tab shows the picture and can start
           // this same plate anyway.
           const { holdStart } = await import('../features/fleet/guard')
-          holdStart(printer.id, () => go(true))
+          holdStart(printer.id, () => go(true, true))
           toast(`${printer.name}: something is on the plate. The start is on hold on the Printers tab.`, 'warn')
         }
         return 'done'
@@ -327,6 +338,12 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       await conn!.approvals.register(request)
       // The sheet's confirm button is the approval and carried the bed statement when one was needed.
       const token = await grantApproval(conn!.approvals, request, start && bed !== 'clear')
+      // The approval waited on the person: the slice must still be this plate's for its plan as it is now.
+      const late = stillSendable()
+      if (late) {
+        toast(late, 'error')
+        return 'done'
+      }
       const remote = await conn!.printers.upload(printer.id, file, token)
       if (start) {
         await conn!.printers.start({ ...remote, sha256: remote.sha256 ?? file.sha256 }, opts, token)
@@ -401,7 +418,7 @@ export async function startQueued(host: Host, item: QueueItem): Promise<void> {
 async function startQueuedNow(host: Host, item: QueueItem): Promise<void> {
   const conn = connected(host)
   if (!conn) return
-  const { queuedBlock, removeFromQueue } = await import('../queue/queue')
+  const { removeFromQueue } = await import('../queue/queue')
   // A plate sliced under another resume plan (or none) than its plate keeps now does not start into the part on the bed.
   const before = queuedBlock(get(), item)
   if (before) {

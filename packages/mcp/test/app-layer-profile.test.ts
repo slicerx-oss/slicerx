@@ -20,6 +20,15 @@ it('routes read, set and reset to the app link and returns what it reads back', 
   }
 })
 
+it('describes a void resume plan and passes its read through', async () => {
+  const state = { summary: 'Plate 1 slices with nothing: its resume plan no longer matches it.', output: { mode: 'resume_void', resume: { kept: true, plate: 1, holds: false }, profile: null } }
+  const [read] = appLayerProfileTools({ call: async () => state } as unknown as AppLinkCaller, 'SlicerX')
+  expect(read!.description).toContain('resume_void')
+  expect(read!.description).toContain('Print everything again')
+  expect(read!.description).toMatch(/resume \(the kept plan: kept, its plate number and whether it holds\)/)
+  expect(await read!.run(read!.input.parse({}) as never, {} as never)).toEqual(state)
+})
+
 it('validates through the MCP client before forwarding', async () => {
   const h = await connect()
   try {

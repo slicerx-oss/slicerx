@@ -143,8 +143,10 @@ describe('Print and Export with a resume plan that no longer matches', () => {
     expect(printBlock(get())).toBe(RESUME_VOID)
     printEverythingAgain()
     expect(get().resume).toBeNull()
-    expect(printBlock(get())).toBeNull()
+    // The slice on screen is the old plan's: the whole plate's own slice is the one that goes.
+    expect(printBlock(get())).toBe(SLICE_NOT_CURRENT)
     await slicePlate(e.host)
+    expect(printBlock(get())).toBeNull()
     expect(e.requests.at(-1)!.options).not.toHaveProperty('resumeFromLayer')
     await exportGcode(e.host)
     expect(e.exported).toHaveLength(1)
