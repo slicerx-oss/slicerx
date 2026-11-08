@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The build eval cases: parts a maker asks for in one message, run through the mimir tab as the desktop app makes it.
-// Six need curved or tapered solids (a loft through sections or a sweep along a path), and two are boxy parts that
-// extrudes build, as controls. Each case says which design steps a good build uses and the sizes its result should
-// have, so the score reads the built part rather than the reply.
+// Most need curved or tapered solids (a loft through sections or a sweep along a path); four are boxy parts that
+// extrudes build, as controls, and one asks for two separate parts. Each case says which design steps a good build
+// uses and the sizes its result should have, so the score reads the built part rather than the reply.
 import type { PilotMachine } from '@slicerx/contracts'
 
 /**
@@ -42,6 +42,11 @@ export interface BuildCase {
   control?: boolean
   /** The part has a hook, checked this way. */
   hook?: HookSpec
+  /**
+   * The person asks for this many separate parts in the one message, so each part may get its own dimension sheet and
+   * Go without counting as an extra turn. One when not given.
+   */
+  parts?: number
 }
 
 const P1S: PilotMachine = { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }
@@ -142,5 +147,87 @@ export const BUILD_CASES: BuildCase[] = [
     bodies: [1, 4],
     sizes: [{ axis: 'xy', minMm: 75, maxMm: 100 }],
     control: true,
+  },
+  // a loft vase that changes section, a handle swept along an arc, a clip and a stand that extrudes and fillets build, a
+  // planter and saucer as two separate parts, and a hook with a rounded tip
+  {
+    id: 'flared-vase',
+    title: 'Flared vase',
+    prompt: 'A vase that starts as a 60 mm square at the bottom and flares out to a round top 110 mm across, 150 mm tall, with a slight twist on the way up. 2 mm walls and a solid 3 mm bottom.',
+    machine: P1S,
+    ops: ['geom.loft'],
+    bodies: [1, 1],
+    sizes: [
+      { axis: 'z', minMm: 140, maxMm: 160 },
+      // the round top sets the width; the square foot is 85 mm corner to corner
+      { axis: 'xy', minMm: 100, maxMm: 118 },
+    ],
+  },
+  {
+    id: 'drawer-handle',
+    title: 'Curved drawer handle',
+    prompt: 'A curved drawer handle: a round bar 12 mm thick that arches out 30 mm from the drawer front between two posts 128 mm apart, center to center, with an M4 screw hole in the end of each post.',
+    machine: P1S,
+    ops: ['geom.sweep', 'geom.revolve:partial'],
+    bodies: [1, 1],
+    sizes: [
+      // 128 between the posts plus a post's width either side
+      { axis: 'xy', minMm: 128, maxMm: 160 },
+    ],
+  },
+  {
+    id: 'cable-clip',
+    title: 'Cable clip with a snap tab',
+    prompt: 'A cable clip to screw under my desk: a 30 by 20 mm base, 3 mm thick, with a countersunk screw hole, and a C shaped clip on top for an 8 mm cable with a snap tab at the opening so the cable clicks in. Round off the outside edges.',
+    machine: P1S,
+    ops: ['geom.extrude', 'geom.build'],
+    bodies: [1, 1],
+    sizes: [
+      { axis: 'xy', minMm: 28, maxMm: 45 },
+      // the base and a clip around an 8 mm cable
+      { axis: 'z', minMm: 10, maxMm: 25 },
+    ],
+    control: true,
+  },
+  {
+    id: 'phone-stand-lip',
+    title: 'Phone stand with an angled lip',
+    prompt: 'A phone stand for my desk, 80 mm wide, that holds the phone leaning back at about 60 degrees, with an angled lip at the front 10 mm tall so it does not slide off and a gap in the lip for the charging cable.',
+    machine: P1S,
+    ops: ['geom.extrude', 'geom.build'],
+    bodies: [1, 1],
+    sizes: [
+      { axis: 'xy', minMm: 75, maxMm: 150 },
+      { axis: 'z', minMm: 40, maxMm: 150 },
+    ],
+    control: true,
+  },
+  {
+    id: 'planter-saucer',
+    title: 'Planter and saucer',
+    prompt: 'A round planter 120 mm across and 100 mm tall with 3 mm walls and five 6 mm drainage holes in the bottom, plus a separate saucer for it to sit in, 140 mm across and 15 mm tall. Two separate parts.',
+    machine: P1S,
+    ops: ['geom.extrude', 'geom.revolve', 'geom.loft', 'geom.build'],
+    // the planter and the saucer, each its own body, and each may get its own sheet and Go
+    bodies: [2, 2],
+    parts: 2,
+    sizes: [
+      // the saucer is the widest; the planter the tallest, standing in its saucer or apart
+      { axis: 'xy', minMm: 135, maxMm: 150 },
+      { axis: 'z', minMm: 95, maxMm: 118 },
+    ],
+  },
+  {
+    id: 'coat-hook',
+    title: 'Coat hook with a rounded tip',
+    prompt: 'A wall coat hook: a 25 by 70 mm back plate, 5 mm thick, with two countersunk screw holes, and a 12 mm round arm that comes out 50 mm from the wall and curves up at the end into a rounded tip so it will not snag a coat.',
+    machine: P1S,
+    ops: ['geom.sweep', 'geom.revolve:partial'],
+    bodies: [1, 1],
+    sizes: [
+      // the plate's 70 mm, whichever way the hook lies on the bed
+      { axis: 'xy', minMm: 25, maxMm: 100 },
+      { axis: 'z', minMm: 25, maxMm: 100 },
+    ],
   },
 ]
