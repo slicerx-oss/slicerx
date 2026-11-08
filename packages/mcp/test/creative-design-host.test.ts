@@ -129,7 +129,7 @@ describe('a recorded reply that builds with the design tools', () => {
   })
 })
 
-describe('a reply that builds the part again as a new design', () => {
+describe('a reply that builds its part beside a design an earlier message left on the plate', () => {
   const P = CREATIVE_PROMPTS.find((x) => x.id === 'spinner-ring')!
   // a tube of `outer` and `inner` diameter, 8 mm tall, as a new body of `design` centered at `at`
   const tube = (design: string, name: string, outer: number, inner: number, at: [number, number]) => ({
