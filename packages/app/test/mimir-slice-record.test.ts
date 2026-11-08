@@ -7,7 +7,7 @@ import { createRunBook, runHandle, type CommandRun, type CommandToolContext } fr
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
-import { set, type PlateEntry } from '../src/state/store'
+import { get, set, type PlateEntry } from '../src/state/store'
 import { appPrintRun } from '../src/workspaces/mimir/print-run'
 import { mimirCommands } from '../src/workspaces/mimir/session'
 
@@ -15,7 +15,9 @@ import { mimirCommands } from '../src/workspaces/mimir/session'
 const fake = vi.hoisted(() => ({ next: null as null | (() => void) }))
 vi.mock('../src/state/actions', async (orig) => ({
   ...(await orig<typeof import('../src/state/actions')>()),
-  slicePlate: async () => {
+  // a slice that lands is stamped first, as the real slicePlate calls onStamp; a call that slices nothing is not
+  slicePlate: async (_host: unknown, opts?: { onStamp?: (at: ReturnType<typeof get>) => void }) => {
+    if (fake.next) opts?.onStamp?.(get())
     fake.next?.()
   },
 }))

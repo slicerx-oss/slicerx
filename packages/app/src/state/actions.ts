@@ -105,7 +105,7 @@ export function endSlice(abort: AbortController): void {
 export const loadSliceRun = () => import('./slice-plate')
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
-export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean; plate?: string } = {}): Promise<void> {
+export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean; plate?: string; onStamp?: (at: AppState) => void } = {}): Promise<void> {
   await (await loadSliceRun()).slicePlate(host, opts)
 }
 

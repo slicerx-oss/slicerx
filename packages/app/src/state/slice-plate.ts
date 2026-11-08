@@ -156,6 +156,14 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
   }
 }
 
+/** slicePlate's options; `onStamp` gets the state the slice is stamped with, as it is stamped. */
+export interface SlicePlateOptions {
+  auto?: boolean
+  planning?: boolean
+  plate?: string
+  onStamp?: (at: AppState) => void
+}
+
 /**
  * Slices the shown plate. `auto` is a background slice after an edit: nothing to say when there is nothing to slice,
  * and a failure shows in the panel, not as a toast. `planning` is the resume dialog's own slice to read the layers,
@@ -163,7 +171,7 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
  * Export every plate): when another plate shows by the time the slice would start (a plate switch while the profile
  * loads or the project G-code question waits), nothing slices.
  */
-export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean; plate?: string } = {}): Promise<void> {
+export async function slicePlate(host: Host, opts: SlicePlateOptions = {}): Promise<void> {
   // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
   if (!hostSlices()) return
   const timed = sliceStarted(opts.auto === true)
@@ -205,6 +213,10 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
   // What this slice is for: the plate, the resume plan it uses and the plate's inputs. It lands only for the same plate
   // and plan, and Print and Export check it against the plate as it is then.
   const stamp = sliceStamp(at)
+  // A caller that records the slice its own way (mimir's run) reads the plate at this same moment: after the profile
+  // and the project G-code question, so a slice is never stale the moment it lands. A round after a refused project
+  // setting reads it again.
+  opts.onStamp?.(at)
   const abort = beginSlice()
   // The last slice stays on screen, stale, until this one lands: the panels and the preview never empty in between.
   const before = shownSlice(get().slice)
