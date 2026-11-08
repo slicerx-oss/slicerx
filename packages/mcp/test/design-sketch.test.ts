@@ -260,7 +260,7 @@ describe('finished sketches in the design tools', () => {
       ['geom.sketch_edit', '1.1.0', (l) => ({ loops: l, op: 'intersect' })],
       ['geom.extrude', '1.4.0', (l) => ({ shape: { type: 'sketch', loops: l }, distance_mm: 2 })],
       ['geom.revolve', '1.4.0', (l) => ({ loops: l, axis: { point: [0, 0], direction: [0, 1] } })],
-      ['design.sketch', '1.2.0', (l) => ({ loops: l })],
+      ['design.sketch', '1.3.0', (l) => ({ loops: l })],
     ]
     for (const [name, version, input] of inputs) {
       expect(tool(name).version, name).toBe(version)

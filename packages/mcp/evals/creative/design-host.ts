@@ -10,14 +10,15 @@
 // topology reference at revision d1:2), so a replay must hand out the same ones the live run did.
 //
 // A first body built off the bed lands on it, and an edit that takes a part off the bed lands it again, by the same
-// rule as on the app's plate (@slicerx/cad-history landing.ts), so a step after it, given in plate millimeters, lands
-// where it would in the app, and the tools say the same landed note. The bed is the eval machine's (plainBed): no brim
+// rule as on the app's plate (@slicerx/cad-history landing.ts): the design moves as a whole and keeps its own frame
+// (design-frame.ts), so a step after it, given in the frame the design was built in, lands where it would in the app,
+// and the tools say the same landed note. Steps and sketches are stored in plate coordinates, as in the app. The bed is the eval machine's (plainBed): no brim
 // or skirt around a part, no excluded areas, and a part that does not fit in the middle of the bed, clear of the other
 // designs, stays where it was built (the app would look for the first free spot).
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { appendStep, bakeMesh, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, noDesignMessage, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { appendStep, bakeMesh, designFrame, designNamed, HISTORY_VERSION, IDENTITY, invert, landEdit, landNew, movedFrame, movedParams, movedSketch, multiply, noDesignMessage, placedAfter, replayHistory, storedToDesign, translation, withPlaced, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type SketchItem, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -126,12 +127,54 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     const bed = opts.bed(d.id)
     if (!before.parts.length) {
       const l = landNew(d.parts, d.transform, bed)
+      // a landing moves the design as a whole: its history keeps the move
+      if (l.moved && 'dxMm' in l.moved) d.history = withPlaced(d.history, placedAfter(d.history.placed, d.transform, l.transform))
       d.transform = l.transform
+      takeSketches(d.id, l.moved && 'dxMm' in l.moved ? l.moved : undefined)
       return l.moved
     }
     const r = landEdit(before, d.parts, bed)
-    if (r.to) d.transform = r.to
+    if (r.to) {
+      d.history = withPlaced(d.history, placedAfter(d.history.placed, d.transform, r.to))
+      d.transform = r.to
+    }
     return r.landed
+  }
+
+  /** As on the app's plate: the sketches drawn for design `id` while it waited, unused, move with its first landing. */
+  function takeSketches(id: string, moved: { dxMm: number; dyMm: number } | undefined): void {
+    const used = new Set([...all.values()].flatMap((x) => x.history.steps.flatMap((st) => (st.sketch !== undefined ? [st.sketch] : []))))
+    timeline = {
+      ...timeline,
+      items: timeline.items.map((i) => {
+        if (i.kind !== 'sketch' || !i.drawnFor?.includes(id)) return i
+        const { drawnFor: _for, ...k } = i
+        return moved && !used.has(i.id) ? { ...k, frame: movedFrame(i.frame, translation([moved.dxMm, moved.dyMm, 0])) } : k
+      }),
+    }
+  }
+
+  /** How far sketch `id` moved since it was stored: the move of the design whose step first drew on it, as in the app. */
+  function sketchMoved(id: string): Mat4 {
+    for (const x of all.values()) {
+      const st = x.history.steps.find((y) => y.sketch === id)
+      if (st) return multiply(x.transform, invert(st.transform))
+    }
+    return [...IDENTITY]
+  }
+
+  /** A step as the stored design `s` keeps it: in plate coordinates, and where its sketch is stored when it draws on one. */
+  function recorded(s: Design, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined): Step {
+    const placed = s.history.placed
+    let p = placed ? movedParams(params, translation([placed[0], placed[1], 0])) : params
+    let transform = [...s.transform]
+    const k = sketch !== undefined ? timeline.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === sketch) : undefined
+    if (k && (p.op === 'shape.extrude' || p.op === 'sketch.revolve')) {
+      const back = invert(sketchMoved(k.id))
+      p = movedParams(p, back)
+      transform = multiply(back, transform)
+    }
+    return { id: nextStepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}) }
   }
 
   /** Keeps a replay on the stored design `s` and lands it; what the landing did. */
@@ -148,21 +191,23 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   // The stored designs never hold `landed`: as in the app, where every read builds the design again from the plate,
   // the note is only in the reply of the call that moved the part. A caller gets copies (get, list), and a call that
   // changes a design changes the stored one and then the caller's copy, with this call's landing on the copy alone.
+  // The stored design stands where it is on the plate (its transform); a caller gets it in its own frame, the plate
+  // transform less its landing moves, as the app's host gives it.
   const stored = (d: Design): Design => all.get(d.id) ?? d
   const copy = (s: Design, landed?: Landed): Design => {
-    const { landed: _l, ...rest } = s
-    return { ...rest, ...(landed ? { landed } : {}) }
+    const { landed: _l, placed: _p, ...rest } = s
+    return { ...rest, transform: designFrame(s.transform, s.history), ...(s.history.placed ? { placed: [...s.history.placed] as [number, number] } : {}), ...(landed ? { landed } : {}) }
   }
   function give(d: Design, s: Design, landed: Landed | undefined): void {
-    Object.assign(d, s)
-    if (landed) d.landed = landed
-    else delete d.landed
+    delete d.placed
+    Object.assign(d, copy(s, landed))
+    if (!landed) delete d.landed
   }
 
   async function addStep(d: Design, part: number, params: StepParams, label: string | undefined, o: { sketch?: string; expectedRevision?: string; feature?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
     guard(d.id, o?.expectedRevision)
     const s = stored(d)
-    const step: Step = { id: nextStepId(), part, transform: [...s.transform], params, ...(label ? { label } : {}), ...(o?.sketch ? { sketch: o.sketch } : {}), ...(o?.feature ? { feature: o.feature } : {}) }
+    const step = recorded(s, part, params, label, o?.sketch, o?.feature)
     const history = appendStep(d.history, step)
     const r = await run(history)
     const st = r.status[r.status.length - 1]
@@ -222,14 +267,19 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
       guard(d.id, o?.expectedRevision)
       give(d, s, keep(s, d.history, r))
     },
-    sketch(id) {
+    sketch(id, design) {
       const k = timeline.items.find((i) => i.kind === 'sketch' && i.id === id)
       if (k?.kind !== 'sketch') throw Object.assign(new Error(`No finished sketch ${id} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
-      return k
+      return design === undefined ? k : movedSketch(k, storedToDesign(sketchMoved(id), host.get(design).placed))
     },
-    addSketch(s) {
-      timeline = withSketch(timeline, { id: `${nextStepId()}k`, ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}) })
-      return timeline.items[timeline.marker - 1] as ReturnType<NonNullable<DesignHost['sketch']>>
+    addSketch(s, design) {
+      const d = design === undefined ? undefined : host.get(design)
+      const waiting = [...all.values()].filter((x) => !x.parts.length).map((x) => x.id)
+      const waits = d ? waiting.filter((x) => x === d.id) : waiting
+      const frame: FaceFrame | undefined = d?.placed ? movedFrame(s.frame, translation([d.placed[0], d.placed[1], 0])) : s.frame
+      const id = `${nextStepId()}k`
+      timeline = withSketch(timeline, { id, ...(frame ? { frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(waits.length ? { drawnFor: waits } : {}) })
+      return d ? host.sketch!(id, d.id) : (timeline.items[timeline.marker - 1] as SketchItem)
     },
   }
   return host

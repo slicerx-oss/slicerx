@@ -150,6 +150,12 @@ export interface History {
   steps: Step[]
   /** Why an earlier history ended, shown above the list: "History ends here: ..." */
   ended?: string
+  /**
+   * How far the design hosts moved the object on the plate to land it, mm in X and Y (landing.ts). The design's own
+   * frame, the one the design tools give and read points in, is the object's transform moved back by this, so steps
+   * given in the frame it was built in still meet its body. Steps are stored in plate coordinates either way.
+   */
+  placed?: [number, number]
 }
 
 export type StepState = 'done' | 'broken' | 'skipped' | 'suppressed'
