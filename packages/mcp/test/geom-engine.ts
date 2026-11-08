@@ -142,7 +142,7 @@ export class ReplayMismatch extends Error {
  * The replaying engine over `replies`, recorded in `fixture`: `start(key)` begins a test's replies at its first one, and
  * `stale` lists every call that did not match, with what to do about it.
  */
-export function replayEngine(fixture: string, replies: Record<string, Recorded[]>): { engine: EngineCall; start(key: string): void; stale: string[] } {
+export function replayEngine(fixture: string, replies: Record<string, Recorded[]>): { engine: EngineCall; start(key: string): void; unused(): string[]; stale: string[] } {
   const stale: string[] = []
   let key = SETUP
   let next = 0
@@ -167,8 +167,23 @@ export function replayEngine(fixture: string, replies: Record<string, Recorded[]
       key = k
       next = 0
     },
+    /** The recorded calls of the running test that it has not made yet, as "call N (op)". */
+    unused() {
+      return (replies[key] ?? []).slice(next).map((r, i) => `call ${next + i + 1} (${r.op})`)
+    },
     stale,
   }
+}
+
+/**
+ * Writes `recorded` to `fixture` as gzip. A run that recorded no call writes nothing, so a test file that makes no engine
+ * calls, or shares a fixture with one that does, cannot wipe it. Returns whether it wrote.
+ */
+export function writeRecording(fixture: string, recorded: Record<string, Recorded[]>): boolean {
+  if (Object.values(recorded).every((list) => list.length === 0)) return false
+  mkdirSync(dirname(fixture), { recursive: true })
+  writeFileSync(fixture, gzipSync(`${JSON.stringify(recorded)}\n`, { level: 9 }))
+  return true
 }
 
 /**
@@ -195,13 +210,15 @@ export function useGeomEngine(name: string): { engine: EngineCall } {
   })
   // A replayed call that did not match fails the test, even when the code under test caught the error and fell back.
   afterEach(() => {
-    if (!replay?.stale.length) return
-    throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
+    if (!replay) return
+    if (replay.stale.length) throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
+    // Each test replays its whole list, so a recorded call it did not make means the test dropped a call or the fixture
+    // holds one it no longer needs.
+    const left = replay.unused()
+    if (left.length) throw new ReplayMismatch(`${fixture} holds recorded calls that "${testKey()}" did not make: ${left.join(', ')}. Record it again with SX_GEOM_RECORD=1.`)
   })
   afterAll(() => {
-    if (!record) return
-    mkdirSync(dirname(fixture), { recursive: true })
-    writeFileSync(fixture, gzipSync(`${JSON.stringify(recorded)}\n`, { level: 9 }))
+    if (record) writeRecording(fixture, recorded)
   })
   return out
 }
