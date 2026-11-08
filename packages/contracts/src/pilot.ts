@@ -470,8 +470,11 @@ export type PilotEvent =
   | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   /** Auto moved the run to another model: asked for deep work, reached a deep tool, or kept failing on the small one. */
   | { type: 'model_switch'; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
-  /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
-  | { type: 'error'; message: string; retryable: boolean; code?: string }
+  /**
+   * `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). `waiting`: the run waits a moment and goes on by
+   * itself (free mimir's per-minute limit), so this is no failure; a later error with the same code takes its place.
+   */
+  | { type: 'error'; message: string; retryable: boolean; code?: string; waiting?: boolean }
   | { type: 'done'; stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error'; ms: number }
   /** The chat's print run after a change. */
   | { type: 'print_run'; run: PrintRun }

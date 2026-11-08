@@ -976,6 +976,8 @@ test.describe('See usage on a mimir cloud refusal', () => {
     slow_down: [429, 'Slow down a moment, then try again.'],
     paused: [503, 'Free mimir is paused right now. We know and are fixing it. Your own key or a local model still works.'],
   }
+  /** The line shown where it is not the proxy's own: on slow_down mimir says it waits a moment and goes on by itself. */
+  const SHOWN: Partial<Record<string, string>> = { slow_down: 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.' }
 
   /** Opens the tab on mimir cloud, signed in through the build's browser host pointed at the stub, and asks once. */
   async function askAndRefuse(page: Page, code: keyof typeof MESSAGES): Promise<void> {
@@ -999,7 +1001,7 @@ test.describe('See usage on a mimir cloud refusal', () => {
     await page.getByTestId('mimir-chat').getByTestId('mimir-notice-ok').click()
     const line = page.getByTestId('mimir-chat').getByTestId('mimir-limit')
     await expect(line).toHaveAttribute('data-code', code, { timeout: 30_000 })
-    await expect(line).toContainText(MESSAGES[code]![1])
+    await expect(line).toContainText(SHOWN[code] ?? MESSAGES[code]![1])
   }
 
   test('a used-up day links to Settings > Account with Usage in view', async ({ page }, info) => {
