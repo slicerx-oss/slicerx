@@ -295,23 +295,72 @@ itself, so do not bundle it again.
 Reading STEP and IGES files (slicerx_step_read) needs the optional STEP reader, the kit's slicerx-step-reader.tgz.
 Unpack it and set SLICERX_STEP_READER_DIR to its package/dist folder. Without it the tool is refused with not_supported.
 
-Licenses: LICENSE-APACHE and NOTICE for the server, LICENSE-AGPL-profiles.txt and LICENSE-LGPL-cura-profiles.txt for
-the printer profiles it carries. The licenses of the inlined packages are at the end of slicerx-mcp-main.mjs.
+Licenses, all in this folder:
+- NOTICE and LICENSE-APACHE: the server.
+- THIRD-PARTY-LICENSES.txt: each npm package the build inlines, with its version and license text.
+- The LICENSE-*-profiles.txt files: the AGPL and LGPL texts of the printer profiles it carries, and LICENSE-GPL-3.0.txt,
+  the GPL text the LGPL builds on.
+The source of the server and of the profile data is at https://github.com/slicerx-oss/slicerx.
 `
 
 /**
- * Builds the self-contained MCP server (packages/mcp/scripts/build.mjs --standalone, without the STEP reader, which
- * stays its own optional tarball) into `<dest>/slicerx-mcp-standalone/` with its licenses and a README, and zips that
- * folder into `<dest>/slicerx-mcp-standalone.zip` (reproducible, as zipFolder writes it). Returns the manifest entry
- * without its sha256: `{ name, version, folder, entry }`.
+ * The NOTICE for the self-contained folder: the MCP package's NOTICE with the paragraphs that name files in the source
+ * repository pointed at the files in the folder instead. Throws when a paragraph it rewrites has changed, so the two
+ * cannot drift apart unseen.
  */
-export function writeStandalone(dest, seconds = sourceDate()) {
+export function standaloneNotice(text) {
+  const edits = [
+    [' (editions/slicerx/)', ''],
+    ['profiles in packages/profiles/ come from', 'profiles this server carries come from'],
+    // the repository's own AGPL file list, which is not in the folder
+    [/\(LICENSES\/AGPL-3\.0-or-later\.txt\), as is \S+\. REUSE\.toml lists these paths\./, '(LICENSE-AGPL-profiles.txt).'],
+    ['docs/licensing.md has the details.', 'The UltiMaker printer profiles are licensed under the GNU Lesser General Public License, version 3 or later, in the LICENSE-LGPL-*-profiles.txt file, which builds on the GNU General Public License, version 3 (LICENSE-GPL-3.0.txt). The source of the server and of the profile data is at https://github.com/slicerx-oss/slicerx, where docs/licensing.md has the details.'],
+    ['TRADEMARK.md explains', 'TRADEMARK.md in the source repository explains'],
+  ]
+  const thirdParty = 'Third-party code keeps its own license. THIRD-PARTY-LICENSES.txt lists each npm package this build inlines, with its version and license text. The STEP reader is not part of this build; it ships on its own with its NOTICE, license texts and source offer.'
+  let replacedThirdParty = false
+  const paragraphs = text.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/).map((p) => {
+    const flat = p.replace(/\s+/g, ' ').trim()
+    if (flat.startsWith('Third-party code, data and fonts keep their own licenses.')) {
+      replacedThirdParty = true
+      return thirdParty
+    }
+    return flat
+  })
+  if (!replacedThirdParty) throw new Error('packages/mcp/NOTICE: the third-party paragraph changed; update standaloneNotice')
+  let out = paragraphs.join('\n\n')
+  for (const [from, to] of edits) {
+    if (typeof from === 'string' ? !out.includes(from) : !from.test(out)) throw new Error(`packages/mcp/NOTICE no longer says "${from}"; update standaloneNotice`)
+    out = out.replace(from, to)
+  }
+  // wrapped at 78 columns, as the NOTICE is; the heading lines stay as they are
+  const wrap = (p) => p.split(' ').reduce((lines, w) => {
+    const last = lines.at(-1)
+    if (last && `${last} ${w}`.length <= 78) lines[lines.length - 1] = `${last} ${w}`
+    else lines.push(w)
+    return lines
+  }, []).join('\n')
+  const [head, ...rest] = out.split('\n\n')
+  const original = text.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/)[0]
+  return `${[head === original.replace(/\s+/g, ' ').trim() ? original : wrap(head), ...rest.map(wrap)].join('\n\n')}\n`
+}
+
+/**
+ * Builds the self-contained MCP server (packages/mcp/scripts/build.mjs --standalone, without the STEP reader, which
+ * stays its own optional tarball) into `<dest>/slicerx-mcp-standalone/` with its licenses, NOTICE and a README, and
+ * zips that folder into `<dest>/slicerx-mcp-standalone.zip` (reproducible, as zipFolder writes it). The build runs from
+ * the repository root, so the bytes do not depend on the folder the pack was started from. `metafile` also writes
+ * esbuild's metafile there. Returns the manifest entry without its sha256: `{ name, version, folder, entry }`.
+ */
+export function writeStandalone(dest, { seconds = sourceDate(), metafile } = {}) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   const mcp = join(root, 'packages', 'mcp')
   const dir = join(dest, STANDALONE)
   rmSync(dir, { recursive: true, force: true })
-  execFileSync(process.execPath, [join(mcp, 'scripts', 'build.mjs'), '--standalone', dir], { stdio: ['ignore', 'ignore', 'inherit'] })
-  for (const f of ['LICENSE-APACHE', 'NOTICE']) cpSync(join(mcp, f), join(dir, f))
+  const args = [join(mcp, 'scripts', 'build.mjs'), '--standalone', dir, ...(metafile ? ['--metafile', resolve(metafile)] : [])]
+  execFileSync(process.execPath, args, { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] })
+  cpSync(join(mcp, 'LICENSE-APACHE'), join(dir, 'LICENSE-APACHE'))
+  writeFileSync(join(dir, 'NOTICE'), standaloneNotice(readFileSync(join(mcp, 'NOTICE'), 'utf8')))
   writeFileSync(join(dir, 'README.txt'), STANDALONE_README)
   const name = `${STANDALONE}.zip`
   zipFolder(dir, join(dest, name), STANDALONE, seconds)

@@ -124,7 +124,7 @@ If your app ships the server as files rather than installing `@slicerx/mcp` besi
 node slicerx-mcp-standalone/slicerx-mcp.mjs --allow-dir /abs/models --printers off
 ```
 
-Copy the whole folder as it is. `slicerx-mcp.mjs` loads `slicerx-mcp-main.mjs`, `chunks/` and `data/` from beside itself.
+Copy the whole folder as it is. `slicerx-mcp.mjs` loads `slicerx-mcp-main.mjs`, `chunks/` and `data/` from beside itself, and the folder carries the license texts that go with it: `NOTICE` and `LICENSE-APACHE` for the server, `THIRD-PARTY-LICENSES.txt` with each npm package the build inlines, and the profile licenses with the GPL text the LGPL builds on.
 
 Don't run a bundler over `dist/cli.js`. It is a small launcher that loads `dist/cli-main.js` with a runtime import a bundler leaves alone, so the bundle comes out with no server in it. The npm build also loads the YAML parser, the SDK's Ajv provider and zod-to-json-schema from `node_modules` on first use, so a bundle shipped without them fails the first time a tool needs one (the `slicerx_kb_*` tools read YAML, for example).
 
