@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
+import { dimText, dimUnit } from '@slicerx/contracts/size-kind'
 import { Button, Icon, ScrubNumber, tipAttrs } from '@slicerx/ui'
 import { useState } from 'react'
 import { safeUrl } from './citations'
@@ -8,7 +9,8 @@ import { safeUrl } from './citations'
 /** The quiet tag a row keeps; a looked-up size has none, its page is in the header. */
 const TAG: Record<PilotSheet['dims'][number]['source'], string | null> = { asked: 'you said', lookup: null, photo: 'from your photo', guess: 'guess' }
 
-const unitText = (u: PilotSheet['dims'][number]['unit']): string => (u === 'deg' ? '°' : u)
+/** The word a screen reader says for a row's unit (dimUnit: a count given in mm has none). */
+const UNIT_WORD: Record<ReturnType<typeof dimUnit>, string> = { '': '', '°': 'degrees', '%': 'percent', mm: 'millimeters' }
 
 /** The pages the looked-up sizes came from, once each, in row order. */
 function sourcesOf(sheet: PilotSheet): { title: string; href: string | null }[] {
@@ -60,7 +62,7 @@ export function SheetRecord({
   const status = !answer && assumed.length
     ? `${assumed.length} assumed value${assumed.length === 1 ? '' : 's'}: ${assumed
         .slice(0, 2)
-        .map((d) => `${d.label.toLowerCase()} ${valueOf(d.key, d.value)} ${unitText(d.unit)}`)
+        .map((d) => `${d.label.toLowerCase()} ${dimText(d, valueOf(d.key, d.value))}`)
         .join(', ')}${assumed.length > 2 ? ` and ${assumed.length - 2} more` : ''}`
     : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? (answer.said ? (answer.changed.length ? `Set aside for your message with ${answer.changed.length} size${answer.changed.length === 1 ? '' : 's'} changed, nothing built` : 'Set aside for your message, nothing built') : 'Canceled, nothing built') : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
@@ -93,6 +95,7 @@ export function SheetRecord({
           // a guess the person kept, or confirmed with the sheet, is no longer a guess
           const tag = yours ? 'yours' : d.source === 'guess' && !guess && (!answer || answer.confirmed) ? 'kept' : TAG[d.source]
           const id = `sheet-rec-${sheet.id}-${d.key}`
+          const unit = dimUnit(d)
           return (
             <li key={d.key} className="sheet-rec-row" data-dim={d.key} data-source={d.source} data-guess={guess ? '' : undefined}>
               <span className="sheet-rec-n" aria-hidden="true">
@@ -114,20 +117,18 @@ export function SheetRecord({
                   <ScrubNumber
                     id={id}
                     value={used}
-                    ariaLabel={`${d.label}, ${d.unit === 'deg' ? 'degrees' : d.unit === '%' ? 'percent' : 'millimeters'}`}
+                    ariaLabel={UNIT_WORD[unit] ? `${d.label}, ${UNIT_WORD[unit]}` : d.label}
                     digits={2}
-                    step={d.unit === 'deg' ? 1 : 0.5}
+                    step={unit === '' || unit === '°' ? 1 : 0.5}
                     boxed={false}
                     onCommit={(v) => onEdit(sheet.id, d.key, v)}
                     {...(d.min !== undefined ? { min: d.min } : {})}
                     {...(d.max !== undefined ? { max: d.max } : {})}
                   />
-                  <span className="sheet-rec-unit">{unitText(d.unit)}</span>
+                  {unit ? <span className="sheet-rec-unit">{unit}</span> : null}
                 </span>
               ) : (
-                <span className="sheet-rec-v">
-                  {used} {unitText(d.unit)}
-                </span>
+                <span className="sheet-rec-v">{dimText(d, used)}</span>
               )}
             </li>
           )

@@ -3,7 +3,8 @@
 // What a planned size measures, read from its key: a count (teeth, segments, the number of holes), an angle (a draft,
 // a twist, a lean) or, by default, a length in the plan's units. The plan card, the sizes sheet and design.check read
 // sizes through it, so a count never shows in mm, an inch plan never converts a count or an angle, and a count or an
-// angle is never held to a size of the body.
+// angle is never held to a size of the body. The sizes sheet's rows (pilot.sheet) carry a unit of their own, and
+// dimUnit and dimText read them the same way, so the panel, the record in the chat and the answer text agree.
 
 export type SizeKind = 'count' | 'angle' | 'length'
 
@@ -68,4 +69,24 @@ export function sizeLabelKey(key: string): string {
   if (sizeKind(key) !== 'angle') return key
   const bare = key.replace(/(?:[_\-.\s]+(?:deg|degs|degrees?)|(?<=[a-z0-9])(?:Deg|Degs|Degrees?))$/, '')
   return bare && bare !== key ? bare : key
+}
+
+/** A sheet row's unit and key, as pilot.sheet carries them. */
+export interface SizedRow {
+  key: string
+  unit: 'mm' | 'deg' | '%'
+}
+
+/** The unit a sheet row shows with: a row given in mm whose key is a count shows none, one whose key is an angle °. */
+export function dimUnit(d: SizedRow): '' | '°' | '%' | 'mm' {
+  if (d.unit === 'deg') return '°'
+  if (d.unit === '%') return '%'
+  const kind = sizeKind(d.key)
+  return kind === 'count' ? '' : kind === 'angle' ? '°' : 'mm'
+}
+
+/** A sheet row's value as it reads: "20" for a count, "70°", "15%", "80 mm". */
+export function dimText(d: SizedRow, value: number): string {
+  const unit = dimUnit(d)
+  return unit === '' ? String(value) : unit === 'mm' ? `${value} mm` : `${value}${unit}`
 }

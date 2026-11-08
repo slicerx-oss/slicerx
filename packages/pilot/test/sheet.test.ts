@@ -348,6 +348,27 @@ describe('pilot.sheet', () => {
     expect(out.summary).toContain('also add a cable hole')
   })
 
+  // A count given in mm reads with no unit and an angle in degrees, as the sheet shows them.
+  it('names a typed count with no unit and an angle in degrees when words set the sheet aside', async () => {
+    const gear = [
+      { key: 'teeth', label: 'Teeth', value: 18, unit: 'mm', source: 'guess', at: { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, 5] } },
+      { key: 'draft_angle', label: 'Draft', value: 1, unit: 'mm', source: 'guess', at: { a: [0, 0, 0], b: [0, 10, 0], off: [0, 0, 5] } },
+      { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'guess', at: { a: [0, 0, 0], b: [0, 0, 6], off: [5, 0, 0] } },
+    ]
+    const seen: string[] = []
+    const p = pilot([
+      { calls: [{ name: 'pilot.sheet', args: { title: 'Gear sizes', views: ['front'], dims: gear, part: PART } }] },
+      (messages) => {
+        const last = messages.at(-1)
+        seen.push(last?.role === 'tool' ? last.content : '')
+        return { text: 'OK.' }
+      },
+    ])
+    for await (const e of p.run('s', 'A gear')) if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, { teeth: 20, draft_angle: 2, width: 42 }, 'make it thinner')
+    const out = JSON.parse(seen[0]!) as { summary: string }
+    expect(out.summary).toContain('They had typed on it: Teeth 20 (was 18), Draft 2° (was 1), Width 42 mm (was 40); keep those.')
+  })
+
   // A pipe bend, a round stem and a tapered vase cannot be extruded outlines; the sheet takes them as they will be built.
   it('shows a sheet whose part is a revolve, a sweep or a loft', async () => {
     const at = { a: [-16, 0, 0], b: [16, 0, 0], off: [0, 0, -8] }

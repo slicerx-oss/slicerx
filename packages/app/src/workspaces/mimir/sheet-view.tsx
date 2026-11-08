@@ -9,7 +9,7 @@
 // panel takes the chat's place instead, between its header and the composer.
 import { drawingPick, foldDrawing, PANE_NAMES, PANE_VIEWS, paneOffered, panesFor, paneShowing, pickFor, showPane, usePhoneDrawing, type PhonePane } from './drawing-pick'
 import { assistantText } from '@slicerx/contracts'
-import { sizeKind } from '@slicerx/mcp/toolset'
+import { dimText, dimUnit as unitOf } from '@slicerx/contracts/size-kind'
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -29,16 +29,13 @@ const SOURCE: Record<PilotDim['source'], { label: string; icon: IconName }> = {
   guess: { label: 'Guess', icon: 'help' },
 }
 
-/**
- * How a row's value reads: its unit, the word a screen reader says for it, and the field's step. A row given in mm whose
- * key is a count (teeth, segments) has no unit and steps by one; one whose key is an angle reads in degrees (sizeKind).
- */
+/** How a row's value reads: its unit (unitOf: a count given in mm has none), the word a screen reader says, and the field's step. */
 function dimUnit(d: Pick<PilotDim, 'key' | 'unit'>): { unit: string; word: string; step: number } {
-  const kind = d.unit === 'mm' ? sizeKind(d.key) : null
-  if (kind === 'count') return { unit: '', word: '', step: 1 }
-  if (d.unit === 'deg' || kind === 'angle') return { unit: '°', word: 'degrees', step: 1 }
-  if (d.unit === '%') return { unit: '%', word: 'percent', step: 0.5 }
-  return { unit: 'mm', word: 'millimeters', step: 0.5 }
+  const unit = unitOf(d)
+  if (unit === '') return { unit, word: '', step: 1 }
+  if (unit === '°') return { unit, word: 'degrees', step: 1 }
+  if (unit === '%') return { unit, word: 'percent', step: 0.5 }
+  return { unit, word: 'millimeters', step: 0.5 }
 }
 
 /** The site a looked-up size came from, for its chip. */
@@ -343,8 +340,7 @@ function Chip({ dim, changed }: { dim: PilotDim; changed: boolean }) {
 function hintFor(dim: PilotDim | undefined, mode: 'confirm' | 'drive', tied: boolean): string {
   if (!dim) return mode === 'confirm' ? 'Pick a row or a callout to change it. Enter saves, Escape puts it back.' : 'Rows tied to a step edit it in Model, like your own edit.'
   if (mode === 'drive' && !tied) return assistantText('This size shapes the sketch, so it needs a rebuild: ask mimir to build again with it.')
-  const unit = dimUnit(dim).unit
-  const range = dim.min !== undefined && dim.max !== undefined ? ` ${dim.min} to ${dim.max}${unit ? ` ${unit}` : ''}.` : ''
+  const range = dim.min !== undefined && dim.max !== undefined ? ` ${dim.min} to ${dimText(dim, dim.max)}.` : ''
   const guess = mode === 'confirm' && dim.source === 'guess' ? ' A guess, so check it.' : ''
   return `${dim.note ? `${dim.note.replace(/\.$/, '')}.` : dim.label + '.'}${range}${guess}`
 }
