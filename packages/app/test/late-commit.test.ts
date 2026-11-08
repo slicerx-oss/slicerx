@@ -8,6 +8,7 @@ import { afterEach, expect, it } from 'vitest'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { IDENTITY, clearReplayCache, type HistoryMesh } from '@slicerx/cad-history'
 import { applyHistory } from '../src/cad/history/ops'
+import { applyShell } from '../src/cad/holes'
 import { setGeomProvider } from '../src/geom/client'
 import { cutSelected, repairSelected } from '../src/plate/geom-ops'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -143,4 +144,35 @@ it('a history replay for an object deleted meanwhile with one of its steps open 
   g.finish()
   await expect(task).rejects.toThrow()
   expect(get().plate.map((p) => p.id)).toEqual(['other'])
+})
+
+it('a history replay that lands after the body’s first step opened for editing brings the body back with the result', async () => {
+  setGeomProvider({ call: async <T>(_op: string, req: unknown) => ({ mesh: (req as { mesh: unknown }).mesh }) as T })
+  const original = entry('body')
+  const other = entry('other')
+  set({ plate: [original, other] })
+  const g = gate()
+  const task = applyHistory(g.host, original.id, { version: 1, base: [mesh()], steps: [] })
+  await g.atLoad
+  // beginEdit of the body's first step while the replay works: the body leaves the plate
+  set({ plate: [other], historyEdit: { objectId: original.id, index: 0, original, hidden: true } })
+  g.finish()
+  await task
+  expect(get().historyEdit).toBeNull()
+  expect(get().plate.map((p) => p.id).sort()).toEqual(['body', 'other'])
+  expect(get().plate.find((p) => p.id === 'body')!.history?.base).toHaveLength(1)
+})
+
+it('a shell that lands while the body’s first step is open for editing says so, changes nothing and keeps the body', async () => {
+  setGeomProvider({ call: async <T>(_op: string, req: unknown) => ({ mesh: (req as { mesh: unknown }).mesh, report: {}, watertight: true }) as T })
+  const original = entry('body')
+  set({ plate: [original] })
+  const g = gate()
+  const task = applyShell(g.host, original.id, 0, { op: 'shell', open: [], wallMm: 2 })
+  await g.atLoad
+  set({ plate: [], historyEdit: { objectId: original.id, index: 0, original, hidden: true } })
+  g.finish()
+  await expect(task).rejects.toThrow('The first step of body is open for editing, so nothing changed. Finish or cancel that edit, then try again.')
+  expect(get().historyEdit?.original).toBe(original)
+  expect(get().plate).toEqual([])
 })

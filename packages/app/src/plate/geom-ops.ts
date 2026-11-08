@@ -7,7 +7,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { fromGeom, geom, toGeom, type GeomMesh } from '../geom/client'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
-import { commitMade } from '../cad/commit'
+import { commitMade, goneError } from '../cad/commit'
 import { selectedEntry } from './select'
 import { bake } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
@@ -60,7 +60,7 @@ async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform
     dropped = kept.length < Object.keys(latest.paint ?? {}).length
     return { handle, parts, ...(kept.length ? { paint: Object.fromEntries(kept) } : {}), ...(baked ? { transform } : {}), ...(history ? { history } : {}) }
   }
-  if (!commitMade(e.id, made)) throw new Error('That object is gone.')
+  if (!commitMade(e.id, made)) throw goneError(e.id)
   markStale()
   return dropped
 }

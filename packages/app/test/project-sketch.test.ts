@@ -1125,6 +1125,31 @@ describe('projections in a sketch made from SVG', () => {
   const tools = (host = appDesignHost(loader)) => designToolset(host)
   const run = (t: ReturnType<typeof tools>, name: string, input: Record<string, unknown>) => t.find((x) => x.name === name)!.run(input as never, {} as never)
 
+  it('keeps a body whose first step opens for editing while a client’s step lands on it', async () => {
+    set({ plate: [], historyEdit: null })
+    // while set, loading the result opens the body's first step, as beginEdit does: the body leaves the plate
+    let open = false
+    const opening = {
+      loadParts: async (name: string, parts: MeshPart[]) => {
+        if (open) {
+          open = false
+          const e = get().plate.find((p) => p.name === name)!
+          quietly(() => set((st) => ({ historyEdit: { objectId: e.id, index: 0, original: e, hidden: true }, plate: st.plate.filter((p) => p.id !== e.id) })))
+        }
+        return loader.loadParts(name, parts)
+      },
+    }
+    const host = appDesignHost(opening)
+    const t = tools(host)
+    const id = ((await run(t, 'design.sketch_svg', { svg })).output as { id: string }).id
+    const d = await host.create('Tab', [])
+    await run(t, 'geom.extrude', { design: d.id, sketch: id, distance_mm: 3, operation: 'new' })
+    open = true
+    await run(t, 'geom.extrude', { design: d.id, sketch: id, distance_mm: 5, operation: 'new' })
+    expect(get().historyEdit).toBeNull()
+    expect(get().plate.find((e) => e.id === d.id)?.history?.steps).toHaveLength(2)
+  })
+
   it('projects into the id design.sketch_svg returns, through the app host', async () => {
     set({ plate: [body('b', 10)] })
     const t = tools()
