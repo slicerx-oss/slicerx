@@ -9,7 +9,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { evaluateDimensions, type Dimension, type FaceFrame, type MovedFace } from '../../geom/cad'
 import { geom, usesWorker } from '../../geom/client'
 import { quietly, type UndoStep } from '../../plate/history'
-import { get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
+import { fullPlate, get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
 import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
@@ -118,6 +118,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     const open = get().historyEdit
     const current = open?.objectId === objectId ? open.original : get().plate.find((p) => p.id === objectId)
     if (!current) throw new Error('That object is gone.')
+    // an edit of a body's first step takes the body off the plate while it is open (beginEdit)
+    const hidden = open?.objectId === objectId && !get().plate.some((p) => p.id === objectId)
     if (current.history?.exact && !next.exact) throw new Error('This edit would remove the required exact history. The design is unchanged.')
     const r = await runReplay({ history: next }, ac.signal)
     if (ac.signal.aborted) throw abortError()
@@ -135,7 +137,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     // A step open for editing closes: the rollback goes away outside undo, the result is the edit.
     guard?.()
     const still = get().historyEdit
-    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
+    // a body the edit hid comes back for the commit; one deleted while this ran stays gone
+    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: hidden ? fullPlate(s) : s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
     // checked before the write, so a step's first change never lands without it: the object is there, and did not
