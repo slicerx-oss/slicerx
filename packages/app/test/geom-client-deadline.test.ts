@@ -202,6 +202,29 @@ describe('a geometry call past its time limit', () => {
     expect(await replay).toMatchObject({ message: 'The step "Fillet 2 mm" ran past its 1 s limit and was stopped; try a smaller version: fewer copies or a simpler part' })
   })
 
+  it("never gives a replay step more than its whole limit when the clock is set back while it runs", async () => {
+    const workers = manual()
+    setGeomCallLimit((op) => (op === 'repair' ? 60_000 : 1000))
+    const api = geom()
+    const replay = api.call('history.replay', {}).catch((e: Error) => e)
+    const other = api.call('repair', {})
+    const w = workers[0]!
+    w.start(0)
+    const id = w.calls()[0]!.id
+    w.send({ step: id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(300)
+    // the computer's clock goes back an hour, then another call stops the step's limit
+    vi.setSystemTime(Date.now() - 3_600_000)
+    w.start(1)
+    w.answer(1)
+    await expect(other).resolves.toEqual({ op: 'repair' })
+    vi.advanceTimersByTime(999)
+    expect(w.terminate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await replay).toMatchObject({ message: expect.stringMatching(/^The step "Fillet 2 mm" ran past its 1 s limit/) })
+  })
+
   it('starts a replay limit only once a call already running ends', async () => {
     const workers = manual()
     setGeomCallLimit(() => 1000)
