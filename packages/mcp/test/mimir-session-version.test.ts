@@ -4,12 +4,13 @@ import { expect, it } from 'vitest'
 import type { AppLinkCaller } from '../src/app-route'
 import { mimirAskTools } from '../src/mimir-ask'
 
-it('slicerx_mimir_session is 1.3.0 and says a question answered on a phone carries answeredOn, error lines their code and waiting, and that a waiting size sheet shows', () => {
+it('slicerx_mimir_session is 1.3.1 and says a question answered on a phone carries answeredOn, error lines their code and waiting, and that a waiting size sheet shows with each unit as the sheet shows it', () => {
   const tool = mimirAskTools({ call: async () => ({}) } as unknown as AppLinkCaller, 'SlicerX').find((t) => t.name === 'mimir.session')
-  expect(tool?.version).toBe('1.3.0')
+  expect(tool?.version).toBe('1.3.1')
   expect(tool?.description).toMatch(/answeredOn/)
   expect(tool?.description).toMatch(/the error lines with their code \(one with waiting true is free mimir waiting out its limit/)
   expect(tool?.description).toMatch(/size sheet it waits on \(its sheetId/)
+  expect(tool?.description).toMatch(/each size's unit as the sheet shows it: mm, deg, % or count/)
 })
 
 it('slicerx_mimir_dismiss is 1.1.0 and says it sets a waiting size sheet aside, never confirming one', () => {

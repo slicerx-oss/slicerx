@@ -265,6 +265,23 @@ describe('the plan card', () => {
     expect(within(feature).getAllByText('°')).toHaveLength(1)
   })
 
+  it('rounds a fraction typed into a count to a whole number, so the field, the plan and Go agree', async () => {
+    const { result } = await shown({ ...BOX, features: [{ name: 'Gear', sizes: { teeth: 18, width: 40 } }], overall: undefined, holes: undefined })
+    const teeth = field(/^Gear, Teeth$/)
+    fireEvent.change(teeth, { target: { value: '20.4' } })
+    fireEvent.keyDown(teeth, { key: 'Enter' })
+    const planId = screen.getByTestId('mimir-plan-card').dataset.planId!
+    await waitFor(() => expect(planById(planId)!.features[0]!.sizes['teeth']).toBe(20))
+    expect(field(/^Gear, Teeth$/).value).toBe('20')
+    // a count under one is turned down by the field, so the plan keeps the last whole count
+    fireEvent.change(field(/^Gear, Teeth$/), { target: { value: '0.4' } })
+    fireEvent.keyDown(field(/^Gear, Teeth$/), { key: 'Enter' })
+    expect(planById(planId)!.features[0]!.sizes['teeth']).toBe(20)
+    fireEvent.click(screen.getByTestId('mimir-plan-go'))
+    const out = (await result()).output as { edits: PartPlan }
+    expect(out.edits.features[0]!.sizes).toEqual({ teeth: 20, width: 40 })
+  })
+
   it('never converts a count or an angle in an inch plan', async () => {
     const gear: PlanInput = { ...BOX, units: 'in', features: [{ name: 'Gear', sizes: { teeth: 20, draft: 1.5, thickness: 0.25 } }], overall: undefined, holes: undefined }
     render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))

@@ -5,7 +5,7 @@
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
 // keep their places and the status keeps its height once answered, so nothing moves under the chat. A count among a
 // feature's sizes shows with no unit and an angle in degrees (sizeKind), in an inch plan too.
-import { sizeKind, sizeLabelKey, sizeText, sizeUnit, type SizeKind } from '@slicerx/contracts/size-kind'
+import { sizeKind, sizeLabelKey, sizeText, sizeUnit, wholeCount, type SizeKind } from '@slicerx/contracts/size-kind'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
@@ -102,7 +102,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
 
   // `group` names where the size sits (the feature, Overall), so two rows called Height read apart to a screen reader
   // `times` is how many holes a hole row stands for: more than one reads "4 x 3.4 mm"
-  // `kind` is what the size measures: a count reads "4", an angle "30°", a length "80 mm"
+  // `kind` is what the size measures: a count reads "4", an angle "30°", a length "80 mm"; a count typed as a fraction is kept whole
   const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1, kind: SizeKind = 'length'): ReactNode => {
     const f = fieldOf(kind, unit)
     return (
@@ -113,7 +113,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
         {live ? (
           <span className="sheet-rec-field">
             {times > 1 ? <span className="sheet-rec-unit">{times} x</span> : null}
-            <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}${times > 1 ? `, ${times} holes` : ''}${f.word ? `, ${f.word}` : ''}`} digits={f.digits} step={f.step} min={f.min} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
+            <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}${times > 1 ? `, ${times} holes` : ''}${f.word ? `, ${f.word}` : ''}`} digits={f.digits} step={f.step} min={f.min} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, kind === 'count' ? wholeCount(v) : v)} />
             {f.unit ? <span className="sheet-rec-unit">{f.unit}</span> : null}
           </span>
         ) : (
