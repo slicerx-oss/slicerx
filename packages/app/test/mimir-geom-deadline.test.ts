@@ -4,9 +4,10 @@
 // A mimir run nobody watches: a step whose geometry call is stuck in the engine is refused at the call's time limit
 // (client.ts, @slicerx/contracts geom-limits.ts), the run reports it plainly and goes on with its next step, and the
 // stuck call is not sent again. A modeling step stopped for good is not run again with the same input on the same
-// target in that turn (the design it names by id or name, else the mesh model it names, else the part the run started
-// last), until a geometry change to that target goes through (a geom.* step that is not a read, or an edit, undo or
-// redo); a quick step's refusal says to try it again, and it can be. The run is the tab's runtime
+// design in that turn (the one it names by id, or by a name an answer in the turn tied to one id, before or after the
+// stop; else the part the run started last), until a geometry change to that design goes through (a geom.* step that
+// is not a read, or an edit, undo or redo). A step on a mesh model file is not run again with the same input at all.
+// A quick step's refusal says to try it again, and it can be. The run is the tab's runtime
 // as session.ts makes it, on scripted turns, with the engine a stand-in in a real thread that spins forever in `array`
 // and `face.pick`.
 import type { Host, PermissionClass, PilotEvent } from '@slicerx/contracts'
@@ -84,6 +85,35 @@ function newTool(runs: string[]) {
   }) as PilotTool<never>
 }
 
+/** Reads that name designs: design.steps of d1 "Bracket", and design.list of two designs (both "Box", or "Box" and one named "p1"). */
+function designReads(runs: string[]) {
+  const steps = defineTool({
+    name: 'design.steps',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'design.steps',
+    input: z.object({ design: z.string() }),
+    run: async (i) => {
+      runs.push(`design.steps ${i.design}`)
+      return { summary: '0 steps', output: { design: 'd1', name: 'Bracket', steps: [] } }
+    },
+  })
+  const list = defineTool({
+    name: 'design.list',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'design.list',
+    input: z.object({ second: z.string() }),
+    run: async (i) => {
+      runs.push('design.list')
+      return { summary: '2 designs', output: { designs: [{ design: 'p1', name: 'Box' }, { design: 'p2', name: i.second }] } }
+    },
+  })
+  return [steps, list] as PilotTool<never>[]
+}
+
 type Call = { name: string; args: Record<string, unknown> }
 type Outcome = 'ok' | 'fail' | 'throw'
 
@@ -107,6 +137,7 @@ async function scriptedTurns(turns: Call[][], runs: string[], outcomes: Partial<
     geomTool('geom.fillet', 'array', runs, 'slice'),
     geomTool('geom.extrude', 'measure', runs, 'slice'),
     newTool(runs),
+    ...designReads(runs),
     writeTool('design.edit_step', runs),
     writeTool('design.undo', runs, outcomes['design.undo'] ?? 'fail'),
     writeTool('design.redo', runs, outcomes['design.redo'] ?? 'throw'),
@@ -380,20 +411,93 @@ describe('a mimir run with a stuck geometry step', () => {
       expect(arrays(workers)).toBe(2)
     }), 20_000)
 
-  it('keys a step on a mesh model to that model', () =>
+  it('keeps a step on a mesh model file refused after a change, and runs the same step on another file', () =>
     stuckEngine(async (workers) => {
       const runs: string[] = []
       const array = { name: 'geom.array', args: { model: 'm1', copies: 12 } }
       const events = await scriptedTurns(
-        [[array, { name: 'geom.extrude', args: { model: 'm2' } }, array, { name: 'geom.extrude', args: { model: 'm1' } }, array]],
+        [[array, { name: 'geom.extrude', args: { model: 'm1' } }, { name: 'design.edit_step', args: {} }, array, { name: 'geom.array', args: { model: 'm2', copies: 12 } }]],
         runs,
       )
       expect(results(events)).toEqual([
         [false, STUCK],
         [true, JSON.stringify({ op: 'measure' })],
+        [true, 'changed'],
         [false, STOPPED_AGAIN_LINE],
-        [true, JSON.stringify({ op: 'measure' })],
         [false, STUCK],
+      ])
+      expect(arrays(workers)).toBe(2)
+    }), 20_000)
+
+  it.each(['Bracket', ' bracket ', 'd1'])(
+    'keeps a step stopped on a design by name before any answer tied it refused, asked again as %j after a read ties it',
+    (again) =>
+      stuckEngine(async (workers) => {
+        const runs: string[] = []
+        const events = await scriptedTurns(
+          [
+            [
+              { name: 'geom.array', args: { design: 'Bracket', copies: 12 } },
+              { name: 'design.steps', args: { design: 'Bracket' } },
+              { name: 'geom.array', args: { design: again, copies: 12 } },
+              { name: 'design.edit_step', args: { design: 'd1' } },
+              { name: 'geom.array', args: { design: 'Bracket', copies: 12 } },
+            ],
+          ],
+          runs,
+        )
+        expect(results(events).map(([ok, said]) => (ok ? ok : said))).toEqual([STUCK, true, STOPPED_AGAIN_LINE, true, STUCK])
+        expect(arrays(workers)).toBe(2)
+      }),
+    20_000,
+  )
+
+  it('keeps a name that stands for two designs as written: it neither blocks nor is cleared by either id', () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const events = await scriptedTurns(
+        [
+          [
+            { name: 'design.list', args: { second: 'Box' } },
+            { name: 'geom.array', args: { design: 'Box', copies: 12 } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+            { name: 'design.edit_step', args: { design: 'p1' } },
+            { name: 'geom.array', args: { design: 'Box', copies: 12 } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+          ],
+        ],
+        runs,
+      )
+      expect(results(events).slice(1)).toEqual([
+        [false, STUCK],
+        [false, STUCK],
+        [true, 'changed'],
+        [false, STOPPED_AGAIN_LINE],
+        [false, STUCK],
+      ])
+      expect(arrays(workers)).toBe(3)
+    }), 20_000)
+
+  it("reads a name that is also a design's id as that id", () =>
+    stuckEngine(async (workers) => {
+      const runs: string[] = []
+      const events = await scriptedTurns(
+        [
+          [
+            { name: 'design.list', args: { second: 'p1' } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+            { name: 'geom.array', args: { design: 'p2', copies: 12 } },
+            { name: 'design.edit_step', args: { design: 'p2' } },
+            { name: 'geom.array', args: { design: 'p1', copies: 12 } },
+          ],
+        ],
+        runs,
+      )
+      expect(results(events).slice(1)).toEqual([
+        [false, STUCK],
+        [false, STUCK],
+        [true, 'changed'],
+        [false, STOPPED_AGAIN_LINE],
       ])
       expect(arrays(workers)).toBe(2)
     }), 20_000)
