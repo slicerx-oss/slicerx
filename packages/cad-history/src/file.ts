@@ -74,7 +74,7 @@ export function historyFiles(objects: readonly { id: string; history?: History; 
     const store = storer(files, id)
     const base = h.base.length ? store(h.base) : null
     const steps = h.steps.map((s) => (s.params.op === 'parts.add' ? { ...s, params: { ...s.params, parts: store(s.params.parts) } } : s))
-    out.push({ object: String(id), base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}), steps })
+    out.push({ object: String(id), base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}), ...(h.placed ? { placed: h.placed } : {}), steps })
   }
   if (!out.length) return []
   return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: HISTORY_FILE_VERSION, objects: out }) }, ...files]
@@ -93,7 +93,7 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
     if (id === undefined) continue
     const store = storer(files, id)
     stores.set(b.id, store)
-    bodies.push({ object: String(id), base: b.base.length ? store(b.base) : null, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}) })
+    bodies.push({ object: String(id), base: b.base.length ? store(b.base) : null, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}), ...(b.placed ? { placed: b.placed } : {}) })
   }
   if (!bodies.length) return []
   const items: unknown[] = []
@@ -107,9 +107,10 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
     } else {
       // a projection names its body by file id; one from a body not saved is lost, and its curves stay
       const s = it.projections ? { ...it, projections: it.projections.map((p) => (fileIds.has(p.source.body) ? { ...p, source: { ...p.source, body: String(fileIds.get(p.source.body)) } } : { ...p, lost: p.lost ?? BODY_GONE })) } : it
-      // a sketch keeps the body it sits on only while that body is saved
-      const { on, ...k } = s
-      items.push(!on ? s : fileIds.has(on.body) ? { ...s, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
+      // a sketch keeps the body it sits on only while that body is saved; what it was drawn for is not saved, as the
+      // designs that waited for a body do not open again
+      const { on, drawnFor: _for, ...k } = s
+      items.push(on && fileIds.has(on.body) ? { ...k, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
     }
     if (i < d.marker) marker = items.length
   })

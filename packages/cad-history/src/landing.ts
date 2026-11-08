@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Where a design's body goes on the bed. A first body that does not print where it was built (off the bed, below it,
-// or with what prints around it past the edge) moves once to the middle of the plate or the first free spot, and from
-// then on the design's coordinates are the plate's. An edit that takes a part that printed off the bed lands it again
-// the same way; a part already off the bed before the edit was parked there and stays, and so does a locked one. The
-// rule is the same wherever designs are built (the app's plate, the creative eval); what counts as printing on the bed
-// and where a part fits are the host's (its bed, margins and other objects), given as a BedLanding.
+// or with what prints around it past the edge) moves once to the middle of the plate or the first free spot. An edit
+// that takes a part that printed off the bed lands it again the same way; a part already off the bed before the edit
+// was parked there and stays, and so does a locked one. A landing moves the design as a whole: the host keeps the move
+// in the design's history (History.placed), and the design's coordinates stay the ones it was built in
+// (design-frame.ts). The rule is the same wherever designs are built (the app's plate, the creative eval); what counts
+// as printing on the bed and where a part fits are the host's (its bed, margins and other objects), given as a
+// BedLanding.
 import type { Landed } from './host'
 import type { Mat4 } from './model'
 

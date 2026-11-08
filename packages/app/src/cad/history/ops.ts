@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, withPlaced, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -106,10 +106,11 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * show (a body whose only step fails), or when the step `need` (a new step) does not go through.
  * A newer call for the same object cancels this one.
  * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; a transform it returns
- * is written with the result, in the same store update, so the edit and the move are one undo step.
+ * is written with the result, with the history's landing moves it gives (History.placed), in the same store update, so
+ * the edit and the move are one undo step.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => { transform: Mat4; placed: [number, number] | undefined } | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -148,8 +149,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (!now) throw abortError()
     if (now.history?.exact && !next.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     const write = () => commitMade(objectId, (latest) => {
-      const transform = land?.(latest, parts)
-      return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(transform ? { transform } : {}) }
+      const moved = land?.(latest, parts)
+      return { handle, parts, history: moved ? withPlaced(history, moved.placed) : history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(moved ? { transform: moved.transform } : {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()
