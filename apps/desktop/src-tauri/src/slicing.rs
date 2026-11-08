@@ -379,6 +379,9 @@ struct Checks {
     newest: Arc<AtomicU32>,
     arranges: Arc<AtomicU32>,
     running: Arc<Mutex<()>>,
+    /// How the checks read their stop, for the tests.
+    #[cfg(test)]
+    reads: Arc<tests::StopReads>,
 }
 
 /// A check asked for: the meshes it checks, the checks, its number (one past the newest so far) and the arranges
@@ -429,7 +432,13 @@ fn run_check(
                 reason: format!("unknown mesh {r}"),
             })
     };
-    let check = match sx_core::api::check_plate_until(req, &lookup, &|| newer() || arranged()) {
+    let stop = || {
+        let now = newer() || arranged();
+        #[cfg(test)]
+        checks.reads.note(now);
+        now
+    };
+    let check = match sx_core::api::check_plate_until(req, &lookup, &stop) {
         Err(Error::Cancelled) => return Err(stopped()),
         other => other.map_err(|e| e.to_string())?,
     };
@@ -861,8 +870,37 @@ mod tests {
         request
     }
 
-    /// Runs `f` on a thread of its own and waits at most `limit` for its answer: a test that fails here does not wait
-    /// for the rest of a long run.
+    /// How the checks of a [`Slicer`] read their stop: every read, and the read that first said stop (from 1; 0 while
+    /// none has).
+    #[derive(Default)]
+    pub(super) struct StopReads {
+        reads: std::sync::atomic::AtomicUsize,
+        first: std::sync::atomic::AtomicUsize,
+    }
+
+    impl StopReads {
+        pub(super) fn note(&self, stop: bool) {
+            let k = self.reads.fetch_add(1, Ordering::SeqCst) + 1;
+            if stop {
+                let _ = self
+                    .first
+                    .compare_exchange(0, k, Ordering::SeqCst, Ordering::SeqCst);
+            }
+        }
+
+        fn reads(&self) -> usize {
+            self.reads.load(Ordering::SeqCst)
+        }
+
+        /// The reads after the one that first said stop, once one has.
+        fn after_stop(&self) -> Option<usize> {
+            let first = self.first.load(Ordering::SeqCst);
+            (first > 0).then(|| self.reads() - first)
+        }
+    }
+
+    /// Runs `f` on a thread of its own and waits at most `limit` for its answer. The limit only keeps a broken build
+    /// from hanging the run; no test reads speed from it.
     fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -871,15 +909,24 @@ mod tests {
         rx.recv_timeout(limit).ok()
     }
 
-    /// Waits until a check holds the checks' lock, then a little longer, so the check is well into its walk.
-    fn while_checking(checks: &Checks) {
+    /// Waits until a running check has read its stop `reads` times: it is walking the plate, past its setup.
+    fn while_walking(checks: &Checks, reads: usize) {
         let t = Instant::now();
-        while checks.running.try_lock().is_ok() {
-            assert!(t.elapsed() < Duration::from_secs(60), "no check started");
-            std::thread::sleep(Duration::from_millis(5));
+        while checks.reads.reads() < reads {
+            assert!(t.elapsed() < Duration::from_secs(120), "no check walked");
+            std::thread::sleep(Duration::from_millis(1));
         }
-        std::thread::sleep(Duration::from_millis(500));
     }
+
+    /// How many more times a stopped check of `objects` objects may read its stop: once more in each walk and once per
+    /// pass for each object, and once at the end of each pass.
+    fn slack(objects: usize) -> usize {
+        4 * objects + 8
+    }
+
+    /// How long a test waits before it calls a run hung. It is no speed bound: the tests check how many times a stopped
+    /// check reads its stop, not how long anything takes.
+    const HANG: Duration = Duration::from_secs(600);
 
     #[test]
     fn an_arrange_stops_a_stale_plate_check_instead_of_waiting_behind_it() {
@@ -888,32 +935,35 @@ mod tests {
         let t = Instant::now();
         arrange_now(&state, &request).expect("the copies arrange");
         let alone = t.elapsed();
-        // The check of the plate as it opened is still running when Arrange starts.
+        // The check of the plate as it opened is walking when Arrange starts.
         let stale = {
             let (state, request) = (state.clone(), request.clone());
             std::thread::spawn(move || check(&state, &request))
         };
         let _stop = StopChecks(state.clone());
-        while_checking(&state.checks);
-        let bound = alone * 2 + Duration::from_secs(3);
+        while_walking(&state.checks, 1000);
         let t = Instant::now();
         let arranged = {
             let (state, request) = (state.clone(), request.clone());
-            within(bound, move || arrange_now(&state, &request))
+            within(HANG, move || arrange_now(&state, &request))
         };
-        let busy = t.elapsed();
-        eprintln!("arrange alone {alone:?}, beside a stale check {busy:?}");
-        assert!(
-            arranged.is_some_and(|a| a.is_ok()),
-            "Arrange waited behind the stale check: over {bound:?}, {alone:?} alone"
-        );
-        let answer = within(Duration::from_secs(10), move || {
-            stale.join().expect("the check thread")
-        });
+        eprintln!("arrange alone {alone:?}, beside a stale check {:?}", t.elapsed());
+        assert!(arranged.is_some_and(|a| a.is_ok()), "Arrange answers");
+        let answer = within(HANG, move || stale.join().expect("the check thread"));
         assert_eq!(
             answer,
             Some(Err(CHECK_CANCELED.to_string())),
             "the stale check stops with no answer"
+        );
+        // It let go of the pool at once: a few more reads of its stop, not the rest of its walk.
+        let after = state
+            .checks
+            .reads
+            .after_stop()
+            .expect("the stale check read its stop");
+        assert!(
+            after <= slack(8),
+            "the stale check read its stop {after} more times"
         );
     }
 
@@ -928,23 +978,37 @@ mod tests {
             std::thread::spawn(move || check(&state, &stale))
         };
         let _stop = StopChecks(state.clone());
-        while_checking(&state.checks);
+        while_walking(&state.checks, state.checks.reads.reads() + 1000);
         let t = Instant::now();
         let newer = {
             let state = state.clone();
-            within(Duration::from_secs(10), move || check(&state, &pair))
+            within(HANG, move || check(&state, &pair))
         };
         eprintln!("the newer check answered in {:?}", t.elapsed());
-        let newer = newer
-            .expect("the newer check waited behind the older one")
-            .expect("the pair checks");
+        let newer = newer.expect("the newer check answers").expect("the pair checks");
         // Its answer is the one it gives alone (the timing aside).
         assert_eq!(newer["collisions"], alone["collisions"]);
         assert_eq!(newer["certainty"], alone["certainty"]);
-        let older = within(Duration::from_secs(10), move || {
-            older.join().expect("the check thread")
-        });
+        let older = within(HANG, move || older.join().expect("the check thread"));
         assert_eq!(older, Some(Err(CHECK_SKIPPED.to_string())));
+        // The older check let go at once; the newer one's own reads come after, so they are counted out.
+        let after = state
+            .checks
+            .reads
+            .after_stop()
+            .expect("the older check read its stop");
+        let newer_reads = check_reads(&state, &by_object_pair(&state, 3.0));
+        assert!(
+            after <= slack(50) + newer_reads,
+            "the older check read its stop {after} more times ({newer_reads} are the newer check's)"
+        );
+    }
+
+    /// How many times a check of `request` reads its stop, run alone.
+    fn check_reads(state: &Slicer, request: &serde_json::Value) -> usize {
+        let before = state.checks.reads.reads();
+        check(state, request).expect("the check answers");
+        state.checks.reads.reads() - before
     }
 
     /// Arranges `request` as the arrange command does, with its first layout let go.
