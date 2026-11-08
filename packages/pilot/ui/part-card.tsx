@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Button, Icon, tipAttrs, VectorField } from '@slicerx/ui'
 import { followUps, partLine, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
 
@@ -106,6 +106,15 @@ export function FollowUpChips({ part, handlers }: { part: CreatedPart; handlers:
   const [asking, setAsking] = useState(false)
   const [size, setSize] = useState<[number, number, number]>(part.sizeMm)
   const id = useId()
+  // Change size answers its click at once: the size row comes into view with the cursor in its first axis, so the click
+  // never reads as nothing happening (the row can open below the chat's fold, under the composer)
+  const row = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = row.current
+    if (!asking || !el) return
+    el.scrollIntoView?.({ block: 'nearest' })
+    el.querySelector<HTMLInputElement>('input:not([disabled])')?.focus({ preventScroll: true })
+  }, [asking])
   const live = (): boolean => {
     const ok = !handlers.has || handlers.has(part.id)
     setGone(!ok)
@@ -144,7 +153,7 @@ export function FollowUpChips({ part, handlers }: { part: CreatedPart; handlers:
       </div>
       {asking ? (
         // not a form: Enter in a field sets that axis, and only Resize sends
-        <div id={`${id}-size`} className="follow-size" role="group" aria-label="Change size">
+        <div ref={row} id={`${id}-size`} className="follow-size" role="group" aria-label="Change size">
           <VectorField id={`${id}-xyz`} label="Size" unit="mm" ariaLabel={`New size of the ${part.name}`} values={size} min={0.1} onCommit={(i, v) => setSize((s) => s.map((x, k) => (k === i ? v : x)) as [number, number, number])} />
           <span className="follow-size-acts">
             <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>
