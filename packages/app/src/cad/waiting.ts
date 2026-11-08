@@ -6,6 +6,23 @@
 import type { Mat4 } from '@slicerx/cad-history'
 
 const waiting = new Map<string, Mat4>()
+/** How each live design host lets its waiting designs go (cad/design-host.ts). */
+const owners = new Set<() => void>()
+
+/** A design host's way to let its waiting designs go, called by forgetWaiting; returns how to take it back. */
+export function ownWaiting(forget: () => void): () => void {
+  owners.add(forget)
+  return () => void owners.delete(forget)
+}
+
+/**
+ * Every design host lets its waiting designs go: the project they were started in is gone (a new project, or one
+ * opened in its place), so none of them can land on the plate now.
+ */
+export function forgetWaiting(): void {
+  for (const forget of [...owners]) forget()
+  waiting.clear()
+}
 
 /** A design host's waiting design `id` stands at `transform`, or (null) no longer waits. */
 export function setWaiting(id: string, transform: Mat4 | null): void {
