@@ -19,8 +19,8 @@ const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(n
 beforeAll(() => useDesignHost(loader))
 beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
 
-/** A body built around the origin lands in the middle of the 256 mm bed; from then on its coordinates are the plate's. */
-const MID = 128
+/** A body built around the origin lands in the middle of the 256 mm bed as a whole; its coordinates stay around the origin. */
+const MID = 0
 
 const code = async (p: Promise<unknown>) => ((await p.catch((e: unknown) => e)) as LinkError).code
 

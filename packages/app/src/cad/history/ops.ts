@@ -105,11 +105,12 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * marks, kept dimensions found again. Throws the broken step's sentence when nothing is left to
  * show (a body whose only step fails), or when the step `need` (a new step) does not go through.
  * A newer call for the same object cancels this one.
- * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; a transform it returns
- * is written with the result, in the same store update, so the edit and the move are one undo step.
+ * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; the transform (and the
+ * landing move) it returns is written with the result, in the same store update, so the edit and the move are one undo
+ * step.
  * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Pick<PlateEntry, 'transform' | 'placed'> | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -147,8 +148,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (!now) throw abortError()
     if (now.history?.exact && !next.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     const write = () => commitMade(objectId, (latest) => {
-      const transform = land?.(latest, parts)
-      return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(transform ? { transform } : {}) }
+      const moved = land?.(latest, parts)
+      return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(moved ?? {}) }
     }, { exactReplay: next.exact === true })
     if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()

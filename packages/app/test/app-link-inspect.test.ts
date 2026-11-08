@@ -11,8 +11,8 @@ useGeomEngine('app-link-inspect-replies')
 beforeAll(() => useDesignHost({ loadParts: async (id: string): Promise<MeshHandle> => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 10, 8], openEdges: 0, parts: [] }) }))
 beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
 
-/** The tray is built around the origin and lands in the middle of the 256 mm bed, where its coordinates are the plate's. */
-const MID = 128
+/** The tray is built around the origin and lands in the middle of the 256 mm bed as a whole; its coordinates stay around the origin. */
+const MID = 0
 async function box() {
   const result = await runCall('design.new', { name: 'Tray' }) as { output: { design: string } }
   const design = result.output.design
@@ -38,7 +38,8 @@ it('shells a live body and reads current and historical volume without changing 
 
 it('measures faces in world coordinates and permits readback while a step is being edited', async () => {
   const design = await box()
-  const entry = get().plate[0]!
+  // a tray a person put at (40, 50), with no landing move kept: its coordinates are the plate's
+  const { placed: _landed, ...entry } = get().plate[0]!
   const transform = [...entry.transform]
   transform[12] = 40
   transform[13] = 50
