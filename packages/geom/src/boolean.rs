@@ -452,6 +452,11 @@ pub(crate) fn stored(mesh: &TriMesh, op: &'static str, what: &str, hint: &str) -
     Ok(out)
 }
 
+/// true when the mesh stores safely: closed, with no collapsed triangles and no crossing faces at storage precision
+pub(crate) fn stores_clean(mesh: &TriMesh) -> bool {
+    !mesh.is_empty() && storage_mesh(mesh).is_ok()
+}
+
 /// a boolean's result with its flat faces filled again (remesh.rs), for results people see
 pub fn tidy(mut out: TriMesh, report: &mut BooleanReport) -> TriMesh {
     out = crate::remesh::tidy_flat(&out, &crate::remesh::RemeshOptions::default());
