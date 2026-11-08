@@ -115,8 +115,9 @@ const readsFile = (files: readonly Pick<PilotAttachment, 'type'>[]): boolean => 
 /** What the runtime knows about the chat a turn is in. */
 export interface TurnChat {
   /**
-   * Whether there is a design to shape: the host's project holds one (an object with a history, or a design with no
-   * body yet), or, where the host cannot say, one of the chat's own tools made or opened one (designMade).
+   * Whether there is a design to shape: the host's plate holds a body with a history, or the chat started a design that
+   * is still waiting for its first body, or, where the host cannot say, one of the chat's own tools made or opened one
+   * (designMade).
    */
   design?: boolean
 }
