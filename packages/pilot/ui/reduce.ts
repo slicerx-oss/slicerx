@@ -61,7 +61,8 @@ export type Block =
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
-  | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string }
+  /** `waiting`: the run waits and goes on by itself; a later error with the same code in the turn takes its place. */
+  | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string; waiting?: boolean }
   /**
    * A place for the print run's card: the slice it made, or the print it started. The card reads `Transcript.printRun`
    * while it is the latest of its kind; `run` is the run as it was when the card was made, which a card keeps once a
@@ -460,8 +461,13 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       return append(settleStreams(s), (id) => ({ kind: 'model', id, model: event.model, label: event.label, reason: event.reason }), true)
     case 'usage':
       return { ...s, meter: { ...s.meter, tokens: s.meter.tokens + event.inputTokens + event.outputTokens } }
-    case 'error':
-      return append(settleStreams(s), (id) => ({ kind: 'error', id, message: event.message, retryable: event.retryable, ...(event.code ? { code: event.code } : {}) }), false)
+    case 'error': {
+      const line = (id: string): Block => ({ kind: 'error', id, message: event.message, retryable: event.retryable, ...(event.code ? { code: event.code } : {}), ...(event.waiting ? { waiting: true } : {}) })
+      // a wait the run went on from (free mimir's per-minute limit) gives its place to the next line about it
+      const waited = event.code ? lastTurn(s)?.blocks.findLast((b) => b.kind === 'error' && b.waiting === true && b.code === event.code) : undefined
+      if (waited) return withLastTurn(settleStreams(s), (t) => ({ ...t, blocks: t.blocks.map((b) => (b.id === waited.id ? line(b.id) : b)) }))
+      return append(settleStreams(s), line, false)
+    }
     case 'done':
       return { ...finishRun(s, event.stopReason, event.ms, now), held: false }
   }

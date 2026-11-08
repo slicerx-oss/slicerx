@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Free mimir answers 429 slow_down past an install's calls per minute (20 on desktop, 10 per person on the web), and a
-// long plan sends a model request every few seconds. A slow_down mid-build shows its line at once, then waits and
-// carries on with the same step instead of ending the run as an error; past a full rate window of waiting it stops like
-// a run cut off at its limit, with the sheet kept, so "keep going" builds the rest. No test here really waits: the
-// runtime's sleep is replaced.
+// long plan sends a model request every few seconds. A slow_down mid-build says at once that mimir is waiting a moment,
+// then going on, and carries on with the same step instead of ending the run as an error; past a full rate window of
+// waiting it stops like a run cut off at its limit, with the sheet kept, so "keep going" builds the rest, and its line
+// takes the place of the waiting one. No test here really waits: the runtime's sleep is replaced.
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, sheetTool, type LlmClient, type ScriptStep } from '../src/index'
-import { abortableSleep, SLOW_DOWN_GIVE_UP_MS, SLOW_DOWN_LINE, SLOW_DOWN_WAIT_MS } from '../src/runtime'
+import { abortableSleep, SLOW_DOWN_GIVE_UP_MS, SLOW_DOWN_LINE, SLOW_DOWN_NOTICE, SLOW_DOWN_WAIT_MS } from '../src/runtime'
+import { foldEvents } from '../ui/reduce'
 
 const SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes', dims: [{ key: 'length', label: 'Length', value: 96, unit: 'mm', source: 'guess' }] } }
 const x = (name: string) => ({ calls: [{ name: 'geom.extrude', args: { name, design: 'd1' } }] })
@@ -99,7 +100,10 @@ describe('a slow_down from the proxy mid-build', () => {
     const events = await s.say('A plate')
     // the notice reaches the person while mimir waits, not after, and comes once for the streak
     const at = events.findIndex((e) => e.type === 'error')
-    expect(slowNotices(events)).toEqual([{ type: 'error', message: 'Slow down a moment, then try again.', retryable: true, code: 'slow_down' }])
+    expect(slowNotices(events)).toEqual([{ type: 'error', message: SLOW_DOWN_NOTICE, retryable: false, code: 'slow_down', waiting: true }])
+    // it says what is happening, not to try again while mimir already goes on by itself
+    expect(SLOW_DOWN_NOTICE).toBe('Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.')
+    expect(SLOW_DOWN_NOTICE).not.toMatch(/try again/i)
     expect(at).toBeGreaterThanOrEqual(0)
     expect(s.waitedAt).toHaveLength(1)
     expect(at).toBeLessThan(s.waitedAt[0]!)
@@ -113,10 +117,15 @@ describe('a slow_down from the proxy mid-build', () => {
     const first = await s.say('A Pi 5 case with a lid')
     expect(s.waits.reduce((a, b) => a + b, 0)).toBe(SLOW_DOWN_GIVE_UP_MS)
     expect(s.waits.every((w) => w === SLOW_DOWN_WAIT_MS)).toBe(true)
-    // one notice for the whole streak of refusals, not one per wait
-    expect(slowNotices(first)).toHaveLength(1)
+    // one waiting notice for the whole streak of refusals, not one per wait, then the line that the run stopped
+    expect(slowNotices(first).map((e) => e.type === 'error' && e.waiting === true)).toEqual([true, false])
     expect(done(first)?.stopReason).toBe('max_steps')
-    expect(said(first)).toContain(SLOW_DOWN_LINE)
+    // the give-up line takes the place of the waiting one: one line about the limit in the reply, with See usage
+    const lines = foldEvents(first).turns.at(-1)!.blocks.filter((b) => b.kind === 'error' || (b.kind === 'say' && /limit|slow down/i.test(b.text)))
+    expect(lines).toEqual([expect.objectContaining({ kind: 'error', message: SLOW_DOWN_LINE, code: 'slow_down' })])
+    expect(lines[0]).not.toHaveProperty('waiting')
+    expect(SLOW_DOWN_LINE).toBe('Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.')
+    expect(said(first)).not.toContain(SLOW_DOWN_LINE)
     expect(s.log).toEqual(['Base', 'Base hollow'])
     // the proxy takes calls again: "keep going" builds the lid under the sheet already confirmed
     refusing = false
