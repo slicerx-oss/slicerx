@@ -69,10 +69,14 @@ export interface ExtrudeInput {
   pattern?: Pattern
 }
 
-/** What an extrude or revolve did, in one sentence. */
+/**
+ * What an extrude or revolve did, in one sentence. `missed` when the shape does not reach the body it joins or cuts,
+ * so nothing changed and nothing was recorded.
+ */
 export interface Landed {
   message: string
   warn: boolean
+  missed?: true
 }
 
 /** Where a solid lands: `step`, when given, is the undo step its edit joins (plate/history.ts newStep). */
@@ -175,6 +179,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
           ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'
           : 'The shape does not reach the body, so nothing changed. Check the distance and the direction.',
         warn: true,
+        missed: true,
       }
     }
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
