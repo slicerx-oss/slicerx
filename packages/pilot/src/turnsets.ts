@@ -115,17 +115,17 @@ const readsFile = (files: readonly Pick<PilotAttachment, 'type'>[]): boolean => 
  * The set a turn starts on, from the request: a picture or PDF to build from is a new part; words about shaping or
  * changing a part pick those sets; words about slicing, settings, the project or a print problem pick app, and words
  * about the printers alone pick print, unless the request also asks for a new part, which comes first ("a hook, then
- * slice it"). A new part asked for with shaping words in it ("a hollow tapered stem", "a pattern of holes") builds:
- * in a chat with no set yet there is nothing to shape, and a request that opens on making a new one ("design a stand")
- * is a new part. A request with none of these words keeps `last`, the set the chat's previous turn ended on, or starts
- * a part when there is none.
+ * slice it"). A request that opens on making a new part ("design a stand ...") builds even with shaping words in it
+ * ("a hollow tapered stem", "a pattern of vent holes"), unless what it makes is itself a shaping ("make a pattern of
+ * holes in the lid", "make a mirrored copy"). A request with none of these words keeps `last`, the set the chat's
+ * previous turn ended on, or starts a part when there is none.
  */
 export function turnSet(message: string, files: readonly Pick<PilotAttachment, 'type'>[] = [], last?: TurnSet): TurnSet {
   if (readsFile(files)) return 'build'
   const print = PRINT_WORDS.test(message)
   const app = APP_WORDS.test(message) || print
   const build = BUILD_WORDS.test(message)
-  const newPart = build && (last === undefined || NEW_PART.test(message))
+  const newPart = build && NEW_PART.test(message)
   if (SHAPE_WORDS.test(message) && !app && !newPart) return 'shape'
   if (EDIT_WORDS.test(message) && !app && (last === 'build' || last === 'shape' || last === 'edit')) return 'edit'
   // both: a request that opens on making a part, or makes it and then prints, builds first; else it is about the app
@@ -139,8 +139,11 @@ export function turnSet(message: string, files: readonly Pick<PilotAttachment, '
 /** A request that goes on to a second thing after the first ("a hook, then slice it"). */
 const THEN = /\b(then|and then|after that|afterwards)\b/i
 
-/** A request that opens on making a new part ("design a stand ...", "make me two clips"), not on changing one ("make it hollow"). */
-const NEW_PART = /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\s+(?:me\s+)?(?:a|an|some|two|three|four|\d+)\b/i
+/**
+ * A request that opens on making a new part ("design a stand ...", "make me two clips"), not on changing one ("make it
+ * hollow") or on a shaping of one ("make a pattern of holes", "make a mirrored copy", "make a cut out").
+ */
+const NEW_PART = /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\s+(?:me\s+)?(?:a|an|some|two|three|four|\d+)\s+(?!(?:pattern\w*|mirror\w*|cop(?:y|ies)|split\w*|cut\w*|hollow\w*|engrav\w*|text|emboss\w*)\b)/i
 
 /** A request that opens on making a part ("make a hook ...", "design me ..."), which builds first whatever follows. */
 const BUILD_START = /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:make|design|model|build|create|draw)\b/i

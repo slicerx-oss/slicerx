@@ -53,6 +53,14 @@ describe('the set a request picks', () => {
     ["Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.", undefined, 'build'],
     ['Make a box with a pattern of vent holes', 'shape', 'build'],
     ['Make it hollow', 'build', 'shape'],
+    // shaping an existing part keeps the shape set even when it opens on "make a"
+    ['Make a pattern of six vent holes in the lid', 'build', 'shape'],
+    ['Make a pattern of four holes on it', 'build', 'shape'],
+    ['Make a mirrored copy of the bracket', 'build', 'shape'],
+    ['Make a cut out in the lid', 'build', 'shape'],
+    // a fresh chat with a part noun in it is not a new part unless it asks for one
+    ['Mirror the bracket', undefined, 'shape'],
+    ['Split the case in half', undefined, 'shape'],
     ['Make the base thicker', 'build', 'edit'],
     ['Undo that step', 'shape', 'edit'],
     ['What layer height and infill should I print the bracket with?', 'build', 'app'],
