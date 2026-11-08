@@ -56,15 +56,19 @@ describe('a new server and the knowledge base', () => {
     vi.resetModules()
     const fresh = await import('../src/index')
     const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-lazy-'))
-    const ctx = await fresh.createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY })
-    const server = fresh.createSlicerxServer(ctx)
     const client = new Client({ name: 'test', version: '0.0.0' }, {})
-    const [a, b] = InMemoryTransport.createLinkedPair()
-    await Promise.all([server.connect(a), client.connect(b)])
-    parsed.calls = 0
-    const r = (await client.callTool({ name: 'slicerx_knowledge_lookup', arguments: { kind: 'filament', id: 'pla' } })) as CallToolResult
-    await client.close()
-    rmSync(dir, { recursive: true, force: true })
+    let r: CallToolResult
+    try {
+      const ctx = await fresh.createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY })
+      const server = fresh.createSlicerxServer(ctx)
+      const [a, b] = InMemoryTransport.createLinkedPair()
+      await Promise.all([server.connect(a), client.connect(b)])
+      parsed.calls = 0
+      r = (await client.callTool({ name: 'slicerx_knowledge_lookup', arguments: { kind: 'filament', id: 'pla' } })) as CallToolResult
+    } finally {
+      await client.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
     expect(r.isError).toBeFalsy()
     expect(parsed.calls).toBeGreaterThan(10)
   })
