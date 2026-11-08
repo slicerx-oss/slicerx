@@ -503,7 +503,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
           return { design, how: 'tied to the plan' }
         }
         if (id !== entry.design && opts.cardSide && !designs.list().some((d) => d.id === entry.design))
-          throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is tied to design ${entry.design}, which is no longer open. It is not moved to another design; make a new plan for the part and check it against that.`)
+          throw new ToolInputError(`design: the plan for ${entry.plan.part} was made in the mimir tab for a design that is no longer open. It is not moved to another design; make a new plan for the part and check it against that.`)
         if (id !== entry.design)
           throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
         return { design: designs.get(entry.design), how: 'tied to the plan' }
