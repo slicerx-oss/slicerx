@@ -3,7 +3,7 @@
 // Finished sketches: Finish sketch puts the sketch in the design timeline without making a solid, the way Fusion
 // does. A finished sketch opens again from the strip or the tree to be changed, extruded or revolved; a feature
 // made from it names it by id (cad-ops.ts LandIn), and changing the sketch replays the bodies that use it.
-import { historyOf, stepId, withoutTaken, withSketch, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
+import { historyOf, stepId, withoutTaken, withSketch, type DrawnFor, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { useSyncExternalStore } from 'react'
 import { brandAccent } from '../edition'
@@ -26,9 +26,11 @@ export interface SketchBody {
   projections?: Projection[] | undefined
   /** how many projection ids it has handed out */
   nextProjection?: number | undefined
+  /** the designs it is drawn for, each where it stands now (SketchItem.drawnFor), written with the sketch */
+  drawnFor?: DrawnFor[] | undefined
 }
 
-const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}), ...(s.nextProjection ? { nextProjection: s.nextProjection } : {}) })
+const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}), ...(s.projections?.length ? { projections: s.projections } : {}), ...(s.nextProjection ? { nextProjection: s.nextProjection } : {}), ...(s.drawnFor?.length ? { drawnFor: s.drawnFor } : {}) })
 
 /** Puts a finished sketch in the timeline at the marker and returns it. Undo takes it out again. */
 export function finishSketch(s: SketchBody, id = `${stepId()}k`): SketchItem {
