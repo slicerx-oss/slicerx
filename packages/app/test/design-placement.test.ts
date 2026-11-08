@@ -1479,17 +1479,41 @@ describe('a project saved before sketches moved with their bodies', () => {
     files.set(name, new TextEncoder().encode(JSON.stringify(j)))
     return zip([...files].map(([n, data]) => ({ name: n, data: new Uint8Array(data) })))
   }
-  /** Opens `bytes` onto an empty plate the way the app opens a project, its one object as 'opened'. */
-  async function open(bytes: Uint8Array) {
+  /**
+   * The project as the app wrote it before design timelines (history version 2): each object's own steps, a step drawn
+   * on a sketch holding that sketch's loops and plane, and no landing moves. That app showed such a sketch through the
+   * step, moved with its body.
+   */
+  function version2(bytes: Uint8Array): Uint8Array {
+    const files = unzipStored(bytes)
+    const name = 'Metadata/slicerx_history.json'
+    const j = JSON.parse(new TextDecoder().decode(files.get(name)!)) as { bodies: Record<string, unknown>[]; items: Record<string, unknown>[] }
+    const sketches = new Map(j.items.filter((i) => i['kind'] === 'sketch').map((i) => [i['id'], i]))
+    const objects = j.bodies.map(({ placed: _p, ...b }) => ({
+      ...b,
+      steps: j.items.filter((i) => i['kind'] === 'feature' && i['body'] === b['object']).map(({ kind: _k, body: _b, sketch, projected: _r, ...st }) => {
+        const k = sketches.get(sketch)
+        return k ? { ...st, params: { ...(st['params'] as object), ...(k['frame'] ? { frame: k['frame'] } : {}), shape: { type: 'sketch', loops: k['loops'] } } } : st
+      }),
+    }))
+    files.set(name, new TextEncoder().encode(JSON.stringify({ version: 2, objects })))
+    return zip([...files].map(([n, data]) => ({ name: n, data: new Uint8Array(data) })))
+  }
+  /** Opens `bytes` onto an empty plate the way the app opens a project, its objects as `ids` in file order. */
+  async function open(bytes: Uint8Array, ids: readonly string[] = ['opened']) {
     const bed = { widthMm: 256, depthMm: 256 }
     readProjectsWithGeom(false)
     const p = await readProject(bytes, bed).finally(() => readProjectsWithGeom(true))
-    const o = p.plates[0]!.objects[0]!
+    const objects = p.plates[0]!.objects
+    expect(objects).toHaveLength(ids.length)
     const { withBodyIds } = await import('@slicerx/cad-history')
     stop?.()
-    appStore.setState({ plate: [{ id: 'opened', name: o.name, handle: handle('opened'), parts: o.parts, colors: ['#bd93f9'], transform: o.transform, history: p.histories.get(o.fileId)! }], timeline: withBodyIds(p.timeline!, (f) => (f === o.fileId ? 'opened' : undefined)) })
+    const plate = objects.map((o, n): PlateEntry => ({ id: ids[n]!, name: o.name, handle: handle(ids[n]!), parts: o.parts, colors: ['#bd93f9'], transform: o.transform, history: p.histories.get(o.fileId)! }))
+    appStore.setState({ plate, timeline: withBodyIds(p.timeline!, (f) => ids[objects.findIndex((o) => o.fileId === f)]) })
     stop = startTimeline()
   }
+  /** Where finished sketch `k` reads in Model, and in the design host. */
+  const reads = (k: string) => ({ model: sketchScene(sketchItem(k))!.frame.origin, host: appDesignHost(loader).sketch!(k).frame?.origin })
 
   it('opens a sketch whose body was dragged after its step where the older app showed it, with the same body, and moves it with the body after', async () => {
     const run = toolsOn(appDesignHost(loader))
@@ -1518,5 +1542,60 @@ describe('a project saved before sketches moved with their bodies', () => {
     // from here on it moves with the body
     drag('opened', 0, 10)
     expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([128, 138, 10])
+  })
+
+  it('opens a version 2 project with a sketch split out of a step on a dragged body where that app showed it, on the body, and moves it with the body after', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const d = String((await run('design.new', { name: 'Block' })).output['design'])
+    expect((await run('geom.extrude', { design: d, ...block, placement: { center: [128, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const k = finishSketch({ frame: { origin: [128, 128, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: square(0, 0, 6) as never }).id
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    // dragged after the cut: the version 2 app drew the cut's sketch through the step, moved with the body
+    drag(d, 30, 0)
+    const cut = { volume: volume(entry(d).parts), plate: onPlate(d) }
+    const bytes = writeProject({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }], bed: { widthMm: 256, depthMm: 256 }, settings: {}, timeline: get().timeline })
+    await open(version2(bytes))
+    // the sketch is split out of the step as the file opens, under a new id, stored where the step was recorded
+    const split = get().timeline.items.find((i): i is SketchItem => i.kind === 'sketch')!
+    expect(split.frame?.origin).toEqual([128, 128, 10])
+    expect(reads(split.id)).toEqual({ model: [158, 128, 10], host: [158, 128, 10] })
+    // the timeline builds the same body where it stands
+    const r = await runReplay({ history: historyOf(get().timeline, 'opened')! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(cut.volume, 0)
+    const b = bounds(r.parts.map(toPart), entry('opened').transform)!
+    expect({ min: b.min.map(r2), max: b.max.map(r2) }).toEqual(cut.plate)
+    drag('opened', 0, 10)
+    expect(reads(split.id)).toEqual({ model: [158, 138, 10], host: [158, 138, 10] })
+  })
+
+  it('opens an older version 3 project with two bodies and two sketches each where that app showed it, and each moves with its own body after', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const left = String((await run('design.new', { name: 'Left' })).output['design'])
+    expect((await run('geom.extrude', { design: left, ...block, placement: { center: [60, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const right = String((await run('design.new', { name: 'Right' })).output['design'])
+    expect((await run('geom.extrude', { design: right, ...block, placement: { center: [190, 128] } })).summary).not.toMatch(/moved to the plate/)
+    const top = { normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number] }
+    // a slot across both blocks, cut first from the left one, and a hole drawn on the right one
+    const slot = finishSketch({ frame: { ...top, origin: [125, 128, 10] }, loops: [{ points: [[-70, -2], [70, -2], [70, 2], [-70, 2]] }] as never }).id
+    const dot = finishSketch({ frame: { ...top, origin: [190, 128, 10] }, loops: square(0, 0, 6) as never }).id
+    expect((await run('geom.extrude', { design: left, sketch: slot, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    expect((await run('geom.extrude', { design: right, sketch: slot, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    expect((await run('geom.extrude', { design: right, sketch: dot, distance_mm: 4, operation: 'cut' })).ok).toBe(true)
+    // both dragged after their cuts, by different moves: the older app left both sketches where they were drawn
+    drag(left, 0, -40)
+    drag(right, 20, 40)
+    const bytes = writeProject({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }], bed: { widthMm: 256, depthMm: 256 }, settings: {}, timeline: get().timeline })
+    await open(older(bytes), ['l', 'r'])
+    expect(reads(slot)).toEqual({ model: [125, 128, 10], host: [125, 128, 10] })
+    expect(reads(dot)).toEqual({ model: [190, 128, 10], host: [190, 128, 10] })
+    // each now moves with the body of the first feature on it: the slot with the left block, the hole with the right
+    expect(sketchItem(slot).drawnFor?.map((f) => f.design)).toEqual(['l'])
+    expect(sketchItem(dot).drawnFor?.map((f) => f.design)).toEqual(['r'])
+    drag('r', 5, 0)
+    expect(reads(slot)).toEqual({ model: [125, 128, 10], host: [125, 128, 10] })
+    expect(reads(dot)).toEqual({ model: [195, 128, 10], host: [195, 128, 10] })
+    drag('l', 0, 7)
+    expect(reads(slot)).toEqual({ model: [125, 135, 10], host: [125, 135, 10] })
+    expect(reads(dot)).toEqual({ model: [195, 128, 10], host: [195, 128, 10] })
   })
 })
