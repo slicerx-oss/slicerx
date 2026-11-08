@@ -17,12 +17,19 @@ export function heldBodies(s: Pick<AppState, 'plate' | 'plates' | 'activePlate' 
 const NONE: History = { version: 1, base: [], steps: [] }
 const notYet = new WeakMap<PlateEntry, PlateEntry>()
 
-/** Every object, and each body held off the plates while the design is rolled back, with nothing made yet. */
+/**
+ * Every object, and each body held off the plates while the design is rolled back, with nothing made yet. A held body
+ * keeps what belongs to the body rather than to its steps (how it ends, whether it is exact, and its landing moves), so
+ * it rolls forward, and saves, with them.
+ */
 function every(s: Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'historyEdit' | 'rollback'>): PlateEntry[] {
   const on = [...fullPlate(s), ...s.plates.filter((p) => p.id !== s.activePlate).flatMap((p) => p.objects)]
   const held = heldBodies(s).map(({ entry }) => {
     let e = notYet.get(entry)
-    if (!e) notYet.set(entry, (e = { ...entry, history: { ...NONE, ...(entry.history?.ended ? { ended: entry.history.ended } : {}) } }))
+    if (!e) {
+      const h = entry.history
+      notYet.set(entry, (e = { ...entry, history: { ...NONE, ...(h?.ended ? { ended: h.ended } : {}), ...(h?.exact ? { exact: true } : {}), ...(h?.placed ? { placed: h.placed } : {}) } }))
+    }
     return e
   })
   return [...on, ...held]
