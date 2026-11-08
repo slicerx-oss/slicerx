@@ -79,7 +79,7 @@ const NO_LLM = {} as LlmTransport
 
 /**
  * The tab's own tools: questions, lookups, sheets and the card's design.plan, then the given design tools, without the
- * design toolset's design.put_plan (@slicerx/mcp tab-tools.ts, which the creative eval uses too).
+ * design toolset's design.put_plan and design.trace_image (@slicerx/mcp tab-tools.ts, which the creative eval uses too).
  */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
   return mimirTabTools(planTool(), extra)
