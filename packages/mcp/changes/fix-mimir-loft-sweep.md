@@ -10,5 +10,8 @@
 
 ### Fixed
 
+- `slicerx_geom_sweep`: a profile whose loop sits far from where the path starts (more than three times its own size, and at least 10 mm) is refused with how far it sits and that its loop points are measured from the profile frame's origin. Before, a circle given at the path start's bed X and Y on a frame already at that start was swept from far off the path, and every bend was refused as too tight.
+
 - `slicerx_geom_extrude`, `slicerx_geom_revolve`, `slicerx_geom_loft` and `slicerx_geom_sweep` with `operation` `join`: a join that closes a hollow (a rod over an open tube, a lid on a cup) joins. Before, the sealed hollow added an inner shell and the join was refused as not reaching the part.
 - A join or cut step the engine reports as leaving the part not closed still lands, and its step now carries a note saying the part is not closed and to look where the shapes meet before printing.
+- `slicerx_geom_subtract` with `design`: a cut the engine reports as leaving the part not closed (a bore the same size as the wall it meets) lands with the same note on its step.
