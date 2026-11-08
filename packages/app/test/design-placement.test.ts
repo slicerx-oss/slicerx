@@ -14,7 +14,7 @@ import { applyArray, applyExtrude, applyRevolve } from '../src/cad/cad-ops'
 import { applyEdges, edgeParams } from '../src/cad/edges'
 import { appDesignHost } from '../src/cad/design-host'
 import { runCall, useDesignHost } from '../src/app-link/methods'
-import { waitingAt } from '../src/cad/waiting'
+import { forgetWaiting, waitingAt } from '../src/cad/waiting'
 import { beginEdit, cancelEdit, nowOf, runReplay, saveEdit, toPart } from '../src/cad/history/ops'
 import { rollTo } from '../src/cad/history/rollback'
 import { finishSketch } from '../src/cad/sketches'
@@ -26,6 +26,7 @@ import { copySelection, pasteClipboard } from '../src/plate/clipboard'
 import { getArrangeOptions, setInstanceCount } from '../src/plate/edit'
 import { duplicatePlate } from '../src/plate/plates'
 import { createHistory } from '../src/plate/history'
+import { clearProject } from '../src/project/new'
 import { heldBodies, startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
@@ -96,6 +97,8 @@ const flat = (d: number) => (d / 2) * Math.cos(Math.PI / 8)
 let stop: (() => void) | null = null
 beforeEach(() => {
   clearReplayCache()
+  // no design left waiting by an earlier test
+  forgetWaiting()
   appStore.setState({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', selection: null, selectedIds: [], historyEdit: null, rollback: null, timeline: { bodies: [], items: [], marker: 0 }, bed: { ...get().bed, ...BED } })
   stop = startTimeline()
 })
@@ -1578,6 +1581,18 @@ describe('a design host that goes away', () => {
     host.dispose()
     set((s) => ({ plate: s.plate.filter((x) => x.id !== e) }))
     expect(sketches()).toEqual([])
+  })
+
+  it('lets its waiting designs go when the project is cleared or another opens in its place', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const d = String((await run('design.new', { name: 'Tray' })).output['design'])
+    expect(waitingAt(d)).toBeDefined()
+    clearProject()
+    expect(waitingAt(d)).toBeUndefined()
+    expect((await run('design.list', {})).output['designs']).toEqual([])
+    // the host still starts new designs
+    const e = String((await run('design.new', { name: 'Lid' })).output['design'])
+    expect(waitingAt(e)).toBeDefined()
   })
 
   it('keeps nothing waiting for a design a call starts on it after it went away', async () => {

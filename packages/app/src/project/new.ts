@@ -6,9 +6,12 @@ import { history } from '../plate/history'
 import { cancelSlice } from '../state/actions'
 import { get, set } from '../state/store'
 import { freshVary } from '../lib/sleipnir-default'
+import { forgetWaiting } from '../cad/waiting'
 import { confirmDiscard, markClean } from './unsaved'
 
 export function clearProject(): void {
+  // Designs a design host keeps waiting for a first body belong to the project that is going: none can land now.
+  forgetWaiting()
   // A slice still running is for a plate that is going: it stops, so the next design does not wait for the slicer.
   cancelSlice({ quiet: true })
   // The project's printer goes with it, and so do the settings and machine G-code the project brought: the plate
