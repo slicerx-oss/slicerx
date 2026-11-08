@@ -120,6 +120,31 @@ describe('canceling a geometry call', () => {
     }
   })
 
+  it('ends a worker stuck in a canceled array and sends the calls queued behind it to a fresh one', async () => {
+    const workers: ThreadWorker[] = []
+    vi.stubGlobal('Worker', function () {
+      const w = new ThreadWorker()
+      workers.push(w)
+      return w
+    })
+    try {
+      const api = geom()
+      const ctl = new AbortController()
+      const array = api.call('array', { merge: true }, ctl.signal).catch((e: Error) => e)
+      await vi.waitFor(() => expect(workers[0]?.started.size).toBe(1))
+      // queued behind the stuck call: the worker never reads them
+      const first = api.call('measure', { n: 1 })
+      const second = api.call('measure', { n: 2 })
+      ctl.abort()
+      expect(await array).toMatchObject({ name: 'AbortError' })
+      expect(await within(first, CANCEL_GRACE_MS + 3000)).toEqual({ op: 'measure' })
+      expect(await within(second, 3000)).toEqual({ op: 'measure' })
+      expect(workers).toHaveLength(2)
+    } finally {
+      await Promise.all(workers.map((w) => w.thread.terminate()))
+    }
+  })
+
   it('keeps the worker when a canceled call finishes within the grace time', async () => {
     const workers = manual()
     const api = geom()
