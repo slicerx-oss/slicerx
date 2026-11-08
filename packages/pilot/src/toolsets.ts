@@ -290,8 +290,8 @@ export function stickyToolsets(): StickyToolsets {
  * named, and one this message needs, in that order; among
  * those a toolset the last request did not send goes before one it sent, then the one called longest ago and least,
  * then the later one in TOOLSET_PRIORITY. Room left goes first to the wanted toolsets that went, whole where they fit and
- * then tool by tool, then to the other toolsets in priority order, whole and then tool by tool. Every tool the chat
- * already called goes. The same inputs give the same list, in the tools' own order.
+ * then tool by tool, then to the other toolsets in priority order, whole and then tool by tool. Core goes first, then every tool the chat
+ * already called. The same inputs give the same list, in the tools' own order.
  */
 export function stickyCapTools<T extends SetTool>(
   tools: readonly T[],
@@ -333,8 +333,9 @@ export function stickyCapTools<T extends SetTool>(
   const add = (list: readonly T[]): void => {
     for (const t of list) if (keep.size < room) keep.add(t)
   }
-  add(calledTools)
+  // core first: a chat that called more tools than the room holds still keeps core
   add(bySet.get('core') ?? [])
+  add(calledTools)
   // most wanted first, so a chat whose protected toolsets alone are over the room keeps the most of them
   const whole = new Set<Toolset>(['core'])
   for (const s of [...chosen].filter((x) => x !== 'core').sort(less).reverse()) {
