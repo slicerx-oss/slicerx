@@ -2,9 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A reply fixes the part it started instead of starting it again. A second design.new in the same run is a restart, and
 // refused with the part to fix and how (design.undo), when the part started last has no body yet or its last step did
-// not go through, or when the new name, without version words (v2, 2, new, again, fixed...), is a started part's name or
-// holds every word of it ("Cable clip 3 mm" after "Cable clip"). Anything else starts its own design: a box and a saucer,
-// two brackets, a left and a right bracket, two parts asked for in any language. The person's message and the plan are
+// not go through, or when the new name is a started part's name once sizes and version words (v2, new, again, fixed,
+// 3 mm...) are left out ("Cable clip 3 mm" after "Cable clip"). Anything else starts its own design: a box and a saucer,
+// a planter and a planter saucer, two brackets, a left and a right bracket, two parts asked for in any language. The person's message and the plan are
 // never read for it. The next message starts its own part as before.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
@@ -30,6 +30,36 @@ function designNew(made: string[]): PilotTool<never> {
     },
   }) as PilotTool<never>
 }
+
+/** design.new from a model: the design starts with the model's body. */
+function designFromModel(made: string[]): PilotTool<never> {
+  return defineTool({
+    name: 'design.new',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'test',
+    input: z.object({ name: z.string(), model: z.string().optional() }),
+    async run(i) {
+      const id = `obj_${made.length + 1}`
+      made.push(i.name)
+      return { summary: `Started ${i.name} (${id})`, output: { design: id, name: i.name, parts: i.model ? [{ name: i.model }] : [] } }
+    },
+  }) as PilotTool<never>
+}
+
+/** Takes back the last step that went through. */
+const undo = defineTool({
+  name: 'design.undo',
+  version: '1.0.0',
+  source: 'command',
+  permission: 'slice',
+  description: 'test',
+  input: z.object({ design: z.string() }),
+  async run(i) {
+    return { summary: `Undid the last step of ${i.design}`, output: { design: i.design } }
+  },
+}) as PilotTool<never>
 
 /** A feature step in a design: a new body unless it says otherwise, and one that does not go through when `fails`. */
 const extrude = defineTool({
@@ -76,12 +106,12 @@ const plan = defineTool({
   },
 }) as PilotTool<never>
 
-async function reply(message: string, steps: ScriptStep[]): Promise<{ made: string[]; seen: string[] }> {
+async function reply(message: string, steps: ScriptStep[], fromModel = false): Promise<{ made: string[]; seen: string[] }> {
   const made: string[] = []
   const seen: string[] = []
   // each step after a call sees that call's answer last
   const watched = steps.map((s) => (m: LlmMessage[]) => (seen.push(m.at(-1)?.content ?? ''), typeof s === 'function' ? s(m) : s))
-  const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(watched, { chunk: false }), builtins: false, tools: [designNew(made), extrude, info, plan] })
+  const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(watched, { chunk: false }), builtins: false, tools: [fromModel ? designFromModel(made) : designNew(made), extrude, info, plan, undo] })
   for await (const _ of p.run('s', message)) void _
   return { made, seen }
 }
@@ -155,17 +185,6 @@ describe('a restart in one reply', () => {
     expect(seen[3]).toContain(ONE_PART_NOTE('Cable clip', 'obj_1', 'same_name'))
   })
 
-  it('refuses a fuller name that holds the started one, with words from the message', async () => {
-    const { made } = await reply('A Raspberry Pi 5 case', [NEW('Pi case'), BODY('obj_1'), NEW('Raspberry Pi case'), { text: 'Fixing the case.' }])
-    expect(made).toEqual(['Pi case'])
-  })
-
-  it('refuses a restart named for a feature of the approved plan', async () => {
-    const go = { calls: [{ name: 'design.plan', args: { part: 'Pi 5 case', features: [{ name: 'Base with standoffs' }, { name: 'Snap-fit lid' }] } }] }
-    const { made } = await reply('A Raspberry Pi 5 case', [go, NEW('Pi 5 case'), BODY('obj_1'), NEW('Pi 5 case with standoffs'), { text: 'Fixing the case.' }])
-    expect(made).toEqual(['Pi 5 case'])
-  })
-
   it('refuses "Box v2" after "Box" even when the message names separate parts', async () => {
     const { made, seen } = await reply('A box and a lid as separate designs', [NEW('Box'), BODY('obj_1'), NEW('Box v2'), { text: 'Fixing the box.' }])
     expect(made).toEqual(['Box'])
@@ -178,21 +197,65 @@ describe('a restart in one reply', () => {
     expect(seen[5]).toContain(ONE_PART_NOTE('Lid', 'obj_2', 'same_name'))
   })
 
-  it('refuses a restart under a fuller name of the started part', async () => {
+  it('refuses a restart under a sturdier name of the started part', async () => {
     const { made, seen } = await reply('A headphone stand', [NEW('Headphone stand'), BODY('obj_1'), NEW('Sturdier headphone stand'), { text: 'Fixing the stand.' }])
     expect(made).toEqual(['Headphone stand'])
     expect(seen[3]).toContain(ONE_PART_NOTE('Headphone stand', 'obj_1', 'same_name'))
+  })
+
+  it('a step that went through but made no body leaves the part without one', async () => {
+    const cut = { calls: [{ name: 'geom.extrude', args: { design: 'obj_1', name: 'Slot', operation: 'cut' } }] }
+    const { made, seen } = await reply('A box and a lid as separate designs', [NEW('Box'), cut, NEW('Lid'), { text: 'Building the box first.' }])
+    expect(made).toEqual(['Box'])
+    expect(seen[3]).toContain(ONE_PART_NOTE('Box', 'obj_1', 'no_body'))
+  })
+
+  it('an undo after a step that failed clears the failure, so a separate part can start', async () => {
+    const back = { calls: [{ name: 'design.undo', args: { design: 'obj_1' } }] }
+    const { made } = await reply('A box and a lid as separate designs', [NEW('Box'), BODY('obj_1'), FAILED('obj_1', 'Fillet'), back, NEW('Lid'), { text: 'Done.' }])
+    expect(made).toEqual(['Box', 'Lid'])
+  })
+})
+
+describe('a separate part with a fuller name', () => {
+  it.each([
+    ['Planter', 'Planter saucer'],
+    ['Base', 'Base plate'],
+    ['Gear', 'Pinion gear'],
+    ['Box', 'Box lid'],
+    ['Shelf bracket', 'Shelf bracket 2'],
+    ['Bracket', 'Second bracket'],
+    ['Pi case', 'Raspberry Pi case'],
+    ['Pi 5 case', 'Pi 5 case with standoffs'],
+  ])('starts %s, then %s', async (first, second) => {
+    const { made } = await reply('Two parts', [NEW(first), BODY('obj_1'), NEW(second), { text: 'Done.' }])
+    expect(made).toEqual([first, second])
+  })
+
+  it('starts a part from a model at once beside another, since the model is its body', async () => {
+    const fromModel = { calls: [{ name: 'design.new', args: { name: 'Lamp base', model: 'lamp.stl' } }] }
+    const { made } = await reply('A shade for this lamp base', [fromModel, NEW('Shade'), { text: 'Done.' }], true)
+    expect(made).toEqual(['Lamp base', 'Shade'])
+  })
+})
+
+describe('the refusal for a name used again', () => {
+  it('asks for a name of its own and does not send the build into the part already started', () => {
+    const note = ONE_PART_NOTE('Cable clip', 'obj_1', 'same_name')
+    expect(note).toContain('needs a name of its own')
+    expect(note).not.toContain('design.undo')
+    expect(note).not.toContain('next step goes on in')
   })
 })
 
 describe('restartOf, the name rule alone', () => {
   const started = (...names: string[]) => names.map((name, i) => ({ id: `obj_${i + 1}`, name }))
   it('matches a name that is a started one once version words are dropped', () => {
-    for (const again of ['Box v2', 'New box', 'Box (fixed)', 'box again', 'Box retry', 'Improved box', 'BOX', 'Box 2']) expect(restartOf(again, started('Box'))?.name).toBe('Box')
+    for (const again of ['Box v2', 'New box', 'Box (fixed)', 'box again', 'Box retry', 'Improved box', 'BOX', 'Box 50 mm', 'Box 2.5cm']) expect(restartOf(again, started('Box'))?.name).toBe('Box')
   })
-  it('matches a name holding every word of a started one', () => {
+  it('matches a name that only adds a size', () => {
     expect(restartOf('Cable clip 3 mm', started('Cable clip'))?.name).toBe('Cable clip')
-    expect(restartOf('Box with lid', started('Box'))?.name).toBe('Box')
+    expect(restartOf('Cable clip 3mm', started('Cable clip'))?.name).toBe('Cable clip')
   })
   it('lets other names through', () => {
     expect(restartOf('Saucer', started('Planter box'))).toBeUndefined()
@@ -200,5 +263,8 @@ describe('restartOf, the name rule alone', () => {
     expect(restartOf('Bracket 2', started('Bracket 1'))).toBeUndefined()
     expect(restartOf('受け皿', started('植木鉢'))).toBeUndefined()
     expect(restartOf('Clip', started('Cable clip'))).toBeUndefined()
+    expect(restartOf('Box with lid', started('Box'))).toBeUndefined()
+    expect(restartOf('Box 2', started('Box'))).toBeUndefined()
+    expect(restartOf('Second bracket', started('Bracket'))).toBeUndefined()
   })
 })
