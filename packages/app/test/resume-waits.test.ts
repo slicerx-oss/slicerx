@@ -17,6 +17,7 @@ import { builtinCommands } from '../src/commands/builtin'
 import { registerCommands } from '../src/commands/registry'
 import { switchPlate } from '../src/plate/plates'
 import { sendToPrinter, slicePlate, STALE_SLICE } from '../src/state/actions'
+import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { mimirCommands, STALE_REPLY, SWITCHED_REPLY } from '../src/workspaces/mimir/session'
 
@@ -453,6 +454,39 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
     }
   })
 
+  it('answers not_ready with the reason, not the old summary, when a stale earlier slice is on screen and nothing slices', async () => {
+    const e = engine()
+    set({ autoSlice: false })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await slicePlate(e.host)
+      set({ plate: get().plate.map((p) => ({ ...p, printable: false })) })
+      const started = Date.now()
+      await expect(bridge.handle('slice', { timeoutMs: 3000 })).rejects.toMatchObject({ code: 'not_ready', message: 'Plate 1 was not sliced: Every object on this plate is set not to print. Turn one on first.' })
+      expect(Date.now() - started).toBeLessThan(1500)
+      expect(e.requests).toHaveLength(1)
+    } finally {
+      off()
+    }
+  })
+
+  it("answers not_ready with the command's own message when the Slice command fails late, with a stale earlier slice on screen", async () => {
+    const e = engine()
+    set({ autoSlice: false })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await slicePlate(e.host)
+      set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+      // The profile fails to load after the bridge's first look at the command.
+      gates.profile = new Promise<void>((_, no) => setTimeout(() => no(new Error('The printer profile did not load.')), 300))
+      gates.profile.catch(() => undefined)
+      await expect(bridge.handle('slice', { timeoutMs: 3000 })).rejects.toMatchObject({ code: 'not_ready', message: 'The printer profile did not load.' })
+      expect(e.requests).toHaveLength(1)
+    } finally {
+      off()
+    }
+  })
+
   it('reports a slice an object rename has put out of date as stale, as the plates list does', async () => {
     const e = engine()
     set({ autoSlice: false })
@@ -462,6 +496,58 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
     expect(get().slice).toMatchObject({ status: 'done', stale: false })
     expect(sliceSummary(get())).toMatchObject({ status: 'done', stale: true })
     expect(platesState().plates[0]!.slice).toBe('stale')
+  })
+
+  describe('with auto slice on', () => {
+    let stop: (() => void) | null = null
+    afterEach(() => {
+      stop?.()
+      stop = null
+      set({ autoSlice: false } as never)
+    })
+    const autoOn = () => set({ autoSlice: true, autoSliceBySize: false, liveEdit: false, revealHold: false, exampleSeeding: false, plateLoading: false, sliceHeld: false } as never)
+
+    it('waits for the slice auto slice has pending for an edit made while its own ran, past the grace', async () => {
+      const held = gate()
+      const e = engine({ slice: held })
+      autoOn()
+      // Auto slice starts its slice 1.5 s after the edit: longer than the bridge's grace after its own slice ends.
+      stop = startAutoSlice(e.host, 1500)
+      const { bridge, off } = bridgeWith(e.host)
+      try {
+        const out = bridge.handle('slice', { timeoutMs: 4000 })
+        await vi.waitFor(() => expect(e.requests).toHaveLength(1))
+        // A setting changes while it runs: auto slice cancels it and slices again after its pause.
+        set({ overrides: { ...get().overrides, wall_loops: 4 } })
+        held.open()
+        await expect(out).resolves.toMatchObject({ status: 'done', stale: false, id: 'r2' })
+        expect(e.requests).toHaveLength(2)
+      } finally {
+        off()
+      }
+    }, 8000)
+
+    it('answers after the grace when auto slice holds the slice for an edit still going (a drag)', async () => {
+      const held = gate()
+      const e = engine({ slice: held })
+      autoOn()
+      stop = startAutoSlice(e.host, 0)
+      const { bridge, off } = bridgeWith(e.host)
+      try {
+        const out = bridge.handle('slice', { timeoutMs: 4000 })
+        await vi.waitFor(() => expect(e.requests).toHaveLength(1))
+        // A drag edits the plate: auto slice cancels the slice and waits for the release, which does not come here.
+        set({ liveEdit: true, overrides: { ...get().overrides, wall_loops: 4 } } as never)
+        held.open()
+        const started = Date.now()
+        await expect(out).rejects.toMatchObject({ code: 'not_ready', message: 'Plate 1 was not sliced' })
+        expect(Date.now() - started).toBeGreaterThan(800)
+        expect(e.requests).toHaveLength(1)
+      } finally {
+        off()
+        set({ liveEdit: false } as never)
+      }
+    })
   })
 
   it("mimir's slice reads a rename since the last slice as stale when no new slice ran", async () => {

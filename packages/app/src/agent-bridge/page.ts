@@ -5,7 +5,7 @@
 // acts go through the controls and commands a person uses (the Vault sheet's Open button, the Slice and Clear the
 // plate commands), so a bridge run exercises the app's own paths. Nothing here prints, sends to a printer or deletes.
 import type { EditionHost, SliceWarning } from '@slicerx/contracts'
-import { isEnabled, listCommands, runCommand } from '../commands/registry'
+import { isEnabled, listCommands, runCommand, type RunResult } from '../commands/registry'
 import { resolveSlots } from '../filament/slots'
 import { spoolParts } from '../filament/pick'
 import { activeMeta, allPlates } from '../plate/plates'
@@ -25,6 +25,7 @@ import { moveSpool, spoolsView } from './spools'
 import { setSettingsView } from './settings'
 import { settingsView } from '../workspaces/prepare/settings-view'
 import { autoSliceMode } from '../state/auto-slice-mode'
+import { autoSlicePending } from '../state/auto-slice'
 import { cadShown } from '../state/model-mode'
 import { sketchMode, sketchModeText } from '../cad/sketch-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
@@ -282,29 +283,45 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     const name = s.plates.find((p) => p.id === asked)?.name ?? 'the plate'
     const mark = capture.marker()
     const toastBefore = s.toast
+    // What was on screen before: a slice that lands for this call counts up slicesDone, and an error it ends in is a new
+    // slice state, so an earlier slice or error is never handed back as this call's answer.
+    const doneBefore = s.slicesDone
+    const sliceBefore = s.slice
     // The Slice command, as the button and Ctrl+Enter run it. A refusal (nothing printable, say) comes back at once.
     const run = runCommand('slice')
     const early = await Promise.race([run, sleep(100).then(() => null)])
     if (early && !early.ok) throw new BridgeError('not_ready', early.message)
-    // When the command ended (its slice landed, or it stopped with nothing to slice). With nothing slicing after that,
-    // no current slice is coming: auto slice is off, or the edit is one it does not slice for (a rename). With auto
-    // slice on, a slice it starts for an edit made while the command ran gets a moment to begin first.
+    // When the command ended (its slice landed, or it stopped with nothing to slice), and how. With nothing slicing
+    // after that and none about to start, no current slice is coming: auto slice is off, or it holds the slice (a drag
+    // still going, a big plate held for Slice). A slice auto slice has pending for an edit made while the command ran
+    // is waited for; the grace covers the moment before its watch has seen the edit.
     let ended: number | null = null
-    void run.then(() => (ended = Date.now()))
+    let result: RunResult | null = null
+    void run.then((r) => {
+      result = r
+      ended = Date.now()
+    })
     const out = await until(
       () => {
         const now = get()
         if (now.activePlate !== asked) throw new BridgeError('not_ready', `another plate was shown before ${name} finished slicing, so no slice was kept for it; show it and slice again`)
         if (now.projectGcode?.asking) throw new BridgeError('not_ready', 'the app asks whether to use the project\'s own printer G-code; answer the dialog, then slice again')
-        if (!needsSlice(now) || now.slice.status === 'error') return now
-        return ended !== null && now.slice.status !== 'running' && (!now.autoSlice || Date.now() - ended > ENDED_GRACE_MS) ? now : null
+        if (now.slice.status === 'error' && now.slice !== sliceBefore) return now
+        if (!needsSlice(now) && now.slicesDone !== doneBefore) return now
+        if (ended === null || now.slice.status === 'running') return null
+        if (now.autoSlice && (autoSlicePending() || Date.now() - ended <= ENDED_GRACE_MS)) return null
+        return now
       },
       timeoutMs,
       mark,
       'Slicing',
     )
-    // A slice that landed out of date comes back as it is, with `stale: true`; no slice at all says why, from its toast.
-    if (out.slice.status !== 'done' && out.slice.status !== 'error') {
+    if (out.slice.status === 'error' && out.slice !== sliceBefore) return sliceSummary(out)
+    // The command failed after the first look (the profile, the code it loads), or no slice landed for this call: say
+    // why, never with the slice from before. A slice that landed out of date comes back as it is, with `stale: true`.
+    const failed = result as RunResult | null
+    if (failed && !failed.ok) throw new BridgeError('not_ready', failed.message)
+    if (out.slicesDone === doneBefore) {
       const said = out.toast !== toastBefore ? out.toast?.text : undefined
       throw new BridgeError('not_ready', `${name} was not sliced${said ? `: ${said}` : ''}`)
     }
