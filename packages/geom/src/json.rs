@@ -712,7 +712,7 @@ fn cut_out(it: &crate::json_cad::Item, solids: &[SolidSpec]) -> Result<TriMesh> 
     Ok(out)
 }
 
-/// true when a cut's result, in the frame it is stored in, is open or has a collapsed or needle thin triangle at f32
+/// true when a cut's result, in the frame it is stored in, is open or has a triangle within a hair of flat at f32
 #[allow(
     clippy::cast_possible_truncation,
     reason = "rounding to the f32 the result is stored in"
@@ -721,7 +721,9 @@ fn suspect(m: &TriMesh) -> bool {
     if !m.edge_report().is_watertight() {
         return true;
     }
-    let tol = f32_step(m) * 8.0;
+    // one float step: cuts that fail to store measured from 0 to 0.03 of one, while plate holes, loft channels and stem
+    // bores that store measured 1.5 and more; a crossing is not always this thin, so this only skips the clear cases
+    let tol = f32_step(m);
     m.triangles.iter().any(|&t| {
         let [a, b, c] = m.corners(t).map(|p| p.map(|v| f64::from(v as f32)));
         let long = [vec3::sub(b, a), vec3::sub(c, b), vec3::sub(a, c)]
