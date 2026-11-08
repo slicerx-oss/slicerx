@@ -203,6 +203,8 @@ export const ONE_PART_NOTE = (name: string, id: string, why: Restart): string =>
 }
 /** The code on that refusal, so a replay of a reply recorded before it can tell (the creative eval). */
 export const SAME_PART = 'same_part'
+/** The answer to a change sent in the same step after a design.new refused as a restart: it was meant for that new part. */
+export const RESTART_SKIP_NOTE = 'Skipped, nothing changed: the design.new before it in this step was refused, so this step would have landed on the part already started. Send it again for the design you mean, with its id.'
 /**
  * Words in a part's name that only say which try, version or size of the part it is ("Box v2", "New box", "Sturdier
  * stand"). An ordinal such as "Second" or a bare number tells parts apart instead ("Shelf bracket 2").
@@ -459,6 +461,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (after?.design === part.id && Array.isArray(after.parts)) part.body = after.parts.length > 0
     } catch {
       // a long answer is cut short and no longer parses; the call itself still counts
+    }
+  }
+  // Whether a call changes a design, as stepOn reads it: any call that is not a read.
+  const changesDesign = (call: LlmToolCall): boolean => {
+    const tool = findTool(call.name)
+    if (!tool) return false
+    try {
+      return (tool.permissionFor?.(JSON.parse(call.arguments.trim() || '{}')) ?? tool.permission) !== 'read'
+    } catch {
+      return tool.permission !== 'read'
     }
   }
   const startedUnder = (sessionId: string, design: string): void => {
@@ -1189,6 +1201,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         stopReason = stopped ? 'denied' : step >= maxSteps ? 'max_steps' : 'end'
         break
       }
+      // a design.new refused as a restart (same_part) in this step: the changes sent after it in the same step were
+      // meant for the part it would have started, and the model could not know that design's id yet, so they would land
+      // on the part already started; they are skipped, and reads still run
+      let restartRefused = false
       for (const call of toolCalls) {
         // a held run waits here, before its next tool call; a canceled one answers the calls it never made
         await whileHeld(sessionId, signal)
@@ -1206,6 +1222,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, skipped: true, message: 'Skipped because an earlier step was declined.' }) })
           continue
         }
+        if (restartRefused && changesDesign(call)) {
+          messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, skipped: true, message: RESTART_SKIP_NOTE }) })
+          continue
+        }
         if (++calls > maxToolCalls) {
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, error: 'Tool call limit reached for this run. Summarize and stop.' }) })
           stopped = true
@@ -1221,6 +1241,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
         const res = await execute(call, sessionId, context, watch, signal, citations, cards, loader)
+        if (call.name === 'design.new' && res.message.includes(`"code":"${SAME_PART}"`)) restartRefused = true
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
