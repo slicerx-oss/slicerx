@@ -116,6 +116,20 @@ The server needs Node 24 or later. `process.execPath` is the Node running your a
 
 An app written in Node can also host the server in its own process with `createContext` and `createSlicerxServer` from `@slicerx/mcp` and an in-memory transport. The package's tests do exactly that (`packages/mcp/test/helpers.ts`).
 
+### Ship the server without node_modules
+
+If your app ships the server as files rather than installing `@slicerx/mcp` beside it, use the kit's self-contained build instead of bundling `dist/cli.js` yourself. The kit has it as the folder `slicerx-mcp-standalone/` and as `slicerx-mcp-standalone.zip` (listed in [kit-manifest.json](kit-manifest.md) and `SHA256SUMS.txt`). Every dependency is inlined, so it runs with plain Node 24 or later and no install:
+
+```sh
+node slicerx-mcp-standalone/slicerx-mcp.mjs --allow-dir /abs/models --printers off
+```
+
+Copy the whole folder as it is. `slicerx-mcp.mjs` loads `slicerx-mcp-main.mjs`, `chunks/` and `data/` from beside itself.
+
+Don't run a bundler over `dist/cli.js`. It is a small launcher that loads `dist/cli-main.js` with a runtime import a bundler leaves alone, so the bundle comes out with no server in it. The npm build also loads the YAML parser, the SDK's Ajv provider and zod-to-json-schema from `node_modules` on first use, so a bundle shipped without them fails the first time a tool needs one (the `slicerx_kb_*` tools read YAML, for example).
+
+The STEP reader stays optional. To read STEP and IGES files with the self-contained server, unpack the kit's `slicerx-step-reader.tgz` and set `SLICERX_STEP_READER_DIR` to its `package/dist` folder. Without it, `slicerx_step_read` is refused with `not_supported`.
+
 ### The tools an integration uses
 
 | Tool | What it does |
