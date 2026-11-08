@@ -22,7 +22,7 @@ import { NO_MARGINS, printsOnBed, setMarginSource } from '../src/plate/arrange'
 import { copySelection, pasteClipboard } from '../src/plate/clipboard'
 import { setInstanceCount } from '../src/plate/edit'
 import { createHistory } from '../src/plate/history'
-import { startTimeline } from '../src/plate/timeline'
+import { heldBodies, startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 import { sketchScene } from '../src/workspaces/design/finished-sketches'
@@ -1119,5 +1119,50 @@ describe('copies of a design whose landing made room', () => {
     expect({ planter: standing(planter), saucer: standing(saucer) }).toEqual(was)
     // the original's own undo still moves the planter back
     expect(entry(saucer).roomMoves?.moves.map((m) => m.id)).toEqual([planter])
+  })
+})
+
+/** `objects` and the timeline written as a project and read back by the TypeScript reader, as the app opens one. */
+async function reopen(objects: PlateEntry[]) {
+  const bed = { widthMm: 256, depthMm: 256 }
+  const bytes = writeProject({ plates: [{ id: 'plate-1', name: 'Plate 1', objects, settings: {} }], bed, settings: {}, timeline: get().timeline })
+  readProjectsWithGeom(false)
+  return readProject(bytes, bed).finally(() => readProjectsWithGeom(true))
+}
+
+describe('a landed design held off the plate by a roll back', () => {
+  const body = (id: string) => get().timeline.bodies.find((b) => b.id === id)
+
+  it('keeps its landing while held, after rolling forward, and in a project saved either way', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    await rollTo(loader, 0)
+    expect(get().plate).toHaveLength(0)
+    expect(body(d)?.placed).toEqual([128, 128])
+    // saved while rolled back: the held body goes in the file with the plate, as a save writes it
+    const held = await reopen([...get().plate, ...heldBodies().map((h) => h.entry)])
+    expect(held.timeline?.bodies.map((b) => b.placed)).toEqual([[128, 128]])
+    expect(held.histories.get(held.plates[0]!.objects[0]!.fileId)?.placed).toEqual([128, 128])
+    await rollTo(loader, get().timeline.items.length)
+    expect(entry(d).history?.placed).toEqual([128, 128])
+    expect(body(d)?.placed).toEqual([128, 128])
+    expect(at(host.get(d))).toEqual([0, 0])
+    const saved = await reopen(get().plate)
+    expect(saved.timeline?.bodies.map((b) => b.placed)).toEqual([[128, 128]])
+    expect(saved.histories.get(saved.plates[0]!.objects[0]!.fileId)?.placed).toEqual([128, 128])
+  })
+
+  it('rolls forward to a step after its first with its landing, so a step in its frame still meets the body', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    await run('geom.extrude', hole(d, -5, 0))
+    await rollTo(loader, 0)
+    await rollTo(loader, 1)
+    expect(entry(d).history?.steps).toHaveLength(1)
+    expect(entry(d).history?.placed).toEqual([128, 128])
+    expect(body(d)?.placed).toEqual([128, 128])
+    expect(at(host.get(d))).toEqual([0, 0])
   })
 })
