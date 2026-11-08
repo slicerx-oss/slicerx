@@ -610,8 +610,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       const design = (input as { design?: unknown } | null)?.design
       // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
-      // never for a part in another design
-      const elsewhere = carried.has(sessionId) && typeof design === 'string' && !sheetDesigns.get(sessionId)?.has(design)
+      // never for a part in another design; with no design recorded for it, any design may be its own
+      const under = sheetDesigns.get(sessionId)
+      const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
       if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
       usedSheet.add(sessionId)
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
@@ -670,9 +671,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           // the latest sheet's answer stands: a cancel takes back an earlier confirmation
           if (answer.confirmed) confirmed.add(sessionId)
           else confirmed.delete(sessionId)
-          // a new sheet is a new part's sizes: nothing carries over from the last one
+          // a new sheet is a new part's sizes: nothing carries over from the last one, and no part has used it yet
           sheetDesigns.delete(sessionId)
           carried.delete(sessionId)
+          usedSheet.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
