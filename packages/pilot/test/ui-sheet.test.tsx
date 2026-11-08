@@ -44,6 +44,25 @@ describe('the sheet record', () => {
     expect([...document.querySelectorAll('.sheet-rec-unit')].map((u) => u.textContent)).toEqual(['°', 'mm'])
   })
 
+  it('shows a fractional count that came on the sheet with its own decimals, live and confirmed', () => {
+    const coil: PilotSheet = { id: 'sheet_coil', title: 'Spring sizes', views: ['iso'], dims: [{ key: 'segments', label: 'Segments', value: 7.5, unit: 'mm', source: 'asked' }] }
+    render(<SheetRecord sheet={coil} answer={null} onEdit={() => undefined} />)
+    expect((screen.getByRole('textbox', { name: 'Segments' }) as HTMLInputElement).value).toBe('7.5')
+    cleanup()
+    render(<SheetRecord sheet={coil} answer={{ confirmed: true, values: { segments: 7.5 }, changed: [] }} />)
+    expect(row('segments').querySelector('.sheet-rec-v')!.textContent).toBe('7.5')
+  })
+
+  it('keeps a typed count inside the row\'s own bounds, so a row that allows none keeps 0', () => {
+    const box: PilotSheet = { id: 'sheet_box', title: 'Box sizes', views: ['iso'], dims: [{ key: 'magnets', label: 'Magnets', value: 2, unit: 'mm', min: 0, max: 8, source: 'asked' }] }
+    const edits: [string, number][] = []
+    render(<SheetRecord sheet={box} answer={null} actionable onEdit={(_id, k, v) => edits.push([k, v])} />)
+    const magnets = screen.getByRole('textbox', { name: 'Magnets' })
+    fireEvent.change(magnets, { target: { value: '0.3' } })
+    fireEvent.keyDown(magnets, { key: 'Enter' })
+    expect(edits).toEqual([['magnets', 0]])
+  })
+
   it('rounds a fraction typed into a count row to a whole number of at least one', () => {
     const gear: PilotSheet = { id: 'sheet_gear', title: 'Gear sizes', views: ['iso'], dims: [{ key: 'teeth', label: 'Teeth', value: 18, unit: 'mm', source: 'asked' }, { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] }
     const edits: [string, number][] = []

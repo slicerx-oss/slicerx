@@ -10,7 +10,7 @@ export type SizeKind = 'count' | 'angle' | 'length'
 
 /** Words that make a key an angle wherever they stand in it ("lean_deg", "twist_degrees"). */
 const ANGLE_UNITS = new Set(['deg', 'degs', 'degree', 'degrees'])
-/** Words that make a key a length wherever they stand in it ("count_mm" is a length in mm). */
+/** Words that make a key a length: last, over every other word ("angle_offset_mm"), and anywhere but "in", which in the middle of a key is a word of it ("n_in_row"). */
 const LENGTH_UNITS = new Set(['mm', 'cm', 'in', 'inch', 'inches', 'millimeter', 'millimeters'])
 /** The last word of a count's key: "count", "segment_count", "num_teeth", "spokes". Turns, coils and loops stay out: a helix or spring often has a fraction of one. */
 const COUNT_HEADS = new Set([
@@ -19,13 +19,13 @@ const COUNT_HEADS = new Set([
   'starts', 'steps', 'levels', 'layers', 'pieces', 'parts', 'divisions', 'sections', 'links', 'facets',
   'grooves', 'notches', 'tabs', 'cells', 'rungs', 'bars', 'magnets', 'screws',
 ])
-/** The last word of a length's key, which wins over its first word: "number_height", "angle_leg_length". */
+/** The last word of a length's key, which wins over a count's first word: "number_height", "n_offset". */
 const LENGTH_HEADS = new Set(['height', 'width', 'depth', 'length', 'thickness', 'diameter', 'radius', 'size', 'spacing', 'pitch', 'offset', 'gap', 'clearance', 'wall', 'margin', 'inset', 'lip'])
 /** The first word of a count's key: "n_holes", "number_of_teeth", "count_x". */
 const COUNT_LEADS = new Set(['count', 'number', 'num', 'nb', 'n', 'qty', 'quantity'])
 /** The last word of an angle's key: "angle", "draft", "helix_angle". */
 const ANGLE_HEADS = new Set(['angle', 'angles', 'draft', 'twist', 'tilt', 'lean', 'incline', 'inclination', 'rotation'])
-/** The first word of an angle's key: "angle_step". */
+/** The first word of an angle's key, which wins over its last: "angle_step", "angle_offset", "angle_spacing". */
 const ANGLE_LEADS = new Set(['angle'])
 
 /** A key's words, lower case: "numberOfTeeth" is number, of, teeth; "angle_deg" is angle, deg. */
@@ -38,27 +38,29 @@ function words(key: string): string[] {
 }
 
 /**
- * What a size measures, from its key. A degree word anywhere makes it an angle and a length unit a length. A length
- * word last makes it a length whatever its first word ("number_height", "angle_leg_length"); otherwise its last word,
- * then its first, says count or angle. Anything else is a length.
+ * What a size measures, from its key. A length unit last makes it a length over everything else ("teeth_mm"); then a
+ * degree word anywhere makes it an angle and a length unit anywhere a length. A key that starts with "angle" is an
+ * angle ("angle_offset"). A length word last makes it a length, over a count's first word ("number_height"); otherwise
+ * its last word, then its first, says count or angle. Anything else is a length.
  */
 export function sizeKind(key: string): SizeKind {
   const w = words(key)
   if (!w.length) return 'length'
-  if (w.some((x) => ANGLE_UNITS.has(x))) return 'angle'
-  if (w.some((x) => LENGTH_UNITS.has(x))) return 'length'
   const head = w.at(-1)!
+  if (LENGTH_UNITS.has(head)) return 'length'
+  if (w.some((x) => ANGLE_UNITS.has(x))) return 'angle'
+  if (w.some((x) => x !== 'in' && LENGTH_UNITS.has(x))) return 'length'
+  if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return 'angle'
   if (LENGTH_HEADS.has(head)) return 'length'
   if (COUNT_HEADS.has(head)) return 'count'
   if (ANGLE_HEADS.has(head)) return 'angle'
   if (w.length > 1 && COUNT_LEADS.has(w[0]!)) return 'count'
-  if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return 'angle'
   return 'length'
 }
 
-/** A count as typed, kept whole: rounded to the nearest whole number, and at least 1. */
-export function wholeCount(v: number): number {
-  return Math.max(1, Math.round(v))
+/** A count as typed, kept whole: rounded to the nearest whole number inside the row's own bounds, at least 1 when it gives none. */
+export function wholeCount(v: number, min = 1, max = Infinity): number {
+  return Math.min(Math.floor(max), Math.max(Math.ceil(min), Math.round(v)))
 }
 
 /** The unit a size of this kind shows with: none for a count, ° for an angle, else the plan's units. */

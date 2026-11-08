@@ -7,7 +7,7 @@
 import type { Host, PilotDim, PilotEvent, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
 import { createApprovalBroker, DEFAULT_CONFIG } from '@slicerx/pilot'
 import type { LlmMessage } from '@slicerx/pilot'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { drawView, fitScale, readsIn, shapeOfSolids, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
@@ -164,6 +164,31 @@ describe('the sizes panel', () => {
       expect(within(rows[0]!).getByRole('textbox', { name: 'Teeth' })).toBeTruthy()
       expect(within(rows[1]!).getByRole('textbox', { name: 'Draft, degrees' })).toBeTruthy()
       expect(within(rows[3]!).getByRole('textbox', { name: 'Width, millimeters' })).toBeTruthy()
+    } finally {
+      cleanup()
+      setShownSheet(null)
+    }
+  })
+
+  it('keeps a count typed on the panel whole, inside its row\'s bounds, and a typed length as typed', () => {
+    const row = (key: string, label: string, value: number, extra: Partial<PilotDim> = {}): PilotDim => ({ key, label, value, unit: 'mm', source: 'guess', ...extra })
+    const sheet: PilotSheet = { id: 'sheet_typed', title: 'Gear sizes', views: ['iso'], dims: [row('teeth', 'Teeth', 18), row('magnets', 'Magnets', 2, { min: 0 }), row('width', 'Width', 40)] }
+    setShownSheet({ sheet, answer: null, bound: null, replay: false })
+    try {
+      render(createElement(MimirSheet))
+      const type = (name: string, value: string) => {
+        const f = screen.getByRole('textbox', { name })
+        fireEvent.change(f, { target: { value } })
+        fireEvent.keyDown(f, { key: 'Enter' })
+      }
+      type('Teeth', '20.4')
+      expect(sheetUi.getState().draft['teeth']).toBe(20)
+      type('Teeth', '0.3')
+      expect(sheetUi.getState().draft['teeth']).toBe(1)
+      type('Magnets', '0.3')
+      expect(sheetUi.getState().draft['magnets']).toBe(0)
+      type('Width, millimeters', '40.4')
+      expect(sheetUi.getState().draft['width']).toBe(40.4)
     } finally {
       cleanup()
       setShownSheet(null)

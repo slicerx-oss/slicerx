@@ -282,6 +282,19 @@ describe('the plan card', () => {
     expect(out.edits.features[0]!.sizes).toEqual({ teeth: 20, width: 40 })
   })
 
+  it('shows a fractional count that came in the plan with its own decimals, live, saved and on Go', async () => {
+    const coil: PlanInput = { ...BOX, features: [{ name: 'Spring', sizes: { segments: 7.5, width: 12 } }], overall: undefined, holes: undefined }
+    render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...coil }, picked: null, actionable: false }))
+    expect(savedRows()).toEqual(['Segments 7.5', 'Width 12 mm'])
+    cleanup()
+    const { result } = await shown(coil)
+    expect(field(/^Spring, Segments$/).value).toBe('7.5')
+    fireEvent.click(screen.getByTestId('mimir-plan-go'))
+    const out = (await result()).output as { accepted: boolean; edits?: PartPlan }
+    expect(out).toMatchObject({ accepted: true })
+    expect(out.edits).toBeUndefined()
+  })
+
   it('never converts a count or an angle in an inch plan', async () => {
     const gear: PlanInput = { ...BOX, units: 'in', features: [{ name: 'Gear', sizes: { teeth: 20, draft: 1.5, thickness: 0.25 } }], overall: undefined, holes: undefined }
     render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))

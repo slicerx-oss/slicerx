@@ -444,7 +444,7 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
                   digits={2}
                   step={dimUnit(d).step}
                   disabled={disabled}
-                  onCommit={(v) => void commit(d, dimUnit(d).unit === '' ? wholeCount(v) : v)}
+                  onCommit={(v) => void commit(d, dimUnit(d).unit === '' ? wholeCount(v, d.min, d.max) : v)}
                   {...(d.min !== undefined ? { min: d.min } : {})}
                   {...(d.max !== undefined ? { max: d.max } : {})}
                 />

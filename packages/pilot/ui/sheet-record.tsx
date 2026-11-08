@@ -121,7 +121,7 @@ export function SheetRecord({
                     digits={2}
                     step={unit === '' || unit === '°' ? 1 : 0.5}
                     boxed={false}
-                    onCommit={(v) => onEdit(sheet.id, d.key, unit === '' ? wholeCount(v) : v)}
+                    onCommit={(v) => onEdit(sheet.id, d.key, unit === '' ? wholeCount(v, d.min, d.max) : v)}
                     {...(d.min !== undefined ? { min: d.min } : {})}
                     {...(d.max !== undefined ? { max: d.max } : {})}
                   />
