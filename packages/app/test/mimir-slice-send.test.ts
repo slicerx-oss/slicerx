@@ -233,6 +233,16 @@ describe("a plate out of view keeps its own G-code inputs in its fingerprint", (
     expect(plateFingerprint(get(), 2)).not.toBe(renamed)
     expect(plateFingerprint(get(), 1)).toBe(one)
   })
+
+  it("a part on plate 2 moved to slot 3 changes plate 1's fingerprint: plate 1's G-code lists the slots every plate uses", () => {
+    set({ plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [{ ...bracketAt(60), id: 'b', name: 'Clip' }], settings: {} }], layerMarks: {}, profile: null } as never)
+    // the part's slot as the mesh names it, which a slot override then changes
+    const clip = { ...bracketAt(60), id: 'b', name: 'Clip', handle: { ...handle, id: 'm2', hash: 'm2', parts: [{ name: 'Body', slot: 1, triangles: 12 }] } }
+    set({ plates: [get().plates[0]!, { ...get().plates[1]!, objects: [clip] }] })
+    const one = plateFingerprint(get(), 1)
+    set({ plates: get().plates.map((p) => (p.id === 'p2' ? { ...p, objects: p.objects.map((e) => ({ ...e, slotOverrides: { Body: 3 } })) } : p)) })
+    expect(plateFingerprint(get(), 1)).not.toBe(one)
+  })
 })
 
 describe("mimir's fingerprint reads the app's slice key", () => {
@@ -244,7 +254,7 @@ describe("mimir's fingerprint reads the app's slice key", () => {
 
   it('covers every slice input the key leaves out some other way', () => {
     // The key leaves these out; the fingerprint must still read each. A new one fails here until it is handled.
-    const handled: Record<string, string> = { layerMarks: 'output', resume: 'resume', plates: 'inputs (the plate own settings)', plate: 'inputs (each object as the slice sees it)', calibration: 'inputs (the plate calibration)' }
+    const handled: Record<string, string> = { layerMarks: 'output', resume: 'resume', plates: "inputs (the plate's own settings)", plate: 'inputs (each object as the slice sees it)', calibration: 'inputs (the plate calibration)' }
     expect(Object.keys(KEY_LEAVES_OUT).sort()).toEqual(Object.keys(handled).sort())
     const fields = Object.keys(fingerprintInputs(get(), 1))
     for (const f of ['inputs', 'output', 'resume']) expect(fields).toContain(f)
