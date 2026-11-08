@@ -230,6 +230,12 @@ export function restartOf<T extends { name: string }>(name: string, started: rea
   const now = [...new Set(nameWords(name))].sort().join(' ')
   return started.findLast((part) => [...new Set(nameWords(part.name))].sort().join(' ') === now)
 }
+/**
+ * The note on a sheet confirmed with sizes changed after a print-in-place plan was approved, and the answer to a part
+ * started before the plan is made again: design.check judges the plan's sizes, so the plan takes the sheet's.
+ */
+export const PLAN_AGAIN_NOTE = 'The person changed sizes after the plan was approved, and design.check checks the plan. Before building, call design.plan again with the confirmed sizes and the same printInPlace.'
+
 /** The answer to a new part started before its sizes were confirmed on a sheet. */
 export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.'
 
@@ -539,6 +545,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // second design.new (another part) ends it, as does the first body built, an approved plan without such pieces, or
   // nothing at all for a plan the person did not approve.
   const printInPlace = new Map<string, boolean>()
+  // Sessions whose sheet changed sizes after a print-in-place plan was approved: the plan is made again before a build.
+  const planAgain = new Set<string>()
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
@@ -910,6 +918,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const under = sheetDesigns.get(sessionId)
       const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
       if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+      if (planAgain.has(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
       usedSheet.add(sessionId)
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
       else starting = true
@@ -981,6 +990,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             carried.delete(sessionId)
             usedSheet.delete(sessionId)
           }
+          // a size changed after the print-in-place plan was approved, before its part: the plan is made again (the gap
+          // rows are the fit rule's guesses, which the plan does not hold)
+          const own = new Set(gaps.map((g) => g.key))
+          if (answer.confirmed && printInPlace.get(sessionId) === false && answer.changed.some((k) => !own.has(k))) planAgain.add(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -1024,6 +1037,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(stopKey, (stops.timedOut.get(stopKey) ?? new Set()).add(again))
     else if (out.ok !== false && geometry && stopKey !== MODEL_KEY) for (const key of keysOf(stopKey, stops.seen)) stops.timedOut.delete(key)
     if (out.ok !== false) noteDesigns(out.output, stops)
+    if (tool.name === 'pilot.sheet' && planAgain.has(sessionId) && out.ok !== false) out = { ...out, summary: `${out.summary}. ${PLAN_AGAIN_NOTE}` }
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -1040,6 +1054,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const pieces = edits ? edits.printInPlace : (input as { printInPlace?: unknown }).printInPlace
       if (Array.isArray(pieces) && pieces.length >= 2) printInPlace.set(sessionId, false)
       else printInPlace.delete(sessionId)
+      planAgain.delete(sessionId)
     }
     if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
       if (printInPlace.get(sessionId)) printInPlace.delete(sessionId)
