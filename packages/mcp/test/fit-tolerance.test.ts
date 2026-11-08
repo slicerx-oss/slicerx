@@ -371,7 +371,29 @@ describe('the pieces item for bodies of one part', () => {
     const fit: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Arm', partName: 'Arm' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 1)] }
     const got = pieces(fit, ['Lid', 'Tray'])
     expect(got.pass).toBe(false)
-    expect(got.got).toContain('name each piece as the plan does')
+    expect(got.got).toBe("2 pieces, but Lid and Tray are not among them: the pieces left over are Arm and Pin. Each is a piece of its own, so only the names are off: give each part one of the plan's names and check again, without changing its shape")
+  })
+
+  it('names the part left over beside the plan name it misses when the count is right and each piece is a part of its own: a naming miss', () => {
+    // the live run: Segment 1 and Segment 2 planned, built as Segment 1 head and Segment 2 body
+    const fit: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Segment 1 head', partName: 'Segment 1 head' }, { part: 1, name: 'Segment 2 body', partName: 'Segment 2 body' }], gaps: [apart(0, 1)] }
+    const got = pieces(fit, ['Segment 1', 'Segment 2'])
+    expect(got).toEqual({
+      name: 'pieces',
+      want: '2 separate pieces (Segment 1, Segment 2)',
+      got: '2 pieces, but Segment 1 and Segment 2 are not among them: Segment 1 head is not named Segment 1; Segment 2 body is not named Segment 2. Each is a piece of its own, so only the names are off: give each part its plan name and check again, without changing its shape',
+      pass: false,
+    })
+    expect(isNamingMiss(got)).toBe(true)
+    // one name off: its part is named beside it, whatever the name
+    const one = pieces({ ...fit, bodies: [{ part: 0, name: 'Hinge leaf', partName: 'Hinge leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }] }, ['Leaf', 'Pin'])
+    expect(one.got).toBe('2 pieces, but Leaf is not among them: Hinge leaf is not named Leaf. It is a piece of its own, so only the name is off: give the part its plan name and check again, without changing its shape')
+    expect(isNamingMiss(one)).toBe(true)
+    // matching stays exact: Segment 1 does not answer Segment 10, and a wrong count is no naming miss
+    const ten = pieces({ ...fit, bodies: [{ part: 0, name: 'Segment 10', partName: 'Segment 10' }, { part: 1, name: 'Segment 2', partName: 'Segment 2' }] }, ['Segment 1', 'Segment 2'])
+    expect(ten.pass).toBe(false)
+    expect(ten.got).toContain('Segment 10 is not named Segment 1')
+    expect(isNamingMiss(pieces({ ...fit, pieces: 1 }, ['Segment 1', 'Segment 2']))).toBe(false)
   })
 
   it('fails a piece merged into another while a third is mirrored: the mirrored part already answers its own name', () => {
@@ -406,9 +428,6 @@ describe('the pieces item for bodies of one part', () => {
     // the same part under a name that is no piece's passes
     const leaves: FitFacts = { ...fit, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }] }
     expect(pieces(leaves, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(true)
-    // a name no body has, with each body a part of its own, is not a naming miss of this kind
-    const own: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Arm', partName: 'Arm' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 1)] }
-    expect(isNamingMiss(pieces(own, ['Lid', 'Tray']))).toBe(false)
   })
 
   it("design.check lets a miss only on a part's name pass once without using the fix round", async () => {
@@ -444,6 +463,29 @@ describe('the pieces item for bodies of one part', () => {
     expect((await check()).out.stop).toBeUndefined()
     expect(plans.get('hinge')?.failedChecks).toBe(1)
     expect((await check()).out.stop).toContain('The fix round is used')
+  })
+
+  it('design.check lets a part built under another name than the plan gives pass once without using the fix round', async () => {
+    const report = {
+      parts: [
+        { bounds: { min: [0, 0, 0], max: [5, 5, 5] }, item: 0 },
+        { bounds: { min: [10, 0, 0], max: [15, 5, 5] }, item: 1 },
+      ],
+      gaps: [{ parts: [0, 1], gapMm: 0.5, limitMm: 0.3, kind: 'apart', from: [5, 0, 0], to: [5.5, 0, 0] }],
+      pieces: 2,
+    }
+    const cube = (name: string, x: number): HistoryMesh => ({ name, slot: 0, positions: [0, 0, 0, 5, 0, 0, 5, 5, 0, 0, 5, 0, 0, 0, 5, 5, 0, 5, 5, 5, 5, 0, 5, 5].map((v, k) => (k % 3 === 0 ? v + x : v)), indices: [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7] })
+    const lizard = designOf([cube('Segment 1 head', 0), cube('Segment 2', 10)])
+    const host = { get: () => lizard, list: () => [lizard], call: async (op: string) => (op === 'fit.check' ? report : op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))) } as unknown as DesignHost
+    const plans = toolset.createPlanRegistry()
+    plans.put({ planId: 'lizard', part: 'Mechanism', units: 'mm', features: [], assumptions: [], questions: [], printInPlace: ['Segment 1', 'Segment 2'] }, 'd', 'card')
+    const tool = toolset.designToolset(host, {}, { plans, cardSide: true }).find((x) => x.name === 'design.check')!
+    const r = await tool.run(tool.input.parse({ planId: 'lizard' }), {} as ToolContext)
+    const out = r.output as { items: { name: string; pass: boolean; got: string }[] }
+    expect(out.items.filter((i) => !i.pass).map((i) => i.name)).toEqual(['pieces'])
+    expect(out.items.find((i) => i.name === 'pieces')!.got).toContain('Segment 1 head is not named Segment 1')
+    expect(r.summary).toContain('This miss does not use the fix round.')
+    expect(plans.get('lizard')?.failedChecks).toBeUndefined()
   })
 
   it('fails more bodies of one part left over than names left: two leaves planned, three leaf bodies', () => {
