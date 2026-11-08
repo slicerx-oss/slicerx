@@ -13,7 +13,7 @@ import { isVisible, settingDef, settingsForTier } from '../src/adapters/settings
 import { sliceSummary } from '../src/agent-bridge'
 import { ExpertSettings } from '../src/workspaces/prepare/expert-settings'
 import { PrinterSettingsDialog } from '../src/workspaces/prepare/printer-settings'
-import { set } from '../src/state/store'
+import { get, set } from '../src/state/store'
 
 const KEY = 'chamber_cooling_mode'
 
@@ -86,7 +86,7 @@ describe('the slice read-back', () => {
     id: '9', engine: 'sx', layerCount: 10, layerZ: new Float32Array(), layerTimeS: new Float32Array(),
     stats: { timeS: 60, filamentMm: [100], filamentG: [3], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 5, warnings: [], ...over,
   })
-  const base = { plate: [], plates: [], activePlate: 'plate-1', autoSlice: false, autoSliceBySize: true, sliceHeld: false }
+  const base = { ...get(), layerMarks: {}, resume: null, plate: [], plates: [], activePlate: 'plate-1', autoSlice: false, autoSliceBySize: true, sliceHeld: false }
 
   it('names the chamber cooling mode the G-code got and where it came from', () => {
     const chamberCooling = { mode: 2, source: 'derived' as const, filaments: ['PLA'], text: 'chamber cooling mode 2, strong cooling (external circulation), from the filaments: PLA' }

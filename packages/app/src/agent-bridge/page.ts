@@ -42,7 +42,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const ENDED_GRACE_MS = 1_000
 
 /** The last slice as an agent reads it: status, and for a finished one its time, filament, layers and warnings. */
-export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'autoSlice' | 'autoSliceBySize' | 'sliceHeld'>): Record<string, unknown> {
+export function sliceSummary(s: AppState): Record<string, unknown> {
   const sl = s.slice
   // The auto slice choice, and whether it is holding this plate's big slice for Slice.
   const auto = { autoSlice: s.autoSlice, autoSliceMode: autoSliceMode(s), ...(s.autoSlice && s.sliceHeld ? { held: true } : {}) }
@@ -61,8 +61,8 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
         status: 'done',
         ...auto,
         // Out of date also when an edit since changed its G-code (a rename, a layer mark): needsSlice, the rule the plate
-        // list, the footer and app_export_gcode read. Callers pass the store.
-        stale: sl.stale || needsSlice(s as AppState),
+        // list, the footer and app_export_gcode read.
+        stale: sl.stale || needsSlice(s),
         id: r.id,
         engine: r.engine,
         layers: r.layerCount,
@@ -96,7 +96,8 @@ function sketchState(): Record<string, unknown> | null {
 
 /** The app as an agent reads it: the tab, the plate with each object's parts and warnings, the printer and filament, and slicing. */
 export function appState(s: AppState): Record<string, unknown> {
-  const warnings = s.slice.status === 'done' && !s.slice.stale ? s.slice.result.warnings : []
+  // A slice an edit since put out of date (needsSlice: a rename, a layer mark too) says nothing of the plate as it is.
+  const warnings = s.slice.status === 'done' && !needsSlice(s) ? s.slice.result.warnings : []
   const inUse = spoolParts(s.plate, activeMeta(s))
   return {
     tab: s.workspace,
