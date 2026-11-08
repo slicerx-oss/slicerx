@@ -178,8 +178,18 @@ describe('design.check on the pinch', () => {
     expect(out.items.find((i) => i.name === 'watertight')).toEqual({
       name: 'watertight',
       want: 'closed',
-      got: 'open: 1 edge where more than two faces meet (surfaces that touch without joining); repair the part or rebuild that join',
+      got: 'open: 1 edge where more than two faces meet (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little',
       pass: false,
     })
+  })
+})
+
+describe('repair on the pinch', () => {
+  // The watertight item tells mimir to rebuild the join rather than repair it: repair welds the touching corners and
+  // the edge keeps its four triangles, so a repair step would leave the part as open as before.
+  it('leaves the touching edge with four triangles', async () => {
+    const r = (await geom.engine('repair', { mesh: pinch(), options: {} })) as { mesh: { positions: number[]; indices: number[] }; report: { watertight: boolean; nonManifoldEdges: number } }
+    expect(r.report).toMatchObject({ watertight: false, nonManifoldEdges: 1 })
+    expect(closureByPosition(r.mesh.positions, r.mesh.indices)).toMatchObject({ watertight: false, nonManifoldEdges: 1 })
   })
 })
