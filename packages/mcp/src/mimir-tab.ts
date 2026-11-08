@@ -37,7 +37,7 @@ interface Capped {
   toolsets: string[]
   leftOut: string[]
   partial: { toolset: string; sent: number; of: number }[]
-  loader: string
+  loader: string | null
 }
 
 const count = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null)
@@ -50,14 +50,14 @@ function cappedOf(v: unknown): Capped | null {
   const cap = count(c['cap'])
   const offered = count(c['offered'])
   const sent = count(c['sent'])
-  if (cap === null || offered === null || sent === null || typeof c['loader'] !== 'string') return null
+  if (cap === null || offered === null || sent === null || (typeof c['loader'] !== 'string' && c['loader'] !== null)) return null
   const partial = (Array.isArray(c['partial']) ? c['partial'] : []).flatMap((p) => {
     const r = (p ?? {}) as Record<string, unknown>
     const n = count(r['sent'])
     const of = count(r['of'])
     return typeof r['toolset'] === 'string' && n !== null && of !== null ? [{ toolset: r['toolset'], sent: n, of }] : []
   })
-  return { cap, offered, sent, toolsets: names(c['toolsets']), leftOut: names(c['leftOut']), partial, loader: c['loader'] }
+  return { cap, offered, sent, toolsets: names(c['toolsets']), leftOut: names(c['leftOut']), partial, loader: typeof c['loader'] === 'string' ? c['loader'] : null }
 }
 
 /** The sets a local model's message picks from, in order (packages/pilot turnsets.ts). */
@@ -83,10 +83,10 @@ const WHERE_WORDS: Record<string, string> = { computer: ' on this computer', net
 export function mimirTabTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const tab = defineTool({
     name: 'mimir.tab',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'read',
-    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens; whether it is a local model (a server the person runs, through the OpenAI-compatible provider); and where the model's server is, by its address: "computer" (this computer), "network" (another computer on the person's network) or "remote" (anywhere else, mimir cloud and API keys included), null without a model. Also lists the tools the model is offered in the tab: the design tools (so each step lands in the timeline), the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands. A local model gets a shorter list that fits its context, and one set of it per message, picked from the request: "build" (a new part), "shape" (shaping a part further), "edit" (changing a part already built), "app" (slicing, settings, the project, the knowledge base, the app commands and sending a sliced plate) or "print" (the printers, their prints, spools and fleets); turns lists each set's tools (the ones every message gets are in each), null where every message gets every tool. Over the provider's tool limit (mimir cloud and OpenAI-style APIs take 128 tools a request), capped says what the open chat's last request sent: the limit, the tools offered and sent, the toolsets sent whole (toolsets), the ones left out (leftOut, with how many of a partly sent one went in partial) and loader, the tool mimir calls to load a left-out toolset for its next step (ask mimir with slicerx_mimir_ask to have one loaded); null where every tool went. A capped chat keeps its toolsets from message to message, so the list changes only when a new message needs room. Carries no key or token.`,
+    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens; whether it is a local model (a server the person runs, through the OpenAI-compatible provider); and where the model's server is, by its address: "computer" (this computer), "network" (another computer on the person's network) or "remote" (anywhere else, mimir cloud and API keys included), null without a model. Also lists the tools the model is offered in the tab: the design tools (so each step lands in the timeline), the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands. A local model gets a shorter list that fits its context, and one set of it per message, picked from the request: "build" (a new part), "shape" (shaping a part further), "edit" (changing a part already built), "app" (slicing, settings, the project, the knowledge base, the app commands and sending a sliced plate) or "print" (the printers, their prints, spools and fleets); turns lists each set's tools (the ones every message gets are in each), null where every message gets every tool. Over the provider's tool limit (mimir cloud and OpenAI-style APIs take 128 tools a request), capped says what the open chat's last request sent: the limit, the tools offered and sent, the toolsets sent whole (toolsets), the ones left out (leftOut, with how many of a partly sent one went in partial) and loader, the tool mimir calls to load a left-out toolset for its next step (ask mimir with slicerx_mimir_ask to have one loaded), null when the request carried none, as on a local model; null where every tool went. A capped chat keeps its toolsets from message to message, so the list changes only when a new message needs room. Carries no key or token.`,
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading the mimir tab needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')

@@ -152,6 +152,8 @@ export interface ToolCapReport {
   leftOut: Toolset[]
   /** Of leftOut, the toolsets that still sent some of their tools, with how many of how many. */
   partial: { toolset: Toolset; sent: number; of: number }[]
+  /** The tool the request carried for loading a left-out toolset (pilot.load_tools), or null when it carried none. */
+  loader: string | null
 }
 
 /** The log line for a turn that left toolsets out. */
@@ -202,7 +204,7 @@ export function capTools<T extends SetTool>(tools: readonly T[], opts: { cap: nu
     return n > 0 ? [{ toolset: s, sent: n, of: members.length }] : []
   })
   const sent = tools.filter((t) => keep.has(t))
-  return { tools: sent, report: { cap, offered: tools.length, sent: sent.length, toolsets: whole, leftOut, partial } }
+  return { tools: sent, report: { cap, offered: tools.length, sent: sent.length, toolsets: whole, leftOut, partial, loader: null } }
 }
 
 /**
@@ -342,7 +344,7 @@ export function stickyCapTools<T extends SetTool>(
     return n > 0 ? [{ toolset: s, sent: n, of: members.length }] : []
   })
   const sent = tools.filter((t) => keep.has(t))
-  return { tools: sent, sets, report: { cap, offered: tools.length, sent: sent.length + 1, toolsets: sets, leftOut, partial } }
+  return { tools: sent, sets, report: { cap, offered: tools.length, sent: sent.length + 1, toolsets: sets, leftOut, partial, loader: LOAD_TOOLS_TOOL } }
 }
 
 /**
