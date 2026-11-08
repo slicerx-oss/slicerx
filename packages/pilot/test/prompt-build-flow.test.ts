@@ -15,6 +15,13 @@ describe('the prompt builds what was asked in one plan', () => {
       expect(text).toContain('Never restart the part you started under a new name; fix it with the design tools.')
     })
 
+    // A planter and a saucer asked for in one message: after the planter's Go, mimir asked "Plan the planter saucer
+    // next?" with a card of its own. The saucer was asked for already, so mimir goes on to it without asking.
+    it(`${scope}: separate parts asked for are each built in turn, with no question about the next one`, () => {
+      const text = systemPrompt(scope)
+      expect(text).toContain('Each thing the message asks for that is its own part (a planter and a saucer) gets its own design. Once one is built and checked, go on to the next at once: plan it, or build it when it needs no plan. Never ask whether to do a part the message already asked for.')
+    })
+
     it(`${scope}: a lid prints open and flat beside the base`, () => {
       const text = systemPrompt(scope)
       expect(text).toContain('A lid planned with its case stays in that design, and a lid or moving piece prints open and flat')
