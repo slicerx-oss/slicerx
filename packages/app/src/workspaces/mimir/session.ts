@@ -5,6 +5,7 @@
 // logs only its own events). With a model set up (mimir cloud, a key or a local model, as in Settings > mimir) the tab
 // runs it; with none, the scripted stub answers over the same tools, and the chat says so.
 import { type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
+import type { DesignHost } from '@slicerx/cad-history'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { nozzleOr, tabToolset } from '@slicerx/mcp/toolset'
 import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
@@ -61,6 +62,8 @@ export interface TabModel {
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 let tools: PilotTool<never>[] = []
+/** The design host the tab's tools work on, made with them; its list holds the designs on the plate and those with no body yet. */
+let designs: DesignHost | null = null
 let current: { key: string; pilot: Pilot & { forgetRun?(sessionId: string): void }; model: TabModel } | null = null
 let building: { key: string; done: Promise<Pilot> } | null = null
 
@@ -93,8 +96,20 @@ export function toolsFor(loader: Loader): PilotTool<never>[] {
   // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
   // is left out of the tab. The creative eval makes its tools with the same tabToolset (@slicerx/mcp toolset.ts).
-  if (tools.length === 0) tools = tabToolset(appDesignHost(loader), cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
+  if (tools.length === 0) {
+    designs = appDesignHost(loader)
+    tools = tabToolset(designs, cardPlans, { nozzleMm: () => nozzleOr(get().profile?.nozzle) })
+  }
   return tools
+}
+
+/**
+ * Whether the project holds a design to shape: the tools' design host has one (on the plate, or waiting for its first
+ * body), or, before the tools are made, an object on the plate has a history. Designs live on the plate, not in a chat,
+ * so a new conversation, a reload and a mimir rebuilt for another model all see them.
+ */
+export function hasDesign(): boolean {
+  return designs ? designs.list().length > 0 : get().plate.some((e) => e.history !== undefined)
 }
 
 /** Commands that slice, print or change slicer settings, which a host that only models leaves out of mimir's tools. */
@@ -219,6 +234,7 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     // same way for the creative eval (@slicerx/pilot tab-options.ts)
     ...tabOptions({ slices, config: parts.config, kb: parts.kb, tools: parts.tools, commands, ...(parts.client ? { client: parts.client } : {}), ...(parts.share ? { share: parts.share } : {}), ...(parts.memory ? { memory: parts.memory } : {}), ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}) }),
     project: appProject(host),
+    hasDesign,
     store: mimirLogs,
     // a turn that leaves toolsets out to stay under the provider's tool limit says so in the app log
     log: note,
@@ -395,5 +411,6 @@ export function resetTabMimir(): void {
   current = null
   building = null
   tools = []
+  designs = null
   setMimirLink('none')
 }

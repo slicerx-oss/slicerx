@@ -6,6 +6,7 @@
 // read back from the HTTP body the provider adapter wrote. Each kind of turn (a new part, shaping it, editing it, the
 // app, the printers) fits a 16,384 token context with the whole system prompt, room for the reply and room for the
 // conversation. A cloud model gets every tool on every turn, as before.
+import { HISTORY_VERSION } from '@slicerx/cad-history'
 import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from '@slicerx/contracts'
 import { messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens, TURN_SET_TOOL } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -14,7 +15,7 @@ import { builtinCommands } from '../src/commands/builtin'
 import { registerCommands } from '../src/commands/registry'
 import { NEUTRAL } from '../src/edition'
 import { setupCommands } from '../src/first-run/look'
-import { get, set } from '../src/state/store'
+import { get, set, type PlateEntry } from '../src/state/store'
 import { resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
@@ -137,6 +138,25 @@ describe('the mimir tab on a local model', () => {
     const print = await tools("How's my print going?")
     expect(print).toEqual(expect.arrayContaining(['printer__status', 'printer__pause', 'printer__queue', 'pilot__tools']))
     expect(print.some((n) => n.startsWith('geom__') || n.startsWith('settings__'))).toBe(false)
+  })
+
+  // New conversation keeps the plate, and a reload or a model change makes a new mimir over it: a design there is shaped
+  // from the first turn of the chat, and once it is deleted the same words start a part
+  it('shapes a design already on the plate in a new chat, and builds once it is gone', async () => {
+    const tools = async (message: string) => read(await turn(LOCAL, message)).tools.map((t) => t.name)
+    const model: PlateEntry = { id: 'obj_lid', name: 'Lid', handle: handle('obj_lid'), parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    try {
+      set({ plate: [{ ...model, history: { version: HISTORY_VERSION, base: [], steps: [] } }] })
+      const shaped = await tools('Make a circular pattern of six holes')
+      expect(shaped).toEqual(expect.arrayContaining(['geom__array', 'geom__mirror']))
+      expect(shaped).not.toContain('design__new')
+      // an object with no history (an imported model) is not a design to shape
+      set({ plate: [model] })
+      expect(await tools('Make a circular pattern of six holes')).toContain('design__new')
+    } finally {
+      set({ plate: [] })
+    }
+    expect(await tools('Make a circular pattern of six holes')).toContain('design__new')
   })
 
   it('lists each set for clients, and every set together is every tool the tab offers', async () => {
