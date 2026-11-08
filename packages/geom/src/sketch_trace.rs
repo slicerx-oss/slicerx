@@ -1105,6 +1105,165 @@ fn exact_ring(ring: &[V2], place: [f64; 6]) -> Option<Loop> {
     b.finish(0.0)
 }
 
+/// Fits that cross themselves or each other, fitted again until none do.
+struct Untangle<'a> {
+    o: &'a SketchTraceOptions,
+    /// The smoothing, working px.
+    tol: f64,
+    place: [f64; 6],
+    /// The round from which a ring still crossing is kept as traced.
+    refits: u32,
+    max_segments: usize,
+}
+
+/// A crossing on one loop: where, and the stretch of its ring under the crossing piece, from a point and how many
+/// points on; None when the check gives no point or piece.
+type Near = Option<(V2, usize, usize)>;
+
+impl Untangle<'_> {
+    /// Keeps every ring with no fit as traced. Then, where a fit crosses itself or a neighbor (both loops of a pair
+    /// that cross), keeps the traced points round the crossing as they are and fits the crossing piece tighter,
+    /// reaching further each round; from the last round on, every loop still crossing is kept as traced, until
+    /// nothing crosses. No ring loses its loop: one too small to keep as traced, or a sketch with no room for the
+    /// traced points, is refused. Gives the rounds that ran.
+    fn run(&self, rings: &[&Vec<V2>], fitted: &mut [Option<Loop>], budget: &mut Budget) -> Result<u32> {
+        let mut exact = vec![false; rings.len()];
+        for (i, f) in fitted.iter_mut().enumerate() {
+            if let Some(l) = f {
+                sketch_fit::tidy_loop(l);
+            } else {
+                *f = Some(self.exact(rings[i])?);
+                exact[i] = true;
+            }
+        }
+        let mut near: Vec<Vec<Near>> = vec![Vec::new(); rings.len()];
+        let mut round = 0;
+        loop {
+            let crossing = self.crossings(rings, fitted, budget)?;
+            if crossing.is_empty() {
+                return Ok(round);
+            }
+            round += 1;
+            let mut bad: Vec<usize> = crossing.iter().map(|c| c.0).collect();
+            bad.sort_unstable();
+            bad.dedup();
+            for (i, at) in crossing {
+                near[i].push(at);
+            }
+            // traced rings never cross, so this is a trace drawn finer than the sketch keeps
+            if bad.iter().all(|&i| exact[i]) {
+                return Err(Self::too_small());
+            }
+            let mut room = self.room(fitted);
+            for i in bad {
+                if exact[i] {
+                    continue;
+                }
+                let ring = rings[i];
+                let n = ring.len();
+                if round >= self.refits || near[i].iter().any(Option::is_none) {
+                    budget.spend(n)?;
+                    let have = fitted[i].as_ref().map_or(0, |l| l.segments.len().max(1));
+                    let need = n.saturating_sub(have);
+                    if room < need {
+                        return Err(Error::invalid(
+                            "image",
+                            format!(
+                                "the outlines run too close together to keep apart within {} segments; lower Smoothing or raise Remove specks under",
+                                self.max_segments
+                            ),
+                        ));
+                    }
+                    room -= need;
+                    fitted[i] = Some(self.exact(ring)?);
+                    exact[i] = true;
+                    continue;
+                }
+                let tight = poly2d::simplify_ring_keep(ring, self.tol / f64::from(1u32 << (round + 1)));
+                budget.spend(n * (4 + near[i].len()))?;
+                let reach = PIN_PX * f64::from(1u32 << (round - 1));
+                let mut pinned = vec![false; n];
+                for &(at, from, len) in near[i].iter().flatten() {
+                    for (j, pin) in pinned.iter_mut().enumerate() {
+                        *pin |= sketch_fit::dist(ring[j], at) <= reach;
+                    }
+                    for j in (0..=len).map(|j| (from + j) % n) {
+                        pinned[j] |= tight[j];
+                    }
+                }
+                let pins: Vec<usize> = (0..n).filter(|&j| pinned[j]).collect();
+                fitted[i] = Some(
+                    if let Some(mut l) = fit_ring(ring, self.o, self.tol, self.place, &pins, budget)?.0 {
+                        sketch_fit::tidy_loop(&mut l);
+                        l
+                    } else {
+                        exact[i] = true;
+                        self.exact(ring)?
+                    },
+                );
+            }
+        }
+    }
+
+    /// Each loop on a crossing, both where two loops cross, with the crossing as `near` keeps it.
+    fn crossings(
+        &self,
+        rings: &[&Vec<V2>],
+        fitted: &[Option<Loop>],
+        budget: &mut Budget,
+    ) -> Result<Vec<(usize, Near)>> {
+        // every ring has a loop by now, so a loop's index is its ring's
+        let loops: Vec<Loop> = fitted.iter().flatten().cloned().collect();
+        let place = self.place;
+        let to_px = |p: V2| [(p[0] - place[4]) / place[0], (p[1] - place[5]) / place[3]];
+        let mut out = Vec::new();
+        for issue in sketch::check(&loops).issues {
+            if !matches!(issue.kind, IssueKind::SelfCrossing | IssueKind::LoopsCross) {
+                continue;
+            }
+            let sides = std::iter::once((issue.loop_index, issue.segment))
+                .chain(issue.other.map(|(l, s)| (l, Some(s))));
+            for (li, seg) in sides {
+                let Some(&ring) = rings.get(li) else {
+                    continue;
+                };
+                budget.spend(ring.len() * 2)?;
+                let piece = seg.and_then(|s| piece_ends(&loops[li], s));
+                let at = issue.at.zip(piece).map(|(at, (p, q))| {
+                    let (a, b) = (closest(ring, to_px(p)), closest(ring, to_px(q)));
+                    // the shorter way round, since a piece that closes the loop may end just short of where it began
+                    let n = ring.len();
+                    let (fwd, back) = ((b + n - a) % n, (a + n - b) % n);
+                    let (from, len) = if fwd <= back { (a, fwd) } else { (b, back) };
+                    (to_px(at), from, len)
+                });
+                out.push((li, at));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The segments the sketch still has room for.
+    fn room(&self, fitted: &[Option<Loop>]) -> usize {
+        self.max_segments
+            .saturating_sub(fitted.iter().flatten().map(|l| l.segments.len().max(1)).sum())
+    }
+
+    /// `ring` as traced, or a refusal when it is too small to draw.
+    fn exact(&self, ring: &[V2]) -> Result<Loop> {
+        let mut l = exact_ring(ring, self.place).ok_or_else(Self::too_small)?;
+        sketch_fit::tidy_loop(&mut l);
+        Ok(l)
+    }
+
+    fn too_small() -> Error {
+        Error::invalid(
+            "image",
+            "a traced outline is too small to draw at this size; make the trace larger or raise Remove specks under",
+        )
+    }
+}
+
 /// Traces a PNG or JPEG file into sketch loops.
 pub fn sketch_trace_bytes(bytes: &[u8], o: &SketchTraceOptions) -> Result<SketchTrace> {
     let r = raster::decode(bytes).map_err(|u| Error::invalid("image", format!("the file {}", u.why())))?;
@@ -1257,71 +1416,15 @@ pub fn sketch_trace(r: Cow<'_, Raster>, o: &SketchTraceOptions) -> Result<Sketch
         missed += m;
         fitted.push(l);
     }
-    // where a fit crosses itself or a neighbor, the traced points round the crossing are kept as they are and the
-    // crossing piece is fitted tighter, reaching further each round; at last the ring is kept as traced, when the
-    // sketch has room for it
-    let to_px = |p: V2| [(p[0] - place[4]) / place[0], (p[1] - place[5]) / place[3]];
-    let mut near: Vec<Vec<Option<(V2, usize, usize)>>> = vec![Vec::new(); rings.len()];
-    for round in 1..=REFITS {
-        let owner: Vec<usize> = (0..fitted.len()).filter(|&i| fitted[i].is_some()).collect();
-        let loops: Vec<Loop> = owner.iter().filter_map(|&i| fitted[i].clone()).collect();
-        let mut bad = Vec::new();
-        for issue in sketch::check(&loops).issues {
-            if matches!(issue.kind, IssueKind::SelfCrossing | IssueKind::LoopsCross)
-                && let Some(&i) = owner.get(issue.loop_index)
-            {
-                let ring = rings[i];
-                let piece = issue
-                    .segment
-                    .and_then(|s| piece_ends(&loops[issue.loop_index], s));
-                budget.spend(ring.len() * 2)?;
-                near[i].push(issue.at.zip(piece).map(|(at, (p, q))| {
-                    let (a, b) = (closest(ring, to_px(p)), closest(ring, to_px(q)));
-                    // the shorter way round, since a piece that closes the loop may end just short of where it began
-                    let n = ring.len();
-                    let (fwd, back) = ((b + n - a) % n, (a + n - b) % n);
-                    let (from, len) = if fwd <= back { (a, fwd) } else { (b, back) };
-                    (to_px(at), from, len)
-                }));
-                bad.push(i);
-            }
-        }
-        bad.sort_unstable();
-        bad.dedup();
-        let mut room = MAX_SEGMENTS.saturating_sub(loops.iter().map(|l| l.segments.len().max(1)).sum());
-        if bad.is_empty() {
-            break;
-        }
-        for i in bad {
-            let ring = rings[i];
-            let n = ring.len();
-            if round == REFITS || near[i].iter().any(Option::is_none) {
-                budget.spend(n)?;
-                let have = fitted[i].as_ref().map_or(0, |l| l.segments.len());
-                if room >= n.saturating_sub(have) {
-                    room -= n.saturating_sub(have);
-                    fitted[i] = exact_ring(ring, place);
-                }
-                continue;
-            }
-            let tight = poly2d::simplify_ring_keep(ring, tol_mm / k / f64::from(1u32 << (round + 1)));
-            budget.spend(n * (4 + near[i].len()))?;
-            let reach = PIN_PX * f64::from(1u32 << (round - 1));
-            let mut pinned = vec![false; n];
-            for &(at, from, len) in near[i].iter().flatten() {
-                for (j, pin) in pinned.iter_mut().enumerate() {
-                    *pin |= sketch_fit::dist(ring[j], at) <= reach;
-                }
-                for j in (0..=len).map(|j| (from + j) % n) {
-                    pinned[j] |= tight[j];
-                }
-            }
-            let pins: Vec<usize> = (0..n).filter(|&j| pinned[j]).collect();
-            fitted[i] = fit_ring(ring, o, tol_mm / k, place, &pins, &mut budget)?.0;
-        }
-    }
-    let mut loops: Vec<Loop> = fitted.into_iter().flatten().collect();
-    loops.iter_mut().for_each(sketch_fit::tidy_loop);
+    let fix = Untangle {
+        o,
+        tol: tol_mm / k,
+        place,
+        refits: REFITS,
+        max_segments: MAX_SEGMENTS,
+    };
+    fix.run(&rings, &mut fitted, &mut budget)?;
+    let loops: Vec<Loop> = fitted.into_iter().flatten().collect();
     let segments: usize = loops.iter().map(|l| l.segments.len().max(1)).sum();
     if segments > MAX_SEGMENTS {
         return Err(Error::invalid(
@@ -2685,21 +2788,273 @@ mod tests {
         Raster::new(w, h, px).unwrap()
     }
 
-    #[test]
-    fn a_fit_that_crosses_is_fitted_again_until_the_sketch_checks_clean() {
-        let o = SketchTraceOptions::default();
-        let r = sketch_trace(Cow::Owned(grainy(1200, 900)), &o).unwrap();
+    /// The traced rings of `img` with specks under `speck_px` dropped: how many, and their area and length in
+    /// working px.
+    fn traced_rings(img: &Raster, speck_px: f64) -> (usize, f64, f64) {
+        let o = TraceOptions {
+            speck_px,
+            ..TraceOptions::default()
+        };
+        let t = trace(img, &o).unwrap();
+        let rings: Vec<&Vec<V2>> = t
+            .shapes
+            .iter()
+            .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+            .collect();
+        let length = rings
+            .iter()
+            .flat_map(|r| (0..r.len()).map(|i| sketch_fit::dist(r[i], r[(i + 1) % r.len()])))
+            .sum();
+        (rings.len(), t.shapes.iter().map(area).sum::<f64>().abs(), length)
+    }
+
+    /// Asserts that `r`, traced from `img` at `tol` working px with specks under `speck_px` dropped, kept every
+    /// traced ring, and that its area is the traced area within `tol` along every edge.
+    fn keeps_every_ring(img: &Raster, speck_px: f64, r: &SketchTrace, tol: f64, what: &str) {
+        let (rings, area, length) = traced_rings(img, speck_px);
         assert!(
             r.check.ok,
-            "{:?}",
+            "{what}: {:?}",
             r.check.issues.iter().take(3).collect::<Vec<_>>()
         );
+        assert_eq!(r.loops.len(), rings, "{what}");
+        let k = r.px_to_mm[0];
+        let got = r.check.area_mm2 / (k * k);
+        assert!((got - area).abs() <= tol * length, "{what}: {got} against {area}");
+    }
+
+    /// A wavy blob with a hole of the same shape `wall` px inside its edge.
+    fn rim(wall: f64) -> Raster {
+        draw(160, 160, WHITE, |x, y| {
+            let (dx, dy) = (x - 80.0, y - 80.0);
+            let a = dy.m_atan2(dx);
+            let edge = 6.0f64.mul_add((5.0 * a).m_sin(), 60.0) + 3.0 * (3.0 * a + 1.0).m_sin();
+            let d = dx.m_hypot(dy);
+            (d < edge && d > edge - wall).then_some(BLACK)
+        })
+    }
+
+    #[test]
+    fn a_thin_wall_between_an_outer_and_its_hole_never_crosses_and_keeps_both_loops() {
+        // lines and arcs cut across the curves by up to the smoothing, through a wall thinner than that
+        for wall in [0.8, 1.2, 2.0] {
+            let img = rim(wall);
+            for fit in [Fit::Lines, Fit::Arcs, Fit::Curves] {
+                for smoothing in [0.5, 2.0, 3.0, 5.0] {
+                    let o = SketchTraceOptions {
+                        mm_per_px: Some(1.0),
+                        speck_mm2: 0.0,
+                        smoothing_mm: Some(smoothing),
+                        fit,
+                        ..SketchTraceOptions::default()
+                    };
+                    let r = sketch_trace(Cow::Borrowed(&img), &o).unwrap();
+                    let what = format!("wall {wall}, {fit:?}, smoothing {smoothing}");
+                    keeps_every_ring(&img, 0.0, &r, smoothing, &what);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_fit_that_crosses_is_fitted_again_until_the_sketch_checks_clean() {
+        // a fixed pixel size, so specks of 0.5 mm2 are 200 px at every stage
+        let o = SketchTraceOptions {
+            mm_per_px: Some(0.05),
+            ..SketchTraceOptions::default()
+        };
+        let img = grainy(1200, 900);
+        let r = sketch_trace(Cow::Borrowed(&img), &o).unwrap();
+        keeps_every_ring(&img, 200.0, &r, 0.5, "grainy");
         // the curves stay curves away from the crossings
         assert!(
             r.counts.splines + r.counts.arcs > r.counts.lines / 4,
             "{:?}",
             r.counts
         );
+    }
+
+    /// A square ring from `a` to `b` a point every px, turning `ccw` or not.
+    fn square_ring(a: f64, b: f64, ccw: bool) -> Vec<V2> {
+        let n = (b - a).round() as usize;
+        let mut r = Vec::new();
+        for i in 0..n {
+            r.push([a + i as f64, a]);
+        }
+        for i in 0..n {
+            r.push([b, a + i as f64]);
+        }
+        for i in 0..n {
+            r.push([b - i as f64, b]);
+        }
+        for i in 0..n {
+            r.push([a, b - i as f64]);
+        }
+        if !ccw {
+            r.reverse();
+        }
+        r
+    }
+
+    /// A closed loop of lines through `pts`.
+    fn lines(pts: &[V2]) -> Loop {
+        let mut b = Builder::new(pts[0]);
+        for &p in &pts[1..] {
+            b.line(p);
+        }
+        b.finish(0.0).unwrap()
+    }
+
+    const PLACE: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
+    fn untangle(refits: u32, max_segments: usize) -> Untangle<'static> {
+        static O: std::sync::LazyLock<SketchTraceOptions> =
+            std::sync::LazyLock::new(SketchTraceOptions::default);
+        Untangle {
+            o: &O,
+            tol: 0.5,
+            place: PLACE,
+            refits,
+            max_segments,
+        }
+    }
+
+    /// An outer square and its hole a px inside, the outer fitted as a diamond through the hole and the hole
+    /// fitted as traced.
+    fn crossed_pair() -> (Vec<Vec<V2>>, Vec<Option<Loop>>) {
+        let (outer, hole) = (square_ring(0.0, 20.0, true), square_ring(1.0, 19.0, false));
+        let diamond = lines(&[[10.0, -1.0], [21.0, 10.0], [10.0, 21.0], [-1.0, 10.0]]);
+        let fitted = vec![Some(diamond), exact_ring(&hole, PLACE)];
+        (vec![outer, hole], fitted)
+    }
+
+    #[test]
+    fn both_loops_of_a_crossing_pair_are_fitted_again() {
+        let (rings, mut fitted) = crossed_pair();
+        let refs: Vec<&Vec<V2>> = rings.iter().collect();
+        // the check names the hole, the later loop, but it is the outer that strays
+        let before: Vec<Loop> = fitted.iter().flatten().cloned().collect();
+        let first = sketch::check(&before);
+        assert!(
+            first
+                .issues
+                .iter()
+                .all(|i| i.loop_index == 1 && i.other.map(|o| o.0) == Some(0)),
+            "{:?}",
+            first.issues
+        );
+        let rounds = untangle(REFITS, MAX_SEGMENTS)
+            .run(&refs, &mut fitted, &mut Budget(FIT_BUDGET))
+            .unwrap();
+        assert_eq!(rounds, 1);
+        let after: Vec<Loop> = fitted.iter().flatten().cloned().collect();
+        assert_eq!(after.len(), 2);
+        assert!(sketch::check(&after).ok);
+        // the outer is fitted again, on its square
+        for p in after[0].segments.iter().filter_map(|s| s.to) {
+            let off = [p[0], 20.0 - p[0], p[1], 20.0 - p[1]].map(f64::abs);
+            assert!(off.iter().copied().fold(f64::MAX, f64::min) <= 0.5, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn a_crossing_left_at_the_last_round_is_kept_as_traced_or_refused_with_no_room() {
+        let (rings, fitted) = crossed_pair();
+        let refs: Vec<&Vec<V2>> = rings.iter().collect();
+        let mut exact = fitted.clone();
+        let rounds = untangle(1, MAX_SEGMENTS)
+            .run(&refs, &mut exact, &mut Budget(FIT_BUDGET))
+            .unwrap();
+        assert_eq!(rounds, 1);
+        let loops: Vec<Loop> = exact.into_iter().flatten().collect();
+        assert_eq!(loops[0].segments.len(), rings[0].len());
+        assert!(sketch::check(&loops).ok);
+        // with no room for the traced points the trace is refused, never left crossing or short a loop
+        let mut tight = fitted.clone();
+        let err = untangle(1, 100)
+            .run(&refs, &mut tight, &mut Budget(FIT_BUDGET))
+            .unwrap_err();
+        assert!(err.to_string().contains("too close together"), "{err}");
+        // a ring with no fit is kept as traced
+        let mut none = vec![None, fitted[1].clone()];
+        untangle(REFITS, MAX_SEGMENTS)
+            .run(&refs, &mut none, &mut Budget(FIT_BUDGET))
+            .unwrap();
+        assert_eq!(none[0].as_ref().map(|l| l.segments.len()), Some(rings[0].len()));
+        // and one too small to draw is refused
+        let speck = vec![[0.0, 0.0], [1e-5, 0.0], [0.0, 1e-5]];
+        let err = untangle(REFITS, MAX_SEGMENTS)
+            .run(&[&speck], &mut [None], &mut Budget(FIT_BUDGET))
+            .unwrap_err();
+        assert!(err.to_string().contains("too small to draw"), "{err}");
+    }
+
+    #[test]
+    fn the_traced_points_of_a_concave_ring_with_sides_nearly_touching_check_clean() {
+        // a square with a slot a twentieth of a px wide cut nearly through it, a point every px or so
+        let corners: [V2; 8] = [
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 20.0],
+            [10.025, 20.0],
+            [10.025, 1.0],
+            [9.975, 1.0],
+            [9.975, 20.0],
+            [0.0, 20.0],
+        ];
+        let mut ring = Vec::new();
+        for (k, &a) in corners.iter().enumerate() {
+            let b = corners[(k + 1) % corners.len()];
+            let n = sketch_fit::dist(a, b).ceil().max(1.0) as usize;
+            ring.extend((0..n).map(|i| {
+                let t = i as f64 / n as f64;
+                [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+            }));
+        }
+        let exact = exact_ring(&ring, PLACE).unwrap();
+        assert_eq!(exact.segments.len(), ring.len());
+        let c = sketch::check(&[exact]);
+        assert!(c.ok, "{:?}", c.issues);
+    }
+
+    #[test]
+    fn a_crossing_that_takes_rounds_is_fitted_tighter_each_round_until_clean() {
+        // lines 5 px off the edge of a rim 0.8 px wide
+        let img = rim(0.8);
+        let t = trace(&img, &TraceOptions::default()).unwrap();
+        let rings: Vec<&Vec<V2>> = t
+            .shapes
+            .iter()
+            .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+            .collect();
+        let o = SketchTraceOptions {
+            fit: Fit::Lines,
+            ..SketchTraceOptions::default()
+        };
+        let mut budget = Budget(FIT_BUDGET);
+        let mut fitted: Vec<Option<Loop>> = rings
+            .iter()
+            .map(|r| fit_ring(r, &o, 5.0, PLACE, &[], &mut budget).unwrap().0)
+            .collect();
+        let fix = Untangle {
+            o: &o,
+            tol: 5.0,
+            place: PLACE,
+            refits: REFITS,
+            max_segments: MAX_SEGMENTS,
+        };
+        let rounds = fix.run(&rings, &mut fitted, &mut budget).unwrap();
+        assert!((2..REFITS).contains(&rounds), "{rounds}");
+        let loops: Vec<Loop> = fitted.into_iter().flatten().collect();
+        assert_eq!(loops.len(), 2);
+        // fitted tighter, never kept as traced
+        assert!(
+            loops
+                .iter()
+                .zip(&rings)
+                .all(|(l, r)| l.segments.len() < r.len() / 2)
+        );
+        assert!(sketch::check(&loops).ok);
     }
 
     #[test]
