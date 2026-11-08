@@ -11,3 +11,4 @@
 ### Fixed
 
 - `slicerx_geom_extrude`, `slicerx_geom_revolve`, `slicerx_geom_loft` and `slicerx_geom_sweep` with `operation` `join`: a join that closes a hollow (a rod over an open tube, a lid on a cup) joins. Before, the sealed hollow added an inner shell and the join was refused as not reaching the part.
+- A join or cut step the engine reports as leaving the part not closed still lands, and its step now carries a note saying the part is not closed and to look where the shapes meet before printing.
