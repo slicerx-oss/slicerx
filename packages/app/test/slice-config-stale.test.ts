@@ -314,3 +314,143 @@ describe("a nozzle volume that lands after the slice", () => {
     }
   })
 })
+
+// A slice someone asked for (Slice, mimir) that was running when the nozzle volume changed is checked once, as it lands:
+// sliced again only when it lands done and read the old value, and never more than once.
+describe('a slice someone asked for, checked as it lands', () => {
+  const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+  let stop: () => void = () => undefined
+  let abort: AbortController | null = null
+
+  /** Auto slice on, and a slice someone asked for running on `plate`, stamped as it starts. */
+  function running(plate: PlateEntry[]) {
+    vi.useFakeTimers()
+    sliced(plate)
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    stop = startAutoSlice(host, 0)
+    abort = beginSlice()
+    const stamp = sliceStamp(get())
+    set({ slice: { status: 'running', progress: null, startedAt: 100 } } as never)
+    return stamp
+  }
+
+  /** The running slice ends as `slice`. */
+  function land(slice: object) {
+    endSlice(abort!)
+    set({ slice } as never)
+  }
+
+  /** Lets the stamp check load and any slice scheduled start. */
+  async function settle() {
+    await vi.dynamicImportSettled()
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.dynamicImportSettled()
+  }
+
+  afterEach(() => {
+    stop()
+    if (abort) endSlice(abort)
+    abort = null
+    for (const r of auto.runs) r.finish()
+    vi.useRealTimers()
+  })
+
+  it('a slice that read the old nozzle volume is sliced again once, and the new slice landing current ends it', async () => {
+    const stamp = running([part('a', 60, 1), part('b', 120, 2)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    land({ status: 'done', result, stale: false, stamp })
+    await settle()
+    expect(auto.started).toBe(1)
+    // the auto slice lands current: nothing more is scheduled, however long it waits
+    auto.runs[0]!.finish()
+    set({ slice: { status: 'done', result, stale: false, stamp: sliceStamp(get()) } } as never)
+    await settle()
+    await settle()
+    expect(auto.started).toBe(1)
+    expect(vi.getTimerCount()).toBe(0)
+    const s = get()
+    expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+  })
+
+  it('a slice that read the new nozzle volume lands current and nothing slices again', async () => {
+    running([part('a', 60, 1), part('b', 120, 2)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    // stamped after the change, as a slice that waited for the profile is
+    land({ status: 'done', result, stale: false, stamp: sliceStamp(get()) })
+    await settle()
+    expect(auto.started).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const s = get()
+    expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+  })
+
+  it('a slice that landed stale already is not sliced again by the check', async () => {
+    const stamp = running([part('a', 60, 1), part('b', 120, 2)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    land({ status: 'done', result, stale: true, stamp })
+    await settle()
+    expect(auto.started).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('a slice that lands with no stamp is left as it is', async () => {
+    running([part('a', 60, 1), part('b', 120, 2)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    land({ status: 'done', result, stale: false })
+    await settle()
+    expect(auto.started).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const s = get()
+    expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+  })
+
+  it('a slice that fails, or is canceled, after the change: nothing is scheduled, and the next slice to land is not checked', async () => {
+    for (const end of [{ status: 'error', message: 'refused' }, { status: 'idle' }]) {
+      const stamp = running([part('a', 60, 1), part('b', 120, 2)])
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      land(end)
+      await settle()
+      expect(auto.started).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+      // a later slice that lands with the old stamp, with no nozzle volume change during it, is not this check's
+      abort = beginSlice()
+      set({ slice: { status: 'running', progress: null, startedAt: 200 } } as never)
+      land({ status: 'done', result, stale: false, stamp })
+      await settle()
+      expect(auto.started).toBe(0)
+      const s = get()
+      expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+      stop()
+    }
+  })
+
+  it('auto slice turned off before the slice lands: nothing is checked or scheduled', async () => {
+    const stamp = running([part('a', 60, 1), part('b', 120, 2)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    set({ autoSlice: false } as never)
+    land({ status: 'done', result, stale: false, stamp })
+    await settle()
+    expect(auto.started).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const s = get()
+    expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+  })
+
+  it('on a single-color plate the nozzle volume is not in the configuration: the slice lands current and nothing is checked', async () => {
+    const stamp = running([part('a', 60, 1)])
+    set({ printerNozzleVolume: 140 })
+    await vi.dynamicImportSettled()
+    land({ status: 'done', result, stale: false, stamp })
+    await settle()
+    expect(auto.started).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    const s = get()
+    expect(s.slice.status === 'done' && s.slice.stale).toBe(false)
+  })
+})
