@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Texture images: PNG and JPEG decoded to RGBA, reduced to at most `MAX_SIDE` a side, with box-filtered levels for
-//! sampling a patch of the surface at its own size, and the lookup itself (wrap, mirror, clamp or none). A lookup
-//! takes the nearest texel of its level: blending neighbor texels would make in-between colors at every color edge,
-//! and those map to a third filament.
+//! Texture images: PNG and JPEG read by [`crate::raster`] as the file stores them, reduced to at most `MAX_SIDE` a
+//! side, with box-filtered levels for sampling a patch of the surface at its own size, and the lookup itself (wrap,
+//! mirror, clamp or none). A lookup takes the nearest texel of its level: blending neighbor texels would make
+//! in-between colors at every color edge, and those map to a third filament.
 // texel offsets are within each level's pixel count, made from its own width and height
 #![allow(clippy::indexing_slicing)]
 
 use crate::error::{Error, Result};
-use crate::fm::Fm as _;
+use crate::raster::{self, Light, Round};
 
 /// The largest side kept. A bigger PNG is reduced row by row while it decodes; a bigger JPEG is refused.
-pub const MAX_SIDE: usize = 4096;
-/// A PNG past this is refused before it decodes.
-const MAX_PNG_SIDE: usize = 4 * MAX_SIDE;
+pub use crate::raster::MAX_SIDE;
+/// Why an image file could not be used as a texture, for the note that says it is left out.
+pub use crate::raster::Unusable;
 
 /// How a coordinate outside 0 to 1 reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,61 +73,7 @@ pub struct Image {
     pub file_size: (usize, usize),
 }
 
-fn srgb_to_linear() -> [f32; 256] {
-    let mut t = [0f32; 256];
-    for (i, v) in t.iter_mut().enumerate() {
-        let c = i as f32 / 255.0;
-        // an f32 table made from the same f64 curve on every target
-        #[allow(clippy::cast_possible_truncation)]
-        let lin = if c <= 0.040_45 {
-            c / 12.92
-        } else {
-            ((f64::from(c) + 0.055) / 1.055).m_powf(2.4) as f32
-        };
-        *v = lin;
-    }
-    t
-}
-
-fn linear_to_srgb(v: f32) -> u8 {
-    let v = f64::from(v.clamp(0.0, 1.0));
-    let s = if v <= 0.003_130_8 {
-        v * 12.92
-    } else {
-        1.055 * v.m_powf(1.0 / 2.4) - 0.055
-    };
-    // within 0 to 255 after the clamp
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let out = (s * 255.0).round().clamp(0.0, 255.0) as u8;
-    out
-}
-
-/// Averages `pixels` (sRGB, straight alpha) in linear light, colors weighted by their alpha.
-fn average(pixels: &[[u8; 4]], lut: &[f32; 256]) -> [u8; 4] {
-    let (mut r, mut g, mut b, mut a) = (0f32, 0f32, 0f32, 0f32);
-    for p in pixels {
-        let w = f32::from(p[3]) / 255.0;
-        r += lut[usize::from(p[0])] * w;
-        g += lut[usize::from(p[1])] * w;
-        b += lut[usize::from(p[2])] * w;
-        a += w;
-    }
-    if a <= 0.0 {
-        return [0, 0, 0, 0];
-    }
-    let n = pixels.len().max(1) as f32;
-    // within 0 to 255 after the clamp
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let alpha = (a / n * 255.0).round().clamp(0.0, 255.0) as u8;
-    [
-        linear_to_srgb(r / a),
-        linear_to_srgb(g / a),
-        linear_to_srgb(b / a),
-        alpha,
-    ]
-}
-
-fn half(l: &Level, lut: &[f32; 256]) -> Level {
+fn half(l: &Level, light: &Light) -> Level {
     let (w, h) = (l.w.div_ceil(2).max(1), l.h.div_ceil(2).max(1));
     let mut px = Vec::with_capacity(w * h);
     for y in 0..h {
@@ -145,7 +91,7 @@ fn half(l: &Level, lut: &[f32; 256]) -> Level {
                     n += 1;
                 }
             }
-            px.push(average(four.get(..n).unwrap_or_default(), lut));
+            px.push(light.average(four.get(..n).unwrap_or_default()));
         }
     }
     Level { w, h, px }
@@ -157,13 +103,13 @@ impl Image {
         if w == 0 || h == 0 || px.len() != w * h {
             return Err(Error::invalid("texture", "an image with no pixels"));
         }
-        let lut = srgb_to_linear();
+        let light = Light::new(Round::Curve);
         let mut levels = vec![Level { w, h, px }];
         while let Some(last) = levels.last() {
             if last.w == 1 && last.h == 1 {
                 break;
             }
-            let next = half(last, &lut);
+            let next = half(last, &light);
             levels.push(next);
         }
         Ok(Self {
@@ -204,17 +150,6 @@ impl Image {
     }
 }
 
-/// Why an image file could not be used as a texture, for the note that says it is left out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Unusable {
-    /// Neither a PNG nor a JPEG.
-    NotImage,
-    Damaged,
-    TooLarge,
-    /// A JPEG of a kind (arithmetic coded, lossless) the decoder does not read.
-    Unsupported,
-}
-
 impl Unusable {
     /// The note for a texture left out: "The texture a.png is damaged, so it is left out."
     #[must_use]
@@ -229,119 +164,12 @@ impl Unusable {
     }
 }
 
-/// Decodes a PNG or JPEG (by its first bytes).
+/// Decodes a PNG or JPEG (by its first bytes) as the file stores it.
 pub fn decode(bytes: &[u8]) -> std::result::Result<Image, Unusable> {
-    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        decode_png(bytes)
-    } else if bytes.starts_with(&[0xFF, 0xD8]) {
-        decode_jpeg(bytes)
-    } else {
-        Err(Unusable::NotImage)
-    }
-}
-
-fn to_rgba(color: png::ColorType, row: &[u8], out: &mut Vec<[u8; 4]>) {
-    match color {
-        png::ColorType::Rgba => out.extend(row.as_chunks::<4>().0.iter().copied()),
-        png::ColorType::Rgb => out.extend(row.as_chunks::<3>().0.iter().map(|&[r, g, b]| [r, g, b, 255])),
-        png::ColorType::GrayscaleAlpha => {
-            out.extend(row.as_chunks::<2>().0.iter().map(|&[v, a]| [v, v, v, a]));
-        }
-        // indexed comes expanded to rgb or rgba by normalize_to_color8
-        png::ColorType::Grayscale | png::ColorType::Indexed => {
-            out.extend(row.iter().map(|&v| [v, v, v, 255]));
-        }
-    }
-}
-
-fn decode_png(bytes: &[u8]) -> std::result::Result<Image, Unusable> {
-    let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
-    dec.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = dec.read_info().map_err(|_| Unusable::Damaged)?;
-    let (w, h) = {
-        let info = reader.info();
-        (info.width as usize, info.height as usize)
-    };
-    if w == 0 || h == 0 {
-        return Err(Unusable::Damaged);
-    }
-    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE {
-        return Err(Unusable::TooLarge);
-    }
-    let (color, _) = reader.output_color_type();
-    let k = w.max(h).div_ceil(MAX_SIDE).max(1);
-    // an interlaced image cannot be reduced row by row
-    if k > 1 && reader.info().interlaced {
-        return Err(Unusable::TooLarge);
-    }
-    let (ow, oh) = (w.div_ceil(k), h.div_ceil(k));
-    let lut = srgb_to_linear();
-    let mut out: Vec<[u8; 4]> = Vec::with_capacity(ow * oh);
-    if k == 1 {
-        let size = reader.output_buffer_size().ok_or(Unusable::TooLarge)?;
-        let mut buf = vec![0u8; size];
-        let info = reader.next_frame(&mut buf).map_err(|_| Unusable::Damaged)?;
-        let line = info.line_size;
-        for y in 0..h {
-            let row = buf.get(y * line..(y + 1) * line).ok_or(Unusable::Damaged)?;
-            to_rgba(color, row, &mut out);
-        }
-    } else {
-        // k rows at a time, each k x k block averaged in linear light
-        let mut band: Vec<Vec<[u8; 4]>> = Vec::with_capacity(k);
-        let mut y = 0;
-        while y < h {
-            let row = reader
-                .next_row()
-                .map_err(|_| Unusable::Damaged)?
-                .ok_or(Unusable::Damaged)?;
-            let mut px = Vec::with_capacity(w);
-            to_rgba(color, row.data(), &mut px);
-            band.push(px);
-            y += 1;
-            if band.len() == k || y == h {
-                for ox in 0..ow {
-                    let mut block = Vec::with_capacity(k * k);
-                    for r in &band {
-                        block.extend(r.get(ox * k..((ox + 1) * k).min(w)).unwrap_or_default());
-                    }
-                    out.push(average(&block, &lut));
-                }
-                band.clear();
-            }
-        }
-    }
-    let mut img = Image::from_rgba(ow, oh, out).map_err(|_| Unusable::Damaged)?;
-    img.file_size = (w, h);
+    let r = raster::read(bytes, raster::TEXTURE)?;
+    let mut img = Image::from_rgba(r.w, r.h, r.px).map_err(|_| Unusable::Damaged)?;
+    img.file_size = r.file_size;
     Ok(img)
-}
-
-fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Image, Unusable> {
-    use zune_jpeg::zune_core::bytestream::ZCursor;
-    use zune_jpeg::zune_core::colorspace::ColorSpace;
-    use zune_jpeg::zune_core::options::DecoderOptions;
-    let options = DecoderOptions::default()
-        .jpeg_set_out_colorspace(ColorSpace::RGB)
-        .set_max_width(MAX_SIDE)
-        .set_max_height(MAX_SIDE);
-    let mut dec = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options);
-    let rgb = dec.decode().map_err(|e| match e {
-        zune_jpeg::errors::DecodeErrors::LargeDimensions(_) => Unusable::TooLarge,
-        zune_jpeg::errors::DecodeErrors::Unsupported(_) => Unusable::Unsupported,
-        _ => Unusable::Damaged,
-    })?;
-    let info = dec.info().ok_or(Unusable::Damaged)?;
-    let (w, h) = (usize::from(info.width), usize::from(info.height));
-    if rgb.len() != w * h * 3 {
-        return Err(Unusable::Damaged);
-    }
-    let px = rgb
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .map(|&[r, g, b]| [r, g, b, 255])
-        .collect();
-    Image::from_rgba(w, h, px).map_err(|_| Unusable::Damaged)
 }
 
 #[cfg(test)]
@@ -444,6 +272,13 @@ mod tests {
             Unusable::Damaged.note("maps/b.jpg"),
             "The texture maps/b.jpg is damaged, so it is left out."
         );
+    }
+
+    #[test]
+    fn a_progressive_jpeg_header_in_a_few_bytes_is_refused_before_it_decodes() {
+        // a 4096 px color square would set aside about 150 MB, but its blocks need far more bytes than it has
+        let hostile = crate::raster::tests::flat_jpeg(0xC2, 4096, 4096, 3, 16);
+        assert_eq!(decode(&hostile).err(), Some(Unusable::Damaged));
     }
 
     #[test]
