@@ -7,7 +7,14 @@ import type { PilotDim, PilotSheetBind, PilotSheetSolid } from '@slicerx/contrac
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
-export function askTool(): PilotTool<never> {
+/** A question about sizes, which belongs on the dimension sheet with suggested values rather than on a card of buttons. */
+const SIZE_QUESTION = /\b(?:dimensions?|sizes?|measurements?|how (?:big|wide|tall|long|thick|deep|high|large))\b/i
+
+/** What the model is told when it asks about sizes on a card where the sheet is offered. */
+export const SIZES_ON_SHEET = 'Not shown: sizes go on the dimension sheet, not a question card. Call pilot.sheet now with a suggested value for each size (source guess unless you know it); the person edits them there.'
+
+/** `sizesOnSheet`: the sheet is offered beside it (the mimir tab), so a question about sizes goes there instead. */
+export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never> {
   return defineTool({
     name: 'pilot.ask',
     version: '1.0.0',
@@ -25,6 +32,7 @@ export function askTool(): PilotTool<never> {
     args: (i) => `"${i.question}"`,
     async run(i, ctx) {
       if (!ctx.ask) return { ok: false, summary: 'Nobody here can answer a question' }
+      if (opts.sizesOnSheet && SIZE_QUESTION.test(`${i.title} ${i.question}`)) return { ok: false, summary: SIZES_ON_SHEET }
       const answer = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
       // turning a question down is an answer, not a failure: the run carries on from it
       if (wasDismissed(answer.id)) {

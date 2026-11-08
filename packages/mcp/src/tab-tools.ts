@@ -196,7 +196,7 @@ export type CardPlans = ReturnType<typeof createCardPlans>
  * in the tab the person traces with the sketch tool's dialog.
  */
 export function mimirTabTools(plan: PilotTool<never>, extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), plan]
+  const own = [askTool({ sizesOnSheet: true }), lookupTool(), sheetTool(), sheetBindTool(), plan]
   const names = new Set([...own.map((t) => t.name), 'design.put_plan', 'design.trace_image'])
   return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
