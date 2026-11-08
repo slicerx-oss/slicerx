@@ -54,6 +54,7 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
     features: shaping.length,
     steps: shaping.map((s) => stepName(s)),
     tags: shaping.map((s) => s.feature?.trim() || null),
+    stepIds: shaping.map((s) => s.id),
     ...(world.length > 1 ? { parts: world.map((w) => bounds([w])) } : {}),
     watertight,
     minWallMm: wall.mm,
