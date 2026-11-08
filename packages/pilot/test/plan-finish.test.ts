@@ -7,6 +7,7 @@ import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/con
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { planLimits } from '../src/runtime'
 import type { ScriptStepData } from '../src/provider/scripted'
 
 const FEATURES = ['Base', 'Hollow', 'Standoffs', 'USB-C cutout', 'Micro HDMI cutouts', 'USB cutouts', 'Ethernet cutout', 'Vents', 'Lid', 'Lid lip', 'Snap clips', 'Fillets']
@@ -144,7 +145,8 @@ describe('a sheet kept after a cut-off run', () => {
       input: z.object({ name: z.string(), operation: z.string().optional(), design: z.string().optional() }),
       async run(i) {
         log.push(i.name)
-        return { summary: `Built ${i.name}` }
+        // a body made with no design argument lands in the open design, which the result names
+        return { summary: `Built ${i.name}`, output: { design: i.design ?? 'd1' } }
       },
     })
   const SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes', dims: [{ key: 'length', label: 'Length', value: 96, unit: 'mm', source: 'guess' }] } }
@@ -189,4 +191,53 @@ describe('a sheet kept after a cut-off run', () => {
     expect(r.log).toEqual(['Base', 'Base hollow', 'Lid'])
     expect(r.blocked).toBe(1)
   })
+
+  it('a "keep going" run that only adds features uses up the kept sheet: a new part after it needs its own', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Vents', 'd1', 'cut'), { text: 'Done.' }, x('Stand', 'd2'), { text: 'I need its sizes first.' }]
+    const r = await chat(steps, ['A Pi 5 case', 'keep going', 'now a phone stand'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends).toEqual(['max_steps', 'end', 'end'])
+    expect(r.log).toEqual(['Base', 'Base hollow', 'Vents'])
+    expect(r.blocked).toBe(1)
+  })
+
+  it('a lid begun in a second design under the same sheet goes on after a cut-off run', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Lid', 'd2'), x('Lid lip', 'd2'), { text: 'The lid is built.' }]
+    const r = await chat(steps, ['A box with a lid', 'keep going'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends).toEqual(['max_steps', 'end'])
+    expect(r.log).toEqual(['Base', 'Lid', 'Lid lip'])
+    expect(r.blocked).toBe(0)
+  })
+
+  it('a first part built with no design argument holds the sheet to the design it landed in', async () => {
+    const noDesign = { calls: [{ name: 'geom.extrude', args: { name: 'Base' } }] }
+    const blockedStand = await chat([{ calls: [SHEET] }, noDesign, x('Base hollow', 'd1', 'cut'), x('Stand', 'd2'), { text: 'I need its sizes first.' }], ['A Pi 5 case', 'now a phone stand'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(blockedStand.log).toEqual(['Base', 'Base hollow'])
+    expect(blockedStand.blocked).toBe(1)
+    const lid = await chat([{ calls: [SHEET] }, noDesign, x('Base hollow', 'd1', 'cut'), x('Lid', 'd1'), { text: 'Done.' }], ['A Pi 5 case', 'keep going'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(lid.log).toEqual(['Base', 'Base hollow', 'Lid'])
+    expect(lid.blocked).toBe(0)
+  })
+
+  it('a run that was not cut off builds a second design under its own sheet', async () => {
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Lid', 'd2'), { text: 'Built.' }]
+    const r = await chat(steps, ['A box with a lid'], { maxSteps: 10, maxToolCalls: 10 })
+    expect(r.log).toEqual(['Base', 'Lid'])
+    expect(r.blocked).toBe(0)
+  })
 })
+
+describe('planLimits', () => {
+  const accepted = JSON.stringify({ ok: true, result: { accepted: true } })
+  const plan = (n: number) => ({ name: 'design.plan', arguments: JSON.stringify({ features: Array.from({ length: n }, (_, k) => ({ name: `F${k}` })) }) })
+
+  it('a 30-feature plan raises steps to 120 and calls to 240 at most', () => {
+    expect(planLimits(plan(30), accepted, { step: 0, calls: 0 })).toEqual({ steps: 102, calls: 204 })
+    expect(planLimits(plan(30), accepted, { step: 30, calls: 100 })).toEqual({ steps: 120, calls: 240 })
+  })
+
+  it('a plan not accepted, or another tool, raises nothing', () => {
+    expect(planLimits(plan(5), JSON.stringify({ ok: false, result: { accepted: false } }), { step: 0, calls: 0 })).toBeUndefined()
+    expect(planLimits({ name: 'geom.extrude', arguments: '{}' }, accepted, { step: 0, calls: 0 })).toBeUndefined()
+  })
+})
+
