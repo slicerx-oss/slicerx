@@ -99,6 +99,9 @@ pub struct Issue {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub at: Option<V2>,
+    /// For loops that cross, the other loop and its segment.
+    #[serde(skip)]
+    pub other: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -211,6 +214,7 @@ fn issue(l: usize, seg: Option<usize>, kind: IssueKind, message: String, at: Opt
         kind,
         message,
         at,
+        other: None,
     }
 }
 
@@ -950,7 +954,7 @@ pub fn check(loops: &[Loop]) -> SketchCheck {
             };
             issues.push(issue(*la, Some(sa.max(sb)), IssueKind::SelfCrossing, message, at));
         } else {
-            issues.push(issue(
+            let mut cross = issue(
                 *lb,
                 Some(sb),
                 IssueKind::LoopsCross,
@@ -964,7 +968,9 @@ pub fn check(loops: &[Loop]) -> SketchCheck {
                     la + 1
                 ),
                 at,
-            ));
+            );
+            cross.other = Some((*la, sa));
+            issues.push(cross);
         }
     }
     for (i, (l, r)) in rings.iter().enumerate() {
