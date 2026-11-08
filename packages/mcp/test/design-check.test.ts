@@ -519,7 +519,7 @@ async function plate(t: number, d: number, plan: Partial<PartPlan> = {}, tags: [
   await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: t, ...tag(0) })
   await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: d }, frame: top(t), placement: { center: [12, 10] }, distance_mm: t, operation: 'cut', ...tag(1) })
   plans.put({ planId: 'plate-1', part: 'Plate', units: 'mm', features: [{ name: 'plate', kind: 'extrude', sizes: { width: 40, depth: 20, thickness: t } }, { name: 'hole', kind: 'cut', sizes: { diameter: 6 } }], overall: { x: 40, y: 20, z: t }, holes: [{ name: 'mount hole', diameter: 6 }], assumptions: [], questions: [], ...plan })
-  return { h, ok, design }
+  return { h, ok, design, plans }
 }
 
 describe('slicerx_design_check', () => {
@@ -592,6 +592,35 @@ describe('slicerx_design_check', () => {
     expect(again.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
     // each untagged step is hinted once
     expect(got.match(/is untagged/g)).toHaveLength(1)
+  })
+
+  it('clears a tag with an empty feature, and keeps tags through undo, redo and a replayed edit', async () => {
+    const { ok, design, plans } = await plate(5, 6)
+    const tags = async () => (await ok<{ steps: { feature?: string }[] }>('slicerx_design_steps', { design })).steps.map((st) => st.feature)
+    // a plan gets one fix round, so each check here is of a plan of its own
+    let n = 0
+    const passes = async () => {
+      const planId = `again-${++n}`
+      plans.put({ ...plans.get('plate-1')!.plan, planId, overall: undefined })
+      return (await ok<Check>('slicerx_design_check', { planId, design })).items.find((i) => i.name === 'feature count')!.pass
+    }
+    for (const empty of ['', '   ']) {
+      await ok('slicerx_design_edit_step', { design, step: 2, feature: empty })
+      expect(await tags()).toEqual(['plate', undefined])
+      expect(await passes()).toBe(false)
+      await ok('slicerx_design_edit_step', { design, step: 2, feature: 'hole' })
+    }
+    expect(await tags()).toEqual(['plate', 'hole'])
+    // a thicker plate replays the hole after it, tag and all
+    await ok('slicerx_design_edit_step', { design, step: 1, value: 6 })
+    expect(await tags()).toEqual(['plate', 'hole'])
+    expect(await passes()).toBe(true)
+    // undo takes the last step (the hole) off; redo puts it back with its tag
+    await ok('slicerx_design_undo', { design })
+    expect(await tags()).toEqual(['plate'])
+    await ok('slicerx_design_redo', { design })
+    expect(await tags()).toEqual(['plate', 'hole'])
+    expect(await passes()).toBe(true)
   })
 
   it('keeps the tags through design.save and design.open, so the reopened plate still passes its plan', async () => {
