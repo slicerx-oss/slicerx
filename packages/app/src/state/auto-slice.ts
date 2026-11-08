@@ -6,12 +6,11 @@
 // the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
 // once, on release. An opened project and the example plate at launch wait for Slice instead.
 import type { Host } from '@slicerx/contracts'
-import { cancelSlice, slicePlate } from './actions'
+import { cancelSlice, slicePlate, STALE_SLICE } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
-import { configKey } from '../plate/resume-tops'
-import { inputsChanged, KEY_CONFIG } from './slice-inputs'
-import { appStore, type AppState } from './store'
+import { inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
+import { appStore } from './store'
 
 export { INPUTS } from './slice-inputs'
 
@@ -34,9 +33,6 @@ let pending: () => boolean = () => false
 export const autoSlicePending = (): boolean => pending()
 
 /** Starts watching the store. Returns the stop function. */
-/** A slice input changed, or a KEY_CONFIG value the plate's configuration reads: a new nozzle volume slices again too. */
-const changed = (a: AppState, b: AppState): boolean => inputsChanged(a, b) || (KEY_CONFIG.some((k) => a[k] !== b[k]) && configKey(a) !== configKey(b))
-
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
@@ -85,6 +81,14 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     waiting = null
     void slicePlate(host, { auto: true })
   }
+  const configMoved = async (): Promise<void> => {
+    const { stampBlock } = await import('../plate/resume-tops')
+    const s = appStore.getState()
+    if (!s.autoSlice || s.liveEdit || s.slice.status !== 'done' || s.slice.stale || stampBlock(s, s.slice.stamp) !== STALE_SLICE) return
+    appStore.setState({ slice: { ...s.slice, stale: true } })
+    clear()
+    timer = setTimeout(() => run(), delayMs)
+  }
   const unsubscribe = appStore.subscribe((s, prev) => {
     if (!s.autoSlice) {
       if (s.sliceHeld) appStore.setState({ sliceHeld: false })
@@ -102,7 +106,13 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     const turnedOn = !prev.autoSlice || (prev.autoSliceBySize && !s.autoSliceBySize)
     const released = prev.liveEdit && !s.liveEdit
     const loaded = prev.plateLoading && !s.plateLoading
-    if (!turnedOn && !released && !changed(s, prev) && !loaded) return
+    if (!turnedOn && !released && !changed(s, prev) && !loaded) {
+      // A KEY_CONFIG value (a new printer's nozzle volume, an opened project's flush matrix) is not a slice input, but a
+      // finished slice whose configuration read it is stale (resume-tops.ts stampBlock): mark it and slice again. The
+      // stamp check loads with the slice code, so the shell does not carry it.
+      if (KEY_CONFIG.some((k) => s[k] !== prev[k])) void configMoved()
+      return
+    }
     // An open whose model sliced while it loaded and did not change since: that slice, running or done, is the one.
     if (loaded && prev.sliceDuringOpen && !turnedOn && !released && !changed(s, prev) && (s.slice.status === 'running' || (s.slice.status === 'done' && !s.slice.stale))) return
     if (s.slice.status === 'running') cancelSlice({ quiet: true })
