@@ -1188,3 +1188,34 @@ describe('a sketch drawn for a design in one step', () => {
     }
   })
 })
+
+describe('a sketch drawn for a design that waits again', () => {
+  it('stays in the timeline under its id when the design\'s only step, drawn on it, is undone, and redo and a new step use that id', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = String((await run('design.new', { name: 'Tray' })).output['design'])
+    const k = String((await run('design.sketch', { design: d, loops: square(0, 0, 20) })).output['id'])
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 5 })).summary).toMatch(/moved to the plate by \(128, 128\) mm/)
+    const stored = structuredClone(sketchItem(k))
+    const sketches = () => get().timeline.items.filter((i) => i.kind === 'sketch').map((i) => i.id)
+    const featureOn = () => get().timeline.items.filter((i) => i.kind === 'feature' && i.body === d).map((i) => i.kind === 'feature' && i.sketch)
+    // the step that made the body is undone: the design waits, and its sketch with it, as stored
+    await run('design.undo', { design: d })
+    expect(get().plate).toHaveLength(0)
+    expect(sketches()).toEqual([k])
+    expect(sketchItem(k)).toEqual(stored)
+    expect(host.sketch!(k, d).frame?.origin ?? [0, 0, 0]).toEqual([0, 0, 0])
+    // redone: the step names the same sketch
+    expect((await run('design.redo', { design: d })).ok).toBe(true)
+    expect(sketches()).toEqual([k])
+    expect(featureOn()).toEqual([k])
+    expect(volume(entry(d).parts)).toBeCloseTo(20 * 20 * 5, 0)
+    // undone again, then a new step on the same id
+    await run('design.undo', { design: d })
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 3 })).ok).toBe(true)
+    expect(sketches()).toEqual([k])
+    expect(featureOn()).toEqual([k])
+    expect(volume(entry(d).parts)).toBeCloseTo(20 * 20 * 3, 0)
+    expect(onPlate(d)).toEqual({ min: [118, 118, 0], max: [138, 138, 3] })
+  })
+})
