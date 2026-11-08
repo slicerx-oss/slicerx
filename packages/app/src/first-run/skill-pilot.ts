@@ -96,7 +96,8 @@ export function createSkillPilot(pilot: Pilot, sessionId: string): OnboardingPil
         } else if (e.type === 'tool_result' && e.ok) {
           const cards = resolvedProposals(e.output, seen)
           if (cards.length) push({ ...reply, proposals: [...reply.proposals, ...cards] })
-        } else if (e.type === 'error') {
+        } else if (e.type === 'error' && e.waiting !== true) {
+          // a wait mimir goes on from (free mimir's per-minute limit) is no failure; a give-up after it arrives as its own error
           if (/429|rate/i.test(e.message)) status = 'rate-limited'
           else if (/network|fetch|offline/i.test(e.message)) status = 'offline'
           push({ ...reply, text: `${reply.text}${reply.text ? '\n' : ''}${e.message}`, unsure: true })
