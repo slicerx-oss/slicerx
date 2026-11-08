@@ -186,34 +186,33 @@ export const ONE_PART_NOTE = (name: string, id: string, why: Restart): string =>
       ? `${name} (${id}), the part this reply started, has no body yet`
       : why === 'failed'
         ? `the last step on ${name} (${id}), the part this reply started, did not go through`
-        : `this name starts ${name} (${id}), a part this reply already started, again`
+        : undefined
+  if (!reason) return `Nothing was started, since this name is ${name} (${id}) again, a part this reply already started. A part the person asked for on its own needs a name of its own, not this one with a size or version added; to change ${name}, keep working in ${id}.`
   return `Nothing was started, since ${reason}. Fix the part you started: design.undo takes back the last step that went through, a step that did not go through changed nothing, and the next step goes on in ${id}. A separate part gets its own design.new under its own name once the part you started has a body.`
 }
 /** The code on that refusal, so a replay of a reply recorded before it can tell (the creative eval). */
 export const SAME_PART = 'same_part'
-/** Words in a part's name that only say which try or version it is. */
-const VERSION_WORDS = new Set(['new', 'again', 'retry', 'redo', 'redone', 'fix', 'fixed', 'corrected', 'improved', 'better', 'updated', 'revised', 'rework', 'reworked', 'final', 'version', 'ver', 'rev', 'copy', 'attempt', 'try', 'another', 'second', 'alt'])
 /**
- * The words of a part's name, lowercase, in any script, without version words ("v2", "rev3", "new", "fixed"). A bare
- * number is a version word too, unless `numbered`: in "Bracket 1" and "Bracket 2" the number tells the parts apart.
+ * Words in a part's name that only say which try, version or size of the part it is ("Box v2", "New box", "Sturdier
+ * stand"). An ordinal such as "Second" or a bare number tells parts apart instead ("Shelf bracket 2").
  */
-function nameWords(name: string, numbered: boolean): string[] {
-  const words = name.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
-  return words.filter((w) => !VERSION_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w) && (numbered || !/^\d+$/.test(w)))
+const VERSION_WORDS = new Set(['new', 'again', 'retry', 'redo', 'redone', 'fix', 'fixed', 'corrected', 'improved', 'better', 'updated', 'revised', 'rework', 'reworked', 'final', 'version', 'ver', 'rev', 'copy', 'attempt', 'try', 'sturdier', 'stronger', 'thicker', 'thinner', 'bigger', 'larger', 'smaller', 'simpler', 'mm', 'cm', 'in', 'inch', 'inches'])
+/** A size written into a name: a number with its unit ("3 mm", "2.5cm", "1 in", '2"'). */
+const SIZE_IN_NAME = /\d+(?:[.,]\d+)?\s*(?:mm|cm|in|inch|inches|")(?![\p{L}\p{N}])/giu
+/** The words of a part's name, lowercase, in any script, without its sizes and the words that only say which try it is. */
+function nameWords(name: string): string[] {
+  const words = name.replace(SIZE_IN_NAME, ' ').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
+  return words.filter((w) => !VERSION_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w))
 }
 /**
- * The started part a design.new named `name` starts again, by name alone: its name without version words is that part's
- * name, or holds every word of it ("Cable clip 3 mm" after "Cable clip", "Box with lid" after "Box"). Undefined when the
- * name is another part's. Only names are compared, never the person's message, so it reads the same in any language.
+ * The started part a design.new named `name` starts again, by name alone: the two names are the same once sizes and
+ * version words are left out ("Cable clip 3 mm" or "Box v2" after "Cable clip" or "Box"). A name that adds a word of its
+ * own names another part ("Planter saucer" after "Planter", "Shelf bracket 2" after "Shelf bracket"). Only names are
+ * compared, never the person's message, so it reads the same in any language.
  */
 export function restartOf<T extends { name: string }>(name: string, started: readonly T[]): T | undefined {
-  return started.findLast((part) => {
-    const numbered = /\d/.test(part.name.replace(/\b(v|ver|rev|mk)\d+\b/gi, ''))
-    const was = nameWords(part.name, numbered)
-    const now = new Set(nameWords(name, numbered))
-    if (was.length === 0) return now.size === 0
-    return was.every((w) => now.has(w))
-  })
+  const now = [...new Set(nameWords(name))].sort().join(' ')
+  return started.findLast((part) => [...new Set(nameWords(part.name))].sort().join(' ') === now)
 }
 /** The answer to a new part started before its sizes were confirmed on a sheet. */
 export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.'
