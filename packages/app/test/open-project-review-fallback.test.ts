@@ -19,6 +19,9 @@ const hostWith = (reviewScripts: (inputs: ScriptReviewInput[]) => Promise<Script
 /** Fake time past the open's wait for the engine's script review. */
 const SLACK_MS = 1_000
 
+/** A real review of a project's scripts takes a few seconds, so the open must be willing to wait at least this long. */
+const MIN_WAIT_MS = 5_000
+
 /** Real time, not fake: lets the open's module loads and promises run. Resolves when `until` is true or `ms` has passed. */
 async function realWait(until: () => boolean, ms: number): Promise<void> {
   const end = Date.now() + ms
@@ -81,5 +84,25 @@ describe('opening a project when its G-code check fails', () => {
     const records = get().projectScriptReviews?.records ?? []
     expect(records.length).toBeGreaterThan(0)
     expect(records.every((r) => r.review.decision === 'review')).toBe(true)
+  })
+
+  it('still waits for a check that has not answered just before the wait ends', async () => {
+    let done = false
+    let asked = false
+    const opening = openModelBytes(hostWith(() => { asked = true; return new Promise<ScriptReview[]>(() => undefined) }), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
+    await realWait(() => asked, 30_000)
+    expect(asked, 'the open never asked for the script review').toBe(true)
+    let elapsed = 0
+    for (const until of [MIN_WAIT_MS, REVIEW_WAIT_MS - 1]) {
+      await vi.advanceTimersByTimeAsync(Math.max(0, until - elapsed))
+      elapsed = Math.max(elapsed, until)
+      // Real time for whatever the open would still do, so a wait that is too short shows up as a finished open.
+      await realWait(() => done, 1_000)
+      expect(done, `the open gave up on the review ${until} ms in, before its ${REVIEW_WAIT_MS} ms wait`).toBe(false)
+    }
+    await vi.advanceTimersByTimeAsync(SLACK_MS)
+    await realWait(() => done, 15_000)
+    await opening
+    expect(done).toBe(true)
   })
 })
