@@ -23,6 +23,7 @@ import { engineVerdict } from '../plate/engine-check'
 import { resolveConfig } from '../adapters/config'
 import { areaOrigin, pointToPlate } from '../plate/bed-origin'
 import { collisionParts, collisionsOf, damagedOf } from '../plate/heimdall'
+import { needsSlice } from '../plate/resume-tops'
 import { LinkError } from './methods-error'
 import { namesOf } from './mimir-run'
 import { PREVIEW_BUSY_TOOLS } from './preview-guard'
@@ -68,16 +69,17 @@ async function printerState(s: AppState) {
  * machine, the plate objects it names (printing first, by id and name), the zone or the prime tower it meets when that
  * is no plate object, its layers counted from 1, the part it strikes (damaged, a hit only), where it goes deepest and
  * the region struck (plate mm, from the printable area's front left corner, as the plate counts), and picked while its
- * row is. `stale` when the plate changed since the slice.
+ * row is. `stale` when the plate changed since the slice, a rename or a layer mark included (needsSlice).
  */
-export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'> & Partial<Pick<AppState, 'strikePick' | 'easy' | 'overrides'>>) {
+export function collisionsReadback(s: AppState) {
   if (s.slice.status !== 'done') return null
   const named = (id: string) => ({ id, name: s.plate.find((e) => e.id === id)?.name ?? null })
   // The engine works in the printer's coordinates; the plate counts from the printable area's corner.
   const origin = s.easy ? areaOrigin(resolveConfig(s.easy, s.overrides ?? {})['printable_area']) : ([0, 0] as const)
   const mm = (p: readonly [number, number, number]) => pointToPlate(p, origin).map((v) => Math.round(v * 100) / 100) as [number, number, number]
   return {
-    stale: s.slice.stale === true,
+    // Out of date also after an edit that changed its G-code (needsSlice: a rename, a layer mark), as the plates read.
+    stale: s.slice.stale === true || needsSlice(s),
     items: collisionsOf(s).map((c, index) => {
       const objects = collisionParts(s, c)
       const damaged = c.severity === 'hit' ? damagedOf(s, c) : null
