@@ -103,6 +103,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
 | `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
 | `mimir-sheet-status` | The record's status beside its buttons: the assumed values (`data-assumed`) while guesses remain, then whether it was confirmed or canceled |
+| `mimir-sheet-said` | On a sheet's record, the words the person wrote to mimir while it waited, which set the sheet aside |
 | `mimir-sizes-pill` | Sizes, floating over the chat while a waiting sheet's record is scrolled out of view; it scrolls the record back and focuses the first assumed size |
 | `mimir-sheet-open` | On a built sheet's record in the tab: Edit sizes, once its rows drive the built steps |
 | `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts. On a phone (`data-phone`) it shows Top and Isometric side by side, or Front or Right alone, picked in its header, and `data-folded` while folded to the header |
@@ -120,7 +121,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-ravens` | The battle ravens watermark behind the conversation; `data-shown` while no model answers in the tab |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
-| `mimir-drawing-status` | The strip on the drawing's bottom edge: the sheet's title, its units and that nothing is built yet |
+| `mimir-drawing-status` | The strip on the drawing's bottom edge: the sheet's title, its units and whether the part is built (`mimir-drawing-built`) |
+| `mimir-drawing-built` | The last cell of `mimir-drawing-status`: As built when the drawing shows a design already built, Not built yet when it draws the sheet's own solids |
 | `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
 | `mimir-lookup-close` | The close button on a lookup card |
 | `mimir-part` | A part card in the conversation: in place of the call that made a part, or after the step rows for the design a reply built (one card per reply, the rows kept); `data-part` is the part's object id on the plate. The body (`Select the <name>`) selects the part and the tab stays; Edit (`Edit the <name>`, none on a phone) opens it in Model at its newest step |
