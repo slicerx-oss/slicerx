@@ -245,7 +245,9 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
     if (params.op === 'parts.add') {
       const parts = readStored(s['params']['parts'], files)
       if (!parts) return null
-      params = { ...params, parts }
+      // the part an array copied, by name: kept only as a name a part could have (the tools take 120 characters)
+      const { arrayOf, ...rest } = params
+      params = { ...rest, parts, ...(typeof arrayOf === 'string' && arrayOf.trim() && arrayOf.length <= 120 ? { arrayOf } : {}) }
     }
     steps.push({
       id: s['id'],
