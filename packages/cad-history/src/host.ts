@@ -12,8 +12,14 @@ export interface Design {
   id: string
   name: string
   history: History
-  /** The object's transform: the frame of every point a client gives and gets. */
+  /**
+   * The design's own frame: every point a client gives and gets is in it. It is the object's transform on the plate
+   * moved back by the moves a host made to land it (`placed`), so a step given in the frame the design was built in
+   * still meets its body after a landing (design-frame.ts).
+   */
   transform: Mat4
+  /** How far the host's landings moved the object on the plate, mm in X and Y; absent when none did. */
+  placed?: [number, number]
   /** The parts after the last replay, in the object's own frame. */
   parts: HistoryMesh[]
   status: StepStatus[]
@@ -26,12 +32,21 @@ export interface Design {
 }
 
 /**
- * A first body built off the bed: moved by (dxMm, dyMm) onto it, after which the design's coordinates are the plate's;
+ * A first body built off the bed: moved by (dxMm, dyMm) onto it as a whole, its coordinates staying the design's own;
  * or offBed when no spot on the bed holds it, so it stays where it was built. Off the bed counts what prints around the
  * part (brim, skirt) and the excluded areas. `edit` marks a part an edit left off the bed, landed again the same way;
- * `locked` one that stayed, and `parked` one that was off the bed before the edit and stays there.
+ * `locked` one that stayed, and `parked` one that was off the bed before the edit and stays there. `room` names the
+ * other designs a host moved over, each as a whole, so a new body had room on the bed.
  */
-export type Landed = { dxMm: number; dyMm: number; edit?: true } | { offBed: true; edit?: true; locked?: true; parked?: true }
+export type Landed = { dxMm: number; dyMm: number; edit?: true; room?: RoomMove[] } | { offBed: true; edit?: true; locked?: true; parked?: true }
+
+/** Another design moved over on the plate, as a whole, to make room for a new body. */
+export interface RoomMove {
+  design: string
+  name: string
+  dxMm: number
+  dyMm: number
+}
 
 export interface DesignCommit {
   step: Step
@@ -66,10 +81,16 @@ export interface DesignHost {
   replay(d: Design, opts?: { expectedRevision?: string }): Promise<void>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
-  /** A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. */
-  sketch?(id: string): SketchItem
-  /** Puts a finished sketch in the design timeline at its marker. No frame is the bed. */
-  addSketch?(s: { frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[] }): SketchItem
+  /**
+   * A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. Given `design`, its
+   * plane comes in that design's frame (design-frame.ts); without, in the plate's.
+   */
+  sketch?(id: string, design?: string): SketchItem
+  /**
+   * Puts a finished sketch in the design timeline at its marker. No frame is the bed. Given `design`, the frame is in
+   * that design's frame, and the sketch is stored in the plate's.
+   */
+  addSketch?(s: { frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[] }, design?: string): SketchItem
   /** The bed's size, mm, for placing on the bed; only a host with a printer (the app) knows it. */
   bed?(): { widthMm: number; depthMm: number }
   /** Solves loops with their constraints as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch turns driven. */

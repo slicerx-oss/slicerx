@@ -535,13 +535,15 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
   const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
-  // a finished sketch of the design timeline: only the app keeps them
-  const finished = (id: string) => {
+  // a finished sketch of the design timeline, in the frame of the design it is used on: only the app keeps them
+  const finished = (id: string, design: string) => {
     const host = deps.designs
     if (!host?.sketch) throw new ToolInputError(`sketch: finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again`)
-    return host.sketch(id)
+    return host.sketch(id, design)
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
+  // the design a new sketch is drawn for, by its id, when the call names one
+  const sketchFor = (design: string | undefined): string | undefined => (design === undefined ? undefined : designOf(design).id)
 
   // the check issues of a spline the engine cannot draw (repeated points, too sharp a bend, too many points)
   // a sketch past the point budget is named on the loop that tips it, which need not be a spline
@@ -557,7 +559,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
@@ -593,7 +595,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const facePick = defineTool({
     name: 'geom.face_pick',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description:
@@ -621,7 +623,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
@@ -766,7 +768,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.sketch !== undefined ? finished(i.sketch) : null
+        const k = i.sketch !== undefined ? finished(i.sketch, d.id) : null
         const frame = k ? k.frame : frameOf(f)
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
@@ -806,7 +808,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.sketch !== undefined ? finished(i.sketch) : null
+        const k = i.sketch !== undefined ? finished(i.sketch, d.id) : null
         const frame = k ? k.frame : frameOf(i.frame)
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
@@ -869,7 +871,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id, d.id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
         return stepOut(d, verb)
@@ -926,9 +928,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.profile_sketch ? finished(i.profile_sketch) : null
+        const k = i.profile_sketch ? finished(i.profile_sketch, d.id) : null
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
-        const j = i.path_sketch ? finished(i.path_sketch) : null
+        const j = i.path_sketch ? finished(i.path_sketch, d.id) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
         const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, withFeature(i.feature))
@@ -943,11 +945,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketch = defineTool({
     name: 'design.sketch',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'slice',
-    description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve.`,
-    input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
+    description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them; without, in the plate's.`,
+    input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional(), design: designArg.optional().describe("The design the sketch is drawn for: its frame is in that design's coordinates") }),
     async run(i) {
       const loopsIn = i.loops
       splinesOk(loopsIn)
@@ -956,7 +958,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       await splinesDraw(loopsIn)
       const frame = frameOf(i.frame)
       if (!i.constraints?.length) {
-        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }))
+        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }), sketchFor(i.design))
         return { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
       }
       if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
@@ -964,7 +966,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
       // the solve moves spline points: two on one spot, or one dragged far, is refused here too
       await splinesDraw(solved.loops)
-      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }))
+      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }), sketchFor(i.design))
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
       return { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
@@ -973,7 +975,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketchSvg = defineTool({
     name: 'design.sketch_svg',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description: `Turn SVG artwork into a finished sketch in the open project's design timeline, as Import SVG in the sketch tool does: each closed path of a filled or stroked shape becomes a loop of lines, arcs, circles and splines (holes stay loops inside, transforms apply), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. Open strokes, text and images are left out and named in warnings. Returns the sketch id, its loops as stored, how many of each curve, the size, and the sketch check (holes, area, any crossings).`,
@@ -984,6 +986,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           .min(1)
           .describe(`The SVG file as text. With the other fields it may come to ${kb(SVG_ARGS)} (${SVG_ARGS} bytes of UTF-8 JSON, quotes escaped), the most the app link carries`),
         frame: frameRef.optional(),
+        design: designArg.optional().describe("The design the sketch is drawn for: frame and center are in that design's coordinates"),
         scale: z.number().positive().optional().describe("mm per SVG unit; the file's own size when absent, and the fits are ignored when given"),
         fit_width_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this width'),
         fit_height_mm: z.number().positive().max(10_000).optional().describe('Scale the artwork to this height, when no width is given'),
@@ -1000,7 +1003,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
       // the middle of the plane, as the sketch panel starts it
       const bed = i.frame ? undefined : host.bed?.()
-      const center = i.center ?? (bed ? [bed.widthMm / 2, bed.depthMm / 2] : [0, 0])
+      // the bed's middle in the plate's coordinates, so in a landed design's frame it is less its landing
+      const off = i.design !== undefined && bed ? (designOf(i.design).placed ?? [0, 0]) : [0, 0]
+      const center = i.center ?? (bed ? [bed.widthMm / 2 - off[0]!, bed.depthMm / 2 - off[1]!] : [0, 0])
       const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center, toleranceMm: i.tolerance_mm })
       const req = { svg: i.svg, options }
       const out = deps.files.engine ? await call('sketch.svg', req) : await engine('sketch.svg', req)
@@ -1010,7 +1015,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       // a spline that cannot be drawn never reaches the timeline, as for design.sketch
       const bad = undrawable(issues, loopsIn)
       if (bad.length) throw new ToolInputError(`svg: ${bad.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
-      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }))
+      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }), sketchFor(i.design))
       const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
       const size = out['sizeMm'] as [number, number]
       const holes = (check.loops ?? []).filter((l) => l.role === 'hole').length
@@ -1028,7 +1033,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketchProject = defineTool({
     name: 'design.sketch_project',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -1377,7 +1382,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const info = defineTool({
     name: 'geom.info',
-    version: '1.2.0',
+    version: '1.3.0',
     source: 'command',
     permission: 'read',
     description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step; a part is closed when, with corners at the same point taken as one, every edge has exactly two faces, as the slicer reads it, and the summary says what keeps a part open. With --app, read the body in the open project without changing its history.',
@@ -1425,7 +1430,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const measure = defineTool({
     name: 'geom.measure',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:

@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The creative eval builds a reply's part where the app's plate would: a first body built off the bed lands on it in
-// both (@slicerx/cad-history landing.ts), and so does a part an edit takes off the bed, so the steps after it, given in
-// plate millimeters, change the same body. Each scenario runs the same calls on the app's design host and on the
+// both (@slicerx/cad-history landing.ts), and so does a part an edit takes off the bed. A landing moves the design as a
+// whole, so the steps after it, given in the frame the design was built in, change the same body. Each scenario runs the same calls on the app's design host and on the
 // eval's, and every reply must match: summary, output and any error, with the design, step and revision ids each host
 // makes put aside. The calls are kept here, not read from the eval's recordings, which every live capture rewrites.
-import { bakeMesh, type Design, type DesignHost } from '@slicerx/cad-history'
+import { bakeMesh, clearReplayCache, type Design, type DesignHost } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { creativeEnv } from '@slicerx/mcp/evals/creative'
 import { createCardPlans, createPlanRegistry, tabToolset } from '@slicerx/mcp/toolset'
@@ -26,9 +26,9 @@ type Call = { name: string; args: Record<string, unknown> }
 
 /**
  * A desk cable organizer as a model built it in a live run: a top plate extruded around the origin, then a hook below
- * and in front of the bed's front left corner, five slots cut in plate millimeters, and the list of designs. The extrude
- * names the design by its name, which both hosts take, so the top plate is the first body: built off the bed, it lands
- * on it. The hook, given in plate millimeters, reaches past the bed's front edge, so that edit lands the part again.
+ * and in front of it, five slots cut in the top plate, and the list of designs, all in the frame the top plate was built
+ * in. The extrude names the design by its name, which both hosts take, so the top plate is the first body: built off the
+ * bed, it lands on it. The hook reaches below the bed, so that edit lands the part again, as a whole.
  */
 const CABLE_ORGANIZER: Call[] = [
   { name: 'design.new', args: { name: 'Desk cable organizer' } },
@@ -38,6 +38,16 @@ const CABLE_ORGANIZER: Call[] = [
   { name: 'design.list', args: {} },
   { name: 'geom.subtract', args: { design: 'd1', part: 0, label: 'Cable slots', solids: [9, 27, 45, 63, 81].map((x) => ({ type: 'box', min: [x, -36, 2], max: [x + 10, -4, 13] })) } },
   { name: 'design.steps', args: { design: 'd1' } },
+]
+
+/**
+ * The first steps of a headphone stand as a model built it in a live run: a round base extruded around the origin, so
+ * it lands on the plate, then the stem revolved about the design's own origin, the middle of the base, and joined to it.
+ */
+const HEADPHONE_STAND: Call[] = [
+  { name: 'design.new', args: { name: 'Headphone stand' } },
+  { name: 'geom.extrude', args: { design: 'd1', distance_mm: 12, extent: 'oneSide', operation: 'new', name: 'Base', shape: { type: 'circle', diameterMm: 110 } } },
+  { name: 'geom.revolve', args: { design: 'd1', frame: { origin: [0, 0, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ points: [[12.5, 0], [15, 0], [15, 12], [11, 162], [8.5, 162], [12.5, 12]] }], axis: { point: [0, 0], direction: [0, 1] }, angle_deg: 360, operation: 'join', name: 'Stem' } },
 ]
 
 /** A block in the middle of the bed, then a join that reaches past the bed's right edge, so the edit lands it again. */
@@ -83,7 +93,7 @@ async function build(tools: readonly PilotTool<never>[], calls: readonly Call[])
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100
-/** The body in plate millimeters: its bounds and how many triangles it has. */
+/** The body in the design's frame: its bounds and how many triangles it has. */
 function body(d: Design): { min: number[]; max: number[]; triangles: number } {
   const min = [Infinity, Infinity, Infinity]
   const max = [-Infinity, -Infinity, -Infinity]
@@ -99,6 +109,27 @@ function body(d: Design): { min: number[]; max: number[]; triangles: number } {
   return { min: min.map(r2), max: max.map(r2), triangles }
 }
 
+/** Each part's bounds in the design's frame. */
+function partBoxes(d: Design): { min: number[]; max: number[] }[] {
+  return d.parts.map((p) => {
+    const w = bakeMesh(p, d.transform)
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i + 2 < w.positions.length; i += 3) for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k]!, w.positions[i + k]!)
+      max[k] = Math.max(max[k]!, w.positions[i + k]!)
+    }
+    return { min, max }
+  })
+}
+
+/** Whether every part's box meets another's, so the parts make one piece (a single part always does). */
+function touching(d: Design): boolean {
+  const b = partBoxes(d)
+  const meet = (x: (typeof b)[number], y: (typeof b)[number]) => [0, 1, 2].every((k) => x.min[k]! <= y.max[k]! + 0.01 && y.min[k]! <= x.max[k]! + 0.01)
+  return b.length === 1 || b.every((x, i) => b.some((y, j) => i !== j && meet(x, y)))
+}
+
 /** The calls on the app's plate and in the eval: the replies of each, and each host's design after them. */
 async function both(calls: readonly Call[]) {
   const appHost: DesignHost = appDesignHost(loader)
@@ -109,7 +140,11 @@ async function both(calls: readonly Call[]) {
 }
 
 // the P1S the prompt names: a 256 mm cube, as the eval reads it from the printer catalog
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null, bed: { ...get().bed, widthMm: 256, depthMm: 256, heightMm: 256 } }))
+// and no replay cached by an earlier test: each test makes every engine call it needs, live or recorded, in any order
+beforeEach(() => {
+  clearReplayCache()
+  set({ plate: [], selection: null, selectedIds: [], historyEdit: null, bed: { ...get().bed, widthMm: 256, depthMm: 256, heightMm: 256 } })
+})
 
 describe('the creative eval lands a body as the app does', () => {
   it('builds the cable organizer into the same body on the same spot, with the same replies', async () => {
@@ -127,12 +162,41 @@ describe('the creative eval lands a body as the app does', () => {
     expect(e.history.steps.map((s) => s.params.op)).toEqual(a.history.steps.map((s) => s.params.op))
   })
 
-  // Not yet: the first landing moves the design's coordinates onto the plate's, so the hook and the slots, given in the
-  // frame the top plate was built in, miss it and the design ends as two parts. Placing a landed design as a whole is
-  // its own change (fix/mimir-design-placement), which turns this into a test that the slots cut and the hook meets
-  // the top plate. It is not run as an expected failure: on the CI engine its checks passed on one try and failed on
-  // the retry, so a known failure here would be flaky rather than a guard.
-  it.todo('keeps the hook on the top plate and cuts its slots after the top plate lands')
+  it('keeps the hook on the top plate and cuts its slots after the top plate lands', async () => {
+    const { app, evalRun, a, e } = await both(CABLE_ORGANIZER)
+    expect(evalRun.replies).toEqual(app.replies)
+    const said = app.replies.map((r) => JSON.stringify(r))
+    expect(said[1]).toMatch(/moved to the plate by \(128, 128\) mm/)
+    // the hook, given in the frame the top plate was built in, joins the top plate: the landing moved the whole design
+    expect(said[2]).toMatch(/"ok":true/)
+    expect(touching(a)).toBe(true)
+    expect(touching(e)).toBe(true)
+    // the slots, in that frame too, are cut from the top plate
+    expect(said[4]).toMatch(/"ok":true.*Cable slots/)
+    expect(said[4]).not.toMatch(/no longer reaches|did not go through/)
+    // one piece no deeper than the top plate and the hook together
+    for (const d of [a, e]) {
+      const b = body(d)
+      expect(b.max[1]! - b.min[1]!).toBeLessThanOrEqual(88.5)
+    }
+    expect(body(e)).toEqual(body(a))
+  })
+
+  it('keeps a step given in the design frame on the body after the first body lands', async () => {
+    const { app, evalRun, a, e } = await both(HEADPHONE_STAND)
+    expect(evalRun.replies).toEqual(app.replies)
+    const said = app.replies.map((r) => JSON.stringify(r))
+    expect(said[1]).toMatch(/moved to the plate by \(128, 128\) mm/)
+    // the stem, revolved about the design's origin, stands in the middle of the base and joins it
+    expect(said[2]).toMatch(/"ok":true.*Revolved/)
+    expect(a.parts).toHaveLength(1)
+    expect(e.parts).toHaveLength(1)
+    expect(body(a).max[2]).toBe(162)
+    expect(body(e)).toEqual(body(a))
+    // on the plate the stand stands where the base landed, the middle of the bed
+    const plate = get().plate.find((p) => p.id === a.id)!
+    expect([plate.transform[12], plate.transform[13]]).toEqual([128, 128])
+  })
 
   it('lands a part again when an edit takes it past the edge of the bed', async () => {
     const { app, evalRun, a, e } = await both(EDIT_OFF_THE_BED)

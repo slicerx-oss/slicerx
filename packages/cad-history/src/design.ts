@@ -22,6 +22,11 @@ export interface SketchItem {
   projections?: Projection[]
   /** how many projection ids it has handed out; a removed one is never handed out again */
   nextProjection?: number
+  /**
+   * the designs it was drawn for while they waited for their first body: the first of them to get one takes it along
+   * when that body lands, if no feature uses it yet. Kept with the sketch so every design host sees it; not saved.
+   */
+  drawnFor?: string[]
 }
 
 type Extrude = Extract<StepParams, { op: 'shape.extrude' }>
@@ -48,6 +53,8 @@ export interface Body {
   base: HistoryMesh[]
   exact?: true
   ended?: string
+  /** How far design hosts moved it to land it on the bed (History.placed). */
+  placed?: [number, number]
 }
 
 export interface Timeline {
@@ -151,7 +158,7 @@ export function timelineOf(objects: readonly { id: string; history: History }[])
     if (isSketch(s.params)) items.push(...split(s, o.id, `Sketch ${++sketches}`, items))
     else items.push({ ...s, kind: 'feature', body: o.id })
   }
-  const bodies = objects.map((o) => ({ id: o.id, base: o.history.base, ...(o.history.exact ? { exact: true as const } : {}), ...(o.history.ended ? { ended: o.history.ended } : {}) }))
+  const bodies = objects.map((o) => ({ id: o.id, base: o.history.base, ...(o.history.exact ? { exact: true as const } : {}), ...(o.history.ended ? { ended: o.history.ended } : {}), ...(o.history.placed ? { placed: o.history.placed } : {}) }))
   return { bodies, items, marker: items.length }
 }
 
@@ -186,7 +193,7 @@ export function historyOf(d: Timeline, body: string): History | null {
     const { kind: _k, body: _b, ...step } = i
     steps.push({ ...step, params })
   }
-  return { version: 1, base: b.base, steps, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}) }
+  return { version: 1, base: b.base, steps, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}), ...(b.placed ? { placed: b.placed } : {}) }
 }
 
 /** Every body's history, by body id. */
@@ -273,7 +280,7 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
     place.set(s.id, at + add.length - 1)
     if (at < marker || (!atEnd && at === marker)) marker += add.length
   })
-  const b: Body = { id: body, base: h.base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}) }
+  const b: Body = { id: body, base: h.base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}), ...(h.placed ? { placed: h.placed } : {}) }
   const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
   return { bodies, items, marker: atEnd ? items.length : marker }
 }
