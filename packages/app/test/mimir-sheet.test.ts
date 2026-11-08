@@ -232,12 +232,34 @@ describe('the scripted sizes sheet of a part already built', () => {
 
   it('shows the sizes when the message names the part as a design or a print, and builds when it asks for one', () => {
     const route = (m: string) => SCRIPTS.find((s) => s.match.test(m))?.id
-    expect(route('Show the main sizes of my box design')).toBe('sizes')
-    expect(route('The dimension sheet for this design')).toBe('sizes')
-    expect(route('Main sizes of the print, please')).toBe('sizes')
-    expect(route('Make a box with a lid and show me the main sizes first')).toBe('box')
-    expect(route('Design a box and show me the size sheet')).toBe('box')
-    expect(route('Build a phone stand, main sizes first')).toBe('stand')
+    // "design" and "print" as nouns: the built part's sizes
+    for (const m of [
+      'Show the main sizes of my box design',
+      'The dimension sheet for this design',
+      'Main sizes of the print, please',
+      'Show me the size sheet for the design',
+      'The main sizes of the print',
+      'What are the main sizes of my phone stand design?',
+    ])
+      expect(route(m), m).toBe('sizes')
+    // "design" and "print" asking for a part, at the start of a clause or before a determiner: a build
+    const builds: [string, string][] = [
+      ['Make a box with a lid and show me the main sizes first', 'box'],
+      ['Design a box and show me the size sheet', 'box'],
+      ['Build a phone stand, main sizes first', 'stand'],
+      ['Design the lid for my box and show me its size sheet', 'box'],
+      ['design my stand, main sizes 80 x 60', 'stand'],
+      ['Design the box and show its main sizes first', 'box'],
+      ['Design another stand with a size sheet', 'stand'],
+      ['Design my phone stand and show the main sizes', 'stand'],
+      ['Print the stand, show main sizes first', 'stand'],
+      ['Please design a lid, main sizes first', 'box'],
+      ['Show me the main sizes, then design the lid', 'box'],
+      ['Can you design me a box? Size sheet first', 'box'],
+    ]
+    for (const [m, id] of builds) expect(route(m), m).toBe(id)
+    // parts no script here builds: never the sizes of a part already built
+    for (const m of ['print the bracket with its size sheet first', 'Design two lids, main sizes first']) expect(route(m), m).not.toBe('sizes')
   })
 
   it('shows the wall of the sheet tied to this design only, never another design\'s', () => {

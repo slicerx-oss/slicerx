@@ -650,11 +650,16 @@ const sizesOf: ScriptStep[] = [
   },
 ]
 
+/**
+ * "Design" or "print" asking for a part: at the start of a clause ("Design two lids, ...", "please print ...") or before
+ * a determiner ("design the lid", "print my bracket"). As nouns ("my box design", "the print") they ask for nothing.
+ */
+const BUILD_VERB = String.raw`(?:(?:^|[.!?,;:]|\b(?:please|can you|could you|would you|let's|lets))\s*(?:design|print)\b|\b(?:design|print)\s+(?:the|my|a|an|this|that|its|your|me|it|another|one|two|some)\b)`
+
 export const SCRIPTS: MimirScript[] = [
   // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another; a message
-  // that also asks to make, build or design one is a build, and goes on to the scripts below. "Design" and "print" as
-  // nouns ("my box design", "the print") stay here.
-  { id: 'sizes', match: /^(?![\s\S]*(?:\b(?:make|build|create)\b|\bdesign (?:a|an|me)\b|\bprint (?:it|this|a)\b))[\s\S]*(?:\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b)/i, steps: sizesOf },
+  // that also asks to make, build, design or print one is a build, and goes on to the scripts below.
+  { id: 'sizes', match: new RegExp(String.raw`^(?![\s\S]*(?:\b(?:make|build|create)\b|${BUILD_VERB}))[\s\S]*(?:\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b)`, 'i'), steps: sizesOf },
   // first, so "check the backplate against its plan" checks rather than building another
   { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
