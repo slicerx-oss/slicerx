@@ -806,6 +806,25 @@ function crosses(a: P2, b: P2, c: P2, d: P2): boolean {
 }
 
 /**
+ * A line on screen whose start the part hides (`hiddenAt(t)` along it, t 0 at its start, 1 at its end, sampled twice a
+ * px) starts where it comes out from behind the part, 3 px clear of the outline. A line hidden all the way, or out from
+ * behind so near its end that less than 4 px of it would be left, is drawn whole, so the size still reads.
+ */
+export function unhide(l: [P2, P2], hiddenAt: (t: number) => boolean): [P2, P2] {
+  const [p, q] = l
+  const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 2)
+  if (n < 2 || !hiddenAt(0)) return l
+  for (let i = 1; i <= n; i++) {
+    const t = i / n
+    if (hiddenAt(t)) continue
+    const s = t + 3 / (n / 2)
+    if (s > 1 - 4 / (n / 2)) return l
+    return [[r1(p[0] + (q[0] - p[0]) * s), r1(p[1] + (q[1] - p[1]) * s)], q]
+  }
+  return l
+}
+
+/**
  * One view of the sheet, fitted in a w x h cell at `scale` pixels per mm (or its own fit when absent): the part as its
  * silhouette and visible edges (`px` device pixels per screen pixel, 1 by default; `part` reuses a raster already drawn
  * at the same fit), and the sizes that read in it with their callouts. A callout sits off the part (its whole disk),
@@ -842,17 +861,7 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
   }
   const unhidden = (l: [P2, P2], l3: [V3, V3]): [P2, P2] => {
     const [p, q] = l
-    const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 2)
-    if (n < 2 || !hidden(p, l3[0])) return l
-    for (let i = 1; i <= n; i++) {
-      const t = i / n
-      if (hidden([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], add(l3[0], mul(sub(l3[1], l3[0]), t)))) continue
-      // out from behind it: start a few px on, clear of the part's outline
-      const s = Math.min(1, t + 3 / (n / 2))
-      return [[r1(p[0] + (q[0] - p[0]) * s), r1(p[1] + (q[1] - p[1]) * s)], q]
-    }
-    // hidden all the way: drawn whole, so the size still reads
-    return l
+    return unhide(l, (t) => hidden([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], add(l3[0], mul(sub(l3[1], l3[0]), t))))
   }
   // every size's own lines first, so no callout lands on a line drawn after it
   const shaped = raws.map((r) => {
