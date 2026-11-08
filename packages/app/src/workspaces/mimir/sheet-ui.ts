@@ -53,6 +53,17 @@ export function setShownSheet(shown: ShownSheet | null): void {
   sheetUi.setState({ shown, ...(same ? {} : { open: false, live: values, draft: {} }), ...(same && !s.shown?.answer && shown?.answer ? { live: values } : {}) })
 }
 
+/**
+ * The waiting sheet's values with the sizes typed on it, for setting it aside with words: the typed sizes go along so
+ * mimir hears of them. Null when nothing was typed, or no sheet waits.
+ */
+export function typedValues(s: SheetUiState): Record<string, number> | null {
+  if (sheetMode(s) !== 'confirm' || !s.shown) return null
+  const keys = new Set(s.shown.sheet.dims.map((d) => d.key))
+  const typed = Object.entries(s.draft).filter(([k, v]) => keys.has(k) && s.shown!.sheet.dims.find((d) => d.key === k)!.value !== v)
+  return typed.length ? { ...Object.fromEntries(s.shown.sheet.dims.map((d) => [d.key, d.value])), ...Object.fromEntries(typed) } : null
+}
+
 export function setSheetActions(actions: SheetActions | null): void {
   sheetUi.setState({ actions })
 }

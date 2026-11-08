@@ -93,6 +93,12 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
   return (
     <form className="composer sx-overlay" data-testid="mimir-composer" data-answers={answers ? kind : undefined} aria-label={`Ask ${ASSISTANT_NAME}`} autoComplete="off" onSubmit={submit}>
       <AttachedFiles attachments={attachments} />
+      {answers && attachments.list.length > 0 && text.trim() !== '' ? (
+        // an answer is words only, so say why Return does nothing while files are attached
+        <div className="composer-note" role="status" data-testid="mimir-composer-files-note">
+          Files cannot go with an answer. Remove them to send.
+        </div>
+      ) : null}
       <div className="composer-row">
         <AttachButton attachments={attachments} />
         <label htmlFor={`${ids}-text`} className="vh">

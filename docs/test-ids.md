@@ -72,6 +72,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-filament` | Under a finished run in the chat, the loaded spools: a click picks the spool the part prints with |
 | `mimir-model-switch` | Auto's one line when a run moves to another model (Using Sonnet 5.5 for this one.) |
 | `mimir-composer` | The message box pinned at the foot of the chat |
+| `mimir-composer-files-note` | Under the message box while a question or size sheet waits and files are attached: files cannot go with an answer, remove them to send |
 | `mimir-connect` | In place of the conversation before a model is connected (and with no mimir cloud): the shared mimir setup; nothing is sent |
 | `mimir-pause` | Pause and Resume in the chat's header, beside New conversation: holds mimir before its next step (`aria-pressed` while held, named Resume mimir then). It never pauses a printer or answers a waiting card; off with no run going and none held |
 | `mimir-chat-more` | The More button in the chat's header; it opens `mimir-chat-menu` with Skills and permissions, Show thinking and Connect a model |

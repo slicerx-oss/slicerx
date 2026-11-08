@@ -519,6 +519,20 @@ describe('turning down the question mimir waits on, through a scripted hub', () 
     expect(asked.isError, text(asked)).toBeFalsy()
   })
 
+  it('sets aside a size sheet mimir waits on, passing its id and the words', async () => {
+    const seen: { method: string; args: Record<string, unknown> }[] = []
+    const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, (method, args) => {
+      seen.push({ method, args })
+      if (method === 'mimir.dismiss') return { sessionId: 's_1', sheetId: args['sheetId'], setAside: true, said: args['said'] }
+      return {}
+    })))
+    const out = await h.call('slicerx_mimir_dismiss', { sheetId: 'sheet_1', said: 'make the wall 3 mm' })
+    expect(out.isError, text(out)).toBeFalsy()
+    expect(seen.find((s) => s.method === 'mimir.dismiss')).toEqual({ method: 'mimir.dismiss', args: { sheetId: 'sheet_1', said: 'make the wall 3 mm' } })
+    expect(data<{ output: unknown }>(out).output).toEqual({ sessionId: 's_1', sheetId: 'sheet_1', setAside: true, said: 'make the wall 3 mm' })
+    expect(text(out)).toMatch(/Set mimir's size sheet aside/)
+  })
+
   it('a stale askId is not_found, a long said is invalid_input before anything is sent, and a closed tab is not_configured', async () => {
     const a = app()
     const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, a.handle)))

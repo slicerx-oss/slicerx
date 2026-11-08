@@ -8,7 +8,7 @@
 import { assistantText } from '@slicerx/contracts'
 import type { PilotEvent, PrintRun, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
-import { openChoice } from '../workspaces/mimir/card-waits'
+import { openChoice, openSheetCard } from '../workspaces/mimir/card-waits'
 import { phoneAnsweredOn } from '../workspaces/mimir/phone-answers'
 import { LinkError } from './methods-error'
 
@@ -99,17 +99,20 @@ function statsOf(events: readonly PilotEvent[]) {
   let confirmed = 0
   let changed = 0
   let dismissed = 0
-  for (const e of events as readonly { type: string; answer?: { confirmed?: boolean; changed?: string[] }; dismissed?: boolean }[]) {
+  let setAside = 0
+  for (const e of events as readonly { type: string; answer?: { confirmed?: boolean; changed?: string[]; said?: string }; dismissed?: boolean }[]) {
     if (e.type === 'ask') questions++
     else if (e.type === 'ask_answered' && e.dismissed === true) dismissed++
     else if (e.type === 'sheet') sheets++
     else if (e.type === 'lookup') lookups++
     else if (e.type === 'sheet_answered') {
       if (e.answer?.confirmed) confirmed++
+      // set aside by words written while it waited, which is not a cancel
+      else if (e.answer?.said) setAside++
       changed += e.answer?.changed?.length ?? 0
     }
   }
-  return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed, questionsDismissed: dismissed }
+  return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed, questionsDismissed: dismissed, sheetsSetAside: setAside }
 }
 
 /** `mimir.sessions`: the conversations, newest first. */
@@ -146,6 +149,8 @@ export async function readSession(args: Record<string, unknown>): Promise<unknow
   // the question the latest run waits on: a client reads it here, and mimir.dismiss turns it down
   const latest = reduced.at(-1)
   const open = latest ? openChoice(latest) : null
-  const waiting = open ? { askId: open.askId, title: cut(open.title, 200), question: cut(open.question, 500), choices: open.choices.map((c) => ({ id: c.id, label: c.label })) } : null
+  // or the size sheet it waits on, which mimir.dismiss sets aside
+  const sheet = latest && !open ? openSheetCard(latest) : null
+  const waiting = open ? { askId: open.askId, title: cut(open.title, 200), question: cut(open.question, 500), choices: open.choices.map((c) => ({ id: c.id, label: c.label })) } : sheet ? { sheetId: sheet.sheetId, title: cut(sheet.title, 200), sizes: sheet.sizes.slice(0, 30) } : null
   return { id, stats: statsOf(events), waiting, turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
 }

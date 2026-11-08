@@ -62,7 +62,7 @@ export function SheetRecord({
         .slice(0, 2)
         .map((d) => `${d.label.toLowerCase()} ${valueOf(d.key, d.value)} ${unitText(d.unit)}`)
         .join(', ')}${assumed.length > 2 ? ` and ${assumed.length - 2} more` : ''}`
-    : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? (answer.said ? 'Set aside for your message, nothing built' : 'Canceled, nothing built') : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
+    : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? (answer.said ? (answer.changed.length ? `Set aside for your message with ${answer.changed.length} size${answer.changed.length === 1 ? '' : 's'} changed, nothing built` : 'Set aside for your message, nothing built') : 'Canceled, nothing built') : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
     <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
       <div className="sheet-rec-head">
