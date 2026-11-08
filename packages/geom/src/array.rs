@@ -243,7 +243,6 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lin
         return Ok(None);
     }
     let (inner, outer): (Vec<&Round>, Vec<&Round>) = rounds.iter().partition(|r| r.inner);
-    // how much of a prism may differ from the part: its corners' own drift over its surface
     // the corners' drift over the surface, capped so a small recess on a big round still counts
     let within = |got: f64, own: &TriMesh, r: &Round| {
         (got - own.volume()).abs() <= (r.dev.max(1e-9) * own.area()).min(MAX_LOSS)
@@ -294,7 +293,9 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lin
         in_turn(&filled, t)
     };
     for r in &misaligned {
-        if clear_inside(&filled, &filled_local, r, r.facets, r.radius, &[]) {
+        // with no bore filled the part is the mesh itself, so the round's own wall can be left out
+        let own_wall: &[usize] = if inner.is_empty() { &r.sides } else { &[] };
+        if clear_inside(&filled, &filled_local, r, r.facets, r.radius, own_wall) {
             continue;
         }
         let own = prism(mesh, &local, t, r, r.facets, false);
@@ -339,11 +340,13 @@ fn in_turn(mesh: &TriMesh, t: &Turn) -> Vec<V3> {
         .collect()
 }
 
-/// whether no face but `skip` reaches inside an `n` sided prism of the round, shrunk by its drift; then it is all one side
+/// whether no face but `skip` reaches inside an `n` sided prism of the round, shrunk past its drift; then it is all one side
+/// (a feature shallower than the drift is not seen)
 #[allow(clippy::cast_precision_loss, reason = "facet counts are small")]
 fn clear_inside(mesh: &TriMesh, local: &[V3], r: &Round, facets: usize, radius: f64, skip: &[usize]) -> bool {
     let n = facets as f64;
-    let tol = r.dev + 1e-9;
+    // a corner can drift both out and along the circle, so its chord reaches up to about 1.41 times the drift in
+    let tol = 1.5 * r.dev + 1e-9;
     let apothem = radius * (PI / n).m_cos();
     if apothem <= 2.0 * tol || r.h.1 - r.h.0 <= 2.0 * tol {
         return false;
@@ -364,9 +367,15 @@ fn clear_inside(mesh: &TriMesh, local: &[V3], r: &Round, facets: usize, radius: 
         })
         .collect();
     let (z0, z1) = (r.h.0 + tol, r.h.1 - tol);
-    mesh.triangles.iter().enumerate().all(|(k, tri)| {
+    let mut skipped = vec![false; mesh.triangles.len()];
+    for &k in skip {
+        if let Some(s) = skipped.get_mut(k) {
+            *s = true;
+        }
+    }
+    mesh.triangles.iter().zip(&skipped).all(|(tri, &skip)| {
         let p = tri.map(|i| local.get(i as usize).copied().unwrap_or_default());
-        if skip.contains(&k) || p.iter().all(|q| q[2] <= z0) || p.iter().all(|q| q[2] >= z1) {
+        if skip || p.iter().all(|q| q[2] <= z0) || p.iter().all(|q| q[2] >= z1) {
             return true;
         }
         // apart if a side of the prism or of the triangle's shadow has them on opposite sides
@@ -953,13 +962,16 @@ mod tests {
         let wrap = 9.5 / (PI / 108.0).m_cos();
         close(u.volume(), ngon(108, wrap, 10.0) - ngon(108, 7.5, 10.0), 1e-6);
         // the bore's corners stay on its circle
-        let on = |u: &TriMesh, below: f64, r: f64| {
-            u.positions
+        let on = |u: &TriMesh, below: f64, r: f64, at_least: usize| {
+            let near: Vec<f64> = u
+                .positions
                 .iter()
-                .filter(|&&p| radius_of(p) < below)
-                .all(|&p| (radius_of(p) - r).abs() < 1e-6)
+                .map(|&p| radius_of(p))
+                .filter(|&d| d < below)
+                .collect();
+            near.len() >= at_least && near.iter().all(|d| (d - r).abs() < 1e-6)
         };
-        assert!(on(&u, 8.5, 7.5));
+        assert!(on(&u, 8.5, 7.5, 108));
         // a cup keeps its pocket, now 72 sided
         let cup = cut(
             &cylinder_at(9.5, 0.0, 10.0, 100),
@@ -977,7 +989,7 @@ mod tests {
             part.volume() + 11.0 * tooth - ngon(48, 2.5, 10.0),
             1e-3,
         );
-        assert!(on(&u, 3.5, 2.5));
+        assert!(on(&u, 3.5, 2.5, 48));
         // a counterbore: two bores, each lined up and cut
         let solid = cylinder_at(9.5, 0.0, 10.0, 100);
         let counter = cut(
@@ -994,12 +1006,14 @@ mod tests {
             ngon(108, wrap, 10.0) - ngon(48, 2.5, 7.0) - ngon(72, 4.0, 3.0),
             1e-6,
         );
-        assert!(
-            u.positions
-                .iter()
-                .filter(|&&p| radius_of(p) < 5.0)
-                .all(|&p| (radius_of(p) - 2.5).abs() < 1e-6 || (radius_of(p) - 4.0).abs() < 1e-6)
-        );
+        let near: Vec<f64> = u
+            .positions
+            .iter()
+            .map(|&p| radius_of(p))
+            .filter(|&d| d < 5.0)
+            .collect();
+        let count = |r: f64| near.iter().filter(|d| (*d - r).abs() < 1e-6).count();
+        assert!(count(2.5) >= 48 && count(4.0) >= 72 && count(2.5) + count(4.0) == near.len());
     }
 
     #[test]
@@ -1213,5 +1227,132 @@ mod tests {
             let _ = lined_up(&part, &t, BooleanOptions::default()).unwrap();
             assert!(MEETS.get() >= 1);
         }
+    }
+
+    /// a round stored in f32, as the app sends it, about a moved and maybe tilted axis
+    fn stored(r: f64, sides: usize, frame: &crate::vec3::Frame, bore: Option<f64>) -> TriMesh {
+        let mut m = build::cylinder(frame, r, 0.0, 20.0, sides);
+        if let Some(b) = bore {
+            m = cut(&m, &build::cylinder(frame, b, -1.0, 21.0, sides));
+        }
+        #[allow(clippy::cast_possible_truncation, reason = "the stored precision")]
+        for p in &mut m.positions {
+            *p = p.map(|v| f64::from(v as f32));
+        }
+        m
+    }
+
+    #[test]
+    fn a_stored_round_moved_or_tilted_needs_no_intersection() {
+        let tilted = vec3::normalize([0.3, -0.2, 1.0]).unwrap();
+        let u = vec3::normalize(vec3::any_perpendicular(tilted)).unwrap();
+        let frames = [
+            ([103.0, 57.0, 2.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            ([30.3, 5.1, 2.2], tilted, u),
+        ];
+        for (origin, w, u) in frames {
+            let frame = crate::vec3::Frame {
+                origin,
+                u,
+                v: vec3::cross(w, u),
+                w,
+            };
+            let spec = ArraySpec::Circular {
+                count: 12,
+                center: origin,
+                axis: Some(w),
+                angle_deg: None,
+                rotate_copies: None,
+            };
+            let t = turn(&spec).unwrap();
+            for part in [
+                stored(100.0, 256, &frame, None),
+                stored(9.5, 100, &frame, Some(7.5)),
+            ] {
+                MEETS.set(0);
+                assert!(
+                    lined_up(&part, &t, BooleanOptions::default()).unwrap().is_some(),
+                    "{origin:?}"
+                );
+                assert_eq!(MEETS.get(), 0, "{origin:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bore_with_a_feature_beside_its_wall_takes_the_plain_join() {
+        // a slot from the top stops 7 microns behind the bore's wall: inside the fill, outside the wall
+        let plate = build::box_mesh([-8.0, -8.0, 0.0], [8.0, 8.0, 10.0]);
+        let bored = cut(&plate, &cylinder_at(2.5, -1.0, 11.0, 40));
+        let (sn, cs) = (PI / 40.0).m_sin_cos();
+        let (w, r0, r1) = (0.2, 2.499, 3.5);
+        let q = vec![
+            [r0 * cs + w * sn, r0 * sn - w * cs],
+            [r1 * cs + w * sn, r1 * sn - w * cs],
+            [r1 * cs - w * sn, r1 * sn + w * cs],
+            [r0 * cs - w * sn, r0 * sn + w * cs],
+        ];
+        let slot = build::extrude(
+            &[crate::poly2d::Polygon::simple(q)],
+            &crate::vec3::Frame::WORLD,
+            5.0,
+            11.0,
+        )
+        .unwrap();
+        let part = cut(&bored, &slot);
+        let rs = rounds(&part, &part.positions);
+        assert!(
+            rs.iter()
+                .any(|r| r.inner && r.facets == 40 && r.sides.len() == 80)
+        );
+        let t = turn(&around_z(3, [0.0; 3])).unwrap();
+        assert!(lined_up(&part, &t, BooleanOptions::default()).unwrap().is_none());
+        assert!(lined_up(&bored, &t, BooleanOptions::default()).unwrap().is_some());
+    }
+
+    #[test]
+    fn clear_inside_sees_only_faces_that_reach_in() {
+        // a 12 sided prism of radius 10, 0 to 10 high, and one triangle at a time
+        let r = Round {
+            radius: 10.0,
+            h: (0.0, 10.0),
+            facets: 12,
+            phase: 0.0,
+            sides: Vec::new(),
+            inner: false,
+            dev: 0.0,
+        };
+        let clear = |p: [V3; 3], skip: &[usize]| {
+            let m = TriMesh::new(p.to_vec(), vec![[0, 1, 2]]);
+            clear_inside(&m, &m.positions, &r, 12, 10.0, skip)
+        };
+        // inside, outside, and across it with no corner inside
+        assert!(!clear([[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0]], &[]));
+        assert!(clear([[20.0, 0.0, 5.0], [21.0, 0.0, 5.0], [20.0, 1.0, 5.0]], &[]));
+        assert!(!clear(
+            [[-30.0, -1.0, 5.0], [30.0, -1.0, 5.0], [0.0, 30.0, 5.0]],
+            &[]
+        ));
+        // above or below the open height, or on the cap
+        assert!(clear([[0.0, 0.0, 12.0], [1.0, 0.0, 12.0], [0.0, 1.0, 12.0]], &[]));
+        assert!(clear([[0.0, 0.0, 10.0], [1.0, 0.0, 10.0], [0.0, 1.0, 10.0]], &[]));
+        // on a side of the prism, touching it from outside
+        let (a, b) = (0.0_f64.m_sin_cos(), (PI / 6.0).m_sin_cos());
+        assert!(clear(
+            [
+                [10.0 * a.1, 10.0 * a.0, 1.0],
+                [10.0 * b.1, 10.0 * b.0, 1.0],
+                [10.0 * a.1, 10.0 * a.0, 9.0]
+            ],
+            &[]
+        ));
+        // a wall seen edge on: outside, then through the middle
+        assert!(clear(
+            [[12.0, -5.0, 1.0], [12.0, 5.0, 1.0], [12.0, 5.0, 9.0]],
+            &[]
+        ));
+        assert!(!clear([[0.0, -5.0, 1.0], [0.0, 5.0, 1.0], [0.0, 5.0, 9.0]], &[]));
+        // left out on purpose
+        assert!(clear([[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0]], &[0]));
     }
 }
