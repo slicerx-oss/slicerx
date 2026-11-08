@@ -26,10 +26,18 @@ export const AUTO_SLICE_DELAY_MS = 150
  */
 export const FIT_WAIT_MS = 15_000
 
+/** Whether the running watch has a slice about to start: its pause after an edit, or a big slice's wait for the fit check. */
+let pending: () => boolean = () => false
+
+/** Whether auto slice has a slice about to start (its pause after an edit, or a big slice waiting on the fit check). */
+export const autoSlicePending = (): boolean => pending()
+
 /** Starts watching the store. Returns the stop function. */
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
+  const isPending = (): boolean => timer !== null || waiting !== null
+  pending = isPending
   const clear = (): void => {
     if (timer) clearTimeout(timer)
     timer = null
@@ -103,5 +111,6 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   return () => {
     clear()
     unsubscribe()
+    if (pending === isPending) pending = () => false
   }
 }
