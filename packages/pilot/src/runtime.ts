@@ -317,6 +317,20 @@ export function answerOf(sheet: PilotSheet, given: Record<string, number> | null
   return said ? { confirmed: false, values, changed, said } : { confirmed: true, values, changed }
 }
 
+/** Waits `ms`, or less when `signal` aborts; a signal already aborted ends the wait at once. */
+export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
+
 export function createPilot(opts: CreatePilotOptions): Pilot & {
   /** Every tool including internal ones, for the inspector and evals. */
   registry(): AnyTool[]
@@ -330,18 +344,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   toolCap(sessionId: string): ToolCapReport | null
 } {
   const now = opts.now ?? (() => Date.now())
-  const sleep =
-    opts.sleep ??
-    ((ms: number, signal: AbortSignal) =>
-      new Promise<void>((resolve) => {
-        const done = () => {
-          clearTimeout(timer)
-          signal.removeEventListener('abort', done)
-          resolve()
-        }
-        const timer = setTimeout(done, ms)
-        signal.addEventListener('abort', done, { once: true })
-      }))
+  const sleep = opts.sleep ?? abortableSleep
   const newId = opts.newId ?? randomId
   const kb = opts.kb ?? createKnowledgeBase(EMPTY_KB_INDEX)
   let policy = normalizePolicy(opts.policy ?? DEFAULT_POLICY)
