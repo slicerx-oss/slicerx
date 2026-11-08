@@ -6,7 +6,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { holeApply, shellBody, threadApply, type MeshItem } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { get, markStale } from '../state/store'
-import { commitMade, goneError } from './commit'
+import { commitMade, goneError, placedNow } from './commit'
 import { stepName, type StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
 import { applyHistory } from './history/ops'
@@ -69,7 +69,7 @@ async function applyPartStep(
   const parts = e.parts.map((p, i) => (i === partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
   const handle = await host.loadParts(e.name, parts)
   const history = withStep(e, partIndex, params)
-  if (!commitMade(e.id, () => ({ handle, parts, history }))) throw goneError(e.id)
+  if (!commitMade(e.id, (latest) => ({ handle, parts, history: placedNow(history, latest) }))) throw goneError(e.id)
   markStale()
   const label = params.op === 'shell' ? stepName({ params }) : params.label
   return { message: `${label} in ${e.name}.`, warn: !r.watertight }

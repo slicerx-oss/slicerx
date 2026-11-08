@@ -10,7 +10,8 @@ import { clearReplayCache, frameNow, historyOf, type Design, type DesignHost, ty
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { applyExtrude, applyRevolve } from '../src/cad/cad-ops'
+import { applyArray, applyExtrude, applyRevolve } from '../src/cad/cad-ops'
+import { applyEdges, edgeParams } from '../src/cad/edges'
 import { appDesignHost } from '../src/cad/design-host'
 import { runCall, useDesignHost } from '../src/app-link/methods'
 import { waitingAt } from '../src/cad/waiting'
@@ -1134,6 +1135,36 @@ describe('a Model join or cut that meets a landing made meanwhile', () => {
     expect(entry(d).transform[12]).toBe(138)
     expect(entry(d).history?.placed).toEqual([138, 128])
     // the design's frame stays where it was built, so mimir's next point still meets the body
+    expect(at(host.get(d))).toEqual([0, 0])
+  })
+  it.each([
+    ['rounds an edge', async (run: ReturnType<typeof toolsOn>, d: string, loading: { loadParts: (name: string, parts: MeshPart[]) => Promise<MeshHandle> }) => {
+      // an edge of the block's top as the design reads it, given on the plate where the block stands
+      const e = ((await run('geom.edge_pick', { design: d, face: { at: [0, -9.5, 10], normal: [0, 0, 1] } })).output as { edge: { a: number[]; b: number[]; center?: number[] } }).edge
+      const on = (p: number[]) => [p[0]! + 128, p[1]! + 128, p[2]!]
+      const edge = { ...e, a: on(e.a), b: on(e.b), ...(e.center ? { center: on(e.center) } : {}) }
+      await applyEdges(loading, d, 0, edgeParams('fillet', [edge as never], 2, null))
+    }],
+    ['merges copies', async (_run: ReturnType<typeof toolsOn>, d: string, loading: { loadParts: (name: string, parts: MeshPart[]) => Promise<MeshHandle> }) => {
+      expect(await applyArray(loading, d, { kind: 'linear', count: 2, step: [0, 30, 0] }, true)).toBe(2)
+    }],
+  ])('keeps the landing moves of a room move made while the result of a Model edit that %s loads', async (_what, edit) => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const before = entry(d).history!.steps.length
+    let during: (() => void) | null = () => set((s) => ({ plate: s.plate.map((e) => (e.id === d ? { ...e, transform: e.transform.map((v, i) => (i === 12 ? v + 10 : v)), history: { ...e.history!, placed: [138, 128] } } : e)) }))
+    const loading = { loadParts: async (name: string, _parts: MeshPart[]) => {
+      const f = during
+      during = null
+      f?.()
+      return handle(name)
+    } }
+    await edit(run, d, loading)
+    expect(during).toBeNull()
+    expect(entry(d).history!.steps).toHaveLength(before + 1)
+    expect(entry(d).transform[12]).toBe(138)
+    expect(entry(d).history?.placed).toEqual([138, 128])
     expect(at(host.get(d))).toEqual([0, 0])
   })
 })
