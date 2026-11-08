@@ -12,7 +12,7 @@ import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, projectionsOut,
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
-import { closureByPosition, notClosedWords, type Closure } from './closure'
+import { notClosedWords, partClosure, type Closure } from './closure'
 import { nozzleOr } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
@@ -1305,8 +1305,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const shut: Closure[] = []
         for (const [k, p] of parts.entries()) {
           const w = bakeMesh(p, d.transform)
-          // closed as the slicer reads it, welded by position: the engine's own reading goes by triangle index
-          const c = closureByPosition(w.positions, w.indices)
+          // closed as the slicer reads it, welded by position on the part's own positions: the engine's own reading goes by
+          // triangle index
+          const c = partClosure(p)
           shut.push(c)
           const { watertight, ...edges } = c
           out.push({ part: k, name: p.name, slot: p.slot, ...(await engine('info', { mesh: { positions: Array.from(w.positions), indices: Array.from(w.indices) } })), edges, watertight })
