@@ -153,7 +153,8 @@ function workerProvider(): GeomProvider {
   const stopStep = (id: number) => {
     const step = steps.get(id)
     if (!step || !deadlines.has(id)) return
-    step.left = Math.max(0, (step.left ?? limitOf(step.op)) - (Date.now() - (step.since ?? Date.now())))
+    // a clock set back cannot give a step more than its whole limit
+    step.left = Math.min(limitOf(step.op), Math.max(0, (step.left ?? limitOf(step.op)) - (Date.now() - (step.since ?? Date.now()))))
     unlimit(id)
   }
   const release = () => {
