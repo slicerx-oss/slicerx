@@ -9,8 +9,9 @@ import type { Host } from '@slicerx/contracts'
 import { cancelSlice, slicePlate } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
-import { inputsChanged as changed } from './slice-inputs'
-import { appStore } from './store'
+import { configKey } from '../plate/resume-tops'
+import { inputsChanged, KEY_CONFIG } from './slice-inputs'
+import { appStore, type AppState } from './store'
 
 export { INPUTS } from './slice-inputs'
 
@@ -33,6 +34,9 @@ let pending: () => boolean = () => false
 export const autoSlicePending = (): boolean => pending()
 
 /** Starts watching the store. Returns the stop function. */
+/** A slice input changed, or a KEY_CONFIG value the plate's configuration reads: a new nozzle volume slices again too. */
+const changed = (a: AppState, b: AppState): boolean => inputsChanged(a, b) || (KEY_CONFIG.some((k) => a[k] !== b[k]) && configKey(a) !== configKey(b))
+
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
