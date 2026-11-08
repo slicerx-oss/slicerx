@@ -8,11 +8,11 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, stalePlanNote, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, stalePlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
-import { fitLimits, type FitProfile } from './fit-facts'
+import { designStamp, fitLimits, type FitProfile } from './fit-facts'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -260,6 +260,9 @@ export interface DesignToolOptions {
   cardSide?: boolean | undefined
 }
 
+/** Two names for one part: the same words, whatever the case or the spaces around them. */
+const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
+
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
 export function designTools(designs: DesignHost, files: DesignFiles, opts: DesignToolOptions = {}): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -280,6 +283,12 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       from: z.string().min(1).optional().describe('Start from this model: an STL path, URL or sample: name. Absent: an empty design'),
     }),
     async run(i) {
+      // a part that was built and passed its check against its plan is changed in its design, not built again
+      const done = designs.list().find((d) => sameName(d.name, i.name) && plans.tiedTo(d.id).some((id) => plans.get(id)?.passed))
+      if (done)
+        throw new ToolInputError(
+          `${done.name} is already built and passed its check against its plan, in the open design ${done.name}${opts.cardSide ? '' : ` (${done.id})`}. Change that design rather than building the part again; if the person asked for a second one, give it another name.`,
+        )
       const base = i.from ? await files.model(i.from, i.name) : []
       const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact === true })
       return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
@@ -533,6 +542,19 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     return { design: all[0]!, how: 'latest' }
   }
 
+  /**
+   * Whether geom.fit_check ran on the design as it is now, over the planned pieces: each piece's own part when every
+   * piece names one, else every part (pieces that are bodies of one part, or named another way).
+   */
+  const fitLooked = (d: HostDesign, pieces: PartPlan['printInPlace'] & {}): boolean => {
+    const run = plans.fitCheckOf(d.id)
+    if (!run || run.stamp !== designStamp(d)) return false
+    if (run.parts === 'all') return true
+    const named = d.parts.flatMap((p, k) => (pieces.some((n) => sameName(n, p.name)) ? [k] : []))
+    const want = named.length === pieces.length ? named : d.parts.map((_, k) => k)
+    return want.every((k) => (run.parts as readonly number[]).includes(k))
+  }
+
   const check = defineTool({
     name: 'design.check',
     version: '1.3.0',
@@ -554,6 +576,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // the fix round is used: the same answer again, with no new geometry work
       if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
       const { design: d, how } = builtFrom(entry, i.design)
+      // a print-in-place part is checked once its gaps were looked at, on the part as it is now
+      if (entry.plan.printInPlace && entry.plan.printInPlace.length >= 2 && !fitLooked(d, entry.plan.printInPlace))
+        throw new ToolInputError(
+          `Nothing was checked. ${entry.plan.part} prints in place, so its gaps are looked at first: run geom.fit_check on ${opts.cardSide ? `the design ${d.name}` : `design ${d.id}`} as it is now, with every planned piece, fix any gap it flags, then check again.`,
+        )
       const nozzleMm = nozzleOr(opts.nozzleMm?.())
       const body = await bodyFacts(designs, d, entry.plan.printInPlace ? fitLimits({ ...opts.fitProfile?.(), nozzleMm }) : undefined)
       const result = designCheck(entry.plan, body, nozzleMm)

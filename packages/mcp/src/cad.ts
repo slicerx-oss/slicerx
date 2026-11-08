@@ -14,7 +14,8 @@ import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { notClosedWords, partClosure, type Closure } from './closure'
 import { gapMm, gapSentence, nozzleOr } from './design-check'
-import { fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
+import { designStamp, fitFacts, fitLimits, fitVerdict, type FitProfile } from './fit-facts'
+import type { PlanRegistry } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -445,7 +446,7 @@ export function imageTooLarge(bytes: number): ToolInputError {
   return new ToolInputError(`image: the file is ${kb(bytes)}, over the 30 MB a trace takes. Export it smaller first.`)
 }
 
-export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height and material the part prints with, for geom.fit_check; half the nozzle and PLA without them. */ fitProfile?: (() => FitProfile) | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; /** The layer height and material the part prints with, for geom.fit_check; half the nozzle and PLA without them. */ fitProfile?: (() => FitProfile) | undefined; /** Where geom.fit_check records each run, so design.check of a print-in-place plan knows the gaps were looked at. */ plans?: Pick<PlanRegistry, 'fitChecked'> | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
   const call = deps.files.call
   const path = (model: string): Promise<string> => deps.files.path(model)
   const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
@@ -1547,6 +1548,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const profile = deps.fitProfile?.() ?? {}
       const limits = fitLimits({ nozzleMm: deps.nozzleMm?.(), layerHeightMm: i.layer_height_mm ?? profile.layerHeightMm, material: i.material ?? profile.material })
       const fit = await fitFacts(designs(), d, limits, i.part)
+      deps.plans?.fitChecked(d.id, { stamp: designStamp(d), parts: i.part ?? 'all' })
       const gaps = fit.gaps.map((g) => ({
         bodies: g.bodies,
         names: g.bodies.map((b) => fit.bodies[b]!.name),
