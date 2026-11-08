@@ -12,6 +12,10 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyArray, applyExtrude, applyRevolve } from '../src/cad/cad-ops'
 import { applyEdges, edgeParams } from '../src/cad/edges'
+import { applyShell } from '../src/cad/holes'
+import { applyPush, pickPushFace } from '../src/cad/push'
+import { subtractFromSelected, textOnSelected } from '../src/plate/geom-ops'
+import { clonePart, reorderParts } from '../src/plate/parts'
 import { appDesignHost } from '../src/cad/design-host'
 import { runCall, useDesignHost } from '../src/app-link/methods'
 import { forgetWaiting, waitingAt } from '../src/cad/waiting'
@@ -23,7 +27,7 @@ import { readProject, readProjectsWithGeom } from '../src/export/import3mf'
 import { writeProject } from '../src/export/threemf'
 import { NO_MARGINS, printsOnBed, setMarginSource } from '../src/plate/arrange'
 import { copySelection, pasteClipboard } from '../src/plate/clipboard'
-import { getArrangeOptions, setInstanceCount } from '../src/plate/edit'
+import { addPrimitive, getArrangeOptions, setInstanceCount } from '../src/plate/edit'
 import { duplicatePlate } from '../src/plate/plates'
 import { createHistory } from '../src/plate/history'
 import { clearProject } from '../src/project/new'
@@ -1153,16 +1157,63 @@ describe('a Model join or cut that meets a landing made meanwhile', () => {
     // the design's frame stays where it was built, so mimir's next point still meets the body
     expect(at(host.get(d))).toEqual([0, 0])
   })
+  type Loading = { loadParts: (name: string, parts: MeshPart[]) => Promise<MeshHandle> }
+  /** The block's top, a triangle of it as the view picks it: on the plate where the block stands. */
+  const topPick = (d: string) => {
+    const m = entry(d).parts[0]!
+    const z = (i: number) => m.positions[3 * m.indices[i]! + 2]!
+    let t = 0
+    while (!(z(3 * t) === 10 && z(3 * t + 1) === 10 && z(3 * t + 2) === 10)) t++
+    return { triangle: t, at: [128, 128, 10] as [number, number, number] }
+  }
+  const select = (d: string) => set({ selection: d, selectedIds: [d] })
+  // each Model edit, run on the block with `loading`, the loader whose first load sees the room move; how many history
+  // steps it adds
   it.each([
-    ['rounds an edge', async (run: ReturnType<typeof toolsOn>, d: string, loading: { loadParts: (name: string, parts: MeshPart[]) => Promise<MeshHandle> }) => {
+    ['rounds an edge', async (run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
       // an edge of the block's top as the design reads it, given on the plate where the block stands
       const e = ((await run('geom.edge_pick', { design: d, face: { at: [0, -9.5, 10], normal: [0, 0, 1] } })).output as { edge: { a: number[]; b: number[]; center?: number[] } }).edge
       const on = (p: number[]) => [p[0]! + 128, p[1]! + 128, p[2]!]
       const edge = { ...e, a: on(e.a), b: on(e.b), ...(e.center ? { center: on(e.center) } : {}) }
       await applyEdges(loading, d, 0, edgeParams('fillet', [edge as never], 2, null))
+      return 1
     }],
-    ['merges copies', async (_run: ReturnType<typeof toolsOn>, d: string, loading: { loadParts: (name: string, parts: MeshPart[]) => Promise<MeshHandle> }) => {
+    ['merges copies', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
       expect(await applyArray(loading, d, { kind: 'linear', count: 2, step: [0, 30, 0] }, true)).toBe(2)
+      return 1
+    }],
+    ['shells the part', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      await applyShell(loading, d, 0, { op: 'shell', open: [{ at: [128, 128, 10], normal: [0, 0, 1] }], wallMm: 2 })
+      return 1
+    }],
+    ['pushes the top', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      await applyPush(loading, await pickPushFace(d, 0, topPick(d)), 3)
+      return 1
+    }],
+    ['subtracts a hole', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      select(d)
+      expect(await subtractFromSelected(loading, { shape: 'box', sizeMm: 6, depthMm: 4, offset: [0, 0] })).toMatch(/^Removed/)
+      return 1
+    }],
+    ['raises text', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      select(d)
+      expect(await textOnSelected(loading, { text: 'X', sizeMm: 6, depthMm: 1, mode: 'emboss' })).toMatch(/^Raised/)
+      return 0
+    }],
+    ['clones a part', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      expect(await clonePart(loading, d, 0)).not.toBeNull()
+      return 1
+    }],
+    ['reorders its parts', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      // a second part first, loaded with no room move
+      expect(await clonePart(loader, d, 0)).not.toBeNull()
+      expect(await reorderParts(loading, d, [1, 0])).toBe(true)
+      return 2
+    }],
+    ['adds a part', async (_run: ReturnType<typeof toolsOn>, d: string, loading: Loading) => {
+      select(d)
+      expect(await addPrimitive(loading, 'box', 'part')).toBe(d)
+      return 1
     }],
   ])('keeps the landing moves of a room move made while the result of a Model edit that %s loads', async (_what, edit) => {
     const host = appDesignHost(loader)
@@ -1176,9 +1227,9 @@ describe('a Model join or cut that meets a landing made meanwhile', () => {
       f?.()
       return handle(name)
     } }
-    await edit(run, d, loading)
+    const added = await edit(run, d, loading)
     expect(during).toBeNull()
-    expect(entry(d).history!.steps).toHaveLength(before + 1)
+    expect(entry(d).history!.steps).toHaveLength(before + added)
     expect(entry(d).transform[12]).toBe(138)
     expect(entry(d).history?.placed).toEqual([138, 128])
     expect(at(host.get(d))).toEqual([0, 0])
