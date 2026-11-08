@@ -49,6 +49,10 @@ describe('the set a request picks', () => {
     ['Design a wall hook for a 6 mm screw', undefined, 'build'],
     ['Make a hook and then slice it for my A1', undefined, 'build'],
     ['Mirror the bracket and add a pattern of four holes', 'build', 'shape'],
+    // a new part with shaping words in it still builds: nothing is there to shape yet, or it opens on a new part
+    ["Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.", undefined, 'build'],
+    ['Make a box with a pattern of vent holes', 'shape', 'build'],
+    ['Make it hollow', 'build', 'shape'],
     ['Make the base thicker', 'build', 'edit'],
     ['Undo that step', 'shape', 'edit'],
     ['What layer height and infill should I print the bracket with?', 'build', 'app'],
