@@ -4,3 +4,4 @@
 - A slice mimir makes right after a filament or printer change is current when it lands. Before, `slicerx_mimir_run` reported it as `stale` at once.
 - A plate deleted while mimir's slice waits or runs no longer leaves that slice recorded under another plate's number.
 - On a multi-color plate, a new nozzle volume or an opened project's flush volumes make the last slice `stale`, in `slicerx_mimir_run` and in the app's Print and Export. A single-color plate has no flush volumes, so its slice stays current.
+- mimir's slice waits for the printer and filament profile after a part moves to another slot, so the slice uses every slot in use and is current when it lands. A part moved while mimir's slice loads its geometry leaves that slice `stale`. A slice you or mimir started is no longer stopped when the nozzle volume changes: it lands, and `slicerx_mimir_run` reports it as `stale` when it read the old volume.
