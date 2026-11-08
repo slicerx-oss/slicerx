@@ -25,6 +25,10 @@ export interface Design extends HostDesign {
 }
 
 export const designArg = z.string().min(1).describe('A design id from slicerx_design_new or slicerx_design_open')
+/** The planned feature a modeling step builds, recorded on the step so design.check ties the step to the plan. */
+export const featureArg = z.string().max(60).optional().describe('The plan feature this step builds, by its name in the plan')
+/** `opts` with the planned feature a modeling tool was given, for the host's add; a blank one is none. */
+export const withFeature = <T extends object>(feature: string | undefined, opts?: T): (T & { feature?: string }) | undefined => (feature?.trim() ? { ...(opts ?? ({} as T)), feature: feature.trim() } : opts)
 
 /** The files the design tools read and write. The app has none: its designs open and save with the project. */
 export interface DesignFiles {
@@ -212,6 +216,7 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     op: s.params.op,
     part: s.part,
     ...(n ? { value: { label: n.label, value: n.value, unit: n.unit } } : {}),
+    ...(s.feature ? { feature: s.feature } : {}),
     state: s.suppressed ? 'suppressed' : (st?.state ?? 'done'),
     ...(st?.message ? { message: st.message } : {}),
     ...(st?.note ? { note: st.note } : {}),
@@ -317,10 +322,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), its main number, and whether it went through, broke (with the reason) or is suppressed.',
+    description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.',
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
@@ -332,17 +337,18 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. Setting a number clears that step's expression binding; renaming or suppressing it keeps the binding. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
+      `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, rename it, or set the plan feature it builds. Setting a number clears that step's expression binding; renaming or suppressing it keeps the binding. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
     input: z.object({
       design: designArg,
       step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
       value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
       suppressed: z.boolean().optional(),
       label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
+      feature: z.string().max(60).optional().describe('The plan feature the step builds; empty for none'),
     }),
     async run(i) {
       const d = designs.get(i.design)
@@ -364,6 +370,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (i.label !== undefined) {
         const { label: _l, ...rest } = next
         next = i.label.trim() ? { ...rest, label: i.label.trim() } : rest
+      }
+      if (i.feature !== undefined) {
+        const { feature: _f, ...rest } = next
+        next = i.feature.trim() ? { ...rest, feature: i.feature.trim() } : rest
       }
       const { broken: _b, ...clean } = next
       await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) })
@@ -487,7 +497,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more for each planned feature, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): overall size, named holes, feature count, closed body and thinnest wall. Returns pass and each item with what the plan wants and what the body has; fix the failed items once and check again. With stop in the result, stop building and tell the person what is off. Give design when it asks which. More: kb.search "design check".',
     input: z.object({
