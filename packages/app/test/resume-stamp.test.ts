@@ -979,4 +979,24 @@ describe('round 19: the footer, the plate badges and the kept slices read the on
     render(wrap(e.host, createElement(PreviewPlates)))
     expect(screen.getAllByRole('button')[0]!.querySelector('small')?.textContent).toBe('Settings changed')
   })
+
+  it("reads a kept slice of an opened project's plate at that plate's own tower spot, as a switch back restores it", async () => {
+    const { switchPlate } = await import('../src/plate/plates')
+    const { keptSlice, trackPlateSlices } = await import('../src/workspaces/preview/plate-slices')
+    const stop = trackPlateSlices()
+    try {
+      const e = engine()
+      set({ profile: null, autoSlice: false, towerFromProject: true, projectTowers: { 'plate-1': { x: 20, y: 30 }, 'plate-2': { x: 40, y: 50 } }, tower: { auto: false, x: 20, y: 30 } } as never)
+      await (await import('../src/state/profile-sync')).profileReady()
+      switchPlate('plate-2')
+      await slicePlate(e.host)
+      switchPlate('plate-1')
+      expect(keptSlice('plate-2')).toEqual({ stale: false })
+      expect(platesState().plates[1]!.slice).toBe('sliced')
+      switchPlate('plate-2')
+      expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    } finally {
+      stop()
+    }
+  })
 })
