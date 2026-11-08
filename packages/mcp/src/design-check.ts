@@ -131,8 +131,14 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
   const tagged = (body.tags ?? []).some((t) => typeof t === 'string' && t.trim() !== '')
   const loose: string[] = []
   let untagged = 0
+  // untagged steps by their place in the history (1 based), for the hint to tag one rather than build it again
+  const bare: number[] = []
   if (tagged) {
     const keys = features.map(nameKey)
+    body.steps.forEach((_, i) => {
+      const t = body.tags?.[i]
+      if (typeof t !== 'string' || !t.trim()) bare.push(i + 1)
+    })
     ;(body.tags ?? []).slice(0, body.steps.length).forEach((t) => {
       if (typeof t !== 'string' || !t.trim()) return void untagged++
       const key = nameKey(t)
@@ -166,8 +172,15 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
   const want = tagged ? `${n} features, each built by a step tagged with its name` : `${n} features, each built by one or more steps`
   if (!missing.length) return { name: 'feature count', want, got: `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`, pass: true }
   const quoted = loose.map((s) => `"${s}"`).join(', ')
+  // an untagged step whose name shares a word with a missing feature is likely that feature: say to tag it
+  const hints = tagged
+    ? missing.flatMap((f) => {
+        const fw = nameWords(f)
+        return bare.filter((i) => [...nameWords(body.steps![i - 1]!)].some((w) => fw.has(w))).map((i) => `step ${i} "${body.steps![i - 1]}" is untagged: set its feature to "${f}" with design.edit_step`)
+      })
+    : []
   const got = tagged
-    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}`
+    ? `${m} steps, none tagged for ${missing.join(', ')}${loose.length ? `; tagged for ${quoted}, which the plan does not have` : ''}${untagged ? `; ${untagged} untagged ${untagged === 1 ? 'step is' : 'steps are'} finishing work` : ''}${hints.length ? `; ${hints.join('; ')}` : ''}`
     : `${m} steps, none for ${missing.join(', ')}${loose.length ? `; ${quoted} match${loose.length === 1 ? 'es' : ''} no planned feature` : ''}; pass feature on each step to tie it to the plan`
   return { name: 'feature count', want, got, pass: false }
 }
