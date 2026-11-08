@@ -50,7 +50,7 @@ import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismis
 import { capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
 import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
-import { clearanceProfileOf, GAP_ROW_KEYS, gapRows } from '../skills/fit_check/clearance'
+import { clearanceProfileOf, GAP_ROW_KEYS, withGapRows } from '../skills/fit_check/clearance'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
@@ -1080,9 +1080,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       })
     ctx.sheet = (draft) =>
       new Promise((resolve, reject) => {
-        // a print-in-place plan's sheet shows the fit rule's gaps as guesses, unless it has its own
-        const gaps = printInPlace.has(sessionId) ? gapRows(draft.dims, clearanceProfileOf(context)) : []
-        const sheet = { ...draft, dims: [...draft.dims, ...gaps], id: `sheet_${newId()}` }
+        // a print-in-place plan's sheet shows the fit rule's gaps as guesses, over any gap mimir guessed; the person's stand
+        const dims = printInPlace.has(sessionId) ? withGapRows(draft.dims, clearanceProfileOf(context)) : draft.dims
+        const sheet = { ...draft, dims, id: `sheet_${newId()}` }
         const onAbort = (): void => {
           sheets.delete(sheet.id)
           reject(new Error('Run canceled.'))
