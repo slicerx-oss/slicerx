@@ -680,7 +680,7 @@ describe('design.check picks the design it checks', () => {
 })
 
 describe('a plan whose sizes changed after it was approved', () => {
-  it('is refused by design.check in plain words, without using a check, until it is made fresh', async () => {
+  it('is refused by design.check in plain words, without using a check, and still once a later plan was answered', async () => {
     const plans = createPlanRegistry()
     plans.put(boxPlan, 'd1', 'card')
     expect(plans.stale('box-1')).toBe(true)
@@ -694,25 +694,44 @@ describe('a plan whose sizes changed after it was approved', () => {
     expect(refused).toContain('design.plan')
     expect(refused).not.toMatch(/box-1|d1/)
     expect(plans.get('box-1')?.failedChecks).toBeUndefined()
-    plans.fresh('box-1')
+    // a later plan answered, approved or declined: the sizes the person rejected are never checked against
+    plans.supersede('box-1')
+    expect(plans.get('box-1')).toMatchObject({ superseded: true })
     expect(plans.get('box-1')?.stale).toBeUndefined()
-    const r = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext)
-    expect((r.output as { pass: boolean }).pass).toBe(true)
+    const superseded = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext).then(
+      () => null,
+      (e: Error) => e.message,
+    )
+    expect(superseded).toContain('Nothing was checked')
+    expect(superseded).toContain('a newer plan has been answered since')
+    expect(superseded).not.toMatch(/box-1|d1/)
+    expect(plans.get('box-1')?.failedChecks).toBeUndefined()
   })
 
-  it('is not tied to a design while it waits, and is tied once it is fresh; a plan it does not have is not marked', () => {
+  it('is not tied to a design while it waits, nor once superseded; a plan it does not have is not marked', () => {
     const plans = createPlanRegistry()
     plans.put(boxPlan, undefined, 'card')
     plans.stale('box-1')
     expect(plans.tie('box-1', 'd1')).toBe(false)
     expect(plans.get('box-1')?.design).toBeUndefined()
-    plans.fresh('box-1')
-    expect(plans.tie('box-1', 'd1')).toBe(true)
+    plans.supersede('box-1')
+    expect(plans.tie('box-1', 'd1')).toBe(false)
+    expect(plans.get('box-1')?.design).toBeUndefined()
     expect(plans.stale('nope')).toBe(false)
-    // an edit put under its planId keeps the mark
-    plans.stale('box-1')
-    plans.put({ ...boxPlan, overall: { x: 60, y: 20, z: 5 } }, 'd1', 'card')
-    expect(plans.get('box-1')?.stale).toBe(true)
+    // an edit put under its planId keeps either mark
+    plans.put({ ...boxPlan, overall: { x: 60, y: 20, z: 5 } }, undefined, 'card')
+    expect(plans.get('box-1')?.superseded).toBe(true)
+    const other = { ...boxPlan, planId: 'box-2' }
+    plans.put(other, undefined, 'card')
+    plans.stale('box-2')
+    plans.put({ ...other, overall: { x: 60, y: 20, z: 5 } }, 'd1', 'card')
+    expect(plans.get('box-2')?.stale).toBe(true)
+    // a plan that was never stale is left as it is
+    const fresh = { ...boxPlan, planId: 'box-3' }
+    plans.put(fresh, undefined, 'card')
+    plans.supersede('box-3')
+    expect(plans.get('box-3')?.superseded).toBeUndefined()
+    expect(plans.tie('box-3', 'd1')).toBe(true)
   })
 
   it('keeps the design the chat started for its part while it waits, apart from its tie, through an edit', () => {

@@ -101,6 +101,11 @@ export function createCardPlans(plans: PlanRegistry) {
     return true
   }
 
+  /** The approved plan the next design built ties to, or null (tests). */
+  function unbuiltPlan(): string | null {
+    return unbuilt
+  }
+
   /** Forgets every plan (tests). */
   function clearPlans(): void {
     plans.clear()
@@ -176,6 +181,8 @@ export function createCardPlans(plans: PlanRegistry) {
         const latest = planById(plan.planId) ?? shown
         // anything but Go is not approved: Not yet, and a dismissed card too
         if (picked.id !== planChoiceId(PLAN_GO, plan.planId)) {
+          // an approved plan whose sizes the person changed since is superseded by this answer: no design ties to it
+          if (unbuilt && plans.get(unbuilt)?.stale) unbuilt = null
           const answer: PlanAnswer = { planId: plan.planId, accepted: false }
           return { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: answer }
         }
@@ -188,7 +195,7 @@ export function createCardPlans(plans: PlanRegistry) {
     }) as PilotTool<never>
   }
 
-  return { plans, planById, shownPlan, editPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool }
+  return { plans, planById, shownPlan, editPlan, unbuiltPlan, clearPlans, tieBuiltPart, withPlanTies, planOfChoices, planTool }
 }
 
 export type CardPlans = ReturnType<typeof createCardPlans>
