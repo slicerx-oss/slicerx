@@ -15,10 +15,14 @@
 
 use crate::error::{Error, Result};
 use crate::fm::Fm as _;
-use crate::poly2d::signed_area;
+use crate::poly2d::{self, signed_area};
 use crate::raster::{self, Raster};
+use crate::sketch::{self, IssueKind, Loop, MAX_MM, SketchCheck};
+use crate::sketch_fit::{self, Builder, Counts, MAX_SAMPLES};
+use crate::sketch_spline;
 use crate::vec3::V2;
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 /// The working size's long side unless set.
@@ -42,7 +46,8 @@ const COLOR_BAND: f32 = 12.0;
 const EDGE: u32 = 1 << 31;
 
 /// What counts as inside.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// Opaque areas when the image has transparency, else the dark side of an automatic threshold.
     #[default]
@@ -92,7 +97,7 @@ pub struct Field {
 }
 
 /// Regions the cleanup took away.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct Dropped {
     pub specks: usize,
     pub holes: usize,
@@ -129,14 +134,22 @@ pub fn trace(r: &Raster, o: &TraceOptions) -> Result<Traced> {
 }
 
 fn run(r: Cow<'_, Raster>, o: &TraceOptions) -> Result<Traced> {
+    stages(r, o, &|_| o.speck_px, 0).map(|(t, _)| t)
+}
+
+/// The trace with the speck size taken from the field, and the working image reduced to `preview` px kept when that
+/// is above 0.
+fn stages(
+    r: Cow<'_, Raster>,
+    o: &TraceOptions,
+    speck: &dyn Fn(&Field) -> f64,
+    preview: usize,
+) -> Result<(Traced, Option<Raster>)> {
     if o.max_side_px == 0 || o.max_side_px > raster::MAX_SIDE {
         return Err(Error::invalid_arg(format!(
             "the working size is 1 to {} px",
             raster::MAX_SIDE
         )));
-    }
-    if !(o.speck_px >= 0.0 && o.speck_px.is_finite()) {
-        return Err(Error::invalid_arg("the speck size is 0 or more"));
     }
     let image_px = [r.file_size.0, r.file_size.1];
     let work = if r.w.max(r.h) > o.max_side_px {
@@ -148,9 +161,14 @@ fn run(r: Cow<'_, Raster>, o: &TraceOptions) -> Result<Traced> {
     };
     let working_px = [work.w, work.h];
     let (mut f, mode, threshold) = field(&work, o)?;
+    let small = (preview > 0).then(|| work.reduced(preview));
     // an owned image is let go before the labels are made, so the two are never held at once
     drop(work);
-    let dropped = despeckle(&mut f, o.speck_px);
+    let speck_px = speck(&f);
+    if !(speck_px >= 0.0 && speck_px.is_finite()) {
+        return Err(Error::invalid_arg("the speck size is 0 or more"));
+    }
+    let dropped = despeckle(&mut f, speck_px);
     if !f.v.iter().any(|&v| v > 0.0) {
         return Err(Error::invalid(
             "image",
@@ -158,14 +176,15 @@ fn run(r: Cow<'_, Raster>, o: &TraceOptions) -> Result<Traced> {
         ));
     }
     let shapes = contours(&f)?;
-    Ok(Traced {
+    let traced = Traced {
         shapes,
         image_px,
         working_px,
         dropped,
         mode,
         threshold,
-    })
+    };
+    Ok((traced, small))
 }
 
 /// sRGB luminance, 0 to 255.
@@ -561,6 +580,838 @@ pub fn contours(f: &Field) -> Result<Vec<Shape>> {
         }
     }
     Ok(shapes)
+}
+
+/// What a traced run of points may become.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fit {
+    Lines,
+    /// Lines and arcs.
+    Arcs,
+    /// Lines, arcs and splines.
+    #[default]
+    Curves,
+}
+
+/// The sketch trace's settings, in sketch mm where they have a size.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SketchTraceOptions {
+    pub mode: Mode,
+    pub threshold: Option<f64>,
+    /// `#rrggbb` colors for the color mode.
+    pub colors: Vec<String>,
+    pub color_tolerance: f64,
+    /// Inside regions smaller than this are dropped and holes smaller filled, mm².
+    pub speck_mm2: f64,
+    /// The most a fitted curve strays from the traced edge; half a working pixel when absent.
+    pub smoothing_mm: Option<f64>,
+    pub fit: Fit,
+    /// A turn sharper than this over about 2 px is a corner.
+    pub corner_angle_deg: f64,
+    /// The traced shapes' width, or height, or the size of one image pixel; width 50 mm when none is set.
+    pub width_mm: Option<f64>,
+    pub height_mm: Option<f64>,
+    pub mm_per_px: Option<f64>,
+    /// Where the middle of the traced shapes lands, sketch mm.
+    pub center: V2,
+    pub max_side_px: usize,
+    /// A PNG of the working image with the loops drawn over it.
+    pub preview_image: bool,
+}
+
+impl Default for SketchTraceOptions {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Auto,
+            threshold: None,
+            colors: Vec::new(),
+            color_tolerance: 12.0,
+            speck_mm2: 0.5,
+            smoothing_mm: None,
+            fit: Fit::Curves,
+            corner_angle_deg: 50.0,
+            width_mm: None,
+            height_mm: None,
+            mm_per_px: None,
+            center: [0.0, 0.0],
+            max_side_px: DEFAULT_SIDE,
+            preview_image: false,
+        }
+    }
+}
+
+/// An image traced into sketch loops.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SketchTrace {
+    pub loops: Vec<Loop>,
+    pub counts: Counts,
+    pub size_mm: V2,
+    /// mm per pixel of the image as the file has it.
+    pub mm_per_px: f64,
+    pub image_px: [usize; 2],
+    pub working_px: [usize; 2],
+    pub dropped: Dropped,
+    pub check: SketchCheck,
+    pub warnings: Vec<String>,
+    pub mode: Mode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<f64>,
+    /// Working px (y up) to sketch mm: `[scale, dx, dy]`, for drawing the loops over the image.
+    pub px_to_mm: [f64; 3],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_png: Option<String>,
+}
+
+/// More segments than this are refused.
+pub const MAX_SEGMENTS: usize = 20_000;
+/// The preview image's long side.
+const PREVIEW_SIDE: usize = 1024;
+/// The fit's work, in point distances measured, before a call stops: about a second natively, where a busy 12
+/// megapixel photo takes under a million.
+pub const FIT_BUDGET: u64 = 60_000_000;
+/// How many times a crossing fit is tried again; the last is the traced points as lines.
+const REFITS: u32 = 6;
+/// How near a crossing, in working px, the traced points are kept as they are.
+const PIN_PX: f64 = 2.0;
+/// the turn is measured this far either side of a point, working px
+const CORNER_WINDOW_PX: f64 = 2.0;
+
+/// `#rrggbb` as a color.
+fn hex_color(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let v = u32::from_str_radix(h, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
+/// The work a fit may still do.
+struct Budget(u64);
+
+impl Budget {
+    fn spend(&mut self, n: usize) -> Result<()> {
+        self.0 = self.0.saturating_sub(n as u64);
+        if self.0 == 0 {
+            return Err(Error::invalid(
+                "image",
+                "the trace needs more work than one call allows; raise Smoothing or Remove specks, or trace at a smaller working size",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Fits the runs of one traced ring, in working px, into a loop in sketch mm.
+struct RingFit<'a> {
+    tol: f64,
+    fit: Fit,
+    place: [f64; 6],
+    budget: &'a mut Budget,
+    missed: usize,
+}
+
+impl RingFit<'_> {
+    fn mm(&self, p: V2) -> V2 {
+        [
+            self.place[0] * p[0] + self.place[4],
+            self.place[3] * p[1] + self.place[5],
+        ]
+    }
+
+    /// Adds `pts` (a run from its first point to its last) to `b`, with `cand` the run's thinned points.
+    fn run(&mut self, b: &mut Builder, pts: &[V2], cand: &[usize]) -> Result<()> {
+        let last = pts.len() - 1;
+        if last == 0 {
+            return Ok(());
+        }
+        let (a, z) = (pts[0], pts[last]);
+        self.budget.spend(pts.len())?;
+        let (far, off) = pts
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| (i, sketch_fit::to_segment(p, a, z)))
+            .fold((0, 0.0), |best, x| if x.1 > best.1 { x } else { best });
+        if off <= self.tol || last == 1 {
+            b.line(self.mm(z));
+            return Ok(());
+        }
+        if self.fit != Fit::Lines
+            && let Some((c, r, through)) = self.arc(pts)?
+        {
+            b.arc(self.mm(z), self.mm(through), self.mm(c), r * self.place[0]);
+            return Ok(());
+        }
+        if self.fit == Fit::Curves && self.spline(b, pts, cand)? {
+            return Ok(());
+        }
+        // split where the run strays most from its chord
+        let at = if far == 0 || far == last { last / 2 } else { far };
+        let (l, r) = split_cand(cand, at);
+        self.run(b, &pts[..=at], &l)?;
+        self.run(b, &pts[at..], &r)
+    }
+
+    /// An arc through both ends of `pts` with its center on their bisector (least squares), when every point is
+    /// within the tolerance of it: the center, radius and a point in the middle of it.
+    fn arc(&mut self, pts: &[V2]) -> Result<Option<(V2, f64, V2)>> {
+        let (a, z) = (pts[0], pts[pts.len() - 1]);
+        let chord = sketch_fit::dist(a, z);
+        if pts.len() < 3 || chord < 1e-6 {
+            return Ok(None);
+        }
+        let m = [f64::midpoint(a[0], z[0]), f64::midpoint(a[1], z[1])];
+        let nrm = [-(z[1] - a[1]) / chord, (z[0] - a[0]) / chord];
+        let mq = [m[0] - a[0], m[1] - a[1]];
+        // a point p on the circle meets |q|^2 - 2 m'.q = 2 t n.q, with q = p - a and the center at m + t n
+        let (mut num, mut den) = (0.0, 0.0);
+        for p in pts {
+            let q = [p[0] - a[0], p[1] - a[1]];
+            let e = q[0] * q[0] + q[1] * q[1] - 2.0 * (mq[0] * q[0] + mq[1] * q[1]);
+            let g = 2.0 * (nrm[0] * q[0] + nrm[1] * q[1]);
+            num += e * g;
+            den += g * g;
+        }
+        self.budget.spend(pts.len())?;
+        if den <= 0.0 {
+            return Ok(None);
+        }
+        let t = num / den;
+        let c = [m[0] + t * nrm[0], m[1] + t * nrm[1]];
+        let r = sketch_fit::dist(a, c);
+        // nearly straight, the arc is a line that missed
+        if !(r.is_finite() && r * self.place[0] < 1e5) {
+            return Ok(None);
+        }
+        if pts.iter().any(|&p| (sketch_fit::dist(p, c) - r).abs() > self.tol) {
+            return Ok(None);
+        }
+        let mid = pts[pts.len() / 2];
+        let d = sketch_fit::dist(mid, c);
+        if d <= 0.0 {
+            return Ok(None);
+        }
+        Ok(Some((
+            c,
+            r,
+            [c[0] + r * (mid[0] - c[0]) / d, c[1] + r * (mid[1] - c[1]) / d],
+        )))
+    }
+
+    /// A spline through the run's thinned points and more where it strays most, when it meets the tolerance within
+    /// the most points a spline takes.
+    fn spline(&mut self, b: &mut Builder, pts: &[V2], cand: &[usize]) -> Result<bool> {
+        let last = pts.len() - 1;
+        let mut idx: Vec<usize> = cand.to_vec();
+        loop {
+            let through: Vec<V2> = idx.iter().map(|&i| pts[i]).collect();
+            // the run between two through points, at the same fraction of its points
+            let along = |j: usize, s: f64| -> V2 {
+                let (i0, i1) = (idx[j], idx[j + 1]);
+                let x = i0 as f64 + s * (i1 - i0) as f64;
+                let k = (x.floor() as usize).min(last - 1);
+                let u = x - k as f64;
+                [
+                    pts[k][0] + u * (pts[k + 1][0] - pts[k][0]),
+                    pts[k][1] + u * (pts[k + 1][1] - pts[k][1]),
+                ]
+            };
+            self.budget.spend(3 * idx.len())?;
+            let spans = sketch_spline::spans(&through, false);
+            let (worst, off) = spans
+                .iter()
+                .enumerate()
+                .map(|(j, s)| {
+                    let e = (1..4)
+                        .map(|q| {
+                            let t = f64::from(q) / 4.0;
+                            sketch_fit::dist(sketch_fit::bez(s, t), along(j, t))
+                        })
+                        .fold(0.0, f64::max);
+                    (j, e)
+                })
+                .fold((0, 0.0), |best, x| if x.1 > best.1 { x } else { best });
+            if off <= self.tol {
+                let inner = through[1..through.len() - 1]
+                    .iter()
+                    .map(|&p| self.mm(p))
+                    .collect();
+                b.spline(self.mm(pts[last]), inner);
+                return Ok(true);
+            }
+            let (i0, i1) = (idx[worst], idx[worst + 1]);
+            if idx.len() > MAX_SAMPLES || i1 - i0 < 2 {
+                // a run this short that still misses goes in as it is, a little further off
+                if pts.len() <= 4 {
+                    self.missed += 1;
+                    let inner = through[1..through.len() - 1]
+                        .iter()
+                        .map(|&p| self.mm(p))
+                        .collect();
+                    b.spline(self.mm(pts[last]), inner);
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+            idx.insert(worst + 1, usize::midpoint(i0, i1));
+        }
+    }
+}
+
+/// The thinned points either side of `at`, each list with its run's ends.
+fn split_cand(cand: &[usize], at: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut l: Vec<usize> = cand.iter().copied().filter(|&i| i < at).collect();
+    l.push(at);
+    let mut r: Vec<usize> = vec![0];
+    r.extend(cand.iter().copied().filter(|&i| i > at).map(|i| i - at));
+    (l, r)
+}
+
+/// The point `d` along `ring` from point `i`, forward or back.
+fn walk(ring: &[V2], i: usize, d: f64, forward: bool) -> V2 {
+    let n = ring.len();
+    let (mut at, mut left) = (i, d);
+    for _ in 0..n {
+        let next = if forward { (at + 1) % n } else { (at + n - 1) % n };
+        let step = sketch_fit::dist(ring[at], ring[next]);
+        if step >= left && step > 0.0 {
+            let u = left / step;
+            return [
+                ring[at][0] + u * (ring[next][0] - ring[at][0]),
+                ring[at][1] + u * (ring[next][1] - ring[at][1]),
+            ];
+        }
+        left -= step;
+        at = next;
+    }
+    ring[at]
+}
+
+/// The corners among the points that turn sharply: points close along the ring are one corner (marching squares cuts
+/// a sharp corner into a short chamfer), at the meeting of the edges coming in and going out when it is close by.
+fn corner_points(ring: &[V2], turned: &[usize]) -> Vec<(usize, usize, V2)> {
+    let n = ring.len();
+    if turned.is_empty() {
+        return Vec::new();
+    }
+    let step = |i: usize| sketch_fit::dist(ring[i], ring[(i + 1) % n]);
+    let apart = |a: usize, b: usize| (0..(b + n - a) % n).map(|j| step((a + j) % n)).sum::<f64>();
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for &i in turned {
+        match groups.last_mut() {
+            Some(g) if apart(g.1, i) <= 2.0 * CORNER_WINDOW_PX => g.1 = i,
+            _ => groups.push((i, i)),
+        }
+    }
+    // the last group may run on into the first round the ring
+    if groups.len() > 1
+        && let (Some(&first), Some(&last)) = (groups.first(), groups.last())
+        && apart(last.1, first.0) <= 2.0 * CORNER_WINDOW_PX
+    {
+        groups[0].0 = last.0;
+        groups.pop();
+        groups.rotate_left(1);
+    }
+    groups
+        .into_iter()
+        .map(|(a, b)| {
+            let (p, q) = (
+                walk(ring, a, CORNER_WINDOW_PX, false),
+                walk(ring, b, CORNER_WINDOW_PX, true),
+            );
+            let (u, v) = (sketch_fit::sub2(ring[a], p), sketch_fit::sub2(q, ring[b]));
+            let den = u[0] * v[1] - u[1] * v[0];
+            let w = sketch_fit::sub2(ring[b], p);
+            let t = (w[0] * v[1] - w[1] * v[0]) / den;
+            let x = [p[0] + t * u[0], p[1] + t * u[1]];
+            let near = den.abs() > 1e-9 && sketch_fit::dist(x, ring[a]) <= CORNER_WINDOW_PX;
+            (a, b, if near { x } else { ring[a] })
+        })
+        .collect()
+}
+
+/// The circle through `ring` by least squares, when every point is within `tol` of it.
+fn ring_circle(ring: &[V2], tol: f64) -> Option<(V2, f64)> {
+    if ring.len() < 8 {
+        return None;
+    }
+    let n = ring.len() as f64;
+    let c0 = ring
+        .iter()
+        .fold([0.0, 0.0], |s, p| [s[0] + p[0] / n, s[1] + p[1] / n]);
+    // x^2 + y^2 + d x + e y + f = 0 round the centroid, by its normal equations
+    let (mut sxx, mut sxy, mut syy, mut sx, mut sy) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    let (mut bx, mut by, mut b1) = (0.0, 0.0, 0.0);
+    for p in ring {
+        let (x, y) = (p[0] - c0[0], p[1] - c0[1]);
+        let z = -(x * x + y * y);
+        sxx += x * x;
+        sxy += x * y;
+        syy += y * y;
+        sx += x;
+        sy += y;
+        bx += z * x;
+        by += z * y;
+        b1 += z;
+    }
+    let m = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]];
+    let det = |m: [[f64; 3]; 3]| {
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    };
+    let d0 = det(m);
+    if d0.abs() < 1e-12 {
+        return None;
+    }
+    let col = |k: usize| {
+        let mut c = m;
+        for (row, v) in c.iter_mut().zip([bx, by, b1]) {
+            row[k] = v;
+        }
+        det(c) / d0
+    };
+    let (d, e, f) = (col(0), col(1), col(2));
+    let c = [-d / 2.0 + c0[0], -e / 2.0 + c0[1]];
+    let r2 = d * d / 4.0 + e * e / 4.0 - f;
+    if r2.is_nan() || r2 <= 0.0 {
+        return None;
+    }
+    let r = r2.sqrt();
+    ring.iter()
+        .all(|&p| (sketch_fit::dist(p, c) - r).abs() <= tol)
+        .then_some((c, r))
+}
+
+/// One traced ring as a sketch loop: thinned, split at its corners, each run fitted.
+fn fit_ring(
+    ring: &[V2],
+    o: &SketchTraceOptions,
+    tol: f64,
+    place: [f64; 6],
+    pins: &[usize],
+    budget: &mut Budget,
+) -> Result<(Option<Loop>, usize)> {
+    let n = ring.len();
+    let keep = poly2d::simplify_ring_keep(ring, tol / 4.0);
+    budget.spend(n * 4)?;
+    let kept: Vec<usize> = (0..n).filter(|&i| keep[i]).collect();
+    let limit = o.corner_angle_deg.to_radians();
+    let turned: Vec<usize> = kept
+        .iter()
+        .copied()
+        .filter(|&i| {
+            let (back, fwd) = (
+                walk(ring, i, CORNER_WINDOW_PX, false),
+                walk(ring, i, CORNER_WINDOW_PX, true),
+            );
+            let (u, v) = (sketch_fit::sub2(ring[i], back), sketch_fit::sub2(fwd, ring[i]));
+            let turn = (u[0] * v[1] - u[1] * v[0])
+                .m_atan2(u[0] * v[0] + u[1] * v[1])
+                .abs();
+            turn > limit
+        })
+        .collect();
+    let mut corners = corner_points(ring, &turned);
+    if !pins.is_empty() {
+        // pinned points are kept as they are, so a corner round one gives way to them
+        let holds = |a: usize, b: usize, i: usize| {
+            if a <= b {
+                (a..=b).contains(&i)
+            } else {
+                i >= a || i <= b
+            }
+        };
+        corners.retain(|&(a, b, _)| !pins.iter().any(|&i| holds(a, b, i)));
+        corners.extend(pins.iter().map(|&i| (i, i, ring[i])));
+        corners.sort_unstable_by_key(|c| c.0);
+    }
+    let mut f = RingFit {
+        tol,
+        fit: o.fit,
+        place,
+        budget,
+        missed: 0,
+    };
+    if corners.is_empty()
+        && o.fit != Fit::Lines
+        && pins.is_empty()
+        && let Some((c, r)) = ring_circle(ring, tol)
+    {
+        return Ok((Some(sketch_fit::circle(f.mm(c), r * place[0])), 0));
+    }
+    // a loop takes two pieces at least, so a ring with under two corners is split across as well
+    if corners.is_empty() {
+        let i = kept.first().copied().unwrap_or(0);
+        corners.push((i, i, ring[i]));
+    }
+    if corners.len() == 1 {
+        let (a, b, _) = corners[0];
+        let opposite = (b + n / 2) % n;
+        let near = kept
+            .iter()
+            .copied()
+            .filter(|&i| i != a && i != b)
+            .min_by_key(|&i| i.abs_diff(opposite))
+            .unwrap_or(opposite);
+        corners.push((near, near, ring[near]));
+        corners.sort_unstable_by_key(|c| c.0);
+    }
+    let mut b = Builder::new(f.mm(corners[0].2));
+    for (k, &(_, end, at)) in corners.iter().enumerate() {
+        let (next, _, to) = corners[(k + 1) % corners.len()];
+        // the ring's points strictly between the two corners, with the corners' own points at the ends
+        let gap = (next + n - end) % n;
+        let inner: Vec<usize> = (1..gap).map(|j| (end + j) % n).collect();
+        let mut pts = Vec::with_capacity(inner.len() + 2);
+        pts.push(at);
+        pts.extend(inner.iter().map(|&i| ring[i]));
+        pts.push(to);
+        let mut cand: Vec<usize> = vec![0];
+        cand.extend((0..inner.len()).filter(|&j| keep[inner[j]]).map(|j| j + 1));
+        cand.push(pts.len() - 1);
+        f.run(&mut b, &pts, &cand)?;
+    }
+    let missed = f.missed;
+    Ok((b.finish(tol * place[0]), missed))
+}
+
+/// The index of the ring point nearest `p`.
+fn closest(ring: &[V2], p: V2) -> usize {
+    (0..ring.len())
+        .min_by(|&a, &b| sketch_fit::dist(ring[a], p).total_cmp(&sketch_fit::dist(ring[b], p)))
+        .unwrap_or(0)
+}
+
+/// Where segment `s` of a loop starts and ends.
+fn piece_ends(l: &Loop, s: usize) -> Option<(V2, V2)> {
+    let from = if s == 0 {
+        l.start?
+    } else {
+        l.segments.get(s - 1)?.to?
+    };
+    Some((from, l.segments.get(s)?.to?))
+}
+
+/// A traced ring as lines through every point, which never cross where the trace did not.
+fn exact_ring(ring: &[V2], place: [f64; 6]) -> Option<Loop> {
+    let mm = |p: V2| [place[0] * p[0] + place[4], place[3] * p[1] + place[5]];
+    let mut b = Builder::new(mm(*ring.first()?));
+    for &p in &ring[1..] {
+        b.line(mm(p));
+    }
+    b.finish(0.0)
+}
+
+/// Traces a PNG or JPEG file into sketch loops.
+pub fn sketch_trace_bytes(bytes: &[u8], o: &SketchTraceOptions) -> Result<SketchTrace> {
+    let r = raster::decode(bytes).map_err(|u| Error::invalid("image", format!("the file {}", u.why())))?;
+    sketch_trace(Cow::Owned(r), o)
+}
+
+/// Traces an image into sketch loops, sized and placed.
+#[allow(
+    clippy::too_many_lines,
+    reason = "checks, the trace, the scale, the fit and the reply in one pass"
+)]
+pub fn sketch_trace(r: Cow<'_, Raster>, o: &SketchTraceOptions) -> Result<SketchTrace> {
+    let colors = o
+        .colors
+        .iter()
+        .map(|c| hex_color(c).ok_or_else(|| Error::invalid("colors", format!("{c} is not a #rrggbb color"))))
+        .collect::<Result<Vec<_>>>()?;
+    let sizes = [("widthMm", o.width_mm), ("heightMm", o.height_mm)];
+    for (what, v) in sizes {
+        if v.is_some_and(|v| !(v.is_finite() && v > 0.0 && v <= 10_000.0)) {
+            return Err(Error::invalid(what, "between 0 and 10000 mm"));
+        }
+    }
+    if o.mm_per_px
+        .is_some_and(|v| !(v.is_finite() && v > 0.0 && v <= 100.0))
+    {
+        return Err(Error::invalid("mmPerPx", "between 0 and 100 mm"));
+    }
+    if [o.width_mm.is_some(), o.height_mm.is_some(), o.mm_per_px.is_some()]
+        .iter()
+        .filter(|&&s| s)
+        .count()
+        > 1
+    {
+        return Err(Error::invalid("size", "set one of widthMm, heightMm and mmPerPx"));
+    }
+    if o.smoothing_mm
+        .is_some_and(|v| !(v.is_finite() && (0.01..=10.0).contains(&v)))
+    {
+        return Err(Error::invalid("smoothingMm", "between 0.01 and 10 mm"));
+    }
+    if !(o.speck_mm2.is_finite() && (0.0..=1e6).contains(&o.speck_mm2)) {
+        return Err(Error::invalid("speckMm2", "0 or more"));
+    }
+    if !(o.corner_angle_deg.is_finite() && (1.0..=179.0).contains(&o.corner_angle_deg)) {
+        return Err(Error::invalid("cornerAngleDeg", "between 1 and 179 degrees"));
+    }
+    if !o.center.iter().all(|c| c.is_finite() && c.abs() <= 10_000.0) {
+        return Err(Error::invalid("center", "within 10000 mm of the origin"));
+    }
+    let core = TraceOptions {
+        mode: o.mode,
+        threshold: o.threshold,
+        colors,
+        color_tolerance: o.color_tolerance,
+        speck_px: 0.0,
+        max_side_px: o.max_side_px,
+    };
+    let image_w = r.file_size.0 as f64;
+    let width = o
+        .width_mm
+        .or((o.height_mm.is_none() && o.mm_per_px.is_none()).then_some(50.0));
+    // mm per working px from the size, given the inside's extent in working px
+    let scale = |work_w: usize, ext: V2| -> f64 {
+        if let Some(m) = o.mm_per_px {
+            m * image_w / work_w as f64
+        } else if let Some(h) = o.height_mm {
+            h / ext[1]
+        } else {
+            width.unwrap_or(50.0) / ext[0]
+        }
+    };
+    // specks are measured at the scale of the regions that are not specks at the scale of all of them; the shapes'
+    // own extent after cleanup sets the scale of the sketch
+    let speck = |f: &Field| -> f64 {
+        if o.speck_mm2 == 0.0 {
+            return 0.0;
+        }
+        let mut labels = Vec::new();
+        let Some(regions) = label(f, true, &mut labels, 1 << 20) else {
+            return 0.0;
+        };
+        let mut bb = vec![[usize::MAX, usize::MAX, 0, 0]; regions.len()];
+        for (i, &l) in labels.iter().enumerate() {
+            if l != 0 {
+                let (x, y, b) = (i % f.w, i / f.w, &mut bb[l as usize - 1]);
+                *b = [b[0].min(x), b[1].min(y), b[2].max(x + 1), b[3].max(y + 1)];
+            }
+        }
+        drop(labels);
+        let k_of = |min_px: f64| -> Option<f64> {
+            let mut u = [usize::MAX, usize::MAX, 0, 0];
+            for (r, b) in regions.iter().zip(&bb) {
+                if f64::from(r & !EDGE) >= min_px {
+                    u = [u[0].min(b[0]), u[1].min(b[1]), u[2].max(b[2]), u[3].max(b[3])];
+                }
+            }
+            (u[0] != usize::MAX).then(|| scale(f.w, [(u[2] - u[0]) as f64, (u[3] - u[1]) as f64]))
+        };
+        let Some(k0) = k_of(0.0) else {
+            return 0.0;
+        };
+        let k1 = k_of(o.speck_mm2 / (k0 * k0)).unwrap_or(k0);
+        o.speck_mm2 / (k1 * k1)
+    };
+    let preview = if o.preview_image { PREVIEW_SIDE } else { 0 };
+    let (traced, small) = stages(r, &core, &speck, preview)?;
+    let rings = traced
+        .shapes
+        .iter()
+        .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes));
+    let (lo, hi) = rings
+        .flatten()
+        .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(lo, hi), p| {
+            (
+                [lo[0].min(p[0]), lo[1].min(p[1])],
+                [hi[0].max(p[0]), hi[1].max(p[1])],
+            )
+        });
+    let ext = [hi[0] - lo[0], hi[1] - lo[1]];
+    let k = scale(traced.working_px[0], ext);
+    if !(k.is_finite() && k > 0.0) {
+        return Err(Error::invalid(
+            "image",
+            "nothing is inside; change what to trace or the threshold",
+        ));
+    }
+    if ext[0] * k > MAX_MM || ext[1] * k > MAX_MM {
+        return Err(Error::invalid(
+            "size",
+            format!(
+                "the trace is {:.0} x {:.0} mm, over the {MAX_MM:.0} mm a sketch takes",
+                ext[0] * k,
+                ext[1] * k
+            ),
+        ));
+    }
+    let tol_mm = o.smoothing_mm.unwrap_or(0.5 * k).max(0.01);
+    let place = sketch_fit::placement(lo, hi, k, o.center);
+    let mut budget = Budget(FIT_BUDGET);
+    let rings: Vec<&Vec<V2>> = traced
+        .shapes
+        .iter()
+        .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+        .collect();
+    let mut fitted = Vec::with_capacity(rings.len());
+    let mut missed = 0;
+    for ring in &rings {
+        let (l, m) = fit_ring(ring, o, tol_mm / k, place, &[], &mut budget)?;
+        missed += m;
+        fitted.push(l);
+    }
+    // where a fit crosses itself or a neighbor, the traced points round the crossing are kept as they are and the
+    // crossing piece is fitted tighter, reaching further each round; at last the ring is kept as traced, when the
+    // sketch has room for it
+    let to_px = |p: V2| [(p[0] - place[4]) / place[0], (p[1] - place[5]) / place[3]];
+    let mut near: Vec<Vec<Option<(V2, usize, usize)>>> = vec![Vec::new(); rings.len()];
+    for round in 1..=REFITS {
+        let owner: Vec<usize> = (0..fitted.len()).filter(|&i| fitted[i].is_some()).collect();
+        let loops: Vec<Loop> = owner.iter().filter_map(|&i| fitted[i].clone()).collect();
+        let mut bad = Vec::new();
+        for issue in sketch::check(&loops).issues {
+            if matches!(issue.kind, IssueKind::SelfCrossing | IssueKind::LoopsCross)
+                && let Some(&i) = owner.get(issue.loop_index)
+            {
+                let ring = rings[i];
+                let piece = issue
+                    .segment
+                    .and_then(|s| piece_ends(&loops[issue.loop_index], s));
+                budget.spend(ring.len() * 2)?;
+                near[i].push(issue.at.zip(piece).map(|(at, (p, q))| {
+                    let (a, b) = (closest(ring, to_px(p)), closest(ring, to_px(q)));
+                    // the shorter way round, since a piece that closes the loop may end just short of where it began
+                    let n = ring.len();
+                    let (fwd, back) = ((b + n - a) % n, (a + n - b) % n);
+                    let (from, len) = if fwd <= back { (a, fwd) } else { (b, back) };
+                    (to_px(at), from, len)
+                }));
+                bad.push(i);
+            }
+        }
+        bad.sort_unstable();
+        bad.dedup();
+        let mut room = MAX_SEGMENTS.saturating_sub(loops.iter().map(|l| l.segments.len().max(1)).sum());
+        if bad.is_empty() {
+            break;
+        }
+        for i in bad {
+            let ring = rings[i];
+            let n = ring.len();
+            if round == REFITS || near[i].iter().any(Option::is_none) {
+                budget.spend(n)?;
+                let have = fitted[i].as_ref().map_or(0, |l| l.segments.len());
+                if room >= n.saturating_sub(have) {
+                    room -= n.saturating_sub(have);
+                    fitted[i] = exact_ring(ring, place);
+                }
+                continue;
+            }
+            let tight = poly2d::simplify_ring_keep(ring, tol_mm / k / f64::from(1u32 << (round + 1)));
+            budget.spend(n * (4 + near[i].len()))?;
+            let reach = PIN_PX * f64::from(1u32 << (round - 1));
+            let mut pinned = vec![false; n];
+            for &(at, from, len) in near[i].iter().flatten() {
+                for (j, pin) in pinned.iter_mut().enumerate() {
+                    *pin |= sketch_fit::dist(ring[j], at) <= reach;
+                }
+                for j in (0..=len).map(|j| (from + j) % n) {
+                    pinned[j] |= tight[j];
+                }
+            }
+            let pins: Vec<usize> = (0..n).filter(|&j| pinned[j]).collect();
+            fitted[i] = fit_ring(ring, o, tol_mm / k, place, &pins, &mut budget)?.0;
+        }
+    }
+    let mut loops: Vec<Loop> = fitted.into_iter().flatten().collect();
+    loops.iter_mut().for_each(sketch_fit::tidy_loop);
+    let segments: usize = loops.iter().map(|l| l.segments.len().max(1)).sum();
+    if segments > MAX_SEGMENTS {
+        return Err(Error::invalid(
+            "image",
+            format!(
+                "the trace has {segments} segments, more than {MAX_SEGMENTS}; raise Remove specks or Smoothing"
+            ),
+        ));
+    }
+    if loops.is_empty() {
+        return Err(Error::invalid(
+            "image",
+            "nothing is inside; change what to trace or the threshold",
+        ));
+    }
+    let mut warnings = Vec::new();
+    if missed > 0 {
+        warnings.push(format!(
+            "{missed} short {} a little further off than Smoothing",
+            if missed == 1 { "curve stays" } else { "curves stay" }
+        ));
+    }
+    let check = sketch::check(&loops);
+    let preview_png = match small {
+        Some(img) => Some(preview_png(&img, traced.working_px, &check, place)?),
+        None => None,
+    };
+    let working_w = traced.working_px[0] as f64;
+    Ok(SketchTrace {
+        counts: sketch_fit::count(&loops),
+        loops,
+        size_mm: [sketch_fit::tidy(ext[0] * k), sketch_fit::tidy(ext[1] * k)],
+        mm_per_px: k * working_w / image_w,
+        image_px: traced.image_px,
+        working_px: traced.working_px,
+        dropped: traced.dropped,
+        check,
+        warnings,
+        mode: traced.mode,
+        threshold: traced.threshold,
+        px_to_mm: [k, place[4], place[5]],
+        preview_png,
+    })
+}
+
+/// The image with the loops drawn over it, as a PNG in base64.
+fn preview_png(img: &Raster, working: [usize; 2], check: &SketchCheck, place: [f64; 6]) -> Result<String> {
+    let mut px = img.px.clone();
+    let (w, h) = (img.w, img.h);
+    // sketch mm to working px (y up) to preview px (y down)
+    let s = w as f64 / working[0] as f64;
+    let to_px = |p: V2| -> (f64, f64) {
+        let x = (p[0] - place[4]) / place[0];
+        let y = (p[1] - place[5]) / place[3];
+        (x * s, (working[1] as f64 - y) * s)
+    };
+    let mut dot = |x: f64, y: f64| {
+        for (dx, dy) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
+            let (xi, yi) = ((x + dx - 0.5).floor(), (y + dy - 0.5).floor());
+            if xi >= 0.0 && yi >= 0.0 && (xi as usize) < w && (yi as usize) < h {
+                px[yi as usize * w + xi as usize] = [240, 40, 140, 255];
+            }
+        }
+    };
+    for poly in &check.polygons {
+        for ring in std::iter::once(&poly.outer).chain(&poly.holes) {
+            for (i, &a) in ring.iter().enumerate() {
+                let (b, a) = (to_px(ring[(i + 1) % ring.len()]), to_px(a));
+                let steps =
+                    ((b.0 - a.0).abs().max((b.1 - a.1).abs()).ceil() as usize).clamp(1, 4 * PREVIEW_SIDE);
+                for k in 0..=steps {
+                    let t = k as f64 / steps as f64;
+                    dot(a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1));
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, w as u32, h as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc
+            .write_header()
+            .map_err(|e| Error::geometry("sketch.trace", e.to_string()))?;
+        writer
+            .write_image_data(px.as_flattened())
+            .map_err(|e| Error::geometry("sketch.trace", e.to_string()))?;
+    }
+    Ok(crate::json::base64_encode(&out))
 }
 
 #[cfg(test)]
@@ -1347,5 +2198,541 @@ mod tests {
             trace(&img, &color(MAX_TOLERANCE + 1e-4)).unwrap_err().to_string(),
             "argument: the color tolerance is 0 to 100"
         );
+    }
+
+    fn sk(img: &Raster, o: &SketchTraceOptions) -> SketchTrace {
+        let r = sketch_trace(Cow::Borrowed(img), o).unwrap();
+        assert!(r.check.ok, "{:?}", r.check.issues);
+        r
+    }
+
+    /// Fit to a width of `w` px in mm, so a working px is a mm.
+    fn mm_px(w: f64) -> SketchTraceOptions {
+        SketchTraceOptions {
+            width_mm: Some(w),
+            speck_mm2: 0.0,
+            ..SketchTraceOptions::default()
+        }
+    }
+
+    fn kinds(l: &Loop) -> Vec<&str> {
+        l.segments.iter().map(|s| s.kind.as_str()).collect()
+    }
+
+    #[test]
+    fn a_square_is_one_loop_of_four_lines_with_its_corners_in_place() {
+        let img = draw(140, 140, WHITE, |x, y| {
+            ((20.0..120.0).contains(&x) && (20.0..120.0).contains(&y)).then_some(BLACK)
+        });
+        let r = sk(&img, &mm_px(100.0));
+        assert_eq!(r.loops.len(), 1);
+        assert_eq!(kinds(&r.loops[0]), ["line"; 4]);
+        assert_eq!(
+            r.counts,
+            Counts {
+                lines: 4,
+                arcs: 0,
+                splines: 0,
+                circles: 0
+            }
+        );
+        // the middle lands on the origin; every corner within half a px of the square's
+        let mut corners: Vec<V2> = r.loops[0].segments.iter().filter_map(|s| s.to).collect();
+        corners.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for (got, want) in corners
+            .iter()
+            .zip([[-50.0, -50.0], [-50.0, 50.0], [50.0, -50.0], [50.0, 50.0]])
+        {
+            assert!(sketch_fit::dist(*got, want) < 0.5, "{corners:?}");
+        }
+        assert!(
+            (r.size_mm[0] - 100.0).abs() < 0.5 && (r.check.area_mm2 - 10_000.0).abs() < 50.0,
+            "{r:?}"
+        );
+        assert_eq!(r.image_px, [140, 140]);
+        assert!((r.mm_per_px - 1.0).abs() < 0.01, "{}", r.mm_per_px);
+    }
+
+    #[test]
+    fn a_circle_is_one_circle_loop_within_one_percent() {
+        let img = draw(120, 120, WHITE, |x, y| {
+            ((x - 60.0).m_hypot(y - 60.0) < 40.0).then_some(BLACK)
+        });
+        let r = sk(
+            &img,
+            &SketchTraceOptions {
+                mm_per_px: Some(1.0),
+                speck_mm2: 0.0,
+                ..SketchTraceOptions::default()
+            },
+        );
+        assert_eq!(r.loops.len(), 1);
+        assert_eq!(r.loops[0].kind.as_deref(), Some("circle"));
+        let d = r.loops[0].diameter_mm.unwrap();
+        assert!((d - 80.0).abs() < 0.8, "{d}");
+        assert_eq!(r.counts.circles, 1);
+    }
+
+    #[test]
+    fn a_ring_is_an_outer_loop_and_a_hole_with_the_area_within_one_percent() {
+        let img = draw(120, 120, WHITE, |x, y| {
+            (20.0..40.0)
+                .contains(&(x - 60.0).m_hypot(y - 60.0))
+                .then_some(BLACK)
+        });
+        let r = sk(
+            &img,
+            &SketchTraceOptions {
+                mm_per_px: Some(1.0),
+                speck_mm2: 0.0,
+                ..SketchTraceOptions::default()
+            },
+        );
+        assert_eq!(r.loops.len(), 2);
+        let roles: Vec<_> = r.check.loops.iter().map(|l| l.role).collect();
+        assert_eq!(roles, [sketch::Role::Outer, sketch::Role::Hole]);
+        let want = std::f64::consts::PI * (40.0 * 40.0 - 20.0 * 20.0);
+        assert!(
+            (r.check.area_mm2 / want - 1.0).abs() < 0.01,
+            "{}",
+            r.check.area_mm2
+        );
+    }
+
+    #[test]
+    fn specks_under_the_size_in_mm2_go_and_their_counts_come_back() {
+        // the speckled image's square is 100 px; at 1 mm a px, its 4 px specks and pinholes are 4 mm2
+        let img = speckled();
+        let at = |speck_mm2: f64| SketchTraceOptions {
+            width_mm: Some(100.0),
+            speck_mm2,
+            ..SketchTraceOptions::default()
+        };
+        let clean = sk(&img, &at(5.0));
+        assert_eq!(clean.loops.len(), 1);
+        assert_eq!(
+            clean.dropped,
+            Dropped {
+                specks: 25,
+                holes: 25
+            }
+        );
+        let kept = sk(&img, &at(3.0));
+        assert_eq!(kept.loops.len(), 51);
+        assert_eq!(kept.dropped, Dropped::default());
+        // the same specks at twice the size are 16 mm2
+        let big = SketchTraceOptions {
+            width_mm: Some(200.0),
+            speck_mm2: 10.0,
+            ..SketchTraceOptions::default()
+        };
+        assert_eq!(sk(&img, &big).dropped, Dropped::default());
+    }
+
+    #[test]
+    fn picking_red_traces_the_red_disk_as_a_circle() {
+        let red = [220, 30, 40, 255];
+        let img = draw(160, 100, WHITE, |x, y| {
+            if (x - 40.0).m_hypot(y - 50.0) < 25.0 {
+                Some(red)
+            } else if (90.0..140.0).contains(&x) && (25.0..75.0).contains(&y) {
+                Some([30, 60, 210, 255])
+            } else {
+                None
+            }
+        });
+        let o = SketchTraceOptions {
+            mode: Mode::Color,
+            colors: vec!["#dc1e28".into()],
+            ..mm_px(50.0)
+        };
+        let r = sk(&img, &o);
+        assert_eq!(r.loops.len(), 1);
+        assert_eq!(r.loops[0].kind.as_deref(), Some("circle"));
+        assert!(
+            (r.loops[0].diameter_mm.unwrap() - 50.0).abs() < 1.0,
+            "{:?}",
+            r.loops[0]
+        );
+    }
+
+    #[test]
+    fn a_45_degree_edge_is_one_line_with_no_staircase() {
+        let img = draw(120, 120, WHITE, |x, y| {
+            ((10.0..110.0).contains(&x) && (10.0..110.0).contains(&y) && y > x).then_some(BLACK)
+        });
+        let r = sk(&img, &mm_px(100.0));
+        assert_eq!(kinds(&r.loops[0]), ["line"; 3]);
+    }
+
+    #[test]
+    fn fit_to_lines_makes_no_curves_and_lines_and_arcs_no_splines() {
+        // a disk with a bite out of it: round runs between two corners
+        let img = draw(120, 120, WHITE, |x, y| {
+            ((x - 60.0).m_hypot(y - 60.0) < 40.0 && !(x > 60.0 && y > 60.0)).then_some(BLACK)
+        });
+        let lines = sk(
+            &img,
+            &SketchTraceOptions {
+                fit: Fit::Lines,
+                ..mm_px(80.0)
+            },
+        );
+        assert!(
+            lines.counts.lines > 8 && lines.counts.arcs + lines.counts.splines + lines.counts.circles == 0,
+            "{:?}",
+            lines.counts
+        );
+        let arcs = sk(
+            &img,
+            &SketchTraceOptions {
+                fit: Fit::Arcs,
+                ..mm_px(80.0)
+            },
+        );
+        assert_eq!(arcs.counts.splines, 0);
+        assert!(arcs.counts.arcs >= 1, "{:?}", arcs.counts);
+        assert!(
+            arcs.counts.lines + arcs.counts.arcs < lines.counts.lines,
+            "{:?} {:?}",
+            arcs.counts,
+            lines.counts
+        );
+    }
+
+    #[test]
+    fn smoothing_bounds_how_far_the_loops_stray_from_the_traced_edge() {
+        // a wavy blob: every fitted point stays within Smoothing of the traced rings
+        let img = draw(160, 160, WHITE, |x, y| {
+            let (dx, dy) = (x - 80.0, y - 80.0);
+            let a = dy.m_atan2(dx);
+            (dx.m_hypot(dy) < 50.0 + 8.0 * (5.0 * a).m_sin()).then_some(BLACK)
+        });
+        for smoothing in [0.2, 1.0] {
+            let o = SketchTraceOptions {
+                smoothing_mm: Some(smoothing),
+                mm_per_px: Some(1.0),
+                speck_mm2: 0.0,
+                ..SketchTraceOptions::default()
+            };
+            let r = sk(&img, &o);
+            let traced = trace(&img, &TraceOptions::default()).unwrap();
+            let [k, dx, dy] = r.px_to_mm;
+            let ring: Vec<V2> = traced.shapes[0]
+                .outer
+                .iter()
+                .map(|p| [k * p[0] + dx, k * p[1] + dy])
+                .collect();
+            let drawn = &r.check.polygons[0].outer;
+            let off = drawn
+                .iter()
+                .map(|&p| {
+                    (0..ring.len())
+                        .map(|i| sketch_fit::to_segment(p, ring[i], ring[(i + 1) % ring.len()]))
+                        .fold(f64::INFINITY, f64::min)
+                })
+                .fold(0.0, f64::max);
+            // the drawn curve is flattened finely and checked at a few points a span, so a little over
+            assert!(off < 1.5 * smoothing, "{smoothing}: {off}");
+            assert!(r.counts.splines > 0, "{:?}", r.counts);
+        }
+    }
+
+    #[test]
+    fn a_png_with_transparency_and_the_jpeg_fixture_trace() {
+        let mut rgba = [255u8, 255, 255, 0].repeat(60 * 60);
+        for y in 10..50 {
+            for x in 10..50 {
+                rgba[(y * 60 + x) * 4..(y * 60 + x + 1) * 4].copy_from_slice(&[230, 230, 230, 255]);
+            }
+        }
+        let r = sketch_trace_bytes(&png(60, 60, 4, &rgba, None), &mm_px(40.0)).unwrap();
+        assert_eq!(r.mode, Mode::Alpha);
+        assert_eq!(kinds(&r.loops[0]), ["line"; 4]);
+        let jpeg = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/trace/square.jpg"
+        ))
+        .unwrap();
+        let j = sketch_trace_bytes(&jpeg, &mm_px(16.0)).unwrap();
+        assert!(j.check.ok);
+        assert_eq!(j.image_px, [48, 32]);
+        assert_eq!(kinds(&j.loops[0]), ["line"; 4]);
+    }
+
+    #[test]
+    fn the_size_comes_from_a_width_a_height_or_a_pixel_size_and_the_middle_lands_at_the_center() {
+        let img = draw(300, 200, WHITE, |x, y| {
+            ((50.0..250.0).contains(&x) && (50.0..150.0).contains(&y)).then_some(BLACK)
+        });
+        let w = sk(
+            &img,
+            &SketchTraceOptions {
+                center: [100.0, 50.0],
+                ..SketchTraceOptions::default()
+            },
+        );
+        assert!(
+            (w.size_mm[0] - 50.0).abs() < 1e-6 && (w.size_mm[1] - 25.0).abs() < 0.2,
+            "{:?}",
+            w.size_mm
+        );
+        let mid = |r: &SketchTrace| {
+            let b = r.check.polygons[0]
+                .outer
+                .iter()
+                .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                    [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
+                });
+            [f64::midpoint(b[0], b[2]), f64::midpoint(b[1], b[3])]
+        };
+        assert!(sketch_fit::dist(mid(&w), [100.0, 50.0]) < 0.05, "{:?}", mid(&w));
+        let h = sk(
+            &img,
+            &SketchTraceOptions {
+                height_mm: Some(10.0),
+                ..SketchTraceOptions::default()
+            },
+        );
+        assert!((h.size_mm[1] - 10.0).abs() < 1e-6, "{:?}", h.size_mm);
+        // a pixel size is of the image as the file has it, at any working size
+        let p = sk(
+            &img,
+            &SketchTraceOptions {
+                mm_per_px: Some(0.1),
+                max_side_px: 100,
+                ..SketchTraceOptions::default()
+            },
+        );
+        assert_eq!(p.working_px, [100, 67]);
+        assert!((p.size_mm[0] - 20.0).abs() < 0.4, "{:?}", p.size_mm);
+        assert!((p.mm_per_px - 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn bad_options_and_images_are_refused_with_a_reason() {
+        let img = draw(20, 20, WHITE, |x, y| {
+            (x > 5.0 && y > 5.0 && x < 15.0 && y < 15.0).then_some(BLACK)
+        });
+        let msg = |o: SketchTraceOptions| sketch_trace(Cow::Borrowed(&img), &o).unwrap_err().to_string();
+        let d = SketchTraceOptions::default;
+        assert_eq!(
+            msg(SketchTraceOptions {
+                colors: vec!["red".into()],
+                ..d()
+            }),
+            "colors: red is not a #rrggbb color"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                width_mm: Some(1.0),
+                height_mm: Some(1.0),
+                ..d()
+            }),
+            "size: set one of widthMm, heightMm and mmPerPx"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                smoothing_mm: Some(0.001),
+                ..d()
+            }),
+            "smoothingMm: between 0.01 and 10 mm"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                corner_angle_deg: 0.0,
+                ..d()
+            }),
+            "cornerAngleDeg: between 1 and 179 degrees"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                mm_per_px: Some(0.0),
+                ..d()
+            }),
+            "mmPerPx: between 0 and 100 mm"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                speck_mm2: -1.0,
+                ..d()
+            }),
+            "speckMm2: 0 or more"
+        );
+        assert_eq!(
+            msg(SketchTraceOptions {
+                center: [1e9, 0.0],
+                ..d()
+            }),
+            "center: within 10000 mm of the origin"
+        );
+        let white = Raster::new(8, 8, vec![WHITE; 64]).unwrap();
+        assert!(
+            sketch_trace(Cow::Borrowed(&white), &d())
+                .unwrap_err()
+                .to_string()
+                .contains("one flat tone")
+        );
+        assert!(
+            sketch_trace_bytes(b"GIF89a", &d())
+                .unwrap_err()
+                .to_string()
+                .contains("not a PNG or JPEG")
+        );
+        // 2001 dots are too many loops; 1500 are fine but too many segments are refused past the limit
+        let many = |n: usize| {
+            let mut px = vec![WHITE; 200 * 200];
+            for i in 0..n {
+                let (x, y) = (2 + (i % 66) * 3, 2 + (i / 66) * 3);
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    px[(y + dy) * 200 + x + dx] = BLACK;
+                }
+            }
+            Raster::new(200, 200, px).unwrap()
+        };
+        let o = SketchTraceOptions {
+            speck_mm2: 0.0,
+            mm_per_px: Some(1.0),
+            ..d()
+        };
+        assert!(
+            sketch_trace(Cow::Owned(many(2001)), &o)
+                .unwrap_err()
+                .to_string()
+                .contains("more than 2000 loops")
+        );
+        assert_eq!(
+            sketch_trace(Cow::Owned(many(1500)), &o).unwrap().loops.len(),
+            1500
+        );
+    }
+
+    #[test]
+    fn the_same_image_traces_the_same_twice_and_the_preview_is_a_png() {
+        let img = draw(160, 160, WHITE, |x, y| {
+            let (dx, dy) = (x - 80.0, y - 80.0);
+            (dx.m_hypot(dy) < 50.0 + 8.0 * (5.0 * dy.m_atan2(dx)).m_sin()).then_some(BLACK)
+        });
+        let o = SketchTraceOptions {
+            preview_image: true,
+            ..SketchTraceOptions::default()
+        };
+        let a = sk(&img, &o);
+        assert_eq!(a, sk(&img, &o));
+        let png = crate::json::base64_decode(a.preview_png.as_deref().unwrap()).unwrap();
+        let back = raster::decode(&png).unwrap();
+        assert_eq!((back.w, back.h), (160, 160));
+        // the loops are drawn in the preview's line color
+        assert!(back.px.contains(&[240, 40, 140, 255]));
+    }
+
+    #[test]
+    fn budget_covers_a_busy_image_well_inside_its_limit() {
+        // 576 blobs of every size with wavy edges, drawn without smoothing
+        let n = 1200;
+        let px = (0..n * n)
+            .map(|i| {
+                let (x, y) = ((i % n) as f64 + 0.5, (i / n) as f64 + 0.5);
+                let (cx, cy) = ((x / 50.0).floor() * 50.0 + 25.0, (y / 50.0).floor() * 50.0 + 25.0);
+                let (dx, dy) = (x - cx, y - cy);
+                let r = 8.0 + ((cx * 7.0 + cy * 3.0) % 13.0);
+                if dx.m_hypot(dy) < r + 2.0 * (4.0 * dy.m_atan2(dx)).m_sin() {
+                    BLACK
+                } else {
+                    WHITE
+                }
+            })
+            .collect();
+        let img = Raster::new(n, n, px).unwrap();
+        let mut budget = Budget(FIT_BUDGET);
+        let traced = trace(&img, &TraceOptions::default()).unwrap();
+        let o = SketchTraceOptions::default();
+        for ring in traced
+            .shapes
+            .iter()
+            .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+        {
+            fit_ring(ring, &o, 0.5, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[], &mut budget).unwrap();
+        }
+        let spent = FIT_BUDGET - budget.0;
+        assert!(spent < FIT_BUDGET / 20, "{spent}");
+        // and a budget too small for it stops with a reason
+        let mut tiny = Budget(1000);
+        let r = traced.shapes.iter().try_for_each(|s| {
+            fit_ring(&s.outer, &o, 0.5, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[], &mut tiny).map(|_| ())
+        });
+        assert!(
+            r.unwrap_err()
+                .to_string()
+                .contains("more work than one call allows")
+        );
+    }
+
+    /// A grainy, busy image whose first fit crosses itself in places.
+    fn grainy(w: usize, h: usize) -> Raster {
+        let mut seed = 0x2545_f491_u32;
+        let px = (0..w * h)
+            .map(|i| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                let (x, y) = ((i % w) as f64, (i / w) as f64);
+                let wave = 60.0 * (x / 37.0).m_sin() * (y / 23.0).m_cos() + 40.0 * ((x + y) / 11.0).m_sin();
+                let v = (128.0 + wave + f64::from(seed % 17) - 8.0).clamp(0.0, 255.0) as u8;
+                [v, v, v, 255]
+            })
+            .collect();
+        Raster::new(w, h, px).unwrap()
+    }
+
+    #[test]
+    fn a_fit_that_crosses_is_fitted_again_until_the_sketch_checks_clean() {
+        let o = SketchTraceOptions::default();
+        let r = sketch_trace(Cow::Owned(grainy(1200, 900)), &o).unwrap();
+        assert!(
+            r.check.ok,
+            "{:?}",
+            r.check.issues.iter().take(3).collect::<Vec<_>>()
+        );
+        // the curves stay curves away from the crossings
+        assert!(
+            r.counts.splines + r.counts.arcs > r.counts.lines / 4,
+            "{:?}",
+            r.counts
+        );
+    }
+
+    #[test]
+    fn pinned_points_are_kept_as_they_are() {
+        let ring: Vec<V2> = (0..40)
+            .map(|i| {
+                let a = f64::from(i) * std::f64::consts::TAU / 40.0;
+                [20.0 * a.m_cos(), 20.0 * a.m_sin()]
+            })
+            .collect();
+        let place = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let o = SketchTraceOptions::default();
+        let free = fit_ring(&ring, &o, 0.5, place, &[], &mut Budget(FIT_BUDGET))
+            .unwrap()
+            .0
+            .unwrap();
+        assert_eq!(free.kind.as_deref(), Some("circle"));
+        let pins: Vec<usize> = (5..=10).collect();
+        let held = fit_ring(&ring, &o, 0.5, place, &pins, &mut Budget(FIT_BUDGET))
+            .unwrap()
+            .0
+            .unwrap();
+        let ends: Vec<V2> = held.segments.iter().filter_map(|s| s.to).collect();
+        for &i in &pins {
+            assert!(
+                ends.iter().any(|&p| sketch_fit::dist(p, ring[i]) < 1e-9),
+                "point {i} not kept"
+            );
+        }
+        // pinned neighbors are joined by lines
+        assert!(held.segments.iter().filter(|s| s.kind == "line").count() >= 5);
+        let exact = exact_ring(&ring, place).unwrap();
+        assert_eq!(exact.segments.len(), 40);
+        assert!(sketch::check(&[exact]).ok);
     }
 }

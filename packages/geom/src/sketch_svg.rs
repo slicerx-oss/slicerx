@@ -136,7 +136,7 @@ fn to_loop(sub: &Sub, m: &Mat, tol: f64, missed: &mut usize) -> Option<Loop> {
         match seg {
             Seg::Line(to) => b.line(apply(m, to)),
             Seg::Cubic(c1, c2, to) => {
-                add_cubic(&mut b, apply(m, c1), apply(m, c2), apply(m, to), tol, missed)
+                add_cubic(&mut b, apply(m, c1), apply(m, c2), apply(m, to), tol, missed);
             }
             Seg::Arc {
                 rx,
