@@ -48,6 +48,14 @@ type StepParams = import('@slicerx/cad-history').StepParams
  * Paint is per triangle, so a part whose triangles the tool rebuilt (`rebuilt`, part indices; all by default) loses
  * its paint; Undo brings it back with the old mesh. Resolves to true when paint was dropped.
  */
+/** `t` moved on the plate as the object went from `from` to `to` in X and Y. */
+function movedOver(t: Mat4, from: Mat4, to: Mat4): Mat4 {
+  const m = [...t]
+  m[12] = (m[12] ?? 0) + (to[12] ?? 0) - (from[12] ?? 0)
+  m[13] = (m[13] ?? 0) + (to[13] ?? 0) - (from[13] ?? 0)
+  return m
+}
+
 async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform: Mat4 = e.transform, step?: { params: StepParams; start: boolean }, rebuilt?: readonly number[]): Promise<boolean> {
   const handle = await host.loadParts(e.name, parts)
   let history = e.history
@@ -58,7 +66,10 @@ async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform
   const made = (latest: PlateEntry) => {
     const kept = Object.entries(latest.paint ?? {}).filter(([part]) => (rebuilt ? !rebuilt.includes(Number(part)) : false))
     dropped = kept.length < Object.keys(latest.paint ?? {}).length
-    return { handle, parts, ...(kept.length ? { paint: Object.fromEntries(kept) } : {}), ...(baked ? { transform } : {}), ...(history ? { history: placedNow(history, latest) } : {}) }
+    // a placement the job baked was worked out where the object stood when it started: a move made meanwhile (a design
+    // host making room) goes onto it, so it stands where that move put it, in step with the landing moves (placedNow)
+    const moved = baked ? movedOver(transform, e.transform, latest.transform) : transform
+    return { handle, parts, ...(kept.length ? { paint: Object.fromEntries(kept) } : {}), ...(baked ? { transform: moved } : {}), ...(history ? { history: placedNow(history, latest) } : {}) }
   }
   if (!commitMade(e.id, made)) throw goneError(e.id)
   markStale()

@@ -104,6 +104,8 @@ export async function clonePart(host: Loader, objectId: string, index: number, g
   const at = e.parts.length
   const parts = [...e.parts, copy]
   const history = e.history ? (await import('../cad/history/record')).withStep(e, -1, { op: 'parts.add', parts: [copy], label: `Clone ${src.name}`.slice(0, 80) }) : undefined
+  // the history goes in with the landing moves the object has as it is written (placedNow)
+  const { placedNow } = await import('../cad/commit')
   const handle = await host.loadParts(e.name, parts)
   guard?.()
   // The object as it is now: a rename or a recolor while the mesh loaded stays.
@@ -128,7 +130,7 @@ export async function clonePart(host: Loader, objectId: string, index: number, g
         ...(Object.keys(slots).length ? { slotOverrides: slots } : {}),
         ...withSettings(settings),
         ...(paint ? { paint } : {}),
-        ...(history ? { history } : o.history ? { history: o.history } : {}),
+        ...(history ? { history: placedNow(history, o) } : o.history ? { history: o.history } : {}),
       }
     },
     { selection: objectId, selectedIds: [objectId], scopePart: { id: objectId, part: name }, settingsScope: 'objects' },
@@ -163,6 +165,8 @@ export async function reorderParts(host: Loader, objectId: string, order: readon
   await editable(objectId)
   const parts = order.map((k) => e.parts[k]!)
   const history = e.history ? (await import('../cad/history/record')).withStep(e, -1, { op: 'parts.order', order: [...order] }, e.transform, true) : undefined
+  // the history goes in with the landing moves the object has as it is written (placedNow)
+  const { placedNow } = await import('../cad/commit')
   const handle = await host.loadParts(e.name, parts)
   guard?.()
   const now = get().plate.find((p) => p.id === objectId)
@@ -176,7 +180,7 @@ export async function reorderParts(host: Loader, objectId: string, order: readon
       })
     }
     const { paint: _old, history: _h, ...rest } = o
-    return { ...rest, handle, parts, colors: order.map((k) => colorAt(o, k)), ...withSettings(settings), ...(paint && Object.keys(paint).length ? { paint } : {}), ...(history ? { history } : o.history ? { history: o.history } : {}) }
+    return { ...rest, handle, parts, colors: order.map((k) => colorAt(o, k)), ...withSettings(settings), ...(paint && Object.keys(paint).length ? { paint } : {}), ...(history ? { history: placedNow(history, o) } : o.history ? { history: o.history } : {}) }
   })
   return true
 }
