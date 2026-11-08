@@ -102,15 +102,16 @@ async function rebuild(): Promise<void> {
     dropLayer()
     return
   }
+  // The printer's nozzle volume, the base of every flush volume, is set with its layer, so a slice waiting for the
+  // profile (profileReady) reads the new printer's (Prepare sets the same value when it shows the printer). Its code
+  // loads before the layer is applied, so a chunk that fails to load leaves the layer and the profile as they were.
+  const [{ printerBase }, { printerMinFlush }] = await Promise.all([import('../workspaces/prepare/printer-base'), import('@slicerx/settings/flush')])
+  const printerNozzleVolume = printerMinFlush((printerBase({ vendor: model.vendor, model: model.model }) as Record<string, SettingValue>)['nozzle_volume'])
   setProfileLayer(layer.values, get().easyTouched, layer.nozzleValues)
   // The no-print areas are machine coordinates; arranging works on the plate.
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
   // The excluded areas and the nozzle wrap check corner (keepOutBoxes): the slice holds a print to both.
   setAvoidAreas(keepOutBoxes(layer.values).map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })))
-  // The printer's nozzle volume, the base of every flush volume, is set with its layer, so a slice waiting for the
-  // profile (profileReady) reads the new printer's (Prepare sets the same value when it shows the printer).
-  const [{ printerBase }, { printerMinFlush }] = await Promise.all([import('../workspaces/prepare/printer-base'), import('@slicerx/settings/flush')])
-  const printerNozzleVolume = printerMinFlush((printerBase({ vendor: model.vendor, model: model.model }) as Record<string, SettingValue>)['nozzle_volume'])
   const bed = get().bed
   const same = bed.widthMm === layer.bed.widthMm && bed.depthMm === layer.bed.depthMm && bed.heightMm === layer.bed.heightMm && !bed.round === !layer.bed.round
   // A new overrides object makes every panel that reads the resolved configuration read it again. Following the
