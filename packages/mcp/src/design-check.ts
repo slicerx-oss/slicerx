@@ -568,6 +568,12 @@ export interface PlanEntry {
    */
   stale?: true
 
+  /**
+   * The design the mimir tab's chat started for the plan's part, which its build waits on while the plan is stale. Kept
+   * apart from `design` (a stale plan ties to none), and design.check does not read it.
+   */
+  claimed?: string
+
   /** Its last design.check passed; a whole new design of its part is then refused (design.new). */
   passed?: true
 }
@@ -631,6 +637,8 @@ export interface PlanRegistry {
   stale(planId: string): boolean
   /** Clears a plan's stale mark, once a new plan for its part was answered (approved or declined). */
   fresh(planId: string): void
+  /** Records the design the chat started for a kept plan's part, stale or not (PlanEntry.claimed); no-op for an unknown plan. */
+  claim(planId: string, design: string): void
   /** Keeps the fit check just run on a design, replacing the one before. */
   fitChecked(design: string, run: FitCheckRun): void
   /** The fit check last run on a design, or undefined. */
@@ -660,7 +668,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -718,6 +726,10 @@ export function createPlanRegistry(): PlanRegistry {
     fresh(planId) {
       const entry = plans.get(planId)
       if (entry) delete entry.stale
+    },
+    claim(planId, design) {
+      const entry = plans.get(planId)
+      if (entry) entry.claimed = design
     },
     fitChecked: (design, run) => void fits.set(design, { stamp: run.stamp, parts: run.parts === 'all' ? 'all' : [...run.parts] }),
     fitCheckOf: (design) => fits.get(design),

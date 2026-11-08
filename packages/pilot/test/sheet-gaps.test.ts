@@ -157,11 +157,13 @@ describe('the gaps on a print-in-place sheet', () => {
 
   it('ask for the plan again before a build when the person changes a size on the sheet after the plan', async () => {
     const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
-    const build = { name: 'geom.extrude', args: { name: 'Leaf' } }
-    // the person types 60 for the 40 mm width the plan has: the sheet's reply says to plan again, and a build waits for it
-    const changed = await replies([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [build] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], { width: 60 })
+    const start = { name: 'design.new', args: { name: 'Hinge' } }
+    const build = { name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }
+    // the person types 60 for the 40 mm width the plan has: the sheet's reply says to plan again, and a build of the
+    // part's design waits for it
+    const changed = await replies([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [start] }, { calls: [build] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], { width: 60 })
     expect(changed.sheet[0]).toContain(PLAN_AGAIN_NOTE)
-    expect(changed.seen[2]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+    expect(changed.seen[3]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
     expect(changed.built).toEqual(['geom.extrude'])
     // the sizes as shown, or only the gap rows changed: no new plan
     for (const answer of [{}, { clearance: 0.35, clearance_vertical: 0.45 }]) {
@@ -208,7 +210,7 @@ describe('the gaps on a print-in-place sheet', () => {
   it('start a new design for the planned part while the plan waits to be made again, and hold its first body until it is', async () => {
     const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
     const start = { name: 'design.new', args: { name: 'Hinge' } }
-    const build = { name: 'geom.extrude', args: { name: 'Leaf' } }
+    const build = { name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }
     // the person types 60 for the 40 mm width, and the model starts the design before it plans again
     const { ran, seen, sheet } = await building([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [start] }, { calls: [build] }, { calls: [SHEET] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], [{ width: 60 }, { width: 60 }])
     expect(seen[2]).not.toContain('Nothing was built')
@@ -221,14 +223,14 @@ describe('the gaps on a print-in-place sheet', () => {
   it('ask for the plan again when the size changes on a sheet shown after the planned part\'s design was started', async () => {
     const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
     const start = { name: 'design.new', args: { name: 'Hinge' } }
-    for (const build of [{ name: 'geom.extrude', args: { name: 'Leaf' } }, { name: 'geom.build', args: { name: 'Hinge' } }]) {
+    for (const build of [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }, { name: 'geom.build', args: { name: 'Hinge', design: 'd1' } }]) {
       const { ran, seen, sheet } = await building([{ calls: [hinge] }, { calls: [start] }, { calls: [SHEET] }, { calls: [build] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], [{ width: 60 }])
       expect(sheet[0]).toContain(PLAN_AGAIN_NOTE)
       expect(seen[3]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
       expect(ran).toEqual(['design.new', build.name])
     }
     // the sizes as shown: the design's first body is built at once
-    const same = await building([{ calls: [hinge] }, { calls: [start] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf' } }] }, { text: 'Done.' }], [{}])
+    const same = await building([{ calls: [hinge] }, { calls: [start] }, { calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Done.' }], [{}])
     expect(same.ran).toEqual(['design.new', 'geom.extrude'])
   })
 
@@ -421,10 +423,11 @@ describe('the gaps on a print-in-place sheet', () => {
   })
 
   it("keep the mark in the host's plans: a size change marks the plan, a plan made again or declined clears it, and the plan's own design is the one held", async () => {
-    const marks = new Map<string, { stale?: true; design?: string }>()
+    const marks = new Map<string, { stale?: true; design?: string; claimed?: string }>()
     const plans = {
       stale: (id: string) => (marks.set(id, { ...marks.get(id), stale: true }), true),
       fresh: (id: string) => void delete (marks.get(id) ?? {}).stale,
+      claim: (id: string, design: string) => void marks.set(id, { ...marks.get(id), claimed: design }),
       get: (id: string) => marks.get(id),
     }
     // the host tied the plan to the design its part was started in, whatever that design is called
@@ -440,6 +443,56 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(states).toEqual([true, undefined])
     expect(seen[3]).toContain(HELD)
     expect(ran).toEqual(['new Hinge box', 'Leaf@d1'])
+    // the design the part was started in is recorded with the plan, apart from the one the host tied it to
+    expect(marks.get('p')?.claimed).toBe('d1')
+  })
+
+  it("change a design the chat never started at once while the plan waits: only the planned part's own design is held", async () => {
+    // run 1 changes the hinge's width and ends before a new plan; run 2 asks for a fillet on the Bracket, a design
+    // already open from the CAD workspace or an earlier chat, which this chat never started or opened
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { text: 'The width changed, shall I plan it again?' }, { calls: [{ name: 'geom.push_pull', args: { design: 'bracket' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge', 'Forget the hinge, add a 3 mm fillet to my Bracket'],
+      [{ width: 60 }],
+    )
+    expect(seen.join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['push@bracket'])
+  })
+
+  it('hold the planned part started under another name than the plan gives it, while its plan waits', async () => {
+    // the plan says Hinge and the design is started as Hinge box after the sheet changed a size: it is the part's design
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Hinge box' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { calls: [HINGE] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(seen[2]).not.toContain('Nothing was built')
+    expect(seen[3]).toContain(HELD)
+    expect(ran).toEqual(['new Hinge box', 'Leaf@d1'])
+  })
+
+  it('hold the design started under the planned part\'s name over one started before it under another name', async () => {
+    // the first design started after the plan is a base under another name; the next is named as the part, so it is
+    // the part's design, and the base is changed at once
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Base' } }] }, { calls: [{ name: 'design.new', args: { name: 'hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd2' } }] }, { calls: [{ name: 'geom.push_pull', args: { design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(seen[4]).toContain(HELD)
+    expect(seen[5]).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Base', 'new hinge', 'push@d1'])
+  })
+
+  it('build a body on a model at once while the plan waits: a step that names no design is not the planned part', async () => {
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Plinth' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Waiting for the plan.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(seen[3]).not.toContain('Nothing was built')
+    expect(seen[4]).toContain(HELD)
+    expect(ran).toEqual(['new Hinge', 'Plinth@undefined'])
   })
 
   it('come from the fit rule profile of the run', () => {
