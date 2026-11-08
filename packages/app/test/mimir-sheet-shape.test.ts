@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { MeshPart, PilotDim, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import type { PlateEntry } from '../src/state/store'
-import { drawPx, drawView, fitScale, paintedEdges, rasterize, shapeBounds, shapeOfMesh, shapeOfSolids, SHEET_VIEWS, TRI_BUDGET, VIEW_PX_MAX, VIEWS, viewsFor, type Raster, type Shape, type V3, type ViewName } from '../src/workspaces/mimir/sheet-draw'
+import { drawPx, drawView, fitScale, paintedEdges, rasterize, shapeBounds, shapeOfMesh, shapeOfSolids, SHEET_VIEWS, TRI_BUDGET, unhide, VIEW_PX_MAX, VIEWS, viewsFor, type Raster, type Shape, type V3, type ViewName } from '../src/workspaces/mimir/sheet-draw'
 import { alignDims, hasPicture, placeMissing, sharedPicture, sheetPicture } from '../src/workspaces/mimir/sheet-shape'
 
 /** An axis-aligned box as 12 outward triangles. */
@@ -483,12 +483,46 @@ describe('leaders to callouts', () => {
     const drawn = drawView(pic.shape, pic.dims, 'iso', 475, 320, { pad: 24, order: ELBOW.views })
     const end = drawn.dims.find((d) => d.key === 'end_length')!
     const { W, cover } = drawn.part
-    for (const [p] of end.lines.slice(0, 2)) expect(cover[Math.floor(p[1]) * W + Math.floor(p[0])], `starts at ${p}`).toBe(0)
+    const on = (p: readonly number[]) => cover[Math.floor(p[1]!) * W + Math.floor(p[0]!)]
+    // where each line comes out from behind the tube, 3 px on
+    expect(end.lines.slice(0, 2).map(([p]) => p)).toEqual([
+      [103.3, 192.6],
+      [106.3, 136.7],
+    ])
+    for (const [p, q] of end.lines.slice(0, 2)) {
+      expect(on(p), `starts at ${p}`).toBe(0)
+      // 3 px clear of the outline: a step back past the clearance, toward where the line came from, is on the part
+      const l = Math.hypot(q[0] - p[0], q[1] - p[1])
+      expect(on([p[0] - ((q[0] - p[0]) / l) * 3.5, p[1] - ((q[1] - p[1]) / l) * 3.5]), `just behind ${p}`).toBe(1)
+    }
     // in Front the same place is on the outline in sight, and its lines start on it
     const front = drawView(pic.shape, pic.dims, 'front', 475, 320, { pad: 24, order: ELBOW.views })
     const [fx, fy] = front.dims.find((d) => d.key === 'end_length')!.lines[0]![0]
     const touches = [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => front.part.cover[(Math.floor(fy) + dy) * front.part.W + Math.floor(fx) + dx] === 1))
     expect(touches, 'Front: the line starts on the outline').toBe(true)
+  })
+})
+
+describe('a line whose start the part hides', () => {
+  // a 100 px line hidden over its first fifth
+  it('starts 3 px past where it comes out from behind the part', () => {
+    expect(unhide([[0, 0], [100, 0]], (t) => t < 0.2)).toEqual([[23, 0], [100, 0]])
+  })
+
+  it('is drawn whole when it is hidden all the way', () => {
+    expect(unhide([[0, 0], [100, 0]], () => true)).toEqual([[0, 0], [100, 0]])
+  })
+
+  // a 10 px extension line from a hidden back corner, out from behind 2 px before its end: drawn whole like a line
+  // hidden all the way, never shrunk to nothing
+  it('is drawn whole when it comes out from behind the part too near its end to leave a line', () => {
+    expect(unhide([[0, 0], [10, 0]], (t) => t < 0.8)).toEqual([[0, 0], [10, 0]])
+    expect(unhide([[0, 0], [0, 12]], (t) => t < 0.75)).toEqual([[0, 0], [0, 12]])
+  })
+
+  it('leaves a line whose start is in sight as it is', () => {
+    const l: [[number, number], [number, number]] = [[0, 0], [100, 0]]
+    expect(unhide(l, (t) => t > 0.5)).toBe(l)
   })
 })
 
