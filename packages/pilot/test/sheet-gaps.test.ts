@@ -7,6 +7,7 @@ import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotContext
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
+import { PLAN_AGAIN_NOTE } from '../src/runtime'
 import { defineTool, type PilotTool } from '../src/tool'
 import { clearanceProfileOf, gapRows } from '../skills/fit_check/clearance'
 
@@ -54,6 +55,34 @@ async function sheets(steps: ScriptStep[], context?: PilotContext): Promise<Pilo
   return shown
 }
 
+/** The replies to each pilot.sheet call and what the model saw after each step, with the person's answer to every sheet. */
+async function replies(steps: ScriptStep[], answer: Record<string, number>) {
+  const built: string[] = []
+  const extrude = defineTool({
+    name: 'geom.extrude',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'test',
+    input: z.object({}).passthrough(),
+    async run() {
+      built.push('geom.extrude')
+      return { summary: 'Done', output: { design: 'd1' } }
+    },
+  }) as PilotTool<never>
+  const seen: string[] = []
+  const watched = steps.map((s, k) => (k === 0 ? s : (m: { content?: string }[]) => (seen.push(m.at(-1)?.content ?? ''), typeof s === 'function' ? s(m as never) : s)))
+  const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(watched as ScriptStep[], { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), extrude] })
+  const sheet: string[] = []
+  const calls = new Map<string, string>()
+  for await (const e of p.run('s', 'A print-in-place hinge') as AsyncIterable<PilotEvent>) {
+    if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answer)
+    if (e.type === 'tool_call') calls.set(e.callId, e.tool)
+    if (e.type === 'tool_result' && calls.get(e.callId) === 'pilot.sheet') sheet.push(e.summary)
+  }
+  return { sheet, seen, built }
+}
+
 describe('the gaps on a print-in-place sheet', () => {
   it('are filled in from the fit rule as guesses after a print-in-place plan', async () => {
     const [before, after] = await sheets([{ calls: [SHEET] }, { calls: [{ name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Done.' }])
@@ -99,6 +128,26 @@ describe('the gaps on a print-in-place sheet', () => {
   it('are not added after a plan the person did not approve', async () => {
     const [dims] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Declined', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Done.' }])
     expect(dims!.map((d) => d.key)).toEqual(['width'])
+  })
+
+  it('ask for the plan again before a build when the person changes a size on the sheet after the plan', async () => {
+    const hinge = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+    const build = { name: 'geom.extrude', args: { name: 'Leaf' } }
+    // the person types 60 for the 40 mm width the plan has: the sheet's reply says to plan again, and a build waits for it
+    const changed = await replies([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [build] }, { calls: [hinge] }, { calls: [build] }, { text: 'Done.' }], { width: 60 })
+    expect(changed.sheet[0]).toContain(PLAN_AGAIN_NOTE)
+    expect(changed.seen[2]).toContain(`Nothing was built. ${PLAN_AGAIN_NOTE}`)
+    expect(changed.built).toEqual(['geom.extrude'])
+    // the sizes as shown, or only the gap rows changed: no new plan
+    for (const answer of [{}, { clearance: 0.35, clearance_vertical: 0.45 }]) {
+      const same = await replies([{ calls: [hinge] }, { calls: [SHEET] }, { calls: [build] }, { text: 'Done.' }], answer)
+      expect(same.sheet[0]).not.toContain(PLAN_AGAIN_NOTE)
+      expect(same.built).toEqual(['geom.extrude'])
+    }
+    // a sheet before any plan changes nothing either
+    const early = await replies([{ calls: [SHEET] }, { calls: [build] }, { text: 'Done.' }], { width: 60 })
+    expect(early.sheet[0]).not.toContain(PLAN_AGAIN_NOTE)
+    expect(early.built).toEqual(['geom.extrude'])
   })
 
   it('come from the fit rule profile of the run', () => {
