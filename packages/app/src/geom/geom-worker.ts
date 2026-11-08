@@ -7,11 +7,11 @@
 // requests still get answers meanwhile, and stops when its caller cancels. The engine is two builds (modules.ts):
 // the core loads first, the full engine the first time a call needs it. Calls named brep.<op> go to the B-rep kernel
 // (brep.ts), which loads the first time one comes.
-import { replayHistory, stepName, type ReplayRequest } from '@slicerx/cad-history'
+import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
 import { callEngine, transferables, type GeomExports } from './engine-call'
 import { loadBrep, type BrepModule } from './brep'
-import { workerLoop, type WorkerMessage } from './worker-loop'
+import { replayStepOf, workerLoop, type WorkerMessage } from './worker-loop'
 
 async function load(url: URL): Promise<EngineModule> {
   const response = await fetch(url)
@@ -88,7 +88,7 @@ const handle = workerLoop((message, transfer) => self.postMessage(message, { tra
   },
   // a replay with exact solids calls the kernel's ops too; the kernel lives in this worker, so its bodies last from
   // call to call
-  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep({ op: s.params.op, name: stepName(s) }) }),
+  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, { keepsBodies: true, yieldStep: (s) => yieldStep(replayStepOf(s)) }),
   memoryBytes,
   transfer: (op, result) => (op.startsWith('brep.') || op.startsWith('engine.') ? [] : transferables(result)),
 })
