@@ -6,7 +6,7 @@
 // the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
 // once, on release. An opened project and the example plate at launch wait for Slice instead.
 import type { Host } from '@slicerx/contracts'
-import { cancelSlice, slicePlate, STALE_SLICE } from './actions'
+import { cancelSlice, currentSlice, slicePlate, STALE_SLICE } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
 import { inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
@@ -41,8 +41,13 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   // as running, never clears a newer run's start.
   let starting = 0
   let runs = 0
-  // The slice auto slice started, while it runs: only that one is stopped for a new nozzle volume (configMoved).
-  let autoRun: Promise<void> | null = null
+  // The abort controller of the last slice auto slice started. Only while it is still the running slice is that slice
+  // stopped for a new nozzle volume (configMoved): one canceled and still unwinding, or finished, is not, so a slice
+  // someone starts after it is never stopped.
+  let autoAbort: AbortController | null = null
+  // A slice someone asked for was running when the nozzle volume changed: once it lands, it is checked against the
+  // new value and sliced again when it read the old one.
+  let checkLanded = false
   const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0
   pending = isPending
   const clear = (): void => {
@@ -99,12 +104,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
       if (starting === mine) starting = 0
       off()
     }
-    const started = slicePlate(host, { auto: true })
-    autoRun = started
-    void started.finally(() => {
-      settle()
-      if (autoRun === started) autoRun = null
-    })
+    void slicePlate(host, { auto: true, onBegin: (abort) => (autoAbort = abort) }).then(settle, settle)
   }
   const configMoved = async (now: AppState, prev: AppState): Promise<void> => {
     const { configKey, stampBlock } = await import('../plate/resume-tops')
@@ -113,8 +113,12 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     if (s.slice.status === 'running') {
       // An auto slice in flight read the old values: it would land stale with nothing to slice again, so it stops and a
       // new one starts. Only a change the plate's configuration reads (a single-color plate has no flush volumes). A
-      // slice someone asked for (Slice, mimir, the print queue) is theirs: it lands, stale if it read the old values.
-      if (!autoRun || configKey(now) === configKey(prev)) return
+      // slice someone asked for (Slice, mimir, the print queue) is theirs: it lands, and is checked once it has.
+      if (configKey(now) === configKey(prev)) return
+      if (!autoAbort || !currentSlice(autoAbort)) {
+        checkLanded = true
+        return
+      }
       cancelSlice({ quiet: true })
     } else {
       if (s.slice.status !== 'done' || s.slice.stale || stampBlock(s, s.slice.stamp) !== STALE_SLICE) return
@@ -125,8 +129,14 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
     if (!s.autoSlice) {
+      checkLanded = false
       if (s.sliceHeld) appStore.setState({ sliceHeld: false })
       return clear()
+    }
+    // The slice someone asked for has landed: stale and sliced again when it read the old nozzle volume.
+    if (checkLanded && prev.slice.status === 'running' && s.slice.status !== 'running') {
+      checkLanded = false
+      if (s.slice.status === 'done') void configMoved(s, prev)
     }
     // The end of an open that started a project slices nothing, whatever the plate's size: a wait set during it goes,
     // and Slice is the action until the person presses it or edits the plate (the edit slices as the setting says).
