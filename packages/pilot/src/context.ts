@@ -5,6 +5,7 @@
 // oldest earlier turns go first, then the oldest tool results of the current run shrink to a
 // stub, then the newest results are shortened in the middle, and stubbed only if that is still
 // not enough. The system prompt and the current request always stay.
+import { PLAN_LEFT_PREFIX } from './plan-left'
 import type { LlmMessage, LlmToolDef } from './provider/types'
 
 /**
@@ -63,11 +64,14 @@ export function fitContext(messages: readonly LlmMessage[], tools: readonly LlmT
 
   const system = messages[0]?.role === 'system' ? [messages[0]] : []
   const rest = messages.slice(system.length)
-  // The current request starts at the last user message; everything before it is earlier turns.
+  // The current request starts at the last user message; everything before it is earlier turns. The note that an
+  // approved plan is not finished is the runtime's, in the middle of the run: it starts no turn, so the person's request
+  // and the plan before it stay with the current one.
+  const starts = (m: LlmMessage | undefined): boolean => m?.role === 'user' && !m.content.startsWith(PLAN_LEFT_PREFIX)
   let current = rest.length - 1
-  while (current > 0 && rest[current]?.role !== 'user') current--
+  while (current > 0 && !starts(rest[current])) current--
   const turnStarts: number[] = []
-  for (let i = 0; i < current; i++) if (rest[i]?.role === 'user') turnStarts.push(i)
+  for (let i = 0; i < current; i++) if (starts(rest[i])) turnStarts.push(i)
 
   // 1. Drop the oldest earlier turns, a whole turn at a time, until the rest fits.
   let from = 0
