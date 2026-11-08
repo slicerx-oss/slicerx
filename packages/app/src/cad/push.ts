@@ -11,7 +11,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { pickFace, pushFace, type FaceFrame, type FacePick, type MovedFace, type Pick as HitPick, type Polygon, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
 import { applyMat } from './cad-ops'
-import { commitMade, goneError } from './commit'
+import { commitMade, goneError, placedNow } from './commit'
 import { followPush } from './dimensions'
 import { findTriangle, followed, partThrough, followsOf, keyOfTriangle, onFlatFace, settle, stepName, type StepParams } from '@slicerx/cad-history'
 import { applyHistory, nowOf, runReplay } from './history/ops'
@@ -233,7 +233,7 @@ export async function applyPush(host: Loader, face: PushFace, distanceMm: number
   // dimensions that followed the push are taken from this job.
   const others = new Map(plate.flatMap((p, i) => (p.id !== entry.id && p.dimensions && p.dimensions !== before[i]?.dimensions ? [[p.id, { dimensions: p.dimensions }] as const] : [])))
   const dims = plate.find((p) => p.id === entry.id)?.dimensions
-  if (!commitMade(entry.id, () => ({ handle, parts, history, ...(dims ? { dimensions: dims } : {}) }), { others })) throw goneError(entry.id, 'That object is gone. Pick a face again.')
+  if (!commitMade(entry.id, (latest) => ({ handle, parts, history: placedNow(history, latest), ...(dims ? { dimensions: dims } : {}) }), { others })) throw goneError(entry.id, 'That object is gone. Pick a face again.')
   markStale()
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
   const message = r.operation === 'join' ? `Added ${volume} to ${entry.name}.` : `Cut ${volume} out of ${entry.name}.`
