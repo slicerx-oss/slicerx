@@ -279,7 +279,7 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
  * A nozzle that is not a positive finite number counts as 0.4 mm. A feature's own sizes are never held to the body, so
  * a count or an angle among them (@slicerx/contracts/size-kind) never fails an item, in mm or inches.
  */
-export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): CheckResult {
+export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number, limits?: FitLimits): CheckResult {
   const scale = plan.units === 'in' ? MM_PER_IN : 1
   const nozzle = nozzleOr(nozzleMm)
   const items: CheckItem[] = []
@@ -318,6 +318,13 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   const unmeasured = body.minWallWhy ? `not measured (${body.minWallWhy})` : 'not measured'
   items.push({ name: 'minimum wall', want: `at least ${mm(wall)} (twice the ${mm(nozzle)} nozzle)`, got: body.minWallMm === null ? unmeasured : mm(body.minWallMm), pass: body.minWallMm !== null && body.minWallMm >= wall - 1e-6 })
   if (plan.printInPlace) items.push(...fitItems(plan.printInPlace, body))
+  // the gaps the plan sets, held to the same limits as the gaps measured
+  const gapLimits = limits ?? body.fit?.limits
+  if (plan.printInPlace && gapLimits) {
+    const gaps = plannedGaps(plan, gapLimits)
+    const under = gaps.filter((g) => !g.pass)
+    if (gaps.length) items.push({ name: 'planned gaps', want: `every gap the plan sets ${gapLimitsText(gapLimits)}`, got: under.length ? under.map((g) => g.text).join('; ') : gaps.map((g) => g.text).join(', '), pass: !under.length })
+  }
 
   return { pass: items.every((i) => i.pass), items }
 }
@@ -353,6 +360,50 @@ export function gapSentence(fit: FitFacts, g: FitGap, needs: string): string {
   const where = g.where ? ` ${g.where}` : g.kind === 'fused' ? '' : ` ${g.direction === 'z' ? 'above and below' : 'side by side'} at ${at(g.from)}`
   const what = g.kind === 'fused' ? `touch${where}, ${gapMm(0)}` : `are ${gapMm(g.gapMm)} apart${where}`
   return `${name(g.bodies[0])} and ${name(g.bodies[1])} ${what}; ${needs} ${mm(need)} or more`
+}
+
+/** The words that name a size as a gap, and those that say which way it runs; a gap named neither way is on every face. */
+const GAP_WORDS: ReadonlySet<string> = new Set(['gap', 'gaps', 'clearance', 'clearances'])
+const UP_WORDS: ReadonlySet<string> = new Set(['vertical', 'z', 'above', 'below', 'top', 'bottom', 'under', 'over', 'cap'])
+const SIDE_WORDS: ReadonlySet<string> = new Set(['side', 'sides', 'xy', 'horizontal', 'radial', 'lateral'])
+
+/**
+ * Which way a planned size named as a gap runs, by its name: xy side by side, z above or below, both when the name
+ * says neither (such a gap is on every face where pieces meet), or null for a size that is no gap. The sheet's gap
+ * rows' keys read as they mean: clearance side by side, clearance_vertical above or below.
+ */
+export function gapWay(key: string): 'xy' | 'z' | 'both' | null {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  if (!words.some((w) => GAP_WORDS.has(w))) return null
+  if (words.some((w) => UP_WORDS.has(w))) return 'z'
+  if (words.some((w) => SIDE_WORDS.has(w)) || key.trim().toLowerCase() === 'clearance') return 'xy'
+  return 'both'
+}
+
+/** The limits in words: "at least 0.3 mm side by side and 0.4 mm above or below (PLA, 0.4 mm nozzle, 0.2 mm layers)". */
+export const gapLimitsText = (l: FitLimits): string => `at least ${mm(l.sideMm)} side by side and ${mm(l.verticalMm)} above or below (${l.material.toUpperCase()}, ${mm(l.nozzleMm)} nozzle, ${mm(l.layerHeightMm)} layers)`
+
+/**
+ * Each size a plan names as a gap, held to the fit rule's limit for its way (the larger for a gap on every face), in
+ * words: "print_gap of Spinner: gap 0.3 mm (vertical) is under the 0.4 mm this printer needs between moving parts; use
+ * 0.4 mm", or "clearance 0.3 mm (side)" when it clears. Inch sizes are held in mm.
+ */
+export function plannedGaps(plan: PartPlan, limits: FitLimits): { pass: boolean; text: string }[] {
+  const scale = plan.units === 'in' ? MM_PER_IN : 1
+  const out: { pass: boolean; text: string }[] = []
+  for (const f of plan.features) {
+    for (const [key, v] of Object.entries(f.sizes)) {
+      const way = gapWay(key)
+      if (!way) continue
+      const z = way === 'z' || (way === 'both' && limits.verticalMm >= limits.sideMm)
+      const need = z ? limits.verticalMm : limits.sideMm
+      const got = v * scale
+      const dir = z ? 'vertical' : 'side'
+      const pass = got >= need - 1e-6
+      out.push({ pass, text: pass ? `${key} ${gapMm(got)} (${dir})` : `${key} of ${f.name}: gap ${gapMm(got)} (${dir}) is under the ${mm(need)} this printer needs between moving parts; use ${mm(need)}` })
+    }
+  }
+  return out
 }
 
 /** Pieces items that failed only on how a part holding several pieces is named (fitItems): a miss that is not the part's fault. */
