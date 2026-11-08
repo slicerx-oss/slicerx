@@ -36,7 +36,7 @@ import { cardPlans } from './plan-tool'
 import { answersReachTheirRun, forgetReplaced, retire } from './answers'
 import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
-import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter } from './scripted'
+import { NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter, scriptsFor } from './scripted'
 import { SCRIPTS } from './scripts'
 import { appTabs } from './tabs'
 
@@ -263,7 +263,7 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
  */
 function scripted(host: Host, kb: KnowledgeBase, edition: EditionConfig): Pilot {
   const still = motionReduced()
-  const client = scriptRouter(SCRIPTS, { delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
+  const client = scriptRouter(scriptsFor(SCRIPTS, host.build?.e2e === true), { delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
   return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client, memory: pilotMemory(edition, { where: chatNotesGo(SCRIPTED_CONFIG, false) }), toolGroups: editionToolGroups(edition) }))
 }
 
