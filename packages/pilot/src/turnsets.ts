@@ -125,23 +125,29 @@ export interface TurnChat {
  * The set a turn starts on, from the request and the chat: a picture or PDF to build from is a new part; words about
  * shaping or changing a part pick those sets; words about slicing, settings, the project or a print problem pick app,
  * and words about the printers alone pick print, unless the request also asks for a new part, which comes first ("a
- * hook, then slice it"). A request with words for a part and for shaping one shapes only when what it shapes is
- * already there: it opens on shaping a part it names ("mirror the bracket", "make it hollow", "make the lid hollow"),
- * or it puts the shaping on one ("engrave SX on the lid", "a pattern of four holes on it") and does not open on a new
- * part ("make a box with a slot in the lid"). With a design there, a request that opens on a shaping with no part
- * named shapes it too ("make a circular pattern of six holes", "make a cut-out for the USB port"). Anything else with
- * words for a part builds ("make a hollow vase", "now make another hollow vase", "a hollow box with a lid"): sending a
- * local model the build and shape sets together would not fit its context. A request with none of these words keeps
- * `last`, the set the chat's previous turn ended on, or starts a part when there is none.
+ * hook, then slice it"). With no design there is nothing to shape, so a request with shaping words builds ("make it
+ * hollow", "give me a box with my name engraved on the lid"). With a design, a request with words for a part and for
+ * shaping one shapes when it opens on shaping a part it names ("mirror the bracket", "make it hollow", "make the lid
+ * hollow"), puts the shaping on one ("engrave SX on the lid", "a pattern of four holes on it") and does not open on a
+ * new part ("make a box with a slot in the lid"), or opens on a shaping with no part named ("make a circular pattern
+ * of six holes", "make a cut-out for the USB port"). Anything else with words for a part builds ("make a hollow vase",
+ * "now make another hollow vase", "a hollow box with a lid"): sending a local model the build and shape sets together
+ * would not fit its context. A request with none of these words keeps `last`, the set the chat's previous turn ended
+ * on, or starts a part when there is none.
  */
 export function turnSet(message: string, files: readonly Pick<PilotAttachment, 'type'>[] = [], last?: TurnSet, chat: TurnChat = {}): TurnSet {
   if (readsFile(files)) return 'build'
   const print = PRINT_WORDS.test(message)
   const app = APP_WORDS.test(message) || print
   const build = BUILD_WORDS.test(message) || WANT_PART.test(message)
-  const there = SHAPE_START.test(message) || OWN_START.test(message) || (ON_A_PART.test(message) && !NEW_PART.test(message)) || (chat.design === true && SHAPING_OPEN.test(message))
+  // with no body on the plate there is nothing to shape: a request to shape one builds, whatever it names
+  const design = chat.design === true
+  const there = design && (SHAPE_START.test(message) || OWN_START.test(message) || (ON_A_PART.test(message) && !NEW_PART.test(message)) || SHAPING_OPEN.test(message))
   const newPart = build && !there
-  if (SHAPE_WORDS.test(message) && !app && !newPart) return 'shape'
+  if (SHAPE_WORDS.test(message) && !app) {
+    if (!design) return 'build'
+    if (!newPart) return 'shape'
+  }
   if (EDIT_WORDS.test(message) && !app && (last === 'build' || last === 'shape' || last === 'edit')) return 'edit'
   // both: a request that opens on making a part, or makes it and then prints, builds first; else it is about the app
   if (build && (!app || BUILD_START.test(message) || THEN.test(message))) return 'build'
