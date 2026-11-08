@@ -875,43 +875,82 @@ describe('room for a second design', () => {
     expect({ transform: entry(planter).transform, placed: entry(planter).history?.placed }).toEqual(moved)
   })
 
-  it('leaves a design the person moves while the room is worked out where they put it, and one they delete gone', { timeout: 60_000 }, async () => {
-    const run = toolsOn(appDesignHost(loader))
-    const { planter, saucer, saucerStep } = await planterAndSaucer(run)
+  /**
+   * Runs `during` on the plate as each nest for room starts (`times` of them, or every one), the engine's nest.start
+   * call: what a person, or another host, does while the room is worked out. Returns how many nests started.
+   */
+  function whileNesting(during: (n: number) => void, times = Infinity): () => number {
     const inner = geom()
-    let during: (() => void) | null = () => drag(planter, 2, 0)
+    let n = 0
     setGeomProvider({ call: (op, req, signal) => {
-      if (op === 'nest.start' && during) {
-        during()
-        during = null
-      }
+      if (op === 'nest.start' && n++ < times) during(n)
       return inner.call(op, req, signal)
     } })
-    const t = entry(planter).transform.map((v, i) => (i === 12 ? v + 2 : v))
+    return () => n
+  }
+  /** A 10 mm cube standing at (x, y): an object a person puts on the plate. */
+  const peg = (id: string, x: number, y: number): PlateEntry => {
+    const c = [[-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0], [-5, -5, 10], [5, -5, 10], [5, 5, 10], [-5, 5, 10]]
+    const f = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
+    return { id, name: id, handle: handle(id), parts: [{ name: id, slot: 1, positions: new Float32Array(c.flat()), indices: new Uint32Array(f) }], colors: ['#bd93f9'], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1] }
+  }
+
+  it('works the room out again when the person moves a design while it is worked out, and lands beside it', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer, saucerStep } = await planterAndSaucer(run)
+    // dragged into the front left corner as the first nest starts: the room worked out with the planter in the middle
+    // is stale, and the planter is no longer one nobody moved
+    const nests = whileNesting(() => drag(planter, -55, -55), 1)
+    const t = entry(planter).transform.map((v, i) => (i === 12 || i === 13 ? v - 55 : v))
     const made = await saucerStep()
+    // two nests on the first try (beside the planter, then with it moved over), one on the second (beside it)
+    expect(nests()).toBe(3)
     expect(entry(planter).transform).toEqual(t)
     expect(entry(planter).history?.placed).toEqual([128, 128])
-    // the room worked out before the drag is no longer right: the saucer does not land on the planter
+    expect(made.summary).toMatch(/moved to the plate by/)
     expect(made.summary).not.toMatch(/Planter moved by/)
-    if (/moved to the plate by/.test(made.summary)) expectApart(planter, saucer)
-    else expect(printsOnBed(entry(saucer), get().bed)).toBe(false)
+    expectApart(planter, saucer)
   })
 
-  it('lands the new design when a design it would move is deleted while the room is worked out', { timeout: 60_000 }, async () => {
+  it('leaves the new design where it was built when the plate changes on every try', { timeout: 60_000 }, async () => {
     const run = toolsOn(appDesignHost(loader))
     const { planter, saucer, saucerStep } = await planterAndSaucer(run)
-    const inner = geom()
-    let during: (() => void) | null = () => set((s) => ({ plate: s.plate.filter((e) => e.id !== planter) }))
-    setGeomProvider({ call: (op, req, signal) => {
-      if (op === 'nest.start' && during) {
-        during()
-        during = null
-      }
-      return inner.call(op, req, signal)
-    } })
+    const t = [...entry(planter).transform]
+    // a peg put down in the back right corner as each nest starts
+    const nests = whileNesting((n) => set((s) => ({ plate: [...s.plate, peg(`peg-${n}`, 240 - 12 * n, 245)] })))
     const made = await saucerStep()
+    // three tries of two nests each, every one gone stale
+    expect(nests()).toBe(6)
+    expect(made.summary).toMatch(/does not fit/)
+    expect(entry(saucer).transform).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    expect(entry(planter).transform).toEqual(t)
+    expect(entry(planter).history?.placed).toEqual([128, 128])
+  })
+
+  it('works the room out again when an object is put on the plate while it is worked out, and lands clear of it', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer, saucerStep } = await planterAndSaucer(run)
+    // a peg put down where the saucer would go as the first nest starts
+    const nests = whileNesting(() => set((s) => ({ plate: [...s.plate, peg('peg', 92, 73)] })), 1)
+    const made = await saucerStep()
+    expect(nests()).toBe(4)
+    expect(made.summary).toMatch(/Planter moved by/)
+    expectApart(planter, saucer)
+    expect(gapOf('peg', saucer)).toBeGreaterThanOrEqual(getArrangeOptions().gapMm - 0.01)
+    expect(gapOf('peg', planter)).toBeGreaterThanOrEqual(getArrangeOptions().gapMm - 0.01)
+  })
+
+  it('works the room out again when a design it would move is deleted while it is worked out, and lands in the middle', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer, saucerStep } = await planterAndSaucer(run)
+    const nests = whileNesting(() => set((s) => ({ plate: s.plate.filter((e) => e.id !== planter) })), 1)
+    const made = await saucerStep()
+    // the second try nests the saucer alone, in the middle
+    expect(nests()).toBe(3)
     expect(made.ok).toBe(true)
     expect(get().plate.map((e) => e.id)).toEqual([saucer])
+    expect(printsOnBed(entry(saucer), get().bed)).toBe(true)
+    expect([entry(saucer).transform[12], entry(saucer).transform[13]]).toEqual([128, 128])
   })
 })
 
