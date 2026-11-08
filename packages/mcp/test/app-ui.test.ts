@@ -158,3 +158,18 @@ describe('the collision tool', () => {
     expect(get!.description).toMatch(/slicerx_app_collision_show/)
   })
 })
+
+it('reads a slice an object rename has put out of date as stale, in slicerx_app_ui and slicerx_app_collision_show', async () => {
+  // What the app answers after a rename with no geometry edit: the slice is out of date (its G-code names the old
+  // object), so its collisions come back stale.
+  const collisions = { stale: true, items: [{ kind: 'hotend', severity: 'hit' as const, part: 'toolhead', objects: [{ id: 'obj_1', name: 'Renamed box' }], firstLayer: 3, lastLayer: 4 }] }
+  const call = vi.fn(async (method: string) => (method === 'collision.show' ? { picked: 0, selection: ['obj_1'], cameraMoved: false, collisions } : { ...UI, tab: 'slice', collisions }))
+  const tools = appUiTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+  const ui = tools.find((t) => t.name === 'app.ui')!
+  const show = tools.find((t) => t.name === 'app.collision_show')!
+  expect(ui.version).toBe('1.1.1')
+  expect(show.version).toBe('1.0.1')
+  expect((await ui.run({} as never, {} as never)).summary).toMatch(/; the last slice, before the plate changed, has 1 collision, the first Renamed box \(obj_1\)\.$/)
+  expect(((await show.run(show.input.parse({ index: 0 }) as never, {} as never)).output as { collisions: { stale: boolean } }).collisions.stale).toBe(true)
+})
+
