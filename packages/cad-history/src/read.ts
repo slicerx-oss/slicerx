@@ -255,6 +255,8 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['broken'] === 'string' ? { broken: s['broken'].slice(0, 500) } : {}),
       ...(typeof s['bind'] === 'string' && s['bind'].length <= 200 ? { bind: s['bind'] } : {}),
       ...(typeof s['label'] === 'string' && s['label'].trim() ? { label: s['label'].trim().slice(0, 100) } : {}),
+      // the plan feature mimir tagged the step with (design.check matches features by it)
+      ...(typeof s['feature'] === 'string' && s['feature'].trim() ? { feature: s['feature'].trim().slice(0, 60) } : {}),
     })
   }
   return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }
