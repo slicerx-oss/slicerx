@@ -142,7 +142,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description: "Apply a paint preview as a step in the design's history (it replays, saves with slicerx_design_save and undoes with slicerx_design_undo). Refused when the design changed since the preview; preview again then. Returns the paint read back, which matches the preview.",
