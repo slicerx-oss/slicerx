@@ -1641,4 +1641,24 @@ mod tests {
         closed(&m);
         assert!((m.volume() - 1000.0).abs() < 1e-6, "{}", m.volume());
     }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "these turns are exact")]
+    fn turned_takes_the_least_rotation_and_leaves_opposite_planes_alone() {
+        let (x, y, z) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        let v = [0.3, -0.7, 1.9];
+        assert_eq!(turned(v, z, z), v);
+        // a quarter turn about z
+        let q = turned(v, x, y);
+        assert!(vec3::len(vec3::sub(q, [0.7, 0.3, 1.9])) < 1e-12, "{q:?}");
+        // half a turn has no one axis, so it stays as it is
+        assert_eq!(turned(v, z, [0.0, 0.0, -1.0]), v);
+        // just short of half a turn it still turns, finite and the same length, and takes `from` onto `to`
+        let c = -1.0 + 2e-9;
+        let to = [(1.0f64 - c * c).sqrt(), 0.0, c];
+        let n = turned(v, z, to);
+        assert!(n.iter().all(|a| a.is_finite()), "{n:?}");
+        assert!((vec3::len(n) - vec3::len(v)).abs() < 1e-6, "{n:?}");
+        assert!(vec3::len(vec3::sub(turned(z, z, to), to)) < 1e-9);
+    }
 }

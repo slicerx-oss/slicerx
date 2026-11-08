@@ -772,36 +772,6 @@ fn open_chains_turn_with_their_planes() {
         volume(&a),
         volume(&b)
     );
-    // four flat strips around the axis, each turned 45 degrees more in its plane: the last meets the first half a turn
-    // around, which the ring can't close without its sides crossing
-    let strips = around(4, 20.0, 90.0, |k| {
-        let a = (f64::from(k) * 45.0).to_radians();
-        let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
-        json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }] })
-    });
-    assert_eq!(
-        fails(
-            "sketch.loft",
-            &json!({ "profiles": strips, "closed": true, "thicken": thick })
-        ),
-        "loft: profile 4 meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
-    );
-    // with both ends of every strip marked, the landmarks say how the ring closes: start to start
-    let marked = |turn: f64| {
-        let strips = around(4, 20.0, 90.0, |k| {
-            let a = (f64::from(k) * turn).to_radians();
-            let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
-            json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }], "landmarks": [[-c, -s], [c, s]] })
-        });
-        json!({ "profiles": strips, "closed": true, "thicken": thick })
-    };
-    solid(&run("sketch.loft", &marked(25.0)));
-    // turned 45 degrees each, that closing span twists the strip 135 degrees, so the shell folds onto itself
-    let err = fails("sketch.loft", &marked(45.0));
-    assert!(
-        err.starts_with("thicken: a 1 mm outward shell runs into itself"),
-        "{err}"
-    );
     // one landmark on each elbow chain, at its start: the second takes its way from the first as the planes turn, drawn
     // either way, and the elbow comes out as it does unmarked
     let marked_elbow = |second: &[[f64; 2]], mark: [f64; 2]| {
@@ -828,5 +798,60 @@ fn open_chains_turn_with_their_planes() {
     assert_eq!(
         fails("sketch.loft", &marked_elbow(&u, u[24])),
         "profiles: profile 2's landmark 1 is at its end and profile 1's is at its start; mark the same points on every profile"
+    );
+}
+
+#[test]
+fn landmarks_say_how_a_ring_of_strips_closes() {
+    let thick = json!({ "thicknessMm": 1 });
+    // four flat strips around the axis, each turned 45 degrees more in its plane: the last meets the first half a turn
+    // around, which the ring can't close without its sides crossing
+    let strips = around(4, 20.0, 90.0, |k| {
+        let a = (f64::from(k) * 45.0).to_radians();
+        let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
+        json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }] })
+    });
+    assert_eq!(
+        fails(
+            "sketch.loft",
+            &json!({ "profiles": strips, "closed": true, "thicken": thick })
+        ),
+        "loft: profile 4 meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
+    );
+    // the same strips with landmarks at the points `marks` gives from each strip's end (c, s)
+    let ring = |turn: f64, marks: &dyn Fn(f64, f64) -> Value| {
+        let strips = around(4, 20.0, 90.0, |k| {
+            let a = (f64::from(k) * turn).to_radians();
+            let (c, s) = (3.0 * a.m_cos(), 3.0 * a.m_sin());
+            json!({ "open": true, "loops": [{ "points": [[-c, -s], [c, s]] }], "landmarks": marks(c, s) })
+        });
+        json!({ "profiles": strips, "closed": true, "thicken": thick })
+    };
+    // with both ends of every strip marked, the landmarks say how the ring closes: start to start
+    let marked = |turn: f64| ring(turn, &|c, s| json!([[-c, -s], [c, s]]));
+    solid(&run("sketch.loft", &marked(25.0)));
+    // turned 35 degrees each, the closing span twists the strip 105 degrees: placed by shape it would meet profile 1 the
+    // other way around, but the landmarks hold it start to start, and smooth sides spread the twist into a good shell
+    let mut twisted = marked(35.0);
+    twisted["smooth"] = json!(true);
+    let m = run("sketch.loft", &twisted);
+    solid(&m);
+    // short of the 6 by 1 mm band carried flat around the circle, since the twist narrows it between profiles
+    let band = 6.0 * 2.0 * PI * 20.0;
+    assert!(
+        volume(&m) > band * 0.8 && volume(&m) < band,
+        "{} {band}",
+        volume(&m)
+    );
+    // turned 45 degrees each, that closing span twists the strip 135 degrees, so the shell folds onto itself
+    let err = fails("sketch.loft", &marked(45.0));
+    assert!(
+        err.starts_with("thicken: a 1 mm outward shell runs into itself"),
+        "{err}"
+    );
+    // one landmark between the ends sets no strip's way, so the ring is placed by shape and refused where it closes
+    assert_eq!(
+        fails("sketch.loft", &ring(45.0, &|_, _| json!([[0.0, 0.0]]))),
+        "loft: profile 4 meets profile 1 the other way around where the ring closes, so its sides would cross; turn the profiles so they line up around the ring"
     );
 }
