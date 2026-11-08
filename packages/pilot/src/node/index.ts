@@ -155,16 +155,17 @@ const limitFor = (timeout: GeomTimeout | undefined, op: string): number => (type
 
 /**
  * Geometry through the `sx-geom` command: the request JSON goes to stdin, the
- * response comes back on stdout. `binary` defaults to `sx-geom` on PATH. A call
- * past its time limit (`timeoutMs`) is stopped and refused with what to try.
+ * response comes back on stdout. `binary` defaults to `sx-geom` on PATH; `args`
+ * go before the operation's name (a script run by an interpreter). A call past
+ * its time limit (`timeoutMs`) is stopped and refused with what to try.
  */
-export function createGeomCli(opts: { binary?: string; timeoutMs?: GeomTimeout } = {}): GeomHost {
+export function createGeomCli(opts: { binary?: string; args?: readonly string[]; timeoutMs?: GeomTimeout } = {}): GeomHost {
   const bin = opts.binary ?? 'sx-geom'
   return {
     run(op, input, signal) {
       if (!/^[a-z.]+$/.test(op)) return Promise.reject(new Error(`Bad geometry operation ${op}`))
       return new Promise((resolve, reject) => {
-        const child = spawn(bin, [op], { stdio: ['pipe', 'pipe', 'pipe'], ...(signal ? { signal } : {}) })
+        const child = spawn(bin, [...(opts.args ?? []), op], { stdio: ['pipe', 'pipe', 'pipe'], ...(signal ? { signal } : {}) })
         const out: Buffer[] = []
         const err: Buffer[] = []
         const ms = limitFor(opts.timeoutMs, op)

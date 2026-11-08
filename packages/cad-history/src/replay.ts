@@ -24,8 +24,8 @@ export interface ReplayRequest {
 }
 
 export interface ReplayOptions {
-  /** Called between steps; throw to stop (a newer edit arrived). */
-  yieldStep?: () => Promise<void>
+  /** Called before each step that runs, with that step; throw to stop (a newer edit arrived). */
+  yieldStep?: (step: Step) => Promise<void>
   /** The engine keeps kernel bodies between calls (one process, as the worker), so exact steps pass solids by
    * number and tessellate only when a step or the result needs the mesh. */
   keepsBodies?: boolean
@@ -591,7 +591,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       remember(keys[i]!, parts, { gone, moved, found })
       continue
     }
-    if (o.yieldStep) await o.yieldStep()
+    if (o.yieldStep) await o.yieldStep(s)
     try {
       parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       const note = found.notes[s.id]
