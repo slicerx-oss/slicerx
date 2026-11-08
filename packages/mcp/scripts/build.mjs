@@ -9,6 +9,10 @@
 // into <dir>/data/, for bundles such as the Claude Code plugin that ship without node_modules.
 // With --step-reader as well (the desktop app's build) the STEP reader goes beside it in <dir>/step-reader: the
 // built @slicerx/step-reader with its NOTICE, license texts and SOURCE.md, checked against the SHA-256 lines there.
+// The self-contained build also writes <dir>/THIRD-PARTY-LICENSES.txt: every npm package it inlines (from esbuild's
+// metafile), with its version and license text, and fails when a package has no license file. It runs from the
+// repository root whatever the caller's folder, so the module path comments, and with them the bytes, are the same
+// on every machine. --metafile <file> also writes esbuild's metafile there (for the kit test).
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
@@ -23,6 +27,9 @@ const repo = join(pkg, '..', '..')
 const flag = process.argv.indexOf('--standalone')
 const standalone = flag >= 0 ? resolve(process.argv[flag + 1] ?? '') : undefined
 const withStepReader = process.argv.includes('--step-reader')
+const metaFlag = process.argv.indexOf('--metafile')
+const metafileOut = metaFlag >= 0 ? resolve(process.argv[metaFlag + 1] ?? '') : undefined
+if (metafileOut && !standalone) throw new Error('--metafile goes with --standalone <dir>')
 if (withStepReader && !standalone) throw new Error('--step-reader goes with --standalone <dir>')
 const external = ['@modelcontextprotocol/sdk', 'zod', 'yaml', '@noble/*']
 // The STEP reader is an optional peer dependency, loaded at run time only when it is installed (slicerx_step_read):
@@ -80,7 +87,11 @@ const deferredCli = {
 }
 
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
-await build({
+// The self-contained build's paths are relative to the repository root, not to the folder the build was started from.
+const workingDir = standalone ? { absWorkingDir: repo } : {}
+const server = await build({
+  ...workingDir,
+  metafile: Boolean(standalone),
   entryPoints: standalone ? { 'slicerx-mcp-main': join(pkg, 'src', 'cli.ts') } : { 'cli-main': join(pkg, 'src', 'cli.ts') },
   // Code splitting keeps dynamic imports in their own chunks, so a server loads the stock printer profiles only when a
   // tool reads them. Without it esbuild also wraps shared modules in lazy initializers, and in the self-contained build
@@ -103,7 +114,9 @@ await build({
   logLevel: 'warning',
 })
 // The entry: node built-ins only, so it loads in no time and nothing else is compiled before the cache is on.
-await build({
+const launcher = await build({
+  ...workingDir,
+  metafile: Boolean(standalone),
   entryPoints: [join(pkg, 'src', 'launch.ts')],
   outfile: outFile,
   bundle: true,
@@ -183,6 +196,19 @@ if (existsSync(printerDocs)) cpSync(printerDocs, join(docs, 'printers'), { recur
 // UltiMaker profiles from Cura (packages/profiles/cura), which are LGPL-3.0-or-later.
 cpSync(join(repo, 'packages', 'profiles', 'LICENSE'), join(standalone ?? join(pkg, 'dist'), 'LICENSE-AGPL-profiles.txt'))
 cpSync(join(repo, 'packages', 'profiles', 'cura', 'LICENSE'), join(standalone ?? join(pkg, 'dist'), 'LICENSE-LGPL-cura-profiles.txt'))
+// The LGPL builds on the GPL, and a work that combines LGPL data ships both texts (LGPL-3.0 section 4(b)).
+cpSync(join(repo, 'packages', 'profiles', 'LICENSE-GPL-3.0'), join(standalone ?? join(pkg, 'dist'), 'LICENSE-GPL-3.0.txt'))
+
+// The npm build leaves its dependencies in node_modules, each with its own license. The self-contained build inlines
+// them, so their notices go beside it.
+if (standalone) {
+  const inputs = [...Object.keys(server.metafile.inputs), ...Object.keys(launcher.metafile.inputs)]
+  writeFileSync(join(standalone, 'THIRD-PARTY-LICENSES.txt'), thirdPartyLicenses(inputs))
+  if (metafileOut) {
+    mkdirSync(dirname(metafileOut), { recursive: true })
+    writeFileSync(metafileOut, JSON.stringify({ inputs: { ...launcher.metafile.inputs, ...server.metafile.inputs }, outputs: server.metafile.outputs }))
+  }
+}
 
 // The STEP reader beside the self-contained server, where the server looks for it first (src/toolbox/step-read.ts).
 if (standalone) {
@@ -214,3 +240,42 @@ if (!standalone) {
   execFileSync(process.execPath, [join(repo, 'scripts', 'emit-types.mjs'), pkg, 'index=src/index.ts', 'agents=src/agents.ts'], { stdio: 'inherit' })
 }
 console.log(`built ${outFile} and ${data}`)
+
+/**
+ * THIRD-PARTY-LICENSES.txt for the npm packages among esbuild's `inputs` (paths relative to the repository root):
+ * each package once per version, sorted, with the text of its LICENSE, LICENCE or COPYING files. Throws, naming the
+ * packages, when one has no such file.
+ */
+function thirdPartyLicenses(inputs) {
+  const packages = new Map()
+  for (const input of inputs) {
+    const parts = resolve(repo, input.replace(/^[a-z-]+:/, '')).split(/[\\/]/)
+    const at = parts.lastIndexOf('node_modules')
+    if (at < 0) continue
+    const scoped = parts[at + 1].startsWith('@')
+    const dir = parts.slice(0, at + (scoped ? 3 : 2)).join('/')
+    const meta = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    packages.set(`${meta.name} ${meta.version}`, { name: meta.name, version: meta.version, license: meta.license, dir })
+  }
+  const missing = []
+  const rule = '='.repeat(78)
+  const blocks = []
+  for (const p of [...packages.values()].sort((a, b) => (a.name === b.name ? a.version.localeCompare(b.version) : a.name < b.name ? -1 : 1))) {
+    const files = readdirSync(p.dir).filter((f) => /^(licen[cs]e|copying)([-.].*)?$/i.test(f)).sort()
+    if (files.length === 0) {
+      missing.push(`${p.name} ${p.version}`)
+      continue
+    }
+    const texts = files.map((f) => readFileSync(join(p.dir, f), 'utf8').replace(/\r\n/g, '\n').trim())
+    blocks.push([rule, `${p.name} ${p.version}`, `License: ${typeof p.license === 'string' ? p.license : 'see below'}`, '', texts.join(`\n\n${'-'.repeat(78)}\n\n`), ''].join('\n'))
+  }
+  if (missing.length) throw new Error(`the self-contained build inlines npm packages with no license file: ${missing.join(', ')}`)
+  const head = [
+    'Third-party packages in the self-contained SlicerX MCP server',
+    '',
+    `This build inlines the ${blocks.length} npm packages below into slicerx-mcp-main.mjs and chunks/. Each keeps its own`,
+    'license; its name, version and license text follow.',
+    '',
+  ].join('\n')
+  return `${head}\n${blocks.join('\n')}`
+}

@@ -311,15 +311,28 @@ test('the manifest and SHA256SUMS.txt list the self-contained MCP server beside 
     const packages = kitPackages().map(({ name, version }) => ({ name, version }))
     for (const p of packages) writeFileSync(join(tmp, `${stemOf(p.name)}-${p.version}.tgz`), p.name)
     const version = packages.find((p) => p.name === '@slicerx/mcp').version
+    const base = writePackageManifest(tmp, packages)
     writeFileSync(join(tmp, 'slicerx-mcp-standalone.zip'), 'zip')
     const standalone = { name: 'slicerx-mcp-standalone.zip', version, folder: 'slicerx-mcp-standalone', entry: 'slicerx-mcp-standalone/slicerx-mcp.mjs' }
     writePackageManifest(tmp, packages, [standalone])
     const manifest = JSON.parse(readFileSync(join(tmp, 'kit-manifest.json'), 'utf8'))
+    // what a reader of the base manifest relies on is unchanged: the schema, the packages and the base files
+    assert.equal(manifest.schemaVersion, 1)
+    assert.deepEqual(manifest.packages, base.packages)
+    assert.deepEqual(manifest.files.slice(0, base.files.length), base.files)
+    for (const f of manifest.files) {
+      assert.equal(typeof f.name, 'string')
+      assert.doesNotMatch(f.name, /[\\/]/, `${f.name} is a file at the top of the kit`)
+      assert.match(f.sha256, /^[0-9a-f]{64}$/)
+      assert.ok(existsSync(join(tmp, f.name)), f.name)
+    }
     const sha = createHash('sha256').update('zip').digest('hex')
     assert.deepEqual(manifest.files.find((f) => f.name === standalone.name), { ...standalone, sha256: sha })
     assert.ok(manifest.files.some((f) => f.name === 'defaults.json'))
     assert.deepEqual(manifest.packages.filter((p) => p.optional).map((p) => p.name), ['@slicerx/step-reader'])
-    assert.equal(parseSums(readFileSync(join(tmp, 'SHA256SUMS.txt'), 'utf8')).get(standalone.name), sha)
+    const sums = parseSums(readFileSync(join(tmp, 'SHA256SUMS.txt'), 'utf8'))
+    assert.equal(sums.get(standalone.name), sha)
+    for (const [name, digest] of sums) assert.equal(createHash('sha256').update(readFileSync(join(tmp, name))).digest('hex'), digest, name)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
