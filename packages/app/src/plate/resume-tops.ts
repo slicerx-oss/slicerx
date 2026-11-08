@@ -4,7 +4,7 @@
 // once a plan stored them for this plate as it is; otherwise (a reopened project, a resume from the printer list) the
 // engine works them out from the plate as the job sliced it, so the plan never counts in layers of its own making.
 import type { Host } from '@slicerx/contracts'
-import { INPUTS, printed, slotsRead } from '../state/slice-inputs'
+import { configRead, INPUTS, KEY_CONFIG, printed, slotsRead } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
 import { cancelSlice, STALE_SLICE } from '../state/actions'
 import { resolveSlots, usedSlots } from '../filament/slots'
@@ -87,12 +87,12 @@ function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState, ids: ReadonlySet<str
 /** State outside INPUTS that picks a slot's filament preset, and so its tuned values (shrinkage moves layers). */
 export const KEY_SLOT_MATCH = ['slotMatch', 'fileSlotTypes', 'fileSlotVendors', 'printerModel'] as const satisfies readonly (keyof AppState)[]
 
-/**
- * State outside INPUTS that goes into the slice's configuration: the nozzle volume and an opened project's flush
- * volumes (the flush matrix), and the values its printer G-code names that no setting models (slice-plate.ts
- * plateSliceConfig).
- */
-export const KEY_CONFIG = ['printerNozzleVolume', 'projectFlush', 'projectScriptKeys'] as const satisfies readonly (keyof AppState)[]
+export { KEY_CONFIG }
+
+/** The KEY_CONFIG values the shown plate's configuration reads: the flush inputs only when any plate uses two slots. */
+export function configKey(s: AppState): string {
+  return configRead(s, Math.max(0, ...usedSlots(s)) >= 2)
+}
 
 /** JSON with mesh arrays as their lengths (the handle hash names their content) and the shipped G-code left out. */
 const lean = (key: string, v: unknown): unknown => (ArrayBuffer.isView(v) ? `#${(v as { length?: number }).length ?? 0}` : key === 'shippedGcode' ? undefined : v)
@@ -125,7 +125,7 @@ export function sliceInputsKey(s: AppState): string {
   // A slot no one set up and no printer reports takes the model's color (the file's, else its parts'), which the
   // configuration writes as that filament's color. An object's colors count only then.
   const colors = resolveSlots(s).map((r) => (r.source === 'model' ? r.color : null))
-  const config = KEY_CONFIG.map((k) => s[k] ?? null)
+  const config = configKey(s)
   const key = hash(JSON.stringify([s.activePlate, objects, meta?.settings ?? null, s.calibration[s.activePlate] ?? null, KEY_INPUTS.map((k) => keyOf(k, s, ids)), slots, used, colors, config], lean))
   if (last.size > 16) last.clear()
   last.set(s.activePlate, { refs, key })
@@ -166,6 +166,8 @@ export interface SliceStamp {
   plan: string | null
   inputs: string
   output: string
+  /** The KEY_CONFIG values it was sliced with (configKey). */
+  config?: string
 }
 
 /**
@@ -183,7 +185,7 @@ export function outputKey(s: AppState): string {
 
 /** The stamp of a slice of the shown plate starting now. */
 export function sliceStamp(s: AppState): SliceStamp {
-  return { plate: s.activePlate, plan: planFor(s, s.activePlate), inputs: sliceInputsKey(s), output: outputKey(s) }
+  return { plate: s.activePlate, plan: planFor(s, s.activePlate), inputs: sliceInputsKey(s), output: outputKey(s), config: configKey(s) }
 }
 
 /** Why a slice no longer sends, exports or queues: its plate, its resume plan or the plate's inputs changed since. */
@@ -200,6 +202,10 @@ export function stampBlock(s: AppState, stamp: SliceStamp | undefined): string |
   if (!stamp) return s.resume ? SLICE_NOT_CURRENT : null
   if (stamp.plate !== s.activePlate) return SLICE_NOT_CURRENT
   if (stamp.plan !== planFor(s, stamp.plate)) return SLICE_NOT_CURRENT
+  // The nozzle volume, an opened project's flush matrix or its G-code values changed after it landed (a printer picked
+  // after the slice, whose profile sets them later): the file would carry the old purge volumes. No setter marks these
+  // stale, so the check is here, where Print, Export and mimir read it.
+  if (stamp.config !== undefined && stamp.config !== configKey(s)) return STALE_SLICE
   // An edit after it landed that changes its G-code but not its layers (a renamed object, a pause, the profile's G-code
   // no longer trusted as shipped), with auto slice off: the file would carry the old labels or marks.
   return outputKey(s) !== stamp.output ? STALE_SLICE : null
