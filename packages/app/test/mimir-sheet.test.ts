@@ -296,6 +296,11 @@ describe('the scripted sizes sheet of a part already built', () => {
       'Show main sizes of my last print, a lid',
       'show the size sheet of the print: the lid',
       'the size sheet of this print, the lid',
+      // "print" before a print noun, at the start of a clause: about how it prints, not a request to print
+      'Show me the size sheet for my design, print quality is fine',
+      'Print settings aside, show the main sizes',
+      'Main sizes please; print time does not matter',
+      'Show the size sheet. Print speed and print profile can wait',
     ])
       expect(route(m), m).toBe('sizes')
     // "design" and "print" asking for a part, at the start of a clause or before a determiner: a build
@@ -312,6 +317,8 @@ describe('the scripted sizes sheet of a part already built', () => {
       ['Please design a lid, main sizes first', 'box'],
       ['Show me the main sizes, then design the lid', 'box'],
       ['Can you design me a box? Size sheet first', 'box'],
+      ['Print a stand, main sizes first', 'stand'],
+      ['Print quality matters: print the stand and show its main sizes', 'stand'],
     ]
     for (const [m, id] of builds) expect(route(m), m).toBe(id)
     // parts no script here builds: never the sizes of a part already built
