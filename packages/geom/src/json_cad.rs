@@ -1681,6 +1681,12 @@ mod tests {
         let out = run("array", &req);
         assert_eq!(out["watertight"], true, "{}", out["report"]);
         assert_eq!(out["shells"], 1);
-        assert_eq!(out["report"]["triangles"], 864);
+        // the annulus between a 108 sided wrap and a 108 sided bore, as the geometry test has it
+        let ngon = |r: f64| 0.5 * 108.0 * r * r * (std::f64::consts::TAU / 108.0).m_sin() * 10.0;
+        let wrap = 9.5 / (std::f64::consts::PI / 108.0).m_cos();
+        let want = ngon(wrap) - ngon(7.5);
+        let got = out["volumeMm3"].as_f64().unwrap();
+        // stored in f32 at (30, 5, 2), so a few millionths
+        assert!((got - want).abs() < 1e-5 * want, "{got} vs {want}");
     }
 }
