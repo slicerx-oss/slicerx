@@ -555,8 +555,8 @@ describe('leaders to callouts', () => {
     const on = (p: readonly number[]) => cover[Math.floor(p[1]!) * W + Math.floor(p[0]!)]
     // where each line comes out from behind the tube, 3 px on
     expect(end.lines.slice(0, 2).map(([p]) => p)).toEqual([
-      [103.3, 192.6],
-      [106.3, 136.7],
+      [118.2, 173.4],
+      [120.3, 123.4],
     ])
     for (const [p, q] of end.lines.slice(0, 2)) {
       expect(on(p), `starts at ${p}`).toBe(0)
@@ -569,6 +569,56 @@ describe('leaders to callouts', () => {
     const [fx, fy] = front.dims.find((d) => d.key === 'end_length')!.lines[0]![0]
     const touches = [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => front.part.cover[(Math.floor(fy) + dy) * front.part.W + Math.floor(fx) + dx] === 1))
     expect(touches, 'Front: the line starts on the outline').toBe(true)
+  })
+})
+
+// In Iso the elbow's outside diameter and wall, set 8 and 16 mm below its foot, ran across the tube's lower end: in
+// that view the plane they sit in passes behind the tube's near side.
+describe('sizes in Iso', () => {
+  /** The points along a segment, every half px. */
+  const along = ([p, q]: [[number, number], [number, number]]): [number, number][] => {
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 2))
+    return Array.from({ length: n + 1 }, (_, i) => [p[0] + ((q[0] - p[0]) * i) / n, p[1] + ((q[1] - p[1]) * i) / n])
+  }
+  const onPart = (r: Raster, [x, y]: [number, number]): boolean => {
+    const i = Math.floor(x * r.px)
+    const j = Math.floor(y * r.px)
+    return i >= 0 && j >= 0 && i < r.W && j < r.H && r.cover[j * r.W + i] === 1
+  }
+
+  it('moves a size whose line crosses the part out along its way out, keeping its lines off the part', () => {
+    const pic = sheetPicture(ELBOW, [])!
+    for (const [w, h, px] of [[475, 320, 2], [420, 300, 1], [178, 133, 2], [356, 133, 2]] as const) {
+      const drawn = drawView(pic.shape, pic.dims, 'iso', w, h, { pad: 24, px, order: ELBOW.views })
+      for (const key of ['outside_diameter', 'wall_thickness', 'end_length']) {
+        const d = drawn.dims.find((x) => x.key === key)!
+        // the size's own line, with its arrows, never on the part
+        const dimLine = d.lines.at(-1)!
+        for (const p of along(dimLine)) expect(onPart(drawn.part, p), `${w} x ${h}: ${key}'s line at ${p}`).toBe(false)
+        // its extension lines start on the part's outline or where they come out from behind it, then stay off it
+        for (const l of d.lines.slice(0, -1)) {
+          const pts = along(l)
+          for (const p of pts.slice(6)) expect(onPart(drawn.part, p), `${w} x ${h}: ${key}'s extension line at ${p}`).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('keeps the sizes moved together in their order, the wall still past the outside diameter', () => {
+    const pic = sheetPicture(ELBOW, [])!
+    const drawn = drawView(pic.shape, pic.dims, 'iso', 475, 320, { pad: 24, order: ELBOW.views })
+    const lineOf = (key: string) => drawn.dims.find((x) => x.key === key)!.lines.at(-1)!
+    // both are set out straight down (z), so on screen the wall's line stays below the outside diameter's
+    const mid = (l: [[number, number], [number, number]]) => (l[0][1] + l[1][1]) / 2
+    expect(mid(lineOf('wall_thickness'))).toBeGreaterThan(mid(lineOf('outside_diameter')) + 10)
+  })
+
+  it('leaves the sizes in the flat views where mimir put them', () => {
+    const pic = sheetPicture(ELBOW, [])!
+    const front = drawView(pic.shape, pic.dims, 'front', 475, 320, { pad: 24, order: ELBOW.views, scale: 3 })
+    const od = front.dims.find((x) => x.key === 'outside_diameter')!
+    // in Front the line stays 8 mm below the foot, 24 px at 3 px per mm
+    expect(od.lines.at(-1)![0][1] - od.lines[0]![0][1]).toBeCloseTo(24, 0)
   })
 })
 
