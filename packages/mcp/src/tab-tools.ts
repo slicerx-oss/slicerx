@@ -8,7 +8,7 @@
 // tab and the creative eval make these tools here (toolset.ts tabToolset), each over its own plan registry.
 import { askTool, defineTool, lookupTool, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import type { z } from 'zod'
-import { MAX_PLANS, partPlanSchema, PLAN_SIZE_MAX, type PartPlan, type PlanRegistry } from './design-check'
+import { MAX_PLANS, partPlanSchema, PLAN_SIZE_MAX, tidyPlan, type PartPlan, type PlanRegistry } from './design-check'
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
@@ -162,7 +162,7 @@ export function createCardPlans(plans: PlanRegistry) {
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
       async run(i, ctx) {
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
-        const plan: PartPlan = { planId: (opts.newId ?? newPlanId)(), ...i }
+        const plan: PartPlan = tidyPlan({ planId: (opts.newId ?? newPlanId)(), ...i })
         const shown = structuredClone(plan)
         remember(plan)
         const picked = await ctx.ask({
