@@ -506,6 +506,8 @@ export interface PlanEntry {
   failedChecks?: number
   /** Its last check failed and its part has not been rebuilt as a new design since: the next check may follow one. */
   replaceable?: true
+  /** The designs open when its last check failed: a rebuild to fix that check is a design none of these. */
+  openAtFail?: string[]
 
   /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
   closed?: { summary: string; output: Record<string, unknown> }
@@ -538,9 +540,10 @@ export interface PlanRegistry {
   tiedTo(design: string): string[]
   /**
    * Counts a design.check of a kept plan; returns how many of its checks have failed (0 when there is no such plan). A
-   * failed check lets the part be rebuilt as a new design once (replace); a pass ends that.
+   * failed check lets the part be rebuilt as a new design once (replace), started after it: `open` is the designs open
+   * then, which a rebuild is none of. A pass ends that.
    */
-  checked(planId: string, pass: boolean): number
+  checked(planId: string, pass: boolean, open?: readonly string[]): number
   /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
   close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
   get(planId: string): PlanEntry | undefined
@@ -567,7 +570,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -584,16 +587,21 @@ export function createPlanRegistry(): PlanRegistry {
       if (!entry?.replaceable) return false
       entry.design = design
       delete entry.replaceable
+      delete entry.openAtFail
       return true
     },
     tiedTo: (design) => [...plans.values()].filter((e) => e.design === design).map((e) => e.plan.planId),
-    checked(planId, pass) {
+    checked(planId, pass, open) {
       const entry = plans.get(planId)
       if (!entry) return 0
-      if (pass) delete entry.replaceable
-      else {
+      if (pass) {
+        delete entry.replaceable
+        delete entry.openAtFail
+      } else {
         entry.failedChecks = (entry.failedChecks ?? 0) + 1
         entry.replaceable = true
+        if (open) entry.openAtFail = [...open]
+        else delete entry.openAtFail
       }
       return entry.failedChecks ?? 0
     },
