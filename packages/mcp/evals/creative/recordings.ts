@@ -39,6 +39,11 @@ export interface CapturedRecording {
    * one the model saw and answered. Recordings from before leave it out and replay as stale when they meet it.
    */
   samePart?: boolean
+  /**
+   * Captured live in a run where mimir went on once with the plan approved in it unfinished (the plan_left note), so the
+   * note in its replay is one the model saw and answered. Recordings without it replay as stale when they get the note.
+   */
+  planGoesOn?: boolean
 }
 
 export type Recording = PendingRecording | CapturedRecording
@@ -67,11 +72,12 @@ export function parseRecording(text: string, where = 'recording'): Recording {
     }
     return step
   })
-  for (const k of ['defaultAnswer', 'tabTools', 'samePart'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
+  for (const k of ['defaultAnswer', 'tabTools', 'samePart', 'planGoesOn'] as const) if (v[k] !== undefined && typeof v[k] !== 'boolean') throw new Error(`${where}: ${k} must be true or false`)
   const rec: CapturedRecording = { status: 'recorded', model: String(v['model']), provider: String(v['provider']), capturedAt: String(v['capturedAt']), steps }
   if (v['defaultAnswer'] === true) rec.defaultAnswer = true
   if (v['tabTools'] === true) rec.tabTools = true
   if (v['samePart'] === true) rec.samePart = true
+  if (v['planGoesOn'] === true) rec.planGoesOn = true
   return rec
 }
 

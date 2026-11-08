@@ -22,8 +22,9 @@
 // recording captured with the answer, and marks a recorded question without one stale. A recording from before the
 // tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again, and so does
 // one whose reply starts the same part again with a second design.new, which mimir now refuses, unless it was captured
-// since that refusal (a live capture stamps samePart, so a refusal the model saw replays as recorded). The log
-// rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
+// since that refusal (a live capture stamps samePart, so a refusal the model saw replays as recorded). A replay that gets
+// mimir's note that its approved plan is unfinished (plan_left) is stale and left out of the score unless its live
+// capture got the note too (stamped planGoesOn). The log rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
@@ -33,7 +34,7 @@ import { createNodeTransport, EVALS_DIR, evalGeom } from '@slicerx/pilot/evals/n
 import { budgetedClient, createBudget, DEFAULT_CAP_USD, DEFAULT_USD_PER_SEARCH, runLive, STOP_MARGIN_USD, type Price } from './live'
 import { CREATIVE_PROMPTS, type CreativePrompt } from './prompts'
 import { loadRecording, saveRecording } from './recordings'
-import { CREATIVE_TAB, DEFAULT_ANSWER, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
+import { CREATIVE_TAB, DEFAULT_ANSWER, replayScored, runPrompt, scoreParts, type CreativeScore, type NoBuild, type PromptRun } from './run'
 
 const PROVIDERS = ['openai', 'anthropic', 'openai-compatible']
 
@@ -119,7 +120,13 @@ const skipped: string[] = []
 const stale: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
   if (mode === 'live' && flag('record') && run.steps.length && !run.error) {
-    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true, samePart: true })
+    saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
+  }
+  // a replay that got the plan_left note its recording never answered stands for no reply of the model's: stale, not scored
+  if (mode === 'replay' && !replayScored(run)) {
+    stale.push(p.id)
+    console.log(`STALE    ${p.id.padEnd(28)} not scored: ${run.stale}`)
+    return
   }
   const sc = scoreParts(p, run.parsed, run.parts, run.gaps)
   scores.push({ id: p.id, score: sc, calls: run.calls.length, answered: run.answered, ...(run.noBuild ? { noBuild: run.noBuild } : {}) })
@@ -146,7 +153,7 @@ if (client) {
       console.log(`SKIP ${p.id.padEnd(28)} recorded (${rec.model}), but there is no geometry engine to build it`)
       continue
     }
-    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true }))
+    report(p, await runPrompt(p, { geom, steps: rec.steps, defaultAnswer, answerRecorded: rec.defaultAnswer === true, tabTools: rec.tabTools === true, samePart: rec.samePart === true, planGoesOn: rec.planGoesOn === true }))
   }
 }
 
