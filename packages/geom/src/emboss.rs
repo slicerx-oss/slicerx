@@ -255,6 +255,24 @@ impl Face {
 }
 
 pub fn merge_coplanar(mesh: &TriMesh) -> Result<TriMesh> {
+    merge_inner(mesh, None)
+}
+
+/// [`merge_coplanar`] for the faces a cut changed alone: a face whose triangles are all still in `before` stays as
+/// it was, since filling it again only risks needles where the cut never reached
+pub fn merge_coplanar_changed(mesh: &TriMesh, before: &TriMesh) -> Result<TriMesh> {
+    let had: HashSet<[[u64; 3]; 3]> = before.triangles.iter().map(|&t| corner_key(before, t)).collect();
+    merge_inner(mesh, Some(&had))
+}
+
+/// a triangle's corners by their exact bits, in a fixed order
+fn corner_key(m: &TriMesh, t: [u32; 3]) -> [[u64; 3]; 3] {
+    let mut k = m.corners(t).map(|p| p.map(f64::to_bits));
+    k.sort_unstable();
+    k
+}
+
+fn merge_inner(mesh: &TriMesh, had: Option<&HashSet<[[u64; 3]; 3]>>) -> Result<TriMesh> {
     mesh.validate("merge_coplanar")?;
     let base = mesh.welded();
     let tol = weld_tolerance(base.bounds()) * 100.0;
@@ -282,7 +300,12 @@ pub fn merge_coplanar(mesh: &TriMesh) -> Result<TriMesh> {
             done[t] = true;
         }
         let keep = |out: &mut TriMesh| out.triangles.extend(members.iter().map(|&t| base.triangles[t]));
-        if members.len() < 4 {
+        let untouched = had.is_some_and(|h| {
+            members
+                .iter()
+                .all(|&t| h.contains(&corner_key(&base, base.triangles[t])))
+        });
+        if members.len() < 4 || untouched {
             keep(&mut out);
             continue;
         }
@@ -295,8 +318,19 @@ pub fn merge_coplanar(mesh: &TriMesh) -> Result<TriMesh> {
             }
             Ok(tris.triangles)
         });
+        // a fill with a flat or turned over triangle (a needle on a rim), or one that covers more than the face did,
+        // keeps the face as it was
+        let area = |t: &[u32; 3]| {
+            let [a, b, c] = t.map(|i| base.positions[i as usize]);
+            vec3::dot(vec3::tri_normal(a, b, c), w)
+        };
+        let face_area: f64 = members.iter().map(|&t| area(&base.triangles[t]).abs()).sum();
+        let fits = |t: &[[u32; 3]]| {
+            t.iter().all(|x| area(x) > 0.0)
+                && (t.iter().map(area).sum::<f64>() - face_area).abs() <= 1e-9 * face_area
+        };
         match rebuilt {
-            Ok(t) if !t.is_empty() && t.len() <= members.len() => out.triangles.extend(t),
+            Ok(t) if !t.is_empty() && t.len() <= members.len() && fits(&t) => out.triangles.extend(t),
             _ => keep(&mut out),
         }
     }

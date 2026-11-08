@@ -353,7 +353,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
                     &convex::overshoot_flush(c, &out, crate::solids::OVERSHOOT_MM),
                 )?;
             }
-            let mut out = emboss::merge_coplanar(&out)?;
+            let mut out = emboss::merge_coplanar_changed(&out, &m)?;
             convex::flip_needles(&mut out);
             // The faces, found here on the f64 result: the answer rounds the corners to f32, and after that a
             // corner the cut left on a chord of a hole's wall reads as a seam, so the wall no longer fits a cylinder.
