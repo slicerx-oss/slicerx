@@ -463,10 +463,15 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
-  /** Whether `next` can be a rebuild of the part in `tied`: open, started after it, and tied to no plan. */
-  const rebuilt = (tied: string, next: string): boolean => {
+  /**
+   * Whether `next` can be a rebuild of the plan's part: the design it is tied to is still open, and `next` is open,
+   * was not open when the plan's last check failed, and is tied to no plan. By the designs open then, not by their
+   * order in the list, which deleting, undoing or redoing a design changes.
+   */
+  const rebuilt = (entry: PlanEntry, next: string): boolean => {
     const ids = designs.list().map((d) => d.id)
-    return ids.indexOf(next) > ids.indexOf(tied) && plans.tiedTo(next).length === 0
+    if (!entry.design || !ids.includes(entry.design) || !ids.includes(next) || !entry.openAtFail) return false
+    return !entry.openAtFail.includes(next) && plans.tiedTo(next).length === 0
   }
 
   /**
@@ -476,8 +481,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
    * plan, or an untied card plan on the card's own side; a card plan is not tied again to another design, and a
    * client's given design for an untied card plan is checked without tying it. The one exception is a replacement: on
    * the card's own side, a card plan whose last check failed and still has its fix round follows the design given now,
-   * since a part rebuilt as a new design to fix it is still the plan's part. Only a design started after the one the
-   * plan is tied to and tied to no other plan qualifies, once per failed check, so a mistaken or injected id never
+   * since a part rebuilt as a new design to fix it is still the plan's part. Only a design started after that check
+   * failed, while the tied design is still open, and tied to no other plan qualifies, once per failed check, so a mistaken or injected id never
    * moves a plan onto another part. Its failed checks carry over, so a replacement never buys a second fix round.
    */
   const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'given' | 'matched by name' | 'latest' } => {
@@ -491,12 +496,14 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
         } catch {
           id = undefined
         }
-        const replaces = opts.cardSide && id !== undefined && id !== entry.design && entry.replaceable && rebuilt(entry.design, id)
+        const replaces = opts.cardSide && id !== undefined && id !== entry.design && entry.replaceable && rebuilt(entry, id)
         if (replaces) {
           const design = designs.get(id!)
           plans.replace(entry.plan.planId, design.id)
           return { design, how: 'tied to the plan' }
         }
+        if (id !== entry.design && opts.cardSide && !designs.list().some((d) => d.id === entry.design))
+          throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is tied to design ${entry.design}, which is no longer open. It is not moved to another design; make a new plan for the part and check it against that.`)
         if (id !== entry.design)
           throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
         return { design: designs.get(entry.design), how: 'tied to the plan' }
@@ -549,7 +556,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const which = `${d.name} (${d.id}, ${how})`
       const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
       const output = { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
-      const failedChecks = plans.checked(entry.plan.planId, result.pass)
+      const failedChecks = plans.checked(entry.plan.planId, result.pass, designs.list().map((x) => x.id))
       if (result.pass || failedChecks <= FIX_ROUNDS) return { summary, output }
       // the second miss: one fix round was the limit, so mimir stops here and says what is off
       const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
