@@ -125,6 +125,20 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(replanned.map((dims) => dims.map((d) => d.key))).toEqual([['width']])
   })
 
+  it('are not added to the next run\'s sheet after the planned part\'s sheet was confirmed and the part never built', async () => {
+    // the hinge's sheet is confirmed, then the person asks for a spacer instead: a one-feature part skips the plan
+    const spacer = { name: 'pilot.sheet', args: { title: 'Spacer', dims: [{ key: 'height', label: 'Height', value: 20, unit: 'mm', source: 'asked' }] } }
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [{ name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Shall I build it?' }, { calls: [spacer] }, { text: 'Done.' }], { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), stub('geom.extrude')] })
+    const shown: string[][] = []
+    for (const message of ['A print-in-place hinge', 'Skip that, make a 20 mm spacer instead'])
+      for await (const e of p.run('s', message) as AsyncIterable<PilotEvent>)
+        if (e.type === 'sheet') {
+          shown.push(e.sheet.dims.map((d) => d.key))
+          void p.answerSheet!(e.sheet.id, {})
+        }
+    expect(shown).toEqual([['width', 'clearance', 'clearance_vertical'], ['height']])
+  })
+
   it('are not added after a plan the person did not approve', async () => {
     const [dims] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Declined', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [SHEET] }, { text: 'Done.' }])
     expect(dims!.map((d) => d.key)).toEqual(['width'])
