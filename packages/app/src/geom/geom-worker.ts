@@ -11,6 +11,7 @@ import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
 import { callEngine, transferables, type GeomExports } from './engine-call'
 import { loadBrep, type BrepModule } from './brep'
+import { workerLoop, type WorkerMessage } from './worker-loop'
 
 async function load(url: URL): Promise<EngineModule> {
   const response = await fetch(url)
@@ -65,57 +66,31 @@ function brepKernel(): Promise<BrepModule> {
   }))
 }
 
-const canceled = new Set<number>()
-
-self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unknown } | { cancel: number }>) => {
-  if ('cancel' in e.data) {
-    canceled.add(e.data.cancel)
-    // Cancels of quick calls arrive after their answer; keep only the latest few.
-    if (canceled.size > 256) canceled.delete(canceled.values().next().value as number)
-    return
-  }
-  const { id, op, request } = e.data
-  // canceled while it waited behind another call
-  if (canceled.delete(id)) {
-    self.postMessage({ id, error: 'Canceled', memoryBytes: memoryBytes() })
-    return
-  }
-  // the page ends this worker when a canceled call is still running here (client.ts, CANCEL_GRACE_MS)
-  self.postMessage({ started: id })
-  try {
-    if (op === 'history.replay') {
-      // a replay with exact solids calls the kernel's ops too
-      const result = await replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, {
-        // the kernel lives in this worker, so its bodies last from call to call
-        keepsBodies: true,
-        yieldStep: async () => {
-          await new Promise((r) => setTimeout(r, 0))
-          if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
-        },
-      })
-      canceled.delete(id)
-      self.postMessage({ id, result, memoryBytes: memoryBytes() })
-      return
-    }
+const handle = workerLoop((message, transfer) => self.postMessage(message, { transfer: transfer ?? [] }), {
+  async prepare(op, request) {
     if (op.startsWith('brep.')) {
-      const result = (await brepKernel()).call(op.slice('brep.'.length), request)
-      self.postMessage({ id, result, memoryBytes: memoryBytes() })
-      return
+      const kernel = await brepKernel()
+      return () => kernel.call(op.slice('brep.'.length), request)
     }
     // started ahead of its first call (client.ts, startSpareGeomWorker): the core engine loads now
     if (op === 'engine.core') {
-      self.postMessage({ id, result: await engine.core(), memoryBytes: memoryBytes() })
-      return
+      const loaded = await engine.core()
+      return () => loaded
     }
     if (op === 'engine.full') {
-      self.postMessage({ id, result: await engine.full(), memoryBytes: memoryBytes() })
-      return
+      const loaded = await engine.full()
+      return () => loaded
     }
     // A project goes to the engine as its bytes (engine-call.ts, rawData), other files as base64.
-    const result = await engine.run(op, op === 'format.read3mf' ? request : bytesAsBase64(request))
-    self.postMessage({ id, result, memoryBytes: memoryBytes() }, { transfer: transferables(result) })
-  } catch (err) {
-    canceled.delete(id)
-    self.postMessage({ id, error: err instanceof Error ? err.message : String(err), memoryBytes: memoryBytes() })
-  }
-}
+    const input = op === 'format.read3mf' ? request : bytesAsBase64(request)
+    const build = await engine.module(op, input)
+    return () => build.call(op, input)
+  },
+  // a replay with exact solids calls the kernel's ops too; the kernel lives in this worker, so its bodies last from
+  // call to call
+  replay: (request, yieldStep) => replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, { keepsBodies: true, yieldStep }),
+  memoryBytes,
+  transfer: (op, result) => (op.startsWith('brep.') || op.startsWith('engine.') ? [] : transferables(result)),
+})
+
+self.onmessage = (e: MessageEvent<WorkerMessage>) => handle(e.data)

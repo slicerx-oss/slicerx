@@ -68,7 +68,7 @@ describe('geometry calls and their abort signal', () => {
 })
 
 
-it('terminates a canceled replay, rejects affected calls, and restarts without stale replies', async () => {
+it('terminates a canceled replay, sends the calls it never started on, and restarts without stale replies', async () => {
   const workers: EchoWorker[] = []
   vi.stubGlobal('Worker', function () {
     const worker = new EchoWorker()
@@ -85,13 +85,16 @@ it('terminates a canceled replay, rejects affected calls, and restarts without s
   ctl.abort()
   expect(old.terminate).toHaveBeenCalledOnce()
   expect(await replay).toMatchObject({ name: 'AbortError' })
-  expect(await queued).toMatchObject({ message: expect.stringMatching(/interrupted.*retry/i) })
   expect(live.size).toBe(0)
-  const fresh = api.call('history.replay', { exact: true })
+  // the queued call never started in the ended worker, so the next one gets it
   const next = workers[1]!
+  expect(next.posted.map((m) => m.op)).toEqual(['fit.check'])
+  const fresh = api.call('history.replay', { exact: true })
   old.onerror?.({ message: 'stale failure' } as ErrorEvent)
-  old.onmessage?.({ data: { id: next.posted[0]!.id, result: 'stale result' } } as MessageEvent)
-  next.answer()
+  old.onmessage?.({ data: { id: next.posted[1]!.id, result: 'stale result' } } as MessageEvent)
+  next.answer(0)
+  next.answer(1)
+  await expect(queued).resolves.toEqual({ op: 'fit.check' })
   await expect(fresh).resolves.toEqual({ op: 'history.replay' })
   expect(next.terminate).not.toHaveBeenCalled()
 })
