@@ -38,7 +38,8 @@ describe("a nozzle volume that lands after the slice", () => {
   it('on a two-color plate: Print, Export and mimir all read the slice as stale', () => {
     sliced([part('a', 60, 1), part('b', 120, 2)])
     const fingerprint = plateFingerprint(get(), 1)
-    expect(stampBlock(get(), get().slice.status === 'done' ? get().slice.stamp : undefined)).toBeNull()
+    const done = get()
+    expect(stampBlock(done, done.slice.status === 'done' ? done.slice.stamp : undefined)).toBeNull()
     newPrinter()
     const s = get()
     expect(stampBlock(s, s.slice.status === 'done' ? s.slice.stamp : undefined)).toBe(STALE_SLICE)
@@ -71,6 +72,8 @@ describe("a nozzle volume that lands after the slice", () => {
     const stop = startAutoSlice(host, 0)
     try {
       set({ printerNozzleVolume: 140 })
+      // the stamp check loads with the slice code
+      await vi.dynamicImportSettled()
       const s = get().slice
       expect(s.status === 'done' && s.stale).toBe(true)
       // the auto slice is scheduled (stop clears it before it runs)
