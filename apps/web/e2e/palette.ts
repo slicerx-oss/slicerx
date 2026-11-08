@@ -19,8 +19,8 @@ export function paletteRow(page: Page, wanted: string | RegExp): Locator {
 /**
  * Opens the command bar and returns its input, ready for text: the focus is in it and the list of commands has loaded.
  * It opens with Cmd+K, or with a click on `trigger` (a phone's Search button). The press goes again if the first one found
- * the page not listening yet; when the bar did not open for a press, the run's annotations say what had the focus and what
- * else was open.
+ * the page not listening yet, or a dialog open (the app ignores the key under a dialog, as the dialog keeps the page inert);
+ * when the bar did not open for a press, the run's annotations say what had the focus and what else was open.
  */
 export async function openPalette(page: Page, trigger?: Locator): Promise<Locator> {
   const palette = paletteDialog(page)
