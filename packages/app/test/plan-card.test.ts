@@ -295,6 +295,13 @@ describe('the plan card', () => {
     expect(out.edits).toBeUndefined()
   })
 
+  it('shows a planned count with up to four decimals of its own, so the field matches what Go sends', async () => {
+    const coil: PlanInput = { ...BOX, features: [{ name: 'Spring', sizes: { segments: 7.555, steps: 2.12345 } }], overall: undefined, holes: undefined }
+    await shown(coil)
+    expect(field(/^Spring, Segments$/).value).toBe('7.555')
+    expect(field(/^Spring, Steps$/).value).toBe('2.1235')
+  })
+
   it('never converts a count or an angle in an inch plan', async () => {
     const gear: PlanInput = { ...BOX, units: 'in', features: [{ name: 'Gear', sizes: { teeth: 20, draft: 1.5, thickness: 0.25 } }], overall: undefined, holes: undefined }
     render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))

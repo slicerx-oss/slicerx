@@ -29,10 +29,16 @@ const UNIT_WORD = { mm: 'millimeters', in: 'inches' } as const
 /** The smallest size a field takes: one step of its last digit, so a size is always more than 0. */
 const SIZE_MIN = { mm: 0.01, in: 0.001 } as const
 
+/** The decimals a value has of its own, up to 4: 0 for 7, 1 for 7.5, 3 for 7.555. */
+function ownDigits(value: number): number {
+  for (let d = 0; d < 4; d++) if (Number(value.toFixed(d)) === value) return d
+  return 4
+}
+
 /** How a size's field reads and steps: a count in whole steps with no unit (its own decimals when the plan gave a fraction), an angle in degrees, a length in the plan's units. */
 function fieldOf(kind: SizeKind, unit: 'mm' | 'in', value: number): { unit: string; word: string; digits: number; step: number; min: number } {
-  // a fraction that came in the plan shows its own decimals, so the field reads what Go sends
-  if (kind === 'count') return { unit: sizeUnit(kind, unit), word: '', digits: Number.isInteger(value) ? 0 : 2, step: 1, min: 1 }
+  // a fraction that came in the plan shows its own decimals (up to 4), so the field reads what Go sends
+  if (kind === 'count') return { unit: sizeUnit(kind, unit), word: '', digits: ownDigits(value), step: 1, min: 1 }
   if (kind === 'angle') return { unit: sizeUnit(kind, unit), word: 'degrees', digits: 2, step: 1, min: SIZE_MIN.mm }
   return { unit: sizeUnit(kind, unit), word: UNIT_WORD[unit], digits: unit === 'in' ? 3 : 2, step: unit === 'in' ? 0.05 : 0.5, min: SIZE_MIN[unit] }
 }

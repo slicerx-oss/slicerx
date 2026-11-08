@@ -60,7 +60,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
   })
   const session = defineTool({
     name: 'mimir.session',
-    version: '1.3.1',
+    version: '1.4.0',
     source: 'command',
     permission: 'read',
     description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups (a question answered on the person's paired phone carries answeredOn with the phone's name), the error lines with their code (one with waiting true is free mimir waiting out its limit for the minute, then going on; slow_down without it is the line that it stopped there), and waiting: the question mimir waits on now (its askId, title, question and choices), or the size sheet it waits on (its sheetId, title and sizes, with each size's unit as the sheet shows it: mm, deg, % or count), or null. Without an id, the newest conversation.`,

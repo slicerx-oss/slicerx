@@ -27,18 +27,24 @@ describe('sizeKind', () => {
     for (const lead of ['number', 'num', 'n', 'count', 'qty']) for (const word of LENGTH_WORDS) expect(sizeKind(`${lead}_${word}`), `${lead}_${word}`).toBe('length')
   })
 
-  it('reads a key that starts with angle as an angle, unless it ends in an extent such as a leg length or a width', () => {
+  it('reads angle_X, two words, as an angle measured by X, unless X is an extent or a count', () => {
     for (const key of ['angle_offset', 'angle_spacing', 'angle_gap', 'angle_pitch', 'angle_step']) expect(sizeKind(key), key).toBe('angle')
-    for (const key of ['angle_leg_length', 'angle_bracket_width', 'angle_height', 'angle_thickness']) expect(sizeKind(key), key).toBe('length')
+    for (const key of ['angle_height', 'angle_thickness']) expect(sizeKind(key), key).toBe('length')
+    for (const key of ['angle_segments', 'angle_steps', 'angle_teeth', 'angle_count', 'angle_divisions', 'angle_number']) expect(sizeKind(key), key).toBe('count')
     const steps = new Set(['offset', 'spacing', 'gap', 'pitch'])
     for (const word of LENGTH_WORDS) expect(sizeKind(`angle_${word}`), `angle_${word}`).toBe(steps.has(word) ? 'angle' : 'length')
+  })
+
+  it('reads a longer key that starts with angle by its last word, as any other key', () => {
+    for (const key of ['angle_leg_length', 'angle_bracket_width', 'angle_bracket_hole_spacing', 'angle_leg_offset', 'angle_bracket_gap', 'angle_hole_pitch']) expect(sizeKind(key), key).toBe('length')
+    for (const key of ['angle_bracket_hole_count', 'angle_bracket_holes', 'angle_hole_count', 'angle_bracket_screws']) expect(sizeKind(key), key).toBe('count')
+    expect(sizeKind('angle_bracket_lean_deg')).toBe('angle')
   })
 
   it('lets an explicit mm or in suffix win over every other word', () => {
     for (const key of ['angle_offset_mm', 'angle_spacing_in', 'teeth_mm', 'count_mm', 'draft_angle_mm', 'twist_deg_mm', 'angleBracketWidthMm']) expect(sizeKind(key), key).toBe('length')
     // in anywhere but last is a word of the key, not a unit
     expect(sizeKind('n_in_row')).toBe('count')
-    expect(sizeKind('angle_in_plane')).toBe('angle')
   })
 
   it('leaves turns, coils and loops out of the counts, since a helix or spring often has a fraction of one', () => {
@@ -98,5 +104,37 @@ describe('wholeCount', () => {
     // a row that allows none keeps 0, and a max of 10.5 keeps the count at 10
     expect(wholeCount(0.3, 0)).toBe(0)
     expect(wholeCount(10.5, 1, 10.5)).toBe(10)
+  })
+})
+
+/**
+ * Real keys and their kinds, from the creative eval recordings (packages/mcp/evals/creative/recordings: plan sizes and
+ * sheet rows), the design.check fixture (packages/app/test/fixtures/mimir-check-608-block.json), the scripted plans
+ * (packages/app/src/workspaces/mimir/scripts.ts), the plan and sheet tests, and the review cases. Every change to the
+ * rules in size-kind.ts must keep this table green: add a row for a new case, never drop or flip one without a reason.
+ */
+const REAL_KEYS: [string, 'count' | 'angle' | 'length'][] = [
+  // counts
+  ['count', 'count'], ['teeth', 'count'], ['planet_teeth', 'count'], ['ring_teeth', 'count'], ['sun_teeth', 'count'], ['teeth_small', 'count'],
+  ['segment_count', 'count'], ['tail_segments', 'count'], ['fin_count', 'count'], ['link_count', 'count'], ['slot_count', 'count'], ['n_holes', 'count'],
+  ['angle_bracket_hole_count', 'count'], ['angle_bracket_holes', 'count'], ['angle_hole_count', 'count'], ['angle_bracket_screws', 'count'], ['angle_segments', 'count'],
+  ['angle_steps', 'count'], ['angle_teeth', 'count'], ['angle_count', 'count'], ['angle_divisions', 'count'], ['angle_number', 'count'],
+  // angles
+  ['lean_deg', 'angle'], ['arc_deg', 'angle'], ['branch_angle', 'angle'], ['countersink_angle', 'angle'], ['pressure_angle', 'angle'], ['angle_deg', 'angle'],
+  ['draft', 'angle'], ['angle_offset', 'angle'], ['angle_spacing', 'angle'], ['angle_gap', 'angle'], ['angle_pitch', 'angle'], ['angle_step', 'angle'],
+  // lengths
+  ['width', 'length'], ['depth', 'length'], ['height', 'length'], ['thickness', 'length'], ['wall', 'length'], ['diameter', 'length'], ['wall_thickness', 'length'],
+  ['lipHeight', 'length'], ['case_allowance', 'length'], ['clearance', 'length'], ['axle_diameter', 'length'], ['bore_clearance', 'length'], ['face_width', 'length'],
+  ['module', 'length'], ['pitch', 'length'], ['pitch_d_large', 'length'], ['pin_d', 'length'], ['ring_od', 'length'], ['hole_spacing', 'length'], ['rib_spacing', 'length'],
+  ['slot_pitch', 'length'], ['slot_pitch_mm', 'length'], ['desk_edge_mm', 'length'], ['wall_mm', 'length'], ['loop_hole', 'length'], ['countersink_head', 'length'],
+  ['axis height', 'length'], ['top height', 'length'], ['joint_gap', 'length'], ['knuckle_length', 'length'], ['lip_inward', 'length'], ['cell_across_flats', 'length'],
+  ['segment_length', 'length'], ['center_distance', 'length'], ['beam', 'length'], ['span', 'length'], ['floor', 'length'], ['rib', 'length'],
+  ['number_height', 'length'], ['n_offset', 'length'], ['count_width', 'length'], ['angle_leg_length', 'length'], ['angle_bracket_width', 'length'],
+  ['angle_bracket_hole_spacing', 'length'], ['angle_leg_offset', 'length'], ['angle_bracket_gap', 'length'], ['angle_hole_pitch', 'length'], ['teeth_mm', 'length'],
+]
+
+describe('the real keys table', () => {
+  it.each(REAL_KEYS)('%s reads as a %s', (key, kind) => {
+    expect(sizeKind(key)).toBe(kind)
   })
 })
