@@ -671,8 +671,9 @@ fn held_anywhere(region: &Shapes, solid: &Shapes, grid: &[(f64, f64)], pitch: f6
 /// `vote` are within 10 percent of their sum and each beats every other direction, and no strand over `region` lands on
 /// solid below at both ends. Then the strands cross the grid along the family nearest the x axis, 135 degrees on a
 /// 45 degree grid. A lone square frame over a 45 degree grid votes almost evenly, and which family won used to depend
-/// on where each outline ring started. `first` says whether the bridge starts its stack (asked only on a near tie), and
-/// `sizes` are the strand spacing and the bridge line width (mm) and the pattern's bias (radians).
+/// on where each outline ring started. A vote already within [`FAMILY_NEAR_DEG`] of that direction is kept as it is.
+/// `first` says whether the bridge starts its stack (asked only on a near tie), and `sizes` are the strand spacing and
+/// the bridge line width (mm) and the pattern's bias (radians).
 fn first_bridge_angle(
     vote: &Vote,
     region: &Shapes,
@@ -696,11 +697,15 @@ fn first_bridge_angle(
         .max()
         .unwrap_or(0);
     let tie = ca + cb > 0 && 10 * (ca - cb).abs() <= ca + cb && ca.min(cb) > other;
-    if !tie || !first() || held_anywhere(region, &below.solid, &below.families, pitch, width) {
+    let family = fold(family_angle(&below.families)? + bias);
+    if !tie
+        || apart(vote.angle, family) <= tol
+        || !first()
+        || held_anywhere(region, &below.solid, &below.families, pitch, width)
+    {
         return None;
     }
-    let d = fold(family_angle(&below.families)? + bias);
-    Some(if d < 0.5 * pi { d + pi } else { d })
+    Some(if family < 0.5 * pi { family + pi } else { family })
 }
 
 /// The layer below `l` as its first bridge reads it: the line families of the sparse lines more than two spacings `sp`
@@ -1885,12 +1890,12 @@ mod tests {
                 10 * (a - b).abs() <= a + b,
                 "start {start}: 45 has {a}, 135 has {b}"
             );
-            votes.push(degrees(vote.angle));
-            assert_eq!(
-                first(&region, &grid(45.0), Vec::new(), true),
-                Some(135),
-                "start {start}"
-            );
+            let voted = degrees(vote.angle);
+            votes.push(voted);
+            // A vote already at 135 is left as it is; one at 45 turns to 135.
+            let rule = first(&region, &grid(45.0), Vec::new(), true);
+            assert_eq!(rule, (voted != 135).then_some(135), "start {start}");
+            assert_eq!(rule.unwrap_or(voted), 135, "start {start}");
         }
         // The vote alone turns with the ring start.
         assert!(
