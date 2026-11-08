@@ -45,6 +45,21 @@ describe('app sheet tools', () => {
     const [ask] = appSheetTools({ call: vi.fn() } as unknown as AppLinkCaller, 'SlicerX')
     expect(ask!.input.safeParse({ title: 'Clip', dims: [] }).success).toBe(false)
     expect(ask!.input.safeParse({ ...SHEET, dims: [{ ...SHEET.dims[0], source: 'lookup' }] }).success).toBe(false)
+    // a solid missing a field its kind needs is named, so the client can fix it
+    const sweep = { kind: 'sweep', path: [[0, 0, 0], [0, 0, 50]], round: 10 }
+    const bad = ask!.input.safeParse({ ...SHEET, part: [sweep] })
+    expect(bad.success).toBe(false)
+    expect(bad.error!.issues.map((i) => i.message).join('; ')).toContain('part 1 (sweep) needs profile')
+  })
+
+  it('send a part on to the app with each solid\'s kind and fields', async () => {
+    const call = vi.fn(async () => ({ sheetId: 'csheet_3', state: 'waiting' }))
+    const [ask] = appSheetTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+    const sweep = { kind: 'sweep', profile: { d: 20, hole: 16 }, path: [[0, 0, 0], [0, 0, 50], [50, 0, 50]], round: 25 }
+    const parsed = ask!.input.safeParse({ ...SHEET, part: [sweep] })
+    expect(parsed.success).toBe(true)
+    await ask!.run(parsed.data as never, {} as never)
+    expect(call).toHaveBeenCalledWith('sheet.ask', expect.objectContaining({ part: [expect.objectContaining(sweep)] }))
   })
 
   it('say how to reach the person while the link is off, and keep the app\'s own refusals', async () => {

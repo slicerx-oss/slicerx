@@ -103,6 +103,19 @@ describe('client sheets over the app link', () => {
     expect(await runCall('sheet.get', { sheetId: asked.sheetId }, A)).toMatchObject({ state: 'confirmed', answer: { confirmed: true, values: { bore: 6.2, wall: 2.4 }, changed: ['wall'] } })
   })
 
+  // a client's part is stored as the sheet draws it, only its own kind's fields, and a refusal names the row to fix
+  it('store a client\'s solid with only its own kind\'s fields, and name a row whose place is short a coordinate', async () => {
+    const at = { a: [0, 0, 0], b: [20, 0, 0], off: [0, 0, -8] }
+    const dims = SHEET.dims.map((d) => ({ ...d, at }))
+    const revolve = { kind: 'revolve', plane: 'xz', points: [[3, 0], [6, 0], [6, 12], [3, 12]], axis: { point: [0, 0], direction: [0, 1] } }
+    const asked = (await runCall('sheet.ask', { ...SHEET, dims, part: [{ ...revolve, holes: [[[4, 1], [5, 1], [5, 2]]], from: 0 }] }, A)) as { sheetId: string }
+    expect(clientSheets.getState().sheets.find((x) => x.sheet.id === asked.sheetId)?.sheet.part).toEqual([revolve])
+    const e = (await runCall('sheet.ask', { ...SHEET, dims: [dims[0], { ...dims[1], at: { a: [0, 0, 0], b: [20, 0] } }] }, B).catch((x: unknown) => x)) as LinkError
+    expect(e.code).toBe('invalid_input')
+    expect(e.message).toContain('row 2 (')
+    expect(e.message).toContain('needs at:')
+  })
+
   it('keep the built design a sheet changes, and refuse one that is not on the plate', async () => {
     const before = get().plate
     const entry = { id: 'obj_clip', name: 'Clip', parts: [{ name: 'Clip', slot: 1, positions: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) }], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], colors: [], handle: {} } as unknown as PlateEntry
