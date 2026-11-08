@@ -324,6 +324,9 @@ Files, all in `scripts/ci/`:
   name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
 - `cargo-retry.sh <cargo test arguments>`: `cargo test --no-fail-fast` with the one rerun by exact name below, for a
   CI job; it appends the tests that passed only on the rerun to the file in `SX_FLAKY_OUT`.
+- `gh-download.sh <url> <file>`: one GitHub release download for a CI step (binaryen, gitleaks, cargo-deny), signed in
+  with `GITHUB_TOKEN` from the environment when set (passed to curl on stdin, never in its arguments) and retried with
+  `--retry 5 --retry-all-errors --retry-delay 10`. The caller checks the sha256 and caches the file with `actions/cache`.
 - `ort-fetch.sh key | fetch <dir>`: the static ONNX Runtime library that the ort-sys build script would download, fetched
   in its own step of the hosted `rust (ubuntu-latest)` job with `curl --retry 5 --retry-all-errors`, checked against a
   sha256 pinned in the script (on a cache hit too), extracted, and pointed to with `ORT_LIB_LOCATION` so the build makes

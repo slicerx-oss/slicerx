@@ -675,7 +675,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm-geom
-      - run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+      # The archive is cached by version and platform and checked against its sha256 on every run; a miss downloads it
+      # with the job's token and retries (scripts/ci/gh-download.sh).
+      - id: binaryen-key
+        run: sh scripts/install-binaryen.sh --key | sed 's/^/key=/' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/binaryen-dl
+          key: ${{ steps.binaryen-key.outputs.key }}
+      - run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" "$RUNNER_TEMP/binaryen-dl" >> "$GITHUB_PATH"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: sh packages/core/web/scripts/build-wasm.sh
       # The geometry module the app's worker loads, then both modules for the e2e shards or the smoke job.
       - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
@@ -1456,9 +1466,19 @@ jobs:
         with:
           fetch-depth: 0
       # the gitleaks CLI is free for organizations; the action needs a paid license
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/gitleaks-dl
+          key: gitleaks-8.18.4-linux-x64 # gitleaks:allow (a cache key, not a secret)
       - name: gitleaks
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz gitleaks
+          gl_tgz="$RUNNER_TEMP/gitleaks-dl/gitleaks_8.18.4_linux_x64.tar.gz"
+          gl_sha=ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d
+          if [ ! -f "$gl_tgz" ] || ! echo "$gl_sha  $gl_tgz" | sha256sum -c - > /dev/null 2>&1; then
+            sh scripts/ci/gh-download.sh https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz "$gl_tgz"
+          fi
+          echo "$gl_sha  $gl_tgz" | sha256sum -c -
+          tar -xzf "$gl_tgz" -C . gitleaks
           # Only the commits this run is about: a pull request's own commits (base..head), or main's history on a
           # push. Without a range gitleaks scans every fetched branch, so one bad branch would fail every pull request.
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then range="$BASE_SHA..$HEAD_SHA"
@@ -1470,6 +1490,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MQ_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           MQ_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   licenses:
     needs: detect
@@ -1495,11 +1516,14 @@ jobs:
         env:
           DENY_VERSION: 0.20.2
           DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           name="cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl"
           tgz="$HOME/.cargo-deny-dl/$name.tar.gz"
           mkdir -p "$HOME/.cargo-deny-dl"
-          [ -f "$tgz" ] || curl -fsSL --retry 5 -o "$tgz" "https://github.com/EmbarkStudios/cargo-deny/releases/download/$DENY_VERSION/$name.tar.gz"
+          if [ ! -f "$tgz" ] || ! echo "$DENY_SHA256  $tgz" | sha256sum -c - > /dev/null 2>&1; then
+            sh scripts/ci/gh-download.sh "https://github.com/EmbarkStudios/cargo-deny/releases/download/$DENY_VERSION/$name.tar.gz" "$tgz"
+          fi
           echo "$DENY_SHA256  $tgz" | sha256sum -c -
           tar -xzf "$tgz" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/$name/cargo-deny" --version
