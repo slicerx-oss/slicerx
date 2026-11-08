@@ -189,6 +189,13 @@ export interface ReplayResult {
 
 export const HISTORY_VERSION = 1
 
+/**
+ * Whether a parts.add step can record `arrayOf` as this name: the project file keeps only a name a part could have,
+ * not blank and at most the 120 characters the tools take, so a longer one (an imported file's part) is left out when
+ * the step is written as well as when it is read.
+ */
+export const keepsArrayOf = (name: unknown): name is string => typeof name === 'string' && name.trim() !== '' && name.length <= 120
+
 let seq = 0
 export const stepId = (): string => `s${Date.now().toString(36)}${(++seq).toString(36)}`
 

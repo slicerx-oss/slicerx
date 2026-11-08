@@ -3,7 +3,7 @@
 // Mesh modeling commands shared by the open app and the server. File access stays with the caller.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { bakeMesh, checkedTextFit, direction, invert, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, checkedTextFit, direction, invert, keepsArrayOf, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, featureArg, withFeature, faceAt, landedNote, item, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -188,7 +188,8 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const r = (await ds.call('array', { mesh: item(d, part), spec })) as { transforms: number[][] }
         const back = invert(d.transform)
         const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
-        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, arrayOf: src.name }, undefined, withFeature(i.feature))
+        // a name the project file would drop on reopening is not recorded, so the copies match the same way after it
+        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate`, ...(keepsArrayOf(src.name) ? { arrayOf: src.name } : {}) }, undefined, withFeature(i.feature))
         return added(d, `Arrayed ${copies} separate copies`)
       }
       const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: i.merge })
