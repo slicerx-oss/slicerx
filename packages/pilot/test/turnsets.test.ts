@@ -14,7 +14,7 @@ import { inTurnSet, TURN_SET_TOOL, turnSet, turnSetsOf, type TurnSet } from '../
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
 
 /** Stand-ins for the design tools the tab passes in, one or two from each set. */
-const design = ['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'geom.mirror', 'geom.array', 'design.timeline', 'geom.sketch_edit'].map(
+const design = ['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'geom.edge_pick', 'geom.faces', 'geom.mirror', 'geom.array', 'design.timeline', 'geom.sketch_edit'].map(
   (name) =>
     defineTool({
       name,
@@ -96,7 +96,7 @@ describe('a local model in the tab', () => {
     const { pilot, client } = env('openai-compatible', [{ text: 'Built.' }, { text: 'Use 0.2 mm.' }])
     await run(pilot, 's', 'A 30 mm cube with a fillet')
     const build = names(client.requests[0]!)
-    expect(build).toEqual(expect.arrayContaining(['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'kb.search', TURN_SET_TOOL]))
+    expect(build).toEqual(expect.arrayContaining(['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'geom.edge_pick', 'geom.faces', 'kb.search', TURN_SET_TOOL]))
     for (const n of ['geom.mirror', 'design.timeline', 'printer.list', 'settings.plan']) expect(build).not.toContain(n)
 
     await run(pilot, 's', 'What layer height and infill should I print it with?')
