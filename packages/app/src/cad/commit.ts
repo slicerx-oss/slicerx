@@ -3,10 +3,19 @@
 // Committing a modeling job's result. A job reads an object, waits on the engine, and only then writes; meanwhile the
 // person may move, recolor, rename, lock or delete the object, or open another project. So the commit reads the object
 // as it is now: a deleted object takes nothing, and every field the job did not make keeps its current value.
+import { withPlaced, type History } from '@slicerx/cad-history'
 import { get, set, type PlateEntry } from '../state/store'
 
 /** What a modeling job makes: the geometry and, when it changes them, the history, kept dimensions, colors and placement. */
 export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntry, 'history' | 'dimensions' | 'colors' | 'transform'>>
+
+/**
+ * A job's history with the landing moves the object has as the job writes (History.placed): a design host may have
+ * moved the design over to make room while the job worked, and that move's transform is the one the write keeps.
+ */
+export function placedNow<H extends History | undefined>(h: H, latest: PlateEntry): H {
+  return (h ? withPlaced(h, latest.history?.placed) : h) as H
+}
 
 /**
  * Writes a job's result onto the object as it is now, in one store update. `others` carries kept dimensions on other
