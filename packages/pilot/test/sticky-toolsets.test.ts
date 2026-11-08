@@ -387,6 +387,24 @@ describe('pilot.load_tools answers only what it does', () => {
 })
 
 describe('uncapped and local chats send what they sent before', () => {
+  it('a local model asked to print gets the local pick for the printers alone: no slicing tools, no pilot.load_tools', async () => {
+    for (const message of ['Print it on Bay 2', 'print 3 copies on Bay 2', 'go ahead and print']) {
+      const tools = manyTools()
+      const { pilot, say } = setup('openai-compatible', [{ text: 'Sure.' }], tools)
+      const reqs = await say(message)
+      expect(reqs.length).toBeGreaterThan(0)
+      // what the runtime would send for these words without the print request: the printers toolset only
+      const needs = new Set<Toolset>(['printers'])
+      const want = capTools(localTurnTools('tab', tools, { needs, called: new Set() }), { cap: 128, needs, called: new Set() }).tools.map((t) => t.name)
+      expect(want.some((n) => n.startsWith('settings.'))).toBe(false)
+      for (const r of reqs) {
+        expect(toolsOf(r)).toEqual(want)
+        expect(toolsOf(r)).not.toContain(LOAD_TOOLS_TOOL)
+      }
+      expect(pilot.toolCap('s1')).toBeNull()
+    }
+  })
+
   it('a capped local turn reports no loader, and a capped cloud chat reports pilot.load_tools', async () => {
     const local = setup('openai-compatible', [{ text: 'One.' }])
     await local.say('Design a part, slice it and print it on the farm in dark mode')
