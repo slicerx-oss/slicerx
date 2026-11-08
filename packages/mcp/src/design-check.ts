@@ -43,6 +43,11 @@ export interface BodyFacts {
   features: number
   /** Those steps' names, in order, when known: a planned feature is matched to the steps named for it. */
   steps?: string[] | undefined
+  /**
+   * For each of those steps, true when it has no name of its own and builds shape (an extrude, cut, hole, pull, revolve,
+   * loft, sweep, join or array): such a step may stand for one planned feature no named step matches.
+   */
+  free?: boolean[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
   /** True when every part is closed. */
@@ -84,37 +89,49 @@ function sizeMatch(got: number[], want: number[]): { pass: boolean; note: string
 // words a step's own name carries whatever it builds ("Sketch extrude 5 mm"), which say nothing about the feature
 const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
 
+/** A word made single: "holes" is "hole", "boxes" is "box", "assemblies" is "assembly"; "glass" stays. */
+function single(w: string): string {
+  if (w.length > 4 && w.endsWith('ies')) return `${w.slice(0, -3)}y`
+  if (w.length > 4 && /(?:ch|sh|ss|x|z)es$/.test(w)) return w.slice(0, -2)
+  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w
+}
+
 /** The words of a name that tell features apart: lower case, three letters or more, no numbers, plurals made single. */
 function nameWords(name: string): Set<string> {
-  const words = name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !STEP_WORDS.has(w))
-  return new Set(words.map((w) => (w.length > 4 && w.endsWith('es') && !w.endsWith('ves') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w)))
+  return new Set(name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !STEP_WORDS.has(w)).map(single))
 }
 
 /**
  * The planned features against the steps that built them. A feature may take several steps (four standoffs, five port
  * cutouts), so more steps than features is fine as long as each feature has a step: a step goes to the feature its name
- * shares the most words with, and a feature no named step matches takes one of the steps no feature claimed (steps
- * named only by their numbers, "Sketch extrude 5 mm"). Fewer steps than features, or a feature left with none, fails.
+ * shares the most words with (on a tie, the feature with fewer words left over). A feature no step matches by name
+ * takes one free step, one with no name of its own that builds shape, or one named only by its numbers ("Sketch
+ * extrude 5 mm"). A step named for something the plan does not have, or a fillet, never stands in for a missing
+ * feature. Fewer steps than features, or a feature left with none, fails.
  */
 function featureItem(features: string[], body: BodyFacts): CheckItem {
   const n = features.length
   const m = body.features
-  if (m === n) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   if (m < n) return { name: 'feature count', want: String(n), got: `${m} step${m === 1 ? '' : 's'} for ${n} planned features`, pass: false }
+  if (m === n && !body.steps) return { name: 'feature count', want: String(n), got: String(m), pass: true }
   const fw = features.map(nameWords)
   const per = features.map(() => 0)
   let free = m - (body.steps?.length ?? 0)
-  for (const step of body.steps ?? []) {
+  const unclaimed: string[] = []
+  ;(body.steps ?? []).forEach((step, i) => {
     const sw = nameWords(step)
     let best = -1
     let bestShared = 0
+    let bestLeft = Infinity
     fw.forEach((w, k) => {
       const shared = [...sw].filter((x) => w.has(x)).length
-      if (shared > bestShared) [best, bestShared] = [k, shared]
+      const left = w.size - shared
+      if (shared > bestShared || (shared > 0 && shared === bestShared && left < bestLeft)) [best, bestShared, bestLeft] = [k, shared, left]
     })
     if (best >= 0) per[best]!++
-    else free++
-  }
+    else if (body.free?.[i] === true || sw.size === 0) free++
+    else unclaimed.push(step)
+  })
   const missing: string[] = []
   per.forEach((c, k) => {
     if (c > 0) return
@@ -124,8 +141,9 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
     } else missing.push(features[k]!)
   })
   const groups = per.map((c, k) => (c > 1 ? `${features[k]} ${c}` : '')).filter(Boolean)
+  const others = unclaimed.length ? `; ${unclaimed.map((s) => `"${s}"`).join(', ')} match${unclaimed.length === 1 ? 'es' : ''} no planned feature` : ''
   const got = missing.length
-    ? `${m} steps, none for ${missing.join(', ')}`
+    ? `${m} steps, none for ${missing.join(', ')}${others}`
     : `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`
   return { name: 'feature count', want: `${n} features, each built by one or more steps`, got, pass: missing.length === 0 }
 }
