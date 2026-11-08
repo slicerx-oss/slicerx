@@ -274,6 +274,16 @@ describe('a capped chat keeps its tools', () => {
 })
 
 describe('uncapped and local chats send what they sent before', () => {
+  it('a capped local turn reports no loader, and a capped cloud chat reports pilot.load_tools', async () => {
+    const local = setup('openai-compatible', [{ text: 'One.' }])
+    await local.say('Design a part, slice it and print it on the farm in dark mode')
+    expect(local.pilot.toolCap('s1')).not.toBeNull()
+    expect(local.pilot.toolCap('s1')!.loader).toBeNull()
+    const cloud = setup('mimir-cloud', [{ text: 'Hi.' }])
+    await cloud.say('hello')
+    expect(cloud.pilot.toolCap('s1')!.loader).toBe(LOAD_TOOLS_TOOL)
+  })
+
   it('a key on the Messages API sends every tool, in order, on every step and turn, with no pilot.load_tools', async () => {
     const { pilot, say } = setup('anthropic', [{ call: 'printer.t1' }, { text: 'Printing.' }, { text: 'Hi.' }])
     const reqs = [...(await say('How is the printer doing?')), ...(await say('yes please'))]

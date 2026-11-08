@@ -7,7 +7,7 @@
 import { type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { nozzleOr, tabToolset } from '@slicerx/mcp/toolset'
-import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, LOAD_TOOLS_TOOL, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
+import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, modelingCommands, sliceFigures, tabOptions, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { currentTabChat, setSessionSource } from '../../app-link/sessions'
@@ -82,8 +82,8 @@ export interface TabToolCap {
   toolsets: string[]
   leftOut: string[]
   partial: { toolset: string; sent: number; of: number }[]
-  /** The tool the capped request carries for loading a toolset that was left out. */
-  loader: string
+  /** The tool the capped request carries for loading a toolset that was left out; null when it carries none (a local model). */
+  loader: string | null
 }
 
 /**
@@ -92,15 +92,15 @@ export interface TabToolCap {
  * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). A
  * local model gets one set of those tools per message, picked from what it asks (build, shape, edit, app or print): `turns`
  * lists each set's tools, null where every message gets them all. Over the provider's tool limit, `capped` says what the
- * open chat's last request sent: the toolsets in and left out, and pilot.load_tools, which mimir calls to load one; null
- * where every tool went. No key or token.
+ * open chat's last request sent: the toolsets in and left out, and pilot.load_tools, which mimir calls to load one (null
+ * when the request carried none, as on a local model); null where every tool went. No key or token.
  */
 export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[]; turns: Record<string, string[]> | null; capped: TabToolCap | null } {
   if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [], turns: null, capped: null }
   const m = current.model
   const chat = currentTabChat()
   const cap = chat ? (current.pilot.toolCap?.(chat) ?? null) : null
-  const capped = cap ? { cap: cap.cap, offered: cap.offered, sent: cap.sent, toolsets: [...cap.toolsets], leftOut: [...cap.leftOut], partial: cap.partial.map((p) => ({ ...p })), loader: LOAD_TOOLS_TOOL } : null
+  const capped = cap ? { cap: cap.cap, offered: cap.offered, sent: cap.sent, toolsets: [...cap.toolsets], leftOut: [...cap.leftOut], partial: cap.partial.map((p) => ({ ...p })), loader: cap.loader } : null
   return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name), turns: current.pilot.turnSets?.() ?? null, capped }
 }
 
