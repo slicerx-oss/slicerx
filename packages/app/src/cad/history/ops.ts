@@ -138,8 +138,11 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
-    // checked before the write, so a step's first change never lands without it
-    if (!get().plate.some((e) => e.id === objectId)) throw abortError()
+    // checked before the write, so a step's first change never lands without it: the object is there, and did not
+    // take an exact history meanwhile that this result would drop (commitMade refuses that)
+    const now = get().plate.find((e) => e.id === objectId)
+    if (!now) throw abortError()
+    if (now.history?.exact && !next.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     const write = () => commitMade(objectId, (latest) => {
       const transform = land?.(latest, parts)
       return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(transform ? { transform } : {}) }

@@ -98,7 +98,7 @@ describe('a shape on a face that misses the body', () => {
       },
     })
   }
-  const run = () => applyExtrude(host, { frame, shape: { type: 'rectangle', widthMm: 80, heightMm: 6 }, placement: { center: [0, 0] }, spec: { distanceMm: 1, operation: 'join' }, target: { objectId: 'o', partIndex: 0 }, name: 'Text' })
+  const run = (operation: 'join' | 'cut' = 'join') => applyExtrude(host, { frame, shape: { type: 'rectangle', widthMm: 80, heightMm: 6 }, placement: { center: [0, 0] }, spec: { distanceMm: 1, operation }, target: { objectId: 'o', partIndex: 0 }, name: 'Text' })
 
   it('keeps the body as it was and records no step when the shape would float off it', async () => {
     reply(240)
@@ -115,8 +115,17 @@ describe('a shape on a face that misses the body', () => {
     reply(0)
     const before = get().plate[0]!
     const r = await run()
-    expect(r.message).toBe('The shape does not reach the body, so nothing changed. Check the distance and the direction.')
+    expect(r).toMatchObject({ message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', missed: true, warn: true })
     expect(get().plate[0]).toBe(before)
+  })
+
+  it('says a cut that misses the body changed nothing, and records no step', async () => {
+    reply(0)
+    const before = get().plate[0]!
+    const r = await run('cut')
+    expect(r).toEqual({ message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', warn: true, missed: true })
+    expect(get().plate[0]).toBe(before)
+    expect(get().plate[0]!.history).toBeUndefined()
   })
 })
 

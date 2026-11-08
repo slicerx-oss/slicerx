@@ -62,9 +62,13 @@ export function sketchNext(id: string | null): void {
   drawsOn = id
 }
 
-function takeSketch(params: StepParams): { sketch?: string } {
-  const id = drawsOn
-  drawsOn = null
+/** The sketch a step draws on: `given` when the tool names it, else the one sketchNext set, which it uses up. */
+function takeSketch(params: StepParams, given?: string): { sketch?: string } {
+  let id = given ?? null
+  if (given === undefined) {
+    id = drawsOn
+    drawsOn = null
+  }
   return id && (params.op === 'shape.extrude' || params.op === 'sketch.revolve') ? { sketch: id } : {}
 }
 
@@ -75,16 +79,17 @@ export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
 
 /**
  * The history after a tool ran `params` on part `part` (-1 for every part) of `before`, the entry
- * as it was. `transform` is the object's transform the params were given in (world values).
+ * as it was. `transform` is the object's transform the params were given in (world values). `sketch`, when given, is
+ * the timeline sketch the step draws on, in place of the one sketchNext set.
  */
-export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform, exactReplay = false): History {
+export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform, exactReplay = false, sketch?: string): History {
   if (before.history?.exact && !exactReplay) throw new Error('This operation requires exact replay. The design is unchanged.')
-  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params) })
+  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch) })
 }
 
-/** A new body made by a step: empty base, the step first. `transform` is the new object's transform. */
-export function bodyHistory(params: StepParams, transform: number[]): History {
-  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params), ...takeSketch(params) }] }
+/** A new body made by a step: empty base, the step first. `transform` is the new object's transform; `sketch` as in withStep. */
+export function bodyHistory(params: StepParams, transform: number[], sketch?: string): History {
+  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch) }] }
 }
 
 /** After an edit that is not a step: no history, or a fresh one starting from `parts` with the reason shown. */
