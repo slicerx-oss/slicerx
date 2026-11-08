@@ -184,11 +184,19 @@ async function gcodeText(host: Host): Promise<{ text: string } | { reason: strin
   return out.blob ? { text: await out.blob.text() } : { reason: 'The slicer returned no G-code.' }
 }
 
+/** Export's answer when another plate showed while the plate it was exporting sliced. */
+export const EXPORT_SWITCHED = 'Another plate was shown before this one finished slicing, so nothing was exported. Show the plate and export it again.'
+
 /** Print output: the sliced active plate as .gcode.3mf, the file Bambu Lab printers take. Slices first when needed. */
 export async function exportGcode3mf(host: Host): Promise<boolean> {
   const s = get()
   const resliced = s.slice.status !== 'done' || s.slice.stale
-  if (resliced) await slicePlate(host)
+  if (resliced) await slicePlate(host, { plate: s.activePlate })
+  // The slice waits on the profile and may ask a question first: the file is the plate it was asked for, or nothing.
+  if (get().activePlate !== s.activePlate) {
+    toast(EXPORT_SWITCHED, 'error')
+    return false
+  }
   const unsafe = printBlock(get())
   if (unsafe) {
     toast(unsafe, 'error')
@@ -237,7 +245,11 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
     for (const [i, p] of plates.entries()) {
       switchPlate(p.id)
       if (get().plate.length === 0) continue
-      await slicePlate(host)
+      await slicePlate(host, { plate: p.id })
+      if (get().activePlate !== p.id) {
+        toast(`${p.name}: ${EXPORT_SWITCHED}`, 'error')
+        return false
+      }
       const got = await gcodeText(host)
       if ('reason' in got) {
         toast(`${p.name}: ${got.reason}`, 'error')

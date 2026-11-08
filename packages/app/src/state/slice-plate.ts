@@ -156,10 +156,12 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
   }
 }
 
-/** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
 /**
- * `plate` is the plate the caller asked for (mimir's slice): when another plate shows by the time the slice would start
- * (a plate switch while the profile loads or the project G-code question waits), nothing slices.
+ * Slices the shown plate. `auto` is a background slice after an edit: nothing to say when there is nothing to slice,
+ * and a failure shows in the panel, not as a toast. `planning` is the resume dialog's own slice to read the layers,
+ * which goes while a void plan is kept. `plate` is the plate the caller asked for (mimir's slice, Export plate 3MF,
+ * Export every plate): when another plate shows by the time the slice would start (a plate switch while the profile
+ * loads or the project G-code question waits), nothing slices.
  */
 export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean; plate?: string } = {}): Promise<void> {
   // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
@@ -247,8 +249,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
     // An edit made while it ran leaves it stale: it shows, and the next slice replaces it before anything prints. That is
-    // anything in the plate's inputs key or in what else goes into its G-code (a pause or color change, an object's
-    // name, the profile's start G-code), not what changes on its own, such as grams left on a spool.
+    // anything in the plate's inputs key or in what else goes into its G-code (outputKey: a pause or color change, an
+    // object's name, whether the profile's G-code is trusted as shipped), not what changes on its own, such as grams left
+    // on a spool.
     const edited = sliceInputsKey(cur) !== stamp.inputs || outputKey(cur) !== stamp.output
     set({ slice: { status: 'done', result, stale: edited, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
     sliceStage(timed, 'shown')

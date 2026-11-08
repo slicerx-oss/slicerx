@@ -20,7 +20,9 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { planFor, printEverythingAgain, RESUME_VOID, resumeFor, resumeState, setResume, SLICE_NOT_CURRENT, sliceInputsKey } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
 import { HELD_NOT_CURRENT, QUEUED_NOT_CURRENT, queuedBlock, type QueueItem } from '../src/queue/queue'
-import { cancelSlice, exportGcode, sendToPrinter, slicePlate, startQueued } from '../src/state/actions'
+import { cancelSlice, exportGcode, sendToPrinter, slicePlate, STALE_SLICE, startQueued } from '../src/state/actions'
+import { startAutoSlice } from '../src/state/auto-slice'
+import { inputsChanged } from '../src/state/slice-inputs'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { ExportMenu } from '../src/workspaces/prepare/object-actions'
@@ -657,6 +659,7 @@ describe('round 15: plans and plates', () => {
 
   it('lands a slice stale when an edit came while it ran, and keeps a landed one sendable through a change the key leaves out', async () => {
     const e = engine()
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
     const go = e.hold()
     const run = slicePlate(e.host)
     await vi.waitFor(() => expect(e.requests).toHaveLength(1))
@@ -666,10 +669,14 @@ describe('round 15: plans and plates', () => {
     expect(get().slice).toMatchObject({ status: 'done', stale: true })
     await slicePlate(e.host)
     expect(get().slice).toMatchObject({ status: 'done', stale: false })
-    // No plan in play: a spool reload (grams left) after it lands leaves it sendable.
-    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10 }] } as never)
-    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
+    // No plan in play: a spool reload (grams left only) after it lands leaves it sendable, and its key as it was.
+    const stamp = (get().slice as { stamp: { inputs: string } }).stamp
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10, spoolUid: 'new' }] } as never)
     expect(printBlock(get())).toBeNull()
+    expect(sliceInputsKey(get())).toBe(stamp.inputs)
+    // Another filament in the slot is an input.
+    set({ printerSlots: [{ id: 'A1', material: 'PETG', color: '#fff', remainingG: 10 }] } as never)
+    expect(sliceInputsKey(get())).not.toBe(stamp.inputs)
   })
 
   it("mimir's run reads its slice as stale once a plan is kept for the plate, through the app's own fingerprint", async () => {
@@ -746,8 +753,17 @@ describe('round 16: what lands stale, and the routes under a plan', () => {
     await slicePlate(e.host)
     expect(printBlock(get())).toBeNull()
     // A spool reload (grams left only) while the plan is kept: still the plate's slice for its plan.
+    const stamp = (get().slice as { stamp: { inputs: string; plan: string | null } }).stamp
+    expect(stamp.plan).toMatch(/^[0-9a-f]+$/)
     set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10 }] } as never)
-    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
+    expect(printBlock(get())).toBeNull()
+    expect(sliceInputsKey(get())).toBe(stamp.inputs)
+    expect(planFor(get(), 'plate-1')).toBe(stamp.plan)
+    // Another color in the slot voids the plan; the same spool back holds it again.
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#000', remainingG: 10 }] } as never)
+    expect(planFor(get(), 'plate-1')).toBe(`void:${stamp.plan}`)
+    expect(printBlock(get())).toBe(RESUME_VOID)
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10 }] } as never)
     expect(printBlock(get())).toBeNull()
     const queued: QueueItem = { id: 'q1', printerId: 'demo-1', printerName: 'Demo 1', plateName: 'Plate 1', remote: { name: 'plate.gcode' } as never, sha256: 'abc', layers: 1, timeS: 1, grams: 1, options: {} as never, addedAt: '2026-11-07T00:00:00Z', plate: 'plate-1', plan: planFor(get(), 'plate-1') }
     // An edit the slice does not hear of (auto slice off, no markStale).
@@ -797,5 +813,77 @@ describe('round 16: what lands stale, and the routes under a plan', () => {
     expect(await exportAllPlates(e.host)).toBe(false)
     expect(get().toast?.text).toBe('Plate 2: The plate changed after this slice. Slice it again first.')
     expect(e.saved).toEqual([])
+  })
+})
+
+describe('round 17: what goes into the G-code, before and after a slice lands', () => {
+  const PROFILE = { printerId: 'bay-1', nozzle: 0.4, nozzles: [0.4], tier: 'standard', source: 'stock', shippedGcode: true, gcodeKeys: [], limits: {}, filamentIds: [], goalValues: {} }
+
+  /** Slices with `during` run while the engine holds the slice, and returns whether it landed stale. */
+  async function landsStale(e: ReturnType<typeof engine>, during: () => void): Promise<boolean> {
+    const go = e.hold()
+    const n = e.requests.length
+    const run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(n + 1))
+    during()
+    go()
+    await run
+    const sl = get().slice
+    expect(sl.status).toBe('done')
+    return (sl as { stale: boolean }).stale
+  }
+
+  it('lands stale for the G-code trust, a mark kind or text, and not for a color change slot or grams', async () => {
+    const e = engine()
+    set({ profile: PROFILE, printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }], layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'custom', gcode: 'M117 a' }] } } as never)
+    // The profile's G-code no longer trusted as shipped: the same profile otherwise.
+    expect(await landsStale(e, () => set({ profile: { ...PROFILE, shippedGcode: false } } as never))).toBe(true)
+    expect(await landsStale(e, () => set({ layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'custom', gcode: 'M117 b' }] } } as never))).toBe(true)
+    expect(await landsStale(e, () => set({ layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'color_change', slot: 1 }] } } as never))).toBe(true)
+    // A color change's slot is a note in the project, not part of the print.
+    expect(await landsStale(e, () => set({ layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'color_change', slot: 2 }] } } as never))).toBe(false)
+    expect(await landsStale(e, () => set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 12 }] } as never))).toBe(false)
+  })
+
+  it('holds back a landed slice once an object is renamed after it, with auto slice off, and lets it go once the name is back', async () => {
+    const e = engine()
+    await slicePlate(e.host)
+    expect(printBlock(get())).toBeNull()
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    expect(printBlock(get())).toBe(STALE_SLICE)
+    expect(await exportGcode3mf(e.host)).toBe(false)
+    expect(e.saved).toEqual([])
+    expect(get().toast).toMatchObject({ text: STALE_SLICE, tone: 'error' })
+    set({ toast: null } as never)
+    await sendToPrinter(e.host, DEMO)
+    expect(get().printSheet).toBeNull()
+    expect(get().toast).toMatchObject({ text: STALE_SLICE, tone: 'error' })
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Box' })) })
+    expect(printBlock(get())).toBeNull()
+  })
+
+  it('reads a spool reload that changes only grams or the tag as no slice input, so auto slice leaves the slice current', async () => {
+    const a = { ...get(), printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never
+    expect(inputsChanged(a, { ...(a as object), printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10, spoolUid: 'x' }] } as never)).toBe(false)
+    expect(inputsChanged(a, { ...(a as object), printerSlots: [{ id: 'A1', material: 'PETG', color: '#fff', remainingG: 900 }] } as never)).toBe(true)
+    expect(inputsChanged(a, { ...(a as object), printerSlots: [{ id: 'A1', material: 'PLA', color: '#000', remainingG: 900 }] } as never)).toBe(true)
+    expect(inputsChanged(a, { ...(a as object), printerSlots: [] } as never)).toBe(true)
+    const e = engine()
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
+    await slicePlate(e.host)
+    set({ autoSlice: true, autoSliceBySize: false, liveEdit: false, revealHold: false, exampleSeeding: false, plateLoading: false, sliceHeld: false } as never)
+    const stop = startAutoSlice(e.host, 0)
+    try {
+      set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10 }] } as never)
+      await new Promise((r) => setTimeout(r, 20))
+      expect(get().slice).toMatchObject({ status: 'done', stale: false })
+      expect(e.requests).toHaveLength(1)
+      set({ printerSlots: [{ id: 'A1', material: 'PETG', color: '#fff', remainingG: 10 }] } as never)
+      await vi.waitFor(() => expect(e.requests).toHaveLength(2))
+    } finally {
+      stop()
+      set({ autoSlice: false } as never)
+    }
   })
 })
