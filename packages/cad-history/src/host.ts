@@ -84,10 +84,14 @@ export function designNamed<D extends Pick<Design, 'id' | 'name'>>(designs: read
 
 /**
  * The refusal for a design that is not there: the ids of the designs that are (up to five, each with its name), so the
- * next call can give one, or how to start one when there are none. `start` and `list` are the tools' names.
+ * next call can give one, or how to start one when there are none. A name that several designs share is refused with
+ * their ids, so it is not read as missing. `start` and `list` are the tools' names.
  */
 export function noDesignMessage(given: string, designs: readonly Pick<Design, 'id' | 'name'>[], tools: { start: string; list: string }): string {
   if (!designs.length) return `design: no design ${given}; there are no designs yet, so start one with ${tools.start} and use the id it returns`
+  const key = nameKey(given)
+  const same = designs.filter((d) => nameKey(d.name) === key)
+  if (same.length > 1) return `design: ${same.length} designs are named ${given}; give one of these ids: ${same.map((d) => `${d.id} (${d.name})`).join(', ')}`
   const ids = designs.slice(-5).map((d) => `${d.id} (${d.name})`).join(', ')
   return `design: no design ${given}; give a design id, such as ${ids}${designs.length > 5 ? `; ${tools.list} lists them all` : ''}`
 }

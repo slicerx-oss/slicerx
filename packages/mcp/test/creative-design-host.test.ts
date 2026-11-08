@@ -39,6 +39,14 @@ const call = async (tools: ReturnType<typeof tabToolset>, name: string, input: u
 }
 
 describe('the creative eval design host', () => {
+  it('takes a design by its name where its id goes, as the app and MCP hosts do, and lists the ids on a miss', async () => {
+    const host = headlessDesignHost(engine)
+    const tools = tabToolset(host, createCardPlans(createPlanRegistry()), { nozzleMm: () => 0.4 })
+    await call(tools, 'design.new', { name: 'Hinged box' })
+    expect(host.get('hinged  box').id).toBe('d1')
+    expect(() => host.get('Lid')).toThrow(/no design Lid; give a design id, such as d1 \(Hinged box\)/)
+  })
+
   it('builds a part through the design tools as feature history, and the history replays to the same body', async () => {
     const host = headlessDesignHost(engine)
     const tools = tabToolset(host, createCardPlans(createPlanRegistry()), { nozzleMm: () => 0.4 })
