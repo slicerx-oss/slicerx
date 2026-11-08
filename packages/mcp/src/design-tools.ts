@@ -264,7 +264,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const create = defineTool({
     name: 'design.new',
-    version: '1.1.0',
+    version: '1.0.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -285,7 +285,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const open = defineTool({
     name: 'design.open',
-    version: '1.3.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
@@ -324,7 +324,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const steps = defineTool({
     name: 'design.steps',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description: 'The steps of a design in order: each one\'s index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), the plan feature it builds when it was given one, its main number, and whether it went through, broke (with the reason) or is suppressed.',
@@ -339,7 +339,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const edit = defineTool({
     name: 'design.edit_step',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -447,7 +447,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const save = defineTool({
     name: 'design.save',
-    version: '1.1.0',
+    version: '1.0.0',
     source: 'command',
     permission: 'slice',
     description: `Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in ${productName()} with every step editable (other slicers open the parts). Also writes the parts as one STL.`,
