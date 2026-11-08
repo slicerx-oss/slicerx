@@ -134,6 +134,13 @@ describe('mesh checks on synthetic geometry', () => {
     expect(minWall(hollow).minWallMm).toBeCloseTo(2, 3)
   })
 
+  it('welds only vertices the slicer welds: two boxes a hair apart stay two closed boxes', () => {
+    // the slicer merges bit-identical vertices only, so faces 0.03 microns apart are not one face with four triangles
+    const pair = [join([box(0, 0, 0, 10, 10, 10), box(10.00003, 0, 0, 20, 10, 10)])]
+    expect(closure(pair)).toEqual({ watertight: true, openEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 })
+    expect(bodyCount(pair)).toBe(2)
+  })
+
   it('counts separate bodies inside one mesh part', () => {
     expect(bodyCount([join([box(0, 0, 0, 10, 10, 10), box(20, 0, 0, 30, 10, 10), box(40, 0, 0, 50, 10, 10)])])).toBe(3)
     const s = scoreParts(prompt({ bodies: [1, 2] }), passing, [join([box(0, 0, 0, 10, 10, 10), box(20, 0, 0, 30, 10, 10), box(40, 0, 0, 50, 10, 10)])])
