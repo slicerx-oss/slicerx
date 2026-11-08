@@ -127,6 +127,19 @@ describe('the creative eval lands a body as the app does', () => {
     expect(e.history.steps.map((s) => s.params.op)).toEqual(a.history.steps.map((s) => s.params.op))
   })
 
+  // Known failure: the first landing moves the design's coordinates onto the plate's, so the hook and the slots, given
+  // in the frame the top plate was built in, miss it and the design ends as two parts. Placing a landed design as a
+  // whole is its own change (fix/mimir-design-placement); this flips to a plain it there.
+  it.fails('keeps the hook on the top plate and cuts its slots after the top plate lands', async () => {
+    const { app, a } = await both(CABLE_ORGANIZER)
+    const said = app.replies.map((r) => JSON.stringify(r))
+    expect(said[4]).toMatch(/"ok":true/)
+    expect(said[4]).not.toMatch(/no longer reaches/)
+    // one piece: the top plate (44 mm deep) and the hook (44 mm deep) meet, so the body is no deeper than both
+    const b = body(a)
+    expect(b.max[1]! - b.min[1]!).toBeLessThanOrEqual(88.5)
+  })
+
   it('lands a part again when an edit takes it past the edge of the bed', async () => {
     const { app, evalRun, a, e } = await both(EDIT_OFF_THE_BED)
     expect(evalRun.replies).toEqual(app.replies)
