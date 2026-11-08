@@ -49,7 +49,9 @@ impl Unusable {
         match self {
             Self::NotImage => "is not a PNG or JPEG image",
             Self::Damaged => "is damaged",
-            Self::TooLarge => "is too large to read",
+            Self::TooLarge => {
+                "is too large to read; save it smaller or as a baseline JPEG (a JPEG reads up to 8192 px a side, or about 25 megapixels if progressive; a PNG up to 16384 px a side, or 4096 if interlaced)"
+            }
             Self::Unsupported => "is a kind of JPEG that is not read",
         }
     }
@@ -259,6 +261,21 @@ fn jpeg_frame(bytes: &[u8]) -> Option<Frame> {
 
 /// Where a JPEG's frame header starts, at its marker.
 fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
+    // every start of frame but huffman tables (c4), the reserved c8 and arithmetic conditioning (cc)
+    jpeg_marker(bytes, |m| {
+        (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC)
+    })
+}
+
+/// How many components the first scan of a JPEG holds, from its scan header.
+fn jpeg_first_scan(bytes: &[u8]) -> Option<usize> {
+    let i = jpeg_marker(bytes, |m| m == 0xDA)?;
+    bytes.get(i + 4).map(|&n| usize::from(n))
+}
+
+/// Where the first marker that `want` takes starts, walking the segments as the decoder does; none past the end or,
+/// unless it is wanted, the first scan.
+fn jpeg_marker(bytes: &[u8], want: impl Fn(u8) -> bool) -> Option<usize> {
     let mut i = 2;
     loop {
         // stray bytes before a marker are skipped, as the decoder skips them
@@ -270,17 +287,14 @@ fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
             // fill bytes, and a stuffed zero; every other marker has a length, as the decoder reads it
             0xFF => i += 1,
             0x00 => i += 2,
-            // the end or the scan with no frame seen
+            _ if want(m) => return Some(i),
+            // the end, or the scan with what was wanted not seen
             0xD9 | 0xDA => return None,
             _ => {
                 let len = usize::from(u16::from_be_bytes([*bytes.get(i + 2)?, *bytes.get(i + 3)?]));
                 // a length counts its own two bytes
                 if len < 2 {
                     return None;
-                }
-                // every start of frame but huffman tables (c4), the reserved c8 and arithmetic conditioning (cc)
-                if (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC) {
-                    return Some(i);
                 }
                 i += 2 + len;
             }
@@ -290,20 +304,21 @@ fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
 
 /// Refuses a JPEG frame, as the decoder read it from the headers, that asks for more decoding memory than
 /// [`MAX_DECODE_BYTES`], or for more blocks than the file's `bytes` could hold, before anything is set aside for it.
-/// The sampling is not known here, so each component is counted at full size on blocks of up to 2 x 2.
+/// The sampling is not known here, so each component is counted at full size on blocks of up to 2 x 2. `kept` is a
+/// frame whose every coefficient is kept until its last scan.
 fn jpeg_budget(
     bytes: usize,
     w: usize,
     h: usize,
     components: usize,
-    progressive: bool,
+    kept: bool,
 ) -> std::result::Result<(), Unusable> {
     // the first scan codes every block of the largest component in a bit at least
     if bytes < w.div_ceil(8) * h.div_ceil(8) / 8 {
         return Err(Unusable::Damaged);
     }
-    // the RGB output, and for a progressive frame two bytes for each coefficient of every block, kept to the end
-    let coefficients = if progressive {
+    // the RGB output, and for a frame kept to the end two bytes for each coefficient of every block
+    let coefficients = if kept {
         components.max(1) * w.div_ceil(16) * 2 * h.div_ceil(16) * 2 * 64 * 2
     } else {
         0
@@ -381,14 +396,16 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     // the headers alone, then the budget on the frame they hold, and only then the pixels
     dec.decode_headers().map_err(refused)?;
     let head = dec.info().ok_or(Unusable::Damaged)?;
-    // the decoder reads only baseline, extended huffman and progressive frames
-    let progressive = head.sof.is_progressive();
+    // the decoder keeps every coefficient of a progressive frame, and of a baseline one whose first scan holds fewer
+    // components than the frame (each in a scan of its own); a scan the walk cannot find counts as one of those
+    let components = usize::from(head.components);
+    let kept = head.sof.is_progressive() || jpeg_first_scan(bytes).is_none_or(|n| n < components);
     jpeg_budget(
         bytes.len(),
         usize::from(head.width),
         usize::from(head.height),
-        usize::from(head.components),
-        progressive,
+        components,
+        kept,
     )?;
     let rgb = dec.decode().map_err(refused)?;
     let info = dec.info().ok_or(Unusable::Damaged)?;
@@ -1083,12 +1100,57 @@ pub(crate) mod tests {
             file.extend_from_slice(&real[2..]);
             assert_eq!(decode(&file).err(), Some(Unusable::TooLarge), "{what}");
         }
-        // the same wrappers round a small image leave it readable
+        // the same wrappers around a small image leave it readable
         let small = flat_jpeg(0xC0, 64, 64, 1, 64 * 2 / 8);
         let mut file = small[..2].to_vec();
         file.extend_from_slice(&[0xFF, 0x01, 0x00, 0x06, 0xFF, 0xDA, 0x00, 0x00]);
         file.extend_from_slice(&small[2..]);
         assert_eq!(decode(&file).map(|r| (r.w, r.h)), Ok((64, 64)));
+    }
+
+    /// A baseline JPEG of `w` x `h` with `comps` components at 4:4:4, each in a scan of its own, so the decoder keeps
+    /// every coefficient until the last scan; each scan is a bit a block for a DC of 0 and a bit for its end.
+    fn one_scan_each_jpeg(w: u16, h: u16, comps: u8) -> Vec<u8> {
+        let mut q = vec![0u8];
+        q.extend_from_slice(&[1; 64]);
+        let table = |class: u8| {
+            let mut t = vec![class, 1];
+            t.extend_from_slice(&[0; 15]);
+            t.push(0);
+            segment(0xC4, &t)
+        };
+        let mut f = vec![8];
+        f.extend_from_slice(&h.to_be_bytes());
+        f.extend_from_slice(&w.to_be_bytes());
+        f.push(comps);
+        for c in 1..=comps {
+            f.extend_from_slice(&[c, 0x11, 0]);
+        }
+        let mut j = jpeg(&[&segment(0xDB, &q), &table(0x00), &table(0x10), &segment(0xC0, &f)]);
+        let blocks = usize::from(w).div_ceil(8) * usize::from(h).div_ceil(8);
+        for c in 1..=comps {
+            j.extend_from_slice(&segment(0xDA, &[1, c, 0x00, 0, 63, 0]));
+            j.resize(j.len() + (blocks * 2).div_ceil(8), 0);
+        }
+        j.extend_from_slice(&[0xFF, 0xD9]);
+        j
+    }
+
+    #[test]
+    fn a_baseline_jpeg_whose_scans_hold_one_component_each_is_held_to_the_budget() {
+        // the decoder keeps every coefficient of such a frame, as for a progressive one: 600 MB at 8192 px
+        assert_eq!(
+            decode(&one_scan_each_jpeg(8192, 8192, 3)).err(),
+            Some(Unusable::TooLarge)
+        );
+        // at 4096 px it fits and reads
+        let r = decode(&one_scan_each_jpeg(4096, 4096, 3)).unwrap();
+        assert_eq!((r.w, r.h, r.px[0]), (4096, 4096, [128, 128, 128, 255]));
+        // a 48 megapixel photo with its components in one scan keeps no coefficients and reads
+        let r = decode(&flat_jpeg(0xC0, 8000, 6000, 3, 1000 * 750 * 3 * 2 / 8)).unwrap();
+        assert_eq!(r.file_size, (8000, 6000));
+        // what is too large says how to make it readable
+        assert!(Unusable::TooLarge.why().contains("save it smaller"));
     }
 
     #[test]
