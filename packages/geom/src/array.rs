@@ -165,11 +165,6 @@ struct Turn {
     steps: usize,
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "steps is a whole number at most MAX_COPIES"
-)]
 fn turn(spec: &ArraySpec) -> Option<Turn> {
     let ArraySpec::Circular {
         count,
@@ -181,18 +176,12 @@ fn turn(spec: &ArraySpec) -> Option<Turn> {
     else {
         return None;
     };
-    if *count < 2 || *rotate_copies == Some(false) {
+    // only copies all round a full turn cover a round from every side
+    let full = (angle_deg.unwrap_or(360.0).abs() - 360.0).abs() < 1e-9;
+    if *count < 2 || *count > MAX_COPIES || *rotate_copies == Some(false) || !full {
         return None;
     }
     let w = vec3::normalize(axis.unwrap_or([0.0, 0.0, 1.0]))?;
-    let sweep = angle_deg.unwrap_or(360.0);
-    let full = (sweep.abs() - 360.0).abs() < 1e-9;
-    let step = (sweep / if full { *count } else { *count - 1 } as f64).abs();
-    let steps = (360.0 / step).round();
-    // only a step that closes a full turn can line facets up
-    if !(step > 1e-9 && steps >= 2.0 && steps <= MAX_COPIES as f64 && (steps * step - 360.0).abs() < 1e-6) {
-        return None;
-    }
     let u = vec3::normalize(vec3::any_perpendicular(w))?;
     Some(Turn {
         frame: vec3::Frame {
@@ -201,7 +190,7 @@ fn turn(spec: &ArraySpec) -> Option<Turn> {
             v: vec3::cross(w, u),
             w,
         },
-        steps: steps as usize,
+        steps: *count,
     })
 }
 
@@ -238,14 +227,29 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Ve
     {
         return Ok(Some((Vec::new(), prism(mesh, &local, t, r, facets(r), false))));
     }
-    let wraps: Vec<TriMesh> = rounds
-        .iter()
-        .filter(|r| r.facets % t.steps != 0)
-        .map(|r| prism(mesh, &local, t, r, facets(r), true))
-        .collect();
-    if wraps.is_empty() {
+    let misaligned: Vec<&Round> = rounds.iter().filter(|r| r.facets % t.steps != 0).collect();
+    if misaligned.is_empty() {
         return Ok(None);
     }
+    // a wrap fills what it covers: each round must be solid through, its own prism inside the part
+    for r in &misaligned {
+        let own = prism(mesh, &local, t, r, r.facets, false);
+        let Ok((inside, _)) = boolean::boolean(
+            std::slice::from_ref(&own),
+            std::slice::from_ref(mesh),
+            BoolOp::Intersection,
+            &opts,
+        ) else {
+            return Ok(None);
+        };
+        if (inside.volume() - own.volume()).abs() > 1e-6 * own.volume() {
+            return Ok(None);
+        }
+    }
+    let wraps: Vec<TriMesh> = misaligned
+        .iter()
+        .map(|r| prism(mesh, &local, t, r, facets(r), true))
+        .collect();
     let rest = boolean::boolean(std::slice::from_ref(mesh), &wraps, BoolOp::Difference, &opts)?.0;
     Ok(Some((wraps, rest)))
 }
@@ -623,8 +627,13 @@ mod tests {
             m.volume()
         );
         assert!(r.watertight && r.shells == 1, "{r:?}");
-        // one prism of 108 facets, no slivers
+        // one prism of 108 facets, no slivers, its corners on the same circle
         assert_eq!(u.triangles.len(), 4 * 108);
+        assert!(
+            u.positions
+                .iter()
+                .all(|&p| radius_of(p) < 1e-9 || (radius_of(p) - 9.5).abs() < 1e-9)
+        );
         // 9 copies of an 84 facet one, off its center
         let m = build::cylinder(
             &crate::vec3::Frame {
@@ -745,5 +754,144 @@ mod tests {
             .map(|&p| radius_of(p))
             .fold(0.0, f64::max);
         assert!(once.len() == 1 && out > 9.5 && out - 9.5 <= 0.01, "{out}");
+    }
+
+    fn hub_tooth() -> TriMesh {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
+        let nums = |k: &str| {
+            v[k].as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "fixture indices"
+        )]
+        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
+        TriMesh::from_flat(&nums("positions"), &idx).unwrap()
+    }
+
+    fn cylinder_at(r: f64, h0: f64, h1: f64, sides: usize) -> TriMesh {
+        build::cylinder(&crate::vec3::Frame::WORLD, r, h0, h1, sides)
+    }
+
+    fn cut(a: &TriMesh, b: &TriMesh) -> TriMesh {
+        boolean::boolean(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
+            BoolOp::Difference,
+            &BooleanOptions::default(),
+        )
+        .unwrap()
+        .0
+    }
+
+    #[test]
+    fn a_bore_pocket_or_tube_inside_a_round_survives_the_array() {
+        // 3 copies: 100 facets do not line up with them, and the fold stays quick in a debug build
+        let spec = around_z(3, [0.0; 3]);
+        let close =
+            |got: f64, want: f64, tol: f64| assert!((got - want).abs() < tol * want, "{got} vs {want}");
+        let tube = cut(
+            &cylinder_at(9.5, 0.0, 10.0, 100),
+            &cylinder_at(7.5, -1.0, 11.0, 100),
+        );
+        let (u, r, _) = joined(&tube, &spec);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        close(u.volume(), tube.volume(), 5e-3);
+        let cup = cut(
+            &cylinder_at(9.5, 0.0, 10.0, 100),
+            &cylinder_at(7.0, 4.0, 11.0, 64),
+        );
+        let (u, r, _) = joined(&cup, &spec);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        close(u.volume(), cup.volume(), 5e-3);
+        // hub minus bore plus one more tooth per copy
+        let part = hub_tooth();
+        let tooth = part.volume() - cylinder_at(9.5, 0.0, 10.0, 100).volume();
+        let bored = cut(&part, &cylinder_at(2.5, -1.0, 11.0, 40));
+        let (u, r, _) = joined(&bored, &spec);
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        close(u.volume(), bored.volume() + 2.0 * tooth, 1e-3);
+    }
+
+    #[test]
+    fn only_a_full_turn_of_a_solid_round_is_lined_up() {
+        // a half disc of 100 facet resolution
+        let mut arc: Vec<[f64; 2]> = (0..=50)
+            .map(|k| {
+                let a = std::f64::consts::PI * (f64::from(k) / 50.0 - 0.5);
+                [9.5 * a.cos(), 9.5 * a.sin()]
+            })
+            .collect();
+        arc.dedup();
+        let half = build::extrude(
+            &[crate::poly2d::Polygon::simple(arc)],
+            &crate::vec3::Frame::WORLD,
+            0.0,
+            10.0,
+        )
+        .unwrap();
+        // a partial sweep is never lined up: two copies 30 degrees apart are just those copies
+        let sweep = ArraySpec::Circular {
+            count: 2,
+            center: [0.0; 3],
+            axis: None,
+            angle_deg: Some(30.0),
+            rotate_copies: None,
+        };
+        assert!(turn(&sweep).is_none());
+        let copies: Vec<TriMesh> = transforms(&sweep)
+            .unwrap()
+            .iter()
+            .map(|t| xform::transformed(&half, t))
+            .collect();
+        let (plain, _) = boolean::boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default()).unwrap();
+        let (u, _, _) = joined(&half, &sweep);
+        assert!((u.volume() - plain.volume()).abs() < 1e-9 * plain.volume());
+        // a full turn of the half disc: its round is not all material, so it is not wrapped
+        let t = turn(&around_z(12, [0.0; 3])).unwrap();
+        assert!(lined_up(&half, &t, BooleanOptions::default()).unwrap().is_none());
+        // 6 copies over 150 degrees, copies that stay put, and one copy leave the round alone
+        for spec in [
+            ArraySpec::Circular {
+                count: 6,
+                center: [0.0; 3],
+                axis: None,
+                angle_deg: Some(150.0),
+                rotate_copies: None,
+            },
+            ArraySpec::Circular {
+                count: 12,
+                center: [0.0; 3],
+                axis: None,
+                angle_deg: None,
+                rotate_copies: Some(false),
+            },
+            around_z(1, [0.0; 3]),
+        ] {
+            assert!(turn(&spec).is_none(), "{spec:?}");
+        }
+        let cyl = cylinder_at(9.5, 0.0, 10.0, 100);
+        let (u, _, _) = joined(&cyl, &around_z(1, [0.0; 3]));
+        assert!((u.volume() - cyl.volume()).abs() < 1e-9 * cyl.volume());
+        assert_eq!(u.triangles.len(), cyl.triangles.len());
+    }
+
+    #[test]
+    #[ignore = "the robust engine takes about 18 s on this in a release build"]
+    fn the_exact_and_robust_engines_agree_on_the_gear() {
+        let spec = around_z(12, [0.0; 3]);
+        let (a, _) = merged(&hub_tooth(), &spec, &BooleanOptions::default()).unwrap();
+        let robust = BooleanOptions {
+            engine: boolean::Engine::Robust,
+            keep_inverted: false,
+        };
+        let (b, _) = merged(&hub_tooth(), &spec, &robust).unwrap();
+        assert!((a.volume() - b.volume()).abs() < 1e-6 * a.volume());
     }
 }
