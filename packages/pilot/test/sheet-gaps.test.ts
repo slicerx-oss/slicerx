@@ -502,6 +502,18 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new Hinge', 'Plinth@undefined'])
   })
 
+  it('build a spacer asked for in the next message at once: a plan approved in an earlier message holds no design started for another part', async () => {
+    // run 1 approves the hinge's plan and ends before any sheet; run 2 drops the hinge for a spacer whose height the
+    // person changes on its sheet
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { text: 'Shall I start on the hinge?' }, { calls: [SPACER] }, { calls: [{ name: 'design.new', args: { name: 'Spacer' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge', 'Forget the hinge, make me a 20 mm spacer'],
+      [{ height: 25 }],
+    )
+    expect(seen.join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Spacer', 'Spacer@d1'])
+  })
+
   it('come from the fit rule profile of the run', () => {
     expect(clearanceProfileOf({})).toEqual({ nozzleMm: undefined, material: undefined })
     expect(clearanceProfileOf({ machine: { nozzle: 0.6, material: 'TPU' }, overrides: { layer_height: 'x' } })).toEqual({ nozzleMm: 0.6, material: 'TPU' })
