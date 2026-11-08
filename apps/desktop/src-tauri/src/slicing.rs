@@ -361,24 +361,19 @@ const CHECK_SKIPPED: &str = "plate check skipped: a newer one was asked for";
 const CHECK_CANCELED: &str = "plate check canceled: the plate is being arranged";
 
 /// heimdall's check of a by-object plate before a slice ([`sx_core::api::check_plate`]), on the blocking pool, so the
-/// window never waits on it. `job` numbers the page's checks: they run one at a time, and one a newer check or an
-/// arrange overtakes stops with an error, waiting or running, so it never holds the pool for a plate nobody waits on.
-/// It slices nothing and keeps or touches no session.
+/// window never waits on it. The shell numbers the checks as they are asked for (a page that reloads keeps counting
+/// up): they run one at a time, and one a newer check or an arrange overtakes stops with an error, waiting or running,
+/// so it never holds the pool for a plate nobody waits on. It slices nothing and keeps or touches no session.
 #[tauri::command]
-pub async fn check_plate(
-    request: String,
-    job: u32,
-    state: State<'_, Slicer>,
-) -> Result<serde_json::Value, String> {
+pub async fn check_plate(request: String, state: State<'_, Slicer>) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
-    let (meshes, checks, arranges) = begin_check(&state, job);
+    let (meshes, checks, job, arranges) = begin_check(&state);
     tauri::async_runtime::spawn_blocking(move || run_check(&req, &meshes, &checks, job, arranges))
         .await
         .map_err(|e| e.to_string())?
 }
 
-/// The checks the page asked for: the newest one's number, how many arranges have started, and a lock held while
-/// one runs.
+/// The checks asked for: the newest one's number, how many arranges have started, and a lock held while one runs.
 #[derive(Default, Clone)]
 struct Checks {
     newest: Arc<AtomicU32>,
@@ -386,13 +381,14 @@ struct Checks {
     running: Arc<Mutex<()>>,
 }
 
-/// Check `job` asked for: the meshes it checks, the checks, and the arranges started so far.
-fn begin_check(state: &Slicer, job: u32) -> (HashMap<u32, Arc<Mesh>>, Checks, u32) {
+/// A check asked for: the meshes it checks, the checks, its number (one past the newest so far) and the arranges
+/// started so far.
+fn begin_check(state: &Slicer) -> (HashMap<u32, Arc<Mesh>>, Checks, u32, u32) {
     let meshes = lock(&state.meshes).clone();
     let checks = state.checks.clone();
-    checks.newest.fetch_max(job, Ordering::Relaxed);
+    let job = checks.newest.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
     let arranges = checks.arranges.load(Ordering::Relaxed);
-    (meshes, checks, arranges)
+    (meshes, checks, job, arranges)
 }
 
 /// An arrange starting: every check asked for before it stops, and the meshes it lays out.
@@ -739,17 +735,51 @@ mod tests {
         })
     }
 
-    fn check(state: &Slicer, request: &serde_json::Value, job: u32) -> Result<serde_json::Value, String> {
-        let req: SliceRequest =
-            serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
-        let (meshes, checks, arranges) = begin_check(state, job);
-        run_check(&req, &meshes, &checks, job, arranges)
+    /// A check of `request` asked for now, to run with [`Asked::run`].
+    struct Asked {
+        req: SliceRequest,
+        meshes: HashMap<u32, Arc<Mesh>>,
+        checks: Checks,
+        job: u32,
+        arranges: u32,
+    }
+
+    impl Asked {
+        fn run(&self) -> Result<serde_json::Value, String> {
+            run_check(&self.req, &self.meshes, &self.checks, self.job, self.arranges)
+        }
+    }
+
+    fn ask(state: &Slicer, request: &serde_json::Value) -> Asked {
+        let req: SliceRequest = serde_json::from_str(&request.to_string()).expect("the request reads");
+        let (meshes, checks, job, arranges) = begin_check(state);
+        Asked {
+            req,
+            meshes,
+            checks,
+            job,
+            arranges,
+        }
+    }
+
+    /// Asks for a check of `request` as the check command does, and runs it.
+    fn check(state: &Slicer, request: &serde_json::Value) -> Result<serde_json::Value, String> {
+        ask(state, request).run()
+    }
+
+    /// Stops every check of `state` asked for so far when dropped, so a failed test leaves no long check running.
+    struct StopChecks(Arc<Slicer>);
+
+    impl Drop for StopChecks {
+        fn drop(&mut self) {
+            self.0.checks.newest.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     #[test]
     fn a_plate_check_says_how_sure_each_strike_is_and_keeps_no_session() {
         let state = Slicer::default();
-        let close = check(&state, &by_object_pair(&state, 3.0), 1).expect("the close pair checks");
+        let close = check(&state, &by_object_pair(&state, 3.0)).expect("the close pair checks");
         let hits = close["collisions"].as_array().expect("collisions");
         let sure = close["certainty"].as_array().expect("certainty");
         assert_eq!(hits.len(), sure.len(), "{close}");
@@ -765,7 +795,7 @@ mod tests {
         );
         assert_eq!(close["order"], serde_json::json!(["a", "b"]));
         // Far apart, nothing the slice would refuse.
-        let apart = check(&state, &by_object_pair(&state, 120.0), 2).expect("the far pair checks");
+        let apart = check(&state, &by_object_pair(&state, 120.0)).expect("the far pair checks");
         assert!(
             !apart["collisions"]
                 .as_array()
@@ -782,13 +812,40 @@ mod tests {
     fn a_plate_check_a_newer_one_overtook_is_skipped() {
         let state = Slicer::default();
         let request = by_object_pair(&state, 3.0);
-        state.checks.newest.fetch_max(5, Ordering::Relaxed);
-        assert_eq!(check(&state, &request, 4), Err(CHECK_SKIPPED.to_string()));
-        assert!(check(&state, &request, 5).is_ok());
+        let older = ask(&state, &request);
+        assert!(check(&state, &request).is_ok());
+        assert_eq!(older.run(), Err(CHECK_SKIPPED.to_string()));
         // An unknown mesh is an error, not a clean plate.
         let mut lost = request.clone();
         lost["plate"]["objects"][0]["mesh"] = serde_json::json!(999);
-        assert!(check(&state, &lost, 6).is_err());
+        assert!(check(&state, &lost).is_err());
+    }
+
+    #[test]
+    fn a_reloaded_page_gets_its_first_check_answered() {
+        let state = Slicer::default();
+        let request = by_object_pair(&state, 3.0);
+        // The page before the reload asked for 40 checks; the shell keeps counting, so the new page's first is newest.
+        state.checks.newest.store(40, Ordering::Relaxed);
+        assert!(check(&state, &request).is_ok());
+    }
+
+    #[test]
+    fn a_check_waiting_its_turn_when_an_arrange_starts_never_runs() {
+        let state = Slicer::default();
+        let request = by_object_pair(&state, 3.0);
+        // A check runs; the next one waits for it.
+        let running = lock(&state.checks.running);
+        let waiting = ask(&state, &request);
+        let answer = std::thread::scope(|s| {
+            let answer = s.spawn(|| waiting.run());
+            let _ = begin_arrange(&state);
+            drop(running);
+            answer.join().expect("the check thread")
+        });
+        assert_eq!(answer, Err(CHECK_CANCELED.to_string()));
+        // A check asked for after the arrange started runs.
+        assert!(check(&state, &request).is_ok());
     }
 
     /// `n` copies of one 20 mm cube `h` mm tall, all on one spot of the P1S bed, printed by object: every band of each
@@ -834,8 +891,9 @@ mod tests {
         // The check of the plate as it opened is still running when Arrange starts.
         let stale = {
             let (state, request) = (state.clone(), request.clone());
-            std::thread::spawn(move || check(&state, &request, 1))
+            std::thread::spawn(move || check(&state, &request))
         };
+        let _stop = StopChecks(state.clone());
         while_checking(&state.checks);
         let bound = alone * 2 + Duration::from_secs(3);
         let t = Instant::now();
@@ -864,16 +922,17 @@ mod tests {
         let state = Arc::new(Slicer::default());
         let stale = stacked(&state, 50, 40.0);
         let pair = by_object_pair(&state, 3.0);
-        let alone = check(&state, &pair, 1).expect("the pair checks");
+        let alone = check(&state, &pair).expect("the pair checks");
         let older = {
             let (state, stale) = (state.clone(), stale.clone());
-            std::thread::spawn(move || check(&state, &stale, 2))
+            std::thread::spawn(move || check(&state, &stale))
         };
+        let _stop = StopChecks(state.clone());
         while_checking(&state.checks);
         let t = Instant::now();
         let newer = {
             let state = state.clone();
-            within(Duration::from_secs(10), move || check(&state, &pair, 3))
+            within(Duration::from_secs(10), move || check(&state, &pair))
         };
         eprintln!("the newer check answered in {:?}", t.elapsed());
         let newer = newer

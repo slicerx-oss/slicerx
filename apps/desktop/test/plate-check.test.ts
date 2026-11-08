@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @vitest-environment jsdom
-// heimdall's plate check on the desktop: the request goes to the check_plate command with the meshes by number and a
-// job number that only grows, the answer is read as the contract's PlateCheck, and an abort lets the answer go.
+// heimdall's plate check on the desktop: the request goes to the check_plate command with the meshes by number (the
+// shell numbers the checks), the answer is read as the contract's PlateCheck, and an abort lets the answer go.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tauri = vi.hoisted(() => ({ calls: [] as { cmd: string; args: unknown }[], answer: null as null | (() => Promise<unknown>) }))
@@ -37,18 +37,16 @@ describe('the desktop plate check', () => {
     expect(slicer.checkPlate).toBeTypeOf('function')
     const r = await slicer.checkPlate!(req)
     expect(r).toEqual(found)
-    const call = tauri.calls.find((c) => c.cmd === 'check_plate')!.args as { request: string; job: number }
+    const call = tauri.calls.find((c) => c.cmd === 'check_plate')!.args as { request: string }
     expect(JSON.parse(call.request).plate.objects[0].mesh).toBe(7)
     expect(JSON.parse(call.request).config).toEqual({ print_sequence: 'by object' })
   })
 
-  it('numbers each check after the last, so the shell can skip one a newer check overtook', async () => {
+  it('sends no check number: the shell numbers the checks, so a reloaded page never starts behind its old count', async () => {
     tauri.answer = async () => found
-    const slicer = createTauriSlicer()
-    await slicer.checkPlate!(req)
-    await slicer.checkPlate!(req)
-    const jobs = tauri.calls.filter((c) => c.cmd === 'check_plate').map((c) => (c.args as { job: number }).job)
-    expect(jobs[1]!).toBeGreaterThan(jobs[0]!)
+    await createTauriSlicer().checkPlate!(req)
+    const call = tauri.calls.find((c) => c.cmd === 'check_plate')!.args as Record<string, unknown>
+    expect(Object.keys(call)).toEqual(['request'])
   })
 
   it('lets the answer go once aborted, and never asks when aborted before', async () => {

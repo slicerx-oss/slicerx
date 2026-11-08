@@ -102,7 +102,6 @@ async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
 }
 
 let nextJob = 1
-let nextCheck = 1
 
 /** The request as the native commands read it: meshes by their numeric id. */
 function nativeRequest(req: SliceRequest, options: Record<string, unknown> = {}): string {
@@ -113,14 +112,15 @@ function nativeRequest(req: SliceRequest, options: Record<string, unknown> = {})
 const STOPPED_CHECK = /^plate check (skipped|canceled):/
 
 /**
- * heimdall's plate check on the blocking pool (the check_plate command). Each check is numbered, so the shell stops one
- * a newer check or an arrange overtakes, waiting or running; that check, like an aborted one, throws an AbortError.
+ * heimdall's plate check on the blocking pool (the check_plate command). The shell numbers the checks as they come and
+ * stops one a newer check or an arrange overtakes, waiting or running; that check, like an aborted one, throws an
+ * AbortError.
  */
 async function checkPlate(req: SliceRequest, opts?: { signal?: AbortSignal }): Promise<PlateCheck> {
   const signal = opts?.signal
   const canceled = () => new DOMException('Plate check canceled', 'AbortError')
   if (signal?.aborted) throw canceled()
-  const raw = await invoke('check_plate', { request: nativeRequest(req), job: nextCheck++ }).catch((e: unknown) => {
+  const raw = await invoke('check_plate', { request: nativeRequest(req) }).catch((e: unknown) => {
     if (signal?.aborted || (typeof e === 'string' && STOPPED_CHECK.test(e))) throw canceled()
     throw e
   })
