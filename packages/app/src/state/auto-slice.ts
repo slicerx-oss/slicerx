@@ -41,6 +41,8 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   // as running, never clears a newer run's start.
   let starting = 0
   let runs = 0
+  // The slice auto slice started, while it runs: only that one is stopped for a new nozzle volume (configMoved).
+  let autoRun: Promise<void> | null = null
   const isPending = (): boolean => timer !== null || waiting !== null || starting !== 0
   pending = isPending
   const clear = (): void => {
@@ -97,16 +99,22 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
       if (starting === mine) starting = 0
       off()
     }
-    void slicePlate(host, { auto: true }).finally(settle)
+    const started = slicePlate(host, { auto: true })
+    autoRun = started
+    void started.finally(() => {
+      settle()
+      if (autoRun === started) autoRun = null
+    })
   }
   const configMoved = async (now: AppState, prev: AppState): Promise<void> => {
     const { configKey, stampBlock } = await import('../plate/resume-tops')
     const s = appStore.getState()
     if (!s.autoSlice || s.liveEdit) return
     if (s.slice.status === 'running') {
-      // A slice in flight read the old values: it would land stale with nothing to slice again, so it stops and a new
-      // one starts. Only a change the plate's configuration reads (a single-color plate has no flush volumes).
-      if (configKey(now) === configKey(prev)) return
+      // An auto slice in flight read the old values: it would land stale with nothing to slice again, so it stops and a
+      // new one starts. Only a change the plate's configuration reads (a single-color plate has no flush volumes). A
+      // slice someone asked for (Slice, mimir, the print queue) is theirs: it lands, stale if it read the old values.
+      if (!autoRun || configKey(now) === configKey(prev)) return
       cancelSlice({ quiet: true })
     } else {
       if (s.slice.status !== 'done' || s.slice.stale || stampBlock(s, s.slice.stamp) !== STALE_SLICE) return
