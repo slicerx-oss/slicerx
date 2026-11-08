@@ -45,6 +45,8 @@ export interface BodyFacts {
   steps?: string[] | undefined
   /** For each of those steps, the planned feature it was tagged with when it was built (the tools' feature), or null. */
   tags?: (string | null)[] | undefined
+  /** Those steps' ids, in order (slicerx_design_edit_step takes a step by id; an index counts paint and suppressed steps too). */
+  stepIds?: string[] | undefined
   /** The size of each part's bounds, when the design has more than one (a lid laid flat beside its base). */
   parts?: { x: number; y: number; z: number }[] | undefined
   /** True when every part is closed. */
@@ -173,10 +175,19 @@ function featureItem(features: string[], body: BodyFacts): CheckItem {
   if (!missing.length) return { name: 'feature count', want, got: `${m} steps for ${n} features${groups.length ? ` (${groups.join(', ')})` : ''}`, pass: true }
   const quoted = loose.map((s) => `"${s}"`).join(', ')
   // an untagged step whose name shares a word with a missing feature is likely that feature: say to tag it
+  // an untagged step named like a missing feature is likely that feature: one hint per step, naming the feature it
+  // shares the most words with, or each of those that tie, and the step by id (an index would count paint and
+  // suppressed steps, which the shaping steps here leave out)
   const hints = tagged
-    ? missing.flatMap((f) => {
-        const fw = nameWords(f)
-        return bare.filter((i) => [...nameWords(body.steps![i - 1]!)].some((w) => fw.has(w))).map((i) => `step ${i} "${body.steps![i - 1]}" is untagged: set its feature to "${f}" with design.edit_step`)
+    ? bare.flatMap((i) => {
+        const sw = nameWords(body.steps![i - 1]!)
+        const shared = missing.map((f) => [...nameWords(f)].filter((w) => sw.has(w)).length)
+        const most = Math.max(0, ...shared)
+        if (!most) return []
+        const best = missing.filter((_, k) => shared[k] === most)
+        const id = body.stepIds?.[i - 1]
+        const which = best.length === 1 ? `"${best[0]}"` : `one of ${best.map((f) => `"${f}"`).join(', ')}`
+        return [`step ${id ? `"${id}"` : i} ("${body.steps![i - 1]}") is untagged: set its feature to ${which} with slicerx_design_edit_step`]
       })
     : []
   const got = tagged

@@ -564,7 +564,34 @@ describe('slicerx_design_check', () => {
     const item = r.items.find((i) => i.name === 'feature count')!
     // the untagged step still never counts as the feature
     expect(item.pass).toBe(false)
-    expect(item.got).toContain('step 2 "Hole 6 mm" is untagged: set its feature to "hole" with design.edit_step')
+    expect(item.got).toMatch(/step "[^"]+" \("Hole 6 mm"\) is untagged: set its feature to "hole" with slicerx_design_edit_step/)
+  })
+
+  it('names the untagged step by its id, so a suppressed step ahead of it does not shift which step gets tagged', async () => {
+    const plans = createPlanRegistry()
+    const h = await connect({ geomEngine: engine, plans })
+    const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: T }>(r).output
+    }
+    const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: 5, feature: 'plate' })
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 4 }, frame: top(5), placement: { center: [30, 10] }, distance_mm: 3, operation: 'join' })
+    await ok('slicerx_design_edit_step', { design, step: 2, suppressed: true })
+    await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: 6 }, frame: top(5), placement: { center: [12, 10] }, distance_mm: 5, operation: 'cut' })
+    plans.put({ planId: 'plate-1', part: 'Plate', units: 'mm', features: [{ name: 'plate', kind: 'extrude', sizes: {} }, { name: 'hole', kind: 'cut', sizes: { diameter: 6 } }], assumptions: [], questions: [] })
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    const got = r.items.find((i) => i.name === 'feature count')!.got
+    const id = /step "([^"]+)" \("Hole 6 mm"\)/.exec(got)?.[1]
+    const steps = await ok<{ steps: { id: string; name: string }[] }>('slicerx_design_steps', { design })
+    // the hole is the third step of the history and the second shaping step: the hint names it, not the suppressed one
+    expect(id).toBe(steps.steps[2]!.id)
+    await ok('slicerx_design_edit_step', { design, step: id, feature: 'hole' })
+    const again = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(again.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
+    // each untagged step is hinted once
+    expect(got.match(/is untagged/g)).toHaveLength(1)
   })
 
   it('keeps the tags through design.save and design.open, so the reopened plate still passes its plan', async () => {
