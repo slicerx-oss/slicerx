@@ -3,7 +3,7 @@
 // What the Model tools tell a person: real numbers in their messages, plain words for the engine's refusals, nothing
 // recorded when nothing changed, and a word when a tool has nothing to do.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clearReplayCache, replayHistory } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, clearReplayCache, replayHistory } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { setGeomProvider, toGeom } from '../src/geom/client'
 import { applyExtrude } from '../src/cad/cad-ops'
@@ -121,6 +121,15 @@ describe('a shape on a face that misses the body', () => {
     expect(get().plate[0]).toBe(before)
   })
 
+  it.each([
+    [1e-9, 'The shape is already inside the body, so nothing changed. Check the distance and the direction.'],
+    [1e-4, 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'],
+  ])('tells a join that adds %s mm³ apart at the shared tolerance', async (volume, message) => {
+    expect(ADDS_NOTHING_MM3).toBe(1e-6)
+    reply(volume)
+    expect((await run()).message).toBe(message)
+  })
+
   it('says a cut that misses the body changed nothing, and records no step', async () => {
     reply(0)
     const before = get().plate[0]!
@@ -145,7 +154,7 @@ describe('a replayed join or cut that changes nothing', () => {
 
   it('says a join sits inside the part, and a cut no longer reaches it', async () => {
     clearReplayCache()
-    expect((await replayed('join')).status[0]).toMatchObject({ state: 'broken', message: 'The shape is already inside the part, so it adds nothing.' })
+    expect((await replayed('join')).status[0]).toMatchObject({ state: 'broken', message: 'The shape is already inside the part, so nothing changed.' })
     clearReplayCache()
     expect((await replayed('cut')).status[0]).toMatchObject({ state: 'broken', message: 'The shape no longer reaches the part.' })
   })

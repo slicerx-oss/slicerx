@@ -597,7 +597,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -644,7 +644,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.3.0',
+    version: '1.3.1',
     source: 'command',
     permission: 'slice',
     description: 'Revolve closed sketch loops around an axis in their plane, up to 360 degrees and on one side of the axis, as a new body, joined to a target or cut from it: with "design" a step, else an STL.',
@@ -703,7 +703,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     .describe('One loop on a plane, as for slicerx_geom_revolve; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description:
@@ -747,7 +747,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
