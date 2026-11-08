@@ -219,6 +219,25 @@ describe('designCheck', () => {
     expect(plans.get('c59')?.origin).toBe('card')
   })
 
+  it('lets a failed plan be replaced once per failed check, and keeps that through an edit put under its planId', () => {
+    const plans = createPlanRegistry()
+    plans.put(bracket, 'd1', 'card')
+    expect(plans.replace('bracket-1', 'd2')).toBe(false)
+    expect(plans.checked('bracket-1', false, ['d1'])).toBe(1)
+    // the card edits the plan after the failed check: the same planId put again keeps its one rebuild
+    plans.put({ ...bracket, part: 'Bracket, wider' }, 'd1', 'card')
+    expect(plans.get('bracket-1')).toMatchObject({ design: 'd1', failedChecks: 1, replaceable: true, openAtFail: ['d1'] })
+    expect(plans.replace('bracket-1', 'd2')).toBe(true)
+    expect(plans.get('bracket-1')?.replaceable).toBeUndefined()
+    expect(plans.replace('bracket-1', 'd3')).toBe(false)
+    // the next failed check opens one more, a pass closes it
+    plans.checked('bracket-1', false, ['d1', 'd2'])
+    expect(plans.get('bracket-1')).toMatchObject({ design: 'd2', failedChecks: 2, replaceable: true, openAtFail: ['d1', 'd2'] })
+    plans.checked('bracket-1', true)
+    expect(plans.replace('bracket-1', 'd3')).toBe(false)
+    expect(plans.get('bracket-1')?.design).toBe('d2')
+  })
+
   it('reads the latest plan of one origin', () => {
     const plans = createPlanRegistry()
     expect(plans.latest('card')).toBeUndefined()
