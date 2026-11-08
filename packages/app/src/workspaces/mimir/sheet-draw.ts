@@ -137,7 +137,8 @@ function revolveInto(s: PilotSheetRevolve, polys: V3[][][], out: number[]): void
     const c = Math.cos(th)
     return add(o, add(add(mul(v, c), mul(cross(ax, v), Math.sin(th))), mul(ax, dot(ax, v) * (1 - c))))
   }
-  const rings = [orient(s.points, true), ...(s.holes ?? []).map((h) => orient(h, false))].map((r) => r.map(([u, v]) => to3(s.plane, u, v, 0)))
+  // one outline, as the sheet's schema takes it: holes sent anyway are not drawn, so the drawing shows what was checked
+  const rings = [orient(s.points, true)].map((r) => r.map(([u, v]) => to3(s.plane, u, v, 0)))
   const th = (k: number): number => (((s.angle ?? 360) < 0 ? -1 : 1) * angle * Math.PI * k) / (180 * n)
   for (const ring of rings) {
     let prev = ring.map((p) => turn(p, 0))
@@ -449,6 +450,8 @@ export interface Raster {
   px: number
   cover: Uint8Array
   edge: Uint8Array
+  /** The nearest surface's depth at each pixel, along the view toward the eye in mm (-Infinity where none). */
+  depth: Float32Array
 }
 
 /** Faces meeting at more than this read as an edge; a round's facets meet at less. */
@@ -639,7 +642,28 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
       }
     }
   }
-  return { W, H, px, cover, edge }
+  return { W, H, px, cover, edge, depth }
+}
+
+/**
+ * The edges as they are painted: about 1.5 screen px wide (2 device px at the least, so a 1x screen gets more than a
+ * hairline), grown right and down into the part only, so the silhouette keeps its size over the card.
+ */
+export function paintedEdges(r: Raster): Uint8Array {
+  const grow = Math.max(2, Math.round(1.5 * r.px)) - 1
+  const out = new Uint8Array(r.edge.length)
+  for (let y = 0; y < r.H; y++) {
+    for (let x = 0; x < r.W; x++) {
+      if (!r.edge[y * r.W + x]) continue
+      for (let j = 0; j <= grow && y + j < r.H; j++) {
+        for (let i = 0; i <= grow && x + i < r.W; i++) {
+          const k = (y + j) * r.W + x + i
+          if (i + j === 0 || r.cover[k]) out[k] = 1
+        }
+      }
+    }
+  }
+  return out
 }
 
 export interface DrawnDim {
@@ -676,6 +700,8 @@ interface RawDim {
   n: number
   guess: boolean
   lines: [P2, P2][]
+  /** The same lines in the part's mm, for telling where one runs behind the part. */
+  lines3: [V3, V3][]
   dimLine: [P2, P2] | null
   arc: P2[] | null
   /** The way the callout moves off its line, on screen. */
@@ -699,17 +725,19 @@ function rawDims(dims: readonly PilotDim[], view: ViewName, shown: Map<string, V
       const [mx, my] = P(pt(turn / 2, at.r * 2))
       const [cx, cy] = P(at.c)
       const midDir: P2 = [mx - cx, my - cy]
-      out.push({ ...base, lines: [[P(at.c), P(pt(0, at.r * 1.15))], [P(at.c), P(pt(turn, at.r * 1.15))]], dimLine: null, arc, push: midDir, mid: P(pt(turn / 2, at.r)) })
+      const lines3: [V3, V3][] = [[at.c, pt(0, at.r * 1.15)], [at.c, pt(turn, at.r * 1.15)]]
+      out.push({ ...base, lines: lines3.map(([p, q]) => [P(p), P(q)]), lines3, dimLine: null, arc, push: midDir, mid: P(pt(turn / 2, at.r)) })
       return
     }
     const a1 = add(at.a, at.off)
     const b1 = add(at.b, at.off)
-    const lines: [P2, P2][] = len(at.off) > 0 ? [[P(at.a), P(a1)], [P(at.b), P(b1)]] : []
+    const lines3: [V3, V3][] = len(at.off) > 0 ? [[at.a, a1], [at.b, b1]] : []
+    const lines = lines3.map(([p, q]): [P2, P2] => [P(p), P(q)])
     const pa = P(a1)
     const pb = P(b1)
     // the projection is linear, so the offset projects to the way out on screen
     const push: P2 = len(at.off) > 0 ? P(at.off) : [-(pb[1] - pa[1]), pb[0] - pa[0]]
-    out.push({ ...base, lines, dimLine: [pa, pb], arc: null, push, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2] })
+    out.push({ ...base, lines, lines3, dimLine: [pa, pb], arc: null, push, mid: [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2] })
   })
   return out
 }
@@ -797,9 +825,33 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
     const y = Math.floor(p[1] * px)
     return x >= 0 && y >= 0 && x < part.W && y < part.H && part.cover[y * part.W + x] === 1
   }
+  // A line from a place the part hides (the middle of a tube, seen in Iso) starts where it comes out from behind the
+  // part, a little clear of it, rather than being drawn over the part's near side.
+  const dv = VIEWS[view].d
+  const hideTol = Math.max(1, 3 / k)
+  const hidden = (p: P2, q3: V3): boolean => {
+    const x = Math.floor(p[0] * px)
+    const y = Math.floor(p[1] * px)
+    if (x < 0 || y < 0 || x >= part.W || y >= part.H || !part.cover[y * part.W + x]) return false
+    return part.depth[y * part.W + x]! > dot(q3, dv) + hideTol
+  }
+  const unhidden = (l: [P2, P2], l3: [V3, V3]): [P2, P2] => {
+    const [p, q] = l
+    const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 2)
+    if (n < 2 || !hidden(p, l3[0])) return l
+    for (let i = 1; i <= n; i++) {
+      const t = i / n
+      if (hidden([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], add(l3[0], mul(sub(l3[1], l3[0]), t)))) continue
+      // out from behind it: start a few px on, clear of the part's outline
+      const s = Math.min(1, t + 3 / (n / 2))
+      return [[r1(p[0] + (q[0] - p[0]) * s), r1(p[1] + (q[1] - p[1]) * s)], q]
+    }
+    // hidden all the way: drawn whole, so the size still reads
+    return l
+  }
   // every size's own lines first, so no callout lands on a line drawn after it
   const shaped = raws.map((r) => {
-    const lines = r.lines.map(([p, q]) => [S(p), S(q)] as [P2, P2])
+    const lines = r.lines.map(([p, q], i) => unhidden([S(p), S(q)], r.lines3[i]!))
     const arrows: [P2, P2][] = []
     let dimLines: [P2, P2][] = []
     if (r.dimLine) {
@@ -845,7 +897,21 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
       const l = leaderOf(bd)
       return !!l && (leaders.some(([p, q]) => crosses(l[0], l[1], p, q)) || placed.some((p) => toSegment(p, l[0], l[1]) < BADGE_R + 2))
     }
-    const free = (bd: P2): boolean => inCell(bd) && !clash(bd) && !onPart(bd) && !onLines(bd) && !tangled(bd)
+    // a leader that leaves the part (or starts off it) and then runs over it again, to a callout on its far side
+    const overPart = (bd: P2): boolean => {
+      const l = leaderOf(bd)
+      if (!l) return false
+      const [p, q] = l
+      const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * px * 2)
+      let off = false
+      for (let i = 0; i <= n; i++) {
+        const t = i / Math.max(1, n)
+        if (!inside([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t])) off = true
+        else if (off) return true
+      }
+      return false
+    }
+    const free = (bd: P2): boolean => inCell(bd) && !clash(bd) && !onPart(bd) && !onLines(bd) && !tangled(bd) && !overPart(bd)
     const loose = (bd: P2): boolean => inCell(bd) && !clash(bd) && !onPart(bd)
     const leads = inside(m) && (ux !== 0 || uy !== 0)
     let tries: P2[]

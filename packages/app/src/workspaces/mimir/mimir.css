@@ -101,7 +101,8 @@
 /* the part under the callouts: its silhouette and visible edges, painted in these two inks (sheet-view.tsx) */
 .mimir-drawing-cell > canvas.mimir-drawing-part { position: absolute; left: 0; top: 0; }
 .mimir-ink-part { position: absolute; visibility: hidden; color: var(--sheet-part); }
-.mimir-ink-edge { position: absolute; visibility: hidden; color: light-dark(#4d5164, #2a2c38); }
+/* the theme's outline ink: near black over the pale part in dark, deep ink in light */
+.mimir-ink-edge { position: absolute; visibility: hidden; color: var(--ti-ol); }
 .mimir-drawing-label { position: absolute; left: 10px; top: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
 /* in light mode the lines go darker so they hold 3:1 against the part even where the halo thins out at 1x */
 .mimir-drawing { --dim-ink: var(--muted); --dim-guess: var(--orange); }

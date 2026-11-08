@@ -15,7 +15,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import { usePhoneKeyboardUp } from '../../shell/phone-keyboard'
-import { arrowHead, drawPx, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor, type Raster } from './sheet-draw'
+import { arrowHead, drawPx, drawView, fitScale, paintedEdges, SHEET_VIEWS, VIEWS, viewsFor, type Raster } from './sheet-draw'
 import { sharedPicture, type SheetPicture } from './sheet-shape'
 import { useApp } from '../../state/store'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
@@ -110,8 +110,9 @@ function PartCanvas({ raster, w, h }: { raster: Raster; w: number; h: number }) 
     const [fill, line] = JSON.parse(inks) as [number, number, number][]
     const img = ctx.createImageData(raster.W, raster.H)
     const px = img.data
+    const edges = paintedEdges(raster)
     for (let i = 0; i < raster.cover.length; i++) {
-      const c3 = raster.edge[i] ? line! : raster.cover[i] ? fill! : null
+      const c3 = edges[i] ? line! : raster.cover[i] ? fill! : null
       if (!c3) continue
       px[4 * i] = c3[0]
       px[4 * i + 1] = c3[1]
