@@ -11,7 +11,7 @@ import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
 import { applyHistory, runReplay, toPart } from './history/ops'
 import { exactSolids } from './history/exact-flag'
-import { commitMade } from './commit'
+import { commitMade, goneError } from './commit'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
@@ -193,9 +193,9 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     // checked before the write, so a step's first change never lands without the solid: the object is there, and did
     // not take an exact history meanwhile that this result would drop (commitMade refuses that)
     const now = get().plate.find((e) => e.id === entry.id)
-    if (!now) throw new Error('That object is gone.')
+    if (!now) throw goneError(entry.id)
     if (now.history?.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
-    if (!writeIn(o, () => commitMade(entry.id, () => ({ handle, parts, ...historyField(history) })))) throw new Error('That object is gone.')
+    if (!writeIn(o, () => commitMade(entry.id, () => ({ handle, parts, ...historyField(history) })))) throw goneError(entry.id)
     markStale()
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
   }
@@ -277,7 +277,7 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
     const handle = await host.loadParts(e.name, parts)
     // Merging copies is a step only in a history the object already has.
     const history = e.history ? withStep(e, -1, { op: 'array.merged', spec }) : undefined
-    if (!commitMade(e.id, () => ({ handle, parts, ...historyField(history) }))) throw new Error('That object is gone.')
+    if (!commitMade(e.id, () => ({ handle, parts, ...historyField(history) }))) throw goneError(e.id)
     markStale()
     return count
   }

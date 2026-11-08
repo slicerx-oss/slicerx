@@ -6,7 +6,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
 import { get, markStale } from '../state/store'
-import { commitMade } from './commit'
+import { commitMade, goneError } from './commit'
 import { edgeOp, type EdgeRef } from './edge-api'
 import type { StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
@@ -90,7 +90,7 @@ export async function applyEdges(host: Loader, objectId: string, partIndex: numb
   const parts = e.parts.map((p, i) => (i === partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
   const handle = await host.loadParts(e.name, parts)
   const history = withStep(e, partIndex, params)
-  if (!commitMade(e.id, () => ({ handle, parts, history }))) throw new Error('That object is gone.')
+  if (!commitMade(e.id, () => ({ handle, parts, history }))) throw goneError(e.id)
   markStale()
   const n = params.edges.length
   return { message: `${params.op === 'edge.fillet' ? 'Rounded' : 'Beveled'} ${n} ${n === 1 ? 'edge' : 'edges'} of ${e.name}.`, warn: !r.watertight }
