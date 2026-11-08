@@ -60,6 +60,23 @@ function weldIds(positions: ArrayLike<number>): Int32Array {
   return ids
 }
 
+/** Readings already made, per part mesh: a part's arrays are replaced, never changed in place, when a step changes it. */
+const readings = new WeakMap<object, { indices: ArrayLike<number>; closure: Closure }>()
+
+/**
+ * The closure of one part, read on its own positions before the design's transform is applied, as the slicer welds a
+ * part (packages/core/src/session.rs): moving the part on the bed changes nothing, and -0 stays apart from 0. A
+ * mirroring transform reverses every triangle, which leaves every count the same. Kept per part mesh, so asking again
+ * about an unchanged part does not weld it again.
+ */
+export function partClosure(part: { positions: ArrayLike<number>; indices: ArrayLike<number> }): Closure {
+  const known = readings.get(part.positions as object)
+  if (known && known.indices === part.indices) return known.closure
+  const closure = closureByPosition(part.positions, part.indices)
+  readings.set(part.positions as object, { indices: part.indices, closure })
+  return closure
+}
+
 /**
  * The closure of a mesh (xyz per vertex, three vertex indices per triangle) once corners at the same single-precision
  * point are welded. A triangle with two corners at one point is dropped, as the slicer drops it.
