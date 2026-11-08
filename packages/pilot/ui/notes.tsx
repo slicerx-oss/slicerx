@@ -3,6 +3,7 @@
 // One line blocks: the permission note, Auto's model switch, errors, the plan and the integrations a reply used.
 import { Icon } from '@slicerx/ui'
 import { useContext } from 'react'
+import { PLAN_LEFT_CODE } from '../src/plan-left'
 import { USAGE_CODES, UsageLinkContext } from './usage-link'
 
 /** What the Permissions setting decided for a step mimir did not ask about. */
@@ -16,9 +17,11 @@ export function ModelLine({ label, reason }: { label: string; reason: 'request' 
 }
 
 /** `code` marks a mimir cloud refusal (`day_used`, `paused`, ...) for the limit hook. A used-up allowance links to the
- * usage page when the host has one. */
+ * usage page when the host has one. The notice that mimir went on with its plan (PLAN_LEFT_CODE) is a plain line. */
 export function ErrorLine({ message, code }: { message: string; code?: string | undefined }) {
   const seeUsage = useContext(UsageLinkContext)
+  // mimir going on with its approved plan is no failure: a plain line, like a model switch
+  if (code === PLAN_LEFT_CODE) return <div className="model-ln" data-testid="mimir-plan-left">{message}</div>
   return (
     <div className="pp-err" role="alert" data-testid={code ? 'mimir-limit' : undefined} data-code={code}>
       <Icon name="alert" />
