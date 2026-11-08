@@ -170,10 +170,7 @@ fn stages(
     }
     let dropped = despeckle(&mut f, speck_px);
     if !f.v.iter().any(|&v| v > 0.0) {
-        return Err(Error::invalid(
-            "image",
-            "nothing is inside; change what to trace or the threshold",
-        ));
+        return Err(nothing_inside(mode));
     }
     let shapes = contours(&f)?;
     let traced = Traced {
@@ -185,6 +182,18 @@ fn stages(
         threshold,
     };
     Ok((traced, small))
+}
+
+/// The refusal of a trace with nothing inside, in the words of the setting to change for `mode`.
+fn nothing_inside(mode: Mode) -> Error {
+    Error::invalid(
+        "image",
+        if mode == Mode::Color {
+            "nothing is near the picked colors; pick another color or raise the tolerance"
+        } else {
+            "nothing is inside; change what to trace or the threshold"
+        },
+    )
 }
 
 /// sRGB luminance, 0 to 255.
@@ -470,13 +479,13 @@ fn within_limits(f: &Field) -> Result<(Vec<u32>, Vec<u32>)> {
     if crossings(f) > MAX_CROSSINGS {
         return Err(Error::invalid(
             "image",
-            "the outlines are too detailed; trace at a smaller working size or drop larger specks",
+            "the outlines are too detailed to trace; raise Remove specks under, or use a simpler image",
         ));
     }
     let too_many = || {
         Error::invalid(
             "image",
-            format!("more than {MAX_LOOPS} loops; drop larger specks or trace at a smaller working size"),
+            format!("more than {MAX_LOOPS} loops; raise Remove specks under, or use a simpler image"),
         )
     };
     let mut labels = Vec::new();
@@ -698,7 +707,7 @@ impl Budget {
         if self.0 == 0 {
             return Err(Error::invalid(
                 "image",
-                "the trace needs more work than one call allows; raise Smoothing or Remove specks, or trace at a smaller working size",
+                "the trace needs more work than one call allows; raise Smoothing or Remove specks under, or use a simpler image",
             ));
         }
         Ok(())
@@ -1386,10 +1395,7 @@ pub fn sketch_trace(r: Cow<'_, Raster>, o: &SketchTraceOptions) -> Result<Sketch
     let ext = [hi[0] - lo[0], hi[1] - lo[1]];
     let k = scale(traced.working_px[0], ext);
     if !(k.is_finite() && k > 0.0) {
-        return Err(Error::invalid(
-            "image",
-            "nothing is inside; change what to trace or the threshold",
-        ));
+        return Err(nothing_inside(traced.mode));
     }
     if ext[0] * k > MAX_MM || ext[1] * k > MAX_MM {
         return Err(Error::invalid(
@@ -1430,15 +1436,12 @@ pub fn sketch_trace(r: Cow<'_, Raster>, o: &SketchTraceOptions) -> Result<Sketch
         return Err(Error::invalid(
             "image",
             format!(
-                "the trace has {segments} segments, more than {MAX_SEGMENTS}; raise Remove specks or Smoothing"
+                "the trace has {segments} segments, more than {MAX_SEGMENTS}; raise Remove specks under or Smoothing"
             ),
         ));
     }
     if loops.is_empty() {
-        return Err(Error::invalid(
-            "image",
-            "nothing is inside; change what to trace or the threshold",
-        ));
+        return Err(nothing_inside(traced.mode));
     }
     let mut warnings = Vec::new();
     if missed > 0 {
@@ -1862,6 +1865,16 @@ mod tests {
             ..opts()
         };
         assert!(msg(trace(&white, &color)).contains("pick a color"));
+        // a color the image does not have names the color mode's own settings
+        let red = TraceOptions {
+            colors: vec![[255, 0, 0]],
+            color_tolerance: 0.0,
+            ..color.clone()
+        };
+        assert_eq!(
+            msg(trace(&white, &red)),
+            "image: nothing is near the picked colors; pick another color or raise the tolerance"
+        );
         let nine = TraceOptions {
             colors: vec![[0, 0, 0]; 9],
             ..color
@@ -1882,7 +1895,7 @@ mod tests {
         let dots = Raster::new(100, 100, px).unwrap();
         assert_eq!(
             msg(trace(&dots, &opts())),
-            "image: more than 2000 loops; drop larger specks or trace at a smaller working size"
+            "image: more than 2000 loops; raise Remove specks under, or use a simpler image"
         );
         assert!(
             msg(trace(
@@ -2131,7 +2144,7 @@ mod tests {
     }
 
     const TOO_DETAILED: &str =
-        "image: the outlines are too detailed; trace at a smaller working size or drop larger specks";
+        "image: the outlines are too detailed to trace; raise Remove specks under, or use a simpler image";
 
     #[test]
     fn a_4096_comb_of_one_region_is_refused_before_its_crossings_are_kept() {
@@ -2211,7 +2224,7 @@ mod tests {
         assert!(crossings(&f) < MAX_CROSSINGS);
         assert_eq!(
             contours(&f).unwrap_err().to_string(),
-            "image: more than 2000 loops; drop larger specks or trace at a smaller working size"
+            "image: more than 2000 loops; raise Remove specks under, or use a simpler image"
         );
     }
 
