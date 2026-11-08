@@ -624,6 +624,30 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new My box for the shelf', 'Box@d1'])
   })
 
+  it('build at once a design whose name shares only a number with the planned part', async () => {
+    // a bare number is an ordinal, never the part's name: Spacer 3 is not the third link of the chain
+    const { ran, seen } = await talk(
+      [{ calls: [{ name: 'design.plan', args: { part: 'Chain link 3', printInPlace: ['Link 1', 'Link 2'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Spacer 3' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer', design: 'd1' } }] }, { text: 'Done.' }],
+      ['A print-in-place chain', 'Actually make me a spacer first'],
+      [{ width: 60 }],
+    )
+    expect(seen.join(' ')).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Spacer 3', 'Spacer@d1'])
+  })
+
+  it('build at once a design whose name shares only print, place, in or fit with the planned part', async () => {
+    // "print-in-place" and "fit" say how a part prints, not which part it is
+    for (const name of ['Print-in-place box', 'Fit test spacer']) {
+      const { ran, seen } = await talk(
+        [{ calls: [{ name: 'design.plan', args: { part: 'Print-in-place hinge with a snug fit', printInPlace: ['Leaf', 'Pin'] } }] }, { text: 'Shall I start?' }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Box', design: 'd1' } }] }, { text: 'Done.' }],
+        ['A print-in-place hinge', 'Actually make me something else first'],
+        [{ width: 60 }],
+      )
+      expect(seen.join(' '), name).not.toContain('Nothing was built')
+      expect(ran, name).toEqual([`new ${name}`, 'Box@d1'])
+    }
+  })
+
   it('hold a change to a design opened under the planned part\'s name, with no part built under an earlier plan', async () => {
     // the design is opened before any plan, so no plan before held it: it is the planned part's by its name alone
     const push = { name: 'geom.push_pull', args: { design: 'd1' } }
