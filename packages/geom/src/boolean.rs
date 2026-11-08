@@ -58,7 +58,11 @@ const CLEAN_WORK_PER_TRI: u64 = 40;
 
 /// the solid through the robust engine, cut by a box around it, on a budget of its own; none unless that comes out clean
 fn cleaned(s: &Solid, opts: BooleanOptions) -> Option<Solid> {
-    let work = Work::new(CLEAN_WORK_PER_TRI * (s.m.num_tri() as u64 + 12));
+    cleaned_within(s, opts, CLEAN_WORK_PER_TRI)
+}
+
+fn cleaned_within(s: &Solid, opts: BooleanOptions, per_tri: u64) -> Option<Solid> {
+    let work = Work::new(per_tri * (s.m.num_tri() as u64 + 12));
     let b = s.m.bounding_box();
     let around = crate::build::box_mesh(
         [b.min.x - 1.0, b.min.y - 1.0, b.min.z - 1.0],
@@ -409,17 +413,23 @@ fn from_gl(gl: &MeshGL64) -> TriMesh {
 /// validates the mesh representation stored by clients, after returning to its local frame.
 #[allow(clippy::cast_possible_truncation, reason = "mesh storage uses f32 positions")]
 pub(crate) fn storage_mesh(mesh: &TriMesh) -> Result<TriMesh> {
+    stored(mesh, "boolean", "the result is", "change the cut or placement")
+}
+
+/// the same check, refused in the words of the op that made the mesh
+#[allow(clippy::cast_possible_truncation, reason = "mesh storage uses f32 positions")]
+pub(crate) fn stored(mesh: &TriMesh, op: &'static str, what: &str, hint: &str) -> Result<TriMesh> {
     let mut out = mesh.clone();
     for point in &mut out.positions {
         *point = point.map(|v| f64::from(v as f32));
     }
     let refuse = |reason| {
         Error::geometry(
-            "boolean",
-            format!("the result is unsafe at mesh storage precision ({reason}); change the cut or placement"),
+            op,
+            format!("{what} unsafe at mesh storage precision ({reason}); {hint}"),
         )
     };
-    out.validate("boolean")?;
+    out.validate(op)?;
     if out.is_empty() {
         return Ok(out);
     }
@@ -928,5 +938,42 @@ mod tests {
         let (_, r) = boolean(&parts, &[], BoolOp::Union, &BooleanOptions::default()).unwrap();
         assert!(r.unclean_inputs == 0 && r.engine == "robust", "{r:?}");
         assert_eq!(SPENT.get(), 0);
+    }
+
+    #[test]
+    fn the_end_pass_stops_at_its_own_budget() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
+        let nums = |k: &str| {
+            v[k].as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "fixture indices"
+        )]
+        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
+        let hub = TriMesh::from_flat(&nums("positions"), &idx).unwrap();
+        let spec = crate::array::ArraySpec::Circular {
+            count: 12,
+            center: [0.0; 3],
+            axis: None,
+            angle_deg: None,
+            rotate_copies: None,
+        };
+        let exact = BooleanOptions {
+            engine: Engine::Exact,
+            keep_inverted: false,
+        };
+        let (m, _) = crate::array::merged(&hub, &spec, &exact).unwrap();
+        let s = Solid::new(&m).unwrap();
+        assert!(s.self_intersects());
+        let o = BooleanOptions::default();
+        assert!(cleaned_within(&s, o, 1).is_none());
+        assert!(cleaned_within(&s, o, CLEAN_WORK_PER_TRI).is_some());
     }
 }

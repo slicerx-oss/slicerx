@@ -269,7 +269,13 @@ fn array_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
         let opts: BooleanOptions = field_or_default(req, "options")?;
         let (m, r) = array::merged(&world, &spec, &opts)?;
         // like a join, a merged array that would not store is refused here, not at save
-        let merged = mesh_report(&boolean::storage_mesh(&it.to_local(&m)?)?, enc);
+        let local = boolean::stored(
+            &it.to_local(&m)?,
+            "array",
+            "the merged copies are",
+            "try another count, or keep the copies unmerged",
+        )?;
+        let merged = mesh_report(&local, enc);
         if let (Some(o), Value::Object(extra)) = (v.as_object_mut(), merged) {
             o.extend(extra);
         }
@@ -1649,6 +1655,32 @@ mod tests {
             "merge": true,
         });
         let e = call("array", &req.to_string()).unwrap_err().to_string();
-        assert!(e.contains("unsafe at mesh storage precision"), "{e}");
+        assert!(
+            e.starts_with("array: the merged copies are unsafe at mesh storage precision"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_moved_merged_array_stores() {
+        // a tube placed away from the origin, arrayed about its own axis
+        let cyl = |r: f64, h0: f64, h1: f64| build::cylinder(&crate::vec3::Frame::WORLD, r, h0, h1, 100);
+        let tube = crate::boolean::boolean(
+            &[cyl(9.5, 0.0, 10.0)],
+            &[cyl(7.5, -1.0, 11.0)],
+            crate::boolean::BoolOp::Difference,
+            &crate::boolean::BooleanOptions::default(),
+        )
+        .unwrap()
+        .0;
+        let req = json!({
+            "mesh": { "mesh": MeshOut::Flat.mesh(&tube), "transform": translate([30.0, 5.0, 2.0]) },
+            "spec": { "kind": "circular", "count": 12, "center": [30, 5, 0] },
+            "merge": true,
+        });
+        let out = run("array", &req);
+        assert_eq!(out["watertight"], true, "{}", out["report"]);
+        assert_eq!(out["shells"], 1);
+        assert_eq!(out["report"]["triangles"], 864);
     }
 }
