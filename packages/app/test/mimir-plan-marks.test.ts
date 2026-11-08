@@ -50,9 +50,9 @@ const SHEET = { title: 'Hinge', dims: [{ key: 'width', label: 'Width', value: 40
  * One message in the tab's runtime, made with tabPilotOptions as the tab makes it, over the tab's own tools (design.plan
  * on the card, pilot.sheet), the design toolset's design tools on the app's registry and a geom.extrude stand-in, the
  * design tools with the tab's plan ties. Each plan card is answered Go, or Not yet for the indexes in `decline`; each
- * sheet with `answer`. `steps` may read the planIds shown so far.
+ * sheet with `answer`. `steps` may read the planIds shown so far. `messages` are the person's messages, one run each.
  */
-async function tab(steps: (plans: string[]) => ScriptStep[], opts: { decline?: number[]; answer?: Record<string, number> } = {}) {
+async function tab(steps: (plans: string[]) => ScriptStep[], opts: { decline?: number[]; answer?: Record<string, number>; messages?: string[] } = {}) {
   const built: string[] = []
   const extrude = defineTool({
     name: 'geom.extrude',
@@ -78,18 +78,19 @@ async function tab(steps: (plans: string[]) => ScriptStep[], opts: { decline?: n
   const pilot = createPilot({ ...options, client: createScriptedClient(watched as ScriptStep[], { chunk: false }) })
   const calls = new Map<string, string>()
   const results: { tool: string; ok: boolean; summary: string }[] = []
-  for await (const e of pilot.run('tab', 'A print-in-place hinge', {}) as AsyncIterable<PilotEvent>) {
-    if (e.type === 'ask') {
-      const planId = planOfChoices(e.choices)
-      if (planId) {
-        planIds.push(planId)
-        void pilot.answer!(e.askId, planChoiceId(opts.decline?.includes(planIds.length - 1) ? 'change' : 'go', planId))
+  for (const message of opts.messages ?? ['A print-in-place hinge'])
+    for await (const e of pilot.run('tab', message, {}) as AsyncIterable<PilotEvent>) {
+      if (e.type === 'ask') {
+        const planId = planOfChoices(e.choices)
+        if (planId) {
+          planIds.push(planId)
+          void pilot.answer!(e.askId, planChoiceId(opts.decline?.includes(planIds.length - 1) ? 'change' : 'go', planId))
+        }
       }
+      if (e.type === 'sheet') void pilot.answerSheet!(e.sheet.id, opts.answer ?? {})
+      if (e.type === 'tool_call') calls.set(e.callId, e.tool)
+      if (e.type === 'tool_result') results.push({ tool: calls.get(e.callId) ?? '', ok: e.ok, summary: e.summary })
     }
-    if (e.type === 'sheet') void pilot.answerSheet!(e.sheet.id, opts.answer ?? {})
-    if (e.type === 'tool_call') calls.set(e.callId, e.tool)
-    if (e.type === 'tool_result') results.push({ tool: calls.get(e.callId) ?? '', ok: e.ok, summary: e.summary })
-  }
   return { built, seen, results, planIds }
 }
 
@@ -187,6 +188,29 @@ describe("the mimir tab's plan marks in the registry design.check reads", () => 
     expect(seen[5]).toContain(HELD)
     expect(built).toEqual([])
     expect(mimirPlans.get(planIds[1]!)).toMatchObject({ stale: true, claimed: 'd1' })
+    const check = results.find((r) => r.tool === 'design.check')!
+    expect(check.ok).toBe(false)
+    expect(check.summary).toContain('The person changed sizes after the plan for Hinge was approved')
+  })
+
+  it('refuses the plan in design.check when the part is built in the next message under a wholly different name', async () => {
+    // a known limit: the plan is approved in one message and the part started in the next under a name that shares no
+    // word with the plan's part, so its build is not held; design.check still refuses the plan whose sizes changed
+    const { built, results, planIds } = await tab(
+      (ids) => [
+        { calls: [{ name: 'design.plan', args: HINGE }] },
+        { text: 'Shall I start?' },
+        { calls: [{ name: 'pilot.sheet', args: SHEET }] },
+        { calls: [{ name: 'design.new', args: { name: 'Door leaf' } }] },
+        { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] },
+        (() => ({ calls: [{ name: 'design.check', args: { planId: ids[0]! } }] })) as ScriptStep,
+        { text: 'Done.' },
+      ],
+      { answer: { width: 60 }, messages: ['A print-in-place hinge', 'yes'] },
+    )
+    expect(planIds).toHaveLength(1)
+    expect(built).toEqual(['Leaf@d1'])
+    expect(mimirPlans.get(planIds[0]!)?.stale).toBe(true)
     const check = results.find((r) => r.tool === 'design.check')!
     expect(check.ok).toBe(false)
     expect(check.summary).toContain('The person changed sizes after the plan for Hinge was approved')
