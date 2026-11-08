@@ -179,7 +179,20 @@ const pairKey = ([a, b]: readonly [number, number]): string => `${Math.min(a, b)
 
 type Flat = { z: number; min: [number, number]; max: [number, number] }
 
-/** The mesh's facets that face up (or down), each as its height and its box seen from above. */
+/**
+ * How straight up (or down) a facet must face to be part of a flat face: flat faces are drawn exactly, while the
+ * facets of a round face nearest its top lean by half a facet's turn, a few degrees at most.
+ */
+const LEVEL = 1 - 1e-6
+
+/**
+ * How wide, both ways seen from above, the level facets around a gap's end must be for it to be on a flat face. A pin
+ * lying flat in its bore can have a level facet strip along its top; the strip is one chord wide (0.6 mm on a 2.5 mm
+ * pin drawn in 25 sides, less on finer ones), so it is no flat face.
+ */
+const FLAT_SPAN_MM = 1
+
+/** The mesh's facets that face straight up (or down), each as its height and its box seen from above. */
 function flats(m: Mesh, up: boolean): Flat[] {
   const out: Flat[] = []
   const at = (i: number, k: number): number => m.positions[i * 3 + k]!
@@ -189,7 +202,7 @@ function flats(m: Mesh, up: boolean): Flat[] {
     const e2 = [at(k, 0) - at(i, 0), at(k, 1) - at(i, 1), at(k, 2) - at(i, 2)] as const
     const nz = e1[0] * e2[1] - e1[1] * e2[0]
     const l = Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], nz)
-    if (l < 1e-12 || (up ? nz : -nz) / l < 0.99) continue
+    if (l < 1e-12 || (up ? nz : -nz) / l < LEVEL) continue
     const xs = [at(i, 0), at(j, 0), at(k, 0)]
     const ys = [at(i, 1), at(j, 1), at(k, 1)]
     out.push({ z: (at(i, 2) + at(j, 2) + at(k, 2)) / 3, min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
@@ -208,6 +221,35 @@ const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM &&
 function restsOn(tops: readonly Flat[], bottoms: readonly Flat[], gapMm: number, low: V3, high: V3): boolean {
   if (high[2] - low[2] < gapMm - ON_FACE_MM) return false
   const t = tops.filter((f) => holds(f, low))
-  if (!t.length) return false
-  return bottoms.some((u) => holds(u, high) && t.some((f) => Math.abs(u.z - f.z - gapMm) <= ON_FACE_MM))
+  if (!t.length || !wide(t, tops)) return false
+  const u = bottoms.filter((b) => holds(b, high) && t.some((f) => Math.abs(b.z - f.z - gapMm) <= ON_FACE_MM))
+  return u.length > 0 && wide(u, bottoms)
+}
+
+/**
+ * Whether the level facets joined to these (at their height, boxes touching, seen from above) span FLAT_SPAN_MM or
+ * more both ways: a flat face, not one strip of facets along a round one.
+ */
+function wide(seed: readonly Flat[], all: readonly Flat[]): boolean {
+  const z = seed[0]!.z
+  const level = all.filter((f) => Math.abs(f.z - z) <= ON_FACE_MM)
+  const touches = (a: Flat, b: Flat): boolean => a.min[0] <= b.max[0] + ON_FACE_MM && b.min[0] <= a.max[0] + ON_FACE_MM && a.min[1] <= b.max[1] + ON_FACE_MM && b.min[1] <= a.max[1] + ON_FACE_MM
+  const region = new Set<Flat>(seed)
+  const lo: [number, number] = [Infinity, Infinity]
+  const hi: [number, number] = [-Infinity, -Infinity]
+  const queue = [...seed]
+  while (queue.length) {
+    const f = queue.pop()!
+    for (const k of [0, 1] as const) {
+      lo[k] = Math.min(lo[k], f.min[k])
+      hi[k] = Math.max(hi[k], f.max[k])
+    }
+    if (hi[0] - lo[0] >= FLAT_SPAN_MM && hi[1] - lo[1] >= FLAT_SPAN_MM) return true
+    for (const g of level)
+      if (!region.has(g) && touches(f, g)) {
+        region.add(g)
+        queue.push(g)
+      }
+  }
+  return false
 }
