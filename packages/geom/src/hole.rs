@@ -487,11 +487,11 @@ mod tests {
             height_mm: 5.5 - z0,
             segments: None,
         };
-        let mut out = cube;
+        let mut out = cube.clone();
         for piece in c.to_convex().unwrap() {
             out = crate::convex::subtract(&out, &crate::convex::overshoot_flush(&piece, &out, 0.01)).unwrap();
         }
-        crate::emboss::merge_coplanar(&out).unwrap()
+        crate::emboss::merge_coplanar_changed(&out, &cube).unwrap()
     }
 
     #[test]
