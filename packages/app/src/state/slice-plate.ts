@@ -156,12 +156,16 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
   }
 }
 
-/** slicePlate's options; `onStamp` gets the state the slice is stamped with, as it is stamped. */
+/**
+ * slicePlate's options; `onStamp` gets the state the slice is stamped with, as it is stamped, and `onBegin` the slice's
+ * own abort controller as it starts running (auto slice keeps it to know whether the running slice is its own).
+ */
 export interface SlicePlateOptions {
   auto?: boolean
   planning?: boolean
   plate?: string
   onStamp?: (at: AppState) => void
+  onBegin?: (abort: AbortController) => void
 }
 
 /**
@@ -218,6 +222,7 @@ export async function slicePlate(host: Host, opts: SlicePlateOptions = {}): Prom
   // setting reads it again.
   opts.onStamp?.(at)
   const abort = beginSlice()
+  opts.onBegin?.(abort)
   // The last slice stays on screen, stale, until this one lands: the panels and the preview never empty in between.
   const before = shownSlice(get().slice)
   set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result, ...(before.stamp ? { lastStamp: before.stamp } : {}) } : {}) } })
