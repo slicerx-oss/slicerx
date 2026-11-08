@@ -4,7 +4,7 @@
 // features in the order they were made, across every body, and a marker that rolls it back. A feature names its
 // sketch by id instead of holding a copy. An object's own history is a view of it, filtered by body, so replay
 // and the app's per-object tools work unchanged.
-import type { History, HistoryMesh, Step, StepParams } from './model'
+import type { History, HistoryMesh, Mat4, Step, StepParams } from './model'
 import { BODY_GONE, type Projection } from './project'
 import type { FaceFrame, SketchLoop } from './types'
 
@@ -23,10 +23,19 @@ export interface SketchItem {
   /** how many projection ids it has handed out; a removed one is never handed out again */
   nextProjection?: number
   /**
-   * the designs it was drawn for while they waited for their first body: the first of them to get one takes it along
-   * when that body lands, if no feature uses it yet. Kept with the sketch so every design host sees it; not saved.
+   * the designs it was drawn for (design.sketch given a design, or every design waiting for a body when none was named),
+   * each with where it stood on the plate then, written once. The sketch moves with the one design it was drawn for, as
+   * a sketch no design was named for moves with the body of the first feature drawn on it (design-frame.ts
+   * sketchAnchor); of designs that waited, the first to get a body claims it. Kept with the sketch so every design host
+   * sees it, and saved with its design.
    */
-  drawnFor?: string[]
+  drawnFor?: DrawnFor[]
+}
+
+/** A design a sketch was drawn for, and its transform on the plate when the sketch was stored. */
+export interface DrawnFor {
+  design: string
+  transform: Mat4
 }
 
 type Extrude = Extract<StepParams, { op: 'shape.extrude' }>
@@ -369,10 +378,17 @@ export function withBodyIds(t: Timeline, id: (old: string) => string | undefined
         const b = id(p.source.body)
         return b === undefined ? { ...p, lost: p.lost ?? BODY_GONE } : { ...p, source: { ...p.source, body: b } }
       }) } : it
-      if (!i.on) return i
-      const body = id(i.on.body)
-      const { on: _on, ...k } = i
-      return body === undefined ? k : { ...i, on: { ...i.on, body } }
+      // drawn for a design with no new id: no longer for any
+      const f = i.drawnFor?.flatMap((x) => {
+        const design = id(x.design)
+        return design === undefined ? [] : [{ ...x, design }]
+      })
+      const { drawnFor: _d, ...bare } = i
+      const j = f === undefined ? i : f.length ? { ...i, drawnFor: f } : bare
+      if (!j.on) return j
+      const body = id(j.on.body)
+      const { on: _on, ...k } = j
+      return body === undefined ? k : { ...j, on: { ...j.on, body } }
     }),
     marker: out.marker,
   }

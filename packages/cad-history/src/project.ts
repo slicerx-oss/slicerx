@@ -6,6 +6,7 @@
 // its source in the references the history already uses, and is found again on the source as it stands at the
 // sketch's place in the timeline. A source that is gone leaves the curves where they were and says why.
 import type { Item, SketchItem, Timeline } from './design'
+import { frameNow, type PlaceOf } from './design-frame'
 import { direction, invert, point, type HistoryMesh, type Mat4 } from './model'
 import { engineReason, type EngineCall } from './replay'
 import type { EdgeRef, FaceFrame, OpenFace, SketchLoop, Vec3 } from './types'
@@ -150,10 +151,11 @@ export type PartsAt = (body: string, at: number) => Promise<{ parts: HistoryMesh
 
 /**
  * Every live sketch's projections found again on their sources as they stand at the sketch, in timeline order, from
- * the bodies in `only` when it is given. A lost source keeps its curves and says why; one found again loses the note.
+ * the bodies in `only` when it is given, each onto the sketch's plane where it stands now (frameNow, with `plateOf`;
+ * without it, where it is stored). A lost source keeps its curves and says why; one found again loses the note.
  * Returns the timeline and the sketches whose curves or notes changed; unchanged, it is the same timeline.
  */
-export async function followProjections(t: Timeline, partsAt: PartsAt, call: EngineCall, only?: ReadonlySet<string>): Promise<{ timeline: Timeline; changed: string[] }> {
+export async function followProjections(t: Timeline, partsAt: PartsAt, call: EngineCall, only?: ReadonlySet<string>, plateOf?: PlaceOf): Promise<{ timeline: Timeline; changed: string[] }> {
   let items = t.items
   const changed: string[] = []
   const live = Math.min(t.marker, t.items.length)
@@ -164,7 +166,7 @@ export async function followProjections(t: Timeline, partsAt: PartsAt, call: Eng
     for (const p of k.projections) {
       if (only && !only.has(p.source.body)) continue
       const at = await partsAt(p.source.body, i)
-      const r = at ? await resolveProjection(call, p.source, at.parts, at.transform, k.frame) : { lost: BODY_GONE }
+      const r = at ? await resolveProjection(call, p.source, at.parts, at.transform, plateOf ? frameNow(t, k, plateOf) : k.frame) : { lost: BODY_GONE }
       const { lost: _l, ...plain } = p
       next = 'loops' in r ? withProjection(next, plain, r.loops) : withProjection(next, { ...plain, lost: r.lost }, null)
     }

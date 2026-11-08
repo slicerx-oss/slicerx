@@ -13,7 +13,7 @@
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
 // renders no React. React renders on clicks, drags of points and edits only.
-import { ownLoops, patternFromFields, patternProblem, type Pattern, type PatternFields, type Projection, type SketchLoop } from '@slicerx/cad-history'
+import { frameNow, ownLoops, patternFromFields, patternProblem, type Pattern, type PatternFields, type Projection, type SketchLoop } from '@slicerx/cad-history'
 import { afterLoopChange, afterReverse, curveStates, fitKey, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
 import { dimensionFor, isDimension, measured, pointAt, pointHit, settle, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
@@ -43,6 +43,7 @@ import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { ProjectCard, type Projected } from './project-card'
+import { placeOf } from './sketch-place'
 import { afterSolid, defaultTarget, finishSketch, oneAtATime, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import type { UndoStep } from '../plate/history'
 import { chamferSketch, filletSketch } from './edge-api'
@@ -229,6 +230,11 @@ interface SketchInit {
   constraints: SketchConstraint[]
   /** A finished sketch opened from the timeline, rather than a step of a body. */
   from?: SketchOpen
+  /**
+   * For a finished sketch: the frame it is stored on (none is the bed). The panel shows it where it stands now, moved
+   * with what it moves with (sketch-place.ts), and a change to it keeps this frame, so the sketch never moves.
+   */
+  stored?: FaceFrame | undefined
   /** For Extrude or Revolve from a finished sketch: the body Join and Cut start on */
   target?: { objectId: string; partIndex: number } | null
   /** Model geometry projected into it, and their curves, kept apart from the drawing */
@@ -287,12 +293,14 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
   const r = ext ? ext.radius + 20 : 50
   const c = ext?.center ?? [0, 0]
   const target = defaultTarget(k, get().plate)
+  // where it stands now, as Model's view draws it and a projection into it lands
+  const shown = frameNow(get().timeline, k, placeOf)
   const plane: Plane = {
-    frame: k.frame ?? BED_FRAME,
+    frame: shown ?? BED_FRAME,
     outline: [],
     label: k.name,
-    min: k.frame ? [c[0] - r, c[1] - r] : [0, 0],
-    max: k.frame ? [c[0] + r, c[1] + r] : [bed.widthMm, bed.depthMm],
+    min: shown ? [c[0] - r, c[1] - r] : [0, 0],
+    max: shown ? [c[0] + r, c[1] + r] : [bed.widthMm, bed.depthMm],
   }
   return {
     plane,
@@ -306,6 +314,7 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
       axis: null,
       constraints: (k.constraints ?? []) as SketchConstraint[],
       from: open,
+      stored: k.frame,
       ...(open.mode === 'edit' ? {} : { target }),
       projected: { list: k.projections ?? [], loops: k.loops.filter((l) => l.projected !== undefined), next: k.nextProjection ?? 0 },
     },
@@ -1614,7 +1623,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name, profile, dof: solved ? solved.solved.dof : null, ready, reason, loops: loopsKey })
   }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
-  const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
+  // a finished sketch keeps the frame it is stored on; the loops in its plane are the same wherever it stands
+  const sketchBody = () => ({ frame: init?.from ? init.stored : plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
   // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
   // timeline as the solid that names it lands, in its undo step (solidOnNewSketch), and a finished one takes changed
   // projections first. The sketch's id goes to the solid's step by name, never through a slot another tool's solid

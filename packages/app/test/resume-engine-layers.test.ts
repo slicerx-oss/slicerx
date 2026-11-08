@@ -545,6 +545,8 @@ describe('the slice inputs key', () => {
     source: LEFT_OUT,
     dimensions: LEFT_OUT,
     history: LEFT_OUT,
+    landedAt: LEFT_OUT,
+    roomMoves: LEFT_OUT,
   } satisfies Record<keyof PlateEntry, (() => void) | typeof LEFT_OUT>
 
   for (const [field, change] of Object.entries(objectFields)) {
