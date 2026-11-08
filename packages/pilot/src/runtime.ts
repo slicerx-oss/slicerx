@@ -281,9 +281,10 @@ export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
 /**
  * A modeling or mesh step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked
- * for again with the same input on the same target in the same turn while that target is unchanged: it would stop the
- * same way, so it is not run again. Only a geometry change to that target that goes through (a geom.* step that is
- * not a read, or design.edit_step, undo or redo) lets it run again (CHANGES_GEOMETRY, stepTarget).
+ * for again with the same input on the same design in the same turn while that design is unchanged: it would stop the
+ * same way, so it is not run again. Only a geometry change to that design that goes through (a geom.* step that is
+ * not a read, or design.edit_step, undo or redo) lets it run again (CHANGES_GEOMETRY, stepKey). A step on a mesh
+ * model file is not run again with the same input at all in that turn: the file is only read.
  */
 export const STOPPED_AGAIN_LINE = 'This exact step was stopped at its time limit earlier in this turn, so it was not run again. Try a smaller version, or say what stopped.'
 /** Said for the model when it ends a run without a word, even after being asked. */
@@ -307,45 +308,82 @@ interface SeenDesigns {
   names: Map<string, Set<string>>
 }
 
-/** Notes the designs a tool's answer names: its own design and name, and each one in a `designs` list. */
-function noteDesigns(output: unknown, seen: SeenDesigns): void {
-  const one = (d: unknown): void => {
-    const { design, name } = (d ?? {}) as { design?: unknown; name?: unknown }
-    if (typeof design !== 'string' || !design) return
-    seen.ids.add(design)
-    if (typeof name === 'string' && name) seen.names.set(designNameKey(name), (seen.names.get(designNameKey(name)) ?? new Set()).add(design))
-  }
-  one(output)
-  const list = (output as { designs?: unknown } | null | undefined)?.designs
-  if (Array.isArray(list)) list.forEach(one)
-}
-
 /**
- * What a step works on, the same way when it is stopped, asked for again and changed: the design it names (by id, or
- * by a name this turn's answers tied to one id), else the mesh model it names, else for a geom.* step the part this
- * run started last, else nothing in particular ('').
+ * A turn's stopped steps by key (stepKey), each with its tool and input keys (stepInput), and the designs seen. A key is
+ * `design <id>`, `name <name>` for a design given by a name no answer has tied to one id yet, MODEL_KEY for a step
+ * on a mesh model file, or '' for a step that names neither.
  */
-function stepTarget(toolName: string, input: unknown, started: readonly StartedPart[] | undefined, seen: SeenDesigns): string {
-  const { design, model } = (input ?? {}) as { design?: unknown; model?: unknown }
-  if (typeof design === 'string' && design) {
-    const ids = seen.ids.has(design) ? undefined : seen.names.get(designNameKey(design))
-    return `design ${ids?.size === 1 ? [...ids][0] : design}`
-  }
-  if (typeof model === 'string' && model) return `model ${model}`
-  const last = toolName.startsWith('geom.') ? started?.at(-1)?.id : undefined
-  return last ? `design ${last}` : ''
-}
-
-/** A turn's stopped steps: each target's tool and input keys (stepInput), and the designs seen for stepTarget. */
 interface TurnStops {
   timedOut: Map<string, Set<string>>
   seen: SeenDesigns
 }
 
-/** A step's input without its target, which stepTarget keys on its own. */
+/** The key of the steps on mesh model files: no change clears it, since a step reads its file and never changes it. */
+const MODEL_KEY = 'model'
+
+/** The key of a design given by id or by name: its id when an answer named that id or tied the name to one id. */
+function designKey(given: string, seen: SeenDesigns): string {
+  if (seen.ids.has(given)) return `design ${given}`
+  const ids = seen.names.get(designNameKey(given))
+  return ids?.size === 1 ? `design ${[...ids][0]}` : `name ${designNameKey(given)}`
+}
+
+/**
+ * What a stopped step is kept under, worked out the same way when it stops, when it is asked for again and when a
+ * change goes through: the design it names (designKey); else for a step on a mesh model file, MODEL_KEY, with the
+ * file left in the input it is compared by; else for a geom.* step the part this run started last; else ''.
+ */
+function stepKey(toolName: string, input: unknown, started: readonly StartedPart[] | undefined, seen: SeenDesigns): string {
+  const { design, model } = (input ?? {}) as { design?: unknown; model?: unknown }
+  if (typeof design === 'string' && design) return designKey(design, seen)
+  if (typeof model === 'string' && model) return MODEL_KEY
+  const last = toolName.startsWith('geom.') ? started?.at(-1)?.id : undefined
+  return last ? `design ${last}` : ''
+}
+
+/**
+ * Every key a stop on `key` may be kept under: for a design id, also each name that stands for that id alone and the
+ * id itself given before any answer named it, so a stop made before a name was tied to its id still counts.
+ */
+function keysOf(key: string, seen: SeenDesigns): string[] {
+  if (!key.startsWith('design ')) return [key]
+  const id = key.slice('design '.length)
+  const names = [...seen.names].filter(([, ids]) => ids.size === 1 && ids.has(id)).map(([name]) => `name ${name}`)
+  return [...new Set([key, `name ${designNameKey(id)}`, ...names])]
+}
+
+/**
+ * Notes the designs a tool's answer names (its own design and name, and each one in a `designs` list), and moves the
+ * stops kept under a name that now stands for one id, or under that id given as a name, to the id.
+ */
+function noteDesigns(output: unknown, stops: TurnStops): void {
+  const { seen, timedOut } = stops
+  const noted = new Set<string>()
+  const one = (d: unknown): void => {
+    const { design, name } = (d ?? {}) as { design?: unknown; name?: unknown }
+    if (typeof design !== 'string' || !design) return
+    seen.ids.add(design)
+    noted.add(design)
+    if (typeof name === 'string' && name) seen.names.set(designNameKey(name), (seen.names.get(designNameKey(name)) ?? new Set()).add(design))
+  }
+  one(output)
+  const list = (output as { designs?: unknown } | null | undefined)?.designs
+  if (Array.isArray(list)) list.forEach(one)
+  for (const id of noted) {
+    const [key, ...others] = keysOf(`design ${id}`, seen)
+    for (const other of others) {
+      const held = timedOut.get(other)
+      if (!held) continue
+      timedOut.set(key!, new Set([...(timedOut.get(key!) ?? []), ...held]))
+      timedOut.delete(other)
+    }
+  }
+}
+
+/** A step's input without the design it names, which stepKey keys on its own. */
 function stepInput(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input
-  const { design: _d, model: _m, ...rest } = input as Record<string, unknown>
+  const { design: _d, ...rest } = input as Record<string, unknown>
   return rest
 }
 
@@ -824,10 +862,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     const input = parsed.data
     // the same step with the same input, after its geometry call was stopped at its time limit this turn, on the same
-    // target (stepTarget): a design named by id or name, or with none named, the part this run started last
+    // design (stepKey): one named by id or name, or with none named, the part this run started last
     const again = `${tool.name} ${sortedJson(stepInput(input))}`
-    const target = stepTarget(tool.name, input, runPart.get(sessionId), stops.seen)
-    if (stops.timedOut.get(target)?.has(again)) {
+    const stopKey = stepKey(tool.name, input, runPart.get(sessionId), stops.seen)
+    if (keysOf(stopKey, stops.seen).some((key) => stops.timedOut.get(key)?.has(again))) {
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: STOPPED_AGAIN_LINE })
       return { message: JSON.stringify({ ok: false, blocked: true, message: STOPPED_AGAIN_LINE }), stop: false }
@@ -952,13 +990,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
-    // A step stopped for good is not run again as it was on that target. A geometry change to the target that goes
+    // A step stopped for good is not run again as it was on that design. A geometry change to the design that goes
     // through (a geom.* step that is not a read, or an edit, undo or redo) may be the smaller version the refusal
-    // asked for, so the steps stopped on that target may run again after it; nothing else lets them.
+    // asked for, so the steps stopped on that design may run again after it; nothing else lets them. A mesh model
+    // file is only read, so nothing clears the steps stopped on one.
     const geometry = (tool.name.startsWith('geom.') && (tool.permissionFor?.(input) ?? tool.permission) !== 'read') || CHANGES_GEOMETRY.has(tool.name)
-    if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(target, (stops.timedOut.get(target) ?? new Set()).add(again))
-    else if (out.ok !== false && geometry) stops.timedOut.delete(target)
-    if (out.ok !== false) noteDesigns(out.output, stops.seen)
+    if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(stopKey, (stops.timedOut.get(stopKey) ?? new Set()).add(again))
+    else if (out.ok !== false && geometry && stopKey !== MODEL_KEY) for (const key of keysOf(stopKey, stops.seen)) stops.timedOut.delete(key)
+    if (out.ok !== false) noteDesigns(out.output, stops)
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -996,9 +1035,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
-    // modeling and mesh steps stopped at a geometry time limit this turn, by target and then tool and input; a target's
-    // steps leave once a geometry change to it goes through (STOPPED_AGAIN_LINE). The designs this turn's answers named
-    // tie a design name to its id.
+    // modeling and mesh steps stopped at a geometry time limit this turn, by design (stepKey) and then tool and input;
+    // a design's steps leave once a geometry change to it goes through (STOPPED_AGAIN_LINE). The designs this turn's
+    // answers named tie a design name to its id.
     const stops: TurnStops = { timedOut: new Map(), seen: { ids: new Set(), names: new Map() } }
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
