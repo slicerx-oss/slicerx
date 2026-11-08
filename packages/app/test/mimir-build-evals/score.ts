@@ -5,7 +5,7 @@
 // person sends one message, confirms the dimension sheet once and presses Go on the plan once; any other answer,
 // question card or nudge is an extra turn, and one extra turn fails the run however good the part is.
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
-import { bedFit, bodyCount, closure, minWall, type BuildVolume } from '../../../pilot/evals/creative/mesh-checks'
+import { bedFit, bodyCount, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
 import type { BuildCase, OpMatch, SizeCheck } from './cases'
 
 export interface Check {
