@@ -1646,6 +1646,19 @@ describe('a design host that goes away', () => {
     expect(waitingAt(e)).toBeDefined()
   })
 
+  it('puts no body on the plate for a first step still being built when the project is cleared', async () => {
+    // the person starts a new project while the tray's first body loads
+    const clearing = { loadParts: async (name: string, _parts: MeshPart[]) => {
+      clearProject()
+      return handle(name)
+    } }
+    const run = toolsOn(appDesignHost(clearing))
+    const d = String((await run('design.new', { name: 'Tray' })).output['design'])
+    await expect(run('geom.extrude', { design: d, ...block })).rejects.toThrow(/The project changed while this design was built/)
+    expect(get().plate).toHaveLength(0)
+    expect(waitingAt(d)).toBeUndefined()
+  })
+
   it('keeps nothing waiting for a design a call starts on it after it went away', async () => {
     const host = appDesignHost(loader)
     const run = toolsOn(host)
