@@ -50,7 +50,7 @@ function manual(): ManualWorker[] {
 const within = <T,>(p: Promise<T>, ms: number): Promise<T | Error | 'still waiting'> =>
   Promise.race([p.catch((e: Error) => e), new Promise<'still waiting'>((r) => setTimeout(() => r('still waiting'), ms))])
 
-const STUCK = /^the array step ran past its 0\.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part$/
+const STUCK = /^The step "Array" ran past its 0\.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part$/
 
 afterEach(() => {
   endIdleGeomWorker()
@@ -118,7 +118,7 @@ describe('a geometry call past its time limit', () => {
     w.start(0)
     vi.advanceTimersByTime(1000)
     expect(w.terminate).toHaveBeenCalledOnce()
-    expect(await stuck).toMatchObject({ message: 'the boolean step ran past its 1 s limit and was stopped; try a smaller version: fewer copies or a simpler part' })
+    expect(await stuck).toMatchObject({ message: 'The step "Join" ran past its 1 s limit and was stopped; try a smaller version: fewer copies or a simpler part' })
     const fresh = workers[1]!
     expect(fresh.calls().map((c) => c.op)).toEqual(['measure'])
     fresh.answer(0)
@@ -135,12 +135,12 @@ describe('a geometry call past its time limit', () => {
     const id = w.calls()[0]!.id
     for (let i = 0; i < 5; i++) {
       vi.advanceTimersByTime(900)
-      w.send({ step: id })
+      w.send({ step: id, op: 'edge.fillet', name: 'Fillet 2 mm' })
     }
     expect(w.terminate).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1000)
     expect(w.terminate).toHaveBeenCalledOnce()
-    expect(await replay).toMatchObject({ message: expect.stringMatching(/^the history\.replay step ran past its 1 s limit/) })
+    expect(await replay).toMatchObject({ message: 'The step "Fillet 2 mm" ran past its 1 s limit and was stopped; try a smaller version: fewer copies or a simpler part' })
     // a replay past its limit is not run again on the next worker
     expect(workers).toHaveLength(1)
   })
@@ -172,6 +172,38 @@ describe('a geometry call past its time limit', () => {
     expect(w.terminate).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(w.terminate).toHaveBeenCalledOnce()
-    expect(await refused).toMatchObject({ message: 'the layers.plan step ran past its 2 s limit and was stopped; try a smaller version: a coarser mesh (simplify it first)' })
+    expect(await refused).toMatchObject({ message: 'The step "Layer plan" ran past its 2 s limit and was stopped; try a smaller version: a coarser mesh' })
+  })
+
+  it('gives a replay step the limit of its own class', async () => {
+    const workers = manual()
+    const api = geom()
+    const replay = api.call('history.replay', {}).catch((e: Error) => e)
+    const w = workers[0]!
+    w.start(0)
+    w.send({ step: w.calls()[0]!.id, op: 'simplify', name: 'Simplify to 25 %' })
+    vi.advanceTimersByTime(180_001)
+    expect(w.terminate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(300_000 - 180_001)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await replay).toMatchObject({ message: 'The step "Simplify to 25 %" ran past its 5 min limit and was stopped; try a smaller version: a coarser mesh' })
+  })
+
+  it('stops a quick call at 30 s and lets a model call run 179 s, with the default limits', async () => {
+    const workers = manual()
+    const api = geom()
+    const join = api.call('boolean', {})
+    const w = workers[0]!
+    w.start(0)
+    vi.advanceTimersByTime(179_000)
+    w.answer(0)
+    await expect(join).resolves.toEqual({ op: 'boolean' })
+    const measure = api.call('measure', {}).catch((e: Error) => e)
+    w.start(1)
+    vi.advanceTimersByTime(29_999)
+    expect(w.terminate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await measure).toMatchObject({ message: 'The step "Measure" took too long (over its 30 s limit) and was stopped; try it again' })
   })
 })

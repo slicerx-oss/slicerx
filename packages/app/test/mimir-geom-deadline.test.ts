@@ -60,7 +60,7 @@ describe('a mimir run with a stuck geometry step', () => {
       expect(performance.now() - t).toBeLessThan(10_000)
       const results = events.flatMap((e) => (e.type === 'tool_result' ? [e] : []))
       expect(results.map((r) => [r.ok, r.summary])).toEqual([
-        [false, 'the array step ran past its 0.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part'],
+        [false, 'The step "Array" ran past its 0.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part'],
         [true, JSON.stringify({ op: 'measure' })],
       ])
       // each step ran once, and the engine got the stuck call once
