@@ -644,8 +644,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       const design = (input as { design?: unknown } | null)?.design
       // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
-      // never for a part in another design
-      const elsewhere = carried.has(sessionId) && typeof design === 'string' && !sheetDesigns.get(sessionId)?.has(design)
+      // never for a part in another design; with no design recorded for it, any design may be its own
+      const under = sheetDesigns.get(sessionId)
+      const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
       if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
       usedSheet.add(sessionId)
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
@@ -707,11 +708,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           if (answer.confirmed) {
             if (!sheet.design) confirmed.add(sessionId)
           } else if (!answer.said && !sheet.design) confirmed.delete(sessionId)
-          // a new part's sheet is a new part's sizes: nothing carries over from the last one. A sheet set aside by
-          // words, or one of a part already built, leaves the last part's sheet as it was.
+          // a new part's sheet is a new part's sizes: nothing carries over from the last one, and no part has used it
+          // yet. A sheet set aside by words, or one of a part already built, leaves the last part's sheet as it was.
           if (!sheet.design && (answer.confirmed || !answer.said)) {
             sheetDesigns.delete(sessionId)
             carried.delete(sessionId)
+            usedSheet.delete(sessionId)
           }
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
