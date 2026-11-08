@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Finished sketches: Finish sketch puts the sketch in the design timeline without making a solid, the way Fusion
 // does. A finished sketch opens again from the strip or the tree to be changed, extruded or revolved; a feature
-// made from it names it by id (record.ts sketchNext), and changing the sketch replays the bodies that use it.
+// made from it names it by id (cad-ops.ts LandIn), and changing the sketch replays the bodies that use it.
 import { historyOf, stepId, withoutTaken, withSketch, type FaceFrame, type Projection, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { useSyncExternalStore } from 'react'
@@ -11,7 +11,6 @@ import { get, markStale, set, toast, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
 import { newStep, withLast, type UndoStep } from '../plate/history'
-import { sketchNext } from './history/record'
 import { followBodies } from './project-sketch'
 
 type Loader = { loadParts(name: string, parts: PlateEntry['parts']): Promise<MeshHandle> }
@@ -41,18 +40,14 @@ export function finishSketch(s: SketchBody, id = `${stepId()}k`): SketchItem {
 /**
  * Extrude or Revolve of a new sketch that holds projections: the solid names the sketch (a projection's source stays
  * on the sketch item), so the sketch goes in the timeline as the solid lands, in the same undo step, as a plain
- * extrude and its sketch do. `apply` hands `step` to the write that lands the solid; nothing else joins the step, so
- * an edit made while the engine works keeps its own. When nothing lands (the engine refuses, or a join misses the
+ * extrude and its sketch do. `apply` hands `step` to the write that lands the solid and `sketch`, the new sketch's id,
+ * to the step it records; nothing else joins the step or takes the id, so an edit or another tool's solid made while
+ * the engine works keeps its own. When nothing lands (the engine refuses, or a join misses the
  * body), the sketch never went in, so there is nothing to take back and the undo history is as it was.
  */
-export async function solidOnNewSketch<T>(s: SketchBody, apply: (step: UndoStep) => Promise<T>): Promise<T> {
+export async function solidOnNewSketch<T>(s: SketchBody, apply: (step: UndoStep, sketch: string) => Promise<T>): Promise<T> {
   const id = `${stepId()}k`
-  sketchNext(id)
-  try {
-    return await apply(newStep(() => void finishSketch(s, id)))
-  } finally {
-    sketchNext(null)
-  }
+  return apply(newStep(() => void finishSketch(s, id)), id)
 }
 
 /**
@@ -75,10 +70,14 @@ export function oneAtATime(): <T>(run: () => Promise<T>) => Promise<T | undefine
 /**
  * What the sketch editor does with an Extrude or Revolve that went through: one that changed nothing (a join that
  * misses the body) keeps the editor and the drawing open with why as its note, as a refusal does, so the distance
- * or direction can be fixed and pressed again; one that landed closes the editor with a toast.
+ * or direction can be fixed and pressed again; one that landed closes the editor with a toast. A miss after the
+ * editor closed (the person left it while the engine worked) has no note to land in, so it says why in a toast.
  */
 export function afterSolid(r: { message: string; warn: boolean; missed?: true | undefined }, note: (text: string) => void): void {
-  if (r.missed) return note(r.message)
+  if (r.missed) {
+    if (get().objectTool === 'sketch') return note(r.message)
+    return toast(r.message, 'warn')
+  }
   toast(r.message, r.warn ? 'warn' : 'ok')
   set({ objectTool: null })
 }
