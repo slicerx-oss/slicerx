@@ -102,6 +102,21 @@ describe('a sheet before the first build', () => {
     expect(ran).toEqual(['geom.extrude:new'])
   })
 
+  // The same lid, but the person presses Cancel on the box's sheet: canceling the sheet of a part already built takes
+  // back nothing, so the lid's confirmed sizes still stand and it builds without a second sheet.
+  it('keeps a new part\'s confirmation after a later sheet of a part already built is canceled', async () => {
+    const ran: string[] = []
+    const built = { name: 'pilot.sheet', args: { ...SHEET.args, design: 'obj_box' } }
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [SHEET] }, { calls: [built] }, { calls: [EXTRUDE] }, { text: 'Built.' }], { chunk: false }), builtins: false, tools: [sheetTool(), geom('geom.extrude', ran)] })
+    const answers: unknown[] = []
+    for await (const e of p.run('s', 'A lid for my box')) {
+      if (e.type === 'sheet') void (e.sheet.design ? p.answerSheet!(e.sheet.id, null) : p.answerSheet!(e.sheet.id, {}))
+      if (e.type === 'sheet_answered') answers.push(e.answer.confirmed)
+    }
+    expect(answers).toEqual([true, false])
+    expect(ran).toEqual(['geom.extrude:new'])
+  })
+
   it('lets edits to a part through without a sheet', async () => {
     const { ran } = await play([{ calls: [{ name: 'geom.extrude', args: { operation: 'cut', part: 0 } }] }, { text: 'Cut.' }])
     expect(ran).toEqual(['geom.extrude:cut'])
