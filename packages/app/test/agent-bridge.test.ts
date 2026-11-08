@@ -278,7 +278,7 @@ describe('the state an agent reads', () => {
   })
 
   it('summarizes a finished slice and every other status', () => {
-    const base = { plate: [entry('cube')], plates: [], activePlate: 'plate-1', autoSlice: true, autoSliceBySize: true, sliceHeld: false }
+    const base = { ...get(), layerMarks: {}, resume: null, plate: [entry('cube')], plates: [], activePlate: 'plate-1', autoSlice: true, autoSliceBySize: true, sliceHeld: false }
     expect(sliceSummary({ ...base, slice: { status: 'done', result: result(), stale: false } })).toMatchObject({ status: 'done', layers: 50, timeS: 1234, filamentG: 3.71, toolChanges: 2, warnings: [{ code: 'thin_wall' }, { code: 'long_bridge' }] })
     expect(sliceSummary({ ...base, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: true, autoSliceMode: 'auto' })
     expect(sliceSummary({ ...base, slice: { status: 'error', message: 'No room' } })).toEqual({ status: 'error', autoSlice: true, autoSliceMode: 'auto', message: 'No room' })
