@@ -48,7 +48,8 @@ const mm = (v: number): string => `${Math.round(v * 1000) / 1000}`
 
 /**
  * The clearance table as knowledge base facts, one per nozzle: "Print in place gaps per side, 0.4 mm nozzle at 0.2 mm
- * layers: PLA 0.3 mm side by side and 0.4 mm above or below; ...". Materials with the same gaps share an entry.
+ * layers: PLA 0.3 mm side by side and 0.4 mm above or below; ...", each entry with both ways named. Materials with
+ * the same gaps share an entry.
  */
 export function clearanceFacts(): string[] {
   return TABLE_NOZZLES.map((nozzleMm) => {
@@ -59,7 +60,8 @@ export function clearanceFacts(): string[] {
       if (same) same.names.push(material)
       else groups.push({ names: [material], c })
     }
-    const parts = groups.map((g, i) => `${g.names.join(' and ')} ${mm(g.c.sideMm)}${i === 0 ? ' mm side by side' : ''} and ${mm(g.c.verticalMm)} mm${i === 0 ? ' above or below' : ''}`)
+    // every material's entry names its two ways, so "PETG and TPU 0.4 and 0.3 mm" never reads as one figure each
+    const parts = groups.map((g) => `${g.names.join(' and ')} ${mm(g.c.sideMm)} mm side by side and ${mm(g.c.verticalMm)} mm above or below`)
     return `Print in place gaps per side, ${mm(nozzleMm)} mm nozzle at ${mm(nozzleMm / 2)} mm layers: ${parts.join('; ')}.`
   })
 }
