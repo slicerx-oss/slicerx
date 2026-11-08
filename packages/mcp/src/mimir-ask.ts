@@ -82,10 +82,10 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. When mimir waits on a size sheet instead, it sets the sheet aside the way the person typing to mimir does: mimir reads said in its place, with any sizes typed on the sheet, and builds nothing from it (with no said the sheet is canceled); it never confirms a sheet. Give the askId or sheetId from waiting so a card that has already changed is refused instead of the next one being turned down.`,
+    description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. When mimir waits on a size sheet instead, a call that gives its sheetId sets the sheet aside the way the person typing to mimir does: mimir reads said in its place, with any sizes typed on the sheet, and builds nothing from it (with no said the sheet is canceled); it never confirms a sheet, and a call without sheetId never touches one. Give the askId or sheetId from waiting so a card that has already changed is refused instead of the next one being turned down.`,
     input: z.object({
       askId: z.string().min(1).max(200).optional().describe('The waiting question to turn down, from slicerx_mimir_session (waiting.askId); the one waiting now when left out'),
-      sheetId: z.string().min(1).max(200).optional().describe('The waiting size sheet to set aside, from slicerx_mimir_session (waiting.sheetId)'),
+      sheetId: z.string().min(1).max(200).optional().describe('The waiting size sheet to set aside, from slicerx_mimir_session (waiting.sheetId); a sheet is set aside only when this is given'),
       said: z.string().max(ASK_SAID_MAX).optional().describe('Words mimir reads in place of an answer, such as why the question does not fit or what to change on the sheet'),
     }),
     async run(i) {
