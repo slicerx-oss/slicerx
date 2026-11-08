@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_POLICY, type LookId, type PrinterHost } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type SetupAddInput, type SetupConnection } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type LlmClient, type SetupAddInput, type SetupConnection } from '@slicerx/pilot'
 import { EMPTY_FORM, pickBrand, pickModel, withAddInput, withConnection } from '../src/first-run/printer-form'
 import type { PilotReply, Proposal } from '../src/first-run/pilot-adapter'
 import { createHostSetup } from '../src/first-run/setup-host'
@@ -91,5 +91,31 @@ describe('form values from an approved card', () => {
     const e = withAddInput(EMPTY_FORM, { profileId: 'prusa-mk4s', nozzleMm: 0.35 })
     expect(e.connection).toBe('export')
     expect(e.nozzles[0]).toMatchObject({ size: null, other: '0.35' })
+  })
+})
+
+describe('a setup answer that waited out free mimir\'s per-minute limit', () => {
+  it('reads as a plain answer, not unsure or rate limited', async () => {
+    const inner = createScriptedClient([{ text: 'A 0.4 mm nozzle it is.' }], { chunk: false })
+    let n = 0
+    // the proxy answers slow_down to the first request, then takes the same step
+    const client: LlmClient = {
+      provider: 'mimir-cloud',
+      async *stream(req, signal) {
+        if (n++ === 0) {
+          yield { type: 'error', message: 'Slow down a moment, then try again.', retryable: false, code: 'slow_down' }
+          yield { type: 'done', stop: 'error' }
+          return
+        }
+        yield* inner.stream(req, signal)
+      },
+    }
+    const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client, sleep: async () => undefined })
+    const onboarding = createSkillPilot(pilot, 's1')
+    const reply = await onboarding.ask({ step: 'printer', text: 'Which nozzle?', form: {} })
+    expect(n).toBe(2)
+    expect(reply.text).toBe('A 0.4 mm nozzle it is.')
+    expect(reply.unsure).toBeFalsy()
+    expect(onboarding.status()).toBe('ready')
   })
 })
