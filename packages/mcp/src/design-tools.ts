@@ -270,11 +270,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   const create = defineTool({
     name: 'design.new',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
-      `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_sweep, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
+      `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_sweep, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0. A name of an open design whose part already passed slicerx_design_check against its plan is refused, naming that design: change that design rather than building the part again, or give a second part another name.`,
     localDescription:
       'Start a design (name): a part the geom tools build step by step when given its design id, every step editable in its history. Start empty (the first step makes a body) or from an STL (from). Units mm, Z up, the bed at Z = 0. More: kb.search "modeling tools".',
     input: z.object({
@@ -561,7 +561,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), and that its thinnest wall is at least twice the nozzle. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material). Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height; parts laid out side by side are held to the largest), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight: corners at the same point count as one, as the slicer reads it, and an open body's item says what keeps it open), and that its thinnest wall is at least twice the nozzle. A plan with printInPlace also gets pieces (each named piece a separate body) and gaps (between moving pieces, by nozzle, layer and material), and is checked only after slicerx_geom_fit_check has run on the design as it is now, over the planned pieces; until then the check is refused and uses no check. A plan the person made in the mimir tab whose sizes they changed on a sheet after approving it is refused until a new plan is answered, and still refused after that answer, approved or declined. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
     localDescription:
       'After a planned part\'s last feature, check it against its plan (planId): overall size, named holes, a step or more tagged with each planned feature, closed body and thinnest wall. Returns pass and each item with what the plan wants and what the body has; fix the failed items once and check again. With stop in the result, stop building and tell the person what is off. Give design when it asks which. More: kb.search "design check".',
     input: z.object({
@@ -574,14 +574,17 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       // sizes changed after the plan was approved: it no longer says what the part should be, and once a newer plan was
       // answered it never will
       if (entry.superseded) throw new ToolInputError(supersededPlanNote(entry.plan.part))
-      if (entry.stale) throw new ToolInputError(stalePlanNote(entry.plan.part))
+      if (entry.stale) throw new ToolInputError(stalePlanNote(entry.plan.part, opts.cardSide === true))
       // the fix round is used: the same answer again, with no new geometry work
       if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
       const { design: d, how } = builtFrom(entry, i.design)
       // a print-in-place part is checked once its gaps were looked at, on the part as it is now
       if (entry.plan.printInPlace && entry.plan.printInPlace.length >= 2 && !fitLooked(d, entry.plan.printInPlace))
         throw new ToolInputError(
-          `Nothing was checked. ${entry.plan.part} prints in place, so its gaps are looked at first: run geom.fit_check on ${opts.cardSide ? `the design ${d.name}` : `design ${d.id}`} as it is now, with every planned piece, fix any gap it flags, then check again.`,
+          // the card's side shows it in the mimir card's step row, in plain words with no tool name or id
+          opts.cardSide
+            ? `Nothing was checked. ${entry.plan.part} prints in place, so its gaps are looked at first: run the fit check on the design ${d.name} as it is now, with every planned piece, fix any gap it flags, then check again.`
+            : `Nothing was checked. ${entry.plan.part} prints in place, so its gaps are looked at first: run geom.fit_check on design ${d.id} as it is now, with every planned piece, fix any gap it flags, then check again.`,
         )
       const nozzleMm = nozzleOr(opts.nozzleMm?.())
       const body = await bodyFacts(designs, d, entry.plan.printInPlace ? fitLimits({ ...opts.fitProfile?.(), nozzleMm }) : undefined)
