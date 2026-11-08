@@ -136,8 +136,59 @@ describe('pilot.sheet', () => {
     expect(events.find((e) => e.type === 'sheet_answered')).toMatchObject({ answer: { confirmed: false, changed: [], said: 'make it 10 mm taller' } })
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('Set aside; the person wrote instead: "make it 10 mm taller"') })
     expect(JSON.parse(seen[0]!)).toMatchObject({ ok: false, result: { confirmed: false, said: 'make it 10 mm taller' } })
-    // words only set a sheet aside: with values they are left out
+    // words set a sheet aside, with or without sizes typed on it
     expect(answerOf({ id: 's', title: 'T', views: ['iso'], dims: DIMS as PilotSheet['dims'] }, null, 'taller')).toMatchObject({ confirmed: false, said: 'taller' })
+  })
+
+  // Sizes typed on the sheet before the person wrote to mimir come along with the words, so none are lost.
+  it('keeps the sizes typed on a sheet that words set aside, and tells mimir of them', async () => {
+    const seen: string[] = []
+    const p = pilot([
+      { calls: [SHEET] },
+      (messages) => {
+        const last = messages.at(-1)
+        seen.push(last?.role === 'tool' ? last.content : '')
+        return { text: 'Adding the hole.' }
+      },
+    ])
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'A phone stand')) {
+      events.push(e)
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, { phone_width: 75, case_allowance: 1.5, lean: 70 }, 'also add a cable hole')
+    }
+    expect(events.find((e) => e.type === 'sheet_answered')).toMatchObject({ answer: { confirmed: false, said: 'also add a cable hole', changed: ['phone_width'], values: { phone_width: 75 } } })
+    const out = JSON.parse(seen[0]!) as { summary: string }
+    expect(out.summary).toContain('Phone width 75 mm (was 71.5)')
+    expect(out.summary).toContain('also add a cable hole')
+  })
+
+  // A pipe bend, a round stem and a tapered vase cannot be extruded outlines; the sheet takes them as they will be built.
+  it('shows a sheet whose part is a revolve, a sweep or a loft', async () => {
+    const at = { a: [-16, 0, 0], b: [16, 0, 0], off: [0, 0, -8] }
+    const parts = {
+      revolve: { kind: 'revolve', plane: 'xz', points: [[0, 0], [16, 0], [16, 40], [0, 40]], axis: { point: [0, 0], direction: [0, 1] } },
+      sweep: { kind: 'sweep', profile: { d: 32, hole: 27 }, path: [[0, 0, 0], [0, 0, 70], [70, 0, 70]], round: 50 },
+      loft: { kind: 'loft', plane: 'xy', sections: [{ at: 0, d: 32 }, { at: 40, points: [[-10, -10], [10, -10], [10, 10], [-10, 10]] }] },
+    }
+    for (const [kind, solid] of Object.entries(parts)) {
+      const dims = [{ ...DIMS[0], at }, { ...DIMS[1], at }]
+      const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims, part: [solid] } }] }], () => ({}))
+      expect(events.find((e) => e.type === 'sheet'), kind).toMatchObject({ sheet: { part: [solid] } })
+    }
+    // a sweep needs a path of two points at least, and a loft two sections
+    for (const bad of [{ ...parts.sweep, path: [[0, 0, 0]] }, { ...parts.loft, sections: [{ at: 0, d: 32 }] }]) {
+      const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: [{ ...DIMS[0], at }, { ...DIMS[1], at }], part: [bad] } }] }], () => ({}))
+      expect(events.some((e) => e.type === 'sheet'), JSON.stringify(bad)).toBe(false)
+    }
+  })
+
+  // A sheet that names a design the host does not have would show no drawing, so mimir hears of it instead.
+  it('refuses a sheet for a built design that is not there', async () => {
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [{ name: 'pilot.sheet', args: { title: 'Case sizes', dims: DIMS, design: 'obj_gone' } }] }, { text: 'ok' }], { chunk: false }), builtins: false, tools: [sheetTool()], sheetDesign: (id) => id === 'obj_case' })
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'Sizes')) events.push(e)
+    expect(events.some((e) => e.type === 'sheet')).toBe(false)
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('no built design obj_gone') })
   })
 
   it('closes a sheet nobody answered when the run ends, as not confirmed', () => {

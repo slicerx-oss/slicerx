@@ -122,6 +122,8 @@ export interface CreatePilotOptions {
    * provider takes fewer tools than there are (see toolsets.ts).
    */
   log?: (line: string) => void
+  /** True when a built design with this id is on the plate, for a sheet that draws it (pilot.sheet's design). */
+  sheetDesign?: (id: string) => boolean
   now?: () => number
   newId?: () => string
 }
@@ -259,6 +261,8 @@ function randomId(): string {
 /**
  * The person's answer to a sheet: each value they gave, kept inside its row's bounds, else the sheet's own; and the
  * keys they changed. A value for a key the sheet does not have is dropped. Null is a cancel: nothing is confirmed.
+ * Words (`said`) set the sheet aside: nothing is confirmed, and the sizes they had typed on it come along, so mimir
+ * hears of them with the words instead of losing them.
  */
 export function answerOf(sheet: PilotSheet, given: Record<string, number> | null, said?: string): PilotSheetAnswer {
   if (given === null) return { confirmed: false, values: Object.fromEntries(sheet.dims.map((d) => [d.key, d.value])), changed: [], ...(said ? { said } : {}) }
@@ -270,7 +274,7 @@ export function answerOf(sheet: PilotSheet, given: Record<string, number> | null
     values[d.key] = ok ? v : d.value
     if (ok && v !== d.value) changed.push(d.key)
   }
-  return { confirmed: true, values, changed }
+  return said ? { confirmed: false, values, changed, said } : { confirmed: true, values, changed }
 }
 
 export function createPilot(opts: CreatePilotOptions): Pilot & {
@@ -631,9 +635,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         sheets.set(sheet.id, (given, said) => {
           signal.removeEventListener('abort', onAbort)
           const answer = answerOf(sheet, given, said)
-          // the latest sheet's answer stands: a cancel takes back an earlier confirmation
-          if (answer.confirmed) confirmed.add(sessionId)
-          else confirmed.delete(sessionId)
+          // the latest sheet's answer stands: a cancel takes back an earlier confirmation; words that set it aside
+          // leave an earlier one as it was. A sheet of a part already built confirms no new part.
+          if (answer.confirmed && !sheet.design) confirmed.add(sessionId)
+          else if (!answer.said) confirmed.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -641,6 +646,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         lastSheet.set(sessionId, sheet)
         emit({ type: 'sheet', sheet })
       })
+    if (opts.sheetDesign) ctx.sheetDesign = opts.sheetDesign
     ctx.bindSheet = (design, binds) => {
       const sheet = lastSheet.get(sessionId)
       if (!sheet) return false
@@ -1044,8 +1050,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const done = sheets.get(sheetId)
       if (!done) throw new Error(`No open sheet ${sheetId}`)
       sheets.delete(sheetId)
-      // words written while the sheet waited set it aside: they come only with no values, like a dismissed question's
-      const words = values === null && typeof said === 'string' ? said.trim().slice(0, ASK_SAID_MAX) : ''
+      // words written while the sheet waited set it aside, with any sizes already typed on it (the values)
+      const words = typeof said === 'string' ? said.trim().slice(0, ASK_SAID_MAX) : ''
       done(values, words || undefined)
     },
     resume(sessionId: string, turns: readonly { user: string; reply: string }[]): void {
