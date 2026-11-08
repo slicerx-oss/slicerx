@@ -148,15 +148,19 @@ pub fn merged(mesh: &TriMesh, spec: &ArraySpec, opts: &BooleanOptions) -> Result
         Some(t) => lined_up(mesh, &t, *opts)?,
         None => None,
     };
-    let (mut all, part) = match &lined {
-        Some((once, part)) => (once.clone(), part),
-        None => (Vec::new(), mesh),
+    let (mut all, part, bores) = match &lined {
+        Some(l) => (l.once.clone(), &l.rest, &l.bores[..]),
+        None => (Vec::new(), mesh, &[][..]),
     };
     if !part.triangles.is_empty() {
         let copies = distinct(part, &ts, &all);
         all.extend(copies);
     }
-    boolean::boolean_array(&all, &[], BoolOp::Union, *opts)
+    if bores.is_empty() {
+        boolean::boolean_array(&all, &[], BoolOp::Union, *opts)
+    } else {
+        boolean::boolean_array(&all, bores, BoolOp::Difference, *opts)
+    }
 }
 
 /// a circular array's axis, as a frame with `w` along it, and the copies a full turn would take
@@ -201,13 +205,24 @@ struct Round {
     facets: usize,
     phase: f64,
     sides: Vec<usize>,
+    /// a bore's wall, facing the axis
+    inner: bool,
+    /// how far its corners sit from the ideal prism, at most `ROUND_TOL`
+    dev: f64,
+}
+
+/// what to join once, what to copy, and the bores to cut after the union
+struct Lined {
+    once: Vec<TriMesh>,
+    rest: TriMesh,
+    bores: Vec<TriMesh>,
 }
 
 /// how close corners must be to count as on one round, in mm
 const ROUND_TOL: f64 = 1e-4;
 
 /// what to join once and what to copy, with the rounds on the axis lined up so copies don't leave slivers
-fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Vec<TriMesh>, TriMesh)>> {
+fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lined>> {
     let local: Vec<V3> = mesh
         .positions
         .iter()
@@ -223,35 +238,70 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Ve
     let rounds = rounds(mesh, &local);
     let facets = |r: &Round| r.facets.div_ceil(t.steps) * t.steps;
     if let [r] = &rounds[..]
+        && !r.inner
         && plain(mesh, &local, r)
     {
-        return Ok(Some((Vec::new(), prism(mesh, &local, t, r, facets(r), false))));
+        return Ok(Some(Lined {
+            once: Vec::new(),
+            rest: prism(mesh, &local, t, r, facets(r), false),
+            bores: Vec::new(),
+        }));
     }
-    let misaligned: Vec<&Round> = rounds.iter().filter(|r| r.facets % t.steps != 0).collect();
-    if misaligned.is_empty() {
+    if rounds.iter().all(|r| r.facets % t.steps == 0) {
         return Ok(None);
     }
-    // a wrap fills what it covers: each round must be solid through, its own prism inside the part
-    for r in &misaligned {
-        let own = prism(mesh, &local, t, r, r.facets, false);
-        let Ok((inside, _)) = boolean::boolean_array(
-            std::slice::from_ref(&own),
-            std::slice::from_ref(mesh),
+    let (inner, outer): (Vec<&Round>, Vec<&Round>) = rounds.iter().partition(|r| r.inner);
+    // how much of a prism may differ from the part: its corners' own drift over its surface
+    let within =
+        |got: f64, own: &TriMesh, r: &Round| (got - own.volume()).abs() <= r.dev.max(1e-9) * own.area();
+    let meet = |a: &TriMesh, b: &TriMesh| {
+        boolean::boolean_array(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
             BoolOp::Intersection,
             opts,
-        ) else {
-            return Ok(None);
-        };
-        if (inside.volume() - own.volume()).abs() > 1e-6 * own.volume() {
+        )
+        .ok()
+        .map(|(m, _)| m.volume())
+    };
+    // a bore is filled before copying and cut once after, so it must be empty through
+    for r in &inner {
+        let own = prism(mesh, &local, t, r, r.facets, false);
+        if !meet(&own, mesh).is_some_and(|v| v.abs() <= r.dev.max(1e-9) * own.area()) {
             return Ok(None);
         }
     }
-    let wraps: Vec<TriMesh> = misaligned
+    let filled = if inner.is_empty() {
+        mesh.clone()
+    } else {
+        let fills: Vec<TriMesh> = inner
+            .iter()
+            .map(|r| prism(mesh, &local, t, r, facets(r), true))
+            .collect();
+        boolean::boolean_array(std::slice::from_ref(mesh), &fills, BoolOp::Union, opts)?.0
+    };
+    let misaligned: Vec<&Round> = outer.into_iter().filter(|r| r.facets % t.steps != 0).collect();
+    // a wrap fills what it covers: each round must be solid through, its own prism inside the part
+    for r in &misaligned {
+        let own = prism(mesh, &local, t, r, r.facets, false);
+        if !meet(&own, &filled).is_some_and(|v| within(v, &own, r)) {
+            return Ok(None);
+        }
+    }
+    let once: Vec<TriMesh> = misaligned
         .iter()
         .map(|r| prism(mesh, &local, t, r, facets(r), true))
         .collect();
-    let rest = boolean::boolean_array(std::slice::from_ref(mesh), &wraps, BoolOp::Difference, opts)?.0;
-    Ok(Some((wraps, rest)))
+    let rest = if once.is_empty() {
+        filled
+    } else {
+        boolean::boolean_array(std::slice::from_ref(&filled), &once, BoolOp::Difference, opts)?.0
+    };
+    let bores = inner
+        .iter()
+        .map(|r| prism(mesh, &local, t, r, facets(r), false))
+        .collect();
+    Ok(Some(Lined { once, rest, bores }))
 }
 
 fn radius_of(p: V3) -> f64 {
@@ -266,20 +316,21 @@ fn radius_of(p: V3) -> f64 {
 )]
 fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
     let at = |i: u32| local.get(i as usize).copied().unwrap_or_default();
-    let mut sides: Vec<(f64, usize)> = mesh
-        .triangles
-        .iter()
-        .enumerate()
-        .filter_map(|(k, tri)| {
-            let rs = tri.map(|i| radius_of(at(i)));
-            let r = rs.iter().sum::<f64>() / 3.0;
-            let [a, b, c] = tri.map(at);
-            let n = vec3::normalize(vec3::tri_normal(a, b, c))?;
-            (r > ROUND_TOL && rs.iter().all(|x| (x - r).abs() < ROUND_TOL) && n[2].abs() < 1e-6)
-                .then_some((r, k))
-        })
-        .collect();
-    sides.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut sides: Vec<(f64, usize, bool)> =
+        mesh.triangles
+            .iter()
+            .enumerate()
+            .filter_map(|(k, tri)| {
+                let rs = tri.map(|i| radius_of(at(i)));
+                let r = rs.iter().sum::<f64>() / 3.0;
+                let [a, b, c] = tri.map(at);
+                let n = vec3::normalize(vec3::tri_normal(a, b, c))?;
+                let mid = vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0);
+                (r > ROUND_TOL && rs.iter().all(|x| (x - r).abs() < ROUND_TOL) && n[2].abs() < 1e-6)
+                    .then_some((r, k, n[0] * mid[0] + n[1] * mid[1] < 0.0))
+            })
+            .collect();
+    sides.sort_by(|a, b| a.2.cmp(&b.2).then(a.0.total_cmp(&b.0)));
     let mut flat = vec![false; local.len()];
     for tri in &mesh.triangles {
         let [a, b, c] = tri.map(at);
@@ -292,7 +343,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
         }
     }
     sides
-        .chunk_by(|a, b| b.0 - a.0 < ROUND_TOL)
+        .chunk_by(|a, b| a.2 == b.2 && b.0 - a.0 < ROUND_TOL)
         .filter_map(|group| {
             // ends on flat faces across the axis: a sphere's middle band is no cylinder
             let capped = group
@@ -333,10 +384,22 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             }
             let phase = *angles.first()?;
             let pitch = TAU / facets;
-            let regular = angles.iter().all(|a| {
-                let k = (a - phase) / pitch;
-                (k - k.round()).abs() * pitch < eps
-            });
+            let off = angles
+                .iter()
+                .map(|a| {
+                    let k = (a - phase) / pitch;
+                    (k - k.round()).abs() * pitch * radius
+                })
+                .fold(0.0, f64::max);
+            let regular = off < ROUND_TOL;
+            let dev = corners
+                .iter()
+                .map(|p| {
+                    (radius_of(*p) - radius)
+                        .abs()
+                        .max((p[2] - h0).abs().min((p[2] - h1).abs()))
+                })
+                .fold(off, f64::max);
             // a tessellated round, not a polygon; the wrap moves it out at most 0.01 mm
             let half = (PI / facets).m_cos();
             let fine = radius * (1.0 - half) <= 0.05 && radius * (1.0 / half - 1.0) <= 0.01;
@@ -346,6 +409,8 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
                 facets: facets as usize,
                 phase,
                 sides: group.iter().map(|g| g.1).collect(),
+                inner: group.first().is_some_and(|g| g.2),
+                dev,
             })
         })
         .collect()
@@ -729,25 +794,9 @@ mod tests {
             assert!(lined(&ball, &around_z(12, [0.0; 3])).is_none(), "{rings} rings");
         }
         // the round on the axis: a plain one is rebuilt, a hub is wrapped at most 0.01 mm out
-        let (once, part) = lined(&cyl, &around_z(12, [0.0; 3])).unwrap();
-        assert!(once.is_empty() && part.triangles.len() == 4 * 108);
-        let v: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
-        let nums = |k: &str| {
-            v[k].as_array()
-                .unwrap()
-                .iter()
-                .map(|x| x.as_f64().unwrap())
-                .collect::<Vec<_>>()
-        };
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "fixture indices"
-        )]
-        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
-        let hub = TriMesh::from_flat(&nums("positions"), &idx).unwrap();
-        let (once, _) = lined(&hub, &around_z(12, [0.0; 3])).unwrap();
+        let l = lined(&cyl, &around_z(12, [0.0; 3])).unwrap();
+        assert!(l.once.is_empty() && l.bores.is_empty() && l.rest.triangles.len() == 4 * 108);
+        let once = lined(&hub_tooth(), &around_z(12, [0.0; 3])).unwrap().once;
         let out = once
             .iter()
             .flat_map(|m| &m.positions)
@@ -790,33 +839,97 @@ mod tests {
         .0
     }
 
+    /// a prism of `n` sides on a circle of radius r, h high
+    #[allow(clippy::cast_precision_loss, reason = "small side counts")]
+    fn ngon(n: usize, r: f64, h: f64) -> f64 {
+        let n = n as f64;
+        0.5 * n * r * r * (TAU / n).m_sin() * h
+    }
+
     #[test]
-    fn a_bore_pocket_or_tube_inside_a_round_survives_the_array() {
-        // 3 copies: 100 facets do not line up with them, and the fold stays quick in a debug build
-        let spec = around_z(3, [0.0; 3]);
+    fn a_bored_hub_tube_or_cup_in_twelve_copies_stays_fast_and_stores() {
+        let spec = around_z(12, [0.0; 3]);
+        let t = turn(&spec).unwrap();
         let close =
             |got: f64, want: f64, tol: f64| assert!((got - want).abs() < tol * want, "{got} vs {want}");
+        let check = |part: &TriMesh| {
+            let l = lined_up(part, &t, BooleanOptions::default()).unwrap().unwrap();
+            assert_eq!(l.bores.len(), 1);
+            let (u, r, secs) = joined(part, &spec);
+            assert!(r.watertight && r.shells == 1, "{r:?}");
+            assert!(secs < 10.0, "{secs} s");
+            assert!(boolean::storage_mesh(&u).is_ok());
+            assert!(
+                u.triangles.len() < 4 * part.triangles.len(),
+                "{}",
+                u.triangles.len()
+            );
+            u
+        };
+        // the tube: a 108 sided wrap round a 108 sided bore
         let tube = cut(
             &cylinder_at(9.5, 0.0, 10.0, 100),
             &cylinder_at(7.5, -1.0, 11.0, 100),
         );
-        let (u, r, _) = joined(&tube, &spec);
-        assert!(r.watertight && r.shells == 1, "{r:?}");
-        close(u.volume(), tube.volume(), 5e-3);
+        let u = check(&tube);
+        let wrap = 9.5 / (PI / 108.0).m_cos();
+        close(u.volume(), ngon(108, wrap, 10.0) - ngon(108, 7.5, 10.0), 1e-6);
+        // a cup keeps its pocket, now 72 sided
         let cup = cut(
             &cylinder_at(9.5, 0.0, 10.0, 100),
             &cylinder_at(7.0, 4.0, 11.0, 64),
         );
-        let (u, r, _) = joined(&cup, &spec);
-        assert!(r.watertight && r.shells == 1, "{r:?}");
-        close(u.volume(), cup.volume(), 5e-3);
+        let u = check(&cup);
+        close(u.volume(), ngon(108, wrap, 10.0) - ngon(72, 7.0, 6.0), 1e-6);
         // hub minus bore plus one more tooth per copy
         let part = hub_tooth();
         let tooth = part.volume() - cylinder_at(9.5, 0.0, 10.0, 100).volume();
         let bored = cut(&part, &cylinder_at(2.5, -1.0, 11.0, 40));
-        let (u, r, _) = joined(&bored, &spec);
-        assert!(r.watertight && r.shells == 1, "{r:?}");
-        close(u.volume(), bored.volume() + 2.0 * tooth, 1e-3);
+        let u = check(&bored);
+        close(
+            u.volume(),
+            part.volume() + 11.0 * tooth - ngon(48, 2.5, 10.0),
+            1e-3,
+        );
+    }
+
+    #[test]
+    fn a_small_recess_on_a_big_round_is_not_filled() {
+        let t = turn(&around_z(12, [0.0; 3])).unwrap();
+        let disc = cylinder_at(100.0, 0.0, 20.0, 256);
+        // a 0.8 mm socket on the axis (0.51 mm3) and a 0.01 mm deep engraving on the top (0.4 mm3)
+        let socket = cut(&disc, &build::box_mesh([-0.4, -0.4, 19.2], [0.4, 0.4, 21.0]));
+        let mark = cut(&disc, &build::box_mesh([30.0, -1.0, 19.99], [50.0, 1.0, 21.0]));
+        for part in [socket, mark] {
+            let rs = rounds(&part, &part.positions);
+            assert!(rs.len() == 1 && rs.iter().all(|r| !r.inner && r.facets % 12 != 0));
+            assert!(lined_up(&part, &t, BooleanOptions::default()).unwrap().is_none());
+        }
+        assert!(lined_up(&disc, &t, BooleanOptions::default()).unwrap().is_some());
+    }
+
+    #[test]
+    fn the_end_cleanup_keeps_the_geometry() {
+        // the hub's join crosses itself on the exact engine; the robust pass cleans it and keeps its shape
+        let spec = around_z(12, [0.0; 3]);
+        let (a, r) = merged(&hub_tooth(), &spec, &BooleanOptions::default()).unwrap();
+        let exact = BooleanOptions {
+            engine: boolean::Engine::Exact,
+            keep_inverted: false,
+        };
+        let (e, _) = merged(&hub_tooth(), &spec, &exact).unwrap();
+        assert!(boolean::Solid::new(&e).unwrap().self_intersects());
+        assert!(r.engine == "robust" && r.watertight && r.shells == 1, "{r:?}");
+        assert!(!boolean::Solid::new(&a).unwrap().self_intersects() && boolean::storage_mesh(&a).is_ok());
+        assert!((a.volume() - e.volume()).abs() < 1e-6 * e.volume());
+        let (ba, be) = (a.bounds().unwrap(), e.bounds().unwrap());
+        assert!(
+            ba.min
+                .iter()
+                .chain(&ba.max)
+                .zip(be.min.iter().chain(&be.max))
+                .all(|(x, y)| (x - y).abs() < 1e-6)
+        );
     }
 
     #[test]
@@ -850,11 +963,14 @@ mod tests {
             .iter()
             .map(|t| xform::transformed(&half, t))
             .collect();
-        let (plain, _) = boolean::boolean_array(&copies, &[], BoolOp::Union, BooleanOptions::default()).unwrap();
+        let (plain, _) =
+            boolean::boolean_array(&copies, &[], BoolOp::Union, BooleanOptions::default()).unwrap();
         let (u, _, _) = joined(&half, &sweep);
         assert!((u.volume() - plain.volume()).abs() < 1e-9 * plain.volume());
         // a full turn of the half disc: its round is not all material, so it is not wrapped
         let t = turn(&around_z(12, [0.0; 3])).unwrap();
+        let rs = rounds(&half, &half.positions);
+        assert!(rs.len() == 1 && rs.iter().all(|r| !r.inner && r.facets == 100));
         assert!(lined_up(&half, &t, BooleanOptions::default()).unwrap().is_none());
         // 6 copies over 150 degrees, copies that stay put, and one copy leave the round alone
         for spec in [
@@ -893,5 +1009,8 @@ mod tests {
         };
         let (b, _) = merged(&hub_tooth(), &spec, &robust).unwrap();
         assert!((a.volume() - b.volume()).abs() < 1e-6 * a.volume());
+        let tooth = hub_tooth().volume() - cylinder_at(9.5, 0.0, 10.0, 100).volume();
+        let want = cylinder_at(9.5, 0.0, 10.0, 100).volume() + 12.0 * tooth;
+        assert!((a.volume() - want).abs() < 2e-3 * want);
     }
 }
