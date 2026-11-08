@@ -506,7 +506,7 @@ describe('design.check picks the design it checks', () => {
     expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: false })
     all.splice(1, 1)
     all.push(boxDesign('d3', 'Hinge v2'))
-    for (const given of ['d1', 'd3']) await expect(check({ planId: 'box-1', design: given })).rejects.toThrow(/tied to design d2, which is no longer open\. It is not moved to another design/)
+    for (const given of ['d1', 'd3']) await expect(check({ planId: 'box-1', design: given })).rejects.toThrow(/^design: the plan for Hinge was made in the mimir tab for a design that is no longer open\. It is not moved to another design/)
     expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1 })
   })
 
