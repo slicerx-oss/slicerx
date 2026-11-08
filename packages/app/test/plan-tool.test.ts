@@ -6,7 +6,7 @@
 import type { PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/mimir/scripted'
-import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, PlanInputSchema, planOfChoices, planTool, samePlan, shownPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
+import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, PlanInputSchema, planOfChoices, planTool, samePlan, shownPlan, unbuiltPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
 import { SCRIPTS } from '../src/workspaces/mimir/scripts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
@@ -275,6 +275,26 @@ describe('design.plan and design.check share one registry', () => {
     const { planId } = (await planTool().run(BOX as never, go)).output as { planId: string }
     await extrude!.run({ design: 'Headphone stand' } as never, {} as never)
     expect(mimirPlans.get(planId)?.design).toBe('d5')
+  })
+
+  it('a plan turned down after the person changed a size on the approved one stops the next design tying to that one', async () => {
+    const [made] = withPlanTies([fake('design.new', 'slice', { design: 'd8' })])
+    const { planId } = (await planTool().run(BOX as never, go)).output as { planId: string }
+    expect(unbuiltPlan()).toBe(planId)
+    // a size changed on the sheet after Go, then the new plan is turned down
+    mimirPlans.stale(planId)
+    await planTool().run(BOX as never, no)
+    expect(unbuiltPlan()).toBeNull()
+    // the answer supersedes the old plan, which then ties to no design built after it
+    mimirPlans.supersede(planId)
+    await made!.run({} as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBeUndefined()
+    // a plan turned down while the approved one still holds leaves that one for the next design
+    const kept = ((await planTool().run(BOX as never, go)).output as { planId: string }).planId
+    await planTool().run(BOX as never, no)
+    expect(unbuiltPlan()).toBe(kept)
+    await made!.run({} as never, {} as never)
+    expect(mimirPlans.get(kept)?.design).toBe('d8')
   })
 
   it('sizes past the plan maximum are refused by the shared shape', () => {

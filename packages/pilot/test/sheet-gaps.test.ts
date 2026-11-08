@@ -422,11 +422,16 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new Hinge', 'open d2', 'push@d2'])
   })
 
-  it("keep the mark in the host's plans: a size change marks the plan, a plan made again or declined clears it, and the plan's own design is the one held", async () => {
-    const marks = new Map<string, { stale?: true; design?: string; claimed?: string }>()
+  it("keep the mark in the host's plans: a size change marks the plan, a plan made again or declined supersedes it, and the plan's own design is the one held", async () => {
+    const marks = new Map<string, { stale?: true; superseded?: true; design?: string; claimed?: string }>()
     const plans = {
       stale: (id: string) => (marks.set(id, { ...marks.get(id), stale: true }), true),
-      fresh: (id: string) => void delete (marks.get(id) ?? {}).stale,
+      // the host keeps the plan refused by design.check; only the build stops waiting
+      supersede: (id: string) => {
+        const m = { ...marks.get(id), superseded: true as const }
+        delete m.stale
+        marks.set(id, m)
+      },
       claim: (id: string, design: string) => void marks.set(id, { ...marks.get(id), claimed: design }),
       get: (id: string) => marks.get(id),
     }
@@ -445,6 +450,8 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new Hinge box', 'Leaf@d1'])
     // the design the part was started in is recorded with the plan, apart from the one the host tied it to
     expect(marks.get('p')?.claimed).toBe('d1')
+    // the declined answer told the host the plan was superseded, so design.check keeps refusing it
+    expect(marks.get('p')?.superseded).toBe(true)
   })
 
   it("change a design the chat never started at once while the plan waits: only the planned part's own design is held", async () => {

@@ -69,14 +69,18 @@ export const INPUT_WITHHELD = 'input withheld'
 
 /**
  * The host's plans, by planId (the plan registry design.check reads), as far as the runtime marks them: a print-in-place
- * plan whose sizes the person changed on a sheet after approving it is stale until a new design.plan is answered, and
+ * plan whose sizes the person changed on a sheet after approving it is stale until a new design.plan is answered, which
+ * supersedes it (the host keeps refusing to check it), and
  * the design this chat started for the plan's part (claimed) is the planned part's, else the one the host tied it to.
  */
 export interface PlanMarks {
   /** Marks the plan stale; false when the host has no such plan. */
   stale(planId: string): boolean
-  /** Clears the mark. */
-  fresh(planId: string): void
+  /**
+   * Ends the stale mark once a later design.plan was answered, approved or declined: the planned part no longer waits,
+   * and the host keeps the plan refused by design.check as superseded, since its sizes are not the ones confirmed.
+   */
+  supersede(planId: string): void
   /**
    * Records the design this chat started for the plan's part, kept apart from the design the host tied the plan to (a
    * stale plan ties to none), so it is recorded while the plan is stale too.
@@ -92,7 +96,7 @@ function localPlanMarks(): PlanMarks {
   const claims = new Map<string, string>()
   return {
     stale: (planId) => (marked.add(planId), true),
-    fresh: (planId) => void marked.delete(planId),
+    supersede: (planId) => void marked.delete(planId),
     claim: (planId, design) => void claims.set(planId, design),
     get: (planId) => ({ ...(marked.has(planId) ? { stale: true as const } : {}), ...(claims.has(planId) ? { claimed: claims.get(planId)! } : {}) }),
   }
@@ -1119,10 +1123,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.untrusted) result.untrusted = true
     emit(result)
     const answered = tool.name === 'design.plan' ? (out.output as { planId?: unknown; accepted?: unknown; edits?: { part?: unknown; printInPlace?: unknown } } | undefined) : undefined
-    // a new plan answered, approved or declined, settles the sizes changed after the last one
+    // a new plan answered, approved or declined, settles the sizes changed after the last one: its part no longer waits,
+    // and a stale plan is superseded, never checked against the sizes the person changed
     const was = planned.get(sessionId)
     if (answered && typeof answered.accepted === 'boolean' && was) {
-      plans.fresh(was.planId)
+      if (plans.get(was.planId)?.stale) plans.supersede(was.planId)
       planned.delete(sessionId)
     }
     if (answered && out.ok !== false && answered.accepted !== false) {
