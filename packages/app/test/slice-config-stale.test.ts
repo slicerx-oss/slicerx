@@ -32,7 +32,36 @@ function newPrinter() {
   set({ printerNozzleVolume: 140 })
 }
 
-afterEach(() => vi.restoreAllMocks())
+// The watcher's own slice: it starts, shows as running and stays running until `finish`, so a test can change the
+// nozzle volume while it runs. Slices started any other way are the real ones.
+const auto = vi.hoisted(() => ({ started: 0, abort: null as AbortController | null, finish: null as null | (() => void) }))
+vi.mock('../src/state/actions', async (orig) => {
+  const real = await orig<typeof import('../src/state/actions')>()
+  const { set: put } = await import('../src/state/store')
+  return {
+    ...real,
+    slicePlate: (_host: unknown, opts?: { auto?: boolean }) => {
+      if (!opts?.auto) return real.slicePlate(_host as never, opts)
+      auto.started++
+      const abort = real.beginSlice()
+      auto.abort = abort
+      put({ slice: { status: 'running', progress: null, startedAt: 0 } } as never)
+      return new Promise<void>((done) => {
+        auto.finish = () => {
+          real.endSlice(abort)
+          done()
+        }
+      })
+    },
+  }
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  auto.started = 0
+  auto.abort = null
+  auto.finish = null
+})
 
 describe("a nozzle volume that lands after the slice", () => {
   it('on a two-color plate: Print, Export and mimir all read the slice as stale', () => {
@@ -84,20 +113,43 @@ describe("a nozzle volume that lands after the slice", () => {
     }
   })
 
-  it('with auto slice on, a slice running when the nozzle volume changes stops, and a new one is scheduled', async () => {
+  it('with auto slice on, an auto slice running when the nozzle volume changes stops, and a new one is scheduled', async () => {
     vi.useFakeTimers()
     const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
     sliced([part('a', 60, 1), part('b', 120, 2)])
     set({ autoSlice: true, autoSliceBySize: false } as never)
     const stop = startAutoSlice(host, 0)
-    // an auto slice in flight, of the old nozzle volume
+    try {
+      // an edit starts an auto slice, which is still running
+      set({ overrides: {} })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
+      expect(get().slice.status).toBe('running')
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(auto.abort?.signal.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+    } finally {
+      stop()
+      auto.finish?.()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a slice someone asked for (Slice, mimir) running when the nozzle volume changes is left to land', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    // not an auto slice: started outside the watcher, as the Slice button or mimir's app.slice does
     const abort = beginSlice()
     set({ slice: { status: 'running' } } as never)
     try {
       set({ printerNozzleVolume: 140 })
       await vi.dynamicImportSettled()
-      expect(abort.signal.aborted).toBe(true)
-      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      expect(abort.signal.aborted).toBe(false)
+      expect(vi.getTimerCount()).toBe(0)
     } finally {
       stop()
       endSlice(abort)
