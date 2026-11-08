@@ -137,37 +137,24 @@ function workerProvider(): GeomProvider {
   }
   // Each running replay's step: its operation and name, whether the replay is between steps (it said {yielded}), and
   // what is left of the step's limit while it is stopped. The worker runs other calls, another replay's steps among
-  // them, while a replay waits between its steps or for a load inside one, so a replay's limit counts only its own
-  // engine time: it is off between steps, stops while another call or another replay's step runs, and goes on with
-  // what was left after.
+  // them, while a replay waits between its steps, so a replay's limit is off between steps, stops while another call
+  // runs, and goes on with what was left after.
+  // A known limit: when two replays each wait inside a step for the same load, both limits keep running, and the
+  // worker does not say which one goes on first once the load is in. One replay's step can then be charged the other's
+  // engine time, and a step that hangs there may be stopped under the other replay's step name.
   const steps = new Map<number, { op: string; name?: string; between?: boolean; left?: number; since?: number }>()
   const othersRunning = () => [...started].some((id) => !steps.has(id))
-  // the replay whose step the worker started last: while it is in a step, the others wait
-  let stepping: number | null = null
   const armStep = (id: number) => {
     const step = steps.get(id)
-    if (!step || step.between || othersRunning() || (stepping !== null && stepping !== id) || !pending.has(id)) return
+    if (!step || step.between || othersRunning() || !pending.has(id)) return
     step.since = Date.now()
     limit(id, step.op, step.name, step.left)
   }
   const stopStep = (id: number) => {
     const step = steps.get(id)
     if (!step || !deadlines.has(id)) return
-    // a clock set back cannot give a step more than its whole limit
-    const whole = limitOf(step.op)
-    step.left = Math.min(whole, Math.max(0, (step.left ?? whole) - (Date.now() - (step.since ?? Date.now()))))
+    step.left = Math.max(0, (step.left ?? limitOf(step.op)) - (Date.now() - (step.since ?? Date.now())))
     unlimit(id)
-  }
-  // a replay starts a step: the others' limits stop until it waits again or ends
-  const stepStarts = (id: number) => {
-    stepping = id
-    for (const r of steps.keys()) if (r !== id) stopStep(r)
-  }
-  // the replay in a step waits or ends: the others in a step go on with what was left
-  const stepEnds = (id: number) => {
-    if (stepping !== id) return
-    stepping = null
-    for (const r of steps.keys()) if (r !== id) armStep(r)
   }
   const release = () => {
     if (idle) clearTimeout(idle)
@@ -177,7 +164,6 @@ function workerProvider(): GeomProvider {
     for (const t of deadlines.values()) clearTimeout(t)
     deadlines.clear()
     steps.clear()
-    stepping = null
     started.clear()
     unstarted.clear()
     going.clear()
@@ -279,7 +265,6 @@ function workerProvider(): GeomProvider {
         if (op === 'history.replay') {
           if (canceled.has(id) || !pending.has(id)) return
           steps.set(id, { op })
-          stepStarts(id)
           armStep(id)
           return
         }
@@ -295,7 +280,6 @@ function workerProvider(): GeomProvider {
         if (!step) return
         step.between = true
         unlimit(e.data.yielded)
-        stepEnds(e.data.yielded)
         return
       }
       if ('step' in e.data) {
@@ -303,15 +287,13 @@ function workerProvider(): GeomProvider {
         const id = e.data.step
         if (!steps.has(id)) return
         steps.set(id, { op: e.data.op ?? 'history.replay', ...(e.data.name ? { name: e.data.name } : {}) })
-        stepStarts(id)
         armStep(id)
         return
       }
       const other = started.has(e.data.id) && !steps.has(e.data.id)
       unlimit(e.data.id)
       started.delete(e.data.id)
-      const ended = steps.delete(e.data.id)
-      if (ended) stepEnds(e.data.id)
+      steps.delete(e.data.id)
       // the last other call is done: each replay in a step goes on with what was left of its limit
       if (other && !othersRunning()) for (const r of steps.keys()) armStep(r)
       unstarted.delete(e.data.id)
