@@ -4,7 +4,8 @@
 // file.ts. Untrusted: a bad step or mesh drops mesh history; required exact history refuses the project.
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
-import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
+import { pinnedOlder, type PlaceOf } from './design-frame'
+import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC, SKETCH_ANCHORS } from './file'
 import { idNumber, MAX_PROJECTION, type Projection, type ProjectSource } from './project'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
@@ -393,9 +394,19 @@ function drawnForOf(v: unknown): Pick<SketchItem, 'drawnFor'> {
 /**
  * The plate's design timeline (design.ts), bodies by 3MF object id: a version 3 file as it was saved, rolled back
  * steps included, or an older file's histories merged by when each step was made. Null when there is none; a body
- * whose history does not read is left out with its features.
+ * whose history does not read is left out with its features. With `standing`, where each object stands by its 3MF
+ * object id, a file written before sketches moved with what they are drawn for or on opens with each sketch where that
+ * app showed it (pinnedOlder).
  */
-export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>): Timeline | null {
+export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>, standing?: PlaceOf): Timeline | null {
+  const t = readTimeline(files, objectIds)
+  if (!t || !standing) return t
+  // written before sketches moved with what they are drawn for or on: each opens where that app showed it
+  const j = JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!)) as Record<string, unknown>
+  return j['version'] === DESIGN_FILE_VERSION && j['sketchAnchors'] === SKETCH_ANCHORS ? t : pinnedOlder(t, standing)
+}
+
+function readTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>): Timeline | null {
   const bytes = files.get('Metadata/slicerx_history.json')
   if (!bytes) return null
   let j: unknown
