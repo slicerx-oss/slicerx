@@ -205,8 +205,12 @@ const SHAPING_OPEN = new RegExp(`${LEAD}${MAKING}${HOW_MANY}${SHAPING}`, 'i')
 const SHAPE_START =
   /^\s*(?:please\s+)?(?:can you\s+|could you\s+)?(?:mirror|split|pattern|array|subtract|emboss|engrave|hollow|repair|measure|cut|combine|merge)\s+(?:out\s+)?(?:the|it|this|that|these|those|them|both|my)\b/i
 
-/** A request that opens on making a part that is there into something ("make it hollow", "make the lid split in half"). */
-const OWN_START = new RegExp(String.raw`${LEAD}(?:make|turn|get)\s+(?:it|this|that|them|these|those|the\s+[\w-]+|my\s+[\w-]+)\b`, 'i')
+/**
+ * A request that opens on making a part that is there into something ("make it hollow", "make the lid split in half",
+ * "make the side wall hollow"): a part named with "the" or "my" counts only when a shaping follows it, so "make the
+ * case for my Raspberry Pi with a cut-out" and "make the hollow vase I described" are new parts.
+ */
+const OWN_START = new RegExp(String.raw`${LEAD}(?:make|turn|get)\s+(?:(?:it|this|that|them|these|those)\b|(?:the|my)\s+[\w-]+(?:\s+[\w-]+)?\s+(?:hollow|split|mirror|pattern|engrav|emboss|array|cut|symmetric)\w*\b)`, 'i')
 
 /**
  * Shaping put on a part that is there: on, to, in or of "it", "this" or a part named with "the" ("engrave SX on the lid",
