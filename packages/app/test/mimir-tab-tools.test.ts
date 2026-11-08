@@ -82,8 +82,8 @@ describe('the mimir tab works on the open project', () => {
     expect(results.get('slice')).toMatchObject({ ok: true })
     expect(sliced[0]!.plate.objects).toHaveLength(3)
     expect(sliced[0]!.config['wall_loops']).toBe(4)
-    // No shipped G-code under this plate, so mimir's slice gets the strict checks.
-    expect(sliced[0]!.options?.trustedGcode).toBeUndefined()
+    // The slice waits for the P1S's profile, as the app's own slice does, so its shipped G-code is trusted as there.
+    expect(sliced[0]!.options?.trustedGcode).toBe(true)
   })
 
   it('starts a new project only through the command, which asks the person first and says what they chose', async () => {
