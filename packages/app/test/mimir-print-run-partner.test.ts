@@ -25,7 +25,8 @@ import { tabPilotOptions } from '../src/workspaces/mimir/session'
 // app.slice's slice: lands one on screen, as the Slice tab would, without the engine
 vi.mock('../src/state/actions', async (orig) => ({
   ...(await orig<typeof import('../src/state/actions')>()),
-  slicePlate: async () => {
+  slicePlate: async (_host: unknown, opts?: { onStamp?: (at: ReturnType<typeof get>) => void }) => {
+    opts?.onStamp?.(get())
     set((st) => ({ slicesDone: st.slicesDone + 1, slice: { status: 'done', result: result('s1'), stale: false } }))
   },
 }))
