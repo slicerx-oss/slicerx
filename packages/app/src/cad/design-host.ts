@@ -49,7 +49,17 @@ export class DesignNotFound extends Error {
 let seq = 0
 const newId = () => `obj_${Date.now().toString(36)}d${(++seq).toString(36)}`
 
-export function appDesignHost(loader: Loader): DesignHost {
+/** A design host on the app's plate, and how to let it go (dispose). */
+export type AppDesignHost = DesignHost & {
+  /**
+   * Lets the host go: the designs it keeps waiting for a first body can never get one now, so they stop waiting
+   * everywhere (waiting.ts). A sketch drawn for one then reads where it is stored, and goes with the last body that
+   * uses it. Called when the app link is hosted again and when the mimir tab's tools are made again.
+   */
+  dispose(): void
+}
+
+export function appDesignHost(loader: Loader): AppDesignHost {
   // Designs with no body yet, by id: their history and where the object stands on the plate. Their first step puts
   // them on the plate under the same id. Where each waits is shared, so a sketch drawn for it reads the same anywhere.
   const empty = new Waiting()
@@ -71,7 +81,12 @@ export function appDesignHost(loader: Loader): DesignHost {
     }
   }
 
-  const host: DesignHost = {
+  const host: AppDesignHost = {
+    dispose() {
+      empty.clear()
+      redo.clear()
+    },
+
     call: (op, request) => geom().call(op, request),
     revision(id) {
       return bodyRevisions.current(host.get(id).id)
@@ -426,6 +441,10 @@ class Waiting extends Map<string, { name: string; history: History; transform: M
   override delete(id: string): boolean {
     setWaiting(id, null)
     return super.delete(id)
+  }
+  override clear(): void {
+    for (const id of this.keys()) setWaiting(id, null)
+    super.clear()
   }
 }
 

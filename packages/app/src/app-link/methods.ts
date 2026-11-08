@@ -568,6 +568,8 @@ export function useLinkSession(read: (() => Promise<boolean>) | null): void {
 /** The design tools, once the link has a loader to put bodies on the plate. */
 let designTools: Map<string, PilotTool<never>> | null = null
 let linkLoader: Loader | null = null
+/** Their design host, let go when the link is hosted again. */
+let linkHost: { dispose(): void } | null = null
 
 /** Gives the design tools the plate's design host. */
 export async function useDesignHost(loader: Loader): Promise<void> {
@@ -576,7 +578,11 @@ export async function useDesignHost(loader: Loader): Promise<void> {
   // design.check reads the same plans as the mimir tab, and holds walls to the printer's nozzle now; a client never
   // ties a plan the person made on the tab's card (no cardSide here)
   const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }
-  designTools = new Map(designToolset(appDesignHost(loader), {}, opts).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
+  // the host before this one can never land the designs it keeps waiting: they stop waiting
+  linkHost?.dispose()
+  const host = appDesignHost(loader)
+  linkHost = host
+  designTools = new Map(designToolset(host, {}, opts).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
 }
 
 const TOOL_CODES = new Set(['invalid_input', 'not_found'])

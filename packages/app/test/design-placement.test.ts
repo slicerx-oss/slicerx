@@ -12,6 +12,7 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyExtrude, applyRevolve } from '../src/cad/cad-ops'
 import { appDesignHost } from '../src/cad/design-host'
+import { runCall, useDesignHost } from '../src/app-link/methods'
 import { waitingAt } from '../src/cad/waiting'
 import { beginEdit, cancelEdit, nowOf, runReplay, saveEdit, toPart } from '../src/cad/history/ops'
 import { rollTo } from '../src/cad/history/rollback'
@@ -1447,6 +1448,43 @@ describe('a sketch drawn for a design that waits again', () => {
     expect(featuresOn(ka)).toEqual([a])
     expect(featuresOn(kb)).toEqual([b])
     expect(sketches()).toEqual([ka, kb, kc])
+  })
+})
+
+describe('a design host that goes away', () => {
+  const sketches = () => get().timeline.items.filter((i) => i.kind === 'sketch').map((i) => i.id)
+  /** On `call`, a tray whose only step, drawn on a sketch drawn for it, landed it and was undone: it waits where it stood. */
+  async function waitingTray(call: (name: string, input: Record<string, unknown>) => Promise<{ output: Record<string, unknown> }>) {
+    const d = String((await call('design.new', { name: 'Tray' })).output['design'])
+    const k = String((await call('design.sketch', { design: d, frame: { origin: [0, 0, 0], normal: [0, 0, 1] }, loops: square(0, 0, 20) })).output['id'])
+    await call('geom.extrude', { design: d, sketch: k, distance_mm: 5 })
+    await call('design.undo', { design: d })
+    expect(get().plate).toHaveLength(0)
+    expect(waitingAt(d)).toBeDefined()
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([128, 128, 0])
+    return { d, k }
+  }
+
+  it('lets the designs it kept waiting go when the app link is hosted again, and their sketches read where they are stored', async () => {
+    await useDesignHost(loader)
+    const { d, k } = await waitingTray((name, input) => runCall(name, input) as Promise<{ output: Record<string, unknown> }>)
+    // hosted again: the old host can never land the tray now
+    await useDesignHost(loader)
+    expect(waitingAt(d)).toBeUndefined()
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([0, 0, 0])
+  })
+
+  it('no longer keeps a sketch drawn for a design it kept waiting once the last body using it leaves', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const { k } = await waitingTray(run)
+    // a slab built where it prints, under where the tray waits, cuts from the tray's sketch
+    const e = String((await run('design.new', { name: 'Slab' })).output['design'])
+    expect((await run('geom.extrude', { design: e, shape: { type: 'rectangle', widthMm: 40, heightMm: 40 }, placement: { center: [128, 128] }, distance_mm: 3 })).summary).not.toMatch(/moved to the plate/)
+    expect((await run('geom.extrude', { design: e, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    host.dispose()
+    set((s) => ({ plate: s.plate.filter((x) => x.id !== e) }))
+    expect(sketches()).toEqual([])
   })
 })
 
