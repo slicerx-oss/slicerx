@@ -105,6 +105,26 @@ function localPlanMarks(): PlanMarks {
 /** Two names for one part: the same words, whatever the case or the spaces around them. */
 const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
+/** Words in a part's name that only say which try or version it is. */
+const PART_VERSION_WORDS: ReadonlySet<string> = new Set(['new', 'again', 'retry', 'redo', 'redone', 'fix', 'fixed', 'corrected', 'improved', 'better', 'updated', 'revised', 'rework', 'reworked', 'final', 'version', 'ver', 'rev', 'copy', 'attempt', 'try', 'another', 'second', 'alt'])
+/** Words that name no part: in "Hinge for my door" only hinge and door do. */
+const FILLER_WORDS: ReadonlySet<string> = new Set(['a', 'an', 'the', 'of', 'for', 'my', 'your', 'our', 'and', 'or', 'with', 'to', 'in', 'on', 'at', 'by', 'this', 'that', 'it'])
+const hasNumber = (name: string): boolean => /\d/.test(name.replace(/\b(v|ver|rev|mk)\d+\b/gi, ''))
+/**
+ * The words of a part's name, lowercase, in any script, without version words ("v2", "rev3", "new", "fixed") or filler
+ * ("the", "my"). A bare number is a version word too, unless `numbered` (the other name has one as well).
+ */
+function partNameWords(name: string, numbered: boolean): string[] {
+  const words = name.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
+  return words.filter((w) => !PART_VERSION_WORDS.has(w) && !FILLER_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w) && (numbered || !/^\d+$/.test(w)))
+}
+/** A design's name and a planned part's name share a word that names the part: "Hinge v2" and "Print-in-place hinge". */
+const sharesWord = (a: string, b: string): boolean => {
+  const numbered = hasNumber(a) && hasNumber(b)
+  const theirs = new Set(partNameWords(b, numbered))
+  return partNameWords(a, numbered).some((w) => theirs.has(w))
+}
+
 /** The sheet rows that are the fit rule's gaps: a print-in-place plan holds none of them, whoever filled them in. */
 const GAP_KEYS: ReadonlySet<string> = new Set(Object.values(GAP_ROW_KEYS))
 
@@ -606,7 +626,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const designNames = new Map<string, Map<string, string>>()
   const namedAsPart = (sessionId: string, id: string, part: string): boolean => {
     const name = designNames.get(sessionId)?.get(id)
-    return name !== undefined && sameName(name, part)
+    return name !== undefined && sharesWord(name, part)
   }
   // a change to a design before the plan holds any: a design named as the part, or the one the plan before it held, is
   // the planned part's, so a plan made again for a part already built holds that part from its first change on
@@ -622,8 +642,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return p !== undefined && plans.get(p.planId)?.stale === true && findTool('design.plan') !== undefined
   }
   // whether a step on `design` waits for the plan to be made again: only the planned part's own designs, by id (the one
-  // this chat started for it, else the one the host tied the plan to, and the one the plan before it held) or by the
-  // name this chat started or opened it under, when it is the part's. A step that names no design (a model), and
+  // this chat started for it, else the one the host tied the plan to, and the one the plan before it held) or by a name
+  // this chat started or opened it under that shares a word with the part's. A step that names no design (a model), and
   // a design this chat did not start for the part, such as one already open from the CAD workspace, never wait.
   const waitsForPlan = (sessionId: string, design: unknown): boolean => {
     if (!isStale(sessionId) || typeof design !== 'string') return false
@@ -1176,9 +1196,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (typeof o?.design === 'string' && typeof (o.name ?? name) === 'string') named.set(o.design, String(o.name ?? name))
       for (const d of Array.isArray(o?.designs) ? o.designs : []) if (typeof d.design === 'string' && typeof d.name === 'string') named.set(d.design, d.name)
     }
-    // the design the planned part is started in: one started after its plan named as the part, in any run and even
-    // after a held change claimed an older design, else the first one started while the part is the one being built
-    // (before its building ends) in the run that approved the plan. Recorded with the plan, stale or not.
+    // the design the planned part is started in: one started after its plan named as the part (a name that shares a word
+    // with it), in any run and even after a held change claimed an older design, else the first one started while the
+    // part is the one being built (before its building ends) in the run that approved the plan. Recorded with the plan,
+    // stale or not.
     const p = planned.get(sessionId)
     if (tool.name === 'design.new' && out.ok !== false && p) {
       const design = (out.output as { design?: unknown } | undefined)?.design
