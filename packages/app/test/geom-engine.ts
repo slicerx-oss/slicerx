@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
+import { clearReplayCache } from '@slicerx/cad-history'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
 
 export interface Recorded { op: string; request: unknown; reply?: unknown; error?: string }
@@ -93,9 +94,11 @@ function pairIds(rec: unknown, now: unknown, ids: Map<string, string>): void {
 /** `v` with every recorded id swapped for the live one. */
 function withIds<T>(v: T, ids: Map<string, string>): T {
   if (!ids.size) return v
-  let text = JSON.stringify(v)
-  for (const [from, to] of ids) text = text.split(JSON.stringify(from)).join(JSON.stringify(to))
-  return JSON.parse(text) as T
+  // One pass over the text: ids from different tests run on one counter, so a live id can be another recorded id (recorded
+  // ...85 and ...86, live ...86 and ...87), and swapping one id after another would swap the same text twice.
+  const quoted = (k: string) => JSON.stringify(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const any = new RegExp([...ids.keys()].map(quoted).join('|'), 'g')
+  return JSON.parse(JSON.stringify(v).replace(any, (m) => JSON.stringify(ids.get(JSON.parse(m) as string)))) as T
 }
 
 /** Calls made outside a test (in a beforeAll) are kept under this key. */
@@ -116,7 +119,7 @@ export class ReplayMismatch extends Error {
 }
 
 /** The replaying provider over the replies in `file` (or `recorded`); `stale` lists every call that did not match. */
-export function replayGeom(file: string, recorded?: Replies) {
+export function replayGeom(file: string, recorded?: Replies, pooled = false) {
   const replies = recorded ?? (existsSync(file) ? (JSON.parse((file.endsWith('.gz') ? gunzipSync(readFileSync(file)) : readFileSync(file)).toString('utf8')) as Replies) : {})
   if (Array.isArray(replies)) throw new Error(`${file} is in the old one list form: record it again with SX_GEOM_RECORD=1`)
   const stale: string[] = []
@@ -138,18 +141,49 @@ export function replayGeom(file: string, recorded?: Replies) {
       ids = new Map()
     },
     async call<T>(op: string, request: unknown): Promise<T> {
-      const r = replies[key]?.[next++]
-      if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
-      if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
       // A step's key salt comes from its id, which has the time in it; the face keys it makes come back in the
       // recorded replies, so the rest of every later request still matches.
       const live = saltless(JSON.parse(JSON.stringify(request)))
-      pairIds(saltless(withIds(r.request, ids)), live, ids)
-      try {
-        expect(saltless(withIds(r.request, ids))).toEqual(live)
-      } catch (e) {
-        return mismatch(`the ${op} request of call ${next} differs from the recorded one: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`)
+      /** The ids `r` pairs with when its request is the live one, or null when it is another request. */
+      const matches = (r: Recorded): Map<string, string> | null => {
+        if (r.op !== op) return null
+        const paired = new Map(ids)
+        pairIds(saltless(withIds(r.request, paired)), live, paired)
+        try {
+          expect(saltless(withIds(r.request, paired))).toEqual(live)
+        } catch {
+          return null
+        }
+        return paired
       }
+      const here = replies[key]?.[next]
+      let r = here
+      let paired = here ? matches(here) : null
+      if (paired) next++
+      else if (pooled) {
+        // A test starts with an empty replay cache (useGeomEngine), so it makes calls that were recorded in another
+        // test only, where a step it needs was already cached. The engine answers a request the same way wherever it
+        // is asked, so any recorded reply to this op and request stands in.
+        for (const list of Object.values(replies)) {
+          const found = list.find((c) => (paired = matches(c)) !== null)
+          if (found) {
+            r = found
+            break
+          }
+        }
+        if (!paired) next++
+      } else next++
+      if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
+      if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
+      if (!paired) {
+        try {
+          expect(saltless(withIds(r.request, ids))).toEqual(live)
+        } catch (e) {
+          return mismatch(`the ${op} request of call ${next} differs from the recorded one: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`)
+        }
+        paired = ids
+      }
+      ids = paired
       if (r.error !== undefined) throw new Error(r.error)
       return withIds(r.reply, ids) as T
     },
@@ -157,10 +191,11 @@ export function replayGeom(file: string, recorded?: Replies) {
 }
 
 /**
- * Installs live wasm or recorded replies; compressed stores large mesh fixtures as gzip. Tests may run in any order.
+ * Installs live wasm or recorded replies; compressed stores large mesh fixtures as gzip; freshCache starts every test with an
+ * empty replay cache. Tests may run in any order.
  * `ops()` lists the ops the running test has called so far, live or replayed, for a test that waits on a call.
  */
-export function useGeomEngine(name: string, options: { compressed?: boolean } = {}): { ops(): readonly string[] } {
+export function useGeomEngine(name: string, options: { compressed?: boolean; freshCache?: boolean } = {}): { ops(): readonly string[] } {
   const fixture = join(__dirname, 'fixtures', `${name}.json${options.compressed ? '.gz' : ''}`)
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Replies = {}
@@ -178,13 +213,20 @@ export function useGeomEngine(name: string, options: { compressed?: boolean } = 
     if (liveEngine) {
       engine = await wasmGeom((r) => (recorded[testKey()] ??= []).push(r))
     } else {
-      engine = replay = replayGeom(fixture)
+      engine = replay = replayGeom(fixture, undefined, options.freshCache === true)
     }
     setGeomProvider(provider)
   })
   // Installed again before every test: a test that puts in a stand-in engine of its own and clears it after
   // must not leave the tests that run after it with none.
+  // The replay cache (packages/cad-history) outlives a test, and a step it holds makes no engine call. Recorded replies
+  // are counted per call, so a test that ran after another one that cached the same steps asked for fewer calls than
+  // were recorded and failed, in some orders only. With `freshCache` each test makes every call it needs, live or
+  // recorded, and a replayed call that is not at its place in the test's own list is looked up by op and request across
+  // the file's recording. A file whose recording was made that way needs no option; one recorded with the cache warm
+  // and run in the file's order replays as it was recorded.
   beforeEach(() => {
+    if (options.freshCache) clearReplayCache()
     setGeomProvider(provider)
     ops.length = 0
     replay?.start()
