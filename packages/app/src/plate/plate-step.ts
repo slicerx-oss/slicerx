@@ -30,12 +30,16 @@ export const SLICE_STATE_LABEL: Record<PlateSliceState, string> = {
 
 type RowState = Pick<AppState, 'plates' | 'plate' | 'activePlate' | 'slice'>
 
-/** One plate's slice state. The plate in view reads the slice on screen; the others read the slice kept for them. */
-export function sliceStateOf(id: string, objects: number, s: RowState, kept: (id: string) => { stale: boolean } | null = (k) => keptSlice(k)): PlateSliceState {
+/**
+ * One plate's slice state. The plate in view reads the slice on screen, out of date also when an edit since has changed
+ * its G-code (`outdated`: needsSlice in plate/resume-tops.ts, for a rename or a layer mark, which callers with the
+ * store pass); the others read the slice kept for them.
+ */
+export function sliceStateOf(id: string, objects: number, s: RowState, kept: (id: string) => { stale: boolean } | null = (k) => keptSlice(k), outdated: () => boolean = () => false): PlateSliceState {
   if (objects === 0) return 'empty'
   if (id === s.activePlate) {
     if (s.slice.status === 'running') return 'slicing'
-    if (s.slice.status === 'done') return s.slice.stale ? 'stale' : 'sliced'
+    if (s.slice.status === 'done') return s.slice.stale || outdated() ? 'stale' : 'sliced'
     return 'not-sliced'
   }
   const k = kept(id)
@@ -43,11 +47,11 @@ export function sliceStateOf(id: string, objects: number, s: RowState, kept: (id
 }
 
 /** Every plate in project order, the one in view marked. */
-export function plateRows(s: RowState = get(), kept?: (id: string) => { stale: boolean } | null): PlateRow[] {
+export function plateRows(s: RowState = get(), kept?: (id: string) => { stale: boolean } | null, outdated?: () => boolean): PlateRow[] {
   return s.plates.map((p, i) => {
     const shown = p.id === s.activePlate
     const objects = shown ? s.plate.length : p.objects.length
-    return { id: p.id, number: i + 1, name: p.name, objects, state: sliceStateOf(p.id, objects, s, kept), shown }
+    return { id: p.id, number: i + 1, name: p.name, objects, state: sliceStateOf(p.id, objects, s, kept, outdated), shown }
   })
 }
 

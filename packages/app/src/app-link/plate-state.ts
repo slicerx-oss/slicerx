@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { plateRows } from '../plate/plate-step'
 import { allPlates } from '../plate/plates'
+import { needsSlice } from '../plate/resume-tops'
 import { objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { bounds } from '../plate/transform'
 import { get } from '../state/store'
@@ -36,7 +37,7 @@ export function drawnPlate(): number | null | undefined {
  */
 export function platesState() {
   const s = get()
-  const rows = plateRows(s)
+  const rows = plateRows(s, undefined, () => needsSlice(s))
   // A printer whose hotends are its tools (the H3C): the shown plate's filaments in use on their tools.
   const cfg = resolveConfig(s.easy, s.overrides) as Record<string, unknown>
   const slots = mapHotends(cfg) ? resolveSlots(s) : []
