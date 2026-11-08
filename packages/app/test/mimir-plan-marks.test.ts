@@ -167,4 +167,28 @@ describe("the mimir tab's plan marks in the registry design.check reads", () => 
     const check = results.find((r) => r.tool === 'design.check')!
     expect(check.summary).toContain('prints in place, so its gaps are looked at first')
   })
+  it('holds the part when a size changes again after the plan is made again, and design.check refuses the new plan', async () => {
+    const wider = { ...HINGE, features: [{ name: 'Leaf', kind: 'extrude', sizes: { width: 60 } }] }
+    const { built, seen, results, planIds } = await tab(
+      (ids) => [
+        { calls: [{ name: 'design.plan', args: HINGE }] },
+        { calls: [{ name: 'pilot.sheet', args: SHEET }] },
+        { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] },
+        { calls: [{ name: 'design.plan', args: wider }] },
+        // the sheet still shows 40 mm and the person types 60 again: the new plan's sizes changed before the build
+        { calls: [{ name: 'pilot.sheet', args: SHEET }] },
+        { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] },
+        (() => ({ calls: [{ name: 'design.check', args: { planId: ids[1]! } }] })) as ScriptStep,
+        { text: 'Waiting for the plan.' },
+      ],
+      { answer: { width: 60 } },
+    )
+    expect(planIds).toHaveLength(2)
+    expect(seen[5]).toContain(HELD)
+    expect(built).toEqual([])
+    expect(mimirPlans.get(planIds[1]!)).toMatchObject({ stale: true, claimed: 'd1' })
+    const check = results.find((r) => r.tool === 'design.check')!
+    expect(check.ok).toBe(false)
+    expect(check.summary).toContain('The person changed sizes after the plan for Hinge was approved')
+  })
 })
