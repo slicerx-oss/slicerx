@@ -30,6 +30,7 @@ import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoa
 import { productName } from '@slicerx/contracts'
 import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
+import { plainRefusal } from './engine-words'
 import { ASSISTANT_NAME } from './name'
 import { decide, normalizePolicy, policyMayGrant } from './gate'
 import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase } from './kb/kb'
@@ -695,7 +696,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
-    const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: out.summary, ms: now() - t0 }
+    // an engine refusal shows in plain words; the model reads the engine's text with how to try again
+    const plain = out.ok === false ? plainRefusal(out.summary) : undefined
+    const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
     if (out.output !== undefined) result.output = out.output
     if (out.display) result.display = out.display
     if (out.untrusted) result.untrusted = true
@@ -713,7 +716,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
     }
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
-    return { message: toolMessage(out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
+    return { message: toolMessage(plain ? { ...out, summary: `${out.summary}. ${plain.hint}` } : out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done' }> {
