@@ -44,6 +44,21 @@ describe('the sheet record', () => {
     expect([...document.querySelectorAll('.sheet-rec-unit')].map((u) => u.textContent)).toEqual(['°', 'mm'])
   })
 
+  it('rounds a fraction typed into a count row to a whole number of at least one', () => {
+    const gear: PilotSheet = { id: 'sheet_gear', title: 'Gear sizes', views: ['iso'], dims: [{ key: 'teeth', label: 'Teeth', value: 18, unit: 'mm', source: 'asked' }, { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' }] }
+    const edits: [string, number][] = []
+    render(<SheetRecord sheet={gear} answer={null} actionable onEdit={(_id, k, v) => edits.push([k, v])} />)
+    for (const typed of ['20.4', '0.3']) {
+      const teeth = screen.getByRole('textbox', { name: 'Teeth' })
+      fireEvent.change(teeth, { target: { value: typed } })
+      fireEvent.keyDown(teeth, { key: 'Enter' })
+    }
+    const width = screen.getByRole('textbox', { name: 'Width, millimeters' })
+    fireEvent.change(width, { target: { value: '40.4' } })
+    fireEvent.keyDown(width, { key: 'Enter' })
+    expect(edits).toEqual([['teeth', 20], ['teeth', 1], ['width', 40.4]])
+  })
+
   it('numbers each row as its callout, names the source once in the header, and marks guesses while it waits', () => {
     render(<SheetRecord sheet={SHEET} answer={null} />)
     expect(row('phone_width').textContent).toContain('71.5 mm')

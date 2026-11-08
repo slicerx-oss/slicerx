@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
-import { dimText, dimUnit } from '@slicerx/contracts/size-kind'
+import { dimText, dimUnit, wholeCount } from '@slicerx/contracts/size-kind'
 import { Button, Icon, ScrubNumber, tipAttrs } from '@slicerx/ui'
 import { useState } from 'react'
 import { safeUrl } from './citations'
@@ -121,7 +121,7 @@ export function SheetRecord({
                     digits={2}
                     step={unit === '' || unit === '°' ? 1 : 0.5}
                     boxed={false}
-                    onCommit={(v) => onEdit(sheet.id, d.key, v)}
+                    onCommit={(v) => onEdit(sheet.id, d.key, unit === '' ? wholeCount(v) : v)}
                     {...(d.min !== undefined ? { min: d.min } : {})}
                     {...(d.max !== undefined ? { max: d.max } : {})}
                   />

@@ -19,6 +19,14 @@ describe('sizeKind', () => {
   it('reads everything else as a length', () => {
     for (const key of ['width', 'wall_thickness', 'lipHeight', 'diameter', 'radius', 'pitch', 'tooth_height', 'segment_length', 'total_length', 'count_mm', 'm3-hole', 'x', 'thickness', 'walls', 'taper', '']) expect(sizeKind(key), key).toBe('length')
   })
+
+  it('reads a key ending in a length word as a length, whatever word it starts with', () => {
+    for (const key of ['number_height', 'num_depth', 'n_offset', 'count_width', 'angle_leg_length', 'angle_bracket_width', 'number_spacing', 'n_hole_spacing']) expect(sizeKind(key), key).toBe('length')
+  })
+
+  it('leaves turns, coils and loops out of the counts, since a helix or spring often has a fraction of one', () => {
+    for (const key of ['turns', 'coils', 'loops']) expect(sizeKind(key), key).toBe('length')
+  })
 })
 
 describe('sizeUnit and sizeText', () => {
