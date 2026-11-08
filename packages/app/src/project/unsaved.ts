@@ -3,7 +3,7 @@
 // Knows whether the project has changes that were never saved, and asks before anything throws them
 // away: starting over, closing the tab or quitting the desktop app. Opening another project keeps them as a
 // recent project instead (autosave.ts, keepBeforeOpen), and asks only when that fails.
-import { allPlates } from '../plate/plates'
+import { allPlates } from '../plate/all-plates'
 import { appStore, get, set, type AppState } from '../state/store'
 
 /** What counts as a project change; slicing state does not. */
