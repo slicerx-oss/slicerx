@@ -250,15 +250,18 @@ export const WRAP_NOTE = 'Stop here and reply to the user now, without tools, in
 /**
  * Free mimir's slow_down (429): the install's or the address's calls in the last minute are at their limit (20 a minute
  * per desktop install, 10 per person on the web, 60 per address). The proxy gives no retry time, and its window is one
- * rolling minute, so the run shows the refusal's line at once (the first of a streak only), waits SLOW_DOWN_WAIT_MS and
- * sends the same step again. Waits in a row add up to at most SLOW_DOWN_GIVE_UP_MS, one whole window: by then none of
- * this run's calls are left in it, so a refusal after that comes from other traffic on the install or the address, and
- * the run stops cut short with the sheet kept for "keep going".
+ * rolling minute, so the run says at once that it is waiting (SLOW_DOWN_NOTICE, the first of a streak only), waits
+ * SLOW_DOWN_WAIT_MS and sends the same step again. Waits in a row add up to at most SLOW_DOWN_GIVE_UP_MS, one whole
+ * window: by then none of this run's calls are left in it, so a refusal after that comes from other traffic on the
+ * install or the address, and the run stops cut short with the sheet kept for "keep going" (SLOW_DOWN_LINE, in place of
+ * the notice).
  */
 export const SLOW_DOWN_WAIT_MS = 20_000
 export const SLOW_DOWN_GIVE_UP_MS = 60_000
-/** What the person sees when slow_down refusals outlast SLOW_DOWN_GIVE_UP_MS. */
-export const SLOW_DOWN_LINE = 'The model service asked me to slow down, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
+/** What the person sees while the run waits on a slow_down refusal; the proxy's own line says to try again. */
+export const SLOW_DOWN_NOTICE = 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.'
+/** What the person sees in place of SLOW_DOWN_NOTICE when slow_down refusals outlast SLOW_DOWN_GIVE_UP_MS. */
+export const SLOW_DOWN_LINE = 'Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
 /** A step cut off at the output limit before it said or called anything. */
 export const CUT_NOTE = 'Your last reply reached the output limit before it said or did anything. Keep it shorter: make one smaller tool call (build a part in a few solids, or one feature at a time), or reply in a few sentences.'
 /** The messages the runtime itself adds as the user's turn, so a scripted client can tell them from the person's. */
@@ -1090,9 +1093,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (failed !== null && failedCode === 'slow_down' && !text && toolCalls.length === 0) {
         // the proxy's rate window is full: wait and send the same step again, or stop cut short after a whole window
         if (slowed + SLOW_DOWN_WAIT_MS <= SLOW_DOWN_GIVE_UP_MS) {
-          // the first refusal of a streak shows the proxy's line (with See usage) at once, so the person knows why
-          // nothing happens while the run waits; the refusals after it in the same streak add nothing
-          if (slowed === 0) emit({ type: 'error', message: failed, retryable: true, code: failedCode })
+          // the first refusal of a streak says at once (with See usage) that mimir is waiting and will go on, so the
+          // person knows why nothing happens; it is no failure, and the refusals after it in the same streak add nothing
+          if (slowed === 0) emit({ type: 'error', message: SLOW_DOWN_NOTICE, retryable: false, code: failedCode, waiting: true })
           slowed += SLOW_DOWN_WAIT_MS
           await sleep(SLOW_DOWN_WAIT_MS, signal)
           if (signal.aborted) {
@@ -1102,8 +1105,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           step--
           continue
         }
-        emit({ type: 'text', delta: SLOW_DOWN_LINE })
-        emit({ type: 'text_done' })
+        // the line that the run stopped takes the place of the waiting notice, so the reply says it once
+        emit({ type: 'error', message: SLOW_DOWN_LINE, retryable: true, code: failedCode })
         messages.push({ role: 'assistant', content: SLOW_DOWN_LINE })
         said = true
         callLimited = true
