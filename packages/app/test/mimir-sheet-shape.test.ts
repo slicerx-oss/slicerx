@@ -639,6 +639,14 @@ describe('a line whose start the part hides', () => {
     expect(unhide([[0, 0], [0, 12]], (t) => t < 0.75)).toEqual([[0, 0], [0, 12]])
   })
 
+  // the cutoff itself: a 10 px line comes out from behind at 3 px, which leaves exactly 4 px once it starts 3 px clear,
+  // so it is shortened; out at 3.5 px only 3.5 px would be left, so it is drawn whole
+  it('is shortened when exactly 4 px are left past its 3 px of clearance, and drawn whole when fewer are', () => {
+    expect(unhide([[0, 0], [10, 0]], (t) => t < 0.29)).toEqual([[6, 0], [10, 0]])
+    expect(unhide([[0, 0], [10, 0]], (t) => t < 0.31)).toEqual([[0, 0], [10, 0]])
+    expect(unhide([[0, 0], [0, 10]], (t) => t < 0.29)).toEqual([[0, 6], [0, 10]])
+  })
+
   it('leaves a line whose start is in sight as it is', () => {
     const l: [[number, number], [number, number]] = [[0, 0], [100, 0]]
     expect(unhide(l, (t) => t > 0.5)).toBe(l)

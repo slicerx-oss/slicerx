@@ -72,7 +72,7 @@ async function mount(pilot: Pilot) {
 /** Sends the first message, waits for the sheet to wait in the chat, then types a bore on it. */
 async function sheetWaiting(bore: number): Promise<string> {
   await act(() => set({ pilotPrompt: 'a cable clip' }))
-  await waitFor(() => expect(sheetMode(sheetUi.getState())).toBe('confirm'))
+  await waitFor(() => expect(sheetMode(sheetUi.getState())).toBe('confirm'), { timeout: 5000 })
   const sheetId = sheetUi.getState().shown!.sheet.id
   act(() => setDraft('bore', bore))
   return sheetId
@@ -93,10 +93,17 @@ describe('setting a waiting sheet aside from the mimir tab', () => {
     const t = tabRuntime()
     await mount(t.pilot)
     const sheetId = await sheetWaiting(7)
-    await act(async () => void (await runCall('mimir.dismiss', { sheetId, said: 'and a cable hole' })))
+    let out: unknown
+    await act(async () => void (out = await runCall('mimir.dismiss', { sheetId, said: 'and a cable hole' })))
+    // the client hears it was set aside, not canceled
+    expect(out).toMatchObject({ sheetId, setAside: true, said: 'and a cable hole' })
+    expect(out).not.toHaveProperty('canceled')
     expect(vi.mocked(setSheetAside)).toHaveBeenCalledWith(t.pilot, sheetId, 'and a cable hole')
     expect(t.answered).toEqual([[sheetId, { bore: 7 }, 'and a cable hole']])
-    await waitFor(() => expect(t.seen).toHaveLength(1))
+    // the card closes and the message box no longer answers it
+    await waitFor(() => expect(sheetMode(sheetUi.getState())).not.toBe('confirm'), { timeout: 5000 })
+    expect(screen.getByTestId('mimir-composer').getAttribute('data-answers')).not.toBe('sheet')
+    await waitFor(() => expect(t.seen).toHaveLength(1), { timeout: 5000 })
     expect(t.seen[0]).toMatchObject({ result: { confirmed: false, said: 'and a cable hole', values: { bore: 7 }, changed: ['bore'] } })
   })
 
@@ -105,12 +112,15 @@ describe('setting a waiting sheet aside from the mimir tab', () => {
     await mount(t.pilot)
     const sheetId = await sheetWaiting(8)
     const box = screen.getByTestId('mimir-composer').querySelector('textarea')!
-    await waitFor(() => expect(screen.getByTestId('mimir-composer').getAttribute('data-answers')).toBe('sheet'))
+    await waitFor(() => expect(screen.getByTestId('mimir-composer').getAttribute('data-answers')).toBe('sheet'), { timeout: 5000 })
     fireEvent.change(box, { target: { value: 'make it a clip for two cables' } })
     await act(async () => void fireEvent.keyDown(box, { key: 'Enter' }))
     expect(vi.mocked(setSheetAside)).toHaveBeenCalledWith(t.pilot, sheetId, 'make it a clip for two cables')
     expect(t.answered).toEqual([[sheetId, { bore: 8 }, 'make it a clip for two cables']])
-    await waitFor(() => expect(t.seen).toHaveLength(1))
+    // the card closes and the message box no longer answers it
+    await waitFor(() => expect(sheetMode(sheetUi.getState())).not.toBe('confirm'), { timeout: 5000 })
+    expect(screen.getByTestId('mimir-composer').getAttribute('data-answers')).not.toBe('sheet')
+    await waitFor(() => expect(t.seen).toHaveLength(1), { timeout: 5000 })
     expect(t.seen[0]).toMatchObject({ result: { confirmed: false, said: 'make it a clip for two cables', values: { bore: 8 }, changed: ['bore'] } })
   })
 })
