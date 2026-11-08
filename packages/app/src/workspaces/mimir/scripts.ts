@@ -652,8 +652,9 @@ const sizesOf: ScriptStep[] = [
 
 export const SCRIPTS: MimirScript[] = [
   // first, so "the dimension sheet for the box" shows the built box's sizes rather than building another; a message
-  // that also asks to make or build something is a build, and goes on to the scripts below
-  { id: 'sizes', match: /^(?![\s\S]*\b(?:make|build|design|create|print)\b)[\s\S]*(?:\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b)/i, steps: sizesOf },
+  // that also asks to make, build or design one is a build, and goes on to the scripts below. "Design" and "print" as
+  // nouns ("my box design", "the print") stay here.
+  { id: 'sizes', match: /^(?![\s\S]*(?:\b(?:make|build|create)\b|\bdesign (?:a|an|me)\b|\bprint (?:it|this|a)\b))[\s\S]*(?:\b(?:dimension|size|sizes) sheet\b|\bmain sizes\b)/i, steps: sizesOf },
   // first, so "check the backplate against its plan" checks rather than building another
   { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },

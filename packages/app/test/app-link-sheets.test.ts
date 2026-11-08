@@ -106,11 +106,14 @@ describe('client sheets over the app link', () => {
   it('keep the built design a sheet changes, and refuse one that is not on the plate', async () => {
     const before = get().plate
     const entry = { id: 'obj_clip', name: 'Clip', parts: [{ name: 'Clip', slot: 1, positions: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) }], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], colors: [], handle: {} } as unknown as PlateEntry
-    set({ plate: [entry] })
+    // on the plate with nothing to draw: its parts are empty
+    const blank = { ...entry, id: 'obj_blank', parts: [{ name: 'Blank', slot: 1, positions: new Float32Array(0), indices: new Uint32Array(0) }] } as unknown as PlateEntry
+    set({ plate: [entry, blank] })
     try {
       const asked = (await runCall('sheet.ask', { ...SHEET, design: 'obj_clip' }, A)) as { sheetId: string }
       expect(clientSheets.getState().sheets.find((x) => x.sheet.id === asked.sheetId)?.sheet.design).toBe('obj_clip')
       expect(await code(runCall('sheet.ask', { ...SHEET, design: 'obj_gone' }, B))).toBe('not_found')
+      expect(await code(runCall('sheet.ask', { ...SHEET, design: 'obj_blank' }, B))).toBe('not_found')
     } finally {
       set({ plate: before })
     }
