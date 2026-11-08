@@ -38,9 +38,9 @@ describe('the clearance table', () => {
         const vertical = assessFit({ ...at, direction: 'z' }).suggestedGapMm
         expect(printInPlaceClearance({ nozzleMm: nozzle, material })).toMatchObject({ sideMm: side, verticalMm: vertical })
         // the material's entry names its two figures
-        expect(facts[i]).toMatch(new RegExp(`${material}( and [A-Z]+)? ${side}( mm side by side)? and ${vertical} mm|[A-Z]+ and ${material} ${side}( mm side by side)? and ${vertical} mm`))
+        expect(facts[i]).toMatch(new RegExp(`(${material}( and [A-Z]+)?|[A-Z]+ and ${material}) ${side} mm side by side and ${vertical} mm above or below`))
       }
     })
-    expect(facts[1]).toBe('Print in place gaps per side, 0.4 mm nozzle at 0.2 mm layers: PLA and ABS 0.3 mm side by side and 0.4 mm above or below; PETG 0.4 and 0.6 mm; TPU 0.4 and 0.4 mm.')
+    expect(facts[1]).toBe('Print in place gaps per side, 0.4 mm nozzle at 0.2 mm layers: PLA and ABS 0.3 mm side by side and 0.4 mm above or below; PETG 0.4 mm side by side and 0.6 mm above or below; TPU 0.4 mm side by side and 0.4 mm above or below.')
   })
 })
