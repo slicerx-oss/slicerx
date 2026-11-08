@@ -49,6 +49,9 @@ describe('opening a job over unsaved work', () => {
     expect(note?.action?.label).toBe('Reopen')
     note!.action!.run()
     await vi.waitFor(() => expect(names()).toEqual(['a', 'b', 'c']))
+    // The plate comes back before the open is over: it then sets the project file Save writes to and drops the loading
+    // flag. Wait for that, or it lands in whichever test runs next and clears the file that test just set.
+    await vi.waitFor(() => expect(get().plateLoading).toBe(false))
     expect(get().unsavedPrompt).toBeNull()
   })
 
