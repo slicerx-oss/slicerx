@@ -590,6 +590,12 @@ export interface PlanEntry {
   stale?: true
 
   /**
+   * A stale plan after a later design.plan was answered, approved or declined: its part no longer waits for it, and
+   * design.check refuses it for good, since the person confirmed other sizes than it holds. It ties to no design.
+   */
+  superseded?: true
+
+  /**
    * The design the mimir tab's chat started for the plan's part, which its build waits on while the plan is stale. Kept
    * apart from `design` (a stale plan ties to none), and design.check does not read it.
    */
@@ -607,6 +613,10 @@ export interface FitCheckRun {
   stamp: string
   parts: 'all' | readonly number[]
 }
+
+/** design.check's answer for a stale plan a later plan's answer superseded (PlanEntry.superseded), naming no id or tool. */
+export const supersededPlanNote = (part: string): string =>
+  `Nothing was checked. The person changed sizes after the plan for ${part} was approved, and a newer plan has been answered since, so this plan no longer says what to build and is not checked. Check the part against the newer plan, or if the person turned it down, make a new plan with the confirmed sizes first.`
 
 /** design.check's answer for a plan whose sizes changed after it was approved (PlanEntry.stale), naming no id. */
 export const stalePlanNote = (part: string): string =>
@@ -630,7 +640,7 @@ export interface PlanRegistry {
   put(plan: PartPlan, design?: string, origin?: PlanOrigin): void
   /**
    * Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such
-   * plan, or it is stale (its part waits for a new plan).
+   * plan, or it is stale (its part waits for a new plan) or superseded.
    */
   tie(planId: string, design: string): boolean
   /**
@@ -656,8 +666,11 @@ export interface PlanRegistry {
   close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
   /** Marks a kept plan stale: sizes changed after it was approved. False when there is no such plan. */
   stale(planId: string): boolean
-  /** Clears a plan's stale mark, once a new plan for its part was answered (approved or declined). */
-  fresh(planId: string): void
+  /**
+   * Turns a stale plan's mark into superseded, once a new plan for its part was answered (approved or declined): design.check
+   * keeps refusing it. A plan that is not stale is left as it is.
+   */
+  supersede(planId: string): void
   /** Records the design the chat started for a kept plan's part, stale or not (PlanEntry.claimed); no-op for an unknown plan. */
   claim(planId: string, design: string): void
   /** Keeps the fit check just run on a design, replacing the one before. */
@@ -689,7 +702,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}), ...(was?.superseded ? { superseded: was.superseded } : {}), ...(was?.claimed ? { claimed: was.claimed } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -697,7 +710,7 @@ export function createPlanRegistry(): PlanRegistry {
     },
     tie(planId, design) {
       const entry = plans.get(planId)
-      if (!entry || entry.stale) return false
+      if (!entry || entry.stale || entry.superseded) return false
       entry.design = design
       return true
     },
@@ -744,9 +757,11 @@ export function createPlanRegistry(): PlanRegistry {
       entry.stale = true
       return true
     },
-    fresh(planId) {
+    supersede(planId) {
       const entry = plans.get(planId)
-      if (entry) delete entry.stale
+      if (!entry?.stale) return
+      delete entry.stale
+      entry.superseded = true
     },
     claim(planId, design) {
       const entry = plans.get(planId)
