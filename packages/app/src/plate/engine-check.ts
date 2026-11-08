@@ -199,7 +199,9 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
       if (ac.signal.aborted || get().plateCheck.id !== id) return null
       set({ plateCheck: { status: 'done', id, inputs, result, slow: false } })
       return result
-    } catch {
+    } catch (e) {
+      // A check the host stopped (a newer check or an arrange took over) has no answer: the one after it brings it.
+      if (e instanceof DOMException && e.name === 'AbortError') return null
       // A failed check leaves the footprint rule on screen; the slice still decides.
       if (!ac.signal.aborted && get().plateCheck.id === id) set({ plateCheck: { status: 'error', id, inputs, result: null, slow: false } })
       return null
