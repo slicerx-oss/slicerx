@@ -714,6 +714,20 @@ describe('a plan whose sizes changed after it was approved', () => {
     plans.put({ ...boxPlan, overall: { x: 60, y: 20, z: 5 } }, 'd1', 'card')
     expect(plans.get('box-1')?.stale).toBe(true)
   })
+
+  it('keeps the design the chat started for its part while it waits, apart from its tie, through an edit', () => {
+    const plans = createPlanRegistry()
+    plans.put(boxPlan, undefined, 'card')
+    plans.stale('box-1')
+    plans.claim('box-1', 'd2')
+    expect(plans.get('box-1')).toMatchObject({ stale: true, claimed: 'd2' })
+    expect(plans.get('box-1')?.design).toBeUndefined()
+    plans.put({ ...boxPlan, overall: { x: 60, y: 20, z: 5 } }, undefined, 'card')
+    expect(plans.get('box-1')?.claimed).toBe('d2')
+    // a plan it does not have records nothing
+    plans.claim('nope', 'd2')
+    expect(plans.get('nope')).toBeUndefined()
+  })
 })
 
 describe('a print-in-place plan', () => {
