@@ -9,6 +9,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { endIdleGeomWorker, geom, setGeomCallLimit, setGeomProvider, soloCall } from '../src/geom/client'
 import { busyWorkers } from './geom-busy-engine'
+import type { StepParams } from '@slicerx/cad-history'
+import { geomOpClass, geomStepName, type GeomOpClass } from '@slicerx/contracts/geom-limits'
 
 type Posted = { id?: number; op?: string; request?: unknown; gate?: boolean }
 
@@ -175,7 +177,52 @@ describe('a geometry call past its time limit', () => {
     expect(await refused).toMatchObject({ message: 'The step "Layer plan" ran past its 2 s limit and was stopped; try a smaller version: a coarser mesh' })
   })
 
-  it("stops a replay step's limit while another call runs between its steps, and starts it again after", async () => {
+  it("stops a replay step's limit while another call runs, and goes on with what was left after it ends", async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const replay = api.call('history.replay', {}).catch((e: Error) => e)
+    const other = api.call('repair', {})
+    const w = workers[0]!
+    w.start(0)
+    const id = w.calls()[0]!.id
+    w.send({ step: id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(600)
+    // the worker runs the repair while the replay's step waits (a load inside it)
+    w.start(1)
+    vi.advanceTimersByTime(900)
+    expect(w.terminate).not.toHaveBeenCalled()
+    w.answer(1)
+    await expect(other).resolves.toEqual({ op: 'repair' })
+    // 400 ms of the step's limit were left, with no further word from the worker
+    vi.advanceTimersByTime(399)
+    expect(w.terminate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await replay).toMatchObject({ message: 'The step "Fillet 2 mm" ran past its 1 s limit and was stopped; try a smaller version: fewer copies or a simpler part' })
+  })
+
+  it('starts a replay limit only once a call already running ends', async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const other = api.call('repair', {})
+    const replay = api.call('history.replay', {}).catch((e: Error) => e)
+    const w = workers[0]!
+    w.start(0)
+    w.start(1)
+    w.send({ step: w.calls()[1]!.id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(900)
+    w.answer(0)
+    await expect(other).resolves.toEqual({ op: 'repair' })
+    vi.advanceTimersByTime(999)
+    expect(w.terminate).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(w.terminate).toHaveBeenCalledOnce()
+    expect(await replay).toMatchObject({ message: expect.stringMatching(/^The step "Fillet 2 mm" ran past its 1 s limit/) })
+  })
+
+  it('leaves no timer behind when a replay ends while another call runs', async () => {
     const workers = manual()
     setGeomCallLimit(() => 1000)
     const api = geom()
@@ -183,24 +230,65 @@ describe('a geometry call past its time limit', () => {
     const other = api.call('repair', {})
     const w = workers[0]!
     w.start(0)
-    const id = w.calls()[0]!.id
-    w.send({ step: id, op: 'edge.fillet', name: 'Fillet 2 mm' })
-    vi.advanceTimersByTime(600)
-    // the worker runs the repair in the replay's pause before its next step
+    w.send({ step: w.calls()[0]!.id, op: 'edge.fillet', name: 'Fillet 2 mm' })
     w.start(1)
-    vi.advanceTimersByTime(900)
-    expect(w.terminate).not.toHaveBeenCalled()
-    w.answer(1)
-    await expect(other).resolves.toEqual({ op: 'repair' })
-    // the replay's step gets a fresh limit once the repair is done
-    vi.advanceTimersByTime(999)
-    expect(w.terminate).not.toHaveBeenCalled()
-    w.send({ step: id, op: 'edge.chamfer', name: 'Chamfer 1 mm' })
-    vi.advanceTimersByTime(999)
     w.answer(0)
     await expect(replay).resolves.toEqual({ op: 'history.replay' })
+    w.answer(1)
+    await expect(other).resolves.toEqual({ op: 'repair' })
+    // only the idle timer that ends an unused worker is left
+    expect(vi.getTimerCount()).toBe(1)
     vi.advanceTimersByTime(5000)
     expect(w.terminate).not.toHaveBeenCalled()
+  })
+
+  it("keeps a replay's limit off between its steps, while another replay's step runs", async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const first = api.call('history.replay', { n: 1 })
+    const second = api.call('history.replay', { n: 2 })
+    const w = workers[0]!
+    const [a, b] = [w.calls()[0]!.id, w.calls()[1]!.id]
+    w.start(0)
+    w.send({ step: a, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(500)
+    // the first replay waits between its steps; the second one's step runs meanwhile
+    w.send({ yielded: a })
+    w.start(1)
+    w.send({ step: b, op: 'edge.chamfer', name: 'Chamfer 1 mm' })
+    vi.advanceTimersByTime(900)
+    w.answer(1)
+    await expect(second).resolves.toEqual({ op: 'history.replay' })
+    vi.advanceTimersByTime(900)
+    expect(w.terminate).not.toHaveBeenCalled()
+    // its next step gets a whole limit
+    w.send({ step: a, op: 'face.push', name: 'Pull 5 mm' })
+    vi.advanceTimersByTime(999)
+    w.answer(0)
+    await expect(first).resolves.toEqual({ op: 'history.replay' })
+    vi.advanceTimersByTime(5000)
+    expect(w.terminate).not.toHaveBeenCalled()
+  })
+
+  it('refuses a replay that is stopped again after it was sent on, without sending it a third time', async () => {
+    const workers = manual()
+    setGeomCallLimit(() => 1000)
+    const api = geom()
+    const replay = api.call('history.replay', {}).catch((e: Error) => e)
+    const stuck = api.call('array', {}).catch((e: Error) => e)
+    const w = workers[0]!
+    w.start(0)
+    w.start(1)
+    vi.advanceTimersByTime(1000)
+    expect(await stuck).toMatchObject({ message: expect.stringMatching(/^The step "Array"/) })
+    const fresh = workers[1]!
+    fresh.start(0)
+    fresh.send({ step: fresh.calls()[0]!.id, op: 'edge.fillet', name: 'Fillet 2 mm' })
+    vi.advanceTimersByTime(1000)
+    expect(fresh.terminate).toHaveBeenCalledOnce()
+    expect(await replay).toMatchObject({ message: expect.stringMatching(/^The step "Fillet 2 mm" ran past its 1 s limit/) })
+    expect(workers).toHaveLength(2)
   })
 
   it('sends a replay to a fresh worker from its start when another call there is stopped', async () => {
@@ -254,5 +342,36 @@ describe('a geometry call past its time limit', () => {
     vi.advanceTimersByTime(1)
     expect(w.terminate).toHaveBeenCalledOnce()
     expect(await measure).toMatchObject({ message: 'The step "Measure" took too long (over its 30 s limit) and was stopped; try it again' })
+  })
+
+  it('gives every history step operation the class chosen for it, and a name', () => {
+    const HISTORY: Record<StepParams['op'], GeomOpClass> = {
+      'array.merged': 'model',
+      boolean: 'model',
+      'edge.chamfer': 'model',
+      'edge.fillet': 'model',
+      'face.push': 'model',
+      'hole.apply': 'model',
+      hollow: 'mesh',
+      mirror: 'model',
+      paint: 'mesh',
+      'parts.add': 'model',
+      'parts.order': 'model',
+      'plane.cut': 'mesh',
+      repair: 'mesh',
+      'shape.extrude': 'model',
+      shell: 'model',
+      simplify: 'mesh',
+      'sketch.loft': 'model',
+      'sketch.revolve': 'model',
+      'sketch.sweep': 'model',
+      split: 'mesh',
+      subtract: 'model',
+      'thread.apply': 'model',
+    }
+    for (const [op, cls] of Object.entries(HISTORY)) {
+      expect([op, geomOpClass(op)]).toEqual([op, cls])
+      expect([op, geomStepName(op)]).toEqual([op, expect.any(String)])
+    }
   })
 })
