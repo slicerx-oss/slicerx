@@ -27,6 +27,16 @@ describe('history steps in the project file', () => {
     })
   }
 
+  it('keeps the part an array of separate copies copied, and drops a name no part could have', () => {
+    const copies = (arrayOf: unknown) => ({ op: 'parts.add', parts: [{ ...boxMesh(2, 2, 2), name: 'Segment 1 2' }], label: 'Array of 2, separate', arrayOf }) as unknown as StepParams
+    expect((roundTrip(copies('Segment 1'))?.steps[0]?.params as { arrayOf?: string }).arrayOf).toBe('Segment 1')
+    for (const bad of ['x'.repeat(121), '   ', 7]) {
+      const back = roundTrip(copies(bad))?.steps[0]?.params as { op: string; arrayOf?: string } | undefined
+      expect(back?.op, String(bad)).toBe('parts.add')
+      expect(back && 'arrayOf' in back, String(bad)).toBe(false)
+    }
+  })
+
   it("keeps a step's own name", () => {
     const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params: STEPS[2]!, label: 'Walls' }] }
     const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
