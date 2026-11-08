@@ -26,6 +26,9 @@ import { inputsChanged } from '../src/state/slice-inputs'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { ExportMenu } from '../src/workspaces/prepare/object-actions'
+import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
+import { PreviewPlates } from '../src/workspaces/preview/preview-plates'
+import { platesState } from '../src/app-link/plate-state'
 
 const part = { ...boxMesh(10, 10, 1), name: 'Body', slot: 1 }
 const box: PlateEntry = { id: 'a', name: 'Box', handle: { id: 'a', hash: 'a', name: 'a', triangles: 12, bboxMm: [10, 10, 1], openEdges: 0, parts: [{ name: 'Body', slot: 1, triangles: 12 }] }, parts: [part], colors: ['#fff'], transform: compose({ position: [60, 60, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
@@ -931,5 +934,49 @@ describe('round 17: what goes into the G-code, before and after a slice lands', 
       stop()
       set({ autoSlice: false } as never)
     }
+  })
+})
+
+describe('round 19: the footer, the plate badges and the kept slices read the one stale rule', () => {
+  it("keeps the footer's Export plate 3MF on after a rename, since it slices again first, and tags the estimate", async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(printBlock(get())).toBe(STALE_SLICE)
+    render(wrap(e.host, createElement(SliceBlock, {})))
+    act(() => screen.getByTestId('slice-output-menu').click())
+    const item = screen.getByTestId('slice-output-export-3mf')
+    expect(item.getAttribute('aria-disabled')).toBeNull()
+    expect(screen.getByTestId('slice-estimate').querySelector('.app-tag.stale')?.textContent).toBe('Settings changed')
+    // The export menu's item reads the same.
+    cleanup()
+    render(wrap(e.host, createElement(ExportMenu, { open: true, onClose: () => undefined })))
+    expect(screen.getByTestId('export-gcode-3mf').getAttribute('aria-disabled')).toBeNull()
+    // A click slices again, then saves.
+    await act(async () => screen.getByTestId('export-gcode-3mf').click())
+    await vi.waitFor(() => expect(e.saved).toHaveLength(1))
+    expect(e.requests).toHaveLength(2)
+  })
+
+  it('keeps Export plate 3MF off in the export menu for a slice made for another plan', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    plan()
+    expect(printBlock(get())).toBe(SLICE_NOT_CURRENT)
+    render(wrap(e.host, createElement(ExportMenu, { open: true, onClose: () => undefined })))
+    expect(screen.getByTestId('export-gcode-3mf').getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('shows a rename since the slice as Settings changed on the plate row and the Preview badge', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    expect(platesState().plates[0]!.slice).toBe('sliced')
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(platesState().plates[0]!.slice).toBe('stale')
+    render(wrap(e.host, createElement(PreviewPlates)))
+    expect(screen.getAllByRole('button')[0]!.querySelector('small')?.textContent).toBe('Settings changed')
   })
 })

@@ -4,12 +4,14 @@
 // sliced before comes back with its toolpaths at once (plate-slices.ts).
 import { Block, tipAttrs } from '@slicerx/ui'
 import { allPlates, switchPlate } from '../../plate/plates'
+import { needsSlice } from '../../plate/resume-tops'
 import { useApp, type SliceState } from '../../state/store'
 import { keptSlice } from './plate-slices'
 import { PlateThumb } from './plate-thumb'
 
-function status(on: boolean, slice: SliceState, id: string): string {
-  if (on) return slice.status === 'done' ? (slice.stale ? 'Settings changed' : 'In view') : slice.status === 'running' ? 'Slicing' : 'Not sliced'
+/** `outdated`: an edit since changed the shown plate's G-code (needsSlice: a rename, a layer mark). */
+function status(on: boolean, slice: SliceState, id: string, outdated: boolean): string {
+  if (on) return slice.status === 'done' ? (slice.stale || outdated ? 'Settings changed' : 'In view') : slice.status === 'running' ? 'Slicing' : 'Not sliced'
   const k = keptSlice(id)
   return k ? (k.stale ? 'Settings changed' : 'Sliced') : 'Not sliced'
 }
@@ -20,6 +22,7 @@ export function PreviewPlates() {
   const active = useApp((s) => s.activePlate)
   const bed = useApp((s) => s.bed)
   const slice = useApp((s) => s.slice)
+  const outdated = useApp((s) => s.slice.status === 'done' && needsSlice(s))
   if (plates.length < 2) return null
   const list = allPlates({ plates, plate, activePlate: active })
   return (
@@ -27,7 +30,7 @@ export function PreviewPlates() {
       <ul className="pv-plates" aria-label="Plates">
         {list.map((p, i) => {
           const on = p.id === active
-          const st = status(on, slice, p.id)
+          const st = status(on, slice, p.id, outdated)
           return (
             <li key={p.id}>
               <button type="button" className="pv-plate" aria-current={on ? 'true' : undefined} onClick={() => switchPlate(p.id)} {...tipAttrs({ title: p.name, body: on ? 'This plate is in view.' : 'Show this plate.' })}>

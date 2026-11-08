@@ -13,8 +13,8 @@ import { useSliceNote } from '../../lib/slice-note'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
-import { printBlock } from '../../plate/heimdall'
-import { RESUME_VOID } from '../../plate/resume-tops'
+import { export3mfBlock, printBlock } from '../../plate/heimdall'
+import { needsSlice, RESUME_VOID } from '../../plate/resume-tops'
 import { ResumeElsewhereNote, ResumeVoidActions } from '../../plate/resume-void-actions'
 import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
 import { checkingSlowly, engineVerdict, preflightProblem } from '../../plate/engine-check'
@@ -53,6 +53,10 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
   // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
   const unsafe = useApp(printBlock)
+  // Export plate 3MF slices again first when an edit since has changed the slice's G-code (a rename, a layer mark).
+  const unsafe3mf = useApp(export3mfBlock)
+  // That edit leaves the slice out of date though it is not marked stale: the estimate says so, as Print holds back.
+  const outdated = useApp((s) => s.slice.status === 'done' && needsSlice(s))
   const heads = useApp(preflightProblem)
   // The same plate's by-object plan: the short warning with the pair it names and Arrange. On the desktop the
   // engine's plate check takes its place once it has answered for the plate as it sits.
@@ -100,7 +104,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       <MenuItem icon="sd-card" data-testid="slice-output-export-gcode" aria-disabled={!fresh ? true : undefined} {...(!fresh && reason ? tipAttrs({ title: 'Export G-code', reason }) : {})} onClick={() => fresh && run(() => exportGcode(host))}>
         Export G-code
       </MenuItem>
-      <MenuItem icon="send-to-printer" data-testid="slice-output-export-3mf" aria-disabled={unsafe !== null || plate.length === 0 ? true : undefined} {...(unsafe !== null ? tipAttrs({ title: 'Export plate 3MF', reason: unsafe }) : {})} onClick={() => unsafe === null && plate.length > 0 && run(() => import('../../export/actions').then((m) => m.exportGcode3mf(host)))}>
+      <MenuItem icon="send-to-printer" data-testid="slice-output-export-3mf" aria-disabled={unsafe3mf !== null || plate.length === 0 ? true : undefined} {...(unsafe3mf !== null ? tipAttrs({ title: 'Export plate 3MF', reason: unsafe3mf }) : {})} onClick={() => unsafe3mf === null && plate.length > 0 && run(() => import('../../export/actions').then((m) => m.exportGcode3mf(host)))}>
         Export plate 3MF
       </MenuItem>
     </Menu>
@@ -220,7 +224,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
             {warnings} {warnings === 1 ? 'warning' : 'warnings'}
           </button>
         ) : null}
-        {done.stale ? <span className="app-tag stale">{auto && !held ? 'Updating' : 'Settings changed'}</span> : null}
+        {done.stale || outdated ? <span className="app-tag stale">{auto && !held ? 'Updating' : 'Settings changed'}</span> : null}
         {again}
       </div>
       {held && done.stale && !running ? (

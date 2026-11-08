@@ -10,7 +10,7 @@ import { addPrimitive, mergeSelected, splitSelectedToObjects, splitSelectedToPar
 import type { PrimitiveShape } from '../../plate/mesh-ops'
 import { toast, useApp } from '../../state/store'
 import { ObjectTools } from './object-tools'
-import { printBlock } from '../../plate/heimdall'
+import { export3mfBlock } from '../../plate/heimdall'
 import { exportAllBlock } from '../../plate/resume-tops'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../../export/actions'
 import { appName } from '../../edition'
@@ -60,8 +60,9 @@ export function ShapeMenu({ open, onClose, align = 'start' }: MenuProps) {
 /** Saving the project and the files for the printer. */
 export function ExportMenu({ open, onClose, align = 'start' }: MenuProps) {
   const host = useHost()
-  // A plate with a strike in its slice is not exported; the item says why.
-  const unsafe = useApp(printBlock)
+  // A plate with a strike in its slice is not exported; the item says why. One whose G-code an edit since has changed
+  // slices again first.
+  const unsafe = useApp(export3mfBlock)
   const allBlocked = useApp(exportAllBlock)
   const plates = useApp((s) => s.plates.length)
   const run = runner(onClose)
