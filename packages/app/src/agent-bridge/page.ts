@@ -37,6 +37,8 @@ type Args = Record<string, unknown>
 
 const num = (v: unknown, fallback: number, min: number, max: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** How long app_slice waits, with auto slice on, for a slice to start after its own one ended out of date (ms). */
+const ENDED_GRACE_MS = 1_000
 
 /** The last slice as an agent reads it: status, and for a finished one its time, filament, layers and warnings. */
 export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'autoSlice' | 'autoSliceBySize' | 'sliceHeld'>): Record<string, unknown> {
@@ -277,21 +279,33 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     const asked = s.activePlate
     const name = s.plates.find((p) => p.id === asked)?.name ?? 'the plate'
     const mark = capture.marker()
+    const toastBefore = s.toast
     // The Slice command, as the button and Ctrl+Enter run it. A refusal (nothing printable, say) comes back at once.
     const run = runCommand('slice')
     const early = await Promise.race([run, sleep(100).then(() => null)])
     if (early && !early.ok) throw new BridgeError('not_ready', early.message)
+    // When the command ended (its slice landed, or it stopped with nothing to slice). With nothing slicing after that,
+    // no current slice is coming: auto slice is off, or the edit is one it does not slice for (a rename). With auto
+    // slice on, a slice it starts for an edit made while the command ran gets a moment to begin first.
+    let ended: number | null = null
+    void run.then(() => (ended = Date.now()))
     const out = await until(
       () => {
         const now = get()
         if (now.activePlate !== asked) throw new BridgeError('not_ready', `another plate was shown before ${name} finished slicing, so no slice was kept for it; show it and slice again`)
         if (now.projectGcode?.asking) throw new BridgeError('not_ready', 'the app asks whether to use the project\'s own printer G-code; answer the dialog, then slice again')
-        return !needsSlice(now) ? now : now.slice.status === 'error' ? now : null
+        if (!needsSlice(now) || now.slice.status === 'error') return now
+        return ended !== null && now.slice.status !== 'running' && (!now.autoSlice || Date.now() - ended > ENDED_GRACE_MS) ? now : null
       },
       timeoutMs,
       mark,
       'Slicing',
     )
+    // A slice that landed out of date comes back as it is, with `stale: true`; no slice at all says why, from its toast.
+    if (out.slice.status !== 'done' && out.slice.status !== 'error') {
+      const said = out.toast !== toastBefore ? out.toast?.text : undefined
+      throw new BridgeError('not_ready', `${name} was not sliced${said ? `: ${said}` : ''}`)
+    }
     return sliceSummary(out)
   }
 
