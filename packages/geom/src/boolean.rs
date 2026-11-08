@@ -7,12 +7,54 @@ use crate::faces::Surface;
 #[cfg(feature = "cad")]
 use crate::faces::{self, Faces};
 use crate::mesh::{self, TriMesh};
+use manifold_rust::cancel::CancelToken;
 use manifold_rust::manifold::Manifold;
+use manifold_rust::progress::ProgressReporter;
 use manifold_rust::types::{BooleanEngine, Error as MfError, MeshGL64, OpType, WindingRule};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "cad")]
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// What one join may hand the kernel, in triangles: each step counts its two inputs, and a robust step also counts
+/// them again over its progress reports. A join past it stops with an error people can act on, not after minutes.
+pub const WORK_BUDGET: u64 = 20_000_000;
+
+/// The work a join has handed the kernel so far. The exact engine reports once a step and the robust one about
+/// every 1% of each of its phases, whatever the step costs, so the count is of triangles, not of reports.
+#[derive(Clone)]
+struct Work {
+    budget: u64,
+    done: Arc<AtomicU64>,
+    token: CancelToken,
+}
+
+impl Work {
+    fn new(budget: u64) -> Self {
+        Self {
+            budget,
+            done: Arc::new(AtomicU64::new(0)),
+            token: CancelToken::new(),
+        }
+    }
+
+    /// false once past the budget, when the token also stops a step in progress
+    fn add(&self, n: u64) -> bool {
+        let within = self.done.fetch_add(n, Ordering::Relaxed).saturating_add(n) <= self.budget;
+        if !within {
+            self.token.cancel();
+        }
+        within
+    }
+}
+
+fn too_long() -> Error {
+    Error::geometry(
+        "boolean",
+        "this join is taking too long to finish; try fewer copies or join them in smaller groups",
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -190,11 +232,21 @@ impl Solid {
         })
     }
 
-    fn apply(&self, other: &Self, op: OpType, opts: BooleanOptions) -> Result<(Self, bool)> {
+    /// `unclean`: some input of this step, here or folded into `self`, was unclean
+    fn apply(
+        &self,
+        other: &Self,
+        op: OpType,
+        opts: BooleanOptions,
+        unclean: bool,
+        work: &Work,
+    ) -> Result<(Self, bool)> {
         let robust = match opts.engine {
             Engine::Robust => true,
             Engine::Exact => false,
-            Engine::Auto => opts.keep_inverted || self.unclean() || other.unclean(),
+            // judged by the inputs, not by a step's own result: slivers the exact engine leaves read as
+            // self-intersections, and the robust engine took minutes on them
+            Engine::Auto => opts.keep_inverted || unclean,
         };
         if !robust && (self.soup || other.soup) {
             return Err(Error::geometry(
@@ -212,9 +264,24 @@ impl Solid {
         } else {
             WindingRule::Positive
         };
-        let m = self
-            .m
-            .boolean_with_engine_rule_and_progress(&other.m, op, engine, rule, None, None);
+        let size = (self.m.num_tri() + other.m.num_tri()) as u64;
+        if !work.add(size) {
+            return Err(too_long());
+        }
+        let counted = work.clone();
+        let progress = ProgressReporter::new(move |_, at| {
+            if at.is_some() {
+                counted.add(size / 100 + 1);
+            }
+        });
+        let m = self.m.boolean_with_engine_rule_and_progress(
+            &other.m,
+            op,
+            engine,
+            rule,
+            Some(&work.token),
+            Some(&progress),
+        );
         check(&m)?;
         let tables = self.tables.iter().chain(&other.tables).cloned().collect();
         Ok((
@@ -264,6 +331,7 @@ fn check(m: &Manifold) -> Result<()> {
         MfError::NoError => Ok(()),
         MfError::NotClosed => Err(not_closed()),
         MfError::ResultTooLarge => Err(Error::geometry("boolean", "the result is too large")),
+        MfError::Cancelled => Err(too_long()),
         e => Err(Error::geometry("boolean", e.to_str().to_owned())),
     }
 }
@@ -365,37 +433,55 @@ pub fn boolean_solids(
     op: BoolOp,
     opts: &BooleanOptions,
 ) -> Result<(TriMesh, BooleanReport)> {
-    let unclean = a.iter().chain(b).filter(|s| s.unclean()).count();
+    boolean_within(a, b, op, *opts, WORK_BUDGET)
+}
+
+pub(crate) fn boolean_within(
+    a: &[Solid],
+    b: &[Solid],
+    op: BoolOp,
+    opts: BooleanOptions,
+    budget: u64,
+) -> Result<(TriMesh, BooleanReport)> {
+    let work = Work::new(budget);
+    let flags: Vec<bool> = a.iter().chain(b).map(Solid::unclean).collect();
+    let unclean = flags.iter().filter(|&&u| u).count();
+    let (fa, fb) = flags.split_at(a.len());
     let mut robust = false;
-    let mut fold = |items: Vec<&Solid>, op: OpType| -> Result<Option<Solid>> {
+    let mut fold = |items: Vec<(&Solid, bool)>, op: OpType| -> Result<Option<(Solid, bool)>> {
         let mut it = items.into_iter();
-        let Some(first) = it.next() else {
+        let Some((first, mut dirty)) = it.next() else {
             return Ok(None);
         };
         let mut acc = first.clone();
-        for s in it {
-            let (r, used) = acc.apply(s, op, *opts)?;
+        for (s, u) in it {
+            dirty |= u;
+            let (r, used) = acc.apply(s, op, opts, dirty, &work)?;
             robust |= used;
+            // a robust step's result is clean
+            dirty &= !used;
             acc = r;
         }
-        Ok(Some(acc))
+        Ok(Some((acc, dirty)))
     };
+    let all = || a.iter().chain(b).zip(flags.iter().copied()).collect();
     let result = match op {
-        BoolOp::Union => fold(a.iter().chain(b).collect(), OpType::Add)?,
-        BoolOp::Intersection => fold(a.iter().chain(b).collect(), OpType::Intersect)?,
+        BoolOp::Union => fold(all(), OpType::Add)?,
+        BoolOp::Intersection => fold(all(), OpType::Intersect)?,
         BoolOp::Difference => {
-            let base = fold(a.iter().collect(), OpType::Add)?;
-            let cut = fold(b.iter().collect(), OpType::Add)?;
+            let base = fold(a.iter().zip(fa.iter().copied()).collect(), OpType::Add)?;
+            let cut = fold(b.iter().zip(fb.iter().copied()).collect(), OpType::Add)?;
             match (base, cut) {
-                (Some(x), Some(y)) => {
-                    let (r, used) = x.apply(&y, OpType::Subtract, *opts)?;
+                (Some((x, ux)), Some((y, uy))) => {
+                    let (r, used) = x.apply(&y, OpType::Subtract, opts, ux || uy, &work)?;
                     robust |= used;
-                    Some(r)
+                    Some((r, false))
                 }
                 (x, _) => x,
             }
         }
     };
+    let result = result.map(|(s, _)| s);
     let Some(result) = result else {
         return Err(Error::invalid("meshes", "needs at least one mesh"));
     };
@@ -648,5 +734,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(crate::faces::check::faces_agree(&u), 12);
+    }
+
+    /// copies of a 100 facet cylinder turned about its axis, as solids: their facets miss each other by microns
+    fn turned_copies(count: usize) -> Vec<Solid> {
+        let m = build::cylinder(&crate::vec3::Frame::WORLD, 9.5, 0.0, 10.0, 100);
+        let spec = crate::array::ArraySpec::Circular {
+            count,
+            center: [0.0; 3],
+            axis: None,
+            angle_deg: None,
+            rotate_copies: None,
+        };
+        crate::array::transforms(&spec)
+            .unwrap()
+            .iter()
+            .map(|t| Solid::new(&crate::xform::transformed(&m, t)).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn a_join_past_its_work_budget_stops_with_an_error() {
+        let copies = turned_copies(12);
+        let o = BooleanOptions::default();
+        let e = boolean_within(&copies, &[], BoolOp::Union, o, 3000).unwrap_err();
+        assert!(e.to_string().contains("taking too long"), "{e}");
+        // a robust step stops partway through once its reports spend the budget
+        let t = std::time::Instant::now();
+        let robust = BooleanOptions {
+            engine: Engine::Robust,
+            ..o
+        };
+        let e = boolean_within(&copies[..2], &[], BoolOp::Union, robust, 900).unwrap_err();
+        assert!(e.to_string().contains("taking too long"), "{e}");
+        assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
+        let (u, r) = boolean_within(&copies[..3], &[], BoolOp::Union, o, WORK_BUDGET).unwrap();
+        assert!(r.watertight && r.engine == "exact" && u.volume() > copies[0].volume());
     }
 }
