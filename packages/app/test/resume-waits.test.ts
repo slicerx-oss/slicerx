@@ -76,8 +76,8 @@ function gate() {
   return g
 }
 
-/** A host that slices at once, uploads and prepares on gates when given, and starts locally when `hub`. */
-function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare?: ReturnType<typeof gate> } = {}) {
+/** A host that slices at once (or on the `slice` gate), uploads and prepares on gates when given, and starts locally when `hub`. */
+function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare?: ReturnType<typeof gate>; slice?: ReturnType<typeof gate> } = {}) {
   const requests: SliceRequest[] = []
   const started: unknown[] = []
   const uploads: string[] = []
@@ -93,6 +93,10 @@ function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare
       exportGcode: async () => ({ fileName: 'plate.gcode', bytes: 4, sha256: '', blob: new Blob(['G1\n']) }),
       slice: async (req: SliceRequest) => {
         requests.push(req)
+        if (opts.slice) {
+          opts.slice.reached++
+          await opts.slice.wait
+        }
         return { id: `r${requests.length}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 1, filamentMm: [1], filamentG: [1], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1 } as unknown as SliceResult
       },
     },
@@ -408,6 +412,40 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
       gates.profile = null
       g.open()
       await expect(out).rejects.toMatchObject({ code: 'not_ready', message: 'another plate was shown before Plate 1 finished slicing, so no slice was kept for it; show it and slice again' })
+      expect(e.requests).toEqual([])
+    } finally {
+      off()
+    }
+  })
+
+  it('answers at once with the stale summary when an edit lands while its slice runs and nothing slices again', async () => {
+    const held = gate()
+    const e = engine({ slice: held })
+    set({ autoSlice: false })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      const out = bridge.handle('slice', { timeoutMs: 3000 })
+      await vi.waitFor(() => expect(e.requests).toHaveLength(1))
+      // Renamed while the engine runs: the slice lands for the old name, and with auto slice off nothing slices again.
+      set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+      const started = Date.now()
+      held.open()
+      await expect(out).resolves.toMatchObject({ status: 'done', stale: true, id: 'r1' })
+      expect(Date.now() - started).toBeLessThan(1500)
+      expect(e.requests).toHaveLength(1)
+    } finally {
+      off()
+    }
+  })
+
+  it('answers not_ready at once, naming why, when the Slice command ends with nothing sliced', async () => {
+    const e = engine()
+    set({ autoSlice: false, plate: get().plate.map((p) => ({ ...p, printable: false })) })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      const started = Date.now()
+      await expect(bridge.handle('slice', { timeoutMs: 3000 })).rejects.toMatchObject({ code: 'not_ready', message: 'Plate 1 was not sliced: Every object on this plate is set not to print. Turn one on first.' })
+      expect(Date.now() - started).toBeLessThan(1500)
       expect(e.requests).toEqual([])
     } finally {
       off()

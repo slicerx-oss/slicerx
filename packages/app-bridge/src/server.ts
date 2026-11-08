@@ -283,7 +283,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     'app_slice',
     {
       title: 'Slice and wait',
-      description: 'Runs Slice the plate and waits for the result: time, grams, layers, tool changes and warnings. A fresh slice already on screen is returned as it is unless force is true.',
+      description: 'Runs Slice the plate and waits for the summary: time, grams, layers, tool changes, warnings. A current slice comes back as it is unless force is true; a stale one slices again, and so does one whose G-code an edit since has changed (an object renamed, a layer mark, whether the profile\'s G-code is trusted as shipped). It slices the plate shown when it starts: another plate shown before that slice lands answers not_ready, naming the plate. A slice that lands out of date (edited while it ran, with nothing slicing it again) comes back at once with stale: true, and a Slice that ends with nothing sliced answers not_ready with the reason the app gave.',
       inputSchema: { force: z.boolean().optional(), timeoutMs: timeoutMs(300_000) },
       annotations: act,
     },
