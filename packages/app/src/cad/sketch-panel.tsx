@@ -30,7 +30,9 @@ import { touchWords } from './touch-words'
 import { FAMILIES, familyName, familyOf, SketchVariants, VARIANTS, type Family } from './sketch-variants'
 import { SvgFileField } from './svg-file'
 import { svgSketchNote, svgToSketch, type SvgSize } from './svg-sketch'
-import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
+import { TraceImageDialog } from './trace-dialog'
+import { traceNote } from './trace-sketch'
+import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck, type SketchTrace } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
@@ -478,6 +480,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [svgFile, setSvgFile] = useDraft<{ name: string; text: string } | null>('svgFile', null)
   const [svgForm, setSvgForm] = useDraft<{ size: SvgSize; value: string; x: string; y: string }>('svgForm', () => ({ size: 'width', value: '50', x: String(Math.round((plane.min[0] + plane.max[0]) / 2)), y: String(Math.round((plane.min[1] + plane.max[1]) / 2)) }))
   const [svgBusy, setSvgBusy] = useState(false)
+  const [traceOpen, setTraceOpen] = useState(false)
   const svgRef = useRef<HTMLFieldSetElement | null>(null)
   useEffect(() => {
     if (svgOpen) svgRef.current?.scrollIntoView({ block: 'nearest' })
@@ -1531,6 +1534,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
   }
 
+  /** Adds a traced image's loops to the sketch, like the SVG's: only the curves are kept, never the image. */
+  const addTrace = (name: string, r: SketchTrace) => {
+    const added = fromLoops(r.loops)
+    if (!added) return setNote('The trace could not be shown as sketch loops.')
+    setSketch((s) => [...s, ...added])
+    const said = traceNote(name, r)
+    toast(said.text, said.warn ? 'warn' : 'ok')
+  }
+
   /** Rounds or bevels the picked line's corners, or every corner of its loop, with the engine's sketch corner ops. */
   const doCorners = async (whole: boolean) => {
     if (!selected) return
@@ -1832,13 +1844,20 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       </div>
     </>
   )
-  // Import SVG: one button until it is opened, after the solid card, so it never pushes the drawing card's settings
-  // or the solid's Distance and Draft down; opened, its form shows below the button and scrolls into view
+  // Import SVG and Trace image: two buttons after the solid card, so they never push the drawing card's settings or the
+  // solid's Distance and Draft down; Import SVG's form opens below them and scrolls into view, and Trace image opens
+  // its own dialog for the big preview
   const svgImport = featureOnly ? null : (
     <div className="sketch-svg-import">
-      <Button size="sm" className="tp-pill" icon="svg-face" aria-pressed={svgOpen} data-testid="sketch-svg-open" data-tip-title="Import SVG" data-tip-body="Adds the closed paths of an SVG file to this sketch as lines, arcs, circles and splines to edit, dimension and extrude." onClick={() => setSvgOpen(!svgOpen)}>
-        Import SVG
-      </Button>
+      <div className="cad-row sketch-import-row">
+        <Button size="sm" className="tp-pill" icon="svg-face" aria-pressed={svgOpen} data-testid="sketch-svg-open" data-tip-title="Import SVG" data-tip-body="Adds the closed paths of an SVG file to this sketch as lines, arcs, circles and splines to edit, dimension and extrude." onClick={() => setSvgOpen(!svgOpen)}>
+          Import SVG
+        </Button>
+        <Button size="sm" className="tp-pill" icon="snapshot" data-testid="sketch-trace-open" data-tip-title="Trace image" data-tip-body="Traces the edges of a PNG or JPEG into this sketch as lines, arcs and splines to edit, dimension and extrude." onClick={() => setTraceOpen(true)}>
+          Trace image
+        </Button>
+      </div>
+      <TraceImageDialog open={traceOpen} onClose={() => setTraceOpen(false)} center={[(plane.min[0] + plane.max[0]) / 2, (plane.min[1] + plane.max[1]) / 2]} onAdd={addTrace} />
       {svgOpen ? (
         // the button above names it, so no caption repeats it
         <fieldset ref={svgRef} className="sketch-copies sketch-svg" aria-label="Import SVG" data-testid="sketch-svg">
