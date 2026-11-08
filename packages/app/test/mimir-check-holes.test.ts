@@ -5,8 +5,8 @@
 // through the tab's design toolset (the approved card plan, then design.new, the geom.build that made the part and
 // design.check). The body a boolean leaves has its rim corners bunched along some arcs, and the bore has a narrower
 // shoulder on its axis; the check still finds the bore and both screw holes at their planned sizes. Runs against the
-// geometry engine and only where it is built: its replies carry the 140,000 facet body, 14 MB recorded, so CI runs the
-// same rims in packages/mcp/test/body-facts-holes.test.ts instead.
+// geometry engine and only where it is built: recorded, its replies came to 14 MB, so CI runs the same rims in
+// packages/mcp/test/body-facts-holes.test.ts instead.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PartPlan } from '@slicerx/mcp/toolset'
 import { designToolset } from '@slicerx/mcp/toolset'
@@ -56,11 +56,15 @@ describe('design.check on a part built in the tab', () => {
       if (step.tool === 'design.new') ids.set(/\((obj_\w+)\)/.exec(step.summary)![1]!, (out.output as { design: string }).design)
       if (step.tool === 'design.check') checked = out.output as Checked
     }
-    // the body checked is the part exported at the end: the same size and as many facets
-    const d = host.get(checked!.design)
-    expect(d.parts.reduce((n, p) => n + p.indices.length / 3, 0)).toBe(block.stl.triangles)
+    // the body checked is the part exported at the end: the same size, and closed by position (design.check welds
+    // corners at the same single-precision point, as the slicer does)
     expect(checked!.body.size).toEqual({ x: block.stl.max[0]! - block.stl.min[0]!, y: block.stl.max[1]! - block.stl.min[1]!, z: block.stl.max[2]! - block.stl.min[2]! })
     expect(checked!.body.watertight).toBe(true)
+    // no exact facet count: it is the engine's to choose. The session's export had 139,998, from a bore cut that split
+    // long faces right across the block; the cut now splits only what it reaches (2,926). The ceiling catches that
+    // split coming back.
+    const d = host.get(checked!.design)
+    expect(d.parts.reduce((n, p) => n + p.indices.length / 3, 0)).toBeLessThan(10_000)
     // the bore, its 18 mm shoulder (a hole of its own on the same axis) and the two M4 holes
     expect(checked!.body.holes.map((h) => Math.round(h.diameterMm * 100) / 100).sort((a, b) => a - b)).toEqual([4.5, 4.5, 18, 21.9])
     const item = (name: string) => checked!.items.find((i) => i.name === name)
