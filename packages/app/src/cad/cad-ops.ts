@@ -12,6 +12,7 @@ import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from
 import { applyHistory, runReplay, toPart } from './history/ops'
 import { exactSolids } from './history/exact-flag'
 import { commitMade, goneError } from './commit'
+import { onSketch } from './sketch-place'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
@@ -100,7 +101,8 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn 
   if (target?.entry.history?.exact || (!target && exactSolids())) {
     const params = extrudeParams(input)
     if (target && input.target) {
-      const next = withStep(target.entry, input.target.partIndex, params, undefined, true, o.sketch)
+      const kept = onSketch(o.sketch, params, target.entry.transform)
+      const next = withStep(target.entry, input.target.partIndex, kept.params, kept.transform, true, o.sketch)
       await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id, undefined, undefined, undefined, o.step)
       return { message: `${operation === 'cut' ? 'Cut' : 'Joined'} ${input.name} ${operation === 'cut' ? 'from' : 'to'} ${target.entry.name}.`, warn: false }
     }
@@ -116,7 +118,8 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn 
     const move = compose({ position: [-cx, -cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
     const parts = world.map(p => bake(p, move))
     const handle = await host.loadParts(input.name, parts)
-    const saved: History = { ...history, steps: history.steps.map(s => ({ ...s, transform: [...transform] })) }
+    const kept = onSketch(o.sketch, params, transform)
+    const saved: History = { ...history, steps: history.steps.map(s => ({ ...s, params: kept.params, transform: kept.transform })) }
     const made: PlateEntry = { id: newId(), name: input.name, handle, parts, colors: [brandAccent()], transform, history: saved }
     writeIn(o, () => set(s => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
     markStale()
@@ -195,7 +198,9 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     }
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
-    const history = withStep(entry, t.partIndex, params, undefined, false, o.sketch)
+    // drawn on a finished sketch: kept where the sketch is stored, as the design tools keep their steps
+    const kept = onSketch(o.sketch, params, entry.transform)
+    const history = withStep(entry, t.partIndex, kept.params, kept.transform, false, o.sketch)
     // checked before the write, so a step's first change never lands without the solid: the object is there, and did
     // not take an exact history meanwhile that this result would drop (commitMade refuses that)
     const now = get().plate.find((e) => e.id === entry.id)
@@ -214,7 +219,8 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const handle = await host.loadParts(name, [local])
   const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
   // The body's history starts with the step that made it, so its sketch or shape stays editable.
-  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(params, transform, o.sketch) }
+  const kept = onSketch(o.sketch, params, transform)
+  const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(kept.params, kept.transform, o.sketch) }
   writeIn(o, () => set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
   markStale()
   return { message: `Added ${name}, ${volume}.`, warn: false }

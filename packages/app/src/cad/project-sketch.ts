@@ -4,12 +4,13 @@
 // projection reads its source as the body stands at the sketch's place in the timeline, and follows it: whenever a
 // body replays, the projections from it are found again, and the bodies drawn on a sketch whose curves moved replay
 // in turn, in the same undo step as the edit that moved them.
-import { followProjections, historyOf, keyOfTriangle, nextProjectionId, point, projectedOf, resolveProjection, withProjection, withoutProjection, type HistoryMesh, type PartsAt, type ProjectMode, type ProjectSource, type SketchItem, type SketchLoop, type Timeline, type Vec3 } from '@slicerx/cad-history'
+import { followProjections, frameNow, historyOf, keyOfTriangle, nextProjectionId, point, projectedOf, resolveProjection, withProjection, withoutProjection, type HistoryMesh, type PartsAt, type ProjectMode, type ProjectSource, type SketchItem, type SketchLoop, type Timeline, type Vec3 } from '@slicerx/cad-history'
 import type { MeshHandle } from '@slicerx/contracts'
 import { geom, toGeom } from '../geom/client'
 import { pickEdge } from '../geom/cad'
 import { get, type PlateEntry } from '../state/store'
 import { runReplay } from './history/ops'
+import { placeOf } from './sketch-place'
 import { sketchById, updateSketch, type SketchBody } from './sketches'
 
 type Loader = { loadParts(name: string, parts: PlateEntry['parts']): Promise<MeshHandle> }
@@ -67,7 +68,7 @@ export async function followBodies(host: Loader, bodies: Iterable<string>): Prom
       waiting.clear()
       const t = get().timeline
       if (!t.items.some((i) => i.kind === 'sketch' && i.projections?.some((p) => only.has(p.source.body)))) continue
-      const r = await followProjections(t, partsAt(t), call, only)
+      const r = await followProjections(t, partsAt(t), call, only, placeOf)
       for (const id of r.changed) {
         const found = sketchById(r.timeline, id)
         const now = sketchById(get().timeline, id)
@@ -95,8 +96,10 @@ export async function followBodies(host: Loader, bodies: Iterable<string>): Prom
 
 /**
  * The curves `source` gives on `frame`, from the body as it stands where the sketch is: at finished sketch `sketch`'s
- * place in the timeline, or at the marker for a sketch not finished yet. The panel, the MCP tool and replay all read
- * a source here, so a projection gives the same curves whichever made it. Throws why it gives none.
+ * place in the timeline, or at the marker for a sketch not finished yet. A finished sketch is projected onto where it
+ * stands on the plate now (frameNow), the plane the sketch panel shows it on, as the source stands where the plate
+ * shows it. The panel, the MCP tool and replay all read a source here, so a projection gives the same curves whichever
+ * made it. Throws why it gives none.
  */
 export async function projectNow(source: ProjectSource, frame: SketchItem['frame'], sketch?: string): Promise<SketchLoop[]> {
   const t = get().timeline
@@ -104,7 +107,7 @@ export async function projectNow(source: ProjectSource, frame: SketchItem['frame
   if (sketch !== undefined && !k) throw Object.assign(new Error(`No finished sketch ${sketch} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
   const at = await partsAt(t)(source.body, k ? t.items.indexOf(k) : t.marker)
   if (!at) throw Object.assign(new Error(`design: no body ${source.body} on the plate; design.list lists them`), { code: 'not_found' })
-  const r = await resolveProjection(call, source, at.parts, at.transform, frame)
+  const r = await resolveProjection(call, source, at.parts, at.transform, k ? frameNow(t, k, placeOf) : frame)
   if ('lost' in r) throw Object.assign(new Error(r.lost), { code: 'invalid_input' })
   return r.loops
 }

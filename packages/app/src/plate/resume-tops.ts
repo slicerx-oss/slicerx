@@ -50,6 +50,8 @@ export const OBJECT_LEAVES_OUT = {
   source: 'where the model came from, for the file',
   dimensions: 'measurements drawn on it',
   history: 'its modeling history; the mesh it made is in the key',
+  landedAt: 'where a design host last landed it, for making room; its placement is in the key',
+  roomMoves: 'the designs its landing moved over, for undoing the landing; their placements are in their own keys',
 } as const satisfies Partial<Record<keyof PlateEntry, string>>
 
 /** What of an object moves layers: every field but OBJECT_LEAVES_OUT, the mesh by its hash and parts by name and filament. */
