@@ -64,6 +64,12 @@ describe('slicerx_mimir_run', () => {
     expect(none.summary).toBe('The mimir tab in SlicerX has not opened yet, so there is no print run to read.')
   })
 
+  it('is version 1.0.1: stale also after a pause, a rename or a change to the G-code trust', () => {
+    const [tool] = mimirRunTools(answering(PRINTING).link, 'SlicerX')
+    expect(tool!.name).toBe('mimir.run')
+    expect(tool!.version).toBe('1.0.1')
+  })
+
   it('sessionId picks that chat', async () => {
     const { call, link } = answering(PRINTING)
     const out = await run(link, { sessionId: 'mimir_a' })
