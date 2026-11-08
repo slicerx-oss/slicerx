@@ -29,11 +29,31 @@ const design = ['design.new', 'design.plan', 'geom.extrude', 'geom.fillet', 'geo
     }) as PilotTool<never>,
 )
 
-function env(provider: string, steps: ScriptStep[]) {
+function env(provider: string, steps: ScriptStep[], opts: { tools?: PilotTool<never>[]; hasDesign?: () => boolean } = {}) {
   const client = createScriptedClient(steps, { provider })
-  const { pilot } = createEvalEnv({ client, machine: MACHINE, objects: [], tools: design })
+  const { pilot } = createEvalEnv({ client, machine: MACHINE, objects: [], tools: opts.tools ?? design, ...(opts.hasDesign ? { hasDesign: opts.hasDesign } : {}) })
   return { pilot, client }
 }
+
+/** A stand-in design tool that answers with `result` (ok false for a failed call). */
+const answering = (name: string, result: { ok?: boolean; output?: unknown }) =>
+  defineTool({
+    name,
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: `The ${name} step.`,
+    input: z.object({}).passthrough(),
+    async run() {
+      return { summary: `${name} ${result.ok === false ? 'failed' : 'done'}`, ...result }
+    },
+  }) as PilotTool<never>
+
+/** What a design step answers with on a design that has a body: the design's id and its parts. */
+const BODY = { design: 'd1', name: 'Lid', steps: 1, parts: [{ index: 0, name: 'Lid', sizeMm: [60, 60, 4], volumeMm3: 14400 }] }
+
+/** A shaping request that names no part of its own: it shapes a design that is there, and builds when there is none. */
+const PROBE = 'Make a circular pattern of six holes'
 
 async function run(pilot: ReturnType<typeof env>['pilot'], session: string, message: string): Promise<PilotEvent[]> {
   const out: PilotEvent[] = []
@@ -63,7 +83,23 @@ describe('the set a request picks', () => {
     // with no design yet there is nothing to shape, so a request that asks for a part builds whatever words it has
     ['I need a box with a pattern of vent holes', undefined, false, 'build'],
     ['A hollow box 50 mm on each side with a lid', undefined, false, 'build'],
-    ['Make a pattern of six vent holes in the lid', 'build', false, 'build'],
+    // a request for a whole new part with a definite part in it still builds
+    ['A hollow box with a hole in the middle', undefined, false, 'build'],
+    ['I need a box with a pattern of vent holes in the lid', undefined, false, 'build'],
+    ['Make a box with a pattern of vent holes in the lid', undefined, false, 'build'],
+    // with no design known, a shaping of "it" or of a part the request names as there ("the lid") still shapes
+    ...['Make it hollow', 'Make this hollow', 'Make the lid hollow', 'Make the lid split in half', 'Engrave SX on the lid', 'Add a pattern of holes to the lid', 'Make a pattern of four holes on it', 'Make a pattern of six vent holes in the lid', 'Make a mirrored copy of the bracket', 'Make a cut out in the lid'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', false, 'shape']),
+    // a shaping with no part named builds when there is no design, and shapes the design when there is one
+    [PROBE, 'build', false, 'build'],
+    [PROBE, 'build', true, 'shape'],
+    // up to two words between the article and the shaping noun
+    ...['Make a circular pattern of six holes in the lid', 'Make a hole pattern on the lid', 'Make a linear array of pegs along the edge', 'Make a mirrored version of the bracket', 'Make a cutout for the USB port'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', true, 'shape']),
+    // the shaping words the new part opener lets through still shape the design there
+    ...['Make a cut in the lid', 'Make an engraving of my name on the lid', 'Make a split in the lid', 'Make a text label on the lid', 'Make a cut-out for the USB port'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', true, 'shape']),
+    // the next part after one is finished, however it opens
+    ...['Now make a hollow vase', 'Next, design an engraved name tag', 'Make another hollow vase', 'Can you please make a hollow vase', 'I want a hollow vase', 'I need a hollow box 50 mm on a side with a lid', 'Ok, now make one more split ring'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'shape', true, 'build']),
+    // still unclear with a design there: build and shape together do not fit a local model's context, so it builds
+    ['A hollow box 50 mm on each side with a lid', 'shape', true, 'build'],
     // shaping the chat's design keeps the shape set even when it opens on "make a"
     ['Make a pattern of six vent holes in the lid', 'build', true, 'shape'],
     ['Make a pattern of four holes on it', 'build', true, 'shape'],
@@ -183,13 +219,85 @@ describe('a local model in the tab', () => {
       { text: 'Which part?' },
     ])
     await run(pilot, 'made', 'Design a lid for a 60 mm jar')
-    await run(pilot, 'made', 'Make a pattern of six vent holes in the lid')
+    await run(pilot, 'made', PROBE)
     expect(names(client.requests[2]!)).toEqual(expect.arrayContaining(['geom.array', 'geom.mirror']))
     expect(names(client.requests[2]!)).not.toContain('design.new')
     // the last turn ended on build, but no design came of it, so there is nothing to put a pattern in yet
     await run(pilot, 'none', 'hello')
-    await run(pilot, 'none', 'Make a pattern of six vent holes in the lid')
+    await run(pilot, 'none', PROBE)
     expect(names(client.requests[4]!)).toContain('design.new')
+  })
+
+  /** The set `PROBE` gets in chat `session` after `calls` ran there, each answering as its tool does. */
+  async function afterCalls(tools: PilotTool<never>[], calls: string[]): Promise<string[]> {
+    const { pilot, client } = env('openai-compatible', [{ calls: calls.map((name) => ({ name, args: {} })) }, { text: 'Done.' }, { text: 'Which part?' }], { tools })
+    await run(pilot, 's', 'Design a lid for a 60 mm jar')
+    await run(pilot, 's', PROBE)
+    return names(client.requests.at(-1)!)
+  }
+
+  it('counts a chat as having a design only after design.new or design.open went through, or a step left a body', async () => {
+    const shaped = (tools: string[]) => {
+      expect(tools).toContain('geom.array')
+      expect(tools).not.toContain('design.new')
+    }
+    const built = (tools: string[]) => {
+      expect(tools).toContain('design.new')
+      expect(tools).not.toContain('geom.array')
+    }
+    const shapeTools = design.filter((t) => t.name === 'geom.array' || t.name === 'geom.mirror')
+    // a design.new that failed made nothing
+    built(await afterCalls([answering('design.new', { ok: false, output: { error: 'no' } }), ...shapeTools], ['design.new']))
+    // opening a design is having one
+    shaped(await afterCalls([answering('design.open', { output: { designs: [BODY] } }), answering('design.new', {}), ...shapeTools], ['design.open']))
+    // a first step on a design the app already holds, which leaves its body
+    shaped(await afterCalls([answering('geom.extrude', { output: BODY }), answering('design.new', {}), ...shapeTools], ['geom.extrude']))
+    // geometry tools that touch no design: a sketch solved on its own, an extrude of a loose model, a calibration model
+    built(await afterCalls([answering('geom.sketch_solve', { output: { status: 'ok', dof: 0 } }), answering('geom.extrude', { output: { volumeMm3: 100, stlPath: '/tmp/a.stl' } }), answering('geom.calibration_model', { output: { files: ['/tmp/t.stl'] } }), answering('design.new', {}), ...shapeTools], ['geom.sketch_solve', 'geom.extrude', 'geom.calibration_model']))
+    // listing designs or planning one is not having one
+    built(await afterCalls([answering('design.list', { output: { designs: [] } }), answering('design.plan', { output: { planId: 'p1' } }), answering('design.new', {}), ...shapeTools], ['design.list', 'design.plan']))
+    // a step that fails after a design went through leaves the design there
+    shaped(await afterCalls([answering('design.new', { output: { design: 'd1', name: 'Lid', steps: 0, parts: [] } }), answering('geom.extrude', { ok: false, output: { error: 'bad loop' } }), ...shapeTools], ['design.new', 'geom.extrude']))
+  })
+
+  it('reads whether the project has a design from the host, in a new chat, after a reload and in a rebuilt mimir', async () => {
+    let there = true
+    const hasDesign = () => there
+    const replies = () => [{ text: 'Which part?' }, { text: 'Which part?' }, { text: 'Which part?' }, { text: 'Which part?' }, { text: 'Which part?' }]
+    // New conversation keeps the design on the plate: the fresh chat shapes it
+    const a = env('openai-compatible', replies(), { hasDesign })
+    await run(a.pilot, 'fresh', PROBE)
+    expect(names(a.client.requests[0]!)).toContain('geom.array')
+    expect(names(a.client.requests[0]!)).not.toContain('design.new')
+    for (const m of ['Make the lid hollow', 'Engrave SX on the lid', 'Add a pattern of holes to the lid']) {
+      await run(a.pilot, 'fresh', m)
+      expect(names(a.client.requests.at(-1)!), m).toContain('geom.mirror')
+    }
+    // a reload: the chat comes back from its text, and the design is still on the plate
+    const b = env('openai-compatible', replies(), { hasDesign })
+    b.pilot.resume!('back', [{ user: 'Design a lid for a 60 mm jar', reply: 'Built the lid.' }])
+    await run(b.pilot, 'back', PROBE)
+    expect(names(b.client.requests[0]!)).toContain('geom.array')
+    // a model change makes a new mimir over the same plate
+    const c = env('openai-compatible', replies(), { hasDesign })
+    await run(c.pilot, 'fresh', PROBE)
+    expect(names(c.client.requests[0]!)).toContain('geom.array')
+    // the design deleted from the plate: nothing is left to shape, even in the chat that made it
+    there = false
+    await run(c.pilot, 'fresh', PROBE)
+    expect(names(c.client.requests[1]!)).toContain('design.new')
+    expect(names(c.client.requests[1]!)).not.toContain('geom.array')
+  })
+
+  it('seeds a resumed chat from the host, and keeps no design for it when the host has none', async () => {
+    const yes = env('openai-compatible', [{ text: 'Which part?' }], { hasDesign: () => true })
+    yes.pilot.resume!('r', [{ user: 'Design a lid', reply: 'Built the lid.' }])
+    await run(yes.pilot, 'r', PROBE)
+    expect(names(yes.client.requests[0]!)).toContain('geom.array')
+    const no = env('openai-compatible', [{ text: 'Which part?' }], { hasDesign: () => false })
+    no.pilot.resume!('r', [{ user: 'Design a lid', reply: 'Built the lid.' }])
+    await run(no.pilot, 'r', PROBE)
+    expect(names(no.client.requests[0]!)).toContain('design.new')
   })
 
   it('lists every set for the read-back', () => {
