@@ -97,8 +97,9 @@ export function createSkillPilot(pilot: Pilot, sessionId: string): OnboardingPil
           const cards = resolvedProposals(e.output, seen)
           if (cards.length) push({ ...reply, proposals: [...reply.proposals, ...cards] })
         } else if (e.type === 'error' && e.waiting !== true) {
-          // a wait mimir goes on from (free mimir's per-minute limit) is no failure; a give-up after it arrives as its own error
-          if (/429|rate/i.test(e.message)) status = 'rate-limited'
+          // a wait mimir goes on from (free mimir's per-minute limit) is no failure; a give-up after it arrives as its own
+          // error, with the slow_down code and its own words, and leaves the setup rate limited like a 429
+          if (e.code === 'slow_down' || /429|rate/i.test(e.message)) status = 'rate-limited'
           else if (/network|fetch|offline/i.test(e.message)) status = 'offline'
           push({ ...reply, text: `${reply.text}${reply.text ? '\n' : ''}${e.message}`, unsure: true })
         }
