@@ -7,16 +7,26 @@ import type { MeshPart } from '@slicerx/contracts'
 type V3 = [number, number, number]
 
 /**
- * A part's triangles with welded vertex ids, so seams in the vertex list do not read as open edges. Only vertices at
- * the same single-precision point are welded, as the slicer welds a part when it loads it (packages/core session.rs
- * weld): a tolerance would fold the sub-micron edges a boolean leaves where two surfaces meet into edges with four
- * triangles that the slicer never sees.
+ * A part's triangles with welded vertex ids, so seams in the vertex list do not read as open edges. Only vertices with
+ * the same single-precision bits are welded, as the slicer welds a part when it loads it (packages/core/src/mesh.rs,
+ * keyed on f32::to_bits): a tolerance would fold the sub-micron edges a boolean leaves where two surfaces meet into
+ * edges with four triangles that the slicer never sees, and -0 and 0 stay two vertices there as they do here.
  */
 interface Welded {
   /** xyz per welded vertex. */
   pos: number[]
   /** Three welded vertex ids per triangle, degenerate triangles dropped. */
   tri: number[]
+}
+
+/** A vertex's key: the bits of its three single-precision coordinates, so -0 and 0 differ as they do in the slicer. */
+const f32 = new Float32Array(3)
+const bits = new Uint32Array(f32.buffer)
+const vertexKey = (x: number, y: number, z: number): string => {
+  f32[0] = x
+  f32[1] = y
+  f32[2] = z
+  return `${bits[0]},${bits[1]},${bits[2]}`
 }
 
 function weld(part: MeshPart): Welded {
@@ -28,7 +38,7 @@ function weld(part: MeshPart): Welded {
     const x = P[v * 3] ?? 0
     const y = P[v * 3 + 1] ?? 0
     const z = P[v * 3 + 2] ?? 0
-    const key = `${Math.fround(x)},${Math.fround(y)},${Math.fround(z)}`
+    const key = vertexKey(x, y, z)
     let id = ids.get(key)
     if (id === undefined) {
       id = pos.length / 3
