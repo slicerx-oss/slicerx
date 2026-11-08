@@ -141,11 +141,12 @@ describe('the tool cap on OpenAI-style providers', () => {
     expect(sent.length).toBeLessThanOrEqual(128)
     for (let i = 0; i < 10; i++) expect(sent).toContain(`core.t${i}`)
     // whole toolsets in priority order: core, cad, settings, printers fill 120; fleets and theme do not fit whole,
-    // and the 8 left go to fleets, the first of them
+    // pilot.load_tools takes one place, and the 7 left go to fleets, the first of them
     expect(sent).toHaveLength(128)
-    expect(sent.filter((n) => n.startsWith('fleet.'))).toEqual(['fleet.t0', 'fleet.t1', 'fleet.t2', 'fleet.t3', 'fleet.t4', 'fleet.t5', 'fleet.t6', 'fleet.t7'])
+    expect(sent.at(-1)).toBe('pilot.load_tools')
+    expect(sent.filter((n) => n.startsWith('fleet.'))).toEqual(['fleet.t0', 'fleet.t1', 'fleet.t2', 'fleet.t3', 'fleet.t4', 'fleet.t5', 'fleet.t6'])
     expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
-    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 8, of: 15 }] })
+    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 7, of: 15 }] })
   })
 
   it('keeps a tool the chat already called, even from a toolset that is left out', async () => {
@@ -153,13 +154,14 @@ describe('the tool cap on OpenAI-style providers', () => {
     const first = await say(pilot, 'hello')
     expect(first.some((e) => e.type === 'tool_call' && e.tool === 'theme.t3')).toBe(true)
     expect(sentTools(llm.sent[0]!)).not.toContain('theme.t3')
-    // the step after the call, and the chat's next message, still carry it
+    // the step after the call, and the chat's next message, still carry it, and with it the toolset it came from
     expect(sentTools(llm.sent[1]!)).toContain('theme.t3')
     await say(pilot, 'and now?')
     const later = sentTools(llm.sent[2]!)
     expect(later).toContain('theme.t3')
     expect(later.length).toBeLessThanOrEqual(128)
-    expect(later.filter((n) => n.startsWith('theme.'))).toEqual(['theme.t3'])
+    expect(later.filter((n) => n.startsWith('theme.'))).toHaveLength(15)
+    expect(sentTools(llm.sent[1]!)).toEqual(later)
   })
 
   it('puts the toolsets a turn asks for first, trims the rest by the fixed priority and logs what it left out', async () => {
@@ -167,13 +169,13 @@ describe('the tool cap on OpenAI-style providers', () => {
     await say(pilot, 'Plan the fleet schedule for tonight')
     const sent = sentTools(llm.sent[0]!)
     // fleets is needed: core 10 + fleets 15 + cad 60 + settings 30 = 115; printers (135) and theme (130) do not fit
-    // whole, and the 13 left go to printers, ahead of theme
+    // whole, pilot.load_tools takes one place, and the 12 left go to printers, ahead of theme
     expect(sent).toHaveLength(128)
     expect(sent.filter((n) => n.startsWith('fleet.'))).toHaveLength(15)
-    expect(sent.filter((n) => n.startsWith('printer.'))).toHaveLength(13)
+    expect(sent.filter((n) => n.startsWith('printer.'))).toHaveLength(12)
     expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
-    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'fleets', 'cad', 'settings'], leftOut: ['printers', 'theme'], partial: [{ toolset: 'printers', sent: 13, of: 20 }] })
-    expect(lines).toEqual(['mimir sent 128 of 150 tools (gpt-5.6-luna on openai takes at most 128); left out: printers (13 of 20 sent), theme'])
+    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'fleets'], leftOut: ['printers', 'theme'], partial: [{ toolset: 'printers', sent: 12, of: 20 }] })
+    expect(lines).toEqual(['mimir sent 128 of 150 tools (gpt-5.6-luna on openai takes at most 128); left out: printers (12 of 20 sent), theme'])
   })
 
   it('logs once per run when the set does not change between steps', async () => {

@@ -5,9 +5,16 @@
 // already called and the toolsets the turn needs, then the other toolsets by a fixed priority while they fit whole; the
 // room left goes to the first toolsets in that order that did not fit, tool by tool. The toolsets left out are
 // reported. Under the cap every tool goes, in the same order, exactly as before.
+//
+// A cloud model's capped chat keeps its toolsets from message to message (stickyCapTools): a short reply such as "yes
+// please" still has what the last message and mimir's last reply asked for, the toolsets of every tool the chat called
+// stay in while they fit, and the list is the same request after request until something forces a change, so the
+// provider's prompt cache keeps hitting. A capped request also carries pilot.load_tools, which loads a toolset that was
+// left out for the next step.
 import type { PilotContext } from '@slicerx/contracts'
+import { z } from 'zod'
 import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
-import type { PilotTool, Toolset } from './tool'
+import { defineTool, type PilotTool, type Toolset } from './tool'
 
 /**
  * The order toolsets are kept in when they do not all fit, first kept first. Core is never traded away. The design
@@ -112,7 +119,7 @@ export interface ToolCapReport {
   cap: number
   offered: number
   sent: number
-  /** Toolsets sent whole, in the order they were taken. */
+  /** Toolsets sent whole: in the order they were taken, or in priority order on a cloud model's capped chat. */
   toolsets: Toolset[]
   /** Toolsets with tools left out, in priority order. A tool the chat already called still goes. */
   leftOut: Toolset[]
@@ -183,4 +190,159 @@ export function localTurnTools<T extends SetTool>(surface: ToolSurface, tools: r
     const set = toolsetOf(t)
     return set !== 'core' && opts.needs.has(set)
   })
+}
+
+/** The tool a capped cloud request adds so the model can load a toolset that was left out. */
+export const LOAD_TOOLS_TOOL = 'pilot.load_tools'
+
+/** What each toolset holds, in the words pilot.load_tools uses. */
+export const TOOLSET_WORDS: Record<Exclude<Toolset, 'core'>, string> = {
+  cad: 'the design tools: sketches, solids, holes, fillets, the timeline',
+  settings: 'slicing, print settings and profiles',
+  printers: 'the printers: state, sending, pausing and canceling prints, spools, cameras, setup and the printer connectors',
+  project: 'the project, its plates and files',
+  kb: 'the knowledge base and lookups',
+  mesh: 'plate mesh edits: cut, hollow, emboss, repair, paint',
+  calibration: 'calibration prints',
+  fleets: 'fleets and schedules',
+  skills: 'connected apps and other skills',
+  theme: "the app's look",
+  cloud: 'cloud services',
+  local_ai: 'local models',
+}
+
+/** The toolsets pilot.load_tools takes: every one but core, which always goes. */
+export const LOADABLE_TOOLSETS = TOOLSET_PRIORITY.filter((s): s is Exclude<Toolset, 'core'> => s !== 'core') as [Exclude<Toolset, 'core'>, ...Exclude<Toolset, 'core'>[]]
+
+/** What a chat's capped tool list remembers between requests. The runtime keeps one per chat. */
+export interface StickyToolsets {
+  /** The toolsets the chat's last request sent whole. */
+  sets: Toolset[]
+  /** For each toolset a tool was called from (or that was loaded), the last turn that happened and how many calls in all. */
+  used: Map<Toolset, { turn: number; calls: number }>
+  /** The chat's turn count; the turn going now while a run is going. */
+  turn: number
+  /** The toolsets a tool was called from, or that were loaded, in the last turn. These are never left out. */
+  lastCalled: Set<Toolset>
+  /** What the last turn's message needed. */
+  lastNeeds: Set<Toolset>
+  /** What mimir's last reply named: an offer ("want me to send it to the printer?") that a short "yes please" accepts. */
+  lastOffer: Set<Toolset>
+}
+
+export function stickyToolsets(): StickyToolsets {
+  return { sets: [], used: new Map(), turn: 0, lastCalled: new Set(), lastNeeds: new Set(), lastOffer: new Set() }
+}
+
+/**
+ * The tools a capped cloud request sends, sticky per chat. Under the cap: every tool, in order, and no report. Over it
+ * the request has room for cap - 1 tools and pilot.load_tools. It takes the union of what the chat wants: core, the
+ * toolsets the last request sent whole, what this message needs, what mimir's last reply named, what the last message
+ * needed, the toolsets of every tool the chat called, and `protect` (called from or loaded in the last turn or this
+ * one). While that is over the room, one toolset goes at a time, the least wanted first: never core or a protected one;
+ * then a toolset nothing asks for, one only an older call asks for, one the last message needed, one the last reply
+ * named, and one this message needs, in that order; among
+ * those a toolset the last request did not send goes before one it sent, then the one called longest ago and least,
+ * then the later one in TOOLSET_PRIORITY. Room left goes first to the wanted toolsets that went, whole where they fit and
+ * then tool by tool, then to the other toolsets in priority order, whole and then tool by tool. Every tool the chat
+ * already called goes. The same inputs give the same list, in the tools' own order.
+ */
+export function stickyCapTools<T extends SetTool>(
+  tools: readonly T[],
+  opts: { cap: number | undefined; needs: ReadonlySet<Toolset>; called: ReadonlySet<string>; protect: ReadonlySet<Toolset>; state: Readonly<StickyToolsets> },
+): { tools: T[]; sets: Toolset[]; report: ToolCapReport | null } {
+  const bySet = new Map<Toolset, T[]>()
+  for (const t of tools) {
+    const set = toolsetOf(t)
+    bySet.set(set, [...(bySet.get(set) ?? []), t])
+  }
+  const present = TOOLSET_PRIORITY.filter((s) => bySet.has(s))
+  const cap = opts.cap
+  if (cap === undefined || tools.length <= cap) return { tools: [...tools], sets: present, report: null }
+  const room = cap - 1
+  const st = opts.state
+  const tier = (s: Toolset): number => (opts.protect.has(s) ? 5 : opts.needs.has(s) ? 4 : st.lastOffer.has(s) ? 3 : st.lastNeeds.has(s) ? 2 : st.used.has(s) ? 1 : 0)
+  const order = (s: Toolset): number => TOOLSET_PRIORITY.indexOf(s)
+  // lower first: the toolset that goes first
+  const key = (s: Toolset): number[] => [tier(s), st.sets.includes(s) ? 1 : 0, st.used.get(s)?.turn ?? -1, st.used.get(s)?.calls ?? 0, -order(s)]
+  const less = (a: Toolset, b: Toolset): number => {
+    const ka = key(a)
+    const kb = key(b)
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i]! - kb[i]!
+    return 0
+  }
+  const calledTools = tools.filter((t) => opts.called.has(t.name))
+  const chosen = new Set<Toolset>(present.filter((s) => s === 'core' || st.sets.includes(s) || tier(s) > 0))
+  const size = (sets: ReadonlySet<Toolset>): number => new Set([...calledTools, ...[...sets].flatMap((s) => bySet.get(s) ?? [])]).size
+  const evicted: Toolset[] = []
+  while (size(chosen) > room) {
+    const out = [...chosen].filter((s) => s !== 'core' && !opts.protect.has(s)).sort(less)[0]
+    if (!out) break
+    chosen.delete(out)
+    evicted.push(out)
+  }
+  const keep = new Set<T>()
+  const add = (list: readonly T[]): void => {
+    for (const t of list) if (keep.size < room) keep.add(t)
+  }
+  add(calledTools)
+  add(bySet.get('core') ?? [])
+  // most wanted first, so a chat whose protected toolsets alone are over the room keeps the most of them
+  const whole = new Set<Toolset>(['core'])
+  for (const s of [...chosen].filter((x) => x !== 'core').sort(less).reverse()) {
+    const members = bySet.get(s)!
+    const fits = keep.size + members.filter((t) => !keep.has(t)).length <= room
+    add(members)
+    if (fits) whole.add(s)
+  }
+  const wantedOut = evicted.filter((s) => tier(s) > 0).sort(less).reverse()
+  const tryWhole = (s: Toolset): void => {
+    const members = bySet.get(s)!
+    if (keep.size + members.filter((t) => !keep.has(t)).length > room) return
+    add(members)
+    whole.add(s)
+  }
+  for (const s of wantedOut) tryWhole(s)
+  for (const s of wantedOut) add(bySet.get(s)!)
+  const rest = present.filter((s) => !whole.has(s))
+  for (const s of rest) tryWhole(s)
+  for (const s of rest) add(bySet.get(s)!)
+  const sets = present.filter((s) => whole.has(s) && (bySet.get(s) ?? []).every((t) => keep.has(t)))
+  const leftOut = present.filter((s) => !sets.includes(s))
+  const partial = leftOut.flatMap((s) => {
+    const members = bySet.get(s)!
+    const n = members.filter((t) => keep.has(t)).length
+    return n > 0 ? [{ toolset: s, sent: n, of: members.length }] : []
+  })
+  const sent = tools.filter((t) => keep.has(t))
+  return { tools: sent, sets, report: { cap, offered: tools.length, sent: sent.length + 1, toolsets: sets, leftOut, partial } }
+}
+
+/**
+ * pilot.load_tools for a capped request: its description names what `report` left out, and `load` takes the toolset the
+ * model asks for, which comes with its next step (stickyCapTools keeps it in as a protected toolset). A toolset this
+ * request already sends whole, or one this chat does not have, is answered as such and nothing changes.
+ */
+export function loadToolsTool(report: ToolCapReport, load: (set: Toolset) => void): PilotTool<never> {
+  const out = report.leftOut.map((s) => {
+    const p = report.partial.find((x) => x.toolset === s)
+    return p ? `${s} (${p.sent} of ${p.of} tools sent)` : s
+  })
+  const offered = new Set<Toolset>([...report.toolsets, ...report.leftOut])
+  return defineTool({
+    name: LOAD_TOOLS_TOOL,
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    toolset: 'core',
+    description: `Load a toolset that was left out of your tools to stay under the provider's tool limit. Its tools come with your next step; others may be left out to make room, never the ones you used last. Left out now: ${out.join(', ') || 'none'}. Toolsets: ${LOADABLE_TOOLSETS.map((s) => `${s}: ${TOOLSET_WORDS[s]}`).join('; ')}.`,
+    input: z.object({ toolset: z.enum(LOADABLE_TOOLSETS) }),
+    args: (i) => i.toolset,
+    async run(i) {
+      if (!offered.has(i.toolset)) return { ok: false, summary: `This chat has no ${i.toolset} tools`, output: { loaded: null, toolset: i.toolset } }
+      if (report.toolsets.includes(i.toolset)) return { summary: `The ${i.toolset} tools are already loaded`, output: { loaded: i.toolset, already: true } }
+      load(i.toolset)
+      return { summary: `Loaded the ${i.toolset} tools for the next step`, output: { loaded: i.toolset, already: false } }
+    },
+  }) as PilotTool<never>
 }

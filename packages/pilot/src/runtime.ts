@@ -45,7 +45,7 @@ import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type Tool
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
-import { capLine, capTools, localTurnTools, turnNeeds, type ToolCapReport } from './toolsets'
+import { capLine, capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
 import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
@@ -305,6 +305,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
   // the last turn of each session that left toolsets out (toolsets.ts)
   const caps = new Map<string, ToolCapReport>()
+  // a cloud model's capped chats: what each keeps between requests, the toolsets pilot.load_tools asked for that the
+  // next request takes, and the pilot.load_tools the chat's last request carried
+  const sticky = new Map<string, StickyToolsets>()
+  const loads = new Map<string, Set<Toolset>>()
+  const loaders = new Map<string, AnyTool>()
+  const queueLoad = (sessionId: string, set: Toolset): void => {
+    loads.set(sessionId, new Set([...(loads.get(sessionId) ?? []), set]))
+  }
   // one book per print run host, so a runtime made again keeps the runs; a started print's watch logs how it ended to
   // the chat's session, whether or not the chat is on screen
   const runBook = opts.printRun ? runBookFor(opts.printRun, now, { printers: opts.host.printers, log: (sessionId, e) => void log(sessionId, e) }) : null
@@ -537,7 +545,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   }
 
   async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
-    const tool = findTool(call.name)
+    // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that chat
+    const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loaders.get(sessionId) : undefined)
     if (!tool) {
       emit({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Unknown tool ${call.name}` })
@@ -724,6 +733,27 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // a local model's set of tools this step (turnsets.ts); unset sends every tool
     let set = turnSets ? startSet : undefined
     picked.delete(sessionId)
+    // A cloud model over its provider's tool limit keeps the chat's toolsets from message to message, and the same list
+    // on every step of a turn until pilot.load_tools asks for another toolset (toolsets.ts). A local model, a run
+    // limited to some tools and a provider without a limit are not affected.
+    const keeps = !local && !restrict && client.maxTools !== undefined
+    const chatSets = keeps ? (sticky.get(sessionId) ?? stickyToolsets()) : null
+    if (chatSets) {
+      sticky.set(sessionId, chatSets)
+      chatSets.turn++
+    }
+    /** This turn's pick for a capped chat: the tool names it sends, and its report; made again only for a load. */
+    let pick: { names: Set<string>; report: ToolCapReport | null } | null = null
+    const loaded = new Set<Toolset>()
+    /** The toolsets of the tools called this turn. */
+    const calledSets = (): Set<Toolset> => {
+      const out = new Set<Toolset>()
+      for (const name of called.values()) {
+        const t = findTool(name)
+        if (t) out.add(toolsetOf(t))
+      }
+      return out
+    }
     for (let step = 0; step <= opts.config.maxSteps; step++) {
       // a held run waits here, before its next model request
       await whileHeld(sessionId, signal)
@@ -740,9 +770,31 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const offered = allTools().filter((t) => (restrict ? restrict(t) : true))
       // a local model gets the surface's every-turn tools and the ones this turn calls for (toolsets.ts)
       const turn = local ? localTurnTools(surface, offered, { needs, called }) : offered
-      // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
-      const capped = capTools(turn.filter((t) => (set ? inTurnSet(t, set) : true)), { cap: client.maxTools, needs, called })
-      const visible = capped.tools
+      let capped: { tools: AnyTool[]; report: ToolCapReport | null }
+      let visible: AnyTool[]
+      if (chatSets) {
+        const want = loads.get(sessionId)
+        loads.delete(sessionId)
+        for (const s of want ?? []) loaded.add(s)
+        // a tool called that the pick did not send (a model may call one it remembers) goes from now on, as every called tool does
+        const strayCall = pick !== null && turn.some((t) => called.has(t.name) && !pick!.names.has(t.name))
+        if (!pick || want?.size || strayCall) {
+          const protect = new Set<Toolset>([...chatSets.lastCalled, ...calledSets(), ...loaded])
+          const got = stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, state: chatSets })
+          chatSets.sets = got.sets
+          pick = { names: new Set(got.tools.map((t) => t.name)), report: got.report }
+          if (got.report) loaders.set(sessionId, loadToolsTool(got.report, (s) => queueLoad(sessionId, s)) as AnyTool)
+          else loaders.delete(sessionId)
+        }
+        const chosen = pick.names
+        const loader = pick.report ? loaders.get(sessionId) : undefined
+        capped = { tools: turn.filter((t) => chosen.has(t.name)), report: pick.report }
+        visible = loader ? [...capped.tools, loader] : capped.tools
+      } else {
+        // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
+        capped = capTools(turn.filter((t) => (set ? inTurnSet(t, set) : true)), { cap: client.maxTools, needs, called })
+        visible = capped.tools
+      }
       // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords
       const toolDefs = local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
@@ -933,6 +985,20 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const cited = citedSources(citations, reply, looked)
     if (cited.length) emit({ type: 'citations', items: cited })
     if (set) lastSet.set(sessionId, set)
+    if (chatSets) {
+      // what the next turn keeps: the toolsets called from or loaded in this one, and what this turn asked for
+      const used = new Set<Toolset>([...calledSets(), ...loaded])
+      for (const name of called.values()) {
+        const t = findTool(name)
+        if (!t) continue
+        const s = toolsetOf(t)
+        chatSets.used.set(s, { turn: chatSets.turn, calls: (chatSets.used.get(s)?.calls ?? 0) + 1 })
+      }
+      for (const s of loaded) chatSets.used.set(s, { turn: chatSets.turn, calls: chatSets.used.get(s)?.calls ?? 0 })
+      chatSets.lastCalled = used
+      chatSets.lastNeeds = new Set(needs)
+      chatSets.lastOffer = turnNeeds(reply)
+    }
     void usageIn
     void usageOut
     return { type: 'done', stopReason, ms: now() - t0 }
