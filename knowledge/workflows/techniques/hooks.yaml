@@ -1,0 +1,22 @@
+kind: guide
+schema_version: 1
+id: hooks
+name: Designing printed hooks
+aliases: [hook, headphone hook, headphone stand, hanger, coat hook, cable hook, j hook, peg hook, hook lip, hook tip]
+applies_to: [all]
+summary: >
+  A printed hook holds when it leaves the side of its stem or plate below the
+  top, with a rounded root, ends in a lip or rounded tip that keeps the load
+  from sliding off, and is thick enough at the root, where the bending is
+  largest. Hooks fail where they join and across layers, so the root and the
+  print orientation matter more than the curve.
+facts:
+  - {text: "In PLA, layers bond at up to about 40 MPa when printed hot, while a part loaded along its layers reaches about 60 MPa.", src: [cnckitchen_temp_adhesion]}
+  - {text: "In a hook test, two walls failed at 20 kg and four walls held 33 kg, so walls carry most of a hook's load.", src: [cnckitchen_extrusion_width]}
+pilot_actions:
+  - "Start the hook in the side wall of the stem or the face of the plate, below its top, and sweep it out of the wall with its first part inside the wall so the join overlaps. Never stand the hook on an open top or a rim."
+  - "Round the root: fillet the edge where the hook meets the wall (geom.fillet), or start the hook as a short loft from a wider section, so the bend does not start at a sharp corner."
+  - "End the hook in a lip: bend the last part of the path back up so the tip sits at least 3 mm above the lowest point the load rests on, or round the tip, so a headband, strap or cable cannot slide off."
+  - "Make the hook a solid rod, not a hollow tube. For PLA, take a solid round section of at least 12 mm for a headphone hook: that keeps a 40 N pull 50 mm out from the root under a third of the 40 MPa layer bond figure, the weakest way a hook printed upright is loaded. Say that this is a guide figure from that load, not a test."
+  - "A stand prints upright, so its hook is loaded across layers. Say so, and suggest four walls; a wall hook or bracket prints stronger on its side with the bend in the bed plane."
+src: [cnckitchen_temp_adhesion, cnckitchen_extrusion_width]

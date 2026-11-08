@@ -33,6 +33,8 @@ const CASES: [string, string[]][] = [
   ['small tower comes out with a rough melted top', ['workflow/small_parts_cooling', 'troubleshoot/pillowing']],
   ['paint where the seam goes', ['workflow/slicerx_paint', 'workflow/seams']],
   ['print tpu on an a1 with the ams lite', ['filament/tpu_95a', 'printer/bambu_a1', 'accessory/bambu_ams_lite']],
+  ['how thick should the hook on a headphone stand be', ['workflow/hooks']],
+  ['hook keeps letting the strap slide off the end', ['workflow/hooks']],
 ]
 
 describe('kb.search answers plain questions', () => {
