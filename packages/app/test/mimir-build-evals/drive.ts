@@ -5,7 +5,8 @@
 // knowledge base, the app's built-in commands and the edition's brain pack. The model is a live client or the
 // recorded replies. The person is played by a fixed policy: confirm the dimension sheet as shown, press Go on the plan,
 // pick the first real choice on any other question card, deny approvals for anything but design, and when a turn ends
-// with nothing built, nudge once or twice. The score counts every one of those past the first sheet and Go.
+// with nothing built, nudge once or twice. The score counts every one of those past the first sheet and Go (past one
+// of each for every part, when the case asks for separate parts).
 import type { Host, MeshHandle, MeshPart, PilotConfig, PilotEvent, PrinterHost } from '@slicerx/contracts'
 import { modelById } from '@slicerx/printer-catalog'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type LlmClient } from '@slicerx/pilot'

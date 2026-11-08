@@ -1,11 +1,12 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The mimir build evals: eight parts asked for in one message, six that need a loft or a sweep and two boxy controls,
-// run through the tab exactly as the desktop app makes it (test/mimir-build-evals/drive.ts) and scored on the part and
-// on the person's turns (score.ts). By default this checks the scoring, and replays offline each case that has a
-// recording in test/mimir-build-evals/recordings (none ship, so those skip until a live run records them); a replay
-// needs the geometry engine (packages/geom/wasm/scripts/build.sh) and skips without it.
+// The mimir build evals: fourteen parts asked for in one message, most needing a loft or a sweep, four boxy controls and
+// a planter with its saucer asked for as two parts, run through the tab exactly as the desktop app makes it
+// (test/mimir-build-evals/drive.ts) and scored on the part and on the person's turns (score.ts). By default this checks
+// the scoring, and replays offline each case that has a recording in test/mimir-build-evals/recordings (a case without
+// one skips until a live run records it); a replay needs the geometry engine (packages/geom/wasm/scripts/build.sh) and
+// skips without it.
 //
 // A live run asks the model and records nothing unless told to:
 //   SX_MIMIR_EVAL=live [SX_MIMIR_EVAL_CASES=id,id] [SX_MIMIR_EVAL_CAP=0.50] [SX_MIMIR_EVAL_RECORD=1]
@@ -73,10 +74,35 @@ describe('build eval scoring', () => {
     expect(scoreCase(box, { events: built, turns: [], parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 }).ops.pass).toBe(true)
   })
 
-  it('has the eight cases, the headphone stand in the words of the request', () => {
-    expect(BUILD_CASES.map((c) => c.id)).toEqual(['headphone-stand', 'square-bottle', 'cable-hook', 'mug-handle', 'twisted-vase', 'pipe-elbow', 'pi5-case', 'hinged-box'])
+  it('has the fourteen cases, the headphone stand in the words of the request', () => {
+    expect(BUILD_CASES.map((c) => c.id)).toEqual(['headphone-stand', 'square-bottle', 'cable-hook', 'mug-handle', 'twisted-vase', 'pipe-elbow', 'pi5-case', 'hinged-box', 'flared-vase', 'drawer-handle', 'cable-clip', 'phone-stand-lip', 'planter-saucer', 'coat-hook'])
     expect(BUILD_CASES[0]!.prompt).toBe("Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.")
-    expect(BUILD_CASES.filter((c) => c.control).map((c) => c.id)).toEqual(['pi5-case', 'hinged-box'])
+    expect(BUILD_CASES.filter((c) => c.control).map((c) => c.id)).toEqual(['pi5-case', 'hinged-box', 'cable-clip', 'phone-stand-lip'])
+    expect(BUILD_CASES.filter((c) => (c.parts ?? 1) > 1).map((c) => c.id)).toEqual(['planter-saucer'])
+  })
+
+  it('lets a sheet and a Go through for each part when the request asks for separate parts', () => {
+    const planter = BUILD_CASES.find((c) => c.id === 'planter-saucer')!
+    const vase = BUILD_CASES.find((c) => c.id === 'flared-vase')!
+    // the planter and the saucer, each sized on its own sheet and built after its own Go
+    const turns: UserTurn[] = [
+      { kind: 'message', text: planter.prompt },
+      { kind: 'sheet', title: 'Planter' },
+      { kind: 'go', part: 'Build the planter?' },
+      { kind: 'sheet', title: 'Saucer' },
+      { kind: 'go', part: 'Build the saucer?' },
+    ]
+    const run = (c: typeof planter, t: UserTurn[]) => scoreCase(c, { events: [], turns: t, parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
+    const two = run(planter, turns)
+    expect(two.turns, two.turns.detail).toMatchObject({ pass: true })
+    expect(two.extra).toBe(0)
+    // a third sheet is past the two parts asked for
+    const third = run(planter, [...turns, { kind: 'sheet', title: 'Planter' }])
+    expect(third.extra).toBe(1)
+    expect(third.turns.detail).toBe('another sheet')
+    // a one part request still counts the second sheet and Go
+    expect(run(vase, turns).extra).toBe(2)
+    expect(extraTurns(turns).map((t) => t.kind)).toEqual(['sheet', 'go'])
   })
 
   // a box from (x0, y0, z0) to (x1, y1, z1), closed and facing out
