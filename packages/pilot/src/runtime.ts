@@ -397,8 +397,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   /** The chats that started a design that has no body yet: it is theirs to shape, and no other chat's. */
   const waiting = new Set<string>()
   /**
-   * Whether chat `sessionId` has a design to shape now: a body on the plate, as the host says, or a design the chat
-   * started that is still waiting for its first body; with no answer from the host, what the chat's own tools made.
+   * Whether chat `sessionId` has a design to shape now: a body on the plate, as the host says. Only when the host
+   * cannot answer: what the chat's own tools made, or a design it started that is still waiting for its first body.
    */
   const designedNow = (sessionId: string): boolean => {
     let there: boolean | undefined
@@ -407,8 +407,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch {
       there = undefined
     }
-    if (there === undefined) return designed.has(sessionId)
-    return there || waiting.has(sessionId)
+    if (there === undefined) return designed.has(sessionId) || waiting.has(sessionId)
+    return there
   }
   if (turnSets) {
     const t = turnSetTool((sessionId, set) => picked.set(sessionId, set)) as AnyTool
