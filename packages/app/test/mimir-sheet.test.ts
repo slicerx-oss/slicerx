@@ -7,13 +7,15 @@
 import type { Host, PilotDim, PilotEvent, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
 import { createApprovalBroker, DEFAULT_CONFIG } from '@slicerx/pilot'
 import type { LlmMessage } from '@slicerx/pilot'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { drawView, fitScale, readsIn, shapeOfSolids, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
 import { backplatePart, boundWall, boxPart, SCRIPTS, standPart } from '../src/workspaces/mimir/scripts'
 import { mimirTools, scriptedMimir } from '../src/workspaces/mimir/scripted'
 import { setDraft, sheetMode, sheetUi, setShownSheet, typedValues } from '../src/workspaces/mimir/sheet-ui'
 import { get, set, type PlateEntry } from '../src/state/store'
-import { sourceHost } from '../src/workspaces/mimir/sheet-view'
+import { MimirSheet, sourceHost } from '../src/workspaces/mimir/sheet-view'
 import { bundledKb } from '../src/workspaces/mimir/kb'
 import { tabPilotOptions } from '../src/workspaces/mimir/session'
 
@@ -146,6 +148,26 @@ describe('the sheet in the view', () => {
     setShownSheet({ sheet: { ...sheet, id: 'sheet_3' }, answer: null, bound: null, replay: true })
     expect(sheetMode(sheetUi.getState())).toBeNull()
     setShownSheet(null)
+  })
+})
+
+describe('the sizes panel', () => {
+  it('shows a count given in mm with no unit and an angle in degrees, beside a length in mm', () => {
+    const row = (key: string, label: string, value: number, unit: PilotDim['unit'] = 'mm'): PilotDim => ({ key, label, value, unit, source: 'guess' })
+    const sheet: PilotSheet = { id: 'sheet_units', title: 'Gear sizes', views: ['iso'], dims: [row('teeth', 'Teeth', 20), row('draft_angle', 'Draft', 2), row('lean', 'Lean', 15, 'deg'), row('width', 'Width', 80)] }
+    setShownSheet({ sheet, answer: null, bound: null, replay: false })
+    try {
+      render(createElement(MimirSheet))
+      const rows = screen.getAllByTestId('mimir-sheet-row')
+      const labels = rows.map((r) => r.querySelector('.mimir-sheet-label')!.textContent)
+      expect(labels).toEqual(['Teeth', 'Draft°', 'Lean°', 'Widthmm'])
+      expect(within(rows[0]!).getByRole('textbox', { name: 'Teeth' })).toBeTruthy()
+      expect(within(rows[1]!).getByRole('textbox', { name: 'Draft, degrees' })).toBeTruthy()
+      expect(within(rows[3]!).getByRole('textbox', { name: 'Width, millimeters' })).toBeTruthy()
+    } finally {
+      cleanup()
+      setShownSheet(null)
+    }
   })
 })
 

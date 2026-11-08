@@ -3,7 +3,9 @@
 // The plan card: what mimir means to build, flat in the conversation. Each feature with the sizes that drive it, the
 // overall size and holes when it knows them, what it assumed and what it still needs to know. While the plan waits,
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
-// keep their places and the status keeps its height once answered, so nothing moves under the chat.
+// keep their places and the status keeps its height once answered, so nothing moves under the chat. A count among a
+// feature's sizes shows with no unit and an angle in degrees (sizeKind), in an inch plan too.
+import { sizeKind, sizeLabelKey, sizeText, sizeUnit, type SizeKind } from '@slicerx/mcp/toolset'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
@@ -26,6 +28,13 @@ export const PLAN_INACTIVE = `Nothing built. Ask ${ASSISTANT_NAME} again.`
 const UNIT_WORD = { mm: 'millimeters', in: 'inches' } as const
 /** The smallest size a field takes: one step of its last digit, so a size is always more than 0. */
 const SIZE_MIN = { mm: 0.01, in: 0.001 } as const
+
+/** How a size's field reads and steps: a count in whole steps with no unit, an angle in degrees, a length in the plan's units. */
+function fieldOf(kind: SizeKind, unit: 'mm' | 'in'): { unit: string; word: string; digits: number; step: number; min: number } {
+  if (kind === 'count') return { unit: sizeUnit(kind, unit), word: '', digits: 0, step: 1, min: 1 }
+  if (kind === 'angle') return { unit: sizeUnit(kind, unit), word: 'degrees', digits: 2, step: 1, min: SIZE_MIN.mm }
+  return { unit: sizeUnit(kind, unit), word: UNIT_WORD[unit], digits: unit === 'in' ? 3 : 2, step: unit === 'in' ? 0.05 : 0.5, min: SIZE_MIN[unit] }
+}
 
 /** Where a size sits in the plan, for editing it. */
 type SizeAt = { kind: 'feature'; index: number; key: string } | { kind: 'overall'; axis: 'x' | 'y' | 'z' } | { kind: 'hole'; index: number }
@@ -93,25 +102,29 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
 
   // `group` names where the size sits (the feature, Overall), so two rows called Height read apart to a screen reader
   // `times` is how many holes a hole row stands for: more than one reads "4 x 3.4 mm"
-  const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1): ReactNode => (
-    <li key={id} className="sheet-rec-row plan-rec-row">
-      <label className="sheet-rec-label" htmlFor={live ? id : undefined}>
-        {label}
-      </label>
-      {live ? (
-        <span className="sheet-rec-field">
-          {times > 1 ? <span className="sheet-rec-unit">{times} x</span> : null}
-          <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}${times > 1 ? `, ${times} holes` : ''}, ${UNIT_WORD[unit]}`} digits={unit === 'in' ? 3 : 2} step={unit === 'in' ? 0.05 : 0.5} min={SIZE_MIN[unit]} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
-          <span className="sheet-rec-unit">{unit}</span>
-        </span>
-      ) : (
-        <span className="sheet-rec-v plan-rec-v">
-          {times > 1 ? `${times} x ` : ''}
-          {value} {unit}
-        </span>
-      )}
-    </li>
-  )
+  // `kind` is what the size measures: a count reads "4", an angle "30°", a length "80 mm"
+  const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1, kind: SizeKind = 'length'): ReactNode => {
+    const f = fieldOf(kind, unit)
+    return (
+      <li key={id} className="sheet-rec-row plan-rec-row">
+        <label className="sheet-rec-label" htmlFor={live ? id : undefined}>
+          {label}
+        </label>
+        {live ? (
+          <span className="sheet-rec-field">
+            {times > 1 ? <span className="sheet-rec-unit">{times} x</span> : null}
+            <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}${times > 1 ? `, ${times} holes` : ''}${f.word ? `, ${f.word}` : ''}`} digits={f.digits} step={f.step} min={f.min} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
+            {f.unit ? <span className="sheet-rec-unit">{f.unit}</span> : null}
+          </span>
+        ) : (
+          <span className="sheet-rec-v plan-rec-v">
+            {times > 1 ? `${times} x ` : ''}
+            {sizeText(kind, value, unit)}
+          </span>
+        )}
+      </li>
+    )
+  }
 
   const status = dismissed ? 'Canceled' : chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
   const base = `plan-${plan.planId}`
@@ -135,7 +148,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
               <span>{f.name}</span>
               {f.kind ? <small className="sheet-rec-tag">{plainLabel(f.kind).toLowerCase()}</small> : null}
             </span>
-            {Object.keys(f.sizes).length ? <ul className="sheet-rec-rows">{Object.entries(f.sizes).map(([k, v]) => row(`${base}-f${i}-${k}`, plainLabel(k), v, { kind: 'feature', index: i, key: k }, f.name))}</ul> : null}
+            {Object.keys(f.sizes).length ? <ul className="sheet-rec-rows">{Object.entries(f.sizes).map(([k, v]) => row(`${base}-f${i}-${k}`, plainLabel(sizeLabelKey(k)), v, { kind: 'feature', index: i, key: k }, f.name, 1, sizeKind(k)))}</ul> : null}
           </li>
         ))}
       </ol>
