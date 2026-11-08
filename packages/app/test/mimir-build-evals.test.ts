@@ -6,7 +6,7 @@
 // (test/mimir-build-evals/drive.ts) and scored on the part and on the person's turns (score.ts). By default this checks
 // the scoring, and replays offline each case that has a recording in test/mimir-build-evals/recordings (a case without
 // one skips until a live run records it); a replay needs the geometry engine (packages/geom/wasm/scripts/build.sh) and
-// skips without it.
+// skips without it. The lofted vases replay only with SX_SLOW_EVALS=1, since their shells are slow to rebuild.
 //
 // A live run asks the model and records nothing unless told to:
 //   SX_MIMIR_EVAL=live [SX_MIMIR_EVAL_CASES=id,id] [SX_MIMIR_EVAL_CAP=0.50] [SX_MIMIR_EVAL_RECORD=1]
@@ -303,14 +303,23 @@ const line = (id: string, r: CaseRun, usd?: number): string => {
   return `${(s.pass ? 'PASS' : s.refused ? 'REFUSED' : 'FAIL').padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }
 
+/**
+ * Cases whose replay rebuilds a lofted shell: about a minute each here and over three on a hosted runner, until loft
+ * rebuilds get faster. They replay only with SX_SLOW_EVALS=1 (the nightly run, or a machine with a built engine).
+ */
+const SLOW_REPLAYS = new Set(['twisted-vase', 'flared-vase'])
+const slowEvals = process.env['SX_SLOW_EVALS'] === '1'
+
 describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
   beforeAll(async () => setGeomProvider(await wasmGeom()))
   afterAll(() => setGeomProvider(null))
   for (const c of BUILD_CASES) {
     const rec = loadRecording(c.id)
+    const slow = SLOW_REPLAYS.has(c.id)
     // a lofted vase with a shell takes about a minute to rebuild in the engine; the drive stops a replay at REPLAY_DRIVE_MS
     // (and says so in r.error), just under the 180 s the test is given
-    it.skipIf(!rec)(`${c.id} scores as it did live`, { timeout: 180_000 }, async () => {
+    const title = slow && !slowEvals ? `${c.id} scores as it did live (lofted, slow to rebuild: set SX_SLOW_EVALS=1)` : `${c.id} scores as it did live`
+    it.skipIf(!rec || (slow && !slowEvals))(title, { timeout: 180_000 }, async () => {
       const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS })
       console.log(line(c.id, r))
       expect(r.error, r.error).toBeUndefined()
