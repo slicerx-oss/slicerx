@@ -527,12 +527,15 @@ fn families(lines: &[Line]) -> Vec<(f64, f64)> {
 }
 
 /// The strand direction across one of the line families `fams` (folded), the one nearest the x axis, and of two
-/// equally near the larger angle: on a 45 degree grid, 135 degrees.
+/// within half a degree of equally near the larger angle: on a 45 degree grid, 135 degrees. Half a degree is far above
+/// the few millionths of a radian that rounding the ends of a small part's short infill lines turns a family by, and far
+/// below the 10 degrees between families.
 fn family_angle(fams: &[(f64, f64)]) -> Option<f64> {
     let pi = std::f64::consts::PI;
+    let tie = 0.5_f64.to_radians();
     fams.iter().map(|f| fold(f.0 + 0.5 * pi)).min_by(|a, b| {
         let (da, db) = (a.min(pi - a), b.min(pi - b));
-        if (da - db).abs() < 1e-6 {
+        if (da - db).abs() < tie {
             b.total_cmp(a)
         } else {
             da.total_cmp(&db)
@@ -725,11 +728,16 @@ fn below_of(env: &Env<'_>, l: i64, below_lines: &[Line], sp: f64) -> Below {
     }
 }
 
-/// Whether one of the 5 layers below `l` bridges, so `l` is not the first bridge of its stack.
-fn bridged_below(env: &Env<'_>, l: i64, memo: &Memo) -> bool {
-    (l.saturating_sub(5).max(1)..l)
-        .rev()
-        .any(|j| !cands_of(env, j, memo).is_empty() && !bridge_layer(env, j, memo).is_empty())
+/// Whether one of the 5 layers below `l` bridges under `region` (grown by `sp`), so the bridge over `region` is not the
+/// first of its stack. Bridges on other islands don't count.
+fn bridged_below(env: &Env<'_>, l: i64, memo: &Memo, region: &Shapes, sp: f64) -> bool {
+    let near = expand(region, sp);
+    (l.saturating_sub(5).max(1)..l).rev().any(|j| {
+        !cands_of(env, j, memo).is_empty()
+            && bridge_layer(env, j, memo)
+                .iter()
+                .any(|b| !meet(&b.area, &near).is_empty())
+    })
 }
 
 fn nearest_line(lines: &[Line], p: (f64, f64)) -> Option<Line> {
@@ -1119,7 +1127,7 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
             determine_angle(&outline, &boundary, 0.0).angle
         } else {
             let vote = determine_angle(&outline, &anchors, env.angle_bias);
-            let first = || !bridged_below(env, l, memo);
+            let first = || !bridged_below(env, l, memo, &to_bridge, sp);
             first_bridge_angle(
                 &vote,
                 &to_bridge,
@@ -1936,6 +1944,79 @@ mod tests {
                 Some(want),
                 "{dir} degree grid"
             );
+        }
+    }
+
+    /// A small part's sparse grid: three lines per family at 45 and 135 degrees, 6 mm apart, 4.2, 6.6 and 3.4 mm long
+    /// as the part's outline clips them, around (`cx`, `cy`), each end rounded to whole internal units as the infill is.
+    fn small_grid(cx: f64, cy: f64) -> Vec<Line> {
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        let mut out = Vec::new();
+        for a in [45.0_f64, 135.0] {
+            let (c, s) = (a.to_radians().m_cos(), a.to_radians().m_sin());
+            for (k, half) in [(-1, 2.1), (0, 3.3), (1, 1.7)] {
+                let o = f64::from(k) * 6.0;
+                let (x, y) = (cx - s * o, cy + c * o);
+                out.push([p(x - c * half, y - s * half), p(x + c * half, y + s * half)]);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_small_grid_crosses_at_135_wherever_it_sits() {
+        // Rounding the ends of a few short lines turns each family's direction by a few millionths of a radian,
+        // differently at every position; the tie between 45 and 135 must not see it.
+        let mut picks = Vec::new();
+        for i in 0..20 {
+            let shift = f64::from(i) * 0.137;
+            let (cx, cy) = (12.3 + shift, 7.9 + 0.61 * shift);
+            let fams = families(&small_grid(cx, cy));
+            assert_eq!(fams.len(), 2, "two families at ({cx}, {cy})");
+            picks.push(family_angle(&fams).map(degrees));
+        }
+        assert!(
+            picks.iter().all(|p| *p == Some(135)),
+            "picks by position: {picks:?}"
+        );
+    }
+
+    #[test]
+    fn a_sparse_infill_without_exactly_two_line_families_keeps_the_vote() {
+        let region = frame(1);
+        let vote = determine_angle(&region, &grid(45.0), 0.0);
+        assert_eq!(degrees(vote.angle), 45, "the vote this test keeps");
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        // Lines in one direction, as a lines pattern lays them on one layer.
+        let one: Vec<Line> = (-20..=20)
+            .map(|k| {
+                let o = f64::from(k) * 2.0;
+                [p(o - 40.0, o + 40.0), p(o + 40.0, o - 40.0)]
+            })
+            .collect();
+        // Three families, as a triangle pattern lays them.
+        let mut three = grid(0.0);
+        three.retain(|l| l[0].y == l[1].y);
+        for a in [60.0_f64, 120.0] {
+            let (c, s) = (a.to_radians().m_cos(), a.to_radians().m_sin());
+            for k in -40..=40 {
+                let o = f64::from(k) * 2.0;
+                let (x, y) = (20.0 - s * o, 20.0 + c * o);
+                three.push([p(x - c * 60.0, y - s * 60.0), p(x + c * 60.0, y + s * 60.0)]);
+            }
+        }
+        for (name, lines, n) in [
+            ("one family", one, 1),
+            ("three families", three, 3),
+            ("no families", Vec::new(), 0),
+        ] {
+            let below = Below {
+                families: families(&lines),
+                solid: Vec::new(),
+            };
+            assert_eq!(below.families.len(), n, "{name}");
+            let rule = first_bridge_angle(&vote, &region, &below, &|| true, (0.45, 0.45, 0.0));
+            assert_eq!(rule, None, "{name}");
         }
     }
 
