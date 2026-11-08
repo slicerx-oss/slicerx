@@ -270,6 +270,62 @@ export function sketchFromSvg(svg: string, options: SvgSketchOptions = {}, signa
   return geom().call<SvgSketch>('sketch.svg', { svg, options }, signal)
 }
 
+export type SketchTraceMode = 'auto' | 'dark' | 'light' | 'color' | 'alpha'
+
+/** A PNG or JPEG file as base64, or decoded pixels (row by row from the top, 4 bytes each) as base64. */
+export type SketchTraceImage = { base64: string } | { rgba: string; width: number; height: number }
+
+export interface SketchTraceOptions {
+  /** auto: opaque areas when the image has transparency, else the dark side of an automatic split. */
+  mode?: SketchTraceMode
+  /** Luminance 0 to 255 for dark and light; automatic when absent. */
+  threshold?: number
+  /** `#rrggbb`, for the color mode. */
+  colors?: string[]
+  colorTolerance?: number
+  /** Areas under this are dropped, mm². */
+  speckMm2?: number
+  /** How far a fitted curve may stray, mm; half a working pixel when absent. */
+  smoothingMm?: number
+  fit?: 'lines' | 'arcs' | 'curves'
+  cornerAngleDeg?: number
+  /** One of the three sizes; a 50 mm width when none is set. */
+  widthMm?: number
+  heightMm?: number
+  mmPerPx?: number
+  /** Where the middle of the trace lands, sketch mm. */
+  center?: Vec2
+  /** The image is shrunk to this long side before tracing. */
+  maxSidePx?: number
+  /** Return the working image with the loops drawn over it. */
+  previewImage?: boolean
+}
+
+export interface SketchTrace {
+  loops: SketchLoop[]
+  counts: { lines: number; arcs: number; splines: number; circles: number }
+  sizeMm: Vec2
+  /** mm per pixel of the image as given. */
+  mmPerPx: number
+  imagePx: [number, number]
+  workingPx: [number, number]
+  dropped: { specks: number; holes: number }
+  check: SketchCheck
+  warnings: string[]
+  /** The mode used, with auto resolved. */
+  mode: SketchTraceMode
+  threshold?: number
+  /** Working pixel (y up) to sketch mm: `[scale, dx, dy]`. */
+  pxToMm: [number, number, number]
+  /** A PNG as base64, when previewImage was set. */
+  previewPng?: string
+}
+
+/** A PNG or JPEG traced into sketch loops: lines, arcs, circles and splines, holes kept. */
+export function sketchFromImage(image: SketchTraceImage, options: SketchTraceOptions = {}, signal?: AbortSignal) {
+  return geom().call<SketchTrace>('sketch.trace', { image, options }, signal)
+}
+
 // Push and pull
 
 export interface PushRequest {

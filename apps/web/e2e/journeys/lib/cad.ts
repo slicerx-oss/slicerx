@@ -3,6 +3,7 @@
 // Shared steps for the CAD journeys (cad-ops, cad-sketch, phone-cad). They share one page per worker, so every test
 // starts with `studio(page)`: it makes sure the debug hooks (window.__sx, __vp) are there and puts the studio back to
 // what the first test found, then the test builds its own part.
+import { deflateSync } from 'node:zlib'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { bounds, command, facePick, freshBox, pick, placeAt, sketchAt, steps, toolPanel, type V3 } from '../../cad-helpers'
 import { expect, viewportReady } from '../../fixtures'
@@ -395,4 +396,33 @@ export async function phoneBox(page: Page): Promise<string> {
   const id = ((await store(page))['plate'] as { id: string }[])[0]!.id
   await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
   return id
+}
+
+/** A grayscale PNG, `w` x `h`, black where `inside` says and white elsewhere, for Trace image. */
+export function grayPng(w: number, h: number, inside: (x: number, y: number) => boolean): Buffer {
+  const table = Array.from({ length: 256 }, (_, n) => {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    return c >>> 0
+  })
+  const crc = (b: Buffer) => {
+    let c = 0xffffffff
+    for (const v of b) c = table[(c ^ v) & 0xff]! ^ (c >>> 8)
+    return (c ^ 0xffffffff) >>> 0
+  }
+  const chunk = (type: string, body: Buffer) => {
+    const typed = Buffer.concat([Buffer.from(type, 'latin1'), body])
+    const out = Buffer.alloc(8 + typed.length)
+    out.writeUInt32BE(body.length, 0)
+    typed.copy(out, 4)
+    out.writeUInt32BE(crc(typed), 4 + typed.length)
+    return out
+  }
+  const head = Buffer.alloc(13)
+  head.writeUInt32BE(w, 0)
+  head.writeUInt32BE(h, 4)
+  head[8] = 8
+  const rows = Buffer.alloc((w + 1) * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) rows[y * (w + 1) + 1 + x] = inside(x, y) ? 0 : 255
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', head), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))])
 }

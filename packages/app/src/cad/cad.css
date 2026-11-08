@@ -25,6 +25,7 @@
 /* Import SVG after the solid card: the button at its natural width, the form below it once opened */
 .sketch-svg-import { display: grid; gap: var(--s-2); min-width: 0; }
 .sketch-svg-import > .sx-btn { justify-self: start; }
+.sketch-import-row { justify-content: flex-start; flex-wrap: wrap; gap: var(--s-2); }
 /* on a desktop the panel's settings sit in cards, so the open form takes a dense card's frame and its fields line up
    with the solid card's; a phone's sheet has no cards */
 :root:not([data-phone]) .sketch-svg-import > .sketch-svg { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); }
