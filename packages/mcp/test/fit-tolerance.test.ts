@@ -206,6 +206,21 @@ describe('the fit tolerance', () => {
       }
   })
 
+  it('a 5 mm pin in a 5.4 mm bore, both drawn in 25 sides along y, clears its 0.4 mm gap: the bore\'s 1.35 mm top strip is no flat face', async () => {
+    // the bore's level strip is wider than the pin's 0.63 mm one, wide enough for a 1 mm disc, but the facets on both
+    // sides of it lean 14.4 degrees: it is the top of a round face. Turned about z too.
+    for (const [boreSides, turnDeg] of [[25, 0], [25, 30], [27, 0]] as const) {
+      const { fit, gap, limits, readMm } = await pinInBore('y', 5, 25, 5.4, boreSides, turnDeg)
+      const what = `bore in ${boreSides} sides turned ${turnDeg} degrees, read ${readMm.toFixed(4)} mm`
+      expect(readMm, what).toBeGreaterThan(0.38)
+      expect(readMm, what).toBeLessThan(0.4)
+      expect(gap.flat, what).toBeUndefined()
+      expect(gap.kind, what).toBe('apart')
+      expect(fitVerdict(gap, limits), what).toBe('slides')
+      expect(gapsItem(fit).pass, what).toBe(true)
+    }
+  })
+
   it('a gap with one end on a flat face and the other on a round one gets the facet allowance, either way up', async () => {
     const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
     const flatTop: HistoryMesh = { name: 'Arm', slot: 0, positions: [-1, -1, 5, 1, -1, 5, 0, 1, 5], indices: [0, 1, 2] }
@@ -310,6 +325,36 @@ describe('the fit tolerance', () => {
       expect(hung.gap.flat).toBeUndefined()
       expect(hung.gap.kind).toBe('apart')
     }
+  })
+
+  it('a bottom strip 1.2 mm wide is a flat face and one 0.9 mm wide is not, from its end', async () => {
+    const plate: [number, number, number, number][] = [[-5, -10, 25, 10]]
+    await expectFlat('a 1.2 mm strip over a plate', (g) => stacked(plate, [[0, 0, 20, 1.2]], g, [0, 0], { step: 0.3 }))
+    await expectFlat('a 1.2 mm strip over a plate, from the middle of its end', (g) => stacked(plate, [[0, 0, 20, 1.2]], g, [0, 0.6], { step: 0.3 }))
+    const narrow = await stacked(plate, [[0, 0, 20, 0.9]], 0.38, [0, 0], { step: 0.3 })
+    expect(narrow.gap.flat).toBeUndefined()
+    expect(narrow.gap.kind).toBe('apart')
+  })
+
+  it('a narrow bottom strip beside a wide one across a thin groove is no flat face: the groove parts them', async () => {
+    const plate: [number, number, number, number][] = [[-5, -10, 25, 10]]
+    for (const groove of [0.1, 0.15, 0.2]) {
+      // a 0.8 mm rail, the groove, then a wide plate, all bottom faces of the upper body at one height
+      const upper: [number, number, number, number][] = [[0, 0, 20, 0.8], [0, 0.8 + groove, 20, 10]]
+      for (const at of [[0, 0], [10, 0.4], [10, 0.8]] as [number, number][]) {
+        const hung = await stacked(plate, upper, 0.38, at, { step: 0.2 })
+        expect(hung.gap.flat, `${groove} mm groove, from ${at.join(', ')}`).toBeUndefined()
+        expect(hung.gap.kind, `${groove} mm groove, from ${at.join(', ')}`).toBe('apart')
+      }
+      // the wide side of the groove is a flat face, though the groove runs past it
+      await expectFlat(`the plate beside a ${groove} mm groove`, (g) => stacked(plate, upper, g, [10, 0.8 + groove], { step: 0.2 }))
+    }
+  })
+
+  it('a wide bottom face with a 0.2 mm slot through it stays a flat face on either side of the slot', async () => {
+    const plate: [number, number, number, number][] = [[-5, -10, 25, 10]]
+    const slotted: [number, number, number, number][] = [[0, 0, 20, 4.9], [0, 5.1, 20, 10]]
+    for (const at of [[10, 4.9], [10, 5.1], [10, 4.5]] as [number, number][]) await expectFlat(`slotted plate, from ${at.join(', ')}`, (g) => stacked(plate, slotted, g, at, { step: 0.2 }))
   })
 
   it('a flat gap above and below and its verdict agree at float error under the limit', async () => {
