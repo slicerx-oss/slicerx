@@ -492,7 +492,8 @@ pub(crate) fn boolean_array(
     folded(&sa, &sb, op, opts, Some(WORK_BUDGET))
 }
 
-#[cfg(test)]
+// only the cad tests call it
+#[cfg(all(test, feature = "cad"))]
 pub(crate) fn boolean_within(
     a: &[Solid],
     b: &[Solid],
