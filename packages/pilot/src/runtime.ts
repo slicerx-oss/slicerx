@@ -627,10 +627,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           signal.removeEventListener('abort', onAbort)
           const answer = answerOf(sheet, given, said)
           // the latest sheet's answer stands: a cancel takes back an earlier confirmation; words that set it aside
-          // leave an earlier one as it was. A sheet of a part already built confirms no new part, and takes none back.
+          // leave an earlier one as it was. A sheet of a part already built confirms no new part, and takes none
+          // back, whether it is confirmed or canceled.
           if (answer.confirmed) {
             if (!sheet.design) confirmed.add(sessionId)
-          } else if (!answer.said) confirmed.delete(sessionId)
+          } else if (!answer.said && !sheet.design) confirmed.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
