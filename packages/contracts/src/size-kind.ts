@@ -25,8 +25,10 @@ const LENGTH_HEADS = new Set(['height', 'width', 'depth', 'length', 'thickness',
 const COUNT_LEADS = new Set(['count', 'number', 'num', 'nb', 'n', 'qty', 'quantity'])
 /** The last word of an angle's key: "angle", "draft", "helix_angle". */
 const ANGLE_HEADS = new Set(['angle', 'angles', 'draft', 'twist', 'tilt', 'lean', 'incline', 'inclination', 'rotation'])
-/** The first word of an angle's key, which wins over its last: "angle_step", "angle_offset", "angle_spacing". */
+/** The first word of an angle's key, which wins over its last unless that is an extent: "angle_step", "angle_offset", "angle_spacing". */
 const ANGLE_LEADS = new Set(['angle'])
+/** Length words that still measure an angle after an angle's first word: "angle_offset", "angle_spacing", "angle_gap", "angle_pitch". */
+const ANGLE_STEPS = new Set(['offset', 'spacing', 'gap', 'pitch'])
 
 /** A key's words, lower case: "numberOfTeeth" is number, of, teeth; "angle_deg" is angle, deg. */
 function words(key: string): string[] {
@@ -40,7 +42,8 @@ function words(key: string): string[] {
 /**
  * What a size measures, from its key. A length unit last makes it a length over everything else ("teeth_mm"); then a
  * degree word anywhere makes it an angle and a length unit anywhere a length. A key that starts with "angle" is an
- * angle ("angle_offset"). A length word last makes it a length, over a count's first word ("number_height"); otherwise
+ * angle ("angle_offset") unless it ends in an extent ("angle_leg_length" is a length); offset, spacing, gap and pitch
+ * stay angles there. A length word last makes it a length, over a count's first word ("number_height"); otherwise
  * its last word, then its first, says count or angle. Anything else is a length.
  */
 export function sizeKind(key: string): SizeKind {
@@ -50,7 +53,7 @@ export function sizeKind(key: string): SizeKind {
   if (LENGTH_UNITS.has(head)) return 'length'
   if (w.some((x) => ANGLE_UNITS.has(x))) return 'angle'
   if (w.some((x) => x !== 'in' && LENGTH_UNITS.has(x))) return 'length'
-  if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return 'angle'
+  if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return LENGTH_HEADS.has(head) && !ANGLE_STEPS.has(head) ? 'length' : 'angle'
   if (LENGTH_HEADS.has(head)) return 'length'
   if (COUNT_HEADS.has(head)) return 'count'
   if (ANGLE_HEADS.has(head)) return 'angle'
