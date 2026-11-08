@@ -5,7 +5,7 @@
 // Revolve on a finished sketch, and every design host (the mimir tab's and the app link's). A body stands on the plate
 // shown, on another plate, held off the plate while the timeline is rolled back, or, for a design that waits for its
 // first body, where a design host keeps it waiting.
-import { BED_FRAME, frameNow, recordedOn, type FaceFrame, type Mat4, type SketchItem, type StepParams } from '@slicerx/cad-history'
+import { BED_FRAME, frameNow, recordedOnSketch, sketchMove, type FaceFrame, type Mat4, type SketchItem, type StepParams } from '@slicerx/cad-history'
 import { heldBodies } from '../plate/timeline'
 import { fullPlate, get } from '../state/store'
 import { waitingAt } from './waiting'
@@ -23,11 +23,16 @@ export function frameShown(k: SketchItem): FaceFrame {
 }
 
 /**
- * A step a person's tool made on timeline sketch `sketch`, given on the plane the sketch stands on now by an object
- * standing at `transform`, as its history keeps it: where the sketch is stored (cad-history recordedOn), as the design
- * hosts record theirs. As given with no timeline sketch.
+ * How a person's tool records a step on timeline sketch `sketch`: given on the plane the sketch stands on now by an
+ * object standing at `transform`, kept where the sketch is stored (cad-history recordedOnSketch), as the design hosts
+ * record theirs; as given with no timeline sketch. Where the sketch stands is read when this is called: call it as the
+ * tool reads the plane, before the engine runs, so a drag while the engine works never shifts what the step is
+ * recorded against.
  */
-export function onSketch(sketch: string | undefined, params: StepParams, transform: Mat4): { params: StepParams; transform: Mat4 } {
-  if (sketch === undefined) return { params, transform: [...transform] }
-  return recordedOn(get().timeline, sketch, transform, params, placeOf)
+export function onSketch(sketch: string | undefined): (params: StepParams, transform: Mat4) => { params: StepParams; transform: Mat4 } {
+  const t = get().timeline
+  const k = sketch === undefined ? undefined : t.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === sketch)
+  if (!k) return (params, transform) => ({ params, transform: [...transform] })
+  const move = sketchMove(t, k.id, placeOf)
+  return (params, transform) => recordedOnSketch(k, move, transform, params)
 }
