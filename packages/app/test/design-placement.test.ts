@@ -958,6 +958,19 @@ describe('room for a second design', () => {
     expect(nests()).toBeGreaterThan(2)
   })
 
+  it('works the room out again when a design it would move changes shape while it is worked out, and lands clear of the new shape', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer, saucerStep } = await planterAndSaucer(run)
+    // the planter grows 10 percent across as the first nest starts: an edit of it landed meanwhile
+    const grown = (e: PlateEntry): PlateEntry => ({ ...e, parts: e.parts.map((m) => ({ ...m, positions: m.positions.map((v, i) => (i % 3 === 2 ? v : v * 1.1)) as Float32Array })) })
+    const nests = whileNesting(() => set((s) => ({ plate: s.plate.map((e) => (e.id === planter ? grown(e) : e)) })), 1)
+    const made = await saucerStep()
+    expect(made.ok).toBe(true)
+    expectApart(planter, saucer)
+    // two nests on the first try, gone stale with the planter's new shape, and two again on the second
+    expect(nests()).toBe(4)
+  })
+
   it('works the room out again when a design it would move is deleted while it is worked out, and lands in the middle', { timeout: 60_000 }, async () => {
     const run = toolsOn(appDesignHost(loader))
     const { planter, saucer, saucerStep } = await planterAndSaucer(run)
@@ -1539,6 +1552,15 @@ describe('a design host that goes away', () => {
     host.dispose()
     set((s) => ({ plate: s.plate.filter((x) => x.id !== e) }))
     expect(sketches()).toEqual([])
+  })
+
+  it('keeps nothing waiting for a design a call starts on it after it went away', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    host.dispose()
+    // a call already under way on the old host, as the link is hosted again
+    const d = String((await run('design.new', { name: 'Late' })).output['design'])
+    expect(waitingAt(d)).toBeUndefined()
   })
 })
 

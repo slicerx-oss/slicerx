@@ -83,7 +83,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
 
   const host: AppDesignHost = {
     dispose() {
-      empty.clear()
+      empty.dispose()
       redo.clear()
     },
 
@@ -301,14 +301,18 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     let room: Map<string, { from: Mat4; to: Mat4 }> | undefined
     if (moved && 'offBed' in moved) {
       // the room is worked out against the plate as it stands when the nest starts; when anything on it moved, came or
-      // went, or was locked or unlocked, while the nest ran, that room may no longer be free or allowed (or a better one
-      // is), so it is worked out again, and after a few tries the new design stays where it was built
+      // went, was locked or unlocked, or changed shape, while the nest ran, that room may no longer be free or allowed
+      // (or a better one is), so it is worked out again, and after a few tries the new design stays where it was built
       for (let tries = 0; tries < 3; tries++) {
-        const before = new Map(get().plate.map((e) => [e.id, { transform: e.transform, locked: !!e.locked }]))
+        const before = new Map(get().plate.map((e) => [e.id, { transform: e.transform, locked: !!e.locked, parts: e.parts }]))
         const made = await makeRoom(id, parts, transform)
         if (!made) break
         const now = get().plate
-        if (now.length !== before.size || now.some((e) => !before.has(e.id) || !same(before.get(e.id)!.transform, e.transform) || before.get(e.id)!.locked !== !!e.locked)) continue
+        const stale = (e: PlateEntry) => {
+          const b = before.get(e.id)
+          return !b || !same(b.transform, e.transform) || b.locked !== !!e.locked || b.parts !== e.parts
+        }
+        if (now.length !== before.size || now.some(stale)) continue
         landedAt = made.at
         room = made.others
         moved = landShift(transform, landedAt)
@@ -434,9 +438,16 @@ export function appDesignHost(loader: Loader): AppDesignHost {
 
 /** The designs a host keeps waiting for their first body; where each waits is shared with every reader (waiting.ts). */
 class Waiting extends Map<string, { name: string; history: History; transform: Mat4 }> {
+  /** Set once the host goes away: a call still under way on it then keeps its designs to itself, never shared. */
+  private gone = false
   override set(id: string, w: { name: string; history: History; transform: Mat4 }): this {
-    setWaiting(id, w.transform)
+    if (!this.gone) setWaiting(id, w.transform)
     return super.set(id, w)
+  }
+  /** Lets every waiting design go, and keeps any later one from being shared. */
+  dispose(): void {
+    this.clear()
+    this.gone = true
   }
   override delete(id: string): boolean {
     setWaiting(id, null)
