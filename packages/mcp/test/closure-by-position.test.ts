@@ -8,8 +8,8 @@ import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { bodyFacts } from '../src/body-facts'
 import { cadTools, type CadFiles } from '../src/cad'
-import { closureByPosition, partClosure } from '../src/closure'
-import { createPlanRegistry, type PartPlan } from '../src/design-check'
+import { closureByPosition, notClosedWords, partClosure } from '../src/closure'
+import { createPlanRegistry, designCheck, type PartPlan } from '../src/design-check'
 import { designToolset } from '../src/toolset'
 import { useGeomEngine } from './geom-engine'
 
@@ -116,9 +116,15 @@ describe('closureByPosition', () => {
     const t = performance.now()
     const c = closureByPosition(positions, indices)
     const ms = performance.now() - t
+    // the same machine's time to sort one number per directed edge, the core of the work, so a slow runner moves both
+    const keys = Float64Array.from({ length: indices.length }, (_, k) => (k * 2654435761) % 4294967296)
+    const s0 = performance.now()
+    keys.sort()
+    const sortMs = performance.now() - s0
     // open around the rim of each grid (the slab has no sides), closed everywhere else
     expect(c).toEqual({ watertight: false, boundaryEdges: 2 * 4 * n, nonManifoldEdges: 0, flippedEdges: 0 })
-    expect(ms).toBeLessThan(3000)
+    // about 1.8 times the sort here; 6 times leaves room for noise and still fails a weld five times slower
+    expect(ms).toBeLessThan(6 * sortMs)
   })
 })
 
@@ -256,5 +262,57 @@ describe('closure read on the part before its transform', () => {
     expect(partClosure(part)).toBe(first)
     // a step replaces the part's arrays; the new mesh is read again
     expect(partClosure({ positions: part.positions, indices: [...part.indices] })).not.toBe(first)
+  })
+})
+
+describe('what the watertight item says', () => {
+  const plan: PartPlan = { planId: 'p', part: 'Part', units: 'mm', features: [], overall: { x: 20, y: 20, z: 10 }, assumptions: [], questions: [] }
+  const watertight = async (mesh: { positions: number[]; indices: number[] } | null) => {
+    const d = designOf('dw', mesh ?? { positions: [], indices: [] })
+    if (!mesh) (d as unknown as { parts: unknown[] }).parts = []
+    const body = await bodyFacts(hostOf([d]), d)
+    const item = designCheck(plan, body, 0.4).items.find((i) => i.name === 'watertight')!
+    return { body, got: item.got }
+  }
+  const box = () => indexed(boxTris([0, 0, 0], [10, 10, 10]))
+
+  it('says repair for open edges', async () => {
+    const b = box()
+    const { body, got } = await watertight({ positions: b.positions, indices: b.indices.slice(3) })
+    expect(body.openWhy).toBe(notClosedWords({ boundaryEdges: 3, nonManifoldEdges: 0, flippedEdges: 0 }))
+    expect(got).toBe('open: 3 open edges; repair the part or rebuild the step that left it open')
+  })
+
+  it('says repair for faces turned the wrong way', async () => {
+    const b = box()
+    ;[b.indices[0], b.indices[1]] = [b.indices[1]!, b.indices[0]!]
+    const { body, got } = await watertight(b)
+    expect(body.openWhy).toBe('3 edges between faces turned opposite ways')
+    expect(got).toBe('open: 3 edges between faces turned opposite ways; repair the part or rebuild the step that left it open')
+  })
+
+  it('gives each kind its own advice when a part has both', async () => {
+    // the pinch with the far box missing a triangle away from the shared edge
+    const p = pinch()
+    const far = p.indices.length - 3
+    const mixed = { positions: p.positions, indices: [...p.indices.slice(0, far)] }
+    const c = closureByPosition(mixed.positions, mixed.indices)
+    expect(c).toMatchObject({ boundaryEdges: 3, nonManifoldEdges: 1 })
+    const { body, got } = await watertight(mixed)
+    expect(body.openWhy).toBe('3 open edges, 1 edge where more than two faces meet')
+    expect(got).toBe(
+      'open: 3 open edges, 1 edge where more than two faces meet; repair can close the open edges, but it leaves surfaces that touch without joining as they are, so rebuild that join so the shapes overlap a little',
+    )
+  })
+
+  it('reads a design with no parts as open, with no faces', async () => {
+    const { body, got } = await watertight(null)
+    expect(body).toMatchObject({ watertight: false, openWhy: 'no faces' })
+    expect(got).toBe('open: no faces; repair the part or rebuild the step that left it open')
+  })
+
+  it('counts in words, one and many', () => {
+    expect(notClosedWords({ boundaryEdges: 1, nonManifoldEdges: 2, flippedEdges: 1 })).toBe('1 open edge, 2 edges where more than two faces meet, 1 edge between faces turned opposite ways')
+    expect(notClosedWords({ boundaryEdges: 2, nonManifoldEdges: 0, flippedEdges: 2 })).toBe('2 open edges, 2 edges between faces turned opposite ways')
   })
 })

@@ -124,12 +124,15 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
 
 /**
  * Why a body is not closed, in words that say what to do: surfaces that touch without joining leave edges where more
- * than two faces meet, and gaps leave open edges.
+ * than two faces meet (repair leaves those as they are), while gaps leave open edges and faces turned the wrong way,
+ * which repair can close. When both kinds are there, each gets its own advice.
  */
 function openWords(why: string | undefined): string {
   if (!why) return 'open'
-  if (/more than two faces/.test(why)) return `open: ${why} (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little`
-  return `open: ${why}; repair the part or rebuild the step that left it open`
+  if (!/more than two faces/.test(why)) return `open: ${why}; repair the part or rebuild the step that left it open`
+  const closable = [/open edge/.test(why) ? 'open edges' : null, /turned opposite ways/.test(why) ? 'edges between faces turned opposite ways' : null].filter((x): x is string => x !== null)
+  if (closable.length === 0) return `open: ${why} (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little`
+  return `open: ${why}; repair can close the ${closable.join(' and the ')}, but it leaves surfaces that touch without joining as they are, so rebuild that join so the shapes overlap a little`
 }
 
 /** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
