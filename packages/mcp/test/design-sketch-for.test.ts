@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { Design, DesignHost, SketchItem } from '@slicerx/cad-history'
 import { describe, expect, it, vi } from 'vitest'
 import { cadTools, wireSketchVia, type SketchVia } from '../src/cad'
+import { paintTools } from '../src/paint'
 import { designToolset, NO_CAD_FILES, NO_ENGINE_HOST } from '../src/toolset'
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -145,13 +146,44 @@ describe('the design a sketch is drawn for and used on', () => {
 })
 
 describe('the change file for designs moved onto the bed', () => {
-  it('names each tool at the version it has', () => {
+  // The design and paint tools' versions on main when this change was made (fixtures/design-tool-versions-main.json,
+  // read from main's toolset). A tool this change leaves as main has it is listed here with why its answer is the
+  // same; every other tool must be one minor version past main's and named in the change file at that version.
+  const SAME_AS_MAIN: Record<string, string> = {
+    'design.timeline': 'lists the timeline as stored: frames and transforms in plate coordinates, as on main',
+    'design.roll': 'moves the rollback marker and says which steps it holds back; no design summary or coordinates',
+    'design.check': 'checks a design against its plan by feature tags and sizes; no coordinates in its answer',
+    'design.put_plan': 'stores a plan for a client; no design is read',
+    'geom.sketch_check': 'checks loops given in a sketch plane; no design is read',
+    'geom.sketch_solve': 'solves loops given in a sketch plane; no design is read',
+    'geom.sketch_edit': 'edits loops given in a sketch plane; no design is read',
+    'paint.preview': 'previews paint on a design\'s parts in their own frame; no design summary',
+    'paint.regions': 'reads painted regions of a design\'s parts in their own frame; no design summary',
+  }
+  const main = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'design-tool-versions-main.json'), 'utf8')) as Record<string, string>
+  const tools = new Map([...designToolset(NO_ENGINE_HOST), ...paintTools({ deps: {} } as never)].map((t) => [t.name, t.version]))
+  const minorPast = (v: string) => {
+    const [a, b] = v.split('.').map(Number)
+    return `${a}.${b! + 1}.0`
+  }
+
+  it('names each changed tool at one minor version past main, and every tool this leaves as main is listed with why', () => {
     const text = readFileSync(join(__dirname, '..', 'changes', 'fix-mimir-design-placement.md'), 'utf8')
-    const named = [...text.matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)/g)].map(([, n, v]) => [n!, v!] as const)
-    expect(named.length).toBeGreaterThan(30)
-    const tools = new Map(designToolset(NO_ENGINE_HOST).map((t) => [t.name.replace('.', '_'), t.version]))
-    for (const [n, v] of named) expect(tools.get(n), n).toBe(v)
-    // design.new and design.open return the design summary too, which has placedMm and bounds in the design's frame
-    expect(named.map(([n]) => n)).toEqual(expect.arrayContaining(['design_new', 'design_open']))
+    const named = new Map([...text.matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)/g)].map(([, n, v]) => [n!, v!] as const))
+    expect(named.size).toBeGreaterThan(30)
+    for (const [name, version] of tools) {
+      const key = name.replace('.', '_')
+      if (name in SAME_AS_MAIN) {
+        expect(version, `${name} is listed as left as main`).toBe(main[name])
+        expect(named.has(key), `${name} is listed as left as main`).toBe(false)
+        continue
+      }
+      // a tool main does not have is new and needs no bump; every other one moved one minor version past main
+      if (main[name] === undefined) continue
+      expect(version, name).toBe(minorPast(main[name]))
+      expect(named.get(key), `${name} in the change file`).toBe(version)
+    }
+    for (const [key, version] of named) expect(tools.get(key.replace('_', '.')), key).toBe(version)
+    for (const name of Object.keys(SAME_AS_MAIN)) expect(tools.has(name), name).toBe(true)
   })
 })
