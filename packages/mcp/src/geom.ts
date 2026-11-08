@@ -13,7 +13,7 @@ import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
 import { productName } from '@slicerx/contracts'
 import { modelingTools } from './modeling-tools'
-import { resolveModel, ToolInputError, type PathPolicy } from './models'
+import { checkReadable, resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
 import { modelArg, vec3, type GeomCall } from './args'
@@ -89,8 +89,11 @@ export function geomCaller(deps: GeomToolDeps): GeomCall {
 }
 
 /** The CAD tools' files on this server: the sx-geom program on STL files, model paths from the policy. */
+/** The images design.trace_image reads. */
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg']
+
 export function cadFiles(deps: GeomToolDeps): CadFiles {
-  return { engine: Boolean(deps.bin), call: geomCaller(deps), path: (model) => resolveModel(deps.policy, model), stl: (stlPath) => readStlPositions(readFileSync(stlPath)) }
+  return { engine: Boolean(deps.bin), call: geomCaller(deps), path: (model) => resolveModel(deps.policy, model), stl: (stlPath) => readStlPositions(readFileSync(stlPath)), image: (p) => readFileSync(checkReadable(deps.policy, p, IMAGE_EXTENSIONS)) }
 }
 
 /** The engine as a history replay calls it: JSON in, meshes back as numbers (with their faces), no files. */
