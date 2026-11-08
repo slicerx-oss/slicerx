@@ -25,3 +25,21 @@ it('notes a join that leaves the part open, and nothing on a closed one', async 
   const closed = await replayHistory(engine(true), { history: sweep() })
   expect(closed.status[0]).toEqual({ state: 'done' })
 })
+
+// A bore cut the same size as the wall it meets (a 25 mm bore up a stem whose inside is 25 mm) leaves the part open;
+// the cut lands, and its step says so, so the next join is not the first to hear of it
+const bore = (): History => ({
+  version: 1,
+  base: [base()],
+  steps: [{ id: 'bore-1', part: 0, transform: [...IDENTITY], params: { op: 'subtract', solids: [{ type: 'cylinder', origin: [5, 5, -1], axis: [0, 0, 1], diameterMm: 4, heightMm: 3 }], label: 'Stem bore' } as never }],
+})
+const cutter = (watertight: boolean) => async (_op: string, req: unknown) => ({ mesh: (req as { mesh: { mesh: unknown } }).mesh.mesh, removedVolumeMm3: 5, watertight, shells: 1 })
+
+it('notes a cut that leaves the part open, and nothing on a closed one', async () => {
+  const open = await replayHistory(cutter(false), { history: bore() })
+  expect(open.status[0]?.state).toBe('done')
+  expect(open.status[0]?.note).toBe(NOT_CLOSED)
+  clearReplayCache()
+  const closed = await replayHistory(cutter(true), { history: bore() })
+  expect(closed.status[0]).toEqual({ state: 'done' })
+})
