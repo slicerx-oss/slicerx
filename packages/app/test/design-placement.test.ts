@@ -19,6 +19,8 @@ import { geom, setGeomProvider } from '../src/geom/client'
 import { readProject, readProjectsWithGeom } from '../src/export/import3mf'
 import { writeProject } from '../src/export/threemf'
 import { NO_MARGINS, printsOnBed, setMarginSource } from '../src/plate/arrange'
+import { copySelection, pasteClipboard } from '../src/plate/clipboard'
+import { setInstanceCount } from '../src/plate/edit'
 import { createHistory } from '../src/plate/history'
 import { startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
@@ -1079,5 +1081,43 @@ describe('the design tools on a landed design', () => {
     expect(volume(entry(b).parts)).toBeCloseTo(BLOCK_MM3 + holeMm3(5), 0)
     expect(onPlate(b)).toEqual({ min: where.min, max: [where.max[0], where.max[1], 15] })
     expect(onPlate(a)).toEqual(aWas)
+  })
+})
+
+describe('copies of a design whose landing made room', () => {
+  // the saucer's landing moved the planter over; a copy of the saucer moved nothing, so undoing the copy's step leaves
+  // the planter where the room move put it
+  async function landedPair(run: ReturnType<typeof toolsOn>) {
+    const planter = String((await run('design.new', { name: 'Planter' })).output['design'])
+    await run('geom.extrude', { design: planter, shape: PLANTER, distance_mm: 100 })
+    const saucer = String((await run('design.new', { name: 'Saucer' })).output['design'])
+    expect((await run('geom.extrude', { design: saucer, shape: SAUCER, distance_mm: 15 })).summary).toMatch(/Planter moved by/)
+    // a bed with room for a copy beside them
+    set((s) => ({ bed: { ...s.bed, widthMm: 512, depthMm: 512 } }))
+    return { planter, saucer }
+  }
+  const standing = (id: string) => ({ transform: [...entry(id).transform], placed: entry(id).history?.placed })
+
+  it.each([
+    ['pasted', (saucer: string) => {
+      set({ selection: saucer, selectedIds: [saucer] })
+      expect(copySelection()).toBe(1)
+      return pasteClipboard()[0]!
+    }],
+    ['added as an instance', (saucer: string) => {
+      expect(setInstanceCount(saucer, 2)).toBe(true)
+      return get().plate.find((e) => e.instanceOf === saucer)!.id
+    }],
+  ])('leaves the others where they stand when the step of a copy %s is undone', { timeout: 60_000 }, async (_how, copyOf) => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter, saucer } = await landedPair(run)
+    const was = { planter: standing(planter), saucer: standing(saucer) }
+    const copy = copyOf(saucer)
+    expect(copy).toBeDefined()
+    await run('design.undo', { design: copy })
+    expect(get().plate.some((e) => e.id === copy)).toBe(false)
+    expect({ planter: standing(planter), saucer: standing(saucer) }).toEqual(was)
+    // the original's own undo still moves the planter back
+    expect(entry(saucer).roomMoves?.moves.map((m) => m.id)).toEqual([planter])
   })
 })
