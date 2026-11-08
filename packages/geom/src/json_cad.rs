@@ -215,6 +215,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.pattern" => sketch_edit_op(req, "pattern"),
         #[cfg(feature = "cad")]
         "sketch.svg" => sketch_svg_op(req),
+        #[cfg(feature = "trace")]
+        "sketch.trace" => sketch_trace_op(req, files),
         _ => return None,
     })
 }
@@ -224,6 +226,47 @@ fn sketch_svg_op(req: &Value) -> Result<Value> {
     let text: String = field(req, "svg")?;
     let opts: crate::sketch_svg::SvgSketchOptions = field_or_default(req, "options")?;
     to_value(&crate::sketch_svg::sketch_svg(&text, &opts)?)
+}
+
+/// `{image: {base64} | {path} | {rgba, width, height}, options}`: a PNG or JPEG file, or pixels already decoded (rgba
+/// base64, rows from the top), traced into sketch loops.
+#[cfg(feature = "trace")]
+fn sketch_trace_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    use crate::raster::{self, Raster};
+    use crate::sketch_trace::{self, SketchTraceOptions};
+    use std::borrow::Cow;
+    let opts: SketchTraceOptions = field_or_default(req, "options")?;
+    let image = req
+        .get("image")
+        .ok_or_else(|| Error::invalid("image", "a file as base64 or a path, or rgba pixels"))?;
+    let bytes = |b: &str| base64_decode(b).ok_or_else(|| Error::invalid("image", "bad base64"));
+    if let Some(rgba) = image.get("rgba").and_then(Value::as_str) {
+        let (w, h): (usize, usize) = (field(image, "width")?, field(image, "height")?);
+        if w == 0 || h == 0 || w > raster::MAX_SIDE || h > raster::MAX_SIDE {
+            return Err(Error::invalid(
+                "image",
+                format!("rgba pixels are 1 to {} a side", raster::MAX_SIDE),
+            ));
+        }
+        let data = bytes(rgba)?;
+        if data.len() != w * h * 4 {
+            return Err(Error::invalid("image", "rgba holds width x height x 4 bytes"));
+        }
+        let px = data.as_chunks::<4>().0.to_vec();
+        let r = Raster::new(w, h, px).map_err(|_| Error::invalid("image", "rgba pixels"))?;
+        return to_value(&sketch_trace::sketch_trace(Cow::Owned(r), &opts)?);
+    }
+    let file = if let Some(b) = image.get("base64").and_then(Value::as_str) {
+        bytes(b)?
+    } else if let Some(p) = image.get("path").and_then(Value::as_str) {
+        files(p)?
+    } else {
+        return Err(Error::invalid(
+            "image",
+            "a file as base64 or a path, or rgba pixels",
+        ));
+    };
+    to_value(&sketch_trace::sketch_trace_bytes(&file, &opts)?)
 }
 
 fn boolean_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {

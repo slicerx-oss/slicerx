@@ -79,6 +79,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("sketch.chamfer", "cad"),
     ("sketch.solve", "cad"),
     ("sketch.svg", "cad"),
+    ("sketch.trace", "trace"),
     ("hole.find", "holes"),
     ("hole.apply", "holes"),
     ("thread.find", "threads"),
@@ -127,6 +128,7 @@ fn has(feature: &str) -> bool {
         "hollow" => cfg!(feature = "hollow"),
         "formats" => cfg!(feature = "formats"),
         "texture" => cfg!(feature = "texture"),
+        "trace" => cfg!(feature = "trace"),
         "brep" => cfg!(feature = "brep"),
         _ => false,
     }
@@ -1817,5 +1819,53 @@ mod tests {
         assert_eq!(out["sizeMm"], json!([40.0, 20.0]));
         assert_eq!(out["check"]["ok"], true);
         assert!(call("sketch.svg", &json!({ "svg": "<svg/>" }).to_string()).is_err());
+    }
+
+    #[cfg(feature = "trace")]
+    #[test]
+    fn sketch_trace_takes_a_file_or_pixels_and_its_loops_extrude() {
+        // a 40 px black square on white, 60 px across
+        let mut rgba = Vec::new();
+        for y in 0..60 {
+            for x in 0..60 {
+                let inside = (10..50).contains(&x) && (10..50).contains(&y);
+                rgba.extend(if inside {
+                    [0, 0, 0, 255]
+                } else {
+                    [255, 255, 255, 255]
+                });
+            }
+        }
+        let png = crate::raster::tests::png(60, 60, 4, &rgba, None);
+        let options = json!({ "widthMm": 20, "center": [100, 100], "fit": "curves" });
+        let file = run(
+            "sketch.trace",
+            &json!({ "image": { "base64": base64_encode(&png) }, "options": options }),
+        );
+        let pixels = run(
+            "sketch.trace",
+            &json!({ "image": { "rgba": base64_encode(&rgba), "width": 60, "height": 60 }, "options": options }),
+        );
+        assert_eq!(file["loops"], pixels["loops"]);
+        assert_eq!(file["counts"]["lines"], 4);
+        assert_eq!(file["sizeMm"], json!([20.0, 20.0]));
+        assert_eq!(file["imagePx"], json!([60, 60]));
+        assert_eq!(file["mode"], "dark");
+        assert_eq!(file["check"]["ok"], true);
+        assert!(file.get("previewPng").is_none());
+        let solid = run(
+            "shape.extrude",
+            &json!({ "shape": { "type": "sketch", "loops": file["loops"] }, "spec": { "distanceMm": 2.0 } }),
+        );
+        let v = solid["volumeMm3"].as_f64().unwrap();
+        assert!((v - 800.0).abs() < 4.0, "{v}");
+        for bad in [
+            json!({ "image": { "base64": "AAAA" } }),
+            json!({ "image": { "rgba": "AAAA", "width": 2, "height": 2 } }),
+            json!({ "image": {} }),
+            json!({ "image": { "base64": base64_encode(&png) }, "options": { "fit": "blobs" } }),
+        ] {
+            assert!(call("sketch.trace", &bad.to_string()).is_err(), "{bad}");
+        }
     }
 }
