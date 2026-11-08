@@ -968,23 +968,23 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
-    if (startsPart(tool.name, input)) {
-      const design = (input as { design?: unknown } | null)?.design
-      if (findTool('pilot.sheet')) {
-        // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in,
-        // and never for a part in another design; with no design recorded for it, any design may be its own
-        const under = sheetDesigns.get(sessionId)
-        const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
-        if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
-      }
-      // the planned part's first body waits while its plan is stale, so it is never built on the old sizes; starting or
-      // opening a design builds nothing, and another design's part never waits
-      if (waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
-      if (findTool('pilot.sheet')) {
-        usedSheet.add(sessionId)
-        if (typeof design === 'string' && design) startedUnder(sessionId, design)
-        else starting = true
-      }
+    const design = (input as { design?: unknown } | null)?.design
+    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+      // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
+      // never for a part in another design; with no design recorded for it, any design may be its own
+      const under = sheetDesigns.get(sessionId)
+      const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
+      if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+    }
+    // the planned part waits while its plan is stale, so it is never built on the old sizes: its first body, and any
+    // change to its design (one started from a model has bodies already; a join on an empty one makes none). Starting
+    // or opening a design builds nothing, and another design never waits.
+    const changes = startsPart(tool.name, input) || (tool.name.startsWith('geom.') && tool.permission !== 'read')
+    if (changes && waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
+    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+      usedSheet.add(sessionId)
+      if (typeof design === 'string' && design) startedUnder(sessionId, design)
+      else starting = true
     }
     // the planned part is being built: a sheet from here on is another part's
     if (startsPart(tool.name, input)) endPrintInPlace(sessionId)
