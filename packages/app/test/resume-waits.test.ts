@@ -11,7 +11,8 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { RESUME_VOID, resumeFor, SLICE_NOT_CURRENT } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
 import { EXPORT_SWITCHED, exportAllPlates, exportGcode3mf } from '../src/export/actions'
-import { createPageBridge, installCapture, type Capture } from '../src/agent-bridge'
+import { createPageBridge, installCapture, sliceSummary, type Capture } from '../src/agent-bridge'
+import { platesState } from '../src/app-link/plate-state'
 import { builtinCommands } from '../src/commands/builtin'
 import { registerCommands } from '../src/commands/registry'
 import { switchPlate } from '../src/plate/plates'
@@ -450,6 +451,17 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
     } finally {
       off()
     }
+  })
+
+  it('reports a slice an object rename has put out of date as stale, as the plates list does', async () => {
+    const e = engine()
+    set({ autoSlice: false })
+    await slicePlate(e.host)
+    expect(sliceSummary(get())).toMatchObject({ status: 'done', stale: false })
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    expect(sliceSummary(get())).toMatchObject({ status: 'done', stale: true })
+    expect(platesState().plates[0]!.slice).toBe('stale')
   })
 
   it("mimir's slice reads a rename since the last slice as stale when no new slice ran", async () => {
