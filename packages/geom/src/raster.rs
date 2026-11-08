@@ -267,9 +267,9 @@ fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
         }
         let m = *bytes.get(i + 1)?;
         match m {
-            // fill bytes, then markers with no length: a stuffed zero, TEM, restarts and a repeated start
+            // fill bytes, and a stuffed zero; every other marker has a length, as the decoder reads it
             0xFF => i += 1,
-            0x00 | 0x01 | 0xD0..=0xD8 => i += 2,
+            0x00 => i += 2,
             // the end or the scan with no frame seen
             0xD9 | 0xDA => return None,
             _ => {
@@ -288,28 +288,23 @@ fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
     }
 }
 
-/// Refuses a JPEG whose frame header asks for more decoding memory than [`MAX_DECODE_BYTES`], or for more blocks
-/// than its bytes could hold, before the decoder sets aside anything for it.
-fn jpeg_budget(bytes: &[u8], sof: usize, (kind, w, h): Frame) -> std::result::Result<(), Unusable> {
-    // each component's sampling factors, in three bytes after the count
-    let n = usize::from(*bytes.get(sof + 9).ok_or(Unusable::Damaged)?);
-    let comps = bytes.get(sof + 10..sof + 10 + 3 * n).ok_or(Unusable::Damaged)?;
-    let factors: Vec<(usize, usize)> = comps
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .map(|c| (usize::from(c[1] >> 4).max(1), usize::from(c[1] & 15).max(1)))
-        .collect();
-    let (hmax, vmax) = factors.iter().fold((1, 1), |m, &(a, b)| (m.0.max(a), m.1.max(b)));
-    let mcus = w.div_ceil(8 * hmax) * h.div_ceil(8 * vmax);
-    // the first scan codes every block in a bit at least
-    let blocks = mcus * factors.iter().map(|&(a, b)| a * b).max().unwrap_or(1);
-    if bytes.len() < blocks / 8 {
+/// Refuses a JPEG frame, as the decoder read it from the headers, that asks for more decoding memory than
+/// [`MAX_DECODE_BYTES`], or for more blocks than the file's `bytes` could hold, before anything is set aside for it.
+/// The sampling is not known here, so each component is counted at full size on blocks of up to 2 x 2.
+fn jpeg_budget(
+    bytes: usize,
+    w: usize,
+    h: usize,
+    components: usize,
+    progressive: bool,
+) -> std::result::Result<(), Unusable> {
+    // the first scan codes every block of the largest component in a bit at least
+    if bytes < w.div_ceil(8) * h.div_ceil(8) / 8 {
         return Err(Unusable::Damaged);
     }
     // the RGB output, and for a progressive frame two bytes for each coefficient of every block, kept to the end
-    let coefficients: usize = if kind == 0xC2 {
-        factors.iter().map(|&(a, b)| mcus * a * b * 64 * 2).sum()
+    let coefficients = if progressive {
+        components.max(1) * w.div_ceil(16) * 2 * h.div_ceil(16) * 2 * 64 * 2
     } else {
         0
     };
@@ -361,28 +356,41 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     use zune_jpeg::zune_core::bytestream::ZCursor;
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
-    // the decoder reports a size over its limits as a damaged file, so the size is read first
-    if let (Some(sof), Some((kind, w, h))) = (jpeg_sof(bytes), jpeg_frame(bytes)) {
+    // the decoder reports a size over its limits, or a kind it does not read, as a damaged file, so a frame header
+    // found first says which; this only refuses sooner, and the budget below runs on the frame the decoder reads
+    if let Some((kind, w, h)) = jpeg_frame(bytes) {
         // within these sides a JPEG is always under the pixel limit
         if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE {
             return Err(Unusable::TooLarge);
         }
-        // only baseline, extended huffman and progressive are read; the decoder calls the rest damaged
+        // only baseline, extended huffman and progressive are read
         if kind > 0xC2 {
             return Err(Unusable::Unsupported);
         }
-        jpeg_budget(bytes, sof, (kind, w, h))?;
     }
     let options = DecoderOptions::default()
         .jpeg_set_out_colorspace(ColorSpace::RGB)
         .set_max_width(MAX_JPEG_SIDE)
         .set_max_height(MAX_JPEG_SIDE);
     let mut dec = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options);
-    let rgb = dec.decode().map_err(|e| match e {
+    let refused = |e: zune_jpeg::errors::DecodeErrors| match e {
         zune_jpeg::errors::DecodeErrors::LargeDimensions(_) => Unusable::TooLarge,
         zune_jpeg::errors::DecodeErrors::Unsupported(_) => Unusable::Unsupported,
         _ => Unusable::Damaged,
-    })?;
+    };
+    // the headers alone, then the budget on the frame they hold, and only then the pixels
+    dec.decode_headers().map_err(refused)?;
+    let head = dec.info().ok_or(Unusable::Damaged)?;
+    // the decoder reads only baseline, extended huffman and progressive frames
+    let progressive = head.sof.is_progressive();
+    jpeg_budget(
+        bytes.len(),
+        usize::from(head.width),
+        usize::from(head.height),
+        usize::from(head.components),
+        progressive,
+    )?;
+    let rgb = dec.decode().map_err(refused)?;
     let info = dec.info().ok_or(Unusable::Damaged)?;
     let (w, h) = (usize::from(info.width), usize::from(info.height));
     if rgb.len() != w * h * 3 {
@@ -837,9 +845,9 @@ pub(crate) mod tests {
                 jpeg(&[&app0, &[0x00, 0x11, 0x22], &big]),
                 Some((0xC0, 16_000, 10)),
             ),
-            // a stuffed zero, a restart and a second start marker carry no length
+            // a stuffed zero carries no length, and a restart a length as the decoder reads it
             (
-                jpeg(&[&[0xFF, 0x00, 0xFF, 0xD3, 0xFF, 0xD8], &big]),
+                jpeg(&[&[0xFF, 0x00, 0xFF, 0xD3, 0x00, 0x04, 0x01, 0x02], &big]),
                 Some((0xC0, 16_000, 10)),
             ),
             // the first frame counts
@@ -1052,6 +1060,35 @@ pub(crate) mod tests {
         chunk(b"IDAT", &miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6));
         chunk(b"IEND", &[]);
         out
+    }
+
+    #[test]
+    fn a_large_frame_hidden_from_a_marker_walk_is_still_held_to_the_budget() {
+        // the decoder reads a length after every marker but fill bytes and a stuffed zero, so these segments hide
+        // what they hold: a scan start, or a small decoy frame ahead of the real one
+        let real = flat_jpeg(0xC2, 8192, 8192, 3, 1024 * 1024 / 8 + 64);
+        let decoy = sof(0xC0, 8, 8);
+        let mut hides_decoy = vec![0xFF, 0xD0];
+        hides_decoy.extend_from_slice(&u16::try_from(decoy.len() + 2).unwrap().to_be_bytes());
+        hides_decoy.extend_from_slice(&decoy);
+        for (what, wrapper) in [
+            (
+                "FF 01 over a scan start",
+                vec![0xFF, 0x01, 0x00, 0x06, 0xFF, 0xDA, 0x00, 0x00],
+            ),
+            ("FF D0 over a small frame", hides_decoy),
+        ] {
+            let mut file = real[..2].to_vec();
+            file.extend_from_slice(&wrapper);
+            file.extend_from_slice(&real[2..]);
+            assert_eq!(decode(&file).err(), Some(Unusable::TooLarge), "{what}");
+        }
+        // the same wrappers round a small image leave it readable
+        let small = flat_jpeg(0xC0, 64, 64, 1, 64 * 2 / 8);
+        let mut file = small[..2].to_vec();
+        file.extend_from_slice(&[0xFF, 0x01, 0x00, 0x06, 0xFF, 0xDA, 0x00, 0x00]);
+        file.extend_from_slice(&small[2..]);
+        assert_eq!(decode(&file).map(|r| (r.w, r.h)), Ok((64, 64)));
     }
 
     #[test]
