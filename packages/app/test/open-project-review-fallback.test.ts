@@ -15,6 +15,16 @@ const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles:
 const hostWith = (reviewScripts: (inputs: ScriptReviewInput[]) => Promise<ScriptReview[]>): Host =>
   ({ kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string) => handle(name), reviewScripts } }) as unknown as Host
 
+/** How long the open waits for the engine's script review (REVIEW_WAIT_MS in src/project/script-review.ts), and some slack. */
+const REVIEW_WAIT_MS = 15_000
+const SLACK_MS = 1_000
+
+/** Real time, not fake: lets the open's module loads and promises run. Resolves when `until` is true or `ms` has passed. */
+async function realWait(until: () => boolean, ms: number): Promise<void> {
+  const end = Date.now() + ms
+  while (!until() && Date.now() < end) await new Promise((resolve) => setImmediate(resolve))
+}
+
 const buf = (b: Uint8Array): ArrayBuffer => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
 const CUBE = '<object id="1" name="Cube" type="model"><mesh><vertices>' +
   [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]].map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join('') +
@@ -52,15 +62,18 @@ afterEach(() => vi.useRealTimers())
 describe('opening a project when its G-code check fails', () => {
   it.each(FAILURES)('still applies the project settings when the check %s', async (_name, review) => {
     let done = false
-    const opening = openModelBytes(hostWith(review), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
-    // The clock runs ahead while the open loads its modules, so a check that never answers is given up on. The loop is
-    // bounded by real time, not by a count of turns: this test can be the first of the file to open a project, and its
-    // cold module loads take more turns than any count, which left the check's clock stopped before it started.
-    const until = Date.now() + 45_000
-    while (!done && Date.now() < until) {
-      await vi.advanceTimersByTimeAsync(1_000)
-      await new Promise((resolve) => setImmediate(resolve))
-    }
+    let asked = false
+    const opening = openModelBytes(hostWith((inputs) => { asked = true; return review(inputs) }), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
+    // The open loads its modules first, and the first test of the file to open a project loads them cold, which takes
+    // real time and any number of turns. So the clock stays still until the open has asked for the review, which is
+    // when the check's own timer starts. Then fake time moves by the wait the open gives the review plus some slack, and
+    // no more: a longer wait fails here instead of passing.
+    await realWait(() => asked, 30_000)
+    expect(asked, 'the open never asked for the script review').toBe(true)
+    await vi.advanceTimersByTimeAsync(REVIEW_WAIT_MS + SLACK_MS)
+    // What follows the review (applying the settings) can need a cold module load too, so give it real time only.
+    await realWait(() => done, 15_000)
+    expect(done, `the open did not give up on the review within ${REVIEW_WAIT_MS + SLACK_MS} ms of fake time`).toBe(true)
     await opening
     expect(get().plate).toHaveLength(1)
     expect(get().overrides['brim_type']).toBe('brim_ears')
