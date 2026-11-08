@@ -136,11 +136,65 @@ describe('build eval scoring', () => {
     const bar = box(15, 15, 55, 55, 25, 65)
     const leg = box(45, 15, 40, 55, 25, 65)
     const c = BUILD_CASES.find((x) => x.id === 'cable-hook')!
-    const held = hookCheck(c.hook!, [], [plate, rod, bar, leg])
+    const held = hookCheck(c.hook!, [plate, rod, bar, leg])
     expect(held, held.detail).toMatchObject({ pass: true })
     expect(held.detail).toMatch(/leg hangs 25 mm below the top of the hook/)
-    const stub = hookCheck(c.hook!, [], [plate, rod, bar])
+    const stub = hookCheck(c.hook!, [plate, rod, bar])
     expect(stub, stub.detail).toMatchObject({ pass: false })
+  })
+
+  // a round column from z0 to z1 around (cx, cy), r0 across at the bottom and r1 at the top, with a bore `wall` mm in
+  // from the outside when wall is given: its outer and inner sides and its ends, as a revolve or a loft makes them
+  const column = (cx: number, cy: number, z0: number, z1: number, r0: number, r1: number, wall?: number): MeshPart => {
+    const n = 48
+    const pos: number[] = []
+    const idx: number[] = []
+    const ring = (z: number, r: number) => {
+      const at = pos.length / 3
+      for (let k = 0; k < n; k++) pos.push(cx + r * Math.cos((2 * Math.PI * k) / n), cy + r * Math.sin((2 * Math.PI * k) / n), z)
+      return at
+    }
+    const side = (a: number, b: number) => {
+      for (let k = 0; k < n; k++) idx.push(a + k, a + ((k + 1) % n), b + k, a + ((k + 1) % n), b + ((k + 1) % n), b + k)
+    }
+    const ob = ring(z0, r0)
+    const ot = ring(z1, r1)
+    side(ob, ot)
+    if (wall) {
+      const ib = ring(z0, r0 - wall)
+      const it2 = ring(z1, r1 - wall)
+      side(it2, ib)
+      side(ib, ob)
+      side(ot, it2)
+    } else {
+      const c0 = pos.length / 3
+      pos.push(cx, cy, z0, cx, cy, z1)
+      for (let k = 0; k < n; k++) idx.push(c0, ob + ((k + 1) % n), ob + k, c0 + 1, ot + k, ot + ((k + 1) % n))
+    }
+    return { name: 'column', slot: 1, positions: new Float32Array(pos), indices: new Uint32Array(idx) }
+  }
+
+  it('reads a stand\'s stem from the part itself, so a revolved stem is judged as a lofted one', () => {
+    const c = BUILD_CASES.find((x) => x.id === 'headphone-stand')!
+    // a base 110 mm across and 12 mm thick, a hollow stem tapering from 30 to 22 mm across up to 162 mm, revolved
+    const base = column(128, 128, 0, 12, 55, 55)
+    const stem = column(128, 128, 12, 162, 15, 11, 2.5)
+    // an arm out of the stem's side 10 mm below its top, 60 mm long, and a lip 15 mm up at its end
+    const arm = box(137, 122, 146, 196, 134, 158)
+    const lip = box(186, 122, 158, 196, 134, 173)
+    const held = hookCheck(c.hook!, [base, stem, arm, lip])
+    expect(held, held.detail).toMatchObject({ pass: true })
+    // read on rings inside its ends: 29 mm across 10 mm up the stem
+    expect(held.detail).toMatch(/stem tapers from 29 to 22 mm across, hollow/)
+    expect(held.detail).toMatch(/leaves the stem side below its top/)
+    // the same arm with no lip: nothing keeps the headband on
+    const bare = hookCheck(c.hook!, [base, stem, arm])
+    expect(bare, bare.detail).toMatchObject({ pass: false })
+    expect(bare.detail).toMatch(/rises only/)
+    // an arm that sits on the stem's top, not its side
+    const onTop = hookCheck(c.hook!, [base, stem, box(120, 122, 162, 196, 134, 170), box(186, 122, 170, 196, 134, 185)])
+    expect(onTop, onTop.detail).toMatchObject({ pass: false })
+    expect(onTop.detail).toMatch(/meets the stem only at its top/)
   })
 
   it('runs the tab on a key for the eval model', () => {

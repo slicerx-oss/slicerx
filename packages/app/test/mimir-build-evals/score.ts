@@ -7,7 +7,6 @@
 // question card or nudge is an extra turn, and one extra turn fails the run however good the part is.
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { bedFit, bodyBoxes, bodyCount, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
-import { frameFor } from '../../../mcp/src/cad'
 import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
 
 export interface Check {
@@ -124,21 +123,59 @@ export function assemblySizes(parts: readonly MeshPart[]): [number, number, numb
 type V3 = [number, number, number]
 type Ring = { z: number; c: [number, number]; r: number }
 
-/** A loft profile on a level plane as a ring: its height, center and half its widest side, else null. */
-function ringOf(p: unknown): Ring | null {
-  const prof = p as { frame?: { origin?: V3; normal?: V3; u?: V3 }; loops?: unknown[] } | null
-  const loop = prof?.loops?.[0] as { type?: string; center?: [number, number]; diameterMm?: number; points?: [number, number][]; start?: [number, number]; segments?: { to?: [number, number] }[] } | undefined
-  if (!loop) return null
-  const f = prof?.frame?.origin && prof.frame.normal ? frameFor(prof.frame.origin, prof.frame.normal, prof.frame.u) : { origin: [0, 0, 0] as V3, normal: [0, 0, 1] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
-  if (Math.abs(f.normal[2]) < 0.99) return null
-  const at = ([a, b]: [number, number]): [number, number] => [f.origin[0] + a * f.u[0] + b * f.v[0], f.origin[1] + a * f.u[1] + b * f.v[1]]
-  if (loop.type === 'circle' && loop.center && loop.diameterMm) return { z: f.origin[2], c: at(loop.center), r: loop.diameterMm / 2 }
-  const pts = (loop.points ?? (loop.start ? [loop.start, ...(loop.segments ?? []).flatMap((g) => (g.to ? [g.to] : []))] : [])).map(at)
-  if (pts.length < 3) return null
-  const xs = pts.map((q) => q[0])
-  const ys = pts.map((q) => q[1])
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
-  return { z: f.origin[2], c: [(x0 + x1) / 2, (y0 + y1) / 2], r: Math.max(x1 - x0, y1 - y0) / 2 }
+/** Sectors around the stem's axis that a ring of its side must reach, so a hook reaching out one side is not read as stem. */
+const SECTORS = 12
+/** Height of each ring read off the stem, mm: more than the spacing of surfacePoints along a long side (up to 60 a side). */
+const RING_MM = 5
+
+/**
+ * The stem read from the part itself, whatever made it (a loft, a revolve, an extrude): rings of its outer side at
+ * each height around a vertical axis through the middle of the part halfway up. A ring's radius is the median of its
+ * farthest points in each sector, so a hook or arm on one side does not widen it; the stem is the run of round rings
+ * that go all the way round and are no wider than half again its width halfway up, which leaves out a wide base under
+ * it and whatever stands on its top. `hollow` when its side has a bore inside it halfway up. Null when there is no such column.
+ */
+function stemOf(pts: readonly V3[]): { rings: Ring[]; hollow: boolean } | null {
+  const z0 = least(pts, (q) => q[2])
+  const z1 = most(pts, (q) => q[2])
+  const h = z1 - z0
+  if (h < 20) return null
+  const mid = pts.filter((q) => q[2] > z0 + 0.4 * h && q[2] < z0 + 0.6 * h)
+  if (!mid.length) return null
+  const c: [number, number] = [(least(mid, (q) => q[0]) + most(mid, (q) => q[0])) / 2, (least(mid, (q) => q[1]) + most(mid, (q) => q[1])) / 2]
+  const d = (q: V3) => Math.hypot(q[0] - c[0], q[1] - c[1])
+  const sector = (q: V3) => Math.min(SECTORS - 1, Math.floor(((Math.atan2(q[1] - c[1], q[0] - c[0]) + Math.PI) / (2 * Math.PI)) * SECTORS))
+  // each ring: the median of the farthest point in each sector, or null when a sector has none
+  const bins = Math.ceil(h / RING_MM)
+  const far: number[][] = Array.from({ length: bins }, () => new Array<number>(SECTORS).fill(-1))
+  for (const q of pts) {
+    const b = Math.min(bins - 1, Math.floor((q[2] - z0) / RING_MM))
+    const k = sector(q)
+    far[b]![k] = Math.max(far[b]![k]!, d(q))
+  }
+  // a ring is round: its lower and upper quartile sectors agree, so an arm out one side does not spoil it, while a
+  // part across the axis (an arm laid over the stem's top) is not read as stem
+  const radius = far.map((f) => {
+    if (f.some((r) => r < 0)) return null
+    const o = [...f].sort((a, b) => a - b)
+    return o[(3 * SECTORS) / 4 - 1]! <= o[SECTORS / 4 - 1]! * 1.25 ? o[SECTORS / 2]! : null
+  })
+  const half = Math.floor(bins / 2)
+  const width = radius[half]
+  if (width == null) return null
+  const isStem = (r: number | null) => r !== null && r <= width * 1.5
+  let lo = half
+  let hi = half
+  while (lo > 0 && isStem(radius[lo - 1]!)) lo--
+  while (hi < bins - 1 && isStem(radius[hi + 1]!)) hi++
+  // the end rings are cut through by the base's top and the stem's own top: read the rings inside them
+  const rings: Ring[] = []
+  for (let b = Math.min(lo + 1, hi); b <= Math.max(hi - 1, lo); b++) rings.push({ z: z0 + (b + 0.5) * RING_MM, c, r: radius[b]! })
+  if (rings.length < 2) return null
+  // a bore: points of the side well inside the stem's outer radius, all the way round, halfway up
+  const ring = pts.filter((q) => Math.floor((q[2] - z0) / RING_MM) === half)
+  const inner = new Set(ring.filter((q) => d(q) < width - 1 && d(q) > 0.5).map(sector))
+  return { rings, hollow: inner.size === SECTORS }
 }
 
 /** Points over every triangle of the parts, about 1.5 mm apart, so a long straight side is read along its length too. */
@@ -161,10 +198,11 @@ const most = <T,>(xs: readonly T[], of: (x: T) => number): number => xs.reduce((
 const least = <T,>(xs: readonly T[], of: (x: T) => number): number => xs.reduce((m, x) => Math.min(m, of(x)), Infinity)
 
 /**
- * Whether the part's hook holds what hangs on it (cases.ts HookSpec). lip reads the stem from the tallest loft that ran
- * on level profiles and added material, so it needs one; leg reads the rod from the part itself.
+ * Whether the part's hook holds what hangs on it (cases.ts HookSpec). lip reads the stem from the part itself (stemOf),
+ * so a revolved, lofted or extruded stem is judged by its shape, and says whether it tapers and is hollow; leg reads the
+ * rod from the part itself.
  */
-export function hookCheck(spec: HookSpec, steps: readonly { tool: string; input: unknown }[], parts: readonly MeshPart[]): Check {
+export function hookCheck(spec: HookSpec, parts: readonly MeshPart[]): Check {
   const pts = surfacePoints(parts)
   if (!pts.length) return { pass: false, detail: 'no part' }
   if (spec.kind === 'leg') {
@@ -182,10 +220,9 @@ export function hookCheck(spec: HookSpec, steps: readonly { tool: string; input:
     const want = spec.rodMm + 5
     return { pass: leg >= want, detail: `leg hangs ${round1(leg)} mm below the top of the hook (want ${want} mm or more)` }
   }
-  // the stem is a loft that adds material: a lofted cut (a bore) is not it
-  const lofts = steps.filter((s) => s.tool === 'geom.loft' && (s.input as { operation?: string } | null)?.operation !== 'cut').map((s) => ((s.input as { profiles?: unknown[] } | null)?.profiles ?? []).map(ringOf))
-  const rings = lofts.filter((l) => l.length >= 2 && l.every((r) => r)).map((l) => (l as Ring[]).sort((a, b) => a.z - b.z)).sort((a, b) => b.at(-1)!.z - b[0]!.z - (a.at(-1)!.z - a[0]!.z))[0]
-  if (!rings) return { pass: false, detail: 'no loft on level profiles to read the stem from' }
+  const stem = stemOf(pts)
+  if (!stem) return { pass: false, detail: 'no round column to read the stem from' }
+  const rings = stem.rings
   const bottom = rings[0]!
   const top = rings.at(-1)!
   // the stem's outer radius at a height, between its profiles and held at the ends
@@ -212,7 +249,9 @@ export function hookCheck(spec: HookSpec, steps: readonly { tool: string; input:
   const tip = tops.get(Math.floor(far / 2)) ?? -Infinity
   const rise = tip - Math.min(...tops.values())
   const lip = rise >= 3
-  return { pass: side && lip, detail: `${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(rise)} mm above the hook's lowest point near the end (want 3 mm or more)` }
+  const across = (r: number) => Math.round(2 * r)
+  const shape = `stem ${across(bottom.r) > across(top.r) ? 'tapers' : 'runs'} from ${across(bottom.r)} to ${across(top.r)} mm across, ${stem.hollow ? 'hollow' : 'solid'}`
+  return { pass: side && lip, detail: `${shape}; ${side ? 'leaves the stem side below its top' : 'meets the stem only at its top'}; tip ${lip ? 'rises' : 'rises only'} ${round1(rise)} mm above the hook's lowest point near the end (want 3 mm or more)` }
 }
 
 export interface CaseScore {
@@ -261,7 +300,7 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   })
   const shown = groups.length > 1 ? groups.map((g) => g.join(' by ')).join(', ') : sizeOf(run.parts).join(' by ')
   out.sizes = { pass: off.length === 0, detail: `${shown} mm${off.length ? `; off: ${off.map((s) => `${s.axis} ${side(s.axis)} (want ${s.minMm} to ${s.maxMm})`).join(', ')}` : ''}` }
-  if (c.hook) out.hook = hookCheck(c.hook, steps, run.parts)
+  if (c.hook) out.hook = hookCheck(c.hook, run.parts)
   out.geometry = [ops, out.watertight, out.bodies, out.minWall, out.bedFit, out.sizes, ...(out.hook ? [out.hook] : [])].every((x) => x.pass)
   out.pass = out.geometry && turns.pass
   return out
