@@ -725,22 +725,7 @@ mod tests {
     #[test]
     fn a_hub_with_one_tooth_arrayed_about_the_hub_makes_a_gear() {
         // a 100 facet hub of r 9.5 with one tooth, from a recorded session
-        let v: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
-        let nums = |k: &str| {
-            v[k].as_array()
-                .unwrap()
-                .iter()
-                .map(|x| x.as_f64().unwrap())
-                .collect::<Vec<_>>()
-        };
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "fixture indices"
-        )]
-        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
-        let m = TriMesh::from_flat(&nums("positions"), &idx).unwrap();
+        let m = hub_tooth();
         let hub = build::cylinder(&crate::vec3::Frame::WORLD, 9.5, 0.0, 10.0, 100).volume();
         let tooth = m.volume() - hub;
         assert!(tooth > 1.0, "{tooth}");
