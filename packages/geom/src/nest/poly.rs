@@ -236,48 +236,9 @@ pub fn dist_to_segment(p: Pt, a: Pt, b: Pt) -> f64 {
     (qx * qx + qy * qy).sqrt()
 }
 
-/// douglas peucker on a closed ring, iterative
+/// douglas peucker on a closed ring
 pub fn simplify_ring(ring: &[Pt], tol: f64) -> Ring {
-    let n = ring.len();
-    if n <= 4 || tol <= 0.0 {
-        return ring.to_vec();
-    }
-    // split at the vertex farthest from the first one so both halves are open chains
-    let a = ring[0];
-    let far = (1..n)
-        .max_by(|&i, &j| {
-            let di = (ring[i][0] - a[0]).m_powi(2) + (ring[i][1] - a[1]).m_powi(2);
-            let dj = (ring[j][0] - a[0]).m_powi(2) + (ring[j][1] - a[1]).m_powi(2);
-            di.total_cmp(&dj).then(j.cmp(&i))
-        })
-        .unwrap_or(n / 2);
-    let mut keep = vec![false; n];
-    keep[0] = true;
-    keep[far] = true;
-    let mut stack = vec![(0usize, far), (far, n)];
-    while let Some((s, e)) = stack.pop() {
-        if e <= s + 1 {
-            continue;
-        }
-        let pe = ring[e % n];
-        let mut best = (0.0, 0usize);
-        for (i, p) in ring.iter().enumerate().take(e).skip(s + 1) {
-            let d = dist_to_segment(*p, ring[s], pe);
-            if d > best.0 {
-                best = (d, i);
-            }
-        }
-        if best.0 > tol {
-            keep[best.1] = true;
-            stack.push((s, best.1));
-            stack.push((best.1, e));
-        }
-    }
-    ring.iter()
-        .zip(&keep)
-        .filter(|(_, k)| **k)
-        .map(|(p, _)| *p)
-        .collect()
+    crate::poly2d::simplify_ring(ring, tol)
 }
 
 /// a simpler region that still covers `r`: grown by `tol`, then simplified by `tol`
