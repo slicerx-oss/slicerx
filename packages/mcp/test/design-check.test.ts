@@ -562,6 +562,24 @@ describe('design.check picks the design it checks', () => {
     expect(plans.get('box-1')?.closed).toBeDefined()
   })
 
+  it('names no plan or design id on the card side when it refuses: nothing built, several open, two named as the part', async () => {
+    const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, undefined, 'card')
+    const refusal = (all: HostDesign[]) =>
+      checkOn(all, card, { planId: 'box-1' }, undefined, true).then(
+        () => '',
+        (e: Error) => e.message,
+      )
+    const none = await refusal([])
+    expect(none).toBe('No design to check: build Spacer first, then check it against its plan.')
+    const several = await refusal([a, b])
+    expect(several).toContain('Open: Bracket, Clip.')
+    const named = await refusal([boxDesign('d1', 'Spacer'), boxDesign('d2', 'spacer '), b])
+    expect(named).toContain('2 open designs are named Spacer')
+    for (const m of [none, several, named]) expect(m, m).not.toMatch(/box-1|\bd[12]\b/)
+    // off the card side the ids stay, for an integrator to check again with
+    await expect(checkOn([], card)).rejects.toThrow('check it against plan box-1')
+  })
+
   it("checks a client's given design for an untied card plan without tying it; the card side ties it", async () => {
     const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, undefined, 'card')
     const client = await checkOn([a, b], card, { planId: 'box-1', design: 'd2' })
