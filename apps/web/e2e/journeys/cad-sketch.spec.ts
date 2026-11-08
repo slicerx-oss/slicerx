@@ -9,7 +9,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, command, facePick, freshBox, height, openStudio, pick, sketchAt, steps, toolPanel } from '../cad-helpers'
 import {
-  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, inputOf, labels, looking, loops, r2, rect, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
+  bedSketch, boxOf, boxesOverControls, designTab, dimsDrawn, ends, extents, grayPng, inputOf, labels, looking, loops, r2, rect, screenAt, shot, shotBoth, size, sketchOnBed, sketchOnTop as sketchOnTopRaw, still, studio,
   type V2, type W,
 } from './lib/cad'
 
@@ -2399,5 +2399,83 @@ test.describe('sketch-svg', () => {
     await expect.poll(() => volume(page)).toBeGreaterThan(3600 - 453 - 3)
     expect(await volume(page)).toBeLessThan(3600 - 453 + 3)
     await shotBoth(page, info, 'svg-sketch-extruded-1440')
+  })
+})
+
+// ---- sketch-trace
+// Trace image in the sketch: a PNG's dark area lands on the bed as loops to edit, sized and centered by the dialog, the
+// hole kept as a circle, and it extrudes like a drawn sketch. The dialog shows the image with the trace over it.
+test.describe('sketch-trace', () => {
+  // a 220 x 140 px dark plate with a round hole 80 px across, in a 300 x 200 px image
+  const ART = grayPng(300, 200, (x, y) => x >= 40 && x < 260 && y >= 30 && y < 170 && Math.hypot(x + 0.5 - 150, y + 0.5 - 100) >= 40)
+  const volume = (page: Page) =>
+    page.evaluate(() => {
+      const sx = (window as unknown as { __sx: { getState(): { plate: { parts: { positions: ArrayLike<number>; indices: ArrayLike<number> }[] }[] } } }).__sx
+      let v = 0
+      for (const p of sx.getState().plate[0]?.parts ?? []) {
+        const at = (i: number) => [p.positions[3 * i]!, p.positions[3 * i + 1]!, p.positions[3 * i + 2]!]
+        for (let t = 0; t < p.indices.length; t += 3) {
+          const [a, b, c] = [at(p.indices[t]!), at(p.indices[t + 1]!), at(p.indices[t + 2]!)]
+          v += (a[0]! * (b[1]! * c[2]! - b[2]! * c[1]!) - a[1]! * (b[0]! * c[2]! - b[2]! * c[0]!) + a[2]! * (b[0]! * c[1]! - b[1]! * c[0]!)) / 6
+        }
+      }
+      return Math.abs(v)
+    })
+
+  test('an image traced to the bed and fit to a width extrudes with its hole', async ({ page }, info) => {
+    const panel = await bedSketch(page)
+    const bed = await page.evaluate(() => (window as unknown as { __sx: { getState(): { bed: { widthMm: number; depthMm: number } } } }).__sx.getState().bed)
+    await panel.getByTestId('sketch-trace-open').click()
+    const dialog = page.getByTestId('trace-dialog')
+    await expect(dialog).toBeVisible()
+    const count = dialog.getByTestId('trace-count')
+    const add = dialog.getByTestId('trace-add')
+    await expect(count).toHaveText('')
+    await expect(add).toBeDisabled()
+    await shotBoth(page, info, 'trace-dialog-empty-1440')
+    await dialog.getByTestId('trace-file').setInputFiles({ name: 'plate.png', mimeType: 'image/png', buffer: ART })
+    await dialog.locator('#trace-value').fill('44')
+    await expect(count).toHaveText(/^2 loops \(1 hole\), 4 lines, 1 circle, 44 x 28 mm/)
+    await expect(dialog.getByTestId('trace-preview')).toBeVisible()
+    // the 300 px image is scaled up to fill the stage with sharp pixels, and the loops are lines over it
+    await expect(dialog.getByTestId('trace-preview')).toHaveAttribute('data-up', '')
+    expect((await dialog.getByTestId('trace-preview').boundingBox())!.width).toBeGreaterThan(450)
+    await expect(dialog.locator('.trace-loops path')).toHaveCount(1)
+    // its middle lands on the middle of the bed unless moved, and the whole dialog is in the window
+    await expect(dialog.locator('#trace-x')).toHaveValue(String(Math.round(bed.widthMm / 2)))
+    await expect(add).toBeInViewport({ ratio: 1 })
+    await shotBoth(page, info, 'trace-dialog-preview-1440')
+
+    // the color mode: a click on the image picks the color under it
+    const what = dialog.getByRole('radiogroup', { name: 'What to trace' })
+    if (await what.count()) await what.getByRole('radio', { name: 'Color' }).click()
+    else await dialog.getByLabel('What to trace').selectOption('color')
+    await expect(dialog.getByTestId('trace-note')).toHaveText(/Click the image to pick a color to trace/)
+    const img = (await dialog.getByTestId('trace-preview').boundingBox())!
+    await page.mouse.click(img.x + img.width * 0.2, img.y + img.height * 0.25)
+    await expect(dialog.getByText('#000000')).toBeVisible()
+    await expect(count).toHaveText(/^2 loops \(1 hole\), 4 lines, 1 circle, 44 x 28 mm/)
+    await shotBoth(page, info, 'trace-dialog-color-1440')
+
+    await add.click()
+    await expect(dialog).toBeHidden()
+    await expect.poll(async () => (await loops(page)).length).toBe(2)
+    const [outer, hole] = await loops(page)
+    expect(size(outer)).toEqual([44, 28])
+    expect(hole).toMatchObject({ type: 'circle' })
+    const h = hole as unknown as { center: [number, number]; diameterMm: number }
+    expect(h.diameterMm).toBeCloseTo(16, 0)
+    expect(h.center[0]).toBeCloseTo(Math.round(bed.widthMm / 2), 1)
+    await expect(page.getByTestId('toast').filter({ hasText: 'Added plate: 2 loops (1 hole), 4 lines, 1 circle, 44 x 28 mm.' })).toBeVisible()
+    await shotBoth(page, info, 'trace-sketch-added-1440')
+
+    await panel.locator('#sk-dist').fill('4')
+    await panel.getByRole('button', { name: 'Extrude', exact: true }).click()
+    await expect.poll(() => extents(page), { timeout: 30_000 }).toEqual([4, 28, 44])
+    // a 44 x 28 mm plate 4 mm thick less a 16 mm round hole
+    const want = 44 * 28 * 4 - Math.PI * 64 * 4
+    await expect.poll(() => volume(page)).toBeGreaterThan(want * 0.99)
+    expect(await volume(page)).toBeLessThan(want * 1.01)
+    await shotBoth(page, info, 'trace-sketch-extruded-1440')
   })
 })
