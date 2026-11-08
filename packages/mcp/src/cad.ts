@@ -365,6 +365,21 @@ export function traceRefusal(e: unknown): unknown {
   return e
 }
 
+/** The first traced loop longer than design.sketch takes (512 pieces, 4096 points for a loop of points or a spline
+ * loop, 512 through points in a spline piece), said in words, or undefined when every loop fits. */
+export function traceLoopTooLong(loops: readonly object[]): string | undefined {
+  for (const [k, l] of loops.entries()) {
+    const n = k + 1
+    const segments = 'segments' in l && Array.isArray(l.segments) ? l.segments : []
+    if (segments.length > 512) return `loop ${n} has ${segments.length} pieces and a sketch loop takes 512`
+    const points = 'points' in l && Array.isArray(l.points) ? l.points.length : 0
+    if (points > 4096) return `loop ${n} has ${points} points and a sketch loop takes 4096`
+    const through = segments.reduce((m, s) => Math.max(m, Array.isArray((s as { points?: unknown[] }).points) ? (s as { points: unknown[] }).points.length : 0), 0)
+    if (through > 512) return `loop ${n} has a spline through ${through} points and a sketch spline takes 512`
+  }
+  return undefined
+}
+
 /** An image past this many bytes is refused before it is read. */
 export const IMAGE_BYTES = 30 * 1024 * 1024
 
@@ -1011,17 +1026,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const tail = [cleaned, problems, ...warnings.map((w) => `${w[0]!.toUpperCase()}${w.slice(1)}.`)].filter(Boolean)
       const report = { counts, sizeMm: size, mmPerPx: out['mmPerPx'], imagePx: out['imagePx'], workingPx: out['workingPx'], dropped, mode: out['mode'], ...(out['threshold'] !== undefined ? { threshold: out['threshold'] } : {}), check: { ok: check.ok, areaMm2: check.areaMm2, loops: check.loops, issues }, warnings }
       const preview = typeof out['previewPng'] === 'string' ? { images: [{ mime: 'image/png' as const, data: out['previewPng'] }] } : {}
+      // the loops go on as design.sketch takes them, so what it would refuse is named here in this tool's options, and
+      // a dry run says so too
+      const args = plain<Record<string, unknown>>({ loops: loopsIn, ...(i.frame ? { frame: i.frame } : {}) })
+      const refusal = ((): string | undefined => {
+        // a spline that cannot be drawn never reaches the timeline
+        const bad = undrawable(issues, loopsIn)
+        if (bad.length) return `image: ${bad.map((x) => x.message).join(' ')} Raise smoothing_mm or speck_mm2.`
+        if (loopsIn.length > 256) return `image: the trace has ${loopsIn.length} loops and a sketch takes 256. Raise speck_mm2 to clean away the small ones, or trace part of the image.`
+        const long = traceLoopTooLong(loopsIn)
+        if (long) return `image: ${long}. Raise smoothing_mm, fit to curves, or raise speck_mm2.`
+        const sent = new TextEncoder().encode(JSON.stringify(args)).length
+        if (sent > SVG_ARGS) return `image: the trace's loops come to ${kb(sent)}, and the app link takes ${kb(SVG_ARGS)}. Raise smoothing_mm or speck_mm2, fit to curves, or trace part of the image; dry_run shows the counts without adding anything.`
+        return undefined
+      })()
       if (i.dry_run) {
         const head = `Traced, nothing added: ${shape}`
-        return { summary: tail.length ? `${head}. ${tail.join(' ')}` : head, output: { loops: loopsIn, ...report }, ...preview }
+        const all = refusal ? [...tail, `Adding it would be refused: ${refusal.replace(/^image: /, '')}`] : tail
+        return { summary: all.length ? `${head}. ${all.join(' ')}` : head, output: { loops: loopsIn, ...report, ...(refusal ? { refused: refusal } : {}) }, ...preview }
       }
-      // the loops go on as design.sketch takes them: a spline that cannot be drawn never reaches the timeline
-      const bad = undrawable(issues, loopsIn)
-      if (bad.length) throw new ToolInputError(`image: ${bad.map((x) => x.message).join(' ')} Raise smoothing_mm or speck_mm2.`)
-      if (loopsIn.length > 256) throw new ToolInputError(`image: the trace has ${loopsIn.length} loops and a sketch takes 256. Raise speck_mm2 to clean away the small ones, or trace part of the image.`)
-      const args = plain<Record<string, unknown>>({ loops: loopsIn, ...(i.frame ? { frame: i.frame } : {}) })
-      const sent = new TextEncoder().encode(JSON.stringify(args)).length
-      if (sent > SVG_ARGS) throw new ToolInputError(`image: the trace's loops come to ${kb(sent)}, and the app link takes ${kb(SVG_ARGS)}. Raise smoothing_mm or speck_mm2, fit to curves, or trace part of the image; dry_run shows the counts without adding anything.`)
+      if (refusal) throw new ToolInputError(refusal)
       const added = deps.sketchVia?.run ? await deps.sketchVia.run(args, ctx) : await sketch.run(sketch.input.parse(args) as never, ctx as never)
       const made = (added.output ?? {}) as { id?: string; name?: string; in?: string }
       const head = `${made.name ?? 'The sketch'} is in the timeline: ${shape}`
