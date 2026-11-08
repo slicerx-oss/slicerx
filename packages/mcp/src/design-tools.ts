@@ -262,6 +262,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     permission: 'slice',
     description:
       `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_loft, slicerx_geom_sweep, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
+    localDescription:
+      'Start a design (name): a part the geom tools build step by step when given its design id, every step editable in its history. Start empty (the first step makes a body) or from an STL (from). Units mm, Z up, the bed at Z = 0. More: kb.search "modeling tools".',
     input: z.object({
       name: z.string().min(1).max(120).default('Design'),
       exact: z.boolean().optional().describe('Require native exact features, with developer opt-in. Unsupported operations refuse instead of using mesh geometry.'),
@@ -486,6 +488,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     permission: 'read',
     description:
       "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+    localDescription:
+      'After a planned part\'s last feature, check it against its plan (planId): overall size, named holes, feature count, closed body and thinnest wall. Returns pass and each item with what the plan wants and what the body has; fix the failed items once and check again. With stop in the result, stop building and tell the person what is off. Give design when it asks which. More: kb.search "design check".',
     input: z.object({
       planId: z.string().min(1).describe('The planId of the plan the part was built from'),
       design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it, except a plan the person made in the mimir tab, which only the tab ties'),

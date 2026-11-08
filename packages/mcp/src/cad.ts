@@ -1187,6 +1187,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description:
       'Union, subtract or intersect closed bodies. With a model: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share; writes one manifold STL. With "design": "part" is combined with the parts in "with_parts", which go away as their own parts; adds a step.',
+    localDescription:
+      'Union, subtract or intersect closed bodies (op). With a model: model and the models in with, written as one STL. With design: part combined with with_parts, which go away as their own parts; adds a step.',
     input: z.object({
       op: z.enum(['union', 'subtract', 'intersect']),
       model: modelOrDesign,
@@ -1222,6 +1224,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description:
       'Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
+    localDescription:
+      'Round straight edges between flat faces to radius_mm; take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL. More: kb.search "modeling tools".',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
     async run(i) {
       oneOf(i)
@@ -1243,6 +1247,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description:
       "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
+    localDescription:
+      'Bevel straight edges between flat faces, set back distance_mm on each face (or distance2_mm on the other); take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
       oneOf(i)
@@ -1264,6 +1270,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description:
       'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls. With --app, a design is the body in the open project.',
+    localDescription:
+      'Hollow a closed body to wall_mm with the open faces left open (each a point on it and its outward normal; none for a closed hollow), for boxes, trays and enclosures. With design it adds a shell step; with a model it writes an STL. More: kb.search "modeling tools".',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
@@ -1294,6 +1302,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step. With --app, read the body in the open project without changing its history.',
+    localDescription:
+      'Read a model or a design back: bounds, volume, surface area, triangle count, watertight and shells; a design per part, now or right after a given step.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg }),
     async run(i) {
       oneOf(i)
@@ -1432,6 +1442,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'slice',
     description:
       'Make a round hole in a model or a design another size, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
+    localDescription:
+      'Change a round hole in a model or a design: a new diameter_mm, a blind hole\'s depth_mm, or a counterbore or countersink at its entry. Pick it by a point on its wall (face) or by center and axis. With design it adds a hole step; with a model it writes an STL. Returns the hole before and after. More: kb.search "hole tool".',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),

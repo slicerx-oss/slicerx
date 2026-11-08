@@ -154,6 +154,8 @@ export function createCardPlans(plans: PlanRegistry) {
       permission: 'read',
       description:
         'Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, and what you still need to know. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, and the edited plan when they changed anything; build from that. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.',
+      localDescription:
+        'Before the first geometry step of a part with two or more features, show the person the plan and wait: part, units, features in build order with their sizes and kind, the overall size and holes when known, assumptions and questions. Returns accepted and the edited plan; build from that. Not accepted: build nothing and ask what to change. One feature: no plan.',
       input: PlanInputSchema,
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
       async run(i, ctx) {

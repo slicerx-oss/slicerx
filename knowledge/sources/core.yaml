@@ -88,6 +88,20 @@ sources:
     url: https://github.com/slicerx-oss/slicerx/blob/main/packages/app/src/workspaces/prepare/paint-panel.tsx
     retrieved: 2026-10-13
     note: "Paint layers Color, Seam, Support, Fuzzy skin; brushes Brush, Fill, Height, with Triangle and Gap fill under More; color slots come from the Filament block."
+  - id: slicerx_app_cad
+    title: "SlicerX modeling tools (geom.hole, geom.shell, geom.fillet, geom.chamfer, geom.boolean, geom.info)"
+    publisher: SlicerX
+    type: app_source
+    url: https://github.com/slicerx-oss/slicerx/blob/main/packages/mcp/src/cad.ts
+    retrieved: 2026-11-08
+    note: "The design tools' full descriptions and checks: picking a hole by its wall or axis, counterbore and countersink, shell open faces, fillet and chamfer edges, boolean with models and parts, reading a part back."
+  - id: slicerx_app_design
+    title: "SlicerX designs, plans and plan checks (design.new, design.plan, design.check)"
+    publisher: SlicerX
+    type: app_source
+    url: https://github.com/slicerx-oss/slicerx/blob/main/packages/mcp/src/design-tools.ts
+    retrieved: 2026-11-08
+    note: "Starting a design and its editable history, the plan card, and the plan check's tolerances, design choice and one fix round."
   - id: snapmaker_blog_threads
     title: "Guide to Designing and 3D Printing Threads"
     publisher: Snapmaker

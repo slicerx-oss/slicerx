@@ -15,6 +15,7 @@ import { registerCommands } from '../src/commands/registry'
 import { NEUTRAL } from '../src/edition'
 import { setupCommands } from '../src/first-run/look'
 import { get, set } from '../src/state/store'
+import { bundledKb } from '../src/workspaces/mimir/kb'
 import { resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
@@ -64,6 +65,48 @@ const TABS = 'The app has these tabs: mimir (this chat), Model, Slice, My models
 /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
 const CONVERSATION_ROOM = 1500
 
+/**
+ * What a build turn keeps spare beyond the conversation's room: a new part's turn sends the most tools, and the next
+ * build tool or prompt line has to fit without cutting the reply or the conversation short.
+ */
+const BUILD_SPARE = 600
+
+/**
+ * Each build tool's required fields and enum values, by path (properties joined with dots, [] for an array's items).
+ * A shorter description or schema text on a local turn never drops one of these; a tool may add more.
+ */
+const BUILD_PINS: Record<string, string[]> = {
+  'design.new': ['name required'],
+  'design.plan': ['assumptions required', 'features required', 'features.[].name required', 'features.[].sizes required', 'holes.[].diameter required', 'holes.[].name required', 'overall.x required', 'overall.y required', 'overall.z required', 'part required', 'questions required', 'units mm|in', 'units required'],
+  'design.check': ['planId required'],
+  'design.undo': ['design required'],
+  'geom.extrude': ['distance_mm required', 'extent oneSide|symmetric|twoSides', 'extent required', 'operation new|join|cut', 'operation required', 'shape.align left|center|right', 'shape.diameterMm required', 'shape.fit inscribed|circumscribed', 'shape.heightMm required', 'shape.lengthMm required', 'shape.loops required', 'shape.sides required', 'shape.sizeMm required', 'shape.svg required', 'shape.text required', 'shape.type circle', 'shape.type polygon', 'shape.type rectangle', 'shape.type required', 'shape.type sketch', 'shape.type slot', 'shape.type svg', 'shape.type text', 'shape.widthMm required'],
+  'geom.revolve': ['angle_deg required', 'axis required', 'axis.direction required', 'axis.point required', 'frame.normal required', 'frame.origin required', 'loops.[].center required', 'loops.[].diameterMm required', 'loops.[].points required', 'loops.[].segments required', 'loops.[].segments.[].type line|arc|spline', 'loops.[].segments.[].type required', 'loops.[].start required', 'loops.[].type circle', 'loops.[].type required', 'loops.[].type spline', 'operation new|join|cut', 'operation required'],
+  'geom.loft': ['operation new|join|cut', 'operation required', 'profiles.[].loops required'],
+  'geom.sweep': ['operation new|join|cut', 'operation required', 'profile.loops required'],
+  'geom.hole': ['counterbore.depth_mm required', 'counterbore.diameter_mm required', 'countersink.angle_deg required', 'countersink.diameter_mm required', 'face.topology.bodyId required', 'face.topology.faceKey required', 'face.topology.part required', 'face.topology.revision required'],
+  'geom.fillet': ['edges required', 'edges.[].a required', 'edges.[].b required', 'edges.[].face required', 'radius_mm required'],
+  'geom.chamfer': ['distance_mm required', 'edges required', 'edges.[].a required', 'edges.[].b required', 'edges.[].face required'],
+  'geom.shell': ['open required', 'open.[].at required', 'open.[].normal required', 'wall_mm required'],
+  'geom.boolean': ['op required', 'op union|subtract|intersect'],
+  'geom.info': [],
+}
+
+/** The required fields and enum and const values of a schema, by path, as BUILD_PINS writes them. */
+function pins(v: unknown, at = '', out = new Set<string>()): Set<string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out
+  const o = v as Record<string, unknown>
+  if (Array.isArray(o.required)) for (const r of o.required) out.add(`${at}${String(r)} required`)
+  if (Array.isArray(o.enum)) out.add(`${at.replace(/\.$/, '')} ${o.enum.join('|')}`)
+  if ('const' in o) out.add(`${at.replace(/\.$/, '')} ${String(o.const)}`)
+  for (const [k, x] of Object.entries(o)) {
+    if (k === 'properties' && x && typeof x === 'object') for (const [name, s] of Object.entries(x)) pins(s, `${at}${name}.`, out)
+    else if (k === 'items' || k === 'additionalProperties') pins(x, `${at}[].`, out)
+    else if (['anyOf', 'oneOf', 'allOf', 'prefixItems'].includes(k) && Array.isArray(x)) for (const s of x) pins(s, at, out)
+  }
+  return out
+}
+
 const LOCAL = { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } as const
 const CLOUD = { mode: 'on', provider: 'anthropic' } as const
 
@@ -109,13 +152,14 @@ describe('the mimir tab on a local model', () => {
   })
   afterAll(() => off())
 
-  it.each(TURNS)('fits a $kind turn ($message) in the context with the whole system prompt', async ({ message, before }) => {
+  it.each(TURNS)('fits a $kind turn ($message) in the context with the whole system prompt', async ({ kind, message, before }) => {
     const local = await turn(LOCAL, message, before)
     expect(local.url).toContain('127.0.0.1:11434')
     const c = cost(local)
     // the headroom in the failure message: what the turn uses, the limit and what is spare
     const used = c.total + REPLY_RESERVE + CONVERSATION_ROOM
     expect(used, `used ${used} of ${MIMIR_CONTEXT} tokens (system ${c.system}, messages ${c.messages}, ${c.count} tools ${c.tools}, the reply ${REPLY_RESERVE}, the conversation ${CONVERSATION_ROOM}), spare ${MIMIR_CONTEXT - used}`).toBeLessThanOrEqual(MIMIR_CONTEXT)
+    if (kind === 'build') expect(MIMIR_CONTEXT - used, `a build turn keeps ${BUILD_SPARE} spare`).toBeGreaterThanOrEqual(BUILD_SPARE)
     // the system prompt goes whole and first: the one a cloud model gets, plus the line naming the registered tabs
     const cloud = read(await turn(CLOUD, message, before))
     const sent = read(local)
@@ -128,7 +172,10 @@ describe('the mimir tab on a local model', () => {
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {
     const tools = async (message: string, before?: string) => read(await turn(LOCAL, message, before)).tools.map((t) => t.name)
     const build = await tools('A 30 mm cube with a fillet')
-    expect(build).toEqual(expect.arrayContaining(['design__new', 'geom__extrude', 'pilot__sheet', 'pilot__tools']))
+    expect(build).toEqual(expect.arrayContaining(['design__new', 'design__plan', 'geom__extrude', 'geom__revolve', 'geom__loft', 'geom__sweep', 'geom__hole', 'pilot__sheet', 'pilot__tools']))
+    // projecting edges into a sketch edits a part already built; a new part never starts with it
+    expect(build).not.toContain('design__sketch_project')
+    expect(await tools('Make the base thicker', 'A 30 mm cube with a fillet')).toContain('design__sketch_project')
     expect(build.some((n) => n.startsWith('app__') || n.startsWith('printer__') || n.startsWith('settings__'))).toBe(false)
     const app = await tools('Slice the plate and send it to my printer')
     expect(app).toEqual(expect.arrayContaining(['app__slice', 'printer__queue', 'settings__get', 'settings__apply', 'pilot__tools']))
@@ -137,6 +184,30 @@ describe('the mimir tab on a local model', () => {
     const print = await tools("How's my print going?")
     expect(print).toEqual(expect.arrayContaining(['printer__status', 'printer__pause', 'printer__queue', 'pilot__tools']))
     expect(print.some((n) => n.startsWith('geom__') || n.startsWith('settings__'))).toBe(false)
+  })
+
+  it('keeps every required field and enum of the build tools, and points a shorter description at the knowledge base', async () => {
+    const local = read(await turn(LOCAL, 'A 30 mm cube with a fillet')).tools
+    const cloud = new Map(read(await turn(CLOUD, 'A 30 mm cube with a fillet')).tools.map((t) => [t.name, t]))
+    const kb = await bundledKb()
+    for (const [name, want] of Object.entries(BUILD_PINS)) {
+      const t = local.find((x) => x.name === name.replace('.', '__'))
+      expect(t, name).toBeDefined()
+      const full = cloud.get(t!.name)!
+      const got = pins(t!.parameters)
+      expect(want.filter((p) => !got.has(p)), `${name} keeps its required fields and enums`).toEqual([])
+      // the local form takes exactly what the cloud form takes
+      expect([...got].sort(), name).toEqual([...pins(full.parameters)].sort())
+      if (t!.description === full.description) continue
+      expect(t!.description.length, name).toBeLessThan(full.description.length)
+      for (const arg of (full.parameters as { required?: string[] }).required ?? []) expect(t!.description, `${name} names ${arg}`).toContain(arg)
+      // a pointer to the rest names a search whose best entry is about this tool
+      for (const [, query] of t!.description.matchAll(/kb\.search "([^"]+)"/g)) {
+        const top = kb.search(query!)[0]?.doc
+        expect(top?.id, `${name}: kb.search "${query}"`).toMatch(/^slicerx_/)
+        expect(JSON.stringify(top?.data), `${name}: kb.search "${query}"`).toContain(name)
+      }
+    }
   })
 
   it('lists each set for clients, and every set together is every tool the tab offers', async () => {
