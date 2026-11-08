@@ -45,6 +45,16 @@ describe('replayed geometry replies', () => {
     expect(r.stale).toEqual([])
   })
 
+  it('with pooled replies, answers a request the test did not record from another test of the file', async () => {
+    const replies = { a: [{ op: 'nest.arrange', request: digest({ a: 1 }), reply: { from: 'a' } }], b: [{ op: 'nest.footprint', request: digest({ b: 1 }), reply: { from: 'b' } }] }
+    const r = replayEngine('fixtures/x.json.gz', replies, true)
+    r.start('b')
+    expect(await r.engine('nest.arrange', { a: 1 })).toEqual({ from: 'a' })
+    expect(await r.engine('nest.footprint', { b: 1 })).toEqual({ from: 'b' })
+    await expect(r.engine('nest.arrange', { a: 2 })).rejects.toBeInstanceOf(ReplayMismatch)
+    expect(r.stale).toHaveLength(1)
+  })
+
   it('names the fixture and how to record it again when a request differs', async () => {
     const r = one()
     r.start('t')
