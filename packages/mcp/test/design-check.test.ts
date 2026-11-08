@@ -504,6 +504,23 @@ describe('slicerx_design_check', () => {
     expect(r.pass).toBe(true)
   })
 
+  it("answers with each shaping step's name, which steps may stand for any feature, and no parts for one body", async () => {
+    const { ok } = await plate(5, 6)
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(r.body.steps).toEqual(['Rectangle extrude 5 mm', 'Hole 6 mm'])
+    expect(r.body.free).toEqual([true, true])
+    expect(r.body.parts).toBeUndefined()
+  })
+
+  it('a step renamed for something the plan lacks is no longer free and leaves its feature unbuilt', async () => {
+    const { ok, design } = await plate(5, 6)
+    await ok('slicerx_design_edit_step', { design, step: 1, label: 'Fillet edges' })
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(r.body.steps).toEqual(['Fillet edges', 'Hole 6 mm'])
+    expect(r.body.free).toEqual([false, true])
+    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: false })
+  })
+
   it('a 6 mm hole built at 5 mm fails that item only', async () => {
     const { h } = await plate(5, 5)
     const res = await h.call('slicerx_design_check', { planId: 'plate-1' })
