@@ -243,22 +243,30 @@ fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     Ok((r, exif))
 }
 
+/// A JPEG frame's kind, width and height.
+type Frame = (u8, usize, usize);
+
 /// A JPEG's frame kind and size from its frame header, before anything decodes.
-fn jpeg_frame(bytes: &[u8]) -> Option<(u8, usize, usize)> {
+fn jpeg_frame(bytes: &[u8]) -> Option<Frame> {
     let mut i = 2;
     loop {
-        if *bytes.get(i)? != 0xFF {
-            return None;
+        // stray bytes before a marker are skipped, as the decoder skips them
+        while *bytes.get(i)? != 0xFF {
+            i += 1;
         }
         let m = *bytes.get(i + 1)?;
         match m {
-            // fill bytes and markers with no length
+            // fill bytes, then markers with no length: a stuffed zero, TEM, restarts and a repeated start
             0xFF => i += 1,
-            0x01 | 0xD0..=0xD7 => i += 2,
-            // the scan starts with no frame seen
+            0x00 | 0x01 | 0xD0..=0xD8 => i += 2,
+            // the end or the scan with no frame seen
             0xD9 | 0xDA => return None,
             _ => {
                 let len = usize::from(u16::from_be_bytes([*bytes.get(i + 2)?, *bytes.get(i + 3)?]));
+                // a length counts its own two bytes
+                if len < 2 {
+                    return None;
+                }
                 // every start of frame but huffman tables (c4), the reserved c8 and arithmetic conditioning (cc)
                 if (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC) {
                     let h = u16::from_be_bytes([*bytes.get(i + 5)?, *bytes.get(i + 6)?]);
@@ -315,7 +323,8 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     use zune_jpeg::zune_core::options::DecoderOptions;
     // the decoder reports a size over its limits as a damaged file, so the size is read first
     if let Some((kind, w, h)) = jpeg_frame(bytes) {
-        if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE || w * h > MAX_PIXELS {
+        // within these sides a JPEG is always under the pixel limit
+        if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE {
             return Err(Unusable::TooLarge);
         }
         // only baseline, extended huffman and progressive are read; the decoder calls the rest damaged
@@ -740,5 +749,136 @@ pub(crate) mod tests {
         assert_eq!((k.w, k.h), (1667, 1));
         assert_eq!(k.file_size, (5000, 1));
         assert_eq!(r.reduced(4096), r);
+    }
+
+    /// A JPEG start, then `parts` in order.
+    fn jpeg(parts: &[&[u8]]) -> Vec<u8> {
+        let mut j = vec![0xFF, 0xD8];
+        for p in parts {
+            j.extend_from_slice(p);
+        }
+        j
+    }
+
+    /// A segment of kind `m` holding `body`, with its length.
+    fn segment(m: u8, body: &[u8]) -> Vec<u8> {
+        let mut s = vec![0xFF, m];
+        s.extend_from_slice(&u16::try_from(body.len() + 2).unwrap().to_be_bytes());
+        s.extend_from_slice(body);
+        s
+    }
+
+    /// A frame header of kind `m` for `w` x `h`, one component.
+    fn sof(m: u8, w: u16, h: u16) -> Vec<u8> {
+        let mut b = vec![8];
+        b.extend_from_slice(&h.to_be_bytes());
+        b.extend_from_slice(&w.to_be_bytes());
+        b.extend_from_slice(&[1, 1, 0x11, 0]);
+        segment(m, &b)
+    }
+
+    #[test]
+    fn the_jpeg_frame_is_found_past_other_segments_and_odd_bytes() {
+        let app0 = segment(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0");
+        let app1 = segment(0xE1, &exif_orientation(6));
+        let com = segment(0xFE, b"made here");
+        let dht = segment(0xC4, &[0x00; 17]);
+        let dqt = segment(0xDB, &[0x00; 65]);
+        let big = sof(0xC0, 16_000, 10);
+        let cases: [(Vec<u8>, Option<Frame>); 13] = [
+            (jpeg(&[&app0, &app1, &big]), Some((0xC0, 16_000, 10))),
+            (jpeg(&[&com, &sof(0xC0, 9000, 10)]), Some((0xC0, 9000, 10))),
+            (jpeg(&[&dqt, &dht, &sof(0xC2, 8193, 10)]), Some((0xC2, 8193, 10))),
+            // fill bytes before a marker
+            (jpeg(&[&[0xFF, 0xFF, 0xFF], &big]), Some((0xC0, 16_000, 10))),
+            // stray bytes between segments, which the decoder skips too
+            (
+                jpeg(&[&app0, &[0x00, 0x11, 0x22], &big]),
+                Some((0xC0, 16_000, 10)),
+            ),
+            // a stuffed zero, a restart and a second start marker carry no length
+            (
+                jpeg(&[&[0xFF, 0x00, 0xFF, 0xD3, 0xFF, 0xD8], &big]),
+                Some((0xC0, 16_000, 10)),
+            ),
+            // the first frame counts
+            (jpeg(&[&sof(0xC0, 10, 10), &big]), Some((0xC0, 10, 10))),
+            // lengths that cannot be
+            (jpeg(&[&[0xFF, 0xE0, 0x00, 0x00], &big]), None),
+            (jpeg(&[&[0xFF, 0xE0, 0x00, 0x01], &big]), None),
+            (jpeg(&[&[0xFF, 0xE0, 0xFF, 0xFF, 1, 2, 3]]), None),
+            // a frame header cut short
+            (jpeg(&[&big[..7]]), None),
+            // the end or the scan before any frame
+            (jpeg(&[&[0xFF, 0xD9], &big]), None),
+            (jpeg(&[&segment(0xDA, &[0; 8]), &big]), None),
+        ];
+        for (i, (bytes, want)) in cases.iter().enumerate() {
+            assert_eq!(jpeg_frame(bytes), *want, "case {i}");
+        }
+        for (i, (bytes, want)) in cases.iter().enumerate().take(6) {
+            let too_large = want.is_some_and(|(_, w, h)| w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE);
+            assert_eq!(
+                decode(bytes).err() == Some(Unusable::TooLarge),
+                too_large,
+                "case {i}"
+            );
+        }
+        // none of the odd ones panics in the decoder either
+        for (bytes, _) in &cases {
+            let _ = decode(bytes);
+        }
+    }
+
+    #[test]
+    fn only_the_frame_kinds_the_decoder_reads_get_past_the_header() {
+        for m in [0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF] {
+            assert_eq!(
+                decode(&jpeg(&[&sof(m, 8, 8)])).err(),
+                Some(Unusable::Unsupported),
+                "{m:X}"
+            );
+        }
+        for m in [0xC0, 0xC1, 0xC2] {
+            assert_eq!(
+                decode(&jpeg(&[&sof(m, 8, 8)])).err(),
+                Some(Unusable::Damaged),
+                "{m:X}"
+            );
+        }
+    }
+
+    #[test]
+    fn random_bytes_after_a_jpeg_start_never_panic() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let head = fixture_jpeg();
+        for round in 0..3000 {
+            let n = usize::try_from(next() % 96).unwrap();
+            let mut bytes = if round % 2 == 0 {
+                vec![0xFF, 0xD8]
+            } else {
+                // a real header with bytes overwritten here and there
+                head[..head.len().min(160)].to_vec()
+            };
+            for _ in 0..n {
+                let b = next().to_le_bytes()[0];
+                // markers often, so the segment walk sees them
+                bytes.push(if next() % 4 == 0 { 0xFF } else { b });
+            }
+            if round % 2 == 1 {
+                let at = 2 + usize::try_from(next() % 150).unwrap();
+                if let Some(b) = bytes.get_mut(at) {
+                    *b = next().to_le_bytes()[0];
+                }
+            }
+            let _ = jpeg_frame(&bytes);
+            let _ = decode(&bytes);
+        }
     }
 }
