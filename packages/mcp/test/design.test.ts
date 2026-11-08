@@ -197,6 +197,7 @@ describe('a client models a cable clip as a design', () => {
     expect(text(both)).toMatch(/give "model" \(an STL\) or "design"/)
     const missing = await h.call('slicerx_design_steps', { design: 'd404' })
     expect(missing.isError).toBe(true)
-    expect(text(missing)).toMatch(/slicerx_design_list/)
+    // with no designs yet, the refusal says how to start one
+    expect(text(missing)).toMatch(/no design d404; there are no designs yet, so start one with slicerx_design_new/)
   })
 })
