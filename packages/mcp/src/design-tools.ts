@@ -8,11 +8,11 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+import { assumptionsInput, createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, printsTogether, stalePlanNote, supersededPlanNote, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
-import { designStamp, fitLimits, type FitProfile } from './fit-facts'
+import { designStamp, runFitLimits, type FitProfile } from './fit-facts'
 import { meshStats } from './mesh'
 
 type V3 = [number, number, number]
@@ -546,7 +546,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
    * Whether geom.fit_check ran on the design as it is now, over the planned pieces: each piece's own part when every
    * piece names one, else every part (pieces that are bodies of one part, or named another way).
    */
-  const fitLooked = (d: HostDesign, pieces: PartPlan['printInPlace'] & {}): boolean => {
+  const fitLooked = (d: HostDesign, pieces: readonly string[]): boolean => {
     const run = plans.fitCheckOf(d.id)
     if (!run || run.stamp !== designStamp(d)) return false
     if (run.parts === 'all') return true
@@ -568,7 +568,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       planId: z.string().min(1).describe('The planId of the plan the part was built from'),
       design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it, except a plan the person made in the mimir tab, which only the tab ties'),
     }),
-    async run(i) {
+    async run(i, ctx) {
       const entry = plans.get(i.planId)
       if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
       // sizes changed after the plan was approved: it no longer says what the part should be, and once a newer plan was
@@ -587,9 +587,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
             : `Nothing was checked. ${entry.plan.part} prints in place, so its gaps are looked at first: run geom.fit_check on design ${d.id} as it is now, with every planned piece, fix any gap it flags, then check again.`,
         )
       const nozzleMm = nozzleOr(opts.nozzleMm?.())
-      const limits = entry.plan.printInPlace ? fitLimits({ ...opts.fitProfile?.(), nozzleMm }) : undefined
-      const body = await bodyFacts(designs, d, limits)
-      const result = designCheck(entry.plan, body, nozzleMm, limits)
+      // a plan the person approved on the card whose pieces print together without printInPlace naming them: only its
+      // planned gaps are held to the rule, as it names no pieces to measure
+      const together = entry.origin === 'card' && printsTogether(entry.plan)
+      // the run's machine material, nozzle and layer height under the host's own, as design.plan holds the plan to
+      const limits = entry.plan.printInPlace || together ? runFitLimits(ctx?.context, { ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() }) : undefined
+      const body = await bodyFacts(designs, d, entry.plan.printInPlace ? limits : undefined)
+      const result = designCheck(entry.plan, body, nozzleMm, limits, together)
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`
       const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
@@ -618,7 +622,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     description:
       'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind, its sizes and, in kinds, count or angle for each size that is a count or an angle; a size with none is read by its name), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none), and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace. Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
     input: z.object({
-      plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
+      plan: partPlanSchema.extend({ assumptions: assumptionsInput }).describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
     }),
     async run(i) {
