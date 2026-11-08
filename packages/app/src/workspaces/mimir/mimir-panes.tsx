@@ -17,8 +17,8 @@ import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, startNewChat, tabTools, useTabMimir } from './session'
 import { editRow } from './sheet-drive'
-import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
-import { useSheetPicture } from './sheet-view'
+import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, sheetUi, typedValues, useSheetUi, type ShownSheet } from './sheet-ui'
+import { hasPicture } from './sheet-shape'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
@@ -37,7 +37,7 @@ import { planChoiceCard } from './plan-card'
 import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
-import { cardWaits, openChoice } from './card-waits'
+import { cardWaits, openChoice, openSheetCard } from './card-waits'
 import { PHONE_REFUSALS, setPhoneCards, syncPhoneQuestion } from './phone-answers'
 import { paneApprovalCards, setPhoneApprovals, syncPhoneApprovals } from './phone-approvals'
 import './mimir.css'
@@ -176,13 +176,16 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     })
     return () => setMimirAsker(null)
   }, [sessionId, live])
-  // a client may turn down the question card waiting here (mimir.dismiss), never pick its answer
+  // a client may turn down the question card waiting here (mimir.dismiss), never pick its answer; a size sheet waiting
+  // it sets aside as Return in the message box does, with the sizes typed on it, never confirms
   useEffect(() => {
     if (!live) return
     setMimirCards({
       sessionId: () => sessionId,
       open: () => openChoice(shown.current),
       dismiss: (askId, said) => pilot.answer?.(askId, null, said) ?? Promise.reject(new Error('No question here')),
+      sheet: () => openSheetCard(shown.current),
+      setAside: (sheetId, said) => pilot.answerSheet?.(sheetId, said ? typedValues(sheetUi.getState()) : null, said) ?? Promise.reject(new Error('No sheet here')),
     })
     return () => setMimirCards(null)
   }, [sessionId, live, pilot])
@@ -486,7 +489,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           answering={open !== null || waiting !== null}
           answers={open === null && waiting !== null ? 'sheet' : 'choice'}
           onAnswer={(text) => {
-            const landed = open ? pilot.answer?.(open.askId, null, text) : waiting ? pilot.answerSheet?.(waiting, null, text) : undefined
+            // sizes typed on the waiting sheet go along with the words, so setting it aside never drops them
+            const landed = open ? pilot.answer?.(open.askId, null, text) : waiting ? pilot.answerSheet?.(waiting, typedValues(sheetUi.getState()), text) : undefined
             landed?.catch((e: unknown) => console.warn('mimir: the written answer did not land', e))
           }}
         />
@@ -584,7 +588,8 @@ export function MimirCaption() {
   }, [])
   const step = useStepCaption()
   const waitingSheet = useSheetUi((s) => (sheetMode(s) === 'confirm' ? (s.shown?.sheet ?? null) : null))
-  const drawing = useSheetPicture(waitingSheet) !== null
+  // only whether a drawing is up: the sheet's own solids, or its design on the plate, without shaping the part here
+  const drawing = useApp((s) => hasPicture(waitingSheet, waitingSheet?.design ? s.plate.filter((p) => p.id === waitingSheet.design) : []))
   return (
     <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
       {drawing ? 'Drawing, four views' : (step ?? captionFor(preset))}

@@ -104,9 +104,14 @@ describe('mimir sessions over the app link', () => {
       { type: 'lookup', lookup: { id: 'l1', title: 'Size', fields: [], source: { title: 'x', url: 'https://example.com' } } },
       { type: 'sheet', sheet: { id: 'sh1', title: 'Sizes', views: ['iso'], dims: [] } },
       { type: 'sheet_answered', sheetId: 'sh1', answer: { confirmed: true, values: {}, changed: ['lean', 'wall'] } },
+      // one set aside by words written while it waited, one canceled: neither is confirmed, and only the first is set aside
+      { type: 'sheet', sheet: { id: 'sh2', title: 'Sizes', views: ['iso'], dims: [] } },
+      { type: 'sheet_answered', sheetId: 'sh2', answer: { confirmed: false, values: {}, changed: [], said: 'make it taller' } },
+      { type: 'sheet', sheet: { id: 'sh3', title: 'Sizes', views: ['iso'], dims: [] } },
+      { type: 'sheet_answered', sheetId: 'sh3', answer: { confirmed: false, values: {}, changed: [] } },
       { type: 'done', stopReason: 'end', ms: 1 },
     ]) await add(e)
     setSessionSource({ store: s })
-    expect(await runCall('mimir.session', { id: 'mimir_c' })).toMatchObject({ stats: { questions: 2, sheets: 1, lookups: 1, sheetsConfirmed: 1, sizesChanged: 2 } })
+    expect(await runCall('mimir.session', { id: 'mimir_c' })).toMatchObject({ stats: { questions: 4, sheets: 3, lookups: 1, sheetsConfirmed: 1, sizesChanged: 2, sheetsSetAside: 1 } })
   })
 })

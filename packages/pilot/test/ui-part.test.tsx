@@ -122,9 +122,19 @@ describe('the part a reply made', () => {
         <TranscriptView transcript={reply()} showThinking={false} approvals={approvals} parts={handlers()} />
       </>,
     )
-    screen.getByRole('textbox', { name: 'Ask mimir' }).focus()
-    fireEvent.click(screen.getByRole('button', { name: 'Change size' }))
-    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: /New size of the 20 mm cube X/ }))
+    // jsdom has no scrolling: stand one in, to see the row is brought into view
+    const scroll = vi.fn()
+    const had = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      screen.getByRole('textbox', { name: 'Ask mimir' }).focus()
+      fireEvent.click(screen.getByRole('button', { name: 'Change size' }))
+      expect(document.activeElement).toBe(screen.getByRole('textbox', { name: /New size of the 20 mm cube X/ }))
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+      expect((scroll.mock.contexts[0] as Element).getAttribute('aria-label')).toBe('Change size')
+    } finally {
+      Element.prototype.scrollIntoView = had
+    }
   })
 
   it('binds each reply\'s steps to the part that reply made', () => {

@@ -132,6 +132,19 @@ describe('the message box while a dimension sheet waits', () => {
     expect(onSend).not.toHaveBeenCalled()
     expect(box.value).toBe('')
   })
+
+  it('says why Enter does nothing while a file is attached, instead of doing nothing silently', () => {
+    const onAnswer = vi.fn()
+    const file: PilotAttachment = { id: 'f1', name: 'photo.png', type: 'image/png', bytes: 10, url: 'data:image/png;base64,AA==' }
+    const attachments = { list: [file], problems: [], add: async () => undefined, remove: () => undefined, clear: () => undefined }
+    render(<Composer attachments={attachments} onSend={vi.fn()} running answering answers="sheet" onAnswer={onAnswer} />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(screen.queryByTestId('mimir-composer-files-note')).toBeNull()
+    fireEvent.change(box, { target: { value: 'make it taller' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAnswer).not.toHaveBeenCalled()
+    expect(screen.getByTestId('mimir-composer-files-note').textContent).toBe('Files cannot go with an answer. Remove them to send.')
+  })
 })
 
 describe('the message box under fast typing', () => {

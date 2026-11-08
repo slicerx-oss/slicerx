@@ -311,4 +311,46 @@ journey.describe('the size drawing on a phone', () => {
     await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(2)
     same(at, await box(fold), 'the fold, opened with no picker')
   })
+
+  // A sheet for a part already built draws that part on a phone too: at 390 and 360 px both views are inked at the
+  // phone's cell size with nothing scrolling sideways, and words in the phone's message box set the sheet aside.
+  journey('draws a built part as built at phone widths, and the message box sets its sheet aside', async ({ page }) => {
+    journey.slow()
+    await phoneMimir(page)
+    await askTab(page, 'Make me a box with a lid')
+    await page.getByTestId('mimir-sheet-confirm').last().click({ timeout: 30_000 })
+    await expect(page.getByTestId('mimir-part').last()).toBeVisible({ timeout: 60_000 })
+    const composer = page.getByTestId('mimir-composer')
+    await expect(composer.getByRole('button', { name: 'Stop' })).toHaveCount(0, { timeout: 60_000 })
+    await askTab(page, "Show me the dimension sheet for the box's main sizes")
+    const drawing = page.getByTestId('mimir-sheet-drawing')
+    await expect(drawing).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('mimir-drawing-built')).toHaveText('As built')
+    for (const phone of PHONES.slice(0, 2)) {
+      await page.setViewportSize(phone)
+      await page.waitForTimeout(400)
+      const inked = await drawing.locator('canvas.mimir-drawing-part').evaluateAll((cs) =>
+        cs.map((c) => {
+          const cv = c as HTMLCanvasElement
+          const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data
+          let n = 0
+          for (let i = 3; i < d.length; i += 4) if (d[i]! > 0) n++
+          return { share: n / (cv.width * cv.height), shown: cv.getBoundingClientRect().width }
+        }),
+      )
+      expect(inked, `${phone.width}`).toHaveLength(2)
+      for (const v of inked) {
+        expect(v.share, `${phone.width}`).toBeGreaterThan(0.03)
+        expect(v.shown, `${phone.width}`).toBeLessThanOrEqual(phone.width / 2 + 1)
+      }
+      await noHorizontalScroll(page)
+    }
+    const box = composer.getByRole('textbox')
+    await expect(box).toHaveAttribute('placeholder', 'Or tell mimir what to change')
+    await box.fill('make the lid 2 mm thicker')
+    await box.press('Enter')
+    await expect(page.getByTestId('mimir-sheet-said').last()).toHaveText('make the lid 2 mm thicker')
+    await expect(page.getByTestId('mimir-sheet-status').last()).toContainText('Set aside for your message')
+    await expect(drawing).toHaveCount(0)
+  })
 })
