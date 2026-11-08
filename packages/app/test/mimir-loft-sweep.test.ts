@@ -178,7 +178,8 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
   /**
    * The headphone stand request built as a model with these tools would build it: the sheet, the plan, a round base, a
    * hollow stem lofted from a 40 mm circle to a 24 mm one with a 3 mm wall, then `hook` (the design id) swept on it,
-   * and design.check. `check` gets the check's result.
+   * and design.check. Each step names the plan feature it builds (`feature`), so the check ties the steps to the plan.
+   * `check` gets the check's result.
    */
   const standSteps = (hook: (design: string) => ScriptStepData, check: (r: Record<string, unknown>) => void): ScriptStep[] => {
     let design = ''
@@ -212,12 +213,12 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
       (messages) => {
         design = String(result(messages)['design'] ?? '')
         const [cx, cy] = mid()
-        return { calls: [{ name: 'geom.extrude', args: { design, name: 'Base', shape: { type: 'sketch', loops: [{ type: 'circle', center: [cx, cy], diameterMm: 120 }] }, distance_mm: 15 } }] }
+        return { calls: [{ name: 'geom.extrude', args: { design, name: 'Base', feature: 'Base', shape: { type: 'sketch', loops: [{ type: 'circle', center: [cx, cy], diameterMm: 120 }] }, distance_mm: 15 } }] }
       },
       () => {
         const [cx, cy] = mid()
         const ring = (z: number, d: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [cx, cy], diameterMm: d }] })
-        return { calls: [{ name: 'geom.loft', args: { design, part: 0, operation: 'join', profiles: [ring(15, 40), ring(165, 24)], thicken: { thicknessMm: 3, side: 'inward' } } }] }
+        return { calls: [{ name: 'geom.loft', args: { design, feature: 'Stem', part: 0, operation: 'join', profiles: [ring(15, 40), ring(165, 24)], thicken: { thicknessMm: 3, side: 'inward' } } }] }
       },
       () => hook(design),
       () => ({ calls: [{ name: 'design.check', args: { planId } }] }),
@@ -236,7 +237,7 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
       const [cx, cy] = mid()
       const profile = { frame: { origin: [0, 0, 150], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [cx, cy], diameterMm: 22 }] }
       const path = { frame: { origin: [0, cy, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [cx, 150], segments: [{ type: 'line', to: [cx, 185] }, { type: 'arc', to: [cx + 70, 185], through: [cx + 35, 220] }, { type: 'line', to: [cx + 70, 172] }] }] }
-      return { calls: [{ name: 'geom.sweep', args: { design, part: 0, operation: 'join', profile, path } }] }
+      return { calls: [{ name: 'geom.sweep', args: { design, feature: 'Hook', part: 0, operation: 'join', profile, path } }] }
     }
     const steps = standSteps(overTop, (r) => (check = r))
     const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(steps, { chunk: false }) })
@@ -262,7 +263,7 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
       // the profile's plane faces along the path's start, through the stem's axis
       const profile = { frame: { origin: [cx, 0, 0], normal: [1, 0, 0] }, loops: [{ type: 'circle', center: [cy, 140], diameterMm: 16 }] }
       const path = { frame: { origin: [0, cy, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [cx, 140], segments: [{ type: 'line', to: [cx + 40, 140] }, { type: 'arc', to: [cx + 52, 152], through: [cx + 48.485, 143.515] }, { type: 'line', to: [cx + 52, 160] }] }] }
-      return { calls: [{ name: 'geom.sweep', args: { design, part: 0, operation: 'join', profile, path, name: 'Hook' } }] }
+      return { calls: [{ name: 'geom.sweep', args: { design, feature: 'Hook', part: 0, operation: 'join', profile, path, name: 'Hook' } }] }
     }
     const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(standSteps(side, (x) => (check = x)), { chunk: false }) })
     expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
