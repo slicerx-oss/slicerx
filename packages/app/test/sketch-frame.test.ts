@@ -5,7 +5,7 @@
 // it was drawn for, else with the body of the first feature drawn on it (cad-history design-frame.ts). A step drawn on
 // it is recorded where the sketch is stored, so folding the step into the timeline writes the frame the sketch has, and
 // nothing a feature's undo, redo, deletion or a change of owner does rewrites it. Plain timelines, no engine.
-import { frameNow, historyOf, recordedOn, sketchMove, syncTimeline, withSketch, type DrawnFor, type FaceFrame, type History, type HistoryMesh, type Mat4, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { frameNow, historyOf, parseTimeline, recordedOn, sketchMove, syncTimeline, timelineFiles, withoutBody, withSketch, type DrawnFor, type FaceFrame, type History, type HistoryMesh, type Mat4, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
 
 const at = (x: number, y: number): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1]
@@ -80,6 +80,120 @@ describe('a sketch frame stored once', () => {
       expect(frameOf(t)).toEqual(TOP)
       expect(historyOf(t, 'E')).toEqual(e)
       expect(frameNow(t, sketchOf(t) as never, where)).toEqual(now)
+    }
+  })
+})
+
+describe('a sketch drawn for a design that waits for its body', () => {
+  // D's only step drew on k; the step is undone, so D waits with no body while `waits` says so
+  const drawnFor = (...ds: string[]): DrawnFor[] => ds.map((design) => ({ design, transform: at(128, 128) }))
+  const made = (k: Parameters<typeof withSketch>[1]) => {
+    const t0 = withSketch(EMPTY, k)
+    return syncTimeline(t0, [on('D', history({ id: 's1', part: 0, transform: at(128, 128), params: cut(TOP), sketch: k.id }), at(128, 128))])
+  }
+  const ids = (t: Timeline) => t.items.map((i) => i.id)
+
+  it('stays under its id when the body leaves while the design waits, and goes with it when nothing waits', () => {
+    const t = made({ id: 'k', frame: TOP, loops: RING, drawnFor: drawnFor('D') })
+    expect(ids(withoutBody(t, 'D', (d) => d === 'D'))).toEqual(['k'])
+    expect(ids(syncTimeline(t, [], undefined, (d) => d === 'D'))).toEqual(['k'])
+    expect(ids(withoutBody(t, 'D', () => false))).toEqual([])
+    expect(ids(withoutBody(t, 'D'))).toEqual([])
+  })
+
+  it('stays while either of two designs it was drawn for waits', () => {
+    const t = made({ id: 'k', frame: TOP, loops: RING, drawnFor: drawnFor('D', 'W') })
+    expect(ids(withoutBody(t, 'D', (d) => d === 'W'))).toEqual(['k'])
+    expect(ids(withoutBody(t, 'D', (d) => d === 'D'))).toEqual(['k'])
+    expect(ids(withoutBody(t, 'D', (d) => d === 'X'))).toEqual([])
+  })
+
+  it('goes with the body when it was drawn for no design, whatever waits', () => {
+    const t = made({ id: 'k', frame: TOP, loops: RING })
+    expect(ids(withoutBody(t, 'D', () => true))).toEqual([])
+  })
+
+  it('stays, once, while another body still uses it', () => {
+    const t0 = made({ id: 'k', frame: TOP, loops: RING, drawnFor: drawnFor('D') })
+    const sE = { id: 's2', part: 0, transform: at(50, 128), params: cut(TOP), sketch: 'k' }
+    const both = syncTimeline(t0, [on('D', history({ id: 's1', part: 0, transform: at(128, 128), params: cut(TOP), sketch: 'k' }), at(128, 128)), on('E', history(sE), at(50, 128))])
+    const left = withoutBody(both, 'D', () => false)
+    expect(ids(left)).toEqual(['k', 's2'])
+    // the step comes back: still one sketch k, now under both features
+    const back = syncTimeline(left, [on('D', history({ id: 's1', part: 0, transform: at(128, 128), params: cut(TOP), sketch: 'k' }), at(128, 128)), on('E', history(sE), at(50, 128))])
+    expect(back.items.filter((i) => i.kind === 'sketch').map((i) => i.id)).toEqual(['k'])
+    expect(back.items.flatMap((i) => (i.kind === 'feature' ? [i.sketch] : []))).toEqual(['k', 'k'])
+  })
+})
+
+describe('a project file with a malformed landing or drawn for', () => {
+  /** A design file of D (object 1) with a landing and a sketch drawn for it, its JSON changed by `edit`, read back. */
+  function readBack(edit: (j: { bodies: Record<string, unknown>[]; items: Record<string, unknown>[] }) => void) {
+    const k = { id: 'k', frame: TOP, loops: RING, drawnFor: [{ design: 'D', transform: at(128, 128) }] }
+    const t0 = withSketch(EMPTY, k)
+    const h: History = { ...history({ id: 's1', part: 0, transform: at(128, 128), params: cut(TOP), sketch: 'k' }), placed: [128, 128] }
+    const t = syncTimeline(t0, [on('D', h, at(128, 128))])
+    const files = new Map(timelineFiles(t, new Map([['D', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    const name = 'Metadata/slicerx_history.json'
+    const j = JSON.parse(new TextDecoder().decode(files.get(name)!)) as { bodies: Record<string, unknown>[]; items: Record<string, unknown>[] }
+    edit(j)
+    files.set(name, new TextEncoder().encode(JSON.stringify(j)))
+    return parseTimeline(files, new Set(['1']), () => at(128, 128))
+  }
+  const sketch = (t: Timeline | null) => t?.items.find((i) => i.kind === 'sketch')
+  const intact = (t: Timeline | null) => {
+    expect(t?.bodies.map((b) => b.id)).toEqual(['1'])
+    expect(t?.items.map((i) => i.id)).toEqual(['k', 's1'])
+    expect(sketch(t)).toMatchObject({ frame: TOP, loops: RING })
+    expect(historyOf(t!, '1')?.steps.map((st) => st.id)).toEqual(['s1'])
+  }
+
+  it('reads both as written', () => {
+    const t = readBack(() => undefined)
+    intact(t)
+    expect(t?.bodies[0]?.placed).toEqual([128, 128])
+    expect(sketch(t)).toMatchObject({ drawnFor: [{ design: '1', transform: at(128, 128) }] })
+  })
+
+  it.each([
+    ['one number', [128]],
+    ['three numbers', [128, 128, 0]],
+    ['a string', ['128', 128]],
+    ['not a number', [null, 128]],
+    ['past a bed\'s reach', [1e9, 0]],
+    ['not a list', { x: 128, y: 128 }],
+  ])('drops a landing of %s and keeps the rest', (_what, placed) => {
+    const t = readBack((j) => {
+      j.bodies[0]!['placed'] = placed
+    })
+    intact(t)
+    expect(t?.bodies[0]?.placed).toBeUndefined()
+    expect(historyOf(t!, '1')?.placed).toBeUndefined()
+  })
+
+  it.each<[string, (f: Record<string, unknown>) => Record<string, unknown>]>([
+    ['a transform of 15 numbers', (f: Record<string, unknown>) => ({ ...f, transform: (f['transform'] as number[]).slice(1) })],
+    ['a transform of 17 numbers', (f: Record<string, unknown>) => ({ ...f, transform: [...(f['transform'] as number[]), 0] })],
+    ['a transform with a string', (f: Record<string, unknown>) => ({ ...f, transform: (f['transform'] as unknown[]).map((v, i) => (i === 12 ? '128' : v)) })],
+    ['a transform with a null', (f: Record<string, unknown>) => ({ ...f, transform: (f['transform'] as unknown[]).map((v, i) => (i === 13 ? null : v)) })],
+    ['a design that is no string', (f: Record<string, unknown>) => ({ ...f, design: 1 })],
+    ['no transform', (f: Record<string, unknown>) => ({ design: f['design'] })],
+  ])('drops a drawn for with %s and keeps the sketch', (_what, change) => {
+    const t = readBack((j) => {
+      const k = j.items.find((i) => i['kind'] === 'sketch')!
+      k['drawnFor'] = (k['drawnFor'] as Record<string, unknown>[]).map(change)
+    })
+    intact(t)
+    expect(sketch(t)).not.toHaveProperty('drawnFor')
+  })
+
+  it('drops a drawn for that names two designs, or none', () => {
+    for (const drawnFor of [[{ design: '1', transform: at(0, 0) }, { design: '1', transform: at(0, 0) }], [], 'D']) {
+      const t = readBack((j) => {
+        j.items.find((i) => i['kind'] === 'sketch')!['drawnFor'] = drawnFor
+      })
+      intact(t)
+      expect(sketch(t)).not.toHaveProperty('drawnFor')
     }
   })
 })
