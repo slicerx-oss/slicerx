@@ -17,7 +17,7 @@ export interface Check {
 
 /**
  * Something the person did in the run, in order. The first message, one sheet confirm and one Go are free, or one sheet
- * and one Go for each part when the message asks for separate parts.
+ * and one Go for each distinct part when the message asks for separate parts.
  */
 export type UserTurn =
   | { kind: 'message'; text: string }
@@ -55,16 +55,25 @@ function matches(step: { tool: string; input: unknown }, m: OpMatch): boolean {
 }
 
 /**
- * Every extra turn: answers to questions, nudges, and any sheet or Go past the first, or past one for each of `parts`
- * when the message asks for that many separate parts.
+ * Every extra turn: answers to questions, nudges, and any sheet or Go that is not for a new part. When the message asks
+ * for `parts` separate parts, a sheet is free once for each title not seen yet (up to `parts` of them) and a Go once for
+ * each part not seen yet (up to `parts`), so confirming the same part's sheet or Go a second time counts.
  */
 export function extraTurns(turns: readonly UserTurn[], parts = 1): UserTurn[] {
-  let sheets = 0
-  let gos = 0
+  const sheets = new Set<string>()
+  const gos = new Set<string>()
   return turns.filter((t, i) => {
     if (t.kind === 'message') return i > 0
-    if (t.kind === 'sheet') return ++sheets > parts
-    if (t.kind === 'go') return ++gos > parts
+    if (t.kind === 'sheet') {
+      const free = !sheets.has(t.title) && sheets.size < parts
+      sheets.add(t.title)
+      return !free
+    }
+    if (t.kind === 'go') {
+      const free = !gos.has(t.part) && gos.size < parts
+      gos.add(t.part)
+      return !free
+    }
     return true
   })
 }

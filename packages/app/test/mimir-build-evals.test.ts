@@ -13,7 +13,9 @@
 //   [SX_MIMIR_EVAL_OUT=results.jsonl] [SX_MIMIR_EVAL_LABEL=what changed] vitest run test/mimir-build-evals.test.ts
 // with ANTHROPIC_API_KEY in the environment. It runs on Haiku at its published price; no new request starts once the
 // spend reaches the cap less the stop margin, and no case starts past it.
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { createTransportClient } from '@slicerx/pilot'
 import { createNodeTransport } from '@slicerx/pilot/node'
@@ -23,14 +25,16 @@ import { setGeomProvider } from '../src/geom/client'
 import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, tabConfig, type CaseRun } from './mimir-build-evals/drive'
-import { loadRecording, saveRecording, type ScoreSummary } from './mimir-build-evals/recordings'
+import { loadRecording, refreshScore, saveRecording, summarize } from './mimir-build-evals/recordings'
 import { assemblySizes, classifyNoBuild, extraTurns, hookCheck, okSteps, scoreCase, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 /** Haiku 5.5's published price per million tokens, and per hosted web search. */
 const HAIKU: Price = { usdIn: 0.1, usdOut: 0.5, usdPerSearch: 0.01, long: { above: 100_000, usdIn: 0.5, usdOut: 2.5 } }
 
-const summary = (r: CaseRun): ScoreSummary => ({ pass: r.score.pass, geometry: r.score.geometry, built: r.score.built, refused: r.score.refused, extra: r.score.extra })
+const summary = (r: CaseRun) => summarize(r.score)
+/** A replay's own limit on the drive, just under the 180 s the test is given, so a stalled replay fails with its error and not as a vitest timeout. */
+const REPLAY_DRIVE_MS = 170_000
 
 describe('build eval scoring', () => {
   it('reads a reply that turns the headphone stand down as turning the part down', () => {
@@ -103,6 +107,71 @@ describe('build eval scoring', () => {
     // a one part request still counts the second sheet and Go
     expect(run(vase, turns).extra).toBe(2)
     expect(extraTurns(turns).map((t) => t.kind)).toEqual(['sheet', 'go'])
+  })
+
+  it('frees a sheet only for a title not seen yet, and a Go only for a part not seen yet', () => {
+    const planter = BUILD_CASES.find((c) => c.id === 'planter-saucer')!
+    const run = (t: UserTurn[]) => scoreCase(planter, { events: [], turns: t, parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 })
+    const message: UserTurn = { kind: 'message', text: planter.prompt }
+    // the same sheet and Go twice with two parts: the person confirmed the planter twice
+    const twice: UserTurn[] = [message, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?' }, { kind: 'sheet', title: 'Planter' }, { kind: 'go', part: 'Build the planter?' }]
+    expect(extraTurns(twice, 2).map((t) => t.kind)).toEqual(['sheet', 'go'])
+    const scored2 = run(twice)
+    expect(scored2.extra).toBe(2)
+    expect(scored2.turns.detail).toBe('another sheet, another go')
+    // a new title and a new part are free up to the parts asked for
+    expect(extraTurns([message, { kind: 'sheet', title: 'Planter' }, { kind: 'sheet', title: 'Saucer' }, { kind: 'go', part: 'Build the planter?' }, { kind: 'go', part: 'Build the saucer?' }], 2)).toEqual([])
+    // a third Go, even for a new part, is past the two asked for
+    expect(extraTurns([message, { kind: 'go', part: 'a' }, { kind: 'go', part: 'b' }, { kind: 'go', part: 'c' }], 2).map((t) => t.kind)).toEqual(['go'])
+    // the boundary: three parts allow three distinct sheets and Gos, and no more
+    const three: UserTurn[] = [message, ...['a', 'b', 'c'].flatMap((n): UserTurn[] => [{ kind: 'sheet', title: n }, { kind: 'go', part: n }])]
+    expect(extraTurns(three, 3)).toEqual([])
+    expect(extraTurns([...three, { kind: 'sheet', title: 'd' }], 3).map((t) => t.kind)).toEqual(['sheet'])
+    expect(extraTurns([...three, { kind: 'go', part: 'd' }], 3).map((t) => t.kind)).toEqual(['go'])
+  })
+
+  it('stops a drive at its own limit and says so, instead of ending quietly', async () => {
+    const c = BUILD_CASES.find((x) => x.id === 'cable-clip')!
+    // a model that never answers: the stream ends only when the drive aborts it
+    const stalled = {
+      provider: 'anthropic',
+      async *stream(_req: unknown, signal?: AbortSignal) {
+        await new Promise<void>((res) => (signal?.aborted ? res() : signal?.addEventListener('abort', () => res())))
+      },
+    }
+    const r = await driveCase(c, { client: stalled as never, timeoutMs: 300 })
+    expect(r.error).toMatch(/stopped after 0\.3 s/)
+    expect(r.score.built).toBe(false)
+  }, 30_000)
+
+  it('puts each check in the summary, so a part that fails one check shows which', () => {
+    const wide = summarize(scored('hinged-box', [box(0, 0, 0, 80, 50, 35), box(0, 60, 0, 130, 110, 4)]))
+    expect(wide.geometry).toBe(false)
+    expect(wide.checks).toMatchObject({ watertight: true, bodies: true, minWall: true, bedFit: true, sizes: false })
+    expect(Object.keys(wide.checks).sort()).toEqual(['bedFit', 'bodies', 'ops', 'sizes', 'watertight'].concat('minWall').sort())
+    // a case with a hook adds the hook; a run that built nothing has no part checks
+    expect(summarize(scored('cable-hook', [box(0, 0, 0, 40, 40, 5)])).checks.hook).toBe(false)
+    const none = summarize(scored('hinged-box', []))
+    expect(none.checks).toEqual({ ops: false })
+  })
+
+  it('rewrites only the score of a recording, and refuses when the old fields no longer match', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rec-'))
+    try {
+      const old = { pass: false, geometry: false, built: true, refused: false, extra: 0 }
+      const rec = { model: 'm', provider: 'p', capturedAt: 't', steps: [{ text: 'hi' }, { calls: [{ name: 'x', args: { a: 1 } }] }], score: old }
+      writeFileSync(join(dir, 'k.json'), `${JSON.stringify(rec, null, 1)}\n`)
+      const next = { ...old, checks: { ops: true, bodies: false } }
+      refreshScore('k', next, dir)
+      const after = JSON.parse(readFileSync(join(dir, 'k.json'), 'utf8')) as typeof rec
+      expect(after.score).toEqual(next)
+      expect({ ...after, score: old }).toEqual(rec)
+      expect(() => refreshScore('k', { ...next, geometry: true }, dir)).toThrow(/geometry/)
+      expect(JSON.parse(readFileSync(join(dir, 'k.json'), 'utf8')).score).toEqual(next)
+      expect(() => refreshScore('missing', next, dir)).toThrow(/no recording/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   // a box from (x0, y0, z0) to (x1, y1, z1), closed and facing out
@@ -239,11 +308,27 @@ describe.skipIf(live || !liveEngine)('recorded build eval replies', () => {
   afterAll(() => setGeomProvider(null))
   for (const c of BUILD_CASES) {
     const rec = loadRecording(c.id)
-    // a lofted vase with a shell takes about a minute to rebuild in the engine; the drive stops a replay at 120 s
+    // a lofted vase with a shell takes about a minute to rebuild in the engine; the drive stops a replay at REPLAY_DRIVE_MS
+    // (and says so in r.error), just under the 180 s the test is given
     it.skipIf(!rec)(`${c.id} scores as it did live`, { timeout: 180_000 }, async () => {
-      const r = await driveCase(c, { steps: rec!.steps })
+      const r = await driveCase(c, { steps: rec!.steps, timeoutMs: REPLAY_DRIVE_MS })
       console.log(line(c.id, r))
-      expect(summary(r)).toEqual(rec!.score)
+      expect(r.error, r.error).toBeUndefined()
+      // SX_MIMIR_EVAL_UPDATE_SCORES=1 fills the score fields a recording lacks from this replay; it refuses if the fields it has differ
+      if (process.env['SX_MIMIR_EVAL_UPDATE_SCORES'] === '1') refreshScore(c.id, summary(r))
+      else expect(summary(r)).toEqual(rec!.score)
+      // a known failure fails for its recorded reason
+      if (c.id === 'planter-saucer') {
+        expect(r.score.bodies, JSON.stringify(r.score.bodies)).toEqual({ pass: false, detail: '1 (want 2 to 2)' })
+        // no saucer: one body, and nothing 135 to 150 mm across; the planter itself is closed, prints and fits
+        expect(r.score.sizes?.detail).toBe('120 by 120 by 100 mm; off: xy 120 (want 135 to 150)')
+        expect([r.score.ops, r.score.watertight, r.score.minWall, r.score.bedFit, r.score.sizes].map((x) => x?.pass)).toEqual([true, true, true, true, false])
+        expect(r.score.turns.pass).toBe(true)
+      }
+      if (c.id === 'drawer-handle') {
+        expect(r.score.geometry).toBe(true)
+        expect(r.score.turns.detail).toMatch(/^answer /)
+      }
     })
   }
 })
