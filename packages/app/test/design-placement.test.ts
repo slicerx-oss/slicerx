@@ -6,11 +6,11 @@
 // the body that owns it and by that design's landing, and a step that draws on a shared sketch is stored so the sketch
 // keeps its frame. Runs the tools on the app's design host against the geometry engine (live wasm when built,
 // recorded replies otherwise), with the replay cache cleared before each test so no test leans on another's replays.
-import { clearReplayCache, historyOf, type Design, type DesignHost, type FaceFrame, type SketchItem, type Step } from '@slicerx/cad-history'
+import { clearReplayCache, frameNow, historyOf, type Design, type DesignHost, type FaceFrame, type SketchItem, type Step } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { applyExtrude } from '../src/cad/cad-ops'
+import { applyExtrude, applyRevolve } from '../src/cad/cad-ops'
 import { appDesignHost } from '../src/cad/design-host'
 import { waitingAt } from '../src/cad/waiting'
 import { beginEdit, cancelEdit, nowOf, runReplay, saveEdit, toPart } from '../src/cad/history/ops'
@@ -1355,7 +1355,10 @@ describe('a sketch drawn for a design that waits again', () => {
     expect(get().plate).toHaveLength(0)
     expect(sketches()).toEqual([k])
     expect(sketchItem(k)).toEqual(stored)
-    expect(host.sketch!(k, d).frame?.origin ?? [0, 0, 0]).toEqual([0, 0, 0])
+    // read in its design's frame where the design waits: still on the bed around the design's origin, which a sketch
+    // with no frame is (moved by nothing), and on the plate where the design waits
+    expect(host.sketch!(k, d).frame).toBeUndefined()
+    expect(sketchScene(sketchItem(k))!.frame.origin).toEqual([128, 128, 0])
     // redone: the step names the same sketch
     expect((await run('design.redo', { design: d })).ok).toBe(true)
     expect(sketches()).toEqual([k])
@@ -1368,6 +1371,82 @@ describe('a sketch drawn for a design that waits again', () => {
     expect(featureOn()).toEqual([k])
     expect(volume(entry(d).parts)).toBeCloseTo(20 * 20 * 3, 0)
     expect(onPlate(d)).toEqual({ min: [118, 118, 0], max: [138, 138, 3] })
+  })
+
+  const sketches = () => get().timeline.items.filter((i) => i.kind === 'sketch').map((i) => i.id)
+  const featuresOn = (k: string) => get().timeline.items.filter((i) => i.kind === 'feature' && i.sketch === k).map((i) => i.kind === 'feature' && i.body)
+
+  it('goes with the design\'s only step when it was drawn for no design, as before', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const d = String((await run('design.new', { name: 'Tray' })).output['design'])
+    const k = finishSketch({ frame: { origin: [128, 128, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: square(0, 0, 20) as never }).id
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 5 })).ok).toBe(true)
+    await run('design.undo', { design: d })
+    expect(get().plate).toHaveLength(0)
+    expect(sketches()).toEqual([])
+  })
+
+  it('stays once, under its id, while another body uses it too, and a redo adds the design\'s feature to it again', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const d = String((await run('design.new', { name: 'Post' })).output['design'])
+    const k = String((await run('design.sketch', { design: d, loops: square(0, 0, 4) })).output['id'])
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 5 })).summary).toMatch(/moved to the plate by \(128, 128\) mm/)
+    // a slab built where it prints, under the post, cuts from the same sketch where it reads now
+    const e = String((await run('design.new', { name: 'Slab' })).output['design'])
+    expect((await run('geom.extrude', { design: e, shape: { type: 'rectangle', widthMm: 40, heightMm: 40 }, placement: { center: [128, 128] }, distance_mm: 3 })).summary).not.toMatch(/moved to the plate/)
+    expect((await run('geom.extrude', { design: e, sketch: k, distance_mm: 2, operation: 'cut' })).ok).toBe(true)
+    const stored = structuredClone(sketchItem(k))
+    await run('design.undo', { design: d })
+    expect(sketches()).toEqual([k])
+    expect(featuresOn(k)).toEqual([e])
+    expect(sketchItem(k)).toEqual(stored)
+    for (let n = 0; n < 2; n++) {
+      expect((await run('design.redo', { design: d })).ok).toBe(true)
+      expect(sketches()).toEqual([k])
+      expect(featuresOn(k).sort()).toEqual([d, e].sort())
+      expect(sketchItem(k).frame).toEqual(stored.frame)
+      if (n === 0) await run('design.undo', { design: d })
+    }
+  })
+
+  it('stays in a project saved while its design waits, and opens read where it is stored, drawn for no design', async () => {
+    const run = toolsOn(appDesignHost(loader))
+    await landedBlock(run, 'Base')
+    const d = String((await run('design.new', { name: 'Tray' })).output['design'])
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 0], normal: [0, 0, 1] }, loops: square(0, 0, 4) })).output['id'])
+    expect((await run('geom.extrude', { design: d, sketch: k, distance_mm: 5 })).ok).toBe(true)
+    await run('design.undo', { design: d })
+    expect(sketches()).toEqual([k])
+    const stored = structuredClone(sketchItem(k).frame)
+    const p = await reopen(get().plate)
+    const opened = p.timeline!.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === k)!
+    expect(opened.frame).toEqual(stored)
+    expect(opened.drawnFor).toBeUndefined()
+    expect(frameNow(p.timeline!, opened, () => undefined)).toEqual(stored)
+  })
+
+  it('keeps each chat\'s sketch with that chat\'s design, and draws a sketch with no design named for that chat\'s waiting designs only', async () => {
+    // the mimir tab's design host and the app link's, each with a design whose only step drew on its own sketch
+    const tab = toolsOn(appDesignHost(loader))
+    const link = toolsOn(appDesignHost(loader))
+    const a = String((await tab('design.new', { name: 'Tray' })).output['design'])
+    const ka = String((await tab('design.sketch', { design: a, loops: square(0, 0, 20) })).output['id'])
+    expect((await tab('geom.extrude', { design: a, sketch: ka, distance_mm: 5 })).ok).toBe(true)
+    const b = String((await link('design.new', { name: 'Lid' })).output['design'])
+    const kb = String((await link('design.sketch', { design: b, loops: square(0, 0, 10) })).output['id'])
+    expect((await link('geom.extrude', { design: b, sketch: kb, distance_mm: 2 })).ok).toBe(true)
+    await tab('design.undo', { design: a })
+    await link('design.undo', { design: b })
+    expect(get().plate).toHaveLength(0)
+    expect(sketches()).toEqual([ka, kb])
+    // a sketch the link draws with no design named is for the link's waiting design, not the tab's
+    const kc = String((await link('design.sketch', { loops: square(0, 0, 2) })).output['id'])
+    expect(sketchItem(kc).drawnFor?.map((f) => f.design)).toEqual([b])
+    expect((await tab('design.redo', { design: a })).ok).toBe(true)
+    expect((await link('design.redo', { design: b })).ok).toBe(true)
+    expect(featuresOn(ka)).toEqual([a])
+    expect(featuresOn(kb)).toEqual([b])
+    expect(sketches()).toEqual([ka, kb, kc])
   })
 })
 
@@ -1400,6 +1479,80 @@ describe('a Model extrude on a finished sketch while its design is dragged', () 
     expect(volume(r.parts.map(toPart))).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
     const step = historyOf(get().timeline, d)!.steps.at(-1)!
     expect([step.transform[12], step.transform[13]]).toEqual([128, 128])
+  })
+
+  /** Drags `id` by (dx, dy) as the engine's first `op` call starts. */
+  function dragDuring(op: string, id: string, dx: number, dy: number): void {
+    const inner = geom()
+    let once = true
+    setGeomProvider({ call: (o, req, signal) => {
+      if (o === op && once) {
+        once = false
+        drag(id, dx, dy)
+      }
+      return inner.call(o, req, signal)
+    } })
+  }
+
+  it('records a revolve the same way: where the sketch stood when the revolve started, so the sketch keeps its frame', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    // a 4 mm post on the top, revolved about the design's vertical axis
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, -1, 0], u: [1, 0, 0] }, loops: [{ points: [[0, 0], [4, 0], [4, 5], [0, 5]] }] })).output['id'])
+    const frame = structuredClone(sketchItem(k).frame)
+    const shown = sketchScene(sketchItem(k))!.frame
+    const v = volume(entry(d).parts)
+    dragDuring('sketch.revolve', d, 10, 0)
+    const made = await applyRevolve(loader, { frame: shown, loops: sketchItem(k).loops, axis: { point: [0, 0], direction: [0, 1] }, angleDeg: 360, operation: 'join', target: { objectId: d, partIndex: 0 }, name: 'Revolved body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    expect(volume(entry(d).parts) - v).toBeCloseTo(Math.PI * 16 * 5, -1)
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(host.sketch!(k, d).frame?.origin).toEqual([10, 0, 10])
+    const r = await runReplay({ history: historyOf(get().timeline, d)! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(volume(entry(d).parts), 0)
+    const step = historyOf(get().timeline, d)!.steps.at(-1)!
+    expect(step.params.op).toBe('sketch.revolve')
+    expect([step.transform[12], step.transform[13]]).toEqual([128, 128])
+  })
+
+  it('records a join with no sketch at the transform the body had when the engine started, and replays to the same body', async () => {
+    const d = await landedBlock(toolsOn(appDesignHost(loader)))
+    dragDuring('shape.extrude', d, 10, 0)
+    const top: FaceFrame = { origin: [128, 128, 10], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+    const made = await applyExtrude(loader, { frame: top, shape: { type: 'rectangle', widthMm: 6, heightMm: 6 }, placement: {}, spec: { distanceMm: 5, extent: 'oneSide', operation: 'join' }, target: { objectId: d, partIndex: 0 }, name: 'Peg' })
+    expect(made.missed).toBeUndefined()
+    expect(volume(entry(d).parts)).toBeCloseTo(BLOCK_MM3 + holeMm3(5), 0)
+    const step = entry(d).history!.steps.at(-1)!
+    expect([step.transform[12], step.transform[13]]).toEqual([128, 128])
+    // the peg stays in the middle of the block's top, as the engine put it
+    const r = await runReplay({ history: entry(d).history! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(volume(entry(d).parts), 0)
+    const local = (parts: readonly Pick<MeshPart, 'positions' | 'indices'>[]) => {
+      const b = bounds(parts as MeshPart[], [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])!
+      return { min: b.min.map(r2), max: b.max.map(r2) }
+    }
+    expect(local(r.parts.map(toPart))).toEqual(local(entry(d).parts))
+  })
+
+  it('makes a new body from a finished sketch where the sketch stood when the extrude started, and leaves the sketch with its design', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+    const frame = structuredClone(sketchItem(k).frame)
+    const shown = sketchScene(sketchItem(k))!.frame
+    dragDuring('shape.extrude', d, 10, 0)
+    const made = await applyExtrude(loader, { frame: shown, shape: { type: 'sketch', loops: sketchItem(k).loops }, placement: {}, spec: { distanceMm: 3, extent: 'oneSide', operation: 'new' }, name: 'Sketch body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    const n = get().plate.find((e) => e.id !== d)!.id
+    expect(onPlate(n)).toEqual({ min: [125, 125, 10], max: [131, 131, 13] })
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(host.sketch!(k, d).frame?.origin).toEqual([10, 0, 10])
+    // the new body's history builds it where it stands
+    const r = await runReplay({ history: historyOf(get().timeline, n)! })
+    const b = bounds(r.parts.map(toPart), entry(n).transform)!
+    expect({ min: b.min.map(r2), max: b.max.map(r2) }).toEqual(onPlate(n))
   })
 })
 
