@@ -34,6 +34,7 @@ import { get, useApp, type AppState, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
 import { cardPlans } from './plan-tool'
+import { mimirPlans } from './plans'
 import { answersReachTheirRun, forgetReplaced, retire } from './answers'
 import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
@@ -267,6 +268,8 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     ...tabOptions({ slices, config: parts.config, kb: parts.kb, tools: parts.tools, commands, ...(parts.client ? { client: parts.client } : {}), ...(parts.share ? { share: parts.share } : {}), ...(parts.memory ? { memory: parts.memory } : {}), ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}) }),
     project: appProject(host),
     hasDesign,
+    // the card's plans, where a print-in-place plan whose sizes changed after Go waits for a new plan (design.check reads them)
+    plans: mimirPlans,
     store: mimirLogs,
     // a turn that leaves toolsets out to stay under the provider's tool limit says so in the app log
     log: note,

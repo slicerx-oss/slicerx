@@ -50,7 +50,7 @@ import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismis
 import { capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
 import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
-import { clearanceProfileOf, gapRows } from '../skills/fit_check/clearance'
+import { clearanceProfileOf, GAP_ROW_KEYS, gapRows } from '../skills/fit_check/clearance'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
@@ -66,6 +66,36 @@ export interface PilotHost extends ToolHost {
 
 /** What a tool row shows for arguments a tool with shownInput could not read (bad JSON or the wrong shape). */
 export const INPUT_WITHHELD = 'input withheld'
+
+/**
+ * The host's plans, by planId (the plan registry design.check reads), as far as the runtime marks them: a print-in-place
+ * plan whose sizes the person changed on a sheet after approving it is stale until a new design.plan is answered, and
+ * the design the host tied the plan to is the planned part's.
+ */
+export interface PlanMarks {
+  /** Marks the plan stale; false when the host has no such plan. */
+  stale(planId: string): boolean
+  /** Clears the mark. */
+  fresh(planId: string): void
+  /** The plan's mark and the design it is tied to, or undefined for a plan the host does not have. */
+  get(planId: string): { stale?: true | undefined; design?: string | undefined } | undefined
+}
+
+/** Plans for a host that keeps none: only the marks, by planId. */
+function localPlanMarks(): PlanMarks {
+  const marked = new Set<string>()
+  return {
+    stale: (planId) => (marked.add(planId), true),
+    fresh: (planId) => void marked.delete(planId),
+    get: (planId) => (marked.has(planId) ? { stale: true } : {}),
+  }
+}
+
+/** Two names for one part: the same words, whatever the case or the spaces around them. */
+const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/** The sheet rows that are the fit rule's gaps: a print-in-place plan holds none of them, whoever filled them in. */
+const GAP_KEYS: ReadonlySet<string> = new Set(Object.values(GAP_ROW_KEYS))
 
 export interface CreatePilotOptions {
   host: PilotHost
@@ -137,6 +167,8 @@ export interface CreatePilotOptions {
   log?: (line: string) => void
   /** True when a built design with this id is on the plate, for a sheet that draws it (pilot.sheet's design). */
   sheetDesign?: (id: string) => boolean
+  /** The host's plans (the registry design.check reads), where a stale print-in-place plan is marked. Unset: kept here. */
+  plans?: PlanMarks
   now?: () => number
   newId?: () => string
   /** Waits `ms` or until `signal` aborts; tests pass one that returns at once. */
@@ -178,9 +210,6 @@ export function startsPart(name: string, input: unknown): boolean {
   const op = (input as { operation?: unknown } | null)?.operation
   return op === undefined || op === 'new'
 }
-/** Calls that start a design or open one from a file, which can bring bodies with it (design.new from a model). */
-const STARTS_DESIGN: ReadonlySet<string> = new Set(['design.new', 'design.open'])
-
 /**
  * Why a second design.new in one reply is a restart of a part the reply started: that part has no body yet, its last
  * step did not go through, or the new name is that part's name again (restartOf).
@@ -548,19 +577,33 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // second design.new (another part) ends it, as does the first body built, an approved plan without such pieces, or
   // nothing at all for a plan the person did not approve.
   const printInPlace = new Map<string, boolean>()
-  // Sessions whose sheet changed sizes after a print-in-place plan was approved: the plan is made again before a build.
-  // It belongs to that plan, so it ends with it (endPrintInPlace) and when the person declines the new plan.
-  const planAgain = new Set<string>()
-  const endPrintInPlace = (sessionId: string): void => {
-    printInPlace.delete(sessionId)
-    planAgain.delete(sessionId)
-  }
-  // whether a build waits for the print-in-place plan to be made again: only while that plan's part has no body yet (a
-  // design started for it with design.new still has none) and design.plan is there to make it
-  const waitsForPlan = (sessionId: string): boolean => planAgain.has(sessionId) && printInPlace.has(sessionId) && findTool('design.plan') !== undefined
-  // Sessions that confirmed a sheet with the gap rows: the rows were for the planned part, so the next run's sheets
-  // get none unless a new print-in-place plan is approved (a part the person asks for instead skips the plan).
+  const endPrintInPlace = (sessionId: string): void => void printInPlace.delete(sessionId)
+  // Sessions that confirmed a sheet while a print-in-place plan was on: the sheet was the planned part's, so the next
+  // run's sheets get no gap rows unless a new print-in-place plan is approved (a part the person asks for instead skips
+  // the plan).
   const gapSheet = new Set<string>()
+  // The last approved print-in-place plan of each session, for the whole chat: its planId and part. A size changed on
+  // its part's sheet marks it stale in the plans (the host's registry), which holds every new body of the planned part,
+  // in this run or a later one, and design.check of it, until a new design.plan is answered. Other designs never wait.
+  const plans = opts.plans ?? localPlanMarks()
+  const planned = new Map<string, { planId: string; part: string }>()
+  // the names of the designs each session started or opened, by id, to tell the planned part's design from another
+  const designNames = new Map<string, Map<string, string>>()
+  const isStale = (sessionId: string): boolean => {
+    const p = planned.get(sessionId)
+    return p !== undefined && plans.get(p.planId)?.stale === true && findTool('design.plan') !== undefined
+  }
+  // whether a step on `design` waits for the plan to be made again: the planned part's own design (the one the host
+  // tied the plan to, else the one named as its part), or a step that names no design or one this chat never saw
+  const waitsForPlan = (sessionId: string, design: unknown): boolean => {
+    if (!isStale(sessionId)) return false
+    const p = planned.get(sessionId)!
+    if (typeof design !== 'string') return true
+    const tied = plans.get(p.planId)?.design
+    if (tied !== undefined) return design === tied
+    const name = designNames.get(sessionId)?.get(design)
+    return name === undefined || sameName(name, p.part)
+  }
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
@@ -925,20 +968,24 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
-    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+    if (startsPart(tool.name, input)) {
       const design = (input as { design?: unknown } | null)?.design
-      // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
-      // never for a part in another design; with no design recorded for it, any design may be its own
-      const under = sheetDesigns.get(sessionId)
-      const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
-      if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
-      if (waitsForPlan(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
-      usedSheet.add(sessionId)
-      if (typeof design === 'string' && design) startedUnder(sessionId, design)
-      else starting = true
+      if (findTool('pilot.sheet')) {
+        // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in,
+        // and never for a part in another design; with no design recorded for it, any design may be its own
+        const under = sheetDesigns.get(sessionId)
+        const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
+        if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+      }
+      // the planned part's first body waits while its plan is stale, so it is never built on the old sizes; starting or
+      // opening a design builds nothing, and another design's part never waits
+      if (waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
+      if (findTool('pilot.sheet')) {
+        usedSheet.add(sessionId)
+        if (typeof design === 'string' && design) startedUnder(sessionId, design)
+        else starting = true
+      }
     }
-    // a design started or opened while the plan waits would be built on its old sizes too
-    if (STARTS_DESIGN.has(tool.name) && waitsForPlan(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
     // the planned part is being built: a sheet from here on is another part's
     if (startsPart(tool.name, input)) endPrintInPlace(sessionId)
     const project = opts.project?.()
@@ -1007,10 +1054,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             usedSheet.delete(sessionId)
           }
           // a size changed after the print-in-place plan was approved, before its part: the plan is made again (the gap
-          // rows are the fit rule's guesses, which the plan does not hold)
-          const own = new Set(gaps.map((g) => g.key))
-          if (answer.confirmed && printInPlace.has(sessionId) && answer.changed.some((k) => !own.has(k))) planAgain.add(sessionId)
-          if (answer.confirmed && gaps.length) gapSheet.add(sessionId)
+          // rows, the fit rule's or mimir's, are not sizes the plan holds)
+          const p = planned.get(sessionId)
+          if (answer.confirmed && printInPlace.has(sessionId) && p && answer.changed.some((k) => !GAP_KEYS.has(k))) plans.stale(p.planId)
+          if (answer.confirmed && printInPlace.has(sessionId)) gapSheet.add(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -1054,7 +1101,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(stopKey, (stops.timedOut.get(stopKey) ?? new Set()).add(again))
     else if (out.ok !== false && geometry && stopKey !== MODEL_KEY) for (const key of keysOf(stopKey, stops.seen)) stops.timedOut.delete(key)
     if (out.ok !== false) noteDesigns(out.output, stops)
-    if (tool.name === 'pilot.sheet' && waitsForPlan(sessionId) && out.ok !== false) out = { ...out, summary: `${out.summary}. ${PLAN_AGAIN_NOTE}` }
+    // the planned part's sheet says so too; a later run's sheet is another part's
+    if (tool.name === 'pilot.sheet' && printInPlace.has(sessionId) && isStale(sessionId) && out.ok !== false) out = { ...out, summary: `${out.summary}. ${PLAN_AGAIN_NOTE}` }
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -1065,16 +1113,33 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.display) result.display = out.display
     if (out.untrusted) result.untrusted = true
     emit(result)
-    if (tool.name === 'design.plan' && out.ok !== false && (out.output as { accepted?: unknown } | undefined)?.accepted !== false) {
+    const answered = tool.name === 'design.plan' ? (out.output as { planId?: unknown; accepted?: unknown; edits?: { part?: unknown; printInPlace?: unknown } } | undefined) : undefined
+    // a new plan answered, approved or declined, settles the sizes changed after the last one
+    const was = planned.get(sessionId)
+    if (answered && typeof answered.accepted === 'boolean' && was) {
+      plans.fresh(was.planId)
+      planned.delete(sessionId)
+    }
+    if (answered && out.ok !== false && answered.accepted !== false) {
       // the plan as approved, with the person's edits when they made any
-      const edits = (out.output as { edits?: { printInPlace?: unknown } } | undefined)?.edits
-      const pieces = edits ? edits.printInPlace : (input as { printInPlace?: unknown }).printInPlace
-      if (Array.isArray(pieces) && pieces.length >= 2) printInPlace.set(sessionId, false)
-      else printInPlace.delete(sessionId)
-      planAgain.delete(sessionId)
+      const pieces = answered.edits ? answered.edits.printInPlace : (input as { printInPlace?: unknown }).printInPlace
+      const part = typeof answered.edits?.part === 'string' ? answered.edits.part : (input as { part?: unknown }).part
+      if (Array.isArray(pieces) && pieces.length >= 2) {
+        printInPlace.set(sessionId, false)
+        if (typeof answered.planId === 'string' && typeof part === 'string') planned.set(sessionId, { planId: answered.planId, part })
+      } else printInPlace.delete(sessionId)
     }
     // a plan the person turns down ends the print-in-place plan before it: the part is built from the confirmed sheet
     if (tool.name === 'design.plan' && (out.output as { accepted?: unknown } | undefined)?.accepted === false) endPrintInPlace(sessionId)
+    // the designs this chat started or opened, by name
+    if ((tool.name === 'design.new' || tool.name === 'design.open') && out.ok !== false) {
+      const o = out.output as { design?: unknown; name?: unknown; designs?: { design?: unknown; name?: unknown }[] } | undefined
+      const named = designNames.get(sessionId) ?? new Map<string, string>()
+      designNames.set(sessionId, named)
+      const name = (input as { name?: unknown }).name
+      if (typeof o?.design === 'string' && typeof (o.name ?? name) === 'string') named.set(o.design, String(o.name ?? name))
+      for (const d of Array.isArray(o?.designs) ? o.designs : []) if (typeof d.design === 'string' && typeof d.name === 'string') named.set(d.design, d.name)
+    }
     if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
       if (printInPlace.get(sessionId)) endPrintInPlace(sessionId)
       else printInPlace.set(sessionId, true)
