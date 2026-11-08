@@ -49,14 +49,14 @@ const SLICE: CommandSpec = { id: 'slice', title: 'Slice the plate', section: 'sl
 const QUEUE = { name: 'printer.queue', args: { printerId: 'bench', plate: 1 } }
 
 /** The tab's runtime with an engine that slices at once (`primeTower` when asked) and printers that keep uploads. */
-async function tab(opts: { tower?: boolean } = {}) {
+async function tab(opts: { tower?: boolean; during?: () => void } = {}) {
   let n = 0
   const uploaded: string[] = []
   const slicer = {
     loadModel: async (m: { id?: string }) => handle(m.id ?? 'm'),
     release: () => undefined,
     getPreview: async () => rawPreview(),
-    slice: async () => ({ id: `r${++n}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 60, filamentMm: [1, 1], filamentG: [1, 1], cost: 0, toolChanges: 1 }, stageMicros: {}, wallMs: 1, ...(opts.tower ? { primeTower: { x: 200, y: 200, width: 35, depth: 35 } } : {}) }) as unknown as SliceResult,
+    slice: async () => (opts.during?.(), { id: `r${++n}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 60, filamentMm: [1, 1], filamentG: [1, 1], cost: 0, toolChanges: 1 }, stageMicros: {}, wallMs: 1, ...(opts.tower ? { primeTower: { x: 200, y: 200, width: 35, depth: 35 } } : {}) }) as unknown as SliceResult,
     exportGcode: async (id: string) => ({ fileName: `${id}.gcode`, bytes: 4, sha256: '', blob: new Blob([`; slice ${id}\nG28\n`]) }),
   }
   const printers = {
@@ -140,6 +140,29 @@ describe("mimir's real slice is current when it lands", () => {
     // the shown plate (once plate 2) changes: its slice reads stale, so printer.queue would refuse it
     set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [90, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
     expect(pilot.printRun?.('tab')?.slice?.stale).toBe(true)
+  })
+
+  it('plate 1 deleted while the engine slices plate 2: nothing is recorded, the reply says stale and printer.queue has nothing to send', async () => {
+    set({ plates: [{ id: 'p1', name: 'Plate 1', objects: [part('x', 60, 1)], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [], settings: {} }, { id: 'p3', name: 'Plate 3', objects: [part('z', 60, 1)], settings: {} }], activePlate: 'p2', plate: [part('a', 60, 1)] })
+    await profileReady()
+    // while the engine slices (after the stamp): plate 2 becomes plate 1, and number 2 now names plate 3
+    let deleted = false
+    const { options, uploaded } = await tab({ during: () => void (!deleted && get().slice.status === 'running' && (deleted = removePlate('p1'))) })
+    const steps = [{ calls: [{ name: 'app.slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bench', plate: 2 } }] }, { text: 'Done.' }]
+    const pilot = createPilot({ ...options, client: createScriptedClient(steps, { chunk: false }) })
+    // a chat of its own, so no slice an earlier test recorded is in it
+    const results: unknown[] = []
+    for await (const ev of pilot.run('engine-delete', 'go', {})) {
+      if (ev.type === 'tool_result') results.push(ev)
+      if (ev.type === 'approval_request') await pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
+    }
+    expect(deleted).toBe(true)
+    expect(get().plates.map((p) => p.id)).toEqual(['p2', 'p3'])
+    expect(JSON.stringify(results[0])).toMatch(/"status":"stale"/)
+    expect(pilot.printRun?.('engine-delete')?.slice).toBeFalsy()
+    // no slice was kept for plate 2 (now plate 3), so none goes to the printer
+    expect(results[1]).toMatchObject({ ok: false })
+    expect(uploaded).toEqual([])
   })
 
   it('a two-color plate with an auto tower: the slice is current after it lands and printer.queue sends it', async () => {
