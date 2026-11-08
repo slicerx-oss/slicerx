@@ -1004,7 +1004,8 @@ describe('a solid from a new sketch with a projection', () => {
     const s = drawn()
     nextExtrude = 'miss'
     const r = await solidOnNewSketch(s, extrudeOf(s, { operation: 'join' }, 'b'))
-    expect(r).toMatchObject({ missed: true, warn: true, message: expect.stringMatching(/does not reach the body/) })
+    // the stand-in's miss adds no volume, as a join that sits inside the body does
+    expect(r).toMatchObject({ missed: true, warn: true, message: expect.stringMatching(/already inside the body/) })
     const notes: string[] = []
     afterSolid(r, (text) => notes.push(text))
     expect(notes).toEqual([r.message])

@@ -3,6 +3,7 @@
 // What the Model tools tell a person: real numbers in their messages, plain words for the engine's refusals, nothing
 // recorded when nothing changed, and a word when a tool has nothing to do.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { clearReplayCache, replayHistory } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { setGeomProvider, toGeom } from '../src/geom/client'
 import { applyExtrude } from '../src/cad/cad-ops'
@@ -111,11 +112,12 @@ describe('a shape on a face that misses the body', () => {
     expect(get().plate[0]!.history).toBeUndefined()
   })
 
-  it('says the shape does not reach the body when nothing would change', async () => {
+  it('says the shape is already inside the body when a join would add nothing', async () => {
+    // a join off the body always adds a piece, so one that adds no volume sits inside it
     reply(0)
     const before = get().plate[0]!
     const r = await run()
-    expect(r).toMatchObject({ message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', missed: true, warn: true })
+    expect(r).toEqual({ message: 'The shape is already inside the body, so nothing changed. Check the distance and the direction.', missed: true, warn: true })
     expect(get().plate[0]).toBe(before)
   })
 
@@ -126,6 +128,26 @@ describe('a shape on a face that misses the body', () => {
     expect(r).toEqual({ message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', warn: true, missed: true })
     expect(get().plate[0]).toBe(before)
     expect(get().plate[0]!.history).toBeUndefined()
+  })
+})
+
+describe('a replayed join or cut that changes nothing', () => {
+  const frame = { origin: [0, 0, 5] as [number, number, number], normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number] }
+  const box = boxMesh(10, 10, 5)
+  const base = { name: 'body', slot: 1, positions: Array.from(box.positions), indices: Array.from(box.indices) }
+  // the engine changes nothing: a join inside the part or a cut that misses it
+  const engine = async (op: string) => {
+    calls.push(op)
+    return { mesh: { positions: base.positions, indices: base.indices }, report: { touches: false, volumeChangeMm3: 0, shells: 1, watertight: true } }
+  }
+  const replayed = (operation: 'join' | 'cut') =>
+    replayHistory(engine, { history: { version: 1, base: [base], steps: [{ id: 's1', part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params: { op: 'shape.extrude', frame, shape: { type: 'rectangle', widthMm: 4, heightMm: 4 }, placement: {}, spec: { distanceMm: 2, operation } } }] } })
+
+  it('says a join sits inside the part, and a cut no longer reaches it', async () => {
+    clearReplayCache()
+    expect((await replayed('join')).status[0]).toMatchObject({ state: 'broken', message: 'The shape is already inside the part, so it adds nothing.' })
+    clearReplayCache()
+    expect((await replayed('cut')).status[0]).toMatchObject({ state: 'broken', message: 'The shape no longer reaches the part.' })
   })
 })
 
