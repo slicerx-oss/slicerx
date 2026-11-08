@@ -84,11 +84,11 @@ function engineHost(kind: 'desktop' | 'web' = 'desktop', threads = 1): { host: H
 
 const LIMITS = { layer_height: 0.2, initial_layer_print_height: 0.2, min_layer_height: [0.08], max_layer_height: [0.28], brim_width: 0 }
 
-/** A 10 x 10 mm box `h` mm tall, alone on the plate, with `paint` when given. */
 // What the tests of the slice inputs key put in the store (a printer, its nozzles, presets, a profile) would stay for the
 // tests that run after them, and a slice reads it: it makes the plate's key another one than the stored plan was made for.
 const START = (({ printerModel, profile, userPresets, printerNozzles, printerExtruders, printerSlots, slotMatch, fileSlotTypes, fileSlotVendors, tower, towerFromProject, projectTowers }) => ({ printerModel, profile, userPresets, printerNozzles, printerExtruders, printerSlots, slotMatch, fileSlotTypes, fileSlotVendors, tower, towerFromProject, projectTowers }))(get())
 
+/** A 10 x 10 mm box `h` mm tall, alone on the plate, with `paint` when given. */
 function onePlate(h: number, overrides: Record<string, unknown>, extra: Partial<PlateEntry> = {}): MeshPart {
   set(START)
   const part = { ...boxMesh(10, 10, h), name: 'Body', slot: 1 }
