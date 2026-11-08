@@ -151,5 +151,7 @@ describe('the change file for designs moved onto the bed', () => {
     expect(named.length).toBeGreaterThan(30)
     const tools = new Map(designToolset(NO_ENGINE_HOST).map((t) => [t.name.replace('.', '_'), t.version]))
     for (const [n, v] of named) expect(tools.get(n), n).toBe(v)
+    // design.new and design.open return the design summary too, which has placedMm and bounds in the design's frame
+    expect(named.map(([n]) => n)).toEqual(expect.arrayContaining(['design_new', 'design_open']))
   })
 })
