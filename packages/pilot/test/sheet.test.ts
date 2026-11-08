@@ -137,6 +137,14 @@ describe('pilot.sheet', () => {
     expect(events.find((e) => e.type === 'sheet_bound')).toEqual({ type: 'sheet_bound', sheetId, design: 'obj_1', binds: [{ key: 'case_allowance', step: 2 }] })
   })
 
+  it('refuses an empty bind with what to do instead: bind once built, or skip the call', async () => {
+    const events = await play([{ calls: [SHEET] }, { calls: [{ name: 'pilot.sheet_bind', args: { design: 'obj_1', binds: [] } }] }, { text: 'Done.' }], () => ({}))
+    const r = events.filter((e) => e.type === 'tool_result').at(-1) as { ok?: boolean; summary?: string } | undefined
+    expect(r?.ok).toBe(false)
+    expect(r?.summary).toMatch(/tie rows once the part is built, and skip this call when no row sets one step/)
+    expect(events.some((e) => e.type === 'sheet_bound')).toBe(false)
+  })
+
   it('binds nothing in a conversation that showed no sheet', async () => {
     const events = await play([{ calls: [{ name: 'pilot.sheet_bind', args: { design: 'obj_1', binds: [{ key: 'a', step: 1 }] } }] }])
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
