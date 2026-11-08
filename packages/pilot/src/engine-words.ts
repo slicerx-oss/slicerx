@@ -15,8 +15,8 @@ const REFUSALS: readonly Refusal[] = [
   {
     // boolean.rs storage_mesh: a cut or join whose result only holds at full precision, from faces that line up
     test: /unsafe at mesh storage precision/i,
-    shown: 'That cut left slivers too thin to keep, so it was not made; trying it a slightly different way',
-    hint: 'The cut or join left faces that line up or slivers. Move or extend the cutting shape about 0.05 mm past the faces it meets and try again. Tell the person in plain words if it still fails; never quote the engine text.',
+    shown: 'That step left slivers too thin to keep, so it was not made.',
+    hint: 'The cut or join left faces that line up or slivers. For a cut, extend the cutting shape about 0.05 mm past the faces it meets; for a join, overlap the bodies about 0.05 mm rather than letting faces just touch. Try again once, and tell the person in plain words if it still fails; never quote the engine text.',
   },
 ]
 
