@@ -10,7 +10,7 @@ import type { Host, JsonSchema, LlmHttpRequest, LlmTransport, MeshHandle } from 
 import type { LlmMessage } from '@slicerx/pilot'
 import { createScriptedClient, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens } from '@slicerx/pilot'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { ScriptStep } from '../../pilot/src/provider/scripted'
+import type { ScriptStep, ScriptStepData } from '../../pilot/src/provider/scripted'
 import { builtinCommands } from '../src/commands/builtin'
 import { registerCommands } from '../src/commands/registry'
 import { NEUTRAL } from '../src/edition'
@@ -109,7 +109,7 @@ describe('the request the tab sends for the headphone stand', () => {
     const { system } = await standRequest(pref)
     const scope = system.split('\n').find((l) => l.startsWith('- Build only shapes the tools can make')) ?? ''
     expect(scope).not.toBe('')
-    // what 0.2.17 offered in place of the stand; a loft builds a shape that changes along its length
+    // what an earlier build offered in place of the stand; a loft builds a shape that changes along its length
     expect(system).not.toMatch(/stacked (?:flat|faceted) sections/i)
     expect(scope).toMatch(/taper/i)
     expect(scope).toMatch(/hook/i)
@@ -128,6 +128,8 @@ describe('the request the tab sends for the headphone stand', () => {
     const sweep = toolText(r.tools.find((t) => t.name === 'geom__sweep')!)
     expect(sweep).toMatch(/path's start/)
     expect(sweep).toMatch(/overlap/)
+    // a hook grows out of a side wall below the top and ends in a lip, so the load stays on
+    expect(sweep).toMatch(/A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip/)
   })
 
   it('on a local model, the tool sets say the build set sweeps too', async () => {
@@ -138,11 +140,16 @@ describe('the request the tab sends for the headphone stand', () => {
   // the live baseline: the cable hook asked which screws, the stand asked for its sizes in words and needed a nudge, and
   // two parts tried geom.hole for a new hole
   it.each(MODELS)('on a %s model, defaults a screw, takes the sheet as the size question, and cuts new holes', async (_name, pref) => {
-    const { system } = await standRequest(pref)
+    const r = await standRequest(pref)
+    const { system } = r
     expect(system).not.toMatch(/never fill it with a guess/)
     expect(system).toMatch(/screw they did not name is a common one from parts\.lookup/)
     expect(system).toMatch(/When asked for the sizes first, the sheet is that question/)
     expect(system).toMatch(/a new hole is a circle cut\), geom\.hole to resize a hole/)
+    // the rerun bound an empty sheet before building anything
+    expect(system).toMatch(/Once the part is built, never before, tie the sheet's sizes to the steps they set with pilot\.sheet_bind, a row for each size that sets one step; skip it when none does/)
+    const hole = r.tools.find((t) => t.name === 'geom__hole')!
+    expect(hole.description).toMatch(/It never makes a new hole; for one, cut a circle loop with the extrude tool/)
   })
 })
 
@@ -167,15 +174,16 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
   beforeAll(async () => setGeomProvider(await wasmGeom()))
   afterAll(() => setGeomProvider(null))
 
-  // The owner's prompt built as a model with these tools would build it: the sheet, the plan, a round base, a hollow
-  // stem lofted from a 40 mm circle to a 24 mm one with a 3 mm wall, and a 22 mm rod swept up out of the stem's top
-  // and over in a hook. The rod closes the stem's open top, which seals the hollow inside; that join is a join.
-  it('builds the headphone stand: a base, a hollow tapered loft and a hook swept along a path', async () => {
+  const mid = (): [number, number] => [get().bed.widthMm / 2, get().bed.depthMm / 2]
+  /**
+   * The headphone stand request built as a model with these tools would build it: the sheet, the plan, a round base, a
+   * hollow stem lofted from a 40 mm circle to a 24 mm one with a 3 mm wall, then `hook` (the design id) swept on it,
+   * and design.check. `check` gets the check's result.
+   */
+  const standSteps = (hook: (design: string) => ScriptStepData, check: (r: Record<string, unknown>) => void): ScriptStep[] => {
     let design = ''
     let planId = ''
-    let check: Record<string, unknown> = {}
-    const mid = (): [number, number] => [get().bed.widthMm / 2, get().bed.depthMm / 2]
-    const steps: ScriptStep[] = [
+    return [
       {
         text: 'Here are the sizes.',
         calls: [
@@ -211,28 +219,58 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
         const ring = (z: number, d: number) => ({ frame: { origin: [0, 0, z], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [cx, cy], diameterMm: d }] })
         return { calls: [{ name: 'geom.loft', args: { design, part: 0, operation: 'join', profiles: [ring(15, 40), ring(165, 24)], thicken: { thicknessMm: 3, side: 'inward' } } }] }
       },
-      () => {
-        const [cx, cy] = mid()
-        const profile = { frame: { origin: [0, 0, 150], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [cx, cy], diameterMm: 22 }] }
-        const path = { frame: { origin: [0, cy, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [cx, 150], segments: [{ type: 'line', to: [cx, 185] }, { type: 'arc', to: [cx + 70, 185], through: [cx + 35, 220] }, { type: 'line', to: [cx + 70, 172] }] }] }
-        return { calls: [{ name: 'geom.sweep', args: { design, part: 0, operation: 'join', profile, path } }] }
-      },
+      () => hook(design),
       () => ({ calls: [{ name: 'design.check', args: { planId } }] }),
       (messages) => {
-        check = result(messages)
+        check(result(messages))
         return { text: 'The stand is built.' }
       },
     ]
+  }
+
+  // A 22 mm rod swept up out of the stem's top and over in a hook. The rod closes the stem's open top, which seals the
+  // hollow inside; that join is a join, and the part it leaves is closed.
+  it('builds the headphone stand: a base, a hollow tapered loft and a hook swept along a path', async () => {
+    let check: Record<string, unknown> = {}
+    const overTop = (design: string): ScriptStepData => {
+      const [cx, cy] = mid()
+      const profile = { frame: { origin: [0, 0, 150], normal: [0, 0, 1] }, loops: [{ type: 'circle', center: [cx, cy], diameterMm: 22 }] }
+      const path = { frame: { origin: [0, cy, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [cx, 150], segments: [{ type: 'line', to: [cx, 185] }, { type: 'arc', to: [cx + 70, 185], through: [cx + 35, 220] }, { type: 'line', to: [cx + 70, 172] }] }] }
+      return { calls: [{ name: 'geom.sweep', args: { design, part: 0, operation: 'join', profile, path } }] }
+    }
+    const steps = standSteps(overTop, (r) => (check = r))
     const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(steps, { chunk: false }) })
     expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
     // one body from the loft and the sweep, on the bed, at the sizes asked, with only the sheet and Go asked of the person
     const s = r.score
-    expect({ ops: s.ops.pass, bodies: s.bodies?.pass, bed: s.bedFit?.pass, sizes: s.sizes?.pass, turns: s.turns.pass }, JSON.stringify(s)).toEqual({ ops: true, bodies: true, bed: true, sizes: true, turns: true })
+    expect({ ops: s.ops.pass, watertight: s.watertight?.pass, bodies: s.bodies?.pass, bed: s.bedFit?.pass, sizes: s.sizes?.pass, turns: s.turns.pass }, JSON.stringify(s)).toEqual({ ops: true, watertight: true, bodies: true, bed: true, sizes: true, turns: true })
     // design.check passes the size, the steps and the closure. Left out until they are fixed: its wall measure reads
     // 0.63 mm here where the eval reads 3 mm, and the eval finds non-manifold edges where the rod meets the stem
     const items = (check['items'] ?? []) as { name: string; pass: boolean }[]
     expect(items.map((i) => i.name)).toContain('minimum wall')
     expect(items.filter((i) => i.name !== 'minimum wall' && !i.pass), JSON.stringify(items)).toEqual([])
+    // a hook over the open top, ending pointed down, is the weak design: no side join and no lip
+    expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: false })
+    expect(s.hook?.detail).toMatch(/meets the stem only at its top; tip rises only/)
+  })
+
+  // The hook as it should be: a 16 mm tube out of the stem's side wall below its top, bending up at its end into a lip.
+  it('scores a hook that leaves the stem side and ends in a lip as holding, and the part as one closed body', async () => {
+    let check: Record<string, unknown> = {}
+    const side = (design: string): ScriptStepData => {
+      const [cx, cy] = mid()
+      // the profile's plane faces along the path's start, through the stem's axis
+      const profile = { frame: { origin: [cx, 0, 0], normal: [1, 0, 0] }, loops: [{ type: 'circle', center: [cy, 140], diameterMm: 16 }] }
+      const path = { frame: { origin: [0, cy, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }, loops: [{ start: [cx, 140], segments: [{ type: 'line', to: [cx + 40, 140] }, { type: 'arc', to: [cx + 52, 152], through: [cx + 48.485, 143.515] }, { type: 'line', to: [cx + 52, 160] }] }] }
+      return { calls: [{ name: 'geom.sweep', args: { design, part: 0, operation: 'join', profile, path, name: 'Hook' } }] }
+    }
+    const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(standSteps(side, (x) => (check = x)), { chunk: false }) })
+    expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
+    const s = r.score
+    expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: true })
+    expect(s.hook?.detail).toMatch(/^leaves the stem side below its top; tip rises/)
+    expect({ watertight: s.watertight?.pass, bodies: s.bodies?.pass, sizes: s.sizes?.pass }, JSON.stringify(s)).toEqual({ watertight: true, bodies: true, sizes: true })
+    expect(((check['items'] ?? []) as { name: string; pass: boolean }[]).find((i) => i.name === 'watertight')?.pass).toBe(true)
   })
 })
 
