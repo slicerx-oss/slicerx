@@ -509,6 +509,24 @@ describe('design.check picks the design it checks', () => {
     expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1 })
   })
 
+  it('never follows a design started after the failed check that another plan is tied to', async () => {
+    // the hinge failed on d2; a bracket is then started as d3 and tied to its own plan. Only the rule that a rebuild is
+    // tied to no other plan keeps the hinge plan off it: d3 is open, newer than d2 and was not open at the failure
+    const hinge = boxDesign('d2', 'Hinge')
+    hinge.parts[0] = { name: 'Hinge', slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
+    const plans = createPlanRegistry()
+    plans.put({ ...boxPlan, part: 'Hinge' }, 'd2', 'card')
+    const all = [hinge]
+    const tool = designToolset(hostOf(all), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    const check = async (args: Record<string, unknown>) => (await tool.run(tool.input.parse(args), {} as ToolContext)).output as { design: string; pass: boolean }
+    expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: false })
+    all.push(boxDesign('d3', 'Bracket'))
+    plans.put({ ...boxPlan, planId: 'bracket-1', part: 'Bracket' }, 'd3', 'card')
+    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/already tied to design d2/)
+    expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1, replaceable: true })
+    expect(plans.tiedTo('d3')).toEqual(['bracket-1'])
+  })
+
   it('follows one replacement per failed check, and none after a pass', async () => {
     const d1 = boxDesign('d1', 'Hinge')
     d1.parts[0] = { name: 'Hinge', slot: 0, ...meshOf(boxTris([0, 0, 0], [30, 20, 5])) }
