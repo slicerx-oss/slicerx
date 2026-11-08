@@ -425,11 +425,12 @@ impl<'a> Measured<'a> {
 /// most that run has on any profile.
 ///
 /// The landmarks' order sets the way each ring runs when it can: three or more on a closed ring, two or more on an open
-/// chain, ends included, or one at either end of it, which the chain then starts from. A ring with fewer runs the way
-/// the others do: a closed one winds about the loft as they do (`facing`: each plane's normal along the loft), and an
-/// open one starts at the end nearest its neighbor's start, each taken about its middle (`centers`) as the planes turn
-/// between them. Closed rings whose landmarks wind opposite ways are refused, and so are open chains whose landmarks
-/// are not at the same ends or between them. Also says whether every ring's way came from its landmarks.
+/// chain, ends included, or one at either end of it, which the chain then starts from where its shape agrees with its
+/// neighbor's. A ring with fewer runs the way the others do: a closed one winds about the loft as they do (`facing`:
+/// each plane's normal along the loft), and an open one starts at the end nearest its neighbor's start, each taken
+/// about its middle (`centers`) as the planes turn between them. Closed rings whose landmarks wind opposite ways are
+/// refused, and so are open chains whose landmarks are not at the same ends or between them. Also says whether every
+/// ring's way came from its landmarks.
 #[allow(
     clippy::too_many_lines,
     reason = "find the landmarks, settle each ring's way, count each run, then spread it"
@@ -517,8 +518,9 @@ fn by_landmarks(
         };
         let first = ways.iter().position(Option::is_some).unwrap_or(0);
         way[first] = ways[first].unwrap_or(true);
+        // a lone end landmark holds only where the shape agrees, so one at the other end is refused below by its place
         let settle = |k: usize, to: usize, way: &mut Vec<bool>| {
-            way[k] = ways[k].unwrap_or_else(|| {
+            way[k] = ways[k].filter(|_| places[k].len() > 1).unwrap_or_else(|| {
                 let (s, e) = ends(to, way[to]);
                 let (s, e) = (turned(s, facing[to], facing[k]), turned(e, facing[to], facing[k]));
                 let cost = |fwd: bool| {

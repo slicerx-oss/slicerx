@@ -464,22 +464,13 @@ fn open_chain_landmarks_at_the_ends_count_as_the_ends() {
         ),
         "profiles: profile 2's landmark 1 is between its ends and profile 1's is at its start; mark the same points on every profile"
     );
-    // a lone start against a lone end of a chain drawn the same way: the second runs from its end, as when both ends are
-    // marked that way, and the half turn runs the shell into itself
-    let err = fails(
-        "sketch.loft",
-        &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0]]), arc_at(&level(10.0), &u, &[u[24]])], "thicken": thick }),
-    );
-    assert!(
-        err.starts_with("thicken: a 0.5 mm outward shell runs into itself"),
-        "{err}"
-    );
+    // a lone start against a lone end of a chain drawn the same way
     assert_eq!(
         fails(
             "sketch.loft",
-            &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0], u[24]]), arc_at(&level(10.0), &u, &[u[24], u[0]])], "thicken": thick })
+            &json!({ "profiles": [arc_at(&level(0.0), &u, &[u[0]]), arc_at(&level(10.0), &u, &[u[24]])], "thicken": thick })
         ),
-        err
+        "profiles: profile 2's landmark 1 is at its end and profile 1's is at its start; mark the same points on every profile"
     );
     // the same point marked on a chain drawn the other way is its end, and it lofts
     let back: Vec<[f64; 2]> = u.iter().rev().copied().collect();
@@ -803,17 +794,11 @@ fn open_chains_turn_with_their_planes() {
             volume(&a)
         );
     }
-    // its start against the second's end, both drawn the same way: the second runs from its end, as when both ends are
-    // marked that way, and the half turn folds the shell
-    let err = fails("sketch.loft", &marked_elbow(&u, u[24]));
-    assert!(
-        err.starts_with("thicken: a 1 mm outward shell folds over itself"),
-        "{err}"
+    // its start against the second's end, both drawn the same way
+    assert_eq!(
+        fails("sketch.loft", &marked_elbow(&u, u[24])),
+        "profiles: profile 2's landmark 1 is at its end and profile 1's is at its start; mark the same points on every profile"
     );
-    let mut both = marked_elbow(&u, u[24]);
-    both["profiles"][0]["landmarks"] = json!([u[0], u[24]]);
-    both["profiles"][1]["landmarks"] = json!([u[24], u[0]]);
-    assert_eq!(fails("sketch.loft", &both), err);
 }
 
 #[test]
@@ -889,4 +874,46 @@ fn landmarks_say_how_a_ring_of_strips_closes() {
             "{err}"
         );
     }
+}
+
+#[test]
+fn a_lone_end_landmark_sets_the_shell_side() {
+    // two straight chains 20 mm long, 10 mm apart, thickened 1 mm outward: which face the wall lands on follows the
+    // way each chain runs, so a landmark at the end turns it, as marking the end and then the start does
+    let sheet = |marks: &[[f64; 2]]| {
+        let p = |z: f64| json!({ "frame": level(z), "open": true, "loops": [{ "points": [[0.0, 0.0], [20.0, 0.0]] }], "landmarks": marks });
+        let m = run(
+            "sketch.loft",
+            &json!({ "profiles": [p(0.0), p(10.0)], "thicken": { "thicknessMm": 1 } }),
+        );
+        solid(&m);
+        let pts = points(&m);
+        let lo = pts.iter().fold([f64::MAX; 3], |a, p| {
+            [a[0].min(p[0]), a[1].min(p[1]), a[2].min(p[2])]
+        });
+        let hi = pts.iter().fold([f64::MIN; 3], |a, p| {
+            [a[0].max(p[0]), a[1].max(p[1]), a[2].max(p[2])]
+        });
+        (lo, hi)
+    };
+    let near = |a: ([f64; 3], [f64; 3]), b: ([f64; 3], [f64; 3])| {
+        (0..3).all(|i| (a.0[i] - b.0[i]).abs() < 1e-9 && (a.1[i] - b.1[i]).abs() < 1e-9)
+    };
+    let plain = sheet(&[]);
+    let start = sheet(&[[0.0, 0.0]]);
+    let end = sheet(&[[20.0, 0.0]]);
+    let both = sheet(&[[20.0, 0.0], [0.0, 0.0]]);
+    assert!(near(plain, start), "{plain:?} {start:?}");
+    assert!(near(end, both), "{end:?} {both:?}");
+    // the same box, its wall on the other face of the sheet
+    let y = |b: ([f64; 3], [f64; 3])| [b.0[1], b.1[1]];
+    let (p, e) = (y(plain), y(end));
+    assert!(
+        (p[1] - p[0] - 1.0).abs() < 1e-9 && (e[1] - e[0] - 1.0).abs() < 1e-9,
+        "{p:?} {e:?}"
+    );
+    assert!(
+        (p[0] + e[1]).abs() < 1e-9 && (p[1] + e[0]).abs() < 1e-9,
+        "{p:?} {e:?}"
+    );
 }
