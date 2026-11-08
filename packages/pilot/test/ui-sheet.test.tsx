@@ -24,6 +24,26 @@ const SHEET: PilotSheet = {
 const row = (key: string) => document.querySelector(`[data-dim="${key}"]`)!
 
 describe('the sheet record', () => {
+  it('shows a count given in mm with no unit and an angle in degrees, waiting and confirmed', () => {
+    const gear: PilotSheet = {
+      id: 'sheet_gear',
+      title: 'Gear sizes',
+      views: ['iso'],
+      dims: [
+        { key: 'teeth', label: 'Teeth', value: 20, unit: 'mm', source: 'asked' },
+        { key: 'draft_angle', label: 'Draft', value: 2, unit: 'mm', source: 'asked' },
+        { key: 'width', label: 'Width', value: 40, unit: 'mm', source: 'asked' },
+      ],
+    }
+    render(<SheetRecord sheet={gear} answer={{ confirmed: true, values: { teeth: 20, draft_angle: 2, width: 40 }, changed: [] }} />)
+    expect(['teeth', 'draft_angle', 'width'].map((k) => row(k).querySelector('.sheet-rec-v')!.textContent)).toEqual(['20', '2°', '40 mm'])
+    cleanup()
+    render(<SheetRecord sheet={gear} answer={null} onEdit={() => undefined} />)
+    expect(screen.getByRole('textbox', { name: 'Teeth' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Draft, degrees' })).toBeTruthy()
+    expect([...document.querySelectorAll('.sheet-rec-unit')].map((u) => u.textContent)).toEqual(['°', 'mm'])
+  })
+
   it('numbers each row as its callout, names the source once in the header, and marks guesses while it waits', () => {
     render(<SheetRecord sheet={SHEET} answer={null} />)
     expect(row('phone_width').textContent).toContain('71.5 mm')
@@ -32,11 +52,11 @@ describe('the sheet record', () => {
     expect(source.getAttribute('href')).toBe('https://www.apple.com/iphone/compare/')
     expect(screen.getAllByTestId('mimir-sheet-source')).toHaveLength(1)
     expect(row('phone_width').querySelector('a')).toBeNull()
-    expect(row('lean').textContent).toContain('70 °')
+    expect(row('lean').textContent).toContain('70°')
     expect(row('lean').textContent).toContain('guess')
     expect(row('lean').hasAttribute('data-guess')).toBe(true)
     expect(row('stand_width').textContent).toContain('you said')
-    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('1 assumed value: lean angle 70 °')
+    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('1 assumed value: lean angle 70°')
     expect(screen.getByTestId('mimir-sheet-status').hasAttribute('data-assumed')).toBe(true)
     expect(screen.queryByRole('textbox')).toBeNull()
   })
@@ -88,7 +108,7 @@ describe('the sheet record', () => {
 
   it('shows the values used once confirmed, and which the person changed', () => {
     render(<SheetRecord sheet={SHEET} answer={{ confirmed: true, values: { phone_width: 71.5, lean: 65, stand_width: 70 }, changed: ['lean'] }} />)
-    expect(row('lean').textContent).toContain('65 °')
+    expect(row('lean').textContent).toContain('65°')
     expect(row('lean').textContent).toContain('yours')
     expect(row('lean').hasAttribute('data-guess')).toBe(false)
     expect(screen.getByTestId('mimir-sheet-record').textContent).toContain('Confirmed with 1 change')

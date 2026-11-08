@@ -5,7 +5,7 @@
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
 // keep their places and the status keeps its height once answered, so nothing moves under the chat. A count among a
 // feature's sizes shows with no unit and an angle in degrees (sizeKind), in an inch plan too.
-import { sizeKind, sizeLabelKey, sizeText, sizeUnit, type SizeKind } from '@slicerx/mcp/toolset'
+import { sizeKind, sizeLabelKey, sizeText, sizeUnit, type SizeKind } from '@slicerx/contracts/size-kind'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
