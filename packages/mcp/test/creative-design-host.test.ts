@@ -107,13 +107,17 @@ describe('a recorded reply that builds with the design tools', () => {
   })
 
   it('marks a recording that starts the same part again in one reply stale, since mimir now refuses that restart', async () => {
-    const steps = [{ calls: [{ name: 'design.new', args: { name: 'Cable tray' } }] }, { calls: [{ name: 'design.new', args: { name: 'Cable tray v2' } }] }, { text: 'Done.' }]
-    const run = await runPrompt(P, { geom: undefined, steps, answerRecorded: true, tabTools: true })
+    const sheet = { calls: [{ name: 'pilot.sheet', args: { title: 'Tray size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }
+    const tray = { calls: [{ name: 'design.new', args: { name: 'Cable tray' } }] }
+    const body = { calls: [{ name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 100, heightMm: 30 }, placement: { center: [60, 20] }, distance_mm: 20 } }] }
+    const geom = { run: (op: string, input: unknown) => engine(op, input) }
+    const run = await runPrompt(P, { geom, steps: [sheet, tray, body, { calls: [{ name: 'design.new', args: { name: 'Cable tray v2' } }] }, { text: 'Done.' }], answerRecorded: true, tabTools: true })
     expect(run.stale).toBe(STALE_RESTART)
-    expect(run.stale).toMatch(/starts the same part again with a second design\.new/)
-    // a separate part the prompt names is no restart, so it replays as recorded
-    const two = await runPrompt({ ...P, prompt: 'A cable tray and a cable clip as separate parts' }, { geom: undefined, steps: [steps[0]!, { calls: [{ name: 'design.new', args: { name: 'Cable clip' } }] }, { text: 'Done.' }], answerRecorded: true, tabTools: true })
+    expect(run.stale).toMatch(/refused a design\.new that starts the same part again \(same_part\)/)
+    // a separate part, started once the tray has a body, is no restart, so it replays as recorded
+    const two = await runPrompt({ ...P, prompt: 'A cable tray and a cable clip as separate parts' }, { geom, steps: [sheet, tray, body, { calls: [{ name: 'design.new', args: { name: 'Cable clip' } }] }, { text: 'Done.' }], answerRecorded: true, tabTools: true })
     expect(two.stale).toBeUndefined()
+    expect(two.calls).toEqual(['pilot.sheet', 'design.new', 'geom.extrude', 'design.new'])
   })
 })
 
