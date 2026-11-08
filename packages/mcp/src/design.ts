@@ -69,18 +69,18 @@ export class Designs implements DesignHost {
   }
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */
-  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }): Promise<Step> {
+  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string; feature?: string }): Promise<Step> {
     return (await this.addStep(d, part, params, label, opts, false)).step
   }
 
-  async addWithReceipt(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }) {
+  async addWithReceipt(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string; feature?: string }) {
     return this.addStep(d, part, params, label, opts, true)
   }
 
-  private async addStep(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string } | undefined, receipt: boolean) {
+  private async addStep(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string; feature?: string } | undefined, receipt: boolean) {
     const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }
     guard()
-    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
+    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}), ...(opts?.feature ? { feature: opts.feature } : {}) }
     const history = appendStep(d.history, step)
     const r = await this.run(history)
     const st = r.status[r.status.length - 1]
