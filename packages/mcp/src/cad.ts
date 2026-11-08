@@ -403,6 +403,17 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     if (!deps.files.image) throw new ToolInputError('image: this server reads no files; pass the image as base64', 'not_supported')
     return deps.files.image(p)
   }
+  // A join or cut on a design names its part with "part". A target given as well that is the design itself (by id or
+  // name) or one of its parts by name stands for that part; any other target is refused with the parts there are.
+  const targetPart = (d: Design, target: string | undefined, part: number | undefined): number | undefined => {
+    if (target === undefined) return part
+    const key = (v: string) => v.trim().replace(/\s+/g, ' ').toLowerCase()
+    if (key(target) === key(d.id) || key(target) === key(d.name)) return part
+    const k = d.parts.findIndex((p) => key(p.name) === key(target))
+    if (k >= 0) return k
+    const parts = d.parts.map((p, n) => `${n} (${p.name})`).join(', ')
+    throw new ToolInputError(`target: with a design, join and cut work on its "part"; leave target out${parts ? ` and give part, one of ${parts}` : ''}`)
+  }
   const manifestOf = (d: Design, revision?: string) => {
     const host = designs()
     if (!host.revision) throw new ToolInputError('This host cannot bind topology to a body revision.', 'not_supported')
@@ -694,14 +705,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const f = i.frame
       if (i.shape?.type === 'sketch') splinesOk(i.shape.loops)
       if (i.design) {
-        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
+        const part = targetPart(d, i.target, i.part)
         const k = i.sketch !== undefined ? finished(i.sketch) : null
         const frame = k ? k.frame : frameOf(f)
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
         const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
         return stepOut(d, verb)
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
@@ -733,14 +744,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
       if (i.loops) splinesOk(i.loops)
       if (i.design) {
-        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
+        const part = targetPart(d, i.target, i.part)
         const k = i.sketch !== undefined ? finished(i.sketch) : null
         const frame = k ? k.frame : frameOf(i.frame)
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
         const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
         return stepOut(d, 'Revolved')
       }
       if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
@@ -769,14 +780,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const r = shapeOf(p).safeParse(p)
       if (!r.success) for (const e of r.error.issues) ctx.addIssue({ code: 'custom', message: e.message, path: e.path })
     })
-    .describe('One loop on a plane, as for slicerx_geom_revolve; open: an open chain; landmarks: [x,y] matched in order')
+    .describe('One loop and its frame, as revolve takes them; open: an open chain; landmarks: [x,y] matched in order')
   const loft = defineTool({
     name: 'geom.loft',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description:
-      'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane.',
+      'Loft a solid through 2 to 64 profiles in order, each on its own plane, as a new body, joined to a target or cut from it; neighboring profiles must not touch or cross each other\'s plane. thicken makes it hollow with open ends (a tapered stem, a vase wall).',
     input: z.object({
       profiles: z.array(loftProfile).min(2).max(64).optional().describe('In loft order; no frame is the bed'),
       smooth: z.boolean().optional().describe('Curved sides'),
@@ -795,11 +806,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const th = i.thicken === undefined ? undefined : parsedAt(thickenShape, i.thicken, 'thicken')
       const loftOpts = { ...(i.smooth ? { smooth: true } : {}), ...(i.closed ? { closed: true } : {}), ...(th ? { thicken: th } : {}) }
       if (i.design) {
-        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
+        const part = targetPart(d, i.target, i.part)
         const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.sketches) throw new ToolInputError('sketches: finished sketches loft on a design; give its id as design')
@@ -816,12 +827,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const sweepPath = z.object({ frame: frameSchema.optional(), loops: z.array(chain).length(1).optional(), points: z.array(vec3).min(2).max(4096).optional() })
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
-    description: 'Sweep a sketch profile along an open path, as a new body, joined or cut; with "design" it adds a step.',
+    description: 'Sweep a sketch profile along an open path (a hook, a handle, a bent rod or pipe), as a new body, joined or cut; a join or cut must overlap the part. With "design" it adds a step.',
     input: z.object({
-      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe('One loop and its frame, as for slicerx_geom_revolve; open: an open chain'),
+      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("One loop and its frame, as revolve takes them; its plane crosses the path's start and it is carried as it sits there; open: an open chain"),
       path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional() }).optional().describe('One open chain of lines, arcs and splines (frame, loops), or points [[x,y,z],...]'),
       profile_sketch: z.string().optional(),
       path_sketch: z.string().optional(),
@@ -847,14 +858,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const pathLoops = pth?.loops as SketchLoop[] | undefined
       const points = pth?.points
       if (i.design) {
-        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
+        const part = targetPart(d, i.target, i.part)
         const k = i.profile_sketch ? finished(i.profile_sketch) : null
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
         const j = i.path_sketch ? finished(i.path_sketch) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
         const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params)
         return stepOut(d, verb)
       }
       if (i.profile_sketch || i.path_sketch) throw new ToolInputError(`${i.profile_sketch ? 'profile_sketch' : 'path_sketch'}: finished sketches sweep on a design; give its id as design`)
@@ -1556,6 +1567,19 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       return { summary: verb(before, s), output: { ...out, before: readHole(before), ...(after ? { after } : {}) } }
     },
   })
+
+  // A pick that finds no hole most often means a new hole was wanted, which this tool does not make: the refusal says
+  // how to make one.
+  const resize = holeTool.run.bind(holeTool)
+  holeTool.run = async (i, ctx) => {
+    try {
+      return await resize(i, ctx)
+    } catch (e) {
+      const m = e instanceof Error ? e.message : ''
+      if (!/^pick: (?:no round hole|the hole does not end)/.test(m)) throw e
+      throw new ToolInputError(`${m.replace(/\.$/, '')}. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)`, e instanceof ToolInputError ? e.code : 'invalid_input', e instanceof ToolInputError ? e.details : undefined)
+    }
+  }
 
   return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }

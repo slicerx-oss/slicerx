@@ -69,3 +69,25 @@ export interface DesignHost {
   /** Switches a projection between reference and real, or takes it out with its curves; the bodies drawn on the sketch replay. */
   changeProjection?(sketch: string, projection: string, change: { mode: ProjectMode } | { remove: true }): Promise<{ sketch: SketchItem; replayed: number }>
 }
+
+const nameKey = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/**
+ * The one design named `name` (case and spacing aside), for a call that gave a design's name where its id goes, or
+ * undefined when no design or more than one has that name.
+ */
+export function designNamed<D extends Pick<Design, 'id' | 'name'>>(designs: readonly D[], name: string): D | undefined {
+  const key = nameKey(name)
+  const hits = designs.filter((d) => nameKey(d.name) === key)
+  return hits.length === 1 ? hits[0] : undefined
+}
+
+/**
+ * The refusal for a design that is not there: the ids of the designs that are (up to five, each with its name), so the
+ * next call can give one, or how to start one when there are none. `start` and `list` are the tools' names.
+ */
+export function noDesignMessage(given: string, designs: readonly Pick<Design, 'id' | 'name'>[], tools: { start: string; list: string }): string {
+  if (!designs.length) return `design: no design ${given}; there are no designs yet, so start one with ${tools.start} and use the id it returns`
+  const ids = designs.slice(-5).map((d) => `${d.id} (${d.name})`).join(', ')
+  return `design: no design ${given}; give a design id, such as ${ids}${designs.length > 5 ? `; ${tools.list} lists them all` : ''}`
+}
