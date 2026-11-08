@@ -498,6 +498,73 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
     expect(platesState().plates[0]!.slice).toBe('stale')
   })
 
+  it('with force, slices again over a current slice and answers with the new one only once it lands', async () => {
+    const held = gate()
+    const e = engine({ slice: held })
+    set({ autoSlice: false })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      const first = slicePlate(e.host)
+      held.open()
+      await first
+      const second = gate()
+      // The same host, its next slice held on a new gate.
+      ;(e.host.slicer as { slice: (r: SliceRequest) => Promise<SliceResult> }).slice = ((orig) => async (r: SliceRequest) => {
+        const out = await orig(r)
+        await second.wait
+        return out
+      })((e.host.slicer as { slice: (r: SliceRequest) => Promise<SliceResult> }).slice)
+      let done = false
+      const out = bridge.handle('slice', { force: true, timeoutMs: 3000 }).then((v) => ((done = true), v))
+      await vi.waitFor(() => expect(e.requests).toHaveLength(2))
+      await new Promise((r) => setTimeout(r, 300))
+      expect(done).toBe(false)
+      second.open()
+      await expect(out).resolves.toMatchObject({ status: 'done', stale: false, id: 'r2' })
+    } finally {
+      off()
+    }
+  })
+
+  it('with force, answers not_ready with the reason when the Slice command slices nothing, never the current slice', async () => {
+    const e = engine()
+    set({ autoSlice: false })
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await slicePlate(e.host)
+      set({ plate: get().plate.map((p) => ({ ...p, printable: false })) })
+      await expect(bridge.handle('slice', { force: true, timeoutMs: 3000 })).rejects.toMatchObject({ code: 'not_ready', message: 'Plate 1 was not sliced: Every object on this plate is set not to print. Turn one on first.' })
+      expect(e.requests).toHaveLength(1)
+    } finally {
+      off()
+    }
+  })
+
+  it('answers a slice the engine refuses with its error summary, as the description says', async () => {
+    const e = engine()
+    set({ autoSlice: false })
+    ;(e.host.slicer as { slice: unknown }).slice = async () => {
+      throw new Error('Box is off the bed.')
+    }
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await expect(bridge.handle('slice', { timeoutMs: 3000 })).resolves.toMatchObject({ status: 'error', message: expect.stringContaining('Box is off the bed.') })
+    } finally {
+      off()
+    }
+  })
+
+  it('never hands back an error from before: one on screen, then a Slice with nothing to slice, answers not_ready', async () => {
+    const e = engine()
+    set({ autoSlice: false, slice: { status: 'error', message: 'old' }, plate: get().plate.map((p) => ({ ...p, printable: false })) } as never)
+    const { bridge, off } = bridgeWith(e.host)
+    try {
+      await expect(bridge.handle('slice', { timeoutMs: 3000 })).rejects.toMatchObject({ code: 'not_ready', message: 'Plate 1 was not sliced: Every object on this plate is set not to print. Turn one on first.' })
+    } finally {
+      off()
+    }
+  })
+
   describe('with auto slice on', () => {
     let stop: (() => void) | null = null
     afterEach(() => {
@@ -526,6 +593,27 @@ describe("the bridge's slice and mimir's slice read one stale rule, and pin thei
         off()
       }
     }, 8000)
+
+    it('waits for an auto slice that has started but still waits on the profile, past the grace', async () => {
+      const held = gate()
+      const e = engine({ slice: held })
+      autoOn()
+      stop = startAutoSlice(e.host, 0)
+      const { bridge, off } = bridgeWith(e.host)
+      try {
+        const out = bridge.handle('slice', { timeoutMs: 5000 })
+        await vi.waitFor(() => expect(e.requests).toHaveLength(1))
+        // Auto slice's own slice (the second profile wait) waits 1.6 s on the profile: longer than the grace.
+        gates.only = 2
+        gates.profile = new Promise<void>((r) => setTimeout(r, 1600))
+        set({ overrides: { ...get().overrides, wall_loops: 4 } })
+        held.open()
+        await expect(out).resolves.toMatchObject({ status: 'done', stale: false, id: 'r2' })
+        expect(e.requests).toHaveLength(2)
+      } finally {
+        off()
+      }
+    }, 9000)
 
     it('answers after the grace when auto slice holds the slice for an edit still going (a drag)', async () => {
       const held = gate()

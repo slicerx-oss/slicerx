@@ -36,7 +36,9 @@ export const autoSlicePending = (): boolean => pending()
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let waiting: (() => void) | null = null
-  const isPending = (): boolean => timer !== null || waiting !== null
+  // A slice it has started that is not running yet (it waits on the profile first): set until it runs or gives up.
+  let starting = false
+  const isPending = (): boolean => timer !== null || waiting !== null || starting
   pending = isPending
   const clear = (): void => {
     if (timer) clearTimeout(timer)
@@ -79,7 +81,15 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     }
     waiting?.()
     waiting = null
-    void slicePlate(host, { auto: true })
+    starting = true
+    const off = appStore.subscribe((now) => {
+      if (now.slice.status === 'running') settle()
+    })
+    const settle = (): void => {
+      starting = false
+      off()
+    }
+    void slicePlate(host, { auto: true }).finally(settle)
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
     if (!s.autoSlice) {
