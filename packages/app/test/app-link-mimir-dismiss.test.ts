@@ -194,6 +194,9 @@ describe('mimir.dismiss on a waiting size sheet', () => {
     expect(await code('mimir.dismiss', { said: 'never mind' })).toBe('not_found')
     const now = (await runCall('mimir.session', { id: 's_old_client' })) as { waiting: { sheetId: string } | null }
     expect(now.waiting?.sheetId).toMatch(/^sheet_/)
+    // the refusal names the sheet that waits, so a client that trusts the text can set it aside by its id
+    const refused = (await runCall('mimir.dismiss', {}).catch((e: unknown) => e)) as LinkError
+    expect(refused.message).toBe(`mimir is waiting on size sheet ${now.waiting!.sheetId}, not a question; give its sheetId to set it aside`)
     await runCall('mimir.dismiss', { sheetId: now.waiting!.sheetId, said: 'done' })
     await c.run
   })

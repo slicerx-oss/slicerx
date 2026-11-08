@@ -46,7 +46,12 @@ export async function dismissCard(args: Record<string, unknown>): Promise<unknow
     // no question: the size sheet waiting, set aside as Return in the message box sets it aside, only when the call
     // names it; a call with no ids (a 1.0 client) never touches a sheet
     const sheet = askId === undefined && sheetId !== undefined ? (cards.sheet?.() ?? null) : null
-    if (!sheet || !cards.setAside) throw new LinkError('not_found', askId === undefined ? 'mimir is not waiting on a question or a size sheet' : `question ${askId} is no longer waiting; read mimir.session for the one that is`)
+    if (!sheet || !cards.setAside) {
+      if (askId !== undefined) throw new LinkError('not_found', `question ${askId} is no longer waiting; read mimir.session for the one that is`)
+      // a call with no ids while a sheet waits: say which one, so the client can name it
+      const waits = sheetId === undefined ? (cards.sheet?.() ?? null) : null
+      throw new LinkError('not_found', waits ? `mimir is waiting on size sheet ${waits.sheetId}, not a question; give its sheetId to set it aside` : 'mimir is not waiting on a question or a size sheet')
+    }
     if (sheetId !== undefined && sheetId !== sheet.sheetId) throw new LinkError('not_found', `sheet ${sheetId} is no longer waiting; read mimir.session for the one that is`)
     const words = typeof said === 'string' ? said.trim() : ''
     try {
