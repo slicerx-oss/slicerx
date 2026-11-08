@@ -155,7 +155,8 @@ export function createNativeTestSlicer(url: string): SlicerHost {
       opts?.onProgress?.({ stage: 'preview', fraction: 1 })
       return toResult(job, report, performance.now() - started)
     },
-    // heimdall's plate check, as the desktop runs it: a newer check stops an older one, and an abort lets the answer go.
+    // heimdall's plate check, as the desktop runs it: a newer check or an arrange stops an older one, which, like an abort,
+    // throws an AbortError; an abort lets the answer go.
     async checkPlate(req: SliceRequest, opts): Promise<PlateCheck> {
       const canceled = () => new DOMException('Plate check canceled', 'AbortError')
       const ids = new Set(req.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
@@ -166,7 +167,7 @@ export function createNativeTestSlicer(url: string): SlicerHost {
         const r = await call(`/checks/${nextCheck++}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plate: req.plate, config: req.config, options: req.options ?? {} }) })
         found = await r.json()
       } catch (e) {
-        if (opts?.signal?.aborted) throw canceled()
+        if (opts?.signal?.aborted || (e instanceof Error && /^plate check (skipped|canceled):/.test(e.message))) throw canceled()
         throw e
       }
       if (opts?.signal?.aborted) throw canceled()
