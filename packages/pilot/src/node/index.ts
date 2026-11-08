@@ -7,6 +7,7 @@ import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import type { LlmHttpRequest, LlmTransport, PilotEvent, SessionStore } from '@slicerx/contracts'
+import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import type { GeomHost } from '../hosts'
 import { scrub, summarize } from '../session'
 
@@ -145,10 +146,19 @@ export function createFileSessionStore(dir: string): SessionStore {
 }
 
 /**
- * Geometry through the `sx-geom` command: the request JSON goes to stdin, the
- * response comes back on stdout. `binary` defaults to `sx-geom` on PATH.
+ * A geometry call's time limit: one for every operation, or one by operation. By default each operation's class limit
+ * (@slicerx/contracts geom-limits.ts).
  */
-export function createGeomCli(opts: { binary?: string; timeoutMs?: number } = {}): GeomHost {
+export type GeomTimeout = number | ((op: string) => number)
+
+const limitFor = (timeout: GeomTimeout | undefined, op: string): number => (typeof timeout === 'number' ? timeout : (timeout ?? geomCallLimitMs)(op))
+
+/**
+ * Geometry through the `sx-geom` command: the request JSON goes to stdin, the
+ * response comes back on stdout. `binary` defaults to `sx-geom` on PATH. A call
+ * past its time limit (`timeoutMs`) is stopped and refused with what to try.
+ */
+export function createGeomCli(opts: { binary?: string; timeoutMs?: GeomTimeout } = {}): GeomHost {
   const bin = opts.binary ?? 'sx-geom'
   return {
     run(op, input, signal) {
@@ -157,7 +167,12 @@ export function createGeomCli(opts: { binary?: string; timeoutMs?: number } = {}
         const child = spawn(bin, [op], { stdio: ['pipe', 'pipe', 'pipe'], ...(signal ? { signal } : {}) })
         const out: Buffer[] = []
         const err: Buffer[] = []
-        const timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs ?? 60_000)
+        const ms = limitFor(opts.timeoutMs, op)
+        let late = false
+        const timer = setTimeout(() => {
+          late = true
+          child.kill('SIGKILL')
+        }, ms)
         child.stdout.on('data', (d: Buffer) => out.push(d))
         child.stderr.on('data', (d: Buffer) => err.push(d))
         child.on('error', (e) => {
@@ -166,6 +181,10 @@ export function createGeomCli(opts: { binary?: string; timeoutMs?: number } = {}
         })
         child.on('close', (code) => {
           clearTimeout(timer)
+          if (late) {
+            reject(new Error(`sx-geom ${op}: ${geomStuckMessage(op, ms)}`))
+            return
+          }
           const text = Buffer.concat(out).toString('utf8')
           let body: unknown
           try {
@@ -201,11 +220,11 @@ parentPort.on('message', ({ op, input }) => {
 /**
  * Geometry through the sx-geom web build (packages/geom/wasm), in a worker thread of this process. Its replies match
  * the command's byte for byte; errors read like the command's, `sx-geom <op>: <message>`. A call that is canceled or
- * runs past `timeoutMs` (5 minutes by default) ends its worker, since a synchronous engine call reads no messages, and
- * the next call starts a fresh one. Calls run one at a time, in order.
+ * runs past its time limit (`timeoutMs`, by default its operation's class limit) ends its worker, since a synchronous
+ * engine call reads no messages, and the next call starts a fresh one; one past its limit is refused with what to try.
+ * Calls run one at a time, in order, and each one's limit starts when its turn comes.
  */
-export function createGeomWasm(opts: { wasm: string; timeoutMs?: number }): GeomHost {
-  const timeoutMs = opts.timeoutMs ?? 5 * 60_000
+export function createGeomWasm(opts: { wasm: string; timeoutMs?: GeomTimeout }): GeomHost {
   let worker: Worker | null = null
   let queue: Promise<unknown> = Promise.resolve()
   const call = (op: string, input: unknown, signal?: AbortSignal): Promise<unknown> => {
@@ -256,7 +275,8 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: number }): Geom
         if (worker === w) worker = null
         fail(`the engine stopped (exit ${code})`)
       }
-      const timer = setTimeout(() => stop(`took longer than ${timeoutMs / 1000} s, so the engine was stopped`), timeoutMs)
+      const ms = limitFor(opts.timeoutMs, op)
+      const timer = setTimeout(() => stop(geomStuckMessage(op, ms)), ms)
       signal?.addEventListener('abort', onAbort, { once: true })
       w.on('message', onMessage).on('error', onError).on('exit', onExit)
       w.postMessage({ op, input })

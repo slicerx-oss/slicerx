@@ -77,6 +77,16 @@ describe('the Node geometry host', () => {
     await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
   })
 
+  it('gives each operation its own limit, and refuses a stuck call with its step and a smaller version to try', async () => {
+    const geom = createGeomWasm({ wasm, timeoutMs: (op) => (op === 'build' ? 400 : 60_000) })
+    const t = performance.now()
+    const stuck = geom.run('build', {})
+    const queued = geom.run('info', {})
+    await expect(stuck).rejects.toThrow(/^sx-geom build: the build step ran past its 0.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part$/)
+    expect(performance.now() - t).toBeLessThan(10_000)
+    await expect(queued).resolves.toEqual({ ok: true })
+  })
+
   it('ends a call stuck in the engine when it is canceled, and a call queued behind it still runs', async () => {
     const geom = createGeomWasm({ wasm })
     const ac = new AbortController()
@@ -123,5 +133,20 @@ describe('the Node geometry host', () => {
     expect(performance.now() - t).toBeLessThan(10_000)
     expect(run.parsed.pass).toBe(false)
     expect(`${run.parsed.detail} ${run.error ?? ''}`).toMatch(/build/)
+  })
+
+  it('a creative prompt reports a stuck step at its own limit and goes on, without sending it again', async () => {
+    const engine = createGeomWasm({ wasm, timeoutMs: (op) => (op === 'build' ? 400 : 60_000) })
+    const sent: string[] = []
+    const geom = { run: (op: string, input: unknown, signal?: AbortSignal) => (sent.push(op), engine.run(op, input, signal)) }
+    const p = CREATIVE_PROMPTS.find((x) => x.id === 'cable-organizer')!
+    const t = performance.now()
+    const run = await runPrompt(p, { geom, timeoutMs: 60_000, tabTools: true, answerRecorded: true, steps: [{ calls: [{ name: 'pilot.sheet', args: { title: 'Size', dims: [{ key: 'length', label: 'Length', value: 100, unit: 'mm', source: 'guess' }] } }] }, { calls: [{ name: 'design.new', args: { name: 'Cable organizer' } }] }, { calls: [{ name: 'geom.build', args: { design: 'd1', name: 'base', solids: [{ type: 'box', min: [0, 0, 0], max: [100, 30, 20] }] } }] }, { text: 'Done.' }] })
+    expect(performance.now() - t).toBeLessThan(10_000)
+    // the run itself did not time out: the step was refused, and the reply after it came
+    expect(run.error).toBeUndefined()
+    expect(run.reply).toContain('Done.')
+    expect(sent.filter((op) => op === 'build')).toHaveLength(1)
+    expect(`${run.parsed.detail}`).toMatch(/build step ran past its 0.4 s limit/)
   })
 })
