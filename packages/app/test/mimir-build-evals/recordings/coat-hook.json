@@ -1,0 +1,1532 @@
+{
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-08T19:12:46.609Z",
+ "steps": [
+  {
+   "calls": [
+    {
+     "name": "parts.lookup",
+     "args": {
+      "name": "M4 countersunk screw"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"M4 screw: clearance close 4.3 mm, clearance normal 4.5 mm, clearance loose 4.8 mm\",\"result\":{\"found\":true,\"query\":\"M4 countersunk screw\",\"parts\":[{\"category\":\"screw-holes\",\"id\":\"M4\",\"name\":\"M4 screw\",\"scope\":\"Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.\",\"info\":{\"thread_series\":\"coarse\"},\"sizes\":[{\"key\":\"clearance_close\",\"value\":4.3,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_normal\",\"value\":4.5,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_loose\",\"value\":4.8,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"}]}],\"note\":\"Say where each size came from (the source page). A null value is not published: ask or look it up, never fill it in.\"}}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Wall coat hook",
+      "views": [
+       "front",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          25,
+          0
+         ],
+         [
+          25,
+          70
+         ],
+         [
+          0,
+          70
+         ]
+        ],
+        "from": 0,
+        "to": 5
+       },
+       {
+        "kind": "sweep",
+        "profile": {
+         "d": 12
+        },
+        "path": [
+         [
+          12.5,
+          5,
+          35
+         ],
+         [
+          12.5,
+          50,
+          35
+         ],
+         [
+          12.5,
+          57.07,
+          42.07
+         ],
+         [
+          12.5,
+          60,
+          45
+         ],
+         [
+          12.5,
+          60,
+          60
+         ]
+        ]
+       }
+      ],
+      "dims": [
+       {
+        "key": "plate_width",
+        "label": "Back plate width (X)",
+        "value": 25,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          25,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "plate_height",
+        "label": "Back plate height (Z)",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          70
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "plate_thickness",
+        "label": "Back plate thickness (Y)",
+        "value": 5,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          25,
+          0,
+          70
+         ],
+         "b": [
+          25,
+          5,
+          70
+         ],
+         "off": [
+          0,
+          0,
+          6
+         ]
+        }
+       },
+       {
+        "key": "arm_diameter",
+        "label": "Arm diameter",
+        "value": 12,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          12.5,
+          50,
+          35
+         ],
+         "b": [
+          12.5,
+          50,
+          47
+         ],
+         "off": [
+          6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "arm_reach",
+        "label": "Arm reach from wall, to the start of the bend",
+        "value": 50,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          12.5,
+          5,
+          35
+         ],
+         "b": [
+          12.5,
+          50,
+          35
+         ],
+         "off": [
+          0,
+          0,
+          -10
+         ]
+        }
+       },
+       {
+        "key": "screw_clearance",
+        "label": "Screw clearance hole, M4 normal fit",
+        "value": 4.5,
+        "unit": "mm",
+        "source": "lookup",
+        "at": {
+         "a": [
+          12.5,
+          0,
+          12
+         ],
+         "b": [
+          12.5,
+          5,
+          12
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        },
+        "note": "Albany County clearance chart"
+       },
+       {
+        "key": "countersink_head",
+        "label": "Countersink diameter on the front face",
+        "value": 8.4,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          0,
+          12
+         ],
+         "b": [
+          12.5,
+          0,
+          12
+         ],
+         "off": [
+          10,
+          0,
+          0
+         ]
+        },
+        "note": "Typical for an M4 flat head, 90 degrees"
+       },
+       {
+        "key": "hole_spacing",
+        "label": "Hole centers, from bottom and top of plate",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          0,
+          0
+         ],
+         "b": [
+          12.5,
+          0,
+          12
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        },
+        "note": "Top hole at 58 mm, 12 mm from top"
+       },
+       {
+        "key": "arm_height",
+        "label": "Arm height on the plate, from the bottom",
+        "value": 35,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          35
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "bend_radius",
+        "label": "Bend radius where the arm turns up",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          50,
+          35
+         ],
+         "b": [
+          12.5,
+          60,
+          45
+         ],
+         "off": [
+          0,
+          0,
+          -8
+         ]
+        }
+       },
+       {
+        "key": "tip_rise",
+        "label": "Rise above the bend to the tip",
+        "value": 15,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          60,
+          45
+         ],
+         "b": [
+          12.5,
+          60,
+          60
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "tip_radius",
+        "label": "Rounded tip radius (equal to arm radius)",
+        "value": 6,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          60,
+          60
+         ],
+         "b": [
+          12.5,
+          60,
+          66
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"(input): a looked-up value needs its sourceUrl\"]}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Wall coat hook",
+      "views": [
+       "front",
+       "side",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          25,
+          0
+         ],
+         [
+          25,
+          70
+         ],
+         [
+          0,
+          70
+         ]
+        ],
+        "from": 0,
+        "to": 5
+       },
+       {
+        "kind": "sweep",
+        "profile": {
+         "d": 12
+        },
+        "path": [
+         [
+          12.5,
+          5,
+          35
+         ],
+         [
+          12.5,
+          50,
+          35
+         ],
+         [
+          12.5,
+          57.07,
+          42.07
+         ],
+         [
+          12.5,
+          60,
+          45
+         ],
+         [
+          12.5,
+          60,
+          60
+         ]
+        ]
+       }
+      ],
+      "dims": [
+       {
+        "key": "plate_width",
+        "label": "Back plate width (X)",
+        "value": 25,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          25,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "plate_height",
+        "label": "Back plate height (Z)",
+        "value": 70,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          70
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "plate_thickness",
+        "label": "Back plate thickness (Y)",
+        "value": 5,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          25,
+          0,
+          70
+         ],
+         "b": [
+          25,
+          5,
+          70
+         ],
+         "off": [
+          0,
+          0,
+          6
+         ]
+        }
+       },
+       {
+        "key": "arm_diameter",
+        "label": "Arm diameter",
+        "value": 12,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          12.5,
+          50,
+          35
+         ],
+         "b": [
+          12.5,
+          50,
+          47
+         ],
+         "off": [
+          6,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "arm_reach",
+        "label": "Arm reach from wall, to the start of the bend",
+        "value": 50,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          12.5,
+          5,
+          35
+         ],
+         "b": [
+          12.5,
+          50,
+          35
+         ],
+         "off": [
+          0,
+          0,
+          -10
+         ]
+        }
+       },
+       {
+        "key": "screw_clearance",
+        "label": "Screw clearance hole, M4 normal fit",
+        "value": 4.5,
+        "unit": "mm",
+        "source": "lookup",
+        "sourceTitle": "Albany County clearance hole chart",
+        "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339",
+        "at": {
+         "a": [
+          12.5,
+          0,
+          12
+         ],
+         "b": [
+          12.5,
+          5,
+          12
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        },
+        "note": "Normal fit"
+       },
+       {
+        "key": "countersink_head",
+        "label": "Countersink diameter on the front face",
+        "value": 8.4,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          8.3,
+          0,
+          12
+         ],
+         "b": [
+          16.7,
+          0,
+          12
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        },
+        "note": "Typical for an M4 flat head, 90 degrees"
+       },
+       {
+        "key": "hole_spacing",
+        "label": "Hole centers, from bottom and top of plate",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          0,
+          0
+         ],
+         "b": [
+          12.5,
+          0,
+          12
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        },
+        "note": "Top hole at 58 mm, 12 mm from top"
+       },
+       {
+        "key": "arm_height",
+        "label": "Arm height on the plate, from the bottom",
+        "value": 35,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          35
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "bend_radius",
+        "label": "Bend radius where the arm turns up",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          50,
+          35
+         ],
+         "b": [
+          12.5,
+          60,
+          45
+         ],
+         "off": [
+          0,
+          0,
+          -8
+         ]
+        }
+       },
+       {
+        "key": "tip_rise",
+        "label": "Rise above the bend to the tip",
+        "value": 15,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          60,
+          45
+         ],
+         "b": [
+          12.5,
+          60,
+          60
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "tip_radius",
+        "label": "Rounded tip radius (equal to arm radius)",
+        "value": 6,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12.5,
+          60,
+          60
+         ],
+         "b": [
+          12.5,
+          60,
+          66
+         ],
+         "off": [
+          8,
+          0,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"plate_width\":25,\"plate_height\":70,\"plate_thickness\":5,\"arm_diameter\":12,\"arm_reach\":50,\"screw_clearance\":4.5,\"countersink_head\":8.4,\"hole_spacing\":12,\"arm_height\":35,\"bend_radius\":10,\"tip_rise\":15,\"tip_radius\":6},\"changed\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Wall coat hook",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Back plate",
+        "kind": "extrude",
+        "sizes": {
+         "width": 25,
+         "height": 70,
+         "thickness": 5
+        }
+       },
+       {
+        "name": "Arm",
+        "kind": "sweep",
+        "sizes": {
+         "diameter": 12,
+         "reach": 50,
+         "bend_radius": 10,
+         "tip_rise": 15,
+         "arm_height": 35
+        }
+       },
+       {
+        "name": "Rounded tip",
+        "kind": "revolve",
+        "sizes": {
+         "tip_radius": 6
+        }
+       },
+       {
+        "name": "Countersunk screw holes",
+        "kind": "hole",
+        "sizes": {
+         "clearance": 4.5,
+         "countersink_head": 8.4,
+         "countersink_angle": 90,
+         "spacing": 12
+        }
+       }
+      ],
+      "holes": [
+       {
+        "name": "Screw hole, bottom",
+        "diameter": 4.5,
+        "count": 1
+       },
+       {
+        "name": "Screw hole, top",
+        "diameter": 4.5,
+        "count": 1
+       }
+      ],
+      "overall": {
+       "x": 25,
+       "y": 66,
+       "z": 70
+      },
+      "assumptions": [
+       "Plate lies in the XZ plane, 5 mm thick along +Y, wall face at Y = 0",
+       "Arm leaves the front face at X 12.5, Z 35 and runs 50 mm along +Y to the bend",
+       "Bend radius 10 mm, then 15 mm straight up to the tip center, tip is a 6 mm radius round cap",
+       "Countersinks 90 degrees on the front face at Z 12 and Z 58, X 12.5"
+      ],
+      "questions": [
+       "Are the sizes marked as guesses on the sheet acceptable?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mw87laqw1oh5j\",\"accepted\":true}}"
+   ],
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Wall coat hook"
+     }
+    },
+    {
+     "name": "design.open",
+     "args": {
+      "path": "x"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Wall coat hook (obj_mw87lc18d1)\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":false,\"summary\":\"Model files are for the MCP server; here, give a design instead.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "name": "Back plate",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         0,
+         0,
+         0
+        ],
+        "max": [
+         25,
+         5,
+         70
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 1, Add Back plate\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw87lcs01\",\"name\":\"Add Back plate\",\"op\":\"parts.add\",\"part\":-1,\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,5,70],\"volumeMm3\":8750,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[25,5,70],\"volumeMm3\":8750}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.sweep",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "name": "Arm",
+      "operation": "join",
+      "part": 0,
+      "profile": {
+       "loops": [
+        {
+         "type": "circle",
+         "center": [
+          0,
+          0
+         ],
+         "diameterMm": 12
+        }
+       ],
+       "frame": {
+        "origin": [
+         12.5,
+         5,
+         35
+        ],
+        "normal": [
+         0,
+         1,
+         0
+        ]
+       }
+      },
+      "path": {
+       "points": [
+        [
+         12.5,
+         5,
+         35
+        ],
+        [
+         12.5,
+         50,
+         35
+        ],
+        [
+         12.5,
+         57.07,
+         42.07
+        ],
+        [
+         12.5,
+         60,
+         45
+        ],
+        [
+         12.5,
+         60,
+         60
+        ]
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Joined: step 2, Sweep\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw87leji2\",\"name\":\"Sweep\",\"op\":\"sketch.sweep\",\"part\":0,\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17126.66,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":5948,\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17126.66}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "name": "Rounded tip",
+      "operation": "join",
+      "part": 0,
+      "frame": {
+       "origin": [
+        12.5,
+        60,
+        60
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
+       {
+        "start": [
+         0,
+         -6
+        ],
+        "segments": [
+         {
+          "type": "arc",
+          "to": [
+           0,
+           6
+          ],
+          "through": [
+           6,
+           0
+          ]
+         },
+         {
+          "type": "line",
+          "to": [
+           0,
+           -6
+          ]
+         }
+        ]
+       }
+      ],
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Revolved: step 3, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw87liiq3\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17577.888,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":10380,\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17577.888}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "center": [
+       12.5,
+       5,
+       12
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "diameter_mm": 4.5,
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink M4 bottom"
+     }
+    },
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "center": [
+       12.5,
+       5,
+       58
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "diameter_mm": 4.5,
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink M4 top"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "label": "Countersunk screw holes",
+      "solids": [
+       {
+        "type": "countersink",
+        "origin": [
+         12.5,
+         5,
+         12
+        ],
+        "axis": [
+         0,
+         -1,
+         0
+        ],
+        "shaftDiameterMm": 4.5,
+        "headDiameterMm": 8.4,
+        "angleDeg": 90,
+        "depthMm": 6
+       },
+       {
+        "type": "countersink",
+        "origin": [
+         12.5,
+         5,
+         58
+        ],
+        "axis": [
+         0,
+         -1,
+         0
+        ],
+        "shaftDiameterMm": 4.5,
+        "headDiameterMm": 8.4,
+        "angleDeg": 90,
+        "depthMm": 6
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"solids: a design's subtract step takes boxes and cylinders; a countersink cut needs a model (or build it as its own part)\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "label": "Screw holes 4.5 mm",
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         12.5,
+         -1,
+         12
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 4.5,
+        "heightMm": 8
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         12.5,
+         -1,
+         58
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 4.5,
+        "heightMm": 8
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Subtracted: step 4, Screw holes 4.5 mm\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw87loi14\",\"name\":\"Screw holes 4.5 mm\",\"op\":\"subtract\",\"part\":0,\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17420.655,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":28120,\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17420.655}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "center": [
+       12.5,
+       5,
+       12
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink bottom hole"
+     }
+    },
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "center": [
+       12.5,
+       5,
+       58
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink top hole"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "face": {
+       "at": [
+        14.75,
+        2.5,
+        12
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      },
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "center": [
+       12.5,
+       5,
+       12
+      ],
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink bottom hole"
+     }
+    },
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "face": {
+       "at": [
+        14.75,
+        2.5,
+        58
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      },
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "center": [
+       12.5,
+       5,
+       58
+      ],
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink top hole"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"pick: give \\\"face\\\" (a point on the wall) or \\\"center\\\" and \\\"axis\\\", not both\"}",
+    "{\"ok\":false,\"summary\":\"pick: give \\\"face\\\" (a point on the wall) or \\\"center\\\" and \\\"axis\\\", not both\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "face": {
+       "at": [
+        14.75,
+        2.5,
+        12
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      },
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink bottom hole"
+     }
+    },
+    {
+     "name": "geom.hole",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "part": 0,
+      "face": {
+       "at": [
+        14.75,
+        2.5,
+        58
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      },
+      "countersink": {
+       "diameter_mm": 8.4,
+       "angle_deg": 90
+      },
+      "label": "Countersink top hole"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}",
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a round wall that does not start at a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "name": "Countersink bottom",
+      "operation": "cut",
+      "part": 0,
+      "frame": {
+       "origin": [
+        12.5,
+        0,
+        12
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        1,
+        0
+       ]
+      },
+      "loops": [
+       {
+        "points": [
+         [
+          0,
+          3.05
+         ],
+         [
+          2.25,
+          3.05
+         ],
+         [
+          5.2,
+          6
+         ],
+         [
+          0,
+          6
+         ]
+        ]
+       }
+      ],
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360
+     }
+    },
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw87lc18d1",
+      "name": "Countersink top",
+      "operation": "cut",
+      "part": 0,
+      "frame": {
+       "origin": [
+        12.5,
+        0,
+        58
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        1,
+        0
+       ]
+      },
+      "loops": [
+       {
+        "points": [
+         [
+          0,
+          3.05
+         ],
+         [
+          2.25,
+          3.05
+         ],
+         [
+          5.2,
+          6
+         ],
+         [
+          0,
+          6
+         ]
+        ]
+       }
+      ],
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Revolved: step 7, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smw87lz3r7\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17349.75,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":32914,\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17349.75}]}}",
+    "{\"ok\":true,\"summary\":\"Revolved: step 8, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw87lc18d1\",\"name\":\"Wall coat hook\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smw87m03i8\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17349.729,\"parts\":[{\"index\":0,\"name\":\"Back plate\",\"slot\":1,\"triangles\":17834,\"minMm\":[0,0,0],\"sizeMm\":[25,66,70],\"volumeMm3\":17349.729}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mw87laqw1oh5j",
+      "design": "obj_mw87lc18d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Wall coat hook (obj_mw87lc18d1, tied to the plan): 3 of 8 checks against plan plan_mw87laqw1oh5j failed: extra hole, 8.4 mm (want no hole (not in the plan), got 8.4 mm diameter); extra hole, 8.4 mm (want no hole (not in the plan), got 8.4 mm diameter); feature count (want 4, got 8)\",\"result\":{\"planId\":\"plan_mw87laqw1oh5j\",\"design\":\"obj_mw87lc18d1\",\"designName\":\"Wall coat hook\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"overall size\",\"want\":\"25 x 66 x 70 mm\",\"got\":\"25 x 66 x 70 mm\",\"pass\":true},{\"name\":\"Screw hole, bottom\",\"want\":\"4.5 mm diameter\",\"got\":\"4.5 mm diameter\",\"pass\":true},{\"name\":\"Screw hole, top\",\"want\":\"4.5 mm diameter\",\"got\":\"4.5 mm diameter\",\"pass\":true},{\"name\":\"extra hole, 8.4 mm\",\"want\":\"no hole (not in the plan)\",\"got\":\"8.4 mm diameter\",\"pass\":false},{\"name\":\"extra hole, 8.4 mm\",\"want\":\"no hole (not in the plan)\",\"got\":\"8.4 mm diameter\",\"pass\":false},{\"name\":\"feature count\",\"want\":\"4\",\"got\":\"8\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"3.05 mm\",\"pass\":true}],\"body\":{\"size\":{\"x\":25,\"y\":66,\"z\":70},\"holes\":[{\"diameterMm\":4.500001001219646},{\"diameterMm\":4.500002563272561},{\"diameterMm\":8.400001662739157},{\"diameterMm\":8.400003208414827}],\"features\":8,\"watertight\":true,\"minWallMm\":3.05}}}"
+   ],
+   "text": "The hook is modeled, but the design check did not fully pass, so it isn't signed off yet.\n\nWhat's in the part: a 25 x 70 x 5 mm back plate, a 12 mm arm that runs 50 mm out from the wall at 35 mm height, bends up with a 10 mm radius, rises 15 mm, and ends in a 6 mm radius rounded tip. It has two 4.5 mm screw holes at 12 mm and 58 mm height, each with a 90 degree countersink.\n\nThe check failed on three items, all from the countersinks. The plan listed only the 4.5 mm shafts, so the two 8.4 mm countersink cones show as extra holes. That also pushes the feature count to 8 against the planned 4, since each countersink is its own step. The overall size, the 4.5 mm holes, watertightness and wall thickness all passed.\n\nSizes that were guesses on the sheet: the 8.4 mm countersink head (typical for M4 flat head), the hole spacing, the 35 mm arm height, the 10 mm bend radius, the 15 mm tip rise and the 6 mm tip radius. The 4.5 mm M4 clearance is from the Albany County chart.\n\nShould I keep the countersinks as they are and accept the check result, or would you rather I drop them to plain 4.5 mm holes so the check passes? Nothing has been sliced or sent to the printer."
+  }
+ ],
+ "score": {
+  "pass": true,
+  "geometry": true,
+  "built": true,
+  "refused": false,
+  "extra": 0
+ }
+}

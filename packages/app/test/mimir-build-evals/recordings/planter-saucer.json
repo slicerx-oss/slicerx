@@ -1,0 +1,1123 @@
+{
+ "model": "claude-haiku-5-5",
+ "provider": "anthropic",
+ "capturedAt": "2026-11-08T19:10:36.071Z",
+ "steps": [
+  {
+   "text": "I'll confirm the planter sizes first. Where you didn't give a size, I've used a guess to confirm.",
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Round planter",
+      "views": [
+       "front",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "revolve",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          60,
+          0
+         ],
+         [
+          60,
+          100
+         ],
+         [
+          57,
+          100
+         ],
+         [
+          57,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ],
+        "axis": {
+         "point": [
+          0,
+          0
+         ],
+         "direction": [
+          0,
+          1
+         ]
+        }
+       }
+      ],
+      "dims": [
+       {
+        "key": "outer_diameter",
+        "label": "Outer diameter",
+        "value": 120,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -60,
+          0,
+          -5
+         ],
+         "b": [
+          60,
+          0,
+          -5
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Height",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          65,
+          0,
+          0
+         ],
+         "b": [
+          65,
+          0,
+          100
+         ],
+         "off": [
+          5,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          57,
+          0,
+          50
+         ],
+         "b": [
+          60,
+          0,
+          50
+         ],
+         "off": [
+          0,
+          0,
+          5
+         ]
+        }
+       },
+       {
+        "key": "floor",
+        "label": "Floor thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Not given; 3 mm to match the walls",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          3
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hole_diameter",
+        "label": "Drain hole diameter",
+        "value": 6,
+        "unit": "mm",
+        "source": "asked",
+        "note": "Five holes in the bottom"
+       },
+       {
+        "key": "hole_ring_radius",
+        "label": "Drain hole ring radius",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Center hole plus four around it at this radius; confirm or change"
+       }
+      ]
+     }
+    },
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Saucer",
+      "views": [
+       "front",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "revolve",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          70,
+          0
+         ],
+         [
+          70,
+          15
+         ],
+         [
+          61,
+          15
+         ],
+         [
+          61,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ],
+        "axis": {
+         "point": [
+          0,
+          0
+         ],
+         "direction": [
+          0,
+          1
+         ]
+        }
+       }
+      ],
+      "dims": [
+       {
+        "key": "outer_diameter",
+        "label": "Outer diameter",
+        "value": 140,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -70,
+          0,
+          -5
+         ],
+         "b": [
+          70,
+          0,
+          -5
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Height",
+        "value": 15,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          75,
+          0,
+          0
+         ],
+         "b": [
+          75,
+          0,
+          15
+         ],
+         "off": [
+          5,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "pocket_diameter",
+        "label": "Pocket diameter (holds the planter base)",
+        "value": 122,
+        "unit": "mm",
+        "source": "guess",
+        "note": "120 mm planter base plus 2 mm clearance"
+       },
+       {
+        "key": "pocket_depth",
+        "label": "Pocket depth",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Leaves a 3 mm floor under the planter"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 5 (Drain hole diameter) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle; row 6 (Drain hole ring radius) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}",
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 3 (Pocket diameter (holds the planter base)) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle; row 4 (Pocket depth) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Round planter",
+      "views": [
+       "front",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "revolve",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          60,
+          0
+         ],
+         [
+          60,
+          100
+         ],
+         [
+          57,
+          100
+         ],
+         [
+          57,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ],
+        "axis": {
+         "point": [
+          0,
+          0
+         ],
+         "direction": [
+          0,
+          1
+         ]
+        }
+       }
+      ],
+      "dims": [
+       {
+        "key": "outer_diameter",
+        "label": "Outer diameter",
+        "value": 120,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -60,
+          0,
+          -5
+         ],
+         "b": [
+          60,
+          0,
+          -5
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Height",
+        "value": 100,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          65,
+          0,
+          0
+         ],
+         "b": [
+          65,
+          0,
+          100
+         ],
+         "off": [
+          5,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "wall",
+        "label": "Wall thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          57,
+          0,
+          50
+         ],
+         "b": [
+          60,
+          0,
+          50
+         ],
+         "off": [
+          0,
+          0,
+          5
+         ]
+        }
+       },
+       {
+        "key": "floor",
+        "label": "Floor thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Not given; 3 mm to match the walls",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          0,
+          3
+         ],
+         "off": [
+          -8,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hole_diameter",
+        "label": "Drain hole diameter",
+        "value": 6,
+        "unit": "mm",
+        "source": "asked",
+        "note": "Five holes in the bottom",
+        "at": {
+         "a": [
+          -3,
+          0,
+          0
+         ],
+         "b": [
+          3,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hole_ring_radius",
+        "label": "Drain hole ring radius",
+        "value": 30,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Center hole plus four around it at this radius; confirm or change",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          30,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          8,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    },
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Saucer",
+      "views": [
+       "front",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "revolve",
+        "plane": "xz",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          70,
+          0
+         ],
+         [
+          70,
+          15
+         ],
+         [
+          61,
+          15
+         ],
+         [
+          61,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ],
+        "axis": {
+         "point": [
+          0,
+          0
+         ],
+         "direction": [
+          0,
+          1
+         ]
+        }
+       }
+      ],
+      "dims": [
+       {
+        "key": "outer_diameter",
+        "label": "Outer diameter",
+        "value": 140,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -70,
+          0,
+          -5
+         ],
+         "b": [
+          70,
+          0,
+          -5
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "height",
+        "label": "Height",
+        "value": 15,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          75,
+          0,
+          0
+         ],
+         "b": [
+          75,
+          0,
+          15
+         ],
+         "off": [
+          5,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "pocket_diameter",
+        "label": "Pocket diameter (holds the planter base)",
+        "value": 122,
+        "unit": "mm",
+        "source": "guess",
+        "note": "120 mm planter base plus 2 mm clearance",
+        "at": {
+         "a": [
+          -61,
+          0,
+          15
+         ],
+         "b": [
+          61,
+          0,
+          15
+         ],
+         "off": [
+          0,
+          -8,
+          0
+         ]
+        }
+       },
+       {
+        "key": "pocket_depth",
+        "label": "Pocket depth",
+        "value": 12,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Leaves a 3 mm floor under the planter",
+        "at": {
+         "a": [
+          61,
+          0,
+          3
+         ],
+         "b": [
+          61,
+          0,
+          15
+         ],
+         "off": [
+          6,
+          0,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"outer_diameter\":120,\"height\":100,\"wall\":3,\"floor\":3,\"hole_diameter\":6,\"hole_ring_radius\":30},\"changed\":[]}}",
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"outer_diameter\":140,\"height\":15,\"pocket_diameter\":122,\"pocket_depth\":12},\"changed\":[]}}"
+   ],
+   "text": "Both sizes are confirmed. The planter has several features, so I'll put its build plan up for your approval.",
+   "calls": [
+    {
+     "name": "design.plan",
+     "args": {
+      "part": "Round planter",
+      "units": "mm",
+      "features": [
+       {
+        "name": "Body",
+        "kind": "revolve",
+        "sizes": {
+         "outer_diameter": 120,
+         "height": 100
+        }
+       },
+       {
+        "name": "Cavity",
+        "kind": "cut",
+        "sizes": {
+         "inner_diameter": 114,
+         "floor": 3,
+         "wall": 3
+        }
+       },
+       {
+        "name": "Drain holes",
+        "kind": "hole",
+        "sizes": {
+         "hole_diameter": 6,
+         "hole_ring_radius": 30,
+         "count": 5
+        }
+       }
+      ],
+      "assumptions": [
+       "Round body, 120 mm outer diameter, 100 mm tall, open top",
+       "Walls 3 mm, so the cavity is 114 mm across and 97 mm deep",
+       "Floor 3 mm (guessed to match the walls)",
+       "Five 6 mm holes through the floor: one at the center, four on a 30 mm radius at 90 degree spacing"
+      ],
+      "questions": [
+       "Is a 30 mm ring radius for the four outer holes right, or do you want a different layout?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mw87irbi1w81x\",\"accepted\":true}}"
+   ],
+   "calls": [
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Round planter"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Started Round planter (obj_mw87iru9d1)\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw87iru9d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360,
+      "frame": {
+       "origin": [
+        0,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
+       {
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          60,
+          0
+         ],
+         [
+          60,
+          100
+         ],
+         [
+          57,
+          100
+         ],
+         [
+          57,
+          3
+         ],
+         [
+          0,
+          3
+         ]
+        ]
+       }
+      ],
+      "operation": "new",
+      "name": "Body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Revolved: step 1, Sketch revolve 360°. The part was off the bed, so it moved to the plate by (128, 128) mm. Its coordinates are now the plate's.\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw87isuo1\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140876.864,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":2918,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140876.864}],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm. Its coordinates are now the plate's.\"}}"
+   ],
+   "text": "The body is 120 x 120 x 100 mm on the plate. Next I'll cut the five drain holes through the floor.",
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw87iru9d1",
+      "label": "Drain holes",
+      "part": 0,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         158,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         98,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         158,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         98,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Subtracted: step 2, Drain holes\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw87iuyq2\",\"name\":\"Drain holes\",\"op\":\"subtract\",\"part\":0,\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140456.299,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":109902,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140456.299}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mw87irbi1w81x",
+      "design": "obj_mw87iru9d1"
+     }
+    },
+    {
+     "name": "design.new",
+     "args": {
+      "name": "Saucer"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Round planter (obj_mw87iru9d1, tied to the plan): 3 of 3 checks against plan plan_mw87irbi1w81x failed: feature count (want 3, got 2); watertight (want closed, got open: 4 edges where more than two faces meet (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little); minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0 mm)\",\"result\":{\"planId\":\"plan_mw87irbi1w81x\",\"design\":\"obj_mw87iru9d1\",\"designName\":\"Round planter\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"3\",\"got\":\"2\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"open: 4 edges where more than two faces meet (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little\",\"pass\":false},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":120,\"y\":120,\"z\":100},\"holes\":[{\"diameterMm\":6.0000000324688205},{\"diameterMm\":113.9999995897089},{\"diameterMm\":5.99999989776089},{\"diameterMm\":113.9999995897089},{\"diameterMm\":113.9999995897089}],\"features\":2,\"watertight\":false,\"openWhy\":\"4 edges where more than two faces meet\",\"minWallMm\":0.002}}}",
+    "{\"ok\":true,\"summary\":\"Started Saucer (obj_mw87izasd2)\",\"result\":{\"design\":\"obj_mw87izasd2\",\"name\":\"Saucer\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+   ],
+   "text": "The planter check failed: the revolve left an open seam at the axis and a zero-thickness wall. I'll remove its steps and rebuild it from a circle extrusion instead. The saucer is started.",
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw87iru9d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw87iru9d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Drain holes\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw87isuo1\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140876.864,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":2918,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140876.864}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mw87iru9d1",
+      "name": "Body",
+      "operation": "new",
+      "distance_mm": 100,
+      "extent": "oneSide",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 120
+      },
+      "frame": {
+       "origin": [
+        128,
+        128,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Extruded: step 1, Circle extrude 100 mm\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw87j4ie3\",\"name\":\"Circle extrude 100 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":100,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":1130848.372,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":1784,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":1130848.372}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.extrude",
+     "args": {
+      "design": "obj_mw87iru9d1",
+      "operation": "cut",
+      "part": 0,
+      "distance_mm": 97,
+      "extent": "oneSide",
+      "shape": {
+       "type": "circle",
+       "diameterMm": 114
+      },
+      "frame": {
+       "origin": [
+        128,
+        128,
+        100
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "target": "Body"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cut: step 2, Hole 114 mm\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw87j5k64\",\"name\":\"Hole 114 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":97,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140879.165,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":2740,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140879.165}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw87iru9d1",
+      "label": "Drain holes",
+      "part": 0,
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         158,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         98,
+         128,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         158,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       },
+       {
+        "type": "cylinder",
+        "origin": [
+         128,
+         98,
+         -1
+        ],
+        "axis": [
+         0,
+         0,
+         1
+        ],
+        "diameterMm": 6,
+        "heightMm": 6
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Subtracted: step 3, Drain holes\",\"result\":{\"design\":\"obj_mw87iru9d1\",\"name\":\"Round planter\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw87j7ng5\",\"name\":\"Drain holes\",\"op\":\"subtract\",\"part\":0,\"state\":\"done\"},\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140458.583,\"parts\":[{\"index\":0,\"name\":\"Body\",\"slot\":1,\"triangles\":7190,\"minMm\":[68,68,0],\"sizeMm\":[120,120,100],\"volumeMm3\":140458.583}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mw87irbi1w81x",
+      "design": "obj_mw87iru9d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Round planter (obj_mw87iru9d1, tied to the plan): 1 of 3 checks against plan plan_mw87irbi1w81x failed: minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.03 mm). The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mw87irbi1w81x again returns this same result.\",\"result\":{\"planId\":\"plan_mw87irbi1w81x\",\"design\":\"obj_mw87iru9d1\",\"designName\":\"Round planter\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"3\",\"got\":\"3\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.03 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":120,\"y\":120,\"z\":100},\"holes\":[{\"diameterMm\":6.000000032468819},{\"diameterMm\":6.000003450591356},{\"diameterMm\":6.000000302533771},{\"diameterMm\":6.000003562732204},{\"diameterMm\":6.0000036945976385}],\"features\":3,\"watertight\":true,\"minWallMm\":0.025},\"stop\":\"The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mw87irbi1w81x again returns this same result.\"}}"
+   ],
+   "text": "The planter is built but does not pass the design check, so I've stopped there.\n\n**What's off:** the minimum wall check failed. The plan wants at least 0.8 mm (twice the 0.4 mm nozzle), and the part measures 0.03 mm. The other two checks pass: the five 6 mm holes are in, and the body is closed. The model is 120 mm across and 100 mm tall, with a 114 mm cavity and a 3 mm floor, so the 0.03 mm figure looks like a sliver at a surface join rather than a real thin wall. I can't confirm that without another check, and the plan's fix round is spent.\n\n**Saucer:** I've started it but haven't built it yet. It is 140 mm across and 15 mm tall, with a 122 mm by 12 mm pocket to hold the planter base (3 mm floor left under it). The pocket size and depth are my guesses.\n\n**Assumptions:** the 3 mm floor and the hole layout (one center hole plus four on a 30 mm radius) are guesses you confirmed on the sheet.\n\nHow would you like to continue? I can rebuild the planter's walls and floor as a single revolve with a different seam, or I can build the saucer and leave the planter as it is for you to check in Model."
+  }
+ ],
+ "score": {
+  "pass": false,
+  "geometry": false,
+  "built": true,
+  "refused": false,
+  "extra": 0
+ }
+}
