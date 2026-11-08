@@ -82,8 +82,22 @@ beforeAll(async () => {
 })
 
 describe('the slice key', () => {
-  // with the slots set up by hand, and with none set up (the model's colors and the file's filaments fill them)
-  const STARTS = [{}, { slotSetup: {} }]
+  // with the slots set up by hand, with none set up (the model's colors and the file's filaments fill them), and with
+  // every plate on one slot
+  const ONE_SLOT = { plate: [part('a', 60, 1)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [part('c', 60, 1)], settings: {} }] }
+  const STARTS = [{}, { slotSetup: {} }, ONE_SLOT]
+
+  it('on plates of one slot, the nozzle volume and the flush matrix change neither the configuration nor the key', () => {
+    // a single-color configuration has no flush volumes (slotConfig), so a new printer's nozzle volume keeps its slice
+    const base = { ...get(), ...ONE_SLOT } as AppState
+    for (const field of ['printerNozzleVolume', 'projectFlush'] as const)
+      for (const v of SEEDED[field]!)
+        for (const plate of PLATES) {
+          const s = { ...base, [field]: v } as AppState
+          expect(config(plate.view(s))).toBe(config(plate.view(base)))
+          expect(plate.keys(s)).toBe(plate.keys(base))
+        }
+  })
 
   it('every seeded change changes the configuration of the shown plate', () => {
     expect(SEEDED.projectScriptKeys).toBeDefined()
