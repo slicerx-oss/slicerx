@@ -59,6 +59,12 @@ const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions:
 export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
 
 /**
+ * A join or cut whose volume changes by no more than this, in mm³, changes nothing. A join off the part always adds a
+ * piece, so a join that misses and adds no more than this sits inside the part.
+ */
+export const ADDS_NOTHING_MM3 = 1e-6
+
+/**
  * The part with a step's result mesh, its faces with it. Its paint goes: the triangles it named are not there any
  * more. `dropped` is told when there was paint, for the step's note.
  */
@@ -324,7 +330,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; volumeChangeMm3?: number } }
         // a join off the part always adds a piece, so one that adds no volume sits inside it
         const joins = (p.op === 'shape.extrude' ? p.spec.operation : p.operation) === 'join'
-        if (!r.report.touches) throw new Broken(joins && r.report.volumeChangeMm3 !== undefined && Math.abs(r.report.volumeChangeMm3) <= 1e-6 ? 'The shape is already inside the part, so it adds nothing.' : 'The shape no longer reaches the part.')
+        if (!r.report.touches) throw new Broken(joins && r.report.volumeChangeMm3 !== undefined && Math.abs(r.report.volumeChangeMm3) <= ADDS_NOTHING_MM3 ? 'The shape is already inside the part, so nothing changed.' : 'The shape no longer reaches the part.')
         out[i] = keep(part, r.mesh)
         break
       }
