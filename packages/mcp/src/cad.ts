@@ -403,16 +403,32 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     if (!deps.files.image) throw new ToolInputError('image: this server reads no files; pass the image as base64', 'not_supported')
     return deps.files.image(p)
   }
-  // A join or cut on a design names its part with "part". A target given as well that is the design itself (by id or
-  // name) or one of its parts by name stands for that part; any other target is refused with the parts there are.
+  // A join or cut on a design names its part with "part". A target given as well that names one of its parts stands
+  // for that part (a part name wins over the design's own name), and one that is the design itself (by id or name)
+  // leaves part as given. A target naming another part than part, a name two parts share, or any other target is
+  // refused with the parts there are.
   const targetPart = (d: Design, target: string | undefined, part: number | undefined): number | undefined => {
     if (target === undefined) return part
     const key = (v: string) => v.trim().replace(/\s+/g, ' ').toLowerCase()
-    if (key(target) === key(d.id) || key(target) === key(d.name)) return part
-    const k = d.parts.findIndex((p) => key(p.name) === key(target))
-    if (k >= 0) return k
     const parts = d.parts.map((p, n) => `${n} (${p.name})`).join(', ')
-    throw new ToolInputError(`target: with a design, join and cut work on its "part"; leave target out${parts ? ` and give part, one of ${parts}` : ''}`)
+    const give = `leave target out${parts ? ` and give part, one of ${parts}` : ''}`
+    const named = d.parts.flatMap((p, n) => (key(p.name) === key(target) ? [n] : []))
+    if (named.length > 1) throw new ToolInputError(`target: ${named.length} parts are named ${target} (${named.join(', ')}); ${give}`)
+    const k = named[0]
+    if (k !== undefined) {
+      if (part !== undefined && part !== k) throw new ToolInputError(`target: ${target} is part ${k} (${d.parts[k]!.name}), but part is ${part}${d.parts[part] ? ` (${d.parts[part]!.name})` : ''}; give one of them`)
+      return k
+    }
+    if (key(target) === key(d.id) || key(target) === key(d.name)) return part
+    throw new ToolInputError(`target: with a design, join and cut work on its "part"; ${give}`)
+  }
+  // The design's id for a refusal's bodyId, so a design given by its name reports the body it means.
+  const bodyIdOf = (given: string): string => {
+    try {
+      return designOf(given).id
+    } catch {
+      return given
+    }
   }
   const manifestOf = (d: Design, revision?: string) => {
     const host = designs()
@@ -1166,7 +1182,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
             ...(e instanceof ToolInputError ? e.details : {}),
             topology: current ? compactManifest(current) : null,
-            operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: i.design,
+            operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: bodyIdOf(i.design),
               priorRevision: i.face.topology.revision, revision: current?.revision ?? null, target: i.face.topology },
           })
         }
@@ -1448,13 +1464,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeTool = defineTool({
     name: 'geom.hole',
-    version: '1.1.0',
+    version: '1.1.1',
     source: 'command',
     permission: 'slice',
     description:
-      'Make a round hole in a model or a design another size, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
+      'Change a round hole already in a model or a design, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. It never makes a new hole; for one, cut a circle loop with the extrude tool. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
     localDescription:
-      'Change a round hole in a model or a design: a new diameter_mm, a blind hole\'s depth_mm, or a counterbore or countersink at its entry. Pick it by a point on its wall (face) or by center and axis. With design it adds a hole step; with a model it writes an STL. Returns the hole before and after. More: kb.search "hole tool".',
+      'Change a round hole already in a model or a design: a new diameter_mm, a blind hole\'s depth_mm, or a counterbore or countersink at its entry. It never makes a new hole; for one, cut a circle loop with the extrude tool. Pick it by a point on its wall (face) or by center and axis. With design it adds a hole step; with a model it writes an STL. Returns the hole before and after. More: kb.search "hole tool".',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
@@ -1562,9 +1578,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           const code = rawCode === 'not_found' ? 'stale_body' : rawCode
           throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
             ...(e instanceof ToolInputError ? e.details : {}),
-            bodyId: i.design, currentRevision: current?.revision ?? null,
+            bodyId: bodyIdOf(i.design), currentRevision: current?.revision ?? null,
             topology: current ? compactManifest(current) : null,
-            operationResult: { operation: 'geom.hole', status: 'refused', reason: code, bodyId: i.design,
+            operationResult: { operation: 'geom.hole', status: 'refused', reason: code, bodyId: bodyIdOf(i.design),
               priorRevision: reference.revision, revision: current?.revision ?? null, target: reference },
           })
         }

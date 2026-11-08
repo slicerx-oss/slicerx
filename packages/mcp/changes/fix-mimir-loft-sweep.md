@@ -2,9 +2,11 @@
 
 - `slicerx_geom_loft` 1.1.1: the description says `thicken` makes the loft hollow with open ends (a tapered stem, a vase wall), and a profile's description points at the revolve tool's loops and frame without naming the tool by its MCP name.
 - `slicerx_geom_sweep` 1.1.1: the description names what a sweep is for (a hook, a handle, a bent rod or pipe) and says a join or cut must overlap the part. The profile's description says its plane crosses the path's start and that it is carried as it sits there.
-- Every tool that takes `design`: a design's name given where its id goes is taken when exactly one design has that name (case and spacing aside). A design that is not there is refused with the ids of the designs there are, each with its name, or with how to start one when there are none.
-- `slicerx_geom_extrude`, `slicerx_geom_revolve`, `slicerx_geom_loft` and `slicerx_geom_sweep` with `design`: a `target` that is the design itself (its id or name) or one of its parts by name stands for that part. Any other `target` is refused with the design's parts by number and name.
-- `slicerx_geom_hole`: a pick that finds no hole is refused with a note that the tool changes a hole that is already there and that a new hole is a circle loop cut with the extrude tool.
+- Every tool that takes `design`: a design's name given where its id goes is taken when exactly one design has that name (case and spacing aside). A design that is not there is refused with the ids of the designs there are, each with its name, or with how to start one when there are none. A name two or more designs share is refused with the ids of those designs, not as a missing design.
+- `slicerx_geom_extrude`, `slicerx_geom_revolve`, `slicerx_geom_loft` and `slicerx_geom_sweep` with `design`: a `target` that names one of the design's parts stands for that part, and one that is the design itself (its id or name) leaves `part` as given. A part name wins over the design's own name. Refused with the design's parts by number and name: a `target` naming another part than the `part` given, a name two parts share, and any other `target`.
+- `slicerx_geom_hole` 1.1.1: the description says it changes a hole that is already there and never makes a new one, which is a circle loop cut with the extrude tool. A pick that finds no hole is refused with the same note.
+- `slicerx_design_check` with `design` given by its name: the plan is compared and tied by the design's id, so a plan tied to a design is checked when the design is named either way.
+- `slicerx_geom_hole` and `slicerx_geom_push_pull` refusals on a topology reference report `bodyId` as the design's id when the design was given by its name.
 
 ### Fixed
 
