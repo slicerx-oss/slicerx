@@ -21,11 +21,11 @@ const COUNT_HEADS = new Set([
 ])
 /** The last word of a length's key, which wins over a count's first word: "number_height", "n_offset". */
 const LENGTH_HEADS = new Set(['height', 'width', 'depth', 'length', 'thickness', 'diameter', 'radius', 'size', 'spacing', 'pitch', 'offset', 'gap', 'clearance', 'wall', 'margin', 'inset', 'lip'])
-/** The first word of a count's key: "n_holes", "number_of_teeth", "count_x". */
-const COUNT_LEADS = new Set(['count', 'number', 'num', 'nb', 'n', 'qty', 'quantity'])
+/** The first word of a count's key: "n_holes", "number_of_teeth", "count_x", "teeth_small" (the small gear's teeth). */
+const COUNT_LEADS = new Set(['count', 'number', 'num', 'nb', 'n', 'qty', 'quantity', 'teeth'])
 /** The last word of an angle's key: "angle", "draft", "helix_angle". */
 const ANGLE_HEADS = new Set(['angle', 'angles', 'draft', 'twist', 'tilt', 'lean', 'incline', 'inclination', 'rotation'])
-/** The first word of an angle's key, which wins over its last unless that is an extent: "angle_step", "angle_offset", "angle_spacing". */
+/** The first word of a two-word angle's key, which wins over its second unless that is a count or an extent: "angle_step", "angle_offset", "angle_spacing". */
 const ANGLE_LEADS = new Set(['angle'])
 /** Length words that still measure an angle after an angle's first word: "angle_offset", "angle_spacing", "angle_gap", "angle_pitch". */
 const ANGLE_STEPS = new Set(['offset', 'spacing', 'gap', 'pitch'])
@@ -41,10 +41,12 @@ function words(key: string): string[] {
 
 /**
  * What a size measures, from its key. A length unit last makes it a length over everything else ("teeth_mm"); then a
- * degree word anywhere makes it an angle and a length unit anywhere a length. A key that starts with "angle" is an
- * angle ("angle_offset") unless it ends in an extent ("angle_leg_length" is a length); offset, spacing, gap and pitch
- * stay angles there. A length word last makes it a length, over a count's first word ("number_height"); otherwise
- * its last word, then its first, says count or angle. Anything else is a length.
+ * degree word anywhere makes it an angle and a length unit anywhere a length. A two-word key that starts with "angle"
+ * is the angle its second word names ("angle_offset", "angle_step"), unless that word is a count ("angle_segments") or
+ * an extent ("angle_height"). A longer key that starts with "angle" is read by its last word like any other key
+ * ("angle_bracket_hole_count" is a count, "angle_leg_offset" a length). A length word last makes it a length, over a
+ * count's first word ("number_height"); otherwise its last word, then its first, says count or angle. Anything else is
+ * a length.
  */
 export function sizeKind(key: string): SizeKind {
   const w = words(key)
@@ -53,7 +55,7 @@ export function sizeKind(key: string): SizeKind {
   if (LENGTH_UNITS.has(head)) return 'length'
   if (w.some((x) => ANGLE_UNITS.has(x))) return 'angle'
   if (w.some((x) => x !== 'in' && LENGTH_UNITS.has(x))) return 'length'
-  if (w.length > 1 && ANGLE_LEADS.has(w[0]!)) return LENGTH_HEADS.has(head) && !ANGLE_STEPS.has(head) ? 'length' : 'angle'
+  if (w.length === 2 && ANGLE_LEADS.has(w[0]!)) return COUNT_HEADS.has(head) ? 'count' : LENGTH_HEADS.has(head) && !ANGLE_STEPS.has(head) ? 'length' : 'angle'
   if (LENGTH_HEADS.has(head)) return 'length'
   if (COUNT_HEADS.has(head)) return 'count'
   if (ANGLE_HEADS.has(head)) return 'angle'
