@@ -1009,7 +1009,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     description:
       'Union, subtract or intersect closed bodies. With a model: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share; writes one manifold STL. With "design": "part" is combined with the parts in "with_parts", which go away as their own parts; adds a step.',
     localDescription:
-      'Union, subtract or intersect closed bodies (op). With a model: model and the models in with, written as one STL. With design: part combined with with_parts, which go away as their own parts; adds a step.',
+      'Union, subtract or intersect closed bodies (op): subtract removes with (or with_parts) from model (or part); intersect keeps what they share. With a model: written as one STL. With design: with_parts go away as their own parts; adds a step. More: kb.search "modeling tools".',
     input: z.object({
       op: z.enum(['union', 'subtract', 'intersect']),
       model: modelOrDesign,
@@ -1069,7 +1069,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     description:
       "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
     localDescription:
-      'Bevel straight edges between flat faces, set back distance_mm on each face (or distance2_mm on the other); take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL.',
+      "Bevel straight edges between flat faces, set back distance_mm on the edge's own face and distance2_mm (optional, else distance_mm) on the other; take the edges from geom.edge_pick. With design it adds a step; with a model it writes an STL. More: kb.search \"modeling tools\".",
     input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
       oneOf(i)
@@ -1124,7 +1124,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     permission: 'read',
     description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step. With --app, read the body in the open project without changing its history.',
     localDescription:
-      'Read a model or a design back: bounds, volume, surface area, triangle count, watertight and shells; a design per part, now or right after a given step.',
+      'Read a model or a design back: bounds, volume, surface area, triangle count, watertight and shells; a design per part, now or right after a given step. More: kb.search "modeling tools".',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg }),
     async run(i) {
       oneOf(i)

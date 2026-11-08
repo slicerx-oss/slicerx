@@ -92,6 +92,15 @@ const BUILD_PINS: Record<string, string[]> = {
   'geom.info': [],
 }
 
+/** The rules a build tool's short local text must keep from its full text, word for word. */
+const TWIN_RULES: Record<string, string[]> = {
+  'geom.boolean': ['removes', 'keeps what they share'],
+  'geom.chamfer': ["edge's own face", 'distance2_mm'],
+  'geom.fillet': ['edge_pick'],
+  'geom.hole': ['counterbore', 'countersink'],
+  'geom.shell': ['outward normal'],
+}
+
 /** The required fields and enum and const values of a schema, by path, as BUILD_PINS writes them. */
 function pins(v: unknown, at = '', out = new Set<string>()): Set<string> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return out
@@ -200,7 +209,15 @@ describe('the mimir tab on a local model', () => {
       expect([...got].sort(), name).toEqual([...pins(full.parameters)].sort())
       if (t!.description === full.description) continue
       expect(t!.description.length, name).toBeLessThan(full.description.length)
-      for (const arg of (full.parameters as { required?: string[] }).required ?? []) expect(t!.description, `${name} names ${arg}`).toContain(arg)
+      // each required argument by name, as a word of its own
+      for (const arg of (full.parameters as { required?: string[] }).required ?? []) expect(t!.description, `${name} names ${arg}`).toMatch(new RegExp(`(?<![\\w.])${arg}(?![\\w])`))
+      // and the rules both texts must keep, so the short one cannot drift from the full one
+      for (const rule of TWIN_RULES[name] ?? []) {
+        expect(full.description, `${name}: the full text says "${rule}"`).toContain(rule)
+        expect(t!.description, `${name}: the short text says "${rule}"`).toContain(rule)
+      }
+      // every shortened text points at the rest
+      expect(t!.description, `${name} points at the knowledge base`).toMatch(/kb\.search "[^"]+"/)
       // a pointer to the rest names a search whose best entry is about this tool
       for (const [, query] of t!.description.matchAll(/kb\.search "([^"]+)"/g)) {
         const top = kb.search(query!)[0]?.doc
@@ -216,7 +233,9 @@ describe('the mimir tab on a local model', () => {
     expect(state.local).toBe(true)
     expect(Object.keys(state.turns)).toEqual(['build', 'shape', 'edit', 'app', 'print'])
     expect(new Set(Object.values(state.turns).flat())).toEqual(new Set(state.tools))
-    expect(state.turns.build).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', TURN_SET_TOOL]))
+    expect(state.turns.build).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.edge_pick', 'geom.faces', TURN_SET_TOOL]))
+    // edge and face pickers serve both the first build and later edits
+    expect(state.turns.edit).toEqual(expect.arrayContaining(['geom.edge_pick', 'geom.faces']))
     expect(state.turns.app).toEqual(expect.arrayContaining(['app.slice', 'printer.queue', TURN_SET_TOOL]))
     expect(state.turns.app).not.toContain('geom.extrude')
   })
