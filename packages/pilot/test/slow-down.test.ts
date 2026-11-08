@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Free mimir answers 429 slow_down past an install's calls per minute (20 on desktop, 10 per person on the web), and a
-// long plan sends a model request every few seconds. A slow_down mid-build waits and carries on with the same step
-// instead of ending the run as an error; past a full rate window of waiting it stops like a run cut off at its limit,
-// with the sheet kept, so "keep going" builds the rest. No test here really waits: the runtime's sleep is replaced.
+// long plan sends a model request every few seconds. A slow_down mid-build shows its line at once, then waits and
+// carries on with the same step instead of ending the run as an error; past a full rate window of waiting it stops like
+// a run cut off at its limit, with the sheet kept, so "keep going" builds the rest. No test here really waits: the
+// runtime's sleep is replaced.
 import { DEFAULT_POLICY, type LlmTransport, type PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -34,6 +35,9 @@ function proxied(steps: ScriptStep[], refuse: (n: number) => boolean): LlmClient
 function setup(client: LlmClient) {
   const log: string[] = []
   const waits: number[] = []
+  // how many events had reached the reader by the end of each wait
+  const waitedAt: number[] = []
+  let current: PilotEvent[] = []
   const extrude = defineTool<{ name: string; design?: string | undefined }>({
     name: 'geom.extrude',
     version: '1',
@@ -55,11 +59,15 @@ function setup(client: LlmClient) {
     tools: [sheetTool(), extrude] as never[],
     sleep: async (ms) => {
       waits.push(ms)
+      // a tick for the reader to take what the run sent before it began to wait
+      await new Promise((r) => setTimeout(r, 0))
+      waitedAt.push(current.length)
     },
   })
   const runs: PilotEvent[][] = []
   const say = async (message: string) => {
     const events: PilotEvent[] = []
+    current = events
     for await (const e of p.run('s', message)) {
       events.push(e)
       if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
@@ -67,11 +75,12 @@ function setup(client: LlmClient) {
     runs.push(events)
     return events
   }
-  return { log, waits, say, runs }
+  return { log, waits, waitedAt, say, runs }
 }
 
 const done = (events: PilotEvent[]) => events.find((e) => e.type === 'done') as { stopReason: string } | undefined
 const errors = (events: PilotEvent[]) => events.filter((e) => e.type === 'error')
+const slowNotices = (events: PilotEvent[]) => errors(events).filter((e) => e.type === 'error' && e.code === 'slow_down')
 const said = (events: PilotEvent[]) => events.flatMap((e) => (e.type === 'text' ? [e.delta] : [])).join('')
 
 describe('a slow_down from the proxy mid-build', () => {
@@ -81,7 +90,19 @@ describe('a slow_down from the proxy mid-build', () => {
     const events = await s.say('A Pi 5 case with a lid')
     expect(s.waits).toEqual([SLOW_DOWN_WAIT_MS])
     expect(s.log).toEqual(['Base', 'Base hollow', 'Vents', 'Lid'])
-    expect(errors(events)).toEqual([])
+    expect(slowNotices(events)).toHaveLength(1)
+    expect(done(events)?.stopReason).toBe('end')
+  })
+
+  it('says so at once, before the first wait, with the code that links to usage', async () => {
+    const s = setup(proxied([{ calls: [SHEET] }, x('Base'), { text: 'Built.' }], (n) => n === 1))
+    const events = await s.say('A plate')
+    // the notice reaches the person while mimir waits, not after, and comes once for the streak
+    const at = events.findIndex((e) => e.type === 'error')
+    expect(slowNotices(events)).toEqual([{ type: 'error', message: 'Slow down a moment, then try again.', retryable: true, code: 'slow_down' }])
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(s.waitedAt).toHaveLength(1)
+    expect(at).toBeLessThan(s.waitedAt[0]!)
     expect(done(events)?.stopReason).toBe('end')
   })
 
@@ -92,7 +113,8 @@ describe('a slow_down from the proxy mid-build', () => {
     const first = await s.say('A Pi 5 case with a lid')
     expect(s.waits.reduce((a, b) => a + b, 0)).toBe(SLOW_DOWN_GIVE_UP_MS)
     expect(s.waits.every((w) => w === SLOW_DOWN_WAIT_MS)).toBe(true)
-    expect(errors(first)).toEqual([])
+    // one notice for the whole streak of refusals, not one per wait
+    expect(slowNotices(first)).toHaveLength(1)
     expect(done(first)?.stopReason).toBe('max_steps')
     expect(said(first)).toContain(SLOW_DOWN_LINE)
     expect(s.log).toEqual(['Base', 'Base hollow'])
