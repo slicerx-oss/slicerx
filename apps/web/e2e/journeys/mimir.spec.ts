@@ -481,6 +481,8 @@ test.describe('the mimir tab', () => {
     // the reply names the design it checked (the one named as the plan's part)
     await expect(transcript).toContainText('I checked the design Thermostat backplate.')
     await expect(transcript).toContainText(/Center hole: wanted 32 mm diameter, got (29\.9\d|30(\.0\d)?) mm diameter\./)
+    // the reply streams in: its last sentence is there before the lines it must not have are looked for
+    await expect(transcript).toContainText('That needs fixing before the part is done.')
     // only that item: the screw holes, size, features, closed body and walls pass, and the reply never says done
     await expect(transcript).not.toContainText(/screw hole:|Overall size:|Feature count:|Watertight:|Minimum wall:/)
     await expect(transcript).not.toContainText('It matches the plan')

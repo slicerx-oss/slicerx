@@ -184,6 +184,9 @@ const backplate: ScriptStep[] = [
           args: {
             design,
             name: 'Backplate',
+            // the planned feature this step builds, as mimir is told to pass on every step of one, so design.check ties
+            // the step to a plan with that feature (the step's own name, "Sketch extrude 3 mm", stands for none)
+            feature: 'plate with holes',
             // the outline, the center hole and two screw holes; a loop inside another is a hole
             shape: { type: 'sketch', loops: [rect(mid, w, h), { type: 'circle', center: mid, diameterMm: c }, { type: 'circle', center: [mid[0], mid[1] - gap / 2], diameterMm: d }, { type: 'circle', center: [mid[0], mid[1] + gap / 2], diameterMm: d }] },
             distance_mm: t,
