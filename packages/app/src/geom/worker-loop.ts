@@ -10,12 +10,21 @@
 export interface WorkerJobs {
   /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself. */
   prepare(op: string, request: unknown): Promise<() => unknown>
-  /** history.replay, in TypeScript: `yieldStep` runs between its steps and throws once the call is canceled. */
-  replay(request: unknown, yieldStep: () => Promise<void>): Promise<unknown>
+  /**
+   * history.replay, in TypeScript: `yieldStep` runs before each of its steps, with the step's operation and the name a
+   * person knows it by, and throws once the call is canceled.
+   */
+  replay(request: unknown, yieldStep: (step?: ReplayStep) => Promise<void>): Promise<unknown>
   /** What the engine modules hold, sent with each answer. */
   memoryBytes(): number
   /** Buffers of a result that go to the page rather than being copied. */
   transfer(op: string, result: unknown): Transferable[]
+}
+
+/** A history step a replay is about to run: its operation, for its time limit, and its name, for a refusal. */
+export interface ReplayStep {
+  op: string
+  name: string
 }
 
 export type WorkerPost = (message: unknown, transfer?: Transferable[]) => void
@@ -32,11 +41,11 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
     try {
       if (op === 'history.replay') {
         post({ started: id })
-        const result = await jobs.replay(request, async () => {
+        const result = await jobs.replay(request, async (step) => {
           await new Promise((r) => setTimeout(r, 0))
           if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
           // each step has a time limit of its own on the page (client.ts, setGeomCallLimit)
-          post({ step: id })
+          post(step ? { step: id, op: step.op, name: step.name } : { step: id })
         })
         canceled.delete(id)
         answer(id, { result })

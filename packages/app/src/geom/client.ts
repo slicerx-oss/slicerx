@@ -48,7 +48,7 @@ export function setGeomCallLimit(limit: ((op: string) => number) | null): void {
 }
 
 /** The refusal of a call stopped at its limit. It is never sent again: the same call would stop the same way. */
-const stuck = (op: string, ms: number): Error => new Error(geomStuckMessage(op, ms))
+const stuck = (op: string, ms: number, name?: string): Error => new Error(geomStuckMessage(op, ms, name))
 
 /**
  * The app's own geometry worker: its answers and failures so far, by operation, the last failure's message, and the
@@ -192,7 +192,7 @@ function workerProvider(): GeomProvider {
   }
   // A call still running at its limit is refused and its worker ends, as for a cancel: nobody may be there to cancel
   // it (a mimir run), and every call queued behind it would wait for good.
-  const limit = (id: number, op: string) => {
+  const limit = (id: number, op: string, name?: string) => {
     unlimit(id)
     const ms = limitOf(op)
     deadlines.set(
@@ -202,7 +202,7 @@ function workerProvider(): GeomProvider {
         const p = pending.get(id)
         pending.delete(id)
         unstarted.delete(id)
-        p?.reject(stuck(op, ms))
+        p?.reject(stuck(op, ms, name))
         interrupt()
       }, ms),
     )
@@ -219,7 +219,7 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number; op?: string; name?: string }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
@@ -244,8 +244,8 @@ function workerProvider(): GeomProvider {
         return
       }
       if ('step' in e.data) {
-        // a replay's next step: its limit starts again
-        if (deadlines.has(e.data.step)) limit(e.data.step, 'history.replay')
+        // a replay's next step: its limit starts again, by that step's class
+        if (deadlines.has(e.data.step)) limit(e.data.step, e.data.op ?? 'history.replay', e.data.name)
         return
       }
       unlimit(e.data.id)
