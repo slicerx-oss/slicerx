@@ -99,6 +99,11 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
     // slice does, so the footer shows its tag and no second line, and Export G-code stays there to say slice again.
     if (stamped && !(stamped === STALE_SLICE && s.slice.stale)) return stamped
   }
+  return sliceBlock(s)
+}
+
+/** printBlock's checks on the slice itself: a strike in it, and for a stale slice the plate's by-object rule. */
+function sliceBlock(s: Parameters<typeof printBlock>[0]): string | null {
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
     return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`} on this plate. See ${hits.length === 1 ? 'it' : 'them'} in Slice, apply a fix or change the plate, and slice again.`
@@ -109,11 +114,12 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
 
 /**
  * Why Export plate 3MF is held back, or null: printBlock's reasons except a slice whose G-code an edit since has
- * changed (STALE_SLICE: a rename, a layer mark), since exportGcode3mf slices the plate again before it saves.
+ * changed (STALE_SLICE: a rename, a layer mark), since exportGcode3mf slices the plate again before it saves. A real
+ * block behind that one (a strike in the slice) still holds it back: the slice again would meet it too.
  */
 export function export3mfBlock(s: Parameters<typeof printBlock>[0]): string | null {
   const why = printBlock(s)
-  return why === STALE_SLICE ? null : why
+  return why === STALE_SLICE ? sliceBlock(s) : why
 }
 
 /**
