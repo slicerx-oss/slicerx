@@ -2191,12 +2191,29 @@ pub fn check_plate(
     req: &SliceRequest,
     meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
 ) -> Result<crate::collide::check::PlateCheck> {
+    check_plate_until(req, meshes, &|| false)
+}
+
+/// [`check_plate`], ending with [`Error::Cancelled`] once `stop` says so: it is read before the walk, and between
+/// objects, bands of layers and moves in it, so a check nobody waits for any more lets go of the pool within one move
+/// of each object it is walking. A check that is not stopped answers as [`check_plate`] does.
+pub fn check_plate_until(
+    req: &SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+    stop: &(dyn Fn() -> bool + Sync),
+) -> Result<crate::collide::check::PlateCheck> {
     let timer = crate::platform::Timer::start();
     let (config, issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
     let (lone, lone_nozzle) = lone_of(&plate, &config)?;
     let (config, _) = with_lone_settings(config, issues, &lone, lone_nozzle)?;
+    if stop() {
+        return Err(Error::Cancelled);
+    }
     let (session, _) = plan_session(req, &plate, &config)?;
+    if stop() {
+        return Err(Error::Cancelled);
+    }
     let zones = crate::collide::plate::zones(&config)
         .iter()
         .map(|z| z.0)
@@ -2215,7 +2232,7 @@ pub fn check_plate(
             if !run.variant_sources.is_empty() {
                 let _ = run.to_mut().refresh_variants()?;
             }
-            crate::collide::check::run(&session, model, &run)?
+            crate::collide::check::run(&session, model, &run, stop)?
         }
         _ => crate::collide::check::PlateCheck::default(),
     };
