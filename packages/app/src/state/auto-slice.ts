@@ -10,7 +10,7 @@ import { cancelSlice, slicePlate, STALE_SLICE } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { isBigSlice, sliceTimingsOf } from './slice-estimate'
 import { inputsChanged as changed, KEY_CONFIG } from './slice-inputs'
-import { appStore } from './store'
+import { appStore, type AppState } from './store'
 
 export { INPUTS } from './slice-inputs'
 
@@ -81,11 +81,19 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     waiting = null
     void slicePlate(host, { auto: true })
   }
-  const configMoved = async (): Promise<void> => {
-    const { stampBlock } = await import('../plate/resume-tops')
+  const configMoved = async (now: AppState, prev: AppState): Promise<void> => {
+    const { configKey, stampBlock } = await import('../plate/resume-tops')
     const s = appStore.getState()
-    if (!s.autoSlice || s.liveEdit || s.slice.status !== 'done' || s.slice.stale || stampBlock(s, s.slice.stamp) !== STALE_SLICE) return
-    appStore.setState({ slice: { ...s.slice, stale: true } })
+    if (!s.autoSlice || s.liveEdit) return
+    if (s.slice.status === 'running') {
+      // A slice in flight read the old values: it would land stale with nothing to slice again, so it stops and a new
+      // one starts. Only a change the plate's configuration reads (a single-color plate has no flush volumes).
+      if (configKey(now) === configKey(prev)) return
+      cancelSlice({ quiet: true })
+    } else {
+      if (s.slice.status !== 'done' || s.slice.stale || stampBlock(s, s.slice.stamp) !== STALE_SLICE) return
+      appStore.setState({ slice: { ...s.slice, stale: true } })
+    }
     clear()
     timer = setTimeout(() => run(), delayMs)
   }
@@ -110,7 +118,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
       // A KEY_CONFIG value (a new printer's nozzle volume, an opened project's flush matrix) is not a slice input, but a
       // finished slice whose configuration read it is stale (resume-tops.ts stampBlock): mark it and slice again. The
       // stamp check loads with the slice code, so the shell does not carry it.
-      if (KEY_CONFIG.some((k) => s[k] !== prev[k])) void configMoved()
+      if (KEY_CONFIG.some((k) => s[k] !== prev[k])) void configMoved(s, prev)
       return
     }
     // An open whose model sliced while it loaded and did not change since: that slice, running or done, is the one.
