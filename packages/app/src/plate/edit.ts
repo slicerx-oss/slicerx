@@ -336,8 +336,10 @@ export function instanceCount(id: string): number {
 
 let instSeq = 0
 
+/** An instance of `src`: where a design host landed `src`, and what that landing moved, stay with `src`, as a paste's do. */
 function copyOf(src: PlateEntry, root: string): PlateEntry {
-  return { ...src, id: `${root}~${Date.now().toString(36)}${(++instSeq).toString(36)}`, instanceOf: root, transform: [...src.transform] }
+  const { landedAt: _l, roomMoves: _r, ...rest } = src
+  return { ...rest, id: `${root}~${Date.now().toString(36)}${(++instSeq).toString(36)}`, instanceOf: root, transform: [...src.transform] }
 }
 
 /**
