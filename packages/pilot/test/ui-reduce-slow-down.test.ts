@@ -64,4 +64,11 @@ describe('the give-up line in a restored chat', () => {
     const s = restoredTranscript(fold([waiting, ...say('Built the base.'), { type: 'error', message: 'Network down.', retryable: true }]))
     expect(transcriptTurns(s)).toEqual([{ user: 'A Pi case', reply: 'Built the base.' }])
   })
+
+  it("leaves out the proxy's own slow_down line after words already said, which the live run never gives the model", () => {
+    // a refusal after the step began to speak ends the run as an error with the proxy's words, and the live history
+    // keeps no line for it; only mimir's line that it stopped at the limit goes back to the model
+    const s = restoredTranscript(fold([...say('Built the base.'), { type: 'error', message: 'Slow down a moment, then try again.', retryable: true, code: 'slow_down' }]))
+    expect(transcriptTurns(s)).toEqual([{ user: 'A Pi case', reply: 'Built the base.' }])
+  })
 })

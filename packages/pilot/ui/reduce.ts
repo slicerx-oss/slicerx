@@ -20,6 +20,7 @@ import type {
   ToolDisplay,
   ToolSource,
 } from '@slicerx/contracts'
+import { SLOW_DOWN_LINE } from '../src/slow-down-lines'
 
 export interface ToolRowModel {
   callId: string
@@ -143,11 +144,12 @@ export function restoredTranscript(t: Transcript): Transcript {
 
 /**
  * Each message the person sent and mimir's words in reply, for picking the conversation back up. The line that free
- * mimir stopped at its limit (slow_down, not a wait it went on from) counts as said, as it is in the live run's history,
- * so "keep going" reads where it stopped.
+ * mimir stopped at its limit counts as said, as it is in the live run's history, so "keep going" reads where it stopped.
+ * Its wait lines and the proxy's own slow_down line (a refusal after words were said, which ends the run as an error)
+ * are not in that history, so they are left out here too.
  */
 export function transcriptTurns(t: Transcript): { user: string; reply: string }[] {
-  const said = (b: Block): string[] => (b.kind === 'say' ? [b.text] : b.kind === 'error' && b.code === 'slow_down' && b.waiting !== true ? [b.message] : [])
+  const said = (b: Block): string[] => (b.kind === 'say' ? [b.text] : b.kind === 'error' && b.code === 'slow_down' && b.message === SLOW_DOWN_LINE ? [b.message] : [])
   return t.turns.flatMap((turn) => (turn.user === null ? [] : [{ user: turn.user, reply: turn.blocks.flatMap(said).join('\n').trim() }]))
 }
 
