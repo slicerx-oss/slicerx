@@ -332,11 +332,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
   const cutShort = new Set<string>()
-  // the design each session's confirmed sheet first built a part in, and the sessions whose run carries that sheet over
-  const sheetDesign = new Map<string, string>()
+  // the designs each session's confirmed sheet started parts in, and the sessions whose run carries that sheet over
+  const sheetDesigns = new Map<string, Set<string>>()
   const carried = new Set<string>()
-  // sessions whose run this time stopped at the tool call limit
-  const callCapped = new Set<string>()
+  const startedUnder = (sessionId: string, design: string): void => {
+    const set = sheetDesigns.get(sessionId) ?? new Set<string>()
+    set.add(design)
+    sheetDesigns.set(sessionId, set)
+  }
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
   // the last turn of each session that left toolsets out (toolsets.ts)
   const caps = new Map<string, ToolCapReport>()
@@ -612,14 +615,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
+    let starting = false
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       const design = (input as { design?: unknown } | null)?.design
-      const was = sheetDesign.get(sessionId)
-      // a sheet carried over from a cut-off run holds for the rest of its own part, never for a part in another design
-      const elsewhere = carried.has(sessionId) && typeof design === 'string' && was !== undefined && design !== was
+      // a sheet carried over from a cut-off run holds for the rest of its own part, the designs it started parts in, and
+      // never for a part in another design
+      const elsewhere = carried.has(sessionId) && typeof design === 'string' && !sheetDesigns.get(sessionId)?.has(design)
       if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
       usedSheet.add(sessionId)
-      if (typeof design === 'string' && design && was === undefined) sheetDesign.set(sessionId, design)
+      if (typeof design === 'string' && design) startedUnder(sessionId, design)
+      else starting = true
     }
     const project = opts.project?.()
     const ctx: ToolContext = {
@@ -675,7 +680,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           if (answer.confirmed) confirmed.add(sessionId)
           else confirmed.delete(sessionId)
           // a new sheet is a new part's sizes: nothing carries over from the last one
-          sheetDesign.delete(sessionId)
+          sheetDesigns.delete(sessionId)
           carried.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
@@ -715,6 +720,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
     if (out.output !== undefined) result.output = out.output
+    // a part started with no design argument lands in a design the result names: the sheet holds for that one
+    const landed = (out.output as { design?: unknown } | undefined)?.design
+    if (starting && out.ok !== false && typeof landed === 'string' && landed) startedUnder(sessionId, landed)
     if (out.display) result.display = out.display
     if (out.untrusted) result.untrusted = true
     emit(result)
@@ -734,7 +742,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { message: toolMessage(plain ? { ...out, summary: `${out.summary}. ${plain.hint}` } : out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
-  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done' }> {
+  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done'; capped?: true }> {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
@@ -799,7 +807,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       }
       return out
     }
-    callCapped.delete(sessionId)
+    // the run stopped at its tool call limit: it ends as denied, but like a run out of steps the part is unfinished
+    let callLimited = false
     // the run's limits; an approved plan raises them to fit its features (planLimits)
     let maxSteps = opts.config.maxSteps
     let maxToolCalls = opts.config.maxToolCalls
@@ -988,7 +997,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (++calls > maxToolCalls) {
           messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, error: 'Tool call limit reached for this run. Summarize and stop.' }) })
           stopped = true
-          callCapped.add(sessionId)
+          callLimited = true
           continue
         }
         // a build keeps the tier its request set, with the design tools or a part generator: building is many tool calls,
@@ -1057,7 +1066,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     void usageIn
     void usageOut
-    return { type: 'done', stopReason, ms: now() - t0 }
+    return { type: 'done', stopReason, ms: now() - t0, ...(callLimited ? { capped: true as const } : {}) }
   }
 
   const pilot = {
@@ -1155,10 +1164,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         const unfinished = cutShort.delete(sessionId)
         if (usedSheet.delete(sessionId) && !unfinished) {
           confirmed.delete(sessionId)
-          sheetDesign.delete(sessionId)
+          sheetDesigns.delete(sessionId)
         }
-        if (unfinished) carried.add(sessionId)
-        else carried.delete(sessionId)
+        // a carried sheet is used by this run whatever it builds: unless this run is cut off too, the next one needs a new sheet
+        if (unfinished) {
+          carried.add(sessionId)
+          usedSheet.add(sessionId)
+        } else carried.delete(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {
@@ -1201,10 +1213,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         let done: PilotEvent & { type: 'done' }
         try {
           const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId)) : undefined
-          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet)
-          if (done.stopReason === 'max_steps' && usedSheet.has(sessionId)) cutShort.add(sessionId)
+          const { capped, ...end } = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet)
+          done = end
           // cut off at either limit (the call limit ends the run as denied) with the part begun: the next run may finish it
-          if ((done.stopReason === 'max_steps' || callCapped.delete(sessionId)) && usedSheet.has(sessionId)) cutShort.add(sessionId)
+          if ((done.stopReason === 'max_steps' || capped) && usedSheet.has(sessionId)) cutShort.add(sessionId)
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })
           done = { type: 'done', stopReason: signal.aborted ? 'canceled' : 'error', ms: 0 }
@@ -1262,7 +1274,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             role: 'user',
             content: `The user switched from ${from.material} on ${from.printer} with a ${from.nozzle} mm nozzle to ${to.material} on ${to.printer} with a ${to.nozzle} mm nozzle. ${productName()} already applied and showed this settings diff:\n${rows}\nExplain the two or three changes that matter most in at most three sentences. Do not call tools unless something in the diff looks wrong.`,
           })
-          const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read', HUGINN, new Set<Toolset>(['settings', 'kb']), 'app')
+          const { capped: _capped, ...done } = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read', HUGINN, new Set<Toolset>(['settings', 'kb']), 'app')
           emit({ ...done, ms: now() - t0 })
           return
         }
