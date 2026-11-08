@@ -599,10 +599,24 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // The last approved print-in-place plan of each session, for the whole chat: its planId and part. A size changed on
   // its part's sheet marks it stale in the plans (the host's registry), which holds every new body of the planned part,
   // in this run or a later one, and design.check of it, until a new design.plan is answered. Other designs never wait.
+  // A plan made again for the same part keeps the design the plan before it held (prior), so an edit of it is held too.
   const plans = opts.plans ?? localPlanMarks()
-  const planned = new Map<string, { planId: string; part: string }>()
+  const planned = new Map<string, { planId: string; part: string; prior?: string }>()
   // the names of the designs each session started or opened, by id, to tell which one the planned part was started in
   const designNames = new Map<string, Map<string, string>>()
+  const namedAsPart = (sessionId: string, id: string, part: string): boolean => {
+    const name = designNames.get(sessionId)?.get(id)
+    return name !== undefined && sameName(name, part)
+  }
+  // a change to a design before the plan holds any: a design named as the part, or the one the plan before it held, is
+  // the planned part's, so a plan made again for a part already built holds that part from its first change on
+  const claimOnChange = (sessionId: string, design: unknown): void => {
+    const p = planned.get(sessionId)
+    if (!p || typeof design !== 'string' || !design) return
+    const marks = plans.get(p.planId)
+    if (marks?.claimed !== undefined || marks?.design !== undefined) return
+    if (design === p.prior || namedAsPart(sessionId, design, p.part)) plans.claim(p.planId, design)
+  }
   const isStale = (sessionId: string): boolean => {
     const p = planned.get(sessionId)
     return p !== undefined && plans.get(p.planId)?.stale === true && findTool('design.plan') !== undefined
@@ -992,6 +1006,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // change to its design (one started from a model has bodies already; a join on an empty one makes none). Starting
     // or opening a design builds nothing, and another design never waits.
     const changes = startsPart(tool.name, input) || (tool.name.startsWith('geom.') && tool.permission !== 'read')
+    if (changes) claimOnChange(sessionId, design)
     if (changes && waitsForPlan(sessionId, design)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
       usedSheet.add(sessionId)
@@ -1140,7 +1155,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (Array.isArray(pieces) && pieces.length >= 2) {
         printInPlace.set(sessionId, false)
         claimWindow.add(sessionId)
-        if (typeof answered.planId === 'string' && typeof part === 'string') planned.set(sessionId, { planId: answered.planId, part })
+        if (typeof answered.planId === 'string' && typeof part === 'string') {
+          // the design the plan before held, when it was for the same part
+          const before = was && sameName(was.part, part) ? plans.get(was.planId) : undefined
+          const prior = before?.claimed ?? before?.design ?? (was && sameName(was.part, part) ? was.prior : undefined)
+          planned.set(sessionId, { planId: answered.planId, part, ...(prior !== undefined ? { prior } : {}) })
+        }
       } else printInPlace.delete(sessionId)
     }
     // a plan the person turns down ends the print-in-place plan before it: the part is built from the confirmed sheet
@@ -1160,10 +1180,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const p = planned.get(sessionId)
     if (tool.name === 'design.new' && out.ok !== false && p) {
       const design = (out.output as { design?: unknown } | undefined)?.design
-      const asPart = (id: string): boolean => {
-        const name = designNames.get(sessionId)?.get(id)
-        return name !== undefined && sameName(name, p.part)
-      }
+      const asPart = (id: string): boolean => namedAsPart(sessionId, id, p.part)
       const claimed = plans.get(p.planId)?.claimed
       const building = printInPlace.has(sessionId) && claimWindow.has(sessionId)
       if (typeof design === 'string' && design && (claimed === undefined ? building || asPart(design) : !asPart(claimed) && asPart(design))) plans.claim(p.planId, design)

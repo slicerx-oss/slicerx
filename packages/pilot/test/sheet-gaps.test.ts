@@ -299,14 +299,14 @@ describe('the gaps on a print-in-place sheet', () => {
   // A chat of several messages over stand-ins that keep their designs apart: design.new and design.open start designs
   // d1, d2 and on, with their names, and geom.extrude records what it built and on which design. What every call
   // started or built, the replies the model saw after each step, and the tool rows other than design.plan's.
-  async function talk(steps: ScriptStep[], messages: string[], answers: Record<string, number>[], opts: { plans?: unknown } = {}) {
+  async function talk(steps: ScriptStep[], messages: string[], answers: Record<string, number>[], opts: { plans?: unknown; plan?: PilotTool<never> } = {}) {
     const ran: string[] = []
     let n = 0
     const tool = (name: string, run: (i: Record<string, unknown>) => Record<string, unknown>, permission: 'read' | 'slice' = 'read') =>
       defineTool({ name, version: '1.0.0', source: 'command', permission, description: 'test', input: z.object({}).passthrough(), async run(i: Record<string, unknown>) { return { summary: 'Done', output: run(i) } } }) as PilotTool<never>
     const tools = [
       sheetTool(),
-      plan,
+      opts.plan ?? plan,
       tool('design.new', (i) => (ran.push(`new ${String(i.name)}`), { design: `d${++n}`, name: i.name })),
       tool('design.open', () => { const id = `d${++n}`; ran.push(`open ${id}`); return { designs: [{ design: id, name: 'Lamp' }] } }),
       tool('geom.extrude', (i) => (ran.push(`${String(i.name)}@${String(i.design)}`), { design: i.design }), 'slice'),
@@ -502,6 +502,22 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(ran).toEqual(['new Hinge', 'Plinth@undefined'])
   })
 
+  // design.plan approved at once with a new planId each time, p1, p2 and on, as the tab's plan card gives them
+  const counted = (): PilotTool<never> => {
+    let n = 0
+    return defineTool({
+      name: 'design.plan',
+      version: '1.0.0',
+      source: 'command',
+      permission: 'read',
+      description: 'test',
+      input: z.object({ part: z.string(), printInPlace: z.array(z.string()).min(2).optional() }),
+      async run() {
+        return { summary: 'Approved', output: { planId: `p${++n}`, accepted: true } }
+      },
+    }) as PilotTool<never>
+  }
+
   it('build a spacer asked for in the next message at once: a plan approved in an earlier message holds no design started for another part', async () => {
     // run 1 approves the hinge's plan and ends before any sheet; run 2 drops the hinge for a spacer whose height the
     // person changes on its sheet
@@ -512,6 +528,38 @@ describe('the gaps on a print-in-place sheet', () => {
     )
     expect(seen.join(' ')).not.toContain('Nothing was built')
     expect(ran).toEqual(['new Spacer', 'Spacer@d1'])
+  })
+
+  it('hold a change to the part built under the last plan while the new plan for it waits to be made again', async () => {
+    // run 1 builds the hinge; run 2 plans it again wider, and the person changes a size on the sheet before the first
+    // change to the hinge's design. The design is the part's by its name, or as the design the last plan held.
+    for (const name of ['Hinge', 'Door leaf']) {
+      const push = { name: 'geom.push_pull', args: { design: 'd1' } }
+      const { ran, seen } = await talk(
+        [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }] }, { text: 'Done.' }, { calls: [HINGE] }, { calls: [SHEET] }, { calls: [push] }, { calls: [HINGE] }, { calls: [push] }, { text: 'Done.' }],
+        ['A print-in-place hinge', 'Make it wider'],
+        [{}, { width: 60 }],
+        { plan: counted() },
+      )
+      expect(seen[3]).not.toContain('Nothing was built')
+      expect(seen[7]).toContain(HELD)
+      expect(seen[9]).not.toContain('Nothing was built')
+      expect(ran).toEqual([`new ${name}`, 'Leaf@d1', 'push@d1'])
+    }
+  })
+
+  it('hold the build after the plan is made again and a size changes a second time, until the plan is made once more', async () => {
+    const leaf = { name: 'geom.extrude', args: { name: 'Leaf', design: 'd1' } }
+    const { ran, seen } = await talk(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.new', args: { name: 'Hinge' } }] }, { calls: [HINGE] }, { calls: [SHEET] }, { calls: [leaf] }, { calls: [HINGE] }, { calls: [leaf] }, { text: 'Done.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }, { width: 70 }],
+      { plan: counted() },
+    )
+    expect(seen[4]).toContain(PLAN_AGAIN_NOTE)
+    expect(seen[5]).toContain(HELD)
+    expect(seen[7]).not.toContain('Nothing was built')
+    expect(ran).toEqual(['new Hinge', 'Leaf@d1'])
   })
 
   it('come from the fit rule profile of the run', () => {
