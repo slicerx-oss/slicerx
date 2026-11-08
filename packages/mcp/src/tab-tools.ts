@@ -6,18 +6,18 @@
 // inline and approve with Go. The card answers through the same question channel pilot.ask uses. The plans made there
 // are kept by id with the person's latest edits, so a later check can read the plan the part was built from. The app's
 // tab and the creative eval make these tools here (toolset.ts tabToolset), each over its own plan registry.
-import { askTool, clearanceProfileOf, defineTool, lookupTool, printInPlaceClearance, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
+import { askTool, defineTool, lookupTool, printInPlaceClearance, sheetBindTool, sheetTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
 import type { z } from 'zod'
-import { gapLimitsText, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, type PartPlan, type PlanRegistry } from './design-check'
-import { fitLimits, type FitProfile } from './fit-facts'
+import { assumptionsInput, gapLimitsText, MAX_PLANS, partPlanSchema, plannedGaps, PLAN_SIZE_MAX, PRINTS_TOGETHER, printsTogether, type PartPlan, type PlanRegistry } from './design-check'
+import { runFitLimits, type FitProfile } from './fit-facts'
 
 export { PLAN_SIZE_MAX, type PartPlan }
 
 /** A part's plan as the card takes it: the shared shape (design-check.ts, which design.check reads), with one feature at least. */
 export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.shape.features.min(1) })
 
-/** What mimir sends: the plan without its id, which the tool gives it. */
-export const PlanInputSchema = PartPlanSchema.omit({ planId: true })
+/** What mimir sends: the plan without its id, which the tool gives it, and with no room for the card's own line. */
+export const PlanInputSchema = PartPlanSchema.omit({ planId: true }).extend({ assumptions: assumptionsInput })
 export type PlanInput = z.infer<typeof PlanInputSchema>
 
 /** What the tool returns once the person answers on the card. */
@@ -173,14 +173,15 @@ export function createCardPlans(plans: PlanRegistry) {
       source: 'command',
       permission: 'read',
       description:
-        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, and the edited plan when they changed anything; build from that. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.`,
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: the part, its units, each feature in build order with the sizes that drive it (and its kind, such as extrude, hole or fillet), the overall size and holes when known (one row with a count for several holes of one size), what you assumed, what you still need to know, and, when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace, and keep the gaps where they meet ${RULE_GAPS}; an approved plan's result gives this printer's. Two or more pieces (named in printInPlace, or counted by a size such as segment_count) with a gap or clearance size print in place unless printInPlace is false or an assumption says the pieces print separately. The person edits sizes on the card and presses Go. Returns the plan id, whether it was accepted, and the edited plan when they changed anything; build from that. Not accepted: build nothing and ask what to change. A part of one feature skips the plan.`,
       localDescription:
-        `Before the first geometry step of a part with two or more features, show the person the plan and wait: part, units, features in build order with their sizes and kind, the overall size and holes when known, assumptions and questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}. Returns accepted and the edited plan; build from that. Not accepted: build nothing and ask what to change. One feature: no plan. More: kb.search "modeling tools".`,
+        `Before the first geometry step of a part with two or more features, show the person the plan and wait: part, units, features in build order with their sizes and kind, the overall size and holes when known, assumptions and questions. printInPlace pieces: keep the gaps where they meet ${RULE_MIN}. Pieces with a gap size print in place unless printInPlace is false. Returns accepted and the edited plan; build from that. Not accepted: build nothing and ask what to change. One feature: no plan. More: kb.search "modeling tools".`,
       input: PlanInputSchema,
       args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
       async run(i, ctx) {
         if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
-        const plan: PartPlan = { planId: (opts.newId ?? newPlanId)(), ...i }
+        // pieces that print together without printInPlace naming them: the card says so first, plainly
+        const plan: PartPlan = { planId: (opts.newId ?? newPlanId)(), ...i, ...(printsTogether(i) ? { assumptions: [PRINTS_TOGETHER, ...i.assumptions] } : {}) }
         const shown = structuredClone(plan)
         remember(plan)
         const picked = await ctx.ask({
@@ -204,12 +205,12 @@ export function createCardPlans(plans: PlanRegistry) {
         const edited = !samePlan(latest, shown)
         const answer: PlanAnswer = edited ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
         const said = edited ? 'Approved with changes' : 'Approved as shown'
-        if (!latest.printInPlace || latest.printInPlace.length < 2) return { summary: said, output: answer }
+        const together = printsTogether(latest)
+        if (!together && (!latest.printInPlace || latest.printInPlace.length < 2)) return { summary: said, output: answer }
         // a print-in-place part: the gaps this printer needs before the first step, and any planned gap under them
-        const given = Object.fromEntries(Object.entries(opts.fitProfile?.() ?? {}).filter(([, v]) => v !== undefined))
-        const limits = fitLimits({ ...clearanceProfileOf(ctx.context ?? {}), ...given })
+        const limits = runFitLimits(ctx.context, opts.fitProfile?.())
         const under = plannedGaps(latest, limits).filter((g) => !g.pass)
-        const summary = `${said}. Moving pieces need gaps of ${gapLimitsText(limits)} on this printer.${under.length ? ` ${under.map((g) => g.text).join('; ')}` : ''}`
+        const summary = `${said}.${together ? ` ${PRINTS_TOGETHER}.` : ''} Moving pieces need gaps of ${gapLimitsText(limits)} on this printer.${under.length ? ` ${under.map((g) => g.text).join('; ')}` : ''}`
         return { summary, output: { ...answer, gaps: { sideMm: limits.sideMm, verticalMm: limits.verticalMm } } }
       },
     }) as PilotTool<never>

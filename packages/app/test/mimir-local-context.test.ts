@@ -102,7 +102,7 @@ const TWIN_RULES: Record<string, string[]> = {
   // the feature tags, and for a print-in-place plan its pieces and gaps and the fit check that must run first
   'design.check': ['a step or more tagged with each planned feature', 'A plan with printInPlace also gets pieces', 'fit_check has run on the design as it is now', 'gap sizes in the plan too'],
   // the gaps a print-in-place plan keeps, by the fit rule
-  'design.plan': ['keep the gaps where they meet at least'],
+  'design.plan': ['keep the gaps where they meet at least', 'unless printInPlace is false'],
   'geom.chamfer': ["edge's own face", 'distance2_mm'],
   'geom.fillet': ['edge_pick'],
   'geom.hole': ['counterbore', 'countersink', 'never makes a new hole'],
