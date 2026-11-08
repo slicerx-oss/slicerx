@@ -67,7 +67,9 @@ export function designToolset(host: DesignHost, files: { design?: DesignFiles; c
  * both make their tools here, so the eval offers what the tab offers. `newPlanId` names each plan (default random).
  */
 export function tabToolset(host: DesignHost, card: CardPlans, opts: { nozzleMm?: () => number | undefined; fitProfile?: DesignToolOptions['fitProfile']; newPlanId?: () => string } = {}): PilotTool<never>[] {
-  const plan = card.planTool(opts.newPlanId ? { newId: opts.newPlanId } : {})
+  // design.plan names the gaps design.check holds a print-in-place part to: the same nozzle, layer height and material
+  const fitProfile = () => ({ ...opts.fitProfile?.(), nozzleMm: opts.nozzleMm?.() })
+  const plan = card.planTool({ ...(opts.newPlanId ? { newId: opts.newPlanId } : {}), fitProfile })
   return card.withPlanTies(mimirTabTools(plan, designToolset(host, {}, { plans: card.plans, nozzleMm: opts.nozzleMm, fitProfile: opts.fitProfile, cardSide: true })))
 }
 
