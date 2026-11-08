@@ -70,16 +70,19 @@ export function oneAtATime(): <T>(run: () => Promise<T>) => Promise<T | undefine
 /**
  * What the sketch editor does with an Extrude or Revolve that went through: one that changed nothing (a join that
  * misses the body) keeps the editor and the drawing open with why as its note, as a refusal does, so the distance
- * or direction can be fixed and pressed again; one that landed closes the editor with a toast. A miss after the
- * editor closed (the person left it while the engine worked) has no note to land in, so it says why in a toast.
+ * or direction can be fixed and pressed again; one that landed closes the editor with a toast. `here` says whether the
+ * editor that started the solid is still open: once it is gone (the person left it, or opened another sketch, while
+ * the engine worked) a miss says why in a toast, since no note of another editor is its place, and a landed solid
+ * leaves whatever tool is open now alone.
  */
-export function afterSolid(r: { message: string; warn: boolean; missed?: true | undefined }, note: (text: string) => void): void {
+export function afterSolid(r: { message: string; warn: boolean; missed?: true | undefined }, note: (text: string) => void, here: () => boolean = () => get().objectTool === 'sketch'): void {
+  const open = here() && get().objectTool === 'sketch'
   if (r.missed) {
-    if (get().objectTool === 'sketch') return note(r.message)
+    if (open) return note(r.message)
     return toast(r.message, 'warn')
   }
   toast(r.message, r.warn ? 'warn' : 'ok')
-  set({ objectTool: null })
+  if (open) set({ objectTool: null })
 }
 
 /** The sketch with this id, or null. */
