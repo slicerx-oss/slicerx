@@ -9,11 +9,12 @@
 // first time a call needs one). It also fails when printer, filament or G-code profile data
 // lands in a startup chunk, and when a startup chunk names an icon that is not in the startup icon table.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
-const dist = join(import.meta.dirname, '..', 'dist')
+// The build to check: apps/web/dist, or the folder given as the first argument (scripts/bundle-size.test.mjs).
+const dist = process.argv[2] ? resolve(process.argv[2]) : join(import.meta.dirname, '..', 'dist')
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
 const SHELL_KB = 217
 const WASM_KB = 1056
