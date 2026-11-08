@@ -338,8 +338,13 @@ fn same_plane(a: &Plane, b: &Plane, eps: f64) -> bool {
 /// an edge by its ends' places, in a fixed order
 type EdgeAt = [[u64; 3]; 2];
 
+/// a point's place as bits; adding 0.0 turns -0.0 into 0.0 so both key the same
+fn at(p: V3) -> [u64; 3] {
+    p.map(|c| (c + 0.0).to_bits())
+}
+
 fn edge_at(p: V3, q: V3) -> EdgeAt {
-    let (a, b) = (p.map(f64::to_bits), q.map(f64::to_bits));
+    let (a, b) = (at(p), at(q));
     if a <= b { [a, b] } else { [b, a] }
 }
 
@@ -414,8 +419,7 @@ impl Imprint {
             let key = (a.min(b), a.max(b));
             *cache.entry(key).or_insert_with(|| {
                 // from the end that comes first by place, so both copies of an edge get the same point
-                let (i, j) = if pos[key.0 as usize].map(f64::to_bits) <= pos[key.1 as usize].map(f64::to_bits)
-                {
+                let (i, j) = if at(pos[key.0 as usize]) <= at(pos[key.1 as usize]) {
                     key
                 } else {
                     (key.1, key.0)
@@ -958,6 +962,14 @@ pub(crate) fn flip_needles(mesh: &mut TriMesh) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_edge_keys_the_same_at_minus_zero() {
+        assert_eq!(
+            edge_at([-0.0, 1.0, 2.0], [3.0, 4.0, -0.0]),
+            edge_at([0.0, 1.0, 2.0], [3.0, 4.0, 0.0])
+        );
+    }
 
     #[test]
     fn overshoot_moves_only_flush_faces() {
