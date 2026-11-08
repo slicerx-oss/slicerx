@@ -5,7 +5,8 @@
 // design waits off the plate until its first step makes a body. A first body built off the bed (around the origin, the
 // bed's front left corner), or with its brim or skirt off it or in an excluded area, moves once to the middle of the
 // plate, or the first free spot, like a person's move, and the call that made it says how far it moved. When no spot is
-// free, the other designs this host landed move over as a whole to make room, and the call says which and how far. A
+// free, the other designs a host landed, and the person has not moved since, move over as a whole to make room, and the
+// call says which and how far; undoing the new design's step through the design tools moves them back. A
 // later step or replay that takes a part that printed on the bed, or what prints around it, off the bed or into an
 // excluded area lands it again the same way, in the same undo step, and says so. A part that still prints where it
 // stands stays put; one parked off the bed before the step, or a locked one, stays where it is, and the step says it
@@ -13,10 +14,11 @@
 //
 // Every landing moves the design as a whole: the history keeps the move (History.placed), so the design's coordinates
 // stay the ones it was built in. Steps and timeline sketches are stored in plate coordinates; a step is moved into them
-// as it is recorded, and a sketch is read in a design's frame through the move of the body that owns it and that
-// design's landing (cad-history design-frame.ts). Nothing about frames is kept in the host itself, so the mimir tab's
-// host and the app link's read the same.
-import { BED_FRAME, HISTORY_VERSION, appendStep, designFrame, designNamed, invert, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, multiply, noDesignMessage, placedAfter, sketchMove, stepId, storedToDesign, translation, withPlaced, type BedLanding, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type SketchItem, type Step, type StepParams } from '@slicerx/cad-history'
+// as it is recorded, one drawn on a timeline sketch where the sketch is stored, and a sketch is read where it stands
+// now, moved with the design it was drawn for or the first feature drawn on it, then into a design's frame by that
+// design's landing (cad-history design-frame.ts). Where a body stands comes from one place for every reader
+// (sketch-place.ts), waiting designs included, so the mimir tab's host, the app link's and Model read the same.
+import { HISTORY_VERSION, appendStep, claimSketches, designFrame, designNamed, landEdit, landNew, landShift, movedBy, movedFrame, movedParams, movedSketch, noDesignMessage, placedAfter, recordedOn, sketchMove, stepId, storedToDesign, translation, withPlaced, type BedLanding, type Design, type DesignCommit, type DesignHost, type DrawnFor, type History, type HistoryMesh, type Landed, type Mat4, type RoomMove, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -33,6 +35,7 @@ import { settle } from './sketch-dimension'
 import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
+import { placeOf, setWaiting } from './sketch-place'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -47,8 +50,8 @@ const newId = () => `obj_${Date.now().toString(36)}d${(++seq).toString(36)}`
 
 export function appDesignHost(loader: Loader): DesignHost {
   // Designs with no body yet, by id: their history and where the object stands on the plate. Their first step puts
-  // them on the plate under the same id.
-  const empty = new Map<string, { name: string; history: History; transform: Mat4 }>()
+  // them on the plate under the same id. Where each waits is shared, so a sketch drawn for it reads the same anywhere.
+  const empty = new Waiting()
   // What undo took off each design, for redo; the plate's own undo is separate.
   const redo = new Map<string, Step[]>()
 
@@ -66,9 +69,6 @@ export function appDesignHost(loader: Loader): DesignHost {
       redo: redo.get(e.id) ?? [],
     }
   }
-
-  /** Where a body stands on the plate now, for the move of the sketches it owns. */
-  const plateOf = (body: string): Mat4 | undefined => get().plate.find((p) => p.id === body)?.transform
 
   const host: DesignHost = {
     call: (op, request) => geom().call(op, request),
@@ -150,9 +150,14 @@ export function appDesignHost(loader: Loader): DesignHost {
         // where it stood, with its landing moves, so its frame and a redo stay where they were.
         const base = d.history.base
         if (!base.length) {
-          const stood = get().plate.find((p) => p.id === d.id)?.transform ?? movedBy(d.transform, d.placed)
-          set((s) => ({ plate: s.plate.filter((p) => p.id !== d.id) }))
-          empty.set(d.id, { name: d.name, history: d.history, transform: stood })
+          const was = get().plate.find((p) => p.id === d.id)
+          const stood = was?.transform ?? movedBy(d.transform, d.placed)
+          // the step that landed it is undone: the designs its landing moved over go back, in the same write
+          const room = was?.roomMoves && !d.history.steps.some((x) => x.id === was.roomMoves!.step) ? was.roomMoves : undefined
+          set((s) => ({ plate: movedBack(s.plate.filter((p) => p.id !== d.id), room?.moves ?? []) }))
+          // with the room taken back it waits where it was built, so a redo lands it again and makes room again
+          if (room) empty.set(d.id, { name: d.name, history: withPlaced(d.history, room.placed), transform: [...room.built] })
+          else empty.set(d.id, { name: d.name, history: d.history, transform: stood })
           bodyRevisions.register(d.id)
         } else {
           const parts = base.map(toPart)
@@ -169,19 +174,21 @@ export function appDesignHost(loader: Loader): DesignHost {
     sketch(id, design) {
       const k = sketchById(get().timeline, id)
       if (!k) throw Object.assign(new Error(`No finished sketch ${id} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
-      if (design === undefined) return k
-      // in plate coordinates where its owning feature ran: moved as its body moved since, then into the design's frame
-      return movedSketch(k, storedToDesign(sketchMove(get().timeline, id, plateOf), host.get(design).placed))
+      // where it stands on the plate now, as Model draws it, then into the design's frame by that design's landing
+      const move = sketchMove(get().timeline, id, placeOf)
+      return movedSketch(k, design === undefined ? move : storedToDesign(move, host.get(design).placed))
     },
 
     addSketch(s, design) {
       const d = design === undefined ? undefined : host.get(design)
-      const waits = d ? (empty.has(d.id) ? [d.id] : []) : [...empty.keys()]
+      // drawn for the design named, or for every design that waits for a body: it moves with that design, where it
+      // stands now (SketchItem.drawnFor), and of waiting designs the first to land claims it
+      const standing = (id: string): DrawnFor => ({ design: id, transform: [...(placeOf(id) ?? identity())] })
+      const drawnFor = d ? [standing(d.id)] : [...empty.keys()].map(standing)
       // drawn in a design's frame: stored in the plate's, by that design's landing
       const by = d?.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
       const k = finishSketch(by ? { ...s, frame: movedFrame(s.frame, by) } : s)
-      // drawn for designs that wait for a body: the first to land takes it along (takeSketches)
-      if (waits.length) set((st) => ({ timeline: { ...st.timeline, items: st.timeline.items.map((i) => (i.kind === 'sketch' && i.id === k.id ? { ...i, drawnFor: waits } : i)) } }))
+      if (drawnFor.length) set((st) => ({ timeline: { ...st.timeline, items: st.timeline.items.map((i) => (i.kind === 'sketch' && i.id === k.id ? { ...i, drawnFor } : i)) } }))
       return d ? host.sketch!(k.id, d.id) : k
     },
 
@@ -213,19 +220,13 @@ export function appDesignHost(loader: Loader): DesignHost {
 
   /**
    * The step a tool asks for on design `d`, as the history keeps it: in plate coordinates, at the transform the object
-   * stands at on the plate. A step drawn on a timeline sketch is kept where that sketch is stored, so recording it
-   * leaves the sketch's frame as it was, and with the sketch's own plane when the tool took it unchanged.
+   * stands at on the plate. A step drawn on a timeline sketch is kept where that sketch is stored (cad-history
+   * recordedOn), as Model's own Extrude and Revolve keep theirs, so recording it leaves the sketch's frame as it was.
    */
   function recorded(d: Design, plate: Mat4, part: number, params: StepParams, label: string | undefined, sketch: string | undefined, feature: string | undefined): Step {
     const placed = d.placed ? translation([d.placed[0], d.placed[1], 0]) : undefined
-    let p = placed ? movedParams(params, placed) : params
-    let transform = [...plate]
-    const k = sketch !== undefined ? sketchById(get().timeline, sketch) : null
-    if (k && (p.op === 'shape.extrude' || p.op === 'sketch.revolve')) {
-      const back = invert(sketchMove(get().timeline, k.id, plateOf))
-      p = keepPlane(movedParams(p, back), k)
-      transform = multiply(back, plate)
-    }
+    const given = placed ? movedParams(params, placed) : params
+    const { transform, params: p } = sketch !== undefined ? recordedOn(get().timeline, sketch, plate, given, placeOf) : { transform: [...plate], params: given }
     return { id: stepId(), part, transform, params: p, ...(label ? { label } : {}), ...(sketch ? { sketch } : {}), ...(feature ? { feature } : {}) }
   }
 
@@ -280,32 +281,53 @@ export function appDesignHost(loader: Loader): DesignHost {
     const parts = r.parts.map(toPart)
     const handle = await loader.loadParts(name, parts)
     let { transform: landedAt, moved } = landing(id, parts, transform)
-    let room: Map<string, Mat4> | undefined
+    let room: Map<string, { from: Mat4; to: Mat4 }> | undefined
     if (moved && 'offBed' in moved) {
-      const made = await makeRoom(id, parts, transform)
-      if (made) {
+      // the room is worked out against the plate as it stands when the nest starts; when anything on it moved while the
+      // nest ran, that room may no longer be free, so it is worked out again, and after a few tries the new design
+      // stays where it was built
+      for (let tries = 0; tries < 3; tries++) {
+        const before = new Map(get().plate.map((e) => [e.id, e.transform]))
+        const made = await makeRoom(id, parts, transform)
+        if (!made) break
+        if (get().plate.some((e) => before.has(e.id) && !same(before.get(e.id)!, e.transform))) continue
         landedAt = made.at
         room = made.others
-        const names = new Map(get().plate.map((e) => [e.id, e.name]))
-        const moves: RoomMove[] = [...made.others].map(([o, t]) => ({ design: o, name: names.get(o) ?? o, ...landShift(get().plate.find((e) => e.id === o)!.transform, t) }))
-        moved = { ...landShift(transform, landedAt), room: moves }
+        moved = landShift(transform, landedAt)
+        break
       }
     }
     const placed = moved && 'dxMm' in moved ? placedAfter(history.placed, transform, landedAt) : history.placed
-    const entry: PlateEntry = { id, name, handle, parts, colors: [brandAccent()], transform: landedAt, history: withPlaced(history, placed) }
+    const step = history.steps.at(-1)?.id
     guard?.()
-    set((s) => ({
-      plate: [
-        ...s.plate.map((e) => {
-          const t = room?.get(e.id)
-          return t && e.history ? { ...e, transform: t, history: withPlaced(e.history, placedAfter(e.history.placed, e.transform, t)) } : e
-        }),
-        entry,
-      ],
-      selection: id,
-      selectedIds: [id],
-    }))
-    takeSketches(id, moved && 'dxMm' in moved ? moved : undefined)
+    // the room moves are worked out against the plate as it was before the nest; one deleted meanwhile is gone
+    const applied: { id: string; name: string; from: Mat4; to: Mat4 }[] = []
+    set((s) => {
+      applied.length = 0
+      const plate = s.plate.map((e) => {
+        const r = room?.get(e.id)
+        if (!r || !e.history || !same(e.transform, r.from)) return e
+        applied.push({ id: e.id, name: e.name, from: r.from, to: r.to })
+        return { ...e, transform: r.to, landedAt: [...r.to], history: withPlaced(e.history, placedAfter(e.history.placed, e.transform, r.to)) }
+      })
+      const entry: PlateEntry = {
+        id,
+        name,
+        handle,
+        parts,
+        colors: [brandAccent()],
+        transform: landedAt,
+        history: withPlaced(history, placed),
+        ...(moved && 'dxMm' in moved ? { landedAt: [...landedAt] } : {}),
+        ...(applied.length && step ? { roomMoves: { step, moves: applied.map((a) => ({ id: a.id, from: [...a.from], to: [...a.to] })), built: [...transform], ...(history.placed ? { placed: history.placed } : {}) } } : {}),
+      }
+      // sketches drawn for it while it and other designs waited are its own now
+      return { plate: [...plate, entry], timeline: claimSketches(s.timeline, id), selection: id, selectedIds: [id] }
+    })
+    if (moved && 'dxMm' in moved && room) {
+      const moves: RoomMove[] = applied.map((a) => ({ design: a.id, name: a.name, ...landShift(a.from, a.to) }))
+      moved = { ...moved, room: moves }
+    }
     committed?.()
     markStale()
     return moved
@@ -313,18 +335,19 @@ export function appDesignHost(loader: Loader): DesignHost {
 
   /**
    * Room for new body `id` (its parts standing at `transform`) when no spot on the bed is free: first beside the other
-   * objects on their true outlines, then with the other designs this host landed (a landing move in their history,
-   * not locked) moved over as wholes, nested together without turning. Each must print where it goes. Null when
-   * neither works or the geometry engine cannot run.
+   * objects on their true outlines, then with the other designs a host landed (a landing move in their history, not
+   * locked) and the person has not moved since (they stand where their landing put them, PlateEntry.landedAt) moved
+   * over as wholes, nested together without turning. Each must print where it goes. Null when neither works or the
+   * geometry engine cannot run.
    */
-  async function makeRoom(id: string, parts: PlateEntry['parts'], transform: Mat4): Promise<{ at: Mat4; others: Map<string, Mat4> } | null> {
+  async function makeRoom(id: string, parts: PlateEntry['parts'], transform: Mat4): Promise<{ at: Mat4; others: Map<string, { from: Mat4; to: Mat4 }> } | null> {
     const s = get()
     const opts = { ...getArrangeOptions(), rotate: false }
     const item = { id, parts, transform }
     // a part with no spot even on an empty bed gets none by moving others
     if (!landOnBed(item, [], s.bed, opts)) return null
     const others = s.plate.filter((e) => e.id !== id)
-    const movable = others.filter((e) => e.history?.placed && !e.locked)
+    const movable = others.filter((e) => e.history?.placed && !e.locked && e.landedAt && same(e.landedAt, e.transform))
     const prints = (e: { parts: PlateEntry['parts']; transform: Mat4 }) => printsOnBed(e, s.bed)
     const tries: { moving: { id: string; parts: PlateEntry['parts']; transform: Mat4 }[]; fixed: PlateEntry[] }[] = [
       { moving: [item], fixed: others },
@@ -336,12 +359,12 @@ export function appDesignHost(loader: Loader): DesignHost {
         if (r.leftOver.length) continue
         const at = r.transforms[id]
         if (!at || !prints({ parts, transform: at })) continue
-        const moved = new Map<string, Mat4>()
+        const moved = new Map<string, { from: Mat4; to: Mat4 }>()
         let ok = true
         for (const e of t.moving.slice(1)) {
           const to = r.transforms[e.id]
           if (!to || !prints({ parts: e.parts, transform: to })) ok = false
-          else if (to[12] !== e.transform[12] || to[13] !== e.transform[13]) moved.set(e.id, to)
+          else if (to[12] !== e.transform[12] || to[13] !== e.transform[13]) moved.set(e.id, { from: [...e.transform], to })
         }
         if (ok) return { at, others: moved }
       } catch {
@@ -350,29 +373,6 @@ export function appDesignHost(loader: Loader): DesignHost {
       }
     }
     return null
-  }
-
-  /**
-   * As design `id` gets its body: the sketches drawn for it while it waited (SketchItem.drawnFor) that no feature has
-   * used move by its landing move, if it moved, so they stay with the body. Either way they are no longer drawn for
-   * any waiting design, so none moves twice.
-   */
-  function takeSketches(id: string, moved: { dxMm: number; dyMm: number } | undefined): void {
-    const t = get().timeline
-    const used = new Set(t.items.flatMap((i) => (i.kind === 'feature' && i.sketch !== undefined ? [i.sketch] : [])))
-    if (!t.items.some((i) => i.kind === 'sketch' && i.drawnFor?.includes(id))) return
-    const shift = (f: FaceFrame | undefined): FaceFrame => movedFrame(f, translation([moved!.dxMm, moved!.dyMm, 0]))
-    set({
-      timeline: {
-        ...t,
-        items: t.items.map((i) => {
-          if (i.kind !== 'sketch' || !i.drawnFor?.includes(id)) return i
-          // claimed once: by this design's body, whether it moved or not
-          const { drawnFor: _for, ...k } = i
-          return moved && !used.has(i.id) ? { ...k, frame: shift(i.frame) } : k
-        }),
-      },
-    })
   }
 
   /**
@@ -398,14 +398,15 @@ export function appDesignHost(loader: Loader): DesignHost {
    * lands again, with the landing a new part gets, only when it printed on the bed before the edit (printsOnBed, with
    * its old parts where it stands now) and with its new shape it, or what prints around it, no longer does. A part
    * already off the bed before the edit was parked there, so it stays; so does a locked part, or one with no room
-   * anywhere. Each says so in the edit's result. The move joins the design's landing moves.
+   * anywhere. Each says so in the edit's result. The move joins the design's landing moves, and the part stands where
+   * a host landed it (PlateEntry.landedAt).
    */
-  function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => { transform: Mat4; placed: [number, number] | undefined } | undefined; landed: () => Landed | undefined } {
+  function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Pick<PlateEntry, 'transform' | 'landedAt'> & { placed: [number, number] | undefined } | undefined; landed: () => Landed | undefined } {
     let out: Landed | undefined
     const land = (latest: PlateEntry, parts: PlateEntry['parts']) => {
       const r = landEdit({ parts: latest.parts, transform: latest.transform, locked: latest.locked }, parts, onPlate(id))
       out = r.landed
-      return r.to ? { transform: r.to, placed: placedAfter(latest.history?.placed, latest.transform, r.to) } : undefined
+      return r.to ? { transform: r.to, landedAt: [...r.to], placed: placedAfter(latest.history?.placed, latest.transform, r.to) } : undefined
     }
     return { land, landed: () => out }
   }
@@ -413,12 +414,32 @@ export function appDesignHost(loader: Loader): DesignHost {
   return host
 }
 
-/** A step drawn on sketch `k`, its plane put back exactly as the sketch keeps it when the move left it the same. */
-function keepPlane(p: StepParams, k: SketchItem): StepParams {
-  if (p.op !== 'shape.extrude' && p.op !== 'sketch.revolve') return p
-  const same = (a: FaceFrame, b: FaceFrame) => (['origin', 'normal', 'u', 'v'] as const).every((f) => a[f].every((v, i) => Math.abs(v - b[f][i]!) < 1e-6))
-  const f = p.frame ?? BED_FRAME
-  if (!same(f, k.frame ?? BED_FRAME)) return p
-  const { frame: _f, ...rest } = p
-  return (k.frame ? { ...rest, frame: k.frame } : rest) as StepParams
+/** The designs a host keeps waiting for their first body; where each waits is shared with every reader (sketch-place.ts). */
+class Waiting extends Map<string, { name: string; history: History; transform: Mat4 }> {
+  override set(id: string, w: { name: string; history: History; transform: Mat4 }): this {
+    setWaiting(id, w.transform)
+    return super.set(id, w)
+  }
+  override delete(id: string): boolean {
+    setWaiting(id, null)
+    return super.delete(id)
+  }
+}
+
+/** Two transforms the same, to float noise. */
+function same(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((v, i) => Math.abs(v - b[i]!) < 1e-9)
+}
+
+/**
+ * The plate with the designs a landing moved over to make room moved back where they stood, each with its landing
+ * moves as they were, when it still stands where the room move put it; one the person moved since stays.
+ */
+function movedBack(plate: PlateEntry[], moves: readonly { id: string; from: number[]; to: number[] }[]): PlateEntry[] {
+  if (!moves.length) return plate
+  return plate.map((e) => {
+    const m = moves.find((x) => x.id === e.id)
+    if (!m || !e.history || !same(e.transform, m.to)) return e
+    return { ...e, transform: [...m.from], landedAt: [...m.from], history: withPlaced(e.history, placedAfter(e.history.placed, e.transform, m.from)) }
+  })
 }

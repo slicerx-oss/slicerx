@@ -375,6 +375,12 @@ export interface SketchVia {
   run?: (args: Record<string, unknown>, ctx: unknown) => Promise<ToolOutput>
   /** The bed's middle on the plate the app shows, when its link answers. */
   bedMiddle?: () => Promise<[number, number] | undefined>
+  /**
+   * The design a routed sketch is drawn for, as the app's design.sketch takes it, and how far the app moved it onto the
+   * bed (its placedMm): the one named, by id or name, or with none named the only design once one was moved onto the
+   * bed. Undefined when there is none to draw for, or the link does not answer.
+   */
+  drawnFor?: (design: string | undefined) => Promise<{ design: string; placed?: [number, number] } | undefined>
 }
 
 /**
@@ -391,6 +397,12 @@ export function wireSketchVia(via: SketchVia, tools: readonly PilotTool<never>[]
     const bed = await appLink.call<{ bed?: { widthMm?: number; depthMm?: number; centerMm?: [number, number] } }>('plate.list').then((r) => r.bed, () => undefined)
     if (bed?.centerMm) return bed.centerMm
     return bed?.widthMm && bed.depthMm ? [bed.widthMm / 2, bed.depthMm / 2] : undefined
+  }
+  via.drawnFor = async (design) => {
+    const r = await appLink.call<{ output?: { designs?: { design?: string; name?: string; placedMm?: [number, number] }[] } }>('design.list').catch(() => undefined)
+    const all = r?.output?.designs ?? []
+    const d = design !== undefined ? (all.find((x) => x.design === design) ?? all.find((x) => x.name === design)) : all.some((x) => x.placedMm) && all.length === 1 ? all[0] : undefined
+    return d?.design ? { design: d.design, ...(d.placedMm ? { placed: d.placedMm } : {}) } : undefined
   }
 }
 
@@ -542,8 +554,17 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return host.sketch(id, design)
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
-  // the design a new sketch is drawn for, by its id, when the call names one
-  const sketchFor = (design: string | undefined): string | undefined => (design === undefined ? undefined : designOf(design).id)
+  // the design a new sketch is drawn for: the one the call names; with none named, once a design was moved onto the bed
+  // its frame is no longer the plate's, so the only design there is, or a refusal while there are others. With no
+  // design moved, every design's frame is the plate's and the sketch is drawn for none.
+  const sketchFor = (design: string | undefined): string | undefined => {
+    if (design !== undefined) return designOf(design).id
+    const all = deps.designs?.list() ?? []
+    const moved = all.filter((d) => d.placed)
+    if (!moved.length) return undefined
+    if (all.length === 1) return all[0]!.id
+    throw new ToolInputError(`design: name the design this sketch is drawn for. ${moved.map((d) => d.name).join(', ')} moved onto the bed, so ${moved.length === 1 ? 'its coordinates are' : 'their coordinates are'} not the plate's; slicerx_design_list lists the designs`)
+  }
 
   // the check issues of a spline the engine cannot draw (repeated points, too sharp a bend, too many points)
   // a sketch past the point budget is named on the loop that tips it, which need not be a spline
@@ -948,17 +969,19 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.3.0',
     source: 'command',
     permission: 'slice',
-    description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them; without, in the plate's.`,
+    description: `Finish a sketch into the open project's design timeline without a solid, solving its constraints first (a dimension that would over-define it stays driven), and return its id to pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. With design, the frame is in that design's own coordinates, as its other tools take them. Without, it is in the plate's while no design was moved onto the bed; after that it is the only design's, or name the design.`,
     input: z.object({ loops: loopsRef, frame: frameRef.optional(), constraints: z.array(loopConstraint).max(8192).optional(), design: designArg.optional().describe("The design the sketch is drawn for: its frame is in that design's coordinates") }),
     async run(i) {
       const loopsIn = i.loops
       splinesOk(loopsIn)
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      // the design it is drawn for, or why there is none to pick, before anything is checked or solved
+      const forId = sketchFor(i.design)
       await splinesDraw(loopsIn)
       const frame = frameOf(i.frame)
       if (!i.constraints?.length) {
-        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }), sketchFor(i.design))
+        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: loopsIn }), forId)
         return { summary: `${k.name} is in the timeline${splines(loopsIn)}`, output: { id: k.id, name: k.name, loops: k.loops.length } }
       }
       if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
@@ -966,7 +989,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
       // the solve moves spline points: two on one spot, or one dragged far, is refused here too
       await splinesDraw(solved.loops)
-      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }), sketchFor(i.design))
+      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }), forId)
       const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
       const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
       return { summary: `${k.name} is in the timeline${splines(loopsIn)}, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
@@ -1001,10 +1024,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     async run(i) {
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
-      // the middle of the plane, as the sketch panel starts it
+      // the design it is drawn for, named or the only one there is once one was moved onto the bed, first: the default
+      // center is the middle of the plane, as the sketch panel starts it, which on the bed is the bed's middle in the
+      // plate's coordinates, so in that design's frame it is less its landing
+      const forId = sketchFor(i.design)
       const bed = i.frame ? undefined : host.bed?.()
-      // the bed's middle in the plate's coordinates, so in a landed design's frame it is less its landing
-      const off = i.design !== undefined && bed ? (designOf(i.design).placed ?? [0, 0]) : [0, 0]
+      const off = forId !== undefined && bed ? (designOf(forId).placed ?? [0, 0]) : [0, 0]
       const center = i.center ?? (bed ? [bed.widthMm / 2 - off[0]!, bed.depthMm / 2 - off[1]!] : [0, 0])
       const options = plain<Record<string, unknown>>({ scale: i.scale, fitWidthMm: i.fit_width_mm, fitHeightMm: i.fit_height_mm, center, toleranceMm: i.tolerance_mm })
       const req = { svg: i.svg, options }
@@ -1015,7 +1040,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       // a spline that cannot be drawn never reaches the timeline, as for design.sketch
       const bad = undrawable(issues, loopsIn)
       if (bad.length) throw new ToolInputError(`svg: ${bad.map((x) => x.message).join(' ')} Raise tolerance_mm or simplify the artwork.`)
-      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }), sketchFor(i.design))
+      const k = host.addSketch(plain({ ...(i.frame ? { frame: frameOf(i.frame) } : {}), loops: loopsIn }), forId)
       const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
       const size = out['sizeMm'] as [number, number]
       const holes = (check.loops ?? []).filter((l) => l.role === 'hole').length
@@ -1087,7 +1112,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const traceImage = defineTool({
     name: 'design.trace_image',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description: `Trace a PNG or JPEG into a finished sketch in the open project's design timeline, as Trace image in the sketch tool does: the inside (dark or light areas, opaque areas, or picked colors) is found, specks are cleaned away, and its edges become loops of lines, arcs, circles and splines (holes stay loops inside), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. The image is traced on this server, so it may be large; the loops then go to the timeline as slicerx_design_sketch sends them. Use dry_run to tune the settings first, and preview_image to see the loops over the image. Returns the sketch id, its loops, how many of each curve, the size, what was cleaned away, and the sketch check.`,
@@ -1109,6 +1134,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         mm_per_px: z.number().positive().max(100).optional().describe('mm per pixel of the image as given'),
         center: vec2.optional().describe("Where the middle of the trace lands, sketch mm; when absent, the middle of the plane: on the bed, the middle of the app's bed while the app is linked, else this server's bed, else the origin; on a plane or face, the frame's origin"),
         frame: frameRef.optional(),
+        design: designArg.optional().describe("The design the sketch is drawn for: frame and center are in that design's coordinates, as for slicerx_design_sketch"),
         max_side_px: z.number().int().min(16).max(4096).optional().describe('The image is shrunk to this long side before tracing; 2048 when absent'),
         dry_run: z.boolean().optional().describe('Trace and report without adding anything to the timeline'),
         preview_image: z.boolean().optional().describe('Also return a PNG of the image with the loops drawn over it'),
@@ -1126,7 +1152,17 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       // the middle of the plane, as the sketch panel and design.sketch_svg start it: the bed's middle on the bed (the
       // app's bed while its link answers, else this server's), the frame's origin on a plane or face
       const local = deps.designs?.bed?.()
-      const middle = i.frame || i.center ? undefined : ((await deps.sketchVia?.bedMiddle?.()) ?? (local ? ([local.widthMm / 2, local.depthMm / 2] as [number, number]) : undefined))
+      const bedMiddle = i.frame || i.center ? undefined : ((await deps.sketchVia?.bedMiddle?.()) ?? (local ? ([local.widthMm / 2, local.depthMm / 2] as [number, number]) : undefined))
+      // the design the trace is drawn for, as design.sketch picks it (the app's when it is routed there), sent on with
+      // the loops; the bed's middle is on the plate, so in the frame of a design moved onto the bed it is less that move
+      const pick = async () => (deps.sketchVia?.drawnFor ? deps.sketchVia.drawnFor(i.design) : ((id) => (id === undefined ? undefined : { design: id, placed: designOf(id).placed }))(sketchFor(i.design)))
+      // a dry run adds nothing, so a design that cannot be picked yet only leaves its center on the plate
+      const drawn = await pick().catch((e: unknown) => {
+        if (i.dry_run) return undefined
+        throw e
+      })
+      const off: [number, number] = bedMiddle ? (drawn?.placed ?? [0, 0]) : [0, 0]
+      const middle = bedMiddle ? ([bedMiddle[0] - off[0], bedMiddle[1] - off[1]] as [number, number]) : undefined
       const center = i.center ?? middle ?? [0, 0]
       const options = plain<Record<string, unknown>>({
         mode: i.mode,
@@ -1166,7 +1202,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const preview = typeof out['previewPng'] === 'string' ? { images: [{ mime: 'image/png' as const, data: out['previewPng'] }] } : {}
       // the loops go on as design.sketch takes them, so what it would refuse is named here in this tool's options, and
       // a dry run says so too
-      const args = plain<Record<string, unknown>>({ loops: loopsIn, ...(i.frame ? { frame: i.frame } : {}) })
+      const forId = i.design ?? drawn?.design
+      const args = plain<Record<string, unknown>>({ loops: loopsIn, ...(i.frame ? { frame: i.frame } : {}), ...(forId !== undefined ? { design: forId } : {}) })
       const refusal = ((): string | undefined => {
         // a spline that cannot be drawn never reaches the timeline
         const bad = undrawable(issues, loopsIn)

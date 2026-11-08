@@ -107,10 +107,11 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
     } else {
       // a projection names its body by file id; one from a body not saved is lost, and its curves stay
       const s = it.projections ? { ...it, projections: it.projections.map((p) => (fileIds.has(p.source.body) ? { ...p, source: { ...p.source, body: String(fileIds.get(p.source.body)) } } : { ...p, lost: p.lost ?? BODY_GONE })) } : it
-      // a sketch keeps the body it sits on only while that body is saved; what it was drawn for is not saved, as the
-      // designs that waited for a body do not open again
-      const { on, drawnFor: _for, ...k } = s
-      items.push(on && fileIds.has(on.body) ? { ...k, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
+      // a sketch keeps the body it sits on, and the one design it was drawn for, only while that body is saved; one
+      // drawn for designs that waited for a body keeps none, as they do not open again
+      const { on, drawnFor, ...k } = s
+      const f = drawnFor?.length === 1 && fileIds.has(drawnFor[0]!.design) ? { drawnFor: [{ design: String(fileIds.get(drawnFor[0]!.design)), transform: drawnFor[0]!.transform }] } : {}
+      items.push(on && fileIds.has(on.body) ? { ...k, ...f, on: { ...on, body: String(fileIds.get(on.body)) } } : { ...k, ...f })
     }
     if (i < d.marker) marker = items.length
   })

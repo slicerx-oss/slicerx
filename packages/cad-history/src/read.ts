@@ -382,6 +382,14 @@ function onOf(v: unknown): Pick<SketchItem, 'on'> {
   return { on: { body: v['body'], part: v['part'] as number } }
 }
 
+// the one design a sketch was drawn for and where it stood: a body id and 16 finite numbers, else none
+function drawnForOf(v: unknown): Pick<SketchItem, 'drawnFor'> {
+  if (!Array.isArray(v) || v.length !== 1 || !obj(v[0])) return {}
+  const { design, transform } = v[0] as Record<string, unknown>
+  if (typeof design !== 'string' || !Array.isArray(transform) || transform.length !== 16 || !transform.every((x) => typeof x === 'number' && Number.isFinite(x))) return {}
+  return { drawnFor: [{ design, transform: transform as number[] }] }
+}
+
 /**
  * The plate's design timeline (design.ts), bodies by 3MF object id: a version 3 file as it was saved, rolled back
  * steps included, or an older file's histories merged by when each step was made. Null when there is none; a body
@@ -426,7 +434,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     if (it['kind'] === 'sketch') {
       const name = typeof it['name'] === 'string' && it['name'].trim() ? it['name'].trim().slice(0, 100) : 'Sketch'
       const n = counted.get(it['id'] as string) ?? 0
-      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']), ...projectionsOf(it['projections']), ...(n ? { nextProjection: n } : {}) }
+      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']), ...drawnForOf(it['drawnFor']), ...projectionsOf(it['projections']), ...(n ? { nextProjection: n } : {}) }
       items.push(k)
     } else {
       const step = histories.get(it['body'] as string)?.steps.find((s) => s.id === it['id'])

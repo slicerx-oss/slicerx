@@ -14,6 +14,7 @@ import { createScriptedClient, type PilotTool } from '@slicerx/pilot'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
 import { geom } from '../src/geom/client'
+import { startTimeline } from '../src/plate/timeline'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
@@ -25,7 +26,7 @@ const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(n
 type Call = { name: string; args: Record<string, unknown> }
 
 /**
- * A desk cable organizer as a model built it in a live run: a top plate extruded around the origin, then a hook below
+ * A desk cable organizer built the way a user builds it: a top plate extruded around the origin, then a hook below
  * and in front of it, five slots cut in the top plate, and the list of designs, all in the frame the top plate was built
  * in. The extrude names the design by its name, which both hosts take, so the top plate is the first body: built off the
  * bed, it lands on it. The hook reaches below the bed, so that edit lands the part again, as a whole.
@@ -41,7 +42,7 @@ const CABLE_ORGANIZER: Call[] = [
 ]
 
 /**
- * The first steps of a headphone stand as a model built it in a live run: a round base extruded around the origin, so
+ * The first steps of a headphone stand built the way a user builds it: a round base extruded around the origin, so
  * it lands on the plate, then the stem revolved about the design's own origin, the middle of the base, and joined to it.
  */
 const HEADPHONE_STAND: Call[] = [
@@ -55,6 +56,20 @@ const EDIT_OFF_THE_BED: Call[] = [
   { name: 'design.new', args: { name: 'Block' } },
   { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [128, 128] }, distance_mm: 5 } },
   { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 140, heightMm: 20 }, placement: { center: [200, 128] }, distance_mm: 5, operation: 'join', part: 0 } },
+  { name: 'design.list', args: {} },
+]
+
+/**
+ * A block built around the origin, so it lands, then a sketch drawn for it on its top, in its own frame: a cut from the
+ * sketch, that cut undone, and a deeper cut from the same sketch. k1 stands for the id design.sketch gave.
+ */
+const SKETCH_AFTER_LANDING: Call[] = [
+  { name: 'design.new', args: { name: 'Block' } },
+  { name: 'geom.extrude', args: { design: 'd1', shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, distance_mm: 10 } },
+  { name: 'design.sketch', args: { design: 'd1', frame: { origin: [2, 0, 10], normal: [0, 0, 1] }, loops: [{ points: [[-3, -3], [3, -3], [3, 3], [-3, 3]] }] } },
+  { name: 'geom.extrude', args: { design: 'd1', sketch: 'k1', distance_mm: 2, operation: 'cut' } },
+  { name: 'design.undo', args: { design: 'd1' } },
+  { name: 'geom.extrude', args: { design: 'd1', sketch: 'k1', distance_mm: 4, operation: 'cut' } },
   { name: 'design.list', args: {} },
 ]
 
@@ -74,16 +89,21 @@ function plain(v: unknown, id: string): unknown {
   return v
 }
 
-/** Runs the calls on `tools`, with the design id d1 as the id design.new gave; each call's whole reply, or its error. */
+/**
+ * Runs the calls on `tools`, with the design id d1 as the id design.new gave and k1 as the id design.sketch gave; each
+ * call's whole reply, or its error.
+ */
 async function build(tools: readonly PilotTool<never>[], calls: readonly Call[]): Promise<{ id: string; replies: unknown[] }> {
   let id = 'd1'
+  let sketch = 'k1'
   const replies: unknown[] = []
   for (const c of calls) {
     const tool = tools.find((t) => t.name === c.name)!
-    const args = JSON.parse(JSON.stringify(c.args).split('"d1"').join(JSON.stringify(id))) as never
+    const args = JSON.parse(JSON.stringify(c.args).split('"d1"').join(JSON.stringify(id)).split('"k1"').join(JSON.stringify(sketch))) as never
     try {
       const out = await tool.run(args, {} as never)
       if (c.name === 'design.new') id = (out.output as { design: string }).design
+      if (c.name === 'design.sketch') sketch = (out.output as { id: string }).id
       replies.push({ call: c.name, ok: out.ok !== false, summary: out.summary, output: out.output })
     } catch (e) {
       replies.push({ call: c.name, error: e instanceof Error ? e.message : String(e) })
@@ -196,6 +216,23 @@ describe('the creative eval lands a body as the app does', () => {
     // on the plate the stand stands where the base landed, the middle of the bed
     const plate = get().plate.find((p) => p.id === a.id)!
     expect([plate.transform[12], plate.transform[13]]).toEqual([128, 128])
+  })
+
+  it('reads a sketch drawn for a landed design the same as the app, through a cut, its undo and a deeper cut', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const stop = startTimeline()
+    try {
+      const { app, evalRun, a, e } = await both(SKETCH_AFTER_LANDING)
+      expect(evalRun.replies).toEqual(app.replies)
+      const said = app.replies.map((r) => JSON.stringify(r))
+      expect(said[3]).toMatch(/"ok":true/)
+      expect(said[5]).toMatch(/"ok":true/)
+      // one 6 mm square hole 4 mm deep, 2 mm off the block's middle in the design's frame
+      for (const d of [a, e]) expect(d.history.steps).toHaveLength(2)
+      expect(body(e)).toEqual(body(a))
+    } finally {
+      stop()
+    }
   })
 
   it('lands a part again when an edit takes it past the edge of the bed', async () => {
