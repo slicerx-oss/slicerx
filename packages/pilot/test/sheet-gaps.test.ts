@@ -104,7 +104,18 @@ describe('the gaps on a print-in-place sheet', () => {
   })
 
   it('leave a gap the sheet already has, and are not added without printInPlace', async () => {
-    const own = { ...SHEET, args: { ...SHEET.args, dims: [...SHEET.args.dims, { key: 'clearance', label: 'Clearance', value: 0.5, unit: 'mm', source: 'asked' }], part: [{ plane: 'xy', points: [[0, 0], [40, 0], [40, 10]], from: 0, to: 5 }] } }
+    // a sheet of several rows places each one on the drawing (at)
+    const own = {
+      ...SHEET,
+      args: {
+        ...SHEET.args,
+        dims: [
+          { ...SHEET.args.dims[0]!, at: { a: [0, 0, 0], b: [40, 0, 0], off: [0, -5, 0] } },
+          { key: 'clearance', label: 'Clearance', value: 0.5, unit: 'mm', source: 'asked', at: { a: [40, 0, 0], b: [40.5, 0, 0], off: [0, -5, 0] } },
+        ],
+        part: [{ plane: 'xy', points: [[0, 0], [40, 0], [40, 10]], from: 0, to: 5 }],
+      },
+    }
     const [mine] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [own] }, { text: 'Done.' }])
     expect(mine!.map((d) => [d.key, d.value])).toEqual([['width', 40], ['clearance', 0.5], ['clearance_vertical', 0.4]])
     const [plain] = await sheets([{ calls: [{ name: 'design.plan', args: { part: 'Box' } }] }, { calls: [SHEET] }, { text: 'Done.' }])
