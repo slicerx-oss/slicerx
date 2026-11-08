@@ -728,16 +728,25 @@ fn below_of(env: &Env<'_>, l: i64, below_lines: &[Line], sp: f64) -> Below {
     }
 }
 
-/// Whether one of the 5 layers below `l` bridges under `region` (grown by `sp`), so the bridge over `region` is not the
-/// first of its stack. Bridges on other islands don't count.
-fn bridged_below(env: &Env<'_>, l: i64, memo: &Memo, region: &Shapes, sp: f64) -> bool {
-    let near = expand(region, sp);
+/// Whether one of the 5 layers below `l` bridges under `region`, so the bridge over `region` is not the first of its
+/// stack. Only a bridge that [`covers`] it counts: one on another island, or beside it on a stepped top where its
+/// anchored strands reach over the edge, does not.
+fn bridged_below(env: &Env<'_>, l: i64, memo: &Memo, region: &Shapes) -> bool {
     (l.saturating_sub(5).max(1)..l).rev().any(|j| {
         !cands_of(env, j, memo).is_empty()
-            && bridge_layer(env, j, memo)
-                .iter()
-                .any(|b| !meet(&b.area, &near).is_empty())
+            && bridge_layer(env, j, memo).iter().any(|b| covers(&b.area, region))
     })
+}
+
+/// Whether the bridge area `lower` lies under at least a quarter of `region`.
+fn covers(lower: &Shapes, region: &Shapes) -> bool {
+    let (Some(a), Some(b)) = (extents(lower), extents(region)) else {
+        return false;
+    };
+    if !rects_overlap(&[a], &[b]) {
+        return false;
+    }
+    area(&meet(lower, region)) >= 0.25 * area(region)
 }
 
 fn nearest_line(lines: &[Line], p: (f64, f64)) -> Option<Line> {
@@ -1127,7 +1136,7 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
             determine_angle(&outline, &boundary, 0.0).angle
         } else {
             let vote = determine_angle(&outline, &anchors, env.angle_bias);
-            let first = || !bridged_below(env, l, memo, &to_bridge, sp);
+            let first = || !bridged_below(env, l, memo, &to_bridge);
             first_bridge_angle(
                 &vote,
                 &to_bridge,
@@ -1938,7 +1947,19 @@ mod tests {
 
     #[test]
     fn the_grid_family_nearest_the_x_axis_wins() {
-        for (dir, want) in [(45.0, 135), (30.0, 30), (60.0, 150), (0.0, 0)] {
+        // 44 and 46 degree grids are a real degree off the tie: the family nearest the x axis wins. Within half a
+        // degree (44.8: 134.8 is 45.2 from the axis, 44.8 is 44.8) it is a tie and the larger angle wins; at 0.6 (44.7)
+        // the nearer family wins again.
+        for (dir, want) in [
+            (45.0, 135),
+            (30.0, 30),
+            (60.0, 150),
+            (0.0, 0),
+            (44.0, 44),
+            (46.0, 136),
+            (44.8, 135),
+            (44.7, 45),
+        ] {
             assert_eq!(
                 family_angle(&families(&grid(dir))).map(degrees),
                 Some(want),
@@ -1994,17 +2015,23 @@ mod tests {
                 [p(o - 40.0, o + 40.0), p(o + 40.0, o - 40.0)]
             })
             .collect();
-        // Three families, as a triangle pattern lays them.
-        let mut three = grid(0.0);
-        three.retain(|l| l[0].y == l[1].y);
-        for a in [60.0_f64, 120.0] {
-            let (c, s) = (a.to_radians().m_cos(), a.to_radians().m_sin());
-            for k in -40..=40 {
-                let o = f64::from(k) * 2.0;
-                let (x, y) = (20.0 - s * o, 20.0 + c * o);
-                three.push([p(x - c * 60.0, y - s * 60.0), p(x + c * 60.0, y + s * 60.0)]);
-            }
-        }
+        // The same 45 degree grid with a lighter third family along x: the vote still splits evenly between the two
+        // heaviest families, so only the count of families keeps the rule off.
+        let mut three = grid(45.0);
+        three.extend((-20..=20).map(|k| {
+            let y = 20.25 + f64::from(k) * 4.0;
+            [p(-40.0, y), p(80.0, y)]
+        }));
+        // The control: the two families alone turn the same vote to 135.
+        let control = Below {
+            families: families(&grid(45.0)),
+            solid: Vec::new(),
+        };
+        assert_eq!(
+            first_bridge_angle(&vote, &region, &control, &|| true, (0.45, 0.45, 0.0)).map(degrees),
+            Some(135),
+            "two families"
+        );
         for (name, lines, n) in [
             ("one family", one, 1),
             ("three families", three, 3),
@@ -2018,6 +2045,19 @@ mod tests {
             let rule = first_bridge_angle(&vote, &region, &below, &|| true, (0.45, 0.45, 0.0));
             assert_eq!(rule, None, "{name}");
         }
+    }
+
+    #[test]
+    fn only_a_bridge_under_a_real_share_of_the_candidate_makes_it_a_later_layer() {
+        let region = rect(0.0, 0.0, 20.0, 20.0);
+        // Under all of it, or under 30 percent.
+        assert!(covers(&rect(-2.0, -2.0, 22.0, 22.0), &region));
+        assert!(covers(&rect(-5.0, 0.0, 6.0, 20.0), &region));
+        // Under 20 percent, reaching over the edge as a neighbor's anchored strands do, touching it, or apart.
+        assert!(!covers(&rect(-5.0, 0.0, 4.0, 20.0), &region));
+        assert!(!covers(&rect(-20.0, 0.0, 0.45, 20.0), &region));
+        assert!(!covers(&rect(-20.0, 0.0, 0.0, 20.0), &region));
+        assert!(!covers(&rect(-20.0, 0.0, -0.5, 20.0), &region));
     }
 
     #[test]
