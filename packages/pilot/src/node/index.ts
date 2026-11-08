@@ -231,8 +231,16 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: number }): Geom
       const onAbort = (): void => stop('canceled, so the engine was stopped')
       const onMessage = (m: { out?: string; error?: string }): void => {
         if (m.out !== undefined) {
+          // read before settling: a throw in this listener would leave the call, and every call queued behind it, waiting
+          let value: unknown
+          try {
+            value = JSON.parse(m.out)
+          } catch (e) {
+            fail(`unreadable reply: ${e instanceof Error ? e.message : String(e)}`)
+            return
+          }
           done()
-          resolve(JSON.parse(m.out) as unknown)
+          resolve(value)
           return
         }
         let message = m.error ?? 'no reply'
