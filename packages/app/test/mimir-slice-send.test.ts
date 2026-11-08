@@ -9,8 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { sendLedger } from '../src/plate/send-ledger'
 import { compose } from '../src/plate/transform'
-import { set, type PlateEntry } from '../src/state/store'
+import { get, set, type PlateEntry } from '../src/state/store'
 import { bundledKb } from '../src/workspaces/mimir/kb'
+import { plateFingerprint } from '../src/workspaces/mimir/print-run'
 import { tabPilotOptions } from '../src/workspaces/mimir/session'
 
 const result = (id: string): SliceResult =>
@@ -115,3 +116,74 @@ describe('printer.queue sends the slice the run records', () => {
     expect(uploaded.some((u) => u.text.includes('skill_1'))).toBe(false)
   })
 })
+
+describe('printer.queue refuses a slice whose G-code an edit since has changed', () => {
+  const PROFILE = { printerId: 'bench', nozzle: 0.4, nozzles: [0.4], nozzleFrom: 'printer', tier: 'standard', source: 'slicerx', shippedGcode: true, gcodeKeys: [], limits: {} }
+  const SLOTS = [{ id: '1', material: 'PLA', color: '#FFFFFF', remainingG: 900 }]
+  beforeEach(() => set({ layerMarks: {}, profile: null } as never))
+
+  /** app.slice, then `edit`, then printer.queue in a later turn: what the run, the queue and the printer got. */
+  async function sliceEditQueue(edit: () => void) {
+    set({ profile: PROFILE, printerSlots: SLOTS } as never)
+    const { options, uploaded } = await tab()
+    // one chat: a turn that slices, then a turn that queues
+    const steps = [{ calls: [{ name: 'app.slice', args: {} }] }, { text: 'Sliced.' }, { calls: [QUEUE] }, { text: 'Done.' }]
+    const pilot = createPilot({ ...options, client: createScriptedClient(steps, { chunk: false }) })
+    await turn(options, [], pilot)
+    expect(pilot.printRun?.('tab')?.slice).toMatchObject({ sliceId: 'app_1', stale: false })
+    edit()
+    const stale = pilot.printRun?.('tab')?.slice?.stale
+    const { cards, results } = await turn(options, [], pilot)
+    return { stale, cards, result: results.at(-1), uploaded }
+  }
+
+  const refused = (r: Awaited<ReturnType<typeof sliceEditQueue>>) => {
+    expect(r.stale).toBe(true)
+    expect(r.cards).toEqual([])
+    expect(r.result).toMatchObject({ ok: false })
+    expect(JSON.stringify(r.result)).toMatch(/stale_slice|changed/)
+    expect(r.uploaded).toEqual([])
+  }
+
+  it('after a pause is added at a layer', async () => {
+    refused(await sliceEditQueue(() => set({ layerMarks: { p1: [{ id: 'm1', z: 2, kind: 'pause' }] } } as never)))
+  })
+
+  it('after an object is renamed', async () => {
+    refused(await sliceEditQueue(() => set({ plate: get().plate.map((e) => ({ ...e, name: 'Bracket v2' })) })))
+  })
+
+  it("after the profile's G-code is no longer the shipped text", async () => {
+    refused(await sliceEditQueue(() => set({ profile: { ...PROFILE, shippedGcode: false } } as never)))
+  })
+
+  it('but not after a spool reload that changes only the grams left or the tag: that slice still sends', async () => {
+    const r = await sliceEditQueue(() => set({ printerSlots: [{ ...SLOTS[0]!, remainingG: 120, spoolUid: 'new-spool' }] } as never))
+    expect(r.stale).toBe(false)
+    expect(r.cards.map((c) => c.tool)).toEqual(['printer.queue'])
+    expect(r.result).toMatchObject({ ok: true })
+    expect(r.uploaded.map((u) => u.name)).toEqual(['app_1.gcode'])
+  })
+
+  it('nor after a note-only change to a color change mark (its slot is a note in the project)', async () => {
+    set({ layerMarks: { p1: [{ id: 'c1', z: 2, kind: 'color_change', slot: 1 }] } } as never)
+    const r = await sliceEditQueue(() => set({ layerMarks: { p1: [{ id: 'c1', z: 2, kind: 'color_change', slot: 2 }] } } as never))
+    expect(r.stale).toBe(false)
+    expect(r.result).toMatchObject({ ok: true })
+  })
+})
+
+describe("a plate out of view keeps its own G-code inputs in its fingerprint", () => {
+  it('a rename or a pause on plate 2 changes its fingerprint while plate 1 is shown, and leaves plate 1 as it was', () => {
+    set({ plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }, { id: 'p2', name: 'Plate 2', objects: [{ ...bracketAt(60), id: 'b', name: 'Clip' }], settings: {} }], layerMarks: {}, profile: null } as never)
+    const one = plateFingerprint(get(), 1)
+    const two = plateFingerprint(get(), 2)
+    set({ plates: get().plates.map((p) => (p.id === 'p2' ? { ...p, objects: p.objects.map((e) => ({ ...e, name: 'Clip v2' })) } : p)) })
+    const renamed = plateFingerprint(get(), 2)
+    expect(renamed).not.toBe(two)
+    set({ layerMarks: { p2: [{ id: 'm1', z: 2, kind: 'pause' }] } } as never)
+    expect(plateFingerprint(get(), 2)).not.toBe(renamed)
+    expect(plateFingerprint(get(), 1)).toBe(one)
+  })
+})
+
