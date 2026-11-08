@@ -3,7 +3,7 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import { ADDS_NOTHING_MM3, withPlaced, type History, type Pattern, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
+import { ADDS_NOTHING_MM3, type History, type Pattern, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
@@ -11,7 +11,7 @@ import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
 import { applyHistory, runReplay, toPart } from './history/ops'
 import { exactSolids } from './history/exact-flag'
-import { commitMade, goneError } from './commit'
+import { commitMade, goneError, placedNow } from './commit'
 import { onSketch } from './sketch-place'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
@@ -219,9 +219,8 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     const now = get().plate.find((e) => e.id === entry.id)
     if (!now) throw goneError(entry.id)
     if (now.history?.exact) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
-    // with the landing moves the object has as it is written: a design host may have moved it over to make room while
-    // the result loaded, and that move's transform is the one the write keeps
-    if (!writeIn(o, () => commitMade(entry.id, (latest) => ({ handle, parts, ...historyField(withPlaced(history, latest.history?.placed)) })))) throw goneError(entry.id)
+    // with the landing moves the object has as it is written (placedNow)
+    if (!writeIn(o, () => commitMade(entry.id, (latest) => ({ handle, parts, ...historyField(placedNow(history, latest)) })))) throw goneError(entry.id)
     markStale()
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
   }
@@ -304,7 +303,7 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
     const handle = await host.loadParts(e.name, parts)
     // Merging copies is a step only in a history the object already has.
     const history = e.history ? withStep(e, -1, { op: 'array.merged', spec }) : undefined
-    if (!commitMade(e.id, () => ({ handle, parts, ...historyField(history) }))) throw goneError(e.id)
+    if (!commitMade(e.id, (latest) => ({ handle, parts, ...historyField(placedNow(history, latest)) }))) throw goneError(e.id)
     markStale()
     return count
   }
