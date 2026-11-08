@@ -1676,6 +1676,48 @@ describe('Extrude from a finished sketch whose design is moved over while the sk
     const r = await runReplay({ history: historyOf(get().timeline, planter)! })
     expect(volume(r.parts.map(toPart))).toBeCloseTo(volume(entry(planter).parts), 0)
   })
+
+  /** A planter landed, a sketch drawn for it, the panel's plane for that sketch, then a saucer that moves the planter over. */
+  async function openThenMoved(frame: Record<string, unknown>, loops: unknown[]) {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const planter = String((await run('design.new', { name: 'Planter' })).output['design'])
+    await run('geom.extrude', { design: planter, shape: PLANTER, distance_mm: 100 })
+    const k = String((await run('design.sketch', { design: planter, frame, loops })).output['id'])
+    const stored = structuredClone(sketchItem(k).frame)
+    const opened = sketchScene(sketchItem(k))!.frame
+    const saucer = String((await run('design.new', { name: 'Saucer' })).output['design'])
+    expect((await run('geom.extrude', { design: saucer, shape: SAUCER, distance_mm: 15 })).summary).toMatch(/Planter moved by/)
+    const now = sketchScene(sketchItem(k))!.frame
+    expect(now.origin).not.toEqual(opened.origin)
+    return { host, planter, saucer, k, stored, opened, now }
+  }
+
+  it('revolves on the body where the sketch stands when Revolve is pressed, and keeps the sketch\'s stored frame', { timeout: 60_000 }, async () => {
+    // a 4 mm post on the planter's top, revolved about the design's vertical axis
+    const { planter, k, stored, opened, now } = await openThenMoved({ origin: [0, 0, 100], normal: [0, -1, 0], u: [1, 0, 0] }, [{ points: [[0, 0], [4, 0], [4, 5], [0, 5]] }])
+    const v = volume(entry(planter).parts)
+    const made = await applyRevolve(loader, { frame: opened, loops: sketchItem(k).loops, axis: { point: [0, 0], direction: [0, 1] }, angleDeg: 360, operation: 'join', target: { objectId: planter, partIndex: 0 }, name: 'Revolved body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    expect(volume(entry(planter).parts) - v).toBeCloseTo(Math.PI * 16 * 5, -1)
+    expect(sketchItem(k).frame).toEqual(stored)
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(now)
+    const r = await runReplay({ history: historyOf(get().timeline, planter)! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(volume(entry(planter).parts), 0)
+  })
+
+  it('makes a new body where the sketch stands when Extrude is pressed, and keeps the sketch\'s stored frame', { timeout: 60_000 }, async () => {
+    const { planter, saucer, k, stored, opened, now } = await openThenMoved({ origin: [0, 0, 100], normal: [0, 0, 1] }, square(0, 0, 6))
+    const made = await applyExtrude(loader, { frame: opened, shape: { type: 'sketch', loops: sketchItem(k).loops }, placement: {}, spec: { distanceMm: 3, extent: 'oneSide', operation: 'new' }, name: 'Sketch body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    const n = get().plate.find((e) => e.id !== planter && e.id !== saucer)!.id
+    const b = onPlate(n)
+    expect({ min: b.min.map((v) => Math.round(v)), max: b.max.map((v) => Math.round(v)) }).toEqual({ min: [Math.round(now.origin[0]! - 3), Math.round(now.origin[1]! - 3), 100], max: [Math.round(now.origin[0]! + 3), Math.round(now.origin[1]! + 3), 103] })
+    expect(sketchItem(k).frame).toEqual(stored)
+    const r = await runReplay({ history: historyOf(get().timeline, n)! })
+    const rb = bounds(r.parts.map(toPart), entry(n).transform)!
+    expect({ min: rb.min.map(r2), max: rb.max.map(r2) }).toEqual(b)
+  })
 })
 
 describe('the history panel\'s step edit on a moved body', () => {
