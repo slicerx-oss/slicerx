@@ -367,6 +367,31 @@ describe('minWall', () => {
     expect(minWall([stem]).mm).toBeGreaterThan(1.8)
     expect(minWall([stem]).mm).toBeLessThanOrEqual(2)
   })
+
+  // a stem 2 mm thick, 50 mm tall, around a bore 18 mm across at the top that leans `degrees` from upright, with the
+  // needle facet along its top edge: a ray down from the needle meets the bore's side at that lean
+  const leaning = (degrees: number, wall = 2) => {
+    const spread = 50 * Math.tan((degrees * Math.PI) / 180)
+    return taperedTube({ foot: [9 + spread, 9 + spread + wall], top: [9, 9 + wall], height: 50, sides: 48, needle: 0.01 })
+  }
+
+  it('reads the stem by its walls when the bore leans 4 degrees, under the lean a ray grazes at', () => {
+    // a ray grazes a face it meets at under about 5.7 degrees: the needle's ray down measures no wall
+    expect(minWall([leaning(4)]).mm).toBeGreaterThan(1.8)
+  })
+
+  it('counts the needle when the bore leans 7 degrees, past the lean a ray grazes at', () => {
+    // at 7 degrees the ray meets the bore's side squarely enough to count: the rim reads a hair thick, as any wall that
+    // leans that much from a ray does
+    expect(minWall([leaning(7)]).mm).toBeLessThan(0.2)
+  })
+
+  it('still reads a real 0.3 mm wall as thin beside a bore that leans, needle and all', () => {
+    // a stem 0.3 mm thick: rays across the wall meet the other side squarely, so the grazing rule leaves it thin
+    const thin = minWall([leaning(4, 0.3)]).mm
+    expect(thin).toBeGreaterThan(0.25)
+    expect(thin).toBeLessThanOrEqual(0.3)
+  })
 })
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
