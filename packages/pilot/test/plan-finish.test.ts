@@ -218,6 +218,51 @@ describe('a sheet kept after a cut-off run', () => {
     expect(lid.blocked).toBe(0)
   })
 
+  // a carried run that shows and confirms a new sheet but builds nothing leaves that sheet unused, so the run after
+  // it builds under the new sheet instead of being sent back for a third one
+  it('a new sheet confirmed in a carried run that builds nothing holds for the next run', async () => {
+    const NEW_SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes, longer', dims: [{ key: 'length', label: 'Length', value: 120, unit: 'mm', source: 'asked' }] } }
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Vents', 'd1', 'cut'), { calls: [NEW_SHEET] }, { text: 'Sizes confirmed. Say Go and I will build it.' }, x('Base', 'd2'), x('Lid', 'd3'), { text: 'Built.' }]
+    const r = await chat(steps, ['A Pi 5 case', 'keep going, but make it 120 mm long', 'Go'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends).toEqual(['max_steps', 'end', 'end'])
+    expect(r.log).toEqual(['Base', 'Base hollow', 'Vents', 'Base', 'Lid'])
+    expect(r.blocked).toBe(0)
+  })
+
+  it('a carried run cut off again right after a new sheet keeps that sheet for every design of the next run', async () => {
+    const NEW_SHEET = { name: 'pilot.sheet', args: { title: 'Case sizes, longer', dims: [{ key: 'length', label: 'Length', value: 120, unit: 'mm', source: 'asked' }] } }
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Base hollow', 'd1', 'cut'), x('Vents', 'd1', 'cut'), { calls: [NEW_SHEET] }, { calls: [{ name: 'pilot.note', args: {} }] }, { calls: [{ name: 'pilot.note', args: {} }] }, x('Base', 'd2'), x('Lid', 'd3'), { text: 'Built.' }]
+    const r = await chat(steps, ['A Pi 5 case', 'keep going, but make it 120 mm long', 'Go'], { maxSteps: 3, maxToolCalls: 10 })
+    expect(r.ends).toEqual(['max_steps', 'max_steps', 'max_steps'])
+    expect(r.log).toEqual(['Base', 'Base hollow', 'Vents', 'Base', 'Lid'])
+    expect(r.blocked).toBe(0)
+  })
+
+  it('a first part whose design was never recorded goes on after a cut-off run', async () => {
+    const log: string[] = []
+    const { sheetTool } = await import('../src/index')
+    // a body made with no design argument whose result names no design either
+    const silent = defineTool<{ name: string; operation?: string | undefined; design?: string | undefined }>({
+      name: 'geom.extrude',
+      version: '1',
+      description: 'One feature',
+      source: 'command',
+      permission: 'read',
+      input: z.object({ name: z.string(), operation: z.string().optional(), design: z.string().optional() }),
+      async run(i) {
+        log.push(i.name)
+        return { summary: `Built ${i.name}` }
+      },
+    })
+    const steps: ScriptStep[] = [{ calls: [SHEET] }, { calls: [{ name: 'geom.extrude', args: { name: 'Base' } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Base hollow', design: 'd1', operation: 'cut' } }] }, x('Lid', 'd1'), { text: 'Done.' }]
+    const client = createScriptedClient(steps, { chunk: false })
+    const p = createPilot({ host: { printers: { list: async () => [], plugins: async () => [] }, approvals: { register: async () => undefined, deny: async () => undefined }, llm: {} as LlmTransport } as never, config: { ...DEFAULT_CONFIG, maxSteps: 3, maxToolCalls: 10 }, policy: DEFAULT_POLICY, client, builtins: false, tools: [sheetTool(), silent] as never[] })
+    for (const message of ['A Pi 5 case', 'keep going'])
+      for await (const e of p.run('s', message)) if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
+    expect(log).toEqual(['Base', 'Base hollow', 'Lid'])
+    expect(client.requests.flatMap((q) => q.messages).filter((m) => m.role === 'tool' && m.content.includes('"blocked":true'))).toHaveLength(0)
+  })
+
   it('a run that was not cut off builds a second design under its own sheet', async () => {
     const steps: ScriptStep[] = [{ calls: [SHEET] }, x('Base', 'd1'), x('Lid', 'd2'), { text: 'Built.' }]
     const r = await chat(steps, ['A box with a lid'], { maxSteps: 10, maxToolCalls: 10 })
@@ -240,4 +285,3 @@ describe('planLimits', () => {
     expect(planLimits({ name: 'geom.extrude', arguments: '{}' }, accepted, { step: 0, calls: 0 })).toBeUndefined()
   })
 })
-
