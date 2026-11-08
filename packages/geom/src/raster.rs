@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Raster images: PNG and JPEG decoded upright to one RGBA level, box reduced in linear light.
+//! Raster images: PNG and JPEG decoded to one RGBA level, upright or as stored, box reduced in linear light. Trace
+//! and texture paint both read images here.
 // pixel offsets are within each image's pixel count, made from its own width and height
 #![allow(clippy::indexing_slicing)]
 
@@ -20,6 +21,35 @@ pub const MAX_BYTES: usize = 30 << 20;
 /// The most a JPEG may ask the decoder to set aside: an 8192 px square baseline photo, or a progressive one of about
 /// 30 megapixels at 4:4:4, whose coefficients are all kept until its last scan.
 const MAX_DECODE_BYTES: usize = 256 << 20;
+
+/// How a caller reads an image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Read {
+    /// Turned the way EXIF says it is shown, or left as the file stores it.
+    pub upright: bool,
+    /// The longest side of a JPEG; one past [`MAX_SIDE`] decodes whole and is reduced.
+    pub jpeg_side: usize,
+    /// The most pixels a PNG may have.
+    pub png_pixels: usize,
+    /// How a reduced image rounds back to sRGB.
+    pub round: Round,
+}
+
+/// Trace: upright, a JPEG up to 8192 px a side, a PNG up to 100 megapixels.
+pub const TRACE: Read = Read {
+    upright: true,
+    jpeg_side: MAX_JPEG_SIDE,
+    png_pixels: MAX_PIXELS,
+    round: Round::Table,
+};
+
+/// Texture paint: as stored, since UVs are in the stored orientation, and a JPEG within [`MAX_SIDE`].
+pub const TEXTURE: Read = Read {
+    upright: false,
+    jpeg_side: MAX_SIDE,
+    png_pixels: usize::MAX,
+    round: Round::Curve,
+};
 
 /// Pixels in sRGB with straight alpha, rows from the top.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,7 +108,7 @@ impl Raster {
         if k == 1 {
             return self.clone();
         }
-        let light = Light::new();
+        let light = Light::new(Round::Table);
         let (w, h) = (self.w.div_ceil(k), self.h.div_ceil(k));
         let mut px = Vec::with_capacity(w * h);
         let mut block = Vec::with_capacity(k * k);
@@ -101,42 +131,77 @@ impl Raster {
     }
 }
 
-/// sRGB to linear light and back, by tables made from the same f64 curve on every target.
-struct Light {
+/// How an average in linear light is put back in sRGB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Round {
+    /// By tables made from the same f64 curve on every target (trace).
+    Table,
+    /// By the curve itself, from steps read as f32 (texture paint, whose levels reduce the same way).
+    Curve,
+}
+
+/// sRGB to linear light and back.
+pub(crate) struct Light {
     lin: [f32; 256],
     /// the linear value where each sRGB step rounds up to the next
     up: [f32; 255],
+    round: Round,
+}
+
+/// The sRGB curve from 0 to 1 into linear light.
+fn curve(c: f64) -> f64 {
+    if c <= 0.040_45 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).m_powf(2.4)
+    }
 }
 
 impl Light {
-    fn new() -> Self {
-        let curve = |c: f64| {
-            // an f32 table, so no target reads the curve differently
-            #[allow(clippy::cast_possible_truncation)]
-            let v = if c <= 0.040_45 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).m_powf(2.4)
-            } as f32;
-            v
-        };
+    pub(crate) fn new(round: Round) -> Self {
+        // an f32 table, so no target reads the curve differently
+        #[allow(clippy::cast_possible_truncation)]
+        let at = |c: f64| curve(c) as f32;
         let mut lin = [0f32; 256];
         for (i, v) in lin.iter_mut().enumerate() {
-            *v = curve(i as f64 / 255.0);
+            *v = match round {
+                Round::Table => at(i as f64 / 255.0),
+                // the step read as f32 first, as texture levels always have
+                Round::Curve => {
+                    let c = i as f32 / 255.0;
+                    if c <= 0.040_45 {
+                        c / 12.92
+                    } else {
+                        at(f64::from(c))
+                    }
+                }
+            };
         }
         let mut up = [0f32; 255];
         for (i, v) in up.iter_mut().enumerate() {
-            *v = curve((i as f64 + 0.5) / 255.0);
+            *v = at((i as f64 + 0.5) / 255.0);
         }
-        Self { lin, up }
+        Self { lin, up, round }
     }
 
     fn srgb(&self, v: f32) -> u8 {
-        u8::try_from(self.up.partition_point(|&t| t <= v)).unwrap_or(u8::MAX)
+        if self.round == Round::Table {
+            return u8::try_from(self.up.partition_point(|&t| t <= v)).unwrap_or(u8::MAX);
+        }
+        let v = f64::from(v.clamp(0.0, 1.0));
+        let s = if v <= 0.003_130_8 {
+            v * 12.92
+        } else {
+            1.055 * v.m_powf(1.0 / 2.4) - 0.055
+        };
+        // within 0 to 255 after the clamp
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let out = (s * 255.0).round().clamp(0.0, 255.0) as u8;
+        out
     }
 
     /// Averages `pixels` in linear light, colors weighted by their alpha.
-    fn average(&self, pixels: &[[u8; 4]]) -> [u8; 4] {
+    pub(crate) fn average(&self, pixels: &[[u8; 4]]) -> [u8; 4] {
         let (mut r, mut g, mut b, mut a) = (0f32, 0f32, 0f32, 0f32);
         for p in pixels {
             let w = f32::from(p[3]) / 255.0;
@@ -156,18 +221,26 @@ impl Light {
     }
 }
 
-/// Decodes a PNG or JPEG (by its first bytes), upright.
+/// Decodes a PNG or JPEG (by its first bytes) for trace: upright, and at most [`MAX_BYTES`].
 pub fn decode(bytes: &[u8]) -> std::result::Result<Raster, Unusable> {
     if bytes.len() > MAX_BYTES {
         return Err(Unusable::TooLarge);
     }
+    read(bytes, TRACE)
+}
+
+/// Decodes a PNG or JPEG (by its first bytes) as `how` says.
+pub fn read(bytes: &[u8], how: Read) -> std::result::Result<Raster, Unusable> {
     let (r, exif) = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        decode_png(bytes)?
+        decode_png(bytes, how)?
     } else if bytes.starts_with(&[0xFF, 0xD8]) {
-        decode_jpeg(bytes)?
+        decode_jpeg(bytes, how)?
     } else {
         return Err(Unusable::NotImage);
     };
+    if !how.upright {
+        return Ok(r);
+    }
     Ok(upright(r, exif.as_deref().map_or(1, orientation)))
 }
 
@@ -187,7 +260,7 @@ fn to_rgba(color: png::ColorType, row: &[u8], out: &mut Vec<[u8; 4]>) {
 
 type Decoded = (Raster, Option<Vec<u8>>);
 
-fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
+fn decode_png(bytes: &[u8], how: Read) -> std::result::Result<Decoded, Unusable> {
     let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
     dec.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = dec.read_info().map_err(|_| Unusable::Damaged)?;
@@ -198,7 +271,7 @@ fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     if w == 0 || h == 0 {
         return Err(Unusable::Damaged);
     }
-    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE || w * h > MAX_PIXELS {
+    if w > MAX_PNG_SIDE || h > MAX_PNG_SIDE || w * h > how.png_pixels {
         return Err(Unusable::TooLarge);
     }
     let (color, _) = reader.output_color_type();
@@ -222,7 +295,7 @@ fn decode_png(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
         }
     } else {
         // row by row, so the file's pixels are never all held at once
-        let mut shrink = Shrink::new(k, w);
+        let mut shrink = Shrink::new(k, w, how.round);
         for y in 0..h {
             let row = reader
                 .next_row()
@@ -339,13 +412,13 @@ struct Shrink {
 }
 
 impl Shrink {
-    fn new(k: usize, w: usize) -> Self {
+    fn new(k: usize, w: usize, round: Round) -> Self {
         Self {
             k,
             w,
             band: Vec::with_capacity(k),
             block: Vec::with_capacity(k * k),
-            light: Light::new(),
+            light: Light::new(round),
         }
     }
 
@@ -367,7 +440,7 @@ impl Shrink {
     }
 }
 
-fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
+fn decode_jpeg(bytes: &[u8], how: Read) -> std::result::Result<Decoded, Unusable> {
     use zune_jpeg::zune_core::bytestream::ZCursor;
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
@@ -375,7 +448,7 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     // found first says which; this only refuses sooner, and the budget below runs on the frame the decoder reads
     if let Some((kind, w, h)) = jpeg_frame(bytes) {
         // within these sides a JPEG is always under the pixel limit
-        if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE {
+        if w > how.jpeg_side || h > how.jpeg_side {
             return Err(Unusable::TooLarge);
         }
         // only baseline, extended huffman and progressive are read
@@ -385,8 +458,8 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     }
     let options = DecoderOptions::default()
         .jpeg_set_out_colorspace(ColorSpace::RGB)
-        .set_max_width(MAX_JPEG_SIDE)
-        .set_max_height(MAX_JPEG_SIDE);
+        .set_max_width(how.jpeg_side)
+        .set_max_height(how.jpeg_side);
     let mut dec = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options);
     let refused = |e: zune_jpeg::errors::DecodeErrors| match e {
         zune_jpeg::errors::DecodeErrors::LargeDimensions(_) => Unusable::TooLarge,
@@ -417,7 +490,7 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     drop(dec);
     let k = w.max(h).div_ceil(MAX_SIDE).max(1);
     let mut px = Vec::with_capacity(w.div_ceil(k) * h.div_ceil(k));
-    let mut shrink = Shrink::new(k, w);
+    let mut shrink = Shrink::new(k, w, how.round);
     for (y, row) in rgb.chunks_exact(w * 3).enumerate() {
         let row = row.as_chunks::<3>().0.iter().map(|&[r, g, b]| [r, g, b, 255]);
         if k == 1 {
@@ -951,7 +1024,7 @@ pub(crate) mod tests {
     /// A whole JPEG of kind `m` (baseline or progressive) for `w` x `h` with `comps` components at 4:4:4, whose one
     /// scan is `fill` zero bytes: each block is a 0 bit for a DC of 0 (and a 0 bit for its end), so mid gray. A
     /// progressive scan reads its marker right after the last block, so its fill is exactly a bit a block.
-    fn flat_jpeg(m: u8, w: u16, h: u16, comps: u8, fill: usize) -> Vec<u8> {
+    pub(crate) fn flat_jpeg(m: u8, w: u16, h: u16, comps: u8, fill: usize) -> Vec<u8> {
         let mut q = vec![0u8];
         q.extend_from_slice(&[1; 64]);
         let table = |class: u8| {
@@ -1197,6 +1270,11 @@ pub(crate) mod tests {
             let plain = decode(&png_of(w, h, 8, 2, false, &rgb, &[])).unwrap();
             let laced = decode(&png_of(w, h, 8, 2, true, &rgb, &[])).unwrap();
             assert_eq!(laced, plain, "{w} x {h}");
+            assert_eq!(
+                read(&png_of(w, h, 8, 2, true, &rgb, &[]), TEXTURE),
+                Ok(plain),
+                "{w} x {h} as stored"
+            );
             let rgba: Vec<u8> = (0..w * h * 8)
                 .map(|i| u8::try_from(i * 13 % 253).unwrap())
                 .collect();
@@ -1214,10 +1292,12 @@ pub(crate) mod tests {
         assert_eq!((r.w, r.h, r.px[MAX_SIDE - 1]), (MAX_SIDE, 1, [9, 9, 9, 255]));
     }
 
-    /// Asserts that `bytes` decodes to a whole raster or is refused, and never panics.
+    /// Asserts that `bytes` decodes to a whole raster or is refused, and never panics, read either way.
     fn decodes_or_refuses(bytes: &[u8], what: &str) {
-        if let Ok(r) = decode(bytes) {
-            assert!(r.w > 0 && r.h > 0 && r.px.len() == r.w * r.h, "{what}");
+        for how in [TRACE, TEXTURE] {
+            if let Ok(r) = read(bytes, how) {
+                assert!(r.w > 0 && r.h > 0 && r.px.len() == r.w * r.h, "{what}");
+            }
         }
     }
 
@@ -1307,5 +1387,58 @@ pub(crate) mod tests {
         if let Ok(r) = decode(&cases[0].1) {
             assert_eq!((r.w, r.h), (16, 16));
         }
+    }
+
+    #[test]
+    fn a_texture_reads_pngs_as_trace_does_and_keeps_the_stored_orientation() {
+        let plte: &[u8] = &[255, 0, 0, 0, 0, 255];
+        for file in [
+            png_of(2, 1, 8, 4, false, &[10, 20, 200, 255], &[]),
+            png_of(2, 1, 16, 0, false, &[0, 0, 0xFF, 0xFF], &[]),
+            png_of(
+                2,
+                1,
+                8,
+                3,
+                false,
+                &[0, 1],
+                &[(*b"PLTE", plte), (*b"tRNS", &[128])],
+            ),
+            png_of(13, 5, 8, 2, true, &[77; 13 * 5 * 3], &[]),
+        ] {
+            assert_eq!(read(&file, TEXTURE), decode(&file));
+        }
+        // UVs are in the stored orientation, so EXIF does not turn a texture
+        let r = read(&with_exif(&fixture_jpeg(), &exif_orientation(6)), TEXTURE).unwrap();
+        assert_eq!((r.w, r.h, r.file_size), (48, 32, (48, 32)));
+        assert!(dark(&r, 10, 10) && !dark(&r, 40, 10));
+        let mut gray = vec![255u8; 6];
+        gray[0] = 0;
+        let r = read(&png(3, 2, 1, &gray, Some(&exif_orientation(8))), TEXTURE).unwrap();
+        assert_eq!((r.w, r.h), (3, 2));
+        assert!(dark(&r, 0, 0));
+    }
+
+    #[test]
+    fn a_texture_jpeg_is_held_to_its_side_and_the_decode_budget() {
+        assert_eq!(
+            read(&jpeg_header(0xC0, 4097, 10), TEXTURE).err(),
+            Some(Unusable::TooLarge)
+        );
+        assert_eq!(
+            read(&jpeg_header(0xC9, 8, 8), TEXTURE).err(),
+            Some(Unusable::Unsupported)
+        );
+        // a progressive 4096 px square in a few bytes would set aside about 150 MB
+        assert_eq!(
+            read(&flat_jpeg(0xC2, 4096, 4096, 3, 16), TEXTURE).err(),
+            Some(Unusable::Damaged)
+        );
+        let r = read(
+            &flat_jpeg(0xC2, 4000, 3000, 3, (500 * 375 * 3usize).div_ceil(8)),
+            TEXTURE,
+        )
+        .unwrap();
+        assert_eq!((r.w, r.h, r.px[0]), (4000, 3000, [128, 128, 128, 255]));
     }
 }

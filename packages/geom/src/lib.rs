@@ -64,7 +64,7 @@ pub mod paint_tree;
 pub mod poly2d;
 #[cfg(feature = "cad")]
 pub mod push;
-#[cfg(feature = "trace")]
+#[cfg(any(feature = "texture", feature = "trace"))]
 pub mod raster;
 pub mod remesh;
 pub mod render;
