@@ -107,6 +107,14 @@ describe('the set a request picks', () => {
     ...['Make a cut in the lid', 'Make an engraving of my name on the lid', 'Make a split in the lid', 'Make a text label on the lid', 'Make a cut-out for the USB port'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', true, 'shape']),
     // the next part after one is finished, however it opens
     ...['Now make a hollow vase', 'Next, design an engraved name tag', 'Make another hollow vase', 'Can you please make a hollow vase', 'I want a hollow vase', 'I need a hollow box 50 mm on a side with a lid', 'Ok, now make one more split ring'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'shape', true, 'build']),
+    // "make the <part>" followed by what the part has, not by a shaping of it, is a new part: with a design there it is
+    // unclear, and an unclear request builds
+    ...['Make the hollow vase I described', 'Make the cable organizer with a cut-out for the cable', 'Make the lid for my jar with a pattern of holes', 'Make the case for my Raspberry Pi with a cut-out for the USB port', 'Make my kid a name tag with her name engraved', 'Make the stand that holds two mirrored arms'].flatMap((m): [string, TurnSet | undefined, boolean, TurnSet][] => [
+      [m, 'shape', true, 'build'],
+      [m, undefined, false, 'build'],
+    ]),
+    // "make the <part>" followed by a shaping of it shapes the design there
+    ...['Make the side wall hollow', 'Make the lid engraved with SX', 'Make my bracket mirrored', 'Make the case split in half'].map((m): [string, TurnSet | undefined, boolean, TurnSet] => [m, 'build', true, 'shape']),
     // still unclear with a design there: build and shape together do not fit a local model's context, so it builds
     ['A hollow box 50 mm on each side with a lid', 'shape', true, 'build'],
     // shaping the chat's design keeps the shape set even when it opens on "make a"
