@@ -45,7 +45,7 @@ import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type Tool
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
-import { capLine, capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
+import { capLine, capTools, LOAD_TOOLS_TOOL, loadFits, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
 import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
@@ -305,14 +305,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
   // the last turn of each session that left toolsets out (toolsets.ts)
   const caps = new Map<string, ToolCapReport>()
-  // a cloud model's capped chats: what each keeps between requests, the toolsets pilot.load_tools asked for that the
-  // next request takes, and the pilot.load_tools the chat's last request carried
+  // a cloud model's capped chats: what each keeps between requests (a load pilot.load_tools asks for lives only in its turn)
   const sticky = new Map<string, StickyToolsets>()
-  const loads = new Map<string, Set<Toolset>>()
-  const loaders = new Map<string, AnyTool>()
-  const queueLoad = (sessionId: string, set: Toolset): void => {
-    loads.set(sessionId, new Set([...(loads.get(sessionId) ?? []), set]))
-  }
   // one book per print run host, so a runtime made again keeps the runs; a started print's watch logs how it ended to
   // the chat's session, whether or not the chat is on screen
   const runBook = opts.printRun ? runBookFor(opts.printRun, now, { printers: opts.host.printers, log: (sessionId, e) => void log(sessionId, e) }) : null
@@ -544,9 +538,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
-    // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that chat
-    const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loaders.get(sessionId) : undefined)
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+    // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
+    // call to it from a step that did not carry it is an unknown tool
+    const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
     if (!tool) {
       emit({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Unknown tool ${call.name}` })
@@ -744,7 +739,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     /** This turn's pick for a capped chat: the tool names it sends, and its report; made again only for a load. */
     let pick: { names: Set<string>; report: ToolCapReport | null } | null = null
+    // the toolsets this turn loaded that a request carried, the ones pilot.load_tools asked for that the next step
+    // takes, and the pilot.load_tools this step carries; none of them outlives the turn
     const loaded = new Set<Toolset>()
+    let queued = new Set<Toolset>()
+    let loader: AnyTool | undefined
     /** The toolsets of the tools called this turn. */
     const calledSets = (): Set<Toolset> => {
       const out = new Set<Toolset>()
@@ -773,27 +772,35 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let capped: { tools: AnyTool[]; report: ToolCapReport | null }
       let visible: AnyTool[]
       if (chatSets) {
-        const want = loads.get(sessionId)
-        loads.delete(sessionId)
-        for (const s of want ?? []) loaded.add(s)
+        const want = queued
+        queued = new Set()
+        for (const s of want) loaded.add(s)
         // a tool called that the pick did not send (a model may call one it remembers) goes from now on, as every called tool does
         const strayCall = pick !== null && turn.some((t) => called.has(t.name) && !pick!.names.has(t.name))
-        if (!pick || want?.size || strayCall) {
+        if (!pick || want.size || strayCall) {
           const protect = new Set<Toolset>([...chatSets.lastCalled, ...calledSets(), ...loaded])
-          const got = stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, state: chatSets })
+          const got = stickyCapTools(turn, { cap: client.maxTools, needs, called, protect, loaded, state: chatSets })
           chatSets.sets = got.sets
           pick = { names: new Set(got.tools.map((t) => t.name)), report: got.report }
-          if (got.report) loaders.set(sessionId, loadToolsTool(got.report, (s) => queueLoad(sessionId, s)) as AnyTool)
-          else loaders.delete(sessionId)
+          const sets = chatSets
+          loader = got.report
+            ? (loadToolsTool(got.report, {
+                load: (s) => void queued.add(s),
+                // at the call: whole beside core, every tool called so far and the toolsets kept this turn
+                fits: (s) => loadFits(allTools(), { cap: client.maxTools, called: calledTools(messages), protect: new Set([...sets.lastCalled, ...calledSets(), ...loaded, ...queued]), set: s }),
+                loaded,
+                queued: () => queued,
+              }) as AnyTool)
+            : undefined
         }
         const chosen = pick.names
-        const loader = pick.report ? loaders.get(sessionId) : undefined
         capped = { tools: turn.filter((t) => chosen.has(t.name)), report: pick.report }
         visible = loader ? [...capped.tools, loader] : capped.tools
       } else {
         // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
         capped = capTools(turn.filter((t) => (set ? inTurnSet(t, set) : true)), { cap: client.maxTools, needs, called })
         visible = capped.tools
+        loader = undefined
       }
       // a local model gets each tool's local form (tool.ts): its short description and a schema without empty keywords
       const toolDefs = local ? visible.map((t) => localToolDef(t)) : visible.map((t) => toolSpec(t)).map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
@@ -808,13 +815,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let cut = false
       const model = modelFor(opts.config, tier)
       if (capped.report) {
-        caps.set(sessionId, capped.report)
+        // a run limited to some tools (a machine switch's note) leaves the chat's own report alone
+        if (!restrict) caps.set(sessionId, capped.report)
         const line = capLine(capped.report, { assistant: ASSISTANT_NAME, model, provider: client.provider })
         if (line !== loggedCap) {
           loggedCap = line
           opts.log?.(line)
         }
-      } else caps.delete(sessionId)
+      } else if (!restrict) caps.delete(sessionId)
       if (model !== asked) {
         asked = model
         if (model !== shown) switched(model)
@@ -949,7 +957,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
-        const res = await execute(call, sessionId, context, watch, signal, citations, cards)
+        const res = await execute(call, sessionId, context, watch, signal, citations, cards, loader)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
           why = 'struggle'
