@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { GEOM_CALL_LIMIT_MS, geomCallLimitMs, geomOpClass, geomStepName, geomStuckMessage, isGeomStuck, type GeomOpClass } from '../src/geom-limits'
+import { GEOM_CALL_LIMIT_MS, geomCallLimitMs, geomOpClass, geomStepName, geomStuckMessage, isGeomStuck, isGeomStuckFinal, type GeomOpClass } from '../src/geom-limits'
 
 /** Every operation the engine lists (packages/geom/src/json.rs, ALL_OPERATIONS), with the class it should have. */
 const ENGINE: Record<string, GeomOpClass> = {
@@ -121,8 +121,8 @@ describe('geometry time limits', () => {
     expect(geomOpClass('plane.cut')).toBe('mesh')
     expect(geomOpClass('paint')).toBe('mesh')
     // an operation nobody listed is a model call
-    expect(geomOpClass('parts.order')).toBe('model')
-    expect(geomStepName('parts.order')).toBeUndefined()
+    expect(geomOpClass('shape.unlisted')).toBe('model')
+    expect(geomStepName('shape.unlisted')).toBeUndefined()
   })
 
   it('has the three limits', () => {
@@ -137,15 +137,28 @@ describe('geometry time limits', () => {
     expect(geomStuckMessage('format.read3mf', 300_000)).toBe('The step "Project open" ran past its 5 min limit and was stopped; try a smaller version: a coarser mesh')
     expect(geomStuckMessage('measure', 30_000)).toBe('The step "Measure" took too long (over its 30 s limit) and was stopped; try it again')
     expect(geomStuckMessage('edge.fillet', 180_000, 'Fillet 2 mm')).toBe('The step "Fillet 2 mm" ran past its 3 min limit and was stopped; try a smaller version: fewer copies or a simpler part')
-    expect(geomStuckMessage('parts.order', 400)).toBe('This step ran past its 0.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part')
+    expect(geomStuckMessage('shape.unlisted', 400)).toBe('This step ran past its 0.4 s limit and was stopped; try a smaller version: fewer copies or a simpler part')
     // no engine operation id reaches the words
     expect(geomStuckMessage('paint.texture', 300_000)).not.toMatch(/paint\.texture/)
   })
 
-  it('knows its own refusals', () => {
+  it('knows its own refusals, and which of them are final', () => {
     for (const op of ['array', 'repair', 'measure', 'parts.order']) expect(isGeomStuck(`sx-geom ${op}: ${geomStuckMessage(op, geomCallLimitMs(op))}`)).toBe(true)
-    expect(isGeomStuck('boolean: this join is taking too long to finish; try fewer copies or join them in smaller groups')).toBe(false)
-    expect(isGeomStuck('The geometry engine was interrupted by a canceled edit. Retry the operation.')).toBe(false)
+    // model and mesh work would stop the same way; a quick step is worth asking for again
+    expect(['array', 'repair', 'parts.order', 'measure'].map((op) => isGeomStuckFinal(geomStuckMessage(op, geomCallLimitMs(op))))).toEqual([true, true, true, false])
+    for (const text of ['boolean: this join is taking too long to finish; try fewer copies or join them in smaller groups', 'The geometry engine was interrupted by a canceled edit. Retry the operation.']) {
+      expect(isGeomStuck(text)).toBe(false)
+      expect(isGeomStuckFinal(text)).toBe(false)
+    }
+  })
+
+  it('never shows an operation id or an engine word in a refusal', () => {
+    for (const op of [...Object.keys(ENGINE), 'engine.core', 'engine.full', 'history.replay', 'array.merged', 'plane.cut', 'parts.add']) {
+      const text = geomStuckMessage(op, geomCallLimitMs(op))
+      expect([op, text]).not.toEqual([op, expect.stringMatching(/\b[a-z]+\.[a-zA-Z]+\b|engine|brep|wasm/i)])
+    }
+    // the engine loading itself is no step a person ran
+    expect(geomStuckMessage('engine.core', 30_000)).toBe('This step took too long (over its 30 s limit) and was stopped; try it again')
   })
 
   it('matches the refusal the MCP change file quotes', () => {

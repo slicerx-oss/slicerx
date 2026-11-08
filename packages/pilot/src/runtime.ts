@@ -28,7 +28,7 @@ import type {
 } from '@slicerx/contracts'
 import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoads } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
-import { isGeomStuck } from '@slicerx/contracts/geom-limits'
+import { isGeomStuckFinal } from '@slicerx/contracts/geom-limits'
 import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
 import { plainRefusal } from './engine-words'
@@ -279,15 +279,20 @@ export const CUT_NOTE = 'Your last reply reached the output limit before it said
 export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
 /** The answer to a tool call cut off at the output limit. */
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
-/** Said for the model when it ends a run without a word, even after being asked. */
 /**
- * A step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked for again with the
- * same input in the same turn: it would stop the same way, so it is not run again.
+ * A modeling or mesh step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked
+ * for again with the same input in the same turn, with nothing changed in between: it would stop the same way, so it is
+ * not run again.
  */
 export const STOPPED_AGAIN_LINE = 'This exact step was stopped at its time limit earlier in this turn, so it was not run again. Try a smaller version, or say what stopped.'
-
+/** Said for the model when it ends a run without a word, even after being asked. */
 export const NO_REPLY_LINE = 'I stopped before I had an answer. Try the request again with fewer details at once, or split it into steps.'
 const STOPPED_LINE = 'I stopped there, and nothing else was changed.'
+
+/** A value as JSON with its object keys in order, so the same input sent with its keys in another order reads the same. */
+function sortedJson(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x))
+}
 
 /** The JSON a tool result becomes for the model, with untrusted output wrapped as data. */
 /** Frames are large; the model keeps only the newest one. A check-in reads one frame. */
@@ -764,7 +769,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     const input = parsed.data
     // the same step with the same input, after its geometry call was stopped at its time limit this turn
-    const again = `${tool.name} ${JSON.stringify(input)}`
+    const again = `${tool.name} ${sortedJson(input)}`
     if (timedOut.has(again)) {
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: STOPPED_AGAIN_LINE })
@@ -890,7 +895,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
-    if (out.ok === false && isGeomStuck(out.summary)) timedOut.add(again)
+    // a step stopped for good is not run again as it was; a change that went through (an edit, an undo, a smaller
+    // part) may be the smaller version it asked for, so every stopped step may run again after one
+    if (out.ok === false && isGeomStuckFinal(out.summary)) timedOut.add(again)
+    else if (out.ok !== false && (tool.permissionFor?.(input) ?? tool.permission) !== 'read') timedOut.clear()
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -928,7 +936,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
-    // steps stopped at a geometry time limit this turn, by tool and input (STOPPED_AGAIN_LINE)
+    // modeling and mesh steps stopped at a geometry time limit this turn and not changed since, by tool and input
+    // (STOPPED_AGAIN_LINE)
     const timedOut = new Set<string>()
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
