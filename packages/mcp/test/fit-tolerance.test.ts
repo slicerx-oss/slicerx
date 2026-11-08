@@ -232,6 +232,86 @@ describe('the fit tolerance', () => {
     }
   })
 
+  // flat faces meshed in small facets, as the engine draws large faces: each rectangle (x0, y0, x1, y1) a grid of
+  // `step` mm squares, two facets each, facing up for the lower body's top and down for the upper body's bottom
+  const face = (name: string, rects: [number, number, number, number][], z: number, step: number, up: boolean, turnDeg = 0): HistoryMesh => {
+    const [cos, sin] = [Math.cos((turnDeg * Math.PI) / 180), Math.sin((turnDeg * Math.PI) / 180)]
+    const positions: number[] = []
+    const indices: number[] = []
+    for (const [x0, y0, x1, y1] of rects) {
+      const [nx, ny] = [Math.round((x1 - x0) / step), Math.round((y1 - y0) / step)]
+      const base = positions.length / 3
+      for (let j = 0; j <= ny; j++)
+        for (let i = 0; i <= nx; i++) {
+          const [x, y] = [x0 + ((x1 - x0) * i) / nx, y0 + ((y1 - y0) * j) / ny]
+          positions.push(x * cos - y * sin, x * sin + y * cos, z)
+        }
+      for (let j = 0; j < ny; j++)
+        for (let i = 0; i < nx; i++) {
+          const [a, b, c, d] = [base + j * (nx + 1) + i, base + j * (nx + 1) + i + 1, base + (j + 1) * (nx + 1) + i + 1, base + (j + 1) * (nx + 1) + i]
+          indices.push(...(up ? [a, b, c, a, c, d] : [a, c, b, a, d, c]))
+        }
+    }
+    return { name, slot: 0, positions, indices }
+  }
+  /** fitFacts over a top face at z 5 under a bottom face `gapMm` higher, the engine's gap from a corner of the lower face (`at`) straight up, as it picks a facet corner of parallel faces. */
+  const stacked = async (lower: [number, number, number, number][], upper: [number, number, number, number][], gapMm: number, at: [number, number], o: { step?: number; turnDeg?: number } = {}) => {
+    const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
+    const [cos, sin] = [Math.cos(((o.turnDeg ?? 0) * Math.PI) / 180), Math.sin(((o.turnDeg ?? 0) * Math.PI) / 180)]
+    const p: [number, number] = [at[0] * cos - at[1] * sin, at[0] * sin + at[1] * cos]
+    const report = {
+      parts: [
+        { bounds: { min: [0, 0, 0], max: [1, 1, 5] }, item: 0 },
+        { bounds: { min: [0, 0, 5 + gapMm], max: [1, 1, 6] }, item: 1 },
+      ],
+      gaps: [{ parts: [0, 1], gapMm, limitMm: limits.verticalMm, kind: 'vertical', from: [...p, 5], to: [...p, 5 + gapMm] }],
+      pieces: 2,
+    }
+    const step = o.step ?? 0.5
+    const fit = await fitFacts({ call: async () => report } as unknown as DesignHost, designOf([face('Arm', lower, 5, step, true, o.turnDeg), face('Pin', upper, 5 + gapMm, step, false, o.turnDeg)]), limits)
+    return { fit, gap: fit.gaps[0]!, limits }
+  }
+  const expectFlat = async (what: string, run: (gapMm: number) => ReturnType<typeof stacked>) => {
+    const tight = await run(0.38)
+    expect(tight.gap.flat, what).toBe(true)
+    expect(tight.gap.kind, what).toBe('vertical')
+    expect(fitVerdict(tight.gap, tight.limits), what).toBe('fuses')
+    expect(gapsItem(tight.fit).pass, what).toBe(false)
+    const clear = await run(0.4)
+    expect(clear.gap.flat, what).toBe(true)
+    expect(clear.gap.kind, what).toBe('apart')
+    expect(fitVerdict(clear.gap, clear.limits), what).toBe('slides')
+  }
+
+  it('stacked 20 mm plates meshed in 0.5 mm facets are flat faces, from a corner, at any turn: 0.38 mm fuses and 0.4 mm slides', async () => {
+    const plate: [number, number, number, number][] = [[0, 0, 20, 20]]
+    for (const turnDeg of [0, 30, 45]) {
+      await expectFlat(`plates turned ${turnDeg} degrees, from a corner`, (g) => stacked(plate, plate, g, [0, 0], { turnDeg }))
+      await expectFlat(`plates turned ${turnDeg} degrees, from an edge`, (g) => stacked(plate, plate, g, [10, 0], { turnDeg }))
+    }
+    // 20,000 facets on each plate
+    await expectFlat('plates in 0.2 mm facets', (g) => stacked(plate, plate, g, [7, 7], { step: 0.2 }))
+  })
+
+  it('a lid over a box rim of 1.2 mm walls is a flat gap, from a corner of the rim', async () => {
+    // a 30 by 20 mm box, its rim four strips 1.2 mm wide, under a lid that covers it
+    const rim: [number, number, number, number][] = [[0, 0, 30, 1.2], [0, 18.8, 30, 20], [0, 1.2, 1.2, 18.8], [28.8, 1.2, 30, 18.8]]
+    await expectFlat('lid on a rim, outer corner', (g) => stacked(rim, [[0, 0, 30, 20]], g, [0, 0], { step: 0.4 }))
+    await expectFlat('lid on a rim, inner corner', (g) => stacked(rim, [[0, 0, 30, 20]], g, [1.2, 1.2], { step: 0.4 }))
+  })
+
+  it('a wide flat bottom over a narrow rail is a flat gap: the bridged face above decides, not the 0.8 mm rail', async () => {
+    const rail: [number, number, number, number][] = [[0, 0, 20, 0.8]]
+    for (const turnDeg of [0, 30]) await expectFlat(`rail turned ${turnDeg} degrees`, (g) => stacked(rail, [[-5, -10, 25, 10]], g, [0, 0], { step: 0.4, turnDeg }))
+    // the same rail hung over a plate, or over another rail, is the face printed over the gap; under 1 mm across it
+    // cannot be told from a pin's level strip, so it gets the facet allowance
+    for (const lower of [[[-5, -10, 25, 10]], rail] as [number, number, number, number][][]) {
+      const hung = await stacked(lower, rail, 0.38, [0, 0], { step: 0.4 })
+      expect(hung.gap.flat).toBeUndefined()
+      expect(hung.gap.kind).toBe('apart')
+    }
+  })
+
   it('a flat gap above and below and its verdict agree at float error under the limit', async () => {
     for (const under of [5e-7, 7e-7]) {
       const { gap, limits } = await oneGap('vertical', 0.4 - under)

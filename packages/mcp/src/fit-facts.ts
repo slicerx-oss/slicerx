@@ -231,12 +231,14 @@ const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM &&
 /**
  * Whether the gap's own ends lie on a top face of the lower body (at `low`) and a bottom face of the upper one (at
  * `high`), `gapMm` apart. Only the facets at the two points count, so faces elsewhere on the meshes, or another body
- * of the same part, never decide it.
+ * of the same part, never decide it. The upper face is the one printed over the gap, which closes it, so it must be a
+ * flat face (wide); the lower end needs only a level facet, so a rail or rib narrower than FLAT_SPAN_MM under a flat
+ * bottom is still a gap between flat faces.
  */
 function restsOn(tops: readonly Flat[], bottoms: readonly Flat[], gapMm: number, low: V3, high: V3): boolean {
   if (high[2] - low[2] < gapMm - ON_FACE_MM) return false
   const t = tops.filter((f) => holds(f, low))
-  if (!t.length || !wide(low, tops)) return false
+  if (!t.length) return false
   const u = bottoms.filter((b) => holds(b, high) && t.some((f) => Math.abs(b.z - f.z - gapMm) <= ON_FACE_MM))
   return u.length > 0 && wide(high, bottoms)
 }
