@@ -347,6 +347,15 @@ describe('the pieces item for bodies of one part', () => {
     expect((await check()).out.stop).toContain('The fix round is used')
   })
 
+  it('fails more bodies of one part left over than names left: two leaves planned, three leaf bodies', () => {
+    // two of the three leaf bodies touch, so the count matches; the part answers no name, so only the count of
+    // leftover bodies against leftover names rejects it
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 0, name: 'Leaf 3', partName: 'Leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 3), apart(1, 3), { ...apart(1, 2), kind: 'fused', gapMm: 0 }] }
+    const got = pieces(fit, ['Left leaf', 'Right leaf', 'Pin'])
+    expect(got.pass).toBe(false)
+    expect(got.got).toContain('Left leaf and Right leaf are not among them')
+  })
+
   it('fails when one of the unnamed bodies is a part of its own', () => {
     const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Arm', partName: 'Arm' }], gaps: [apart(0, 2), apart(1, 2)] }
     expect(pieces(fit, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(false)
