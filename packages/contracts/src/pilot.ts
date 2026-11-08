@@ -545,6 +545,12 @@ export interface Pilot {
    * every turn sends every tool. Runtimes without turn sets leave it out.
    */
   turnSets?(): Record<string, string[]> | null
+  /**
+   * The chat's last request when it left toolsets out to stay under the provider's tool limit: the limit, how many
+   * tools were offered and sent, the toolsets sent whole and the ones left out (with how many of a partly sent one
+   * went); null when it sent every tool. Runtimes without a limit leave it out.
+   */
+  toolCap?(sessionId: string): { cap: number; offered: number; sent: number; toolsets: string[]; leftOut: string[]; partial: { toolset: string; sent: number; of: number }[] } | null
 }
 
 // ---------------------------------------------------------------------------
