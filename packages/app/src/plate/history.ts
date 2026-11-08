@@ -67,16 +67,31 @@ export function inStep<T>(token: object, fn: () => T): T {
   }
 }
 
+/** An undo step handed to the writes that belong to it. */
+export interface UndoStep {
+  /** Runs `fn`'s edits as part of this step. Throw before editing, not after, when a write cannot land. */
+  write<T>(fn: () => T): T
+}
+
 /**
- * Opens an undo step that stays open across awaits until the returned close runs: an action whose edits come on both
- * sides of an engine call (a new sketch, then the solid that names it) undoes as one step.
+ * An undo step for an action whose edits land after an engine call (a solid, with the new sketch it names). Nothing
+ * holds it open across the await: only writes given the step join it, each through `write`, so an edit made meanwhile
+ * keeps its own step, and steps that overlap or finish in any order leave none open. Writes that come one after
+ * another are one step; anything edited between them starts a new one. `first`, when given, runs inside the step
+ * just before the first write, and never when nothing is written: a new sketch goes in with the solid that names it,
+ * so a refusal leaves nothing to take back.
  */
-export function openStep(): () => void {
+export function newStep(first?: () => void): UndoStep {
   const token = {}
-  const was = step
-  step = token
-  return () => {
-    if (step === token) step = was
+  let lead = first
+  return {
+    write: (fn) =>
+      inStep(token, () => {
+        const f = lead
+        lead = undefined
+        f?.()
+        return fn()
+      }),
   }
 }
 
