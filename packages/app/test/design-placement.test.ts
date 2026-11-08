@@ -1403,6 +1403,36 @@ describe('a Model extrude on a finished sketch while its design is dragged', () 
   })
 })
 
+describe('Extrude from a finished sketch whose design is moved over while the sketch panel is open', () => {
+  it('cuts on the body where it stands when Extrude is pressed, and keeps the sketch\'s stored frame', { timeout: 60_000 }, async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const planter = String((await run('design.new', { name: 'Planter' })).output['design'])
+    await run('geom.extrude', { design: planter, shape: PLANTER, distance_mm: 100 })
+    const k = String((await run('design.sketch', { design: planter, frame: { origin: [0, 0, 100], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+    const stored = structuredClone(sketchItem(k).frame)
+    // the panel opens the sketch on the plane where it stands now (finishedEdit), and keeps that plane while open
+    const opened = sketchScene(sketchItem(k))!.frame
+    expect(opened.origin).toEqual([128, 128, 100])
+    // meanwhile a saucer lands and the planter is moved over to make room for it
+    const saucer = String((await run('design.new', { name: 'Saucer' })).output['design'])
+    expect((await run('geom.extrude', { design: saucer, shape: SAUCER, distance_mm: 15 })).summary).toMatch(/Planter moved by/)
+    const now = sketchScene(sketchItem(k))!.frame
+    expect(now.origin).not.toEqual(opened.origin)
+    // Extrude pressed: the panel hands over the plane it opened with, as its input
+    const v = volume(entry(planter).parts)
+    const made = await applyExtrude(loader, { frame: opened, shape: { type: 'sketch', loops: sketchItem(k).loops }, placement: {}, spec: { distanceMm: 4, extent: 'oneSide', operation: 'cut' }, target: { objectId: planter, partIndex: 0 }, name: 'Sketch body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    expect(v - volume(entry(planter).parts)).toBeCloseTo(holeMm3(4), 0)
+    expect(sketchItem(k).frame).toEqual(stored)
+    expect(sketchScene(sketchItem(k))!.frame).toEqual(now)
+    expect(host.sketch!(k, planter).frame?.origin.map(r2)).toEqual([0, 0, 100])
+    // the timeline builds the same cut body
+    const r = await runReplay({ history: historyOf(get().timeline, planter)! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(volume(entry(planter).parts), 0)
+  })
+})
+
 describe('the history panel\'s step edit on a moved body', () => {
   /** A step's params given in its object's world now, its depth changed: what the step's tool hands saveEdit. */
   function editedNow(id: string, index: number, depth: number) {

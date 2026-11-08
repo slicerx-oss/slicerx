@@ -5,7 +5,7 @@
 // Revolve on a finished sketch, and every design host (the mimir tab's and the app link's). A body stands on the plate
 // shown, on another plate, held off the plate while the timeline is rolled back, or, for a design that waits for its
 // first body, where a design host keeps it waiting.
-import { BED_FRAME, frameNow, recordedOnSketch, sketchMove, type FaceFrame, type Mat4, type SketchItem, type StepParams } from '@slicerx/cad-history'
+import { BED_FRAME, frameNow, movedSketch, recordedOnSketch, sketchMove, type FaceFrame, type Mat4, type SketchItem, type StepParams } from '@slicerx/cad-history'
 import { heldBodies } from '../plate/timeline'
 import { fullPlate, get } from '../state/store'
 import { waitingAt } from './waiting'
@@ -22,17 +22,25 @@ export function frameShown(k: SketchItem): FaceFrame {
   return frameNow(get().timeline, k, placeOf) ?? BED_FRAME
 }
 
+/** How a person's tool records a step on a timeline sketch, and the plane the step is worked out on (onSketch). */
+export interface OnSketch {
+  (params: StepParams, transform: Mat4): { params: StepParams; transform: Mat4 }
+  /** Where the sketch stands as this was read: the plane the engine runs the step on. Undefined with no timeline sketch. */
+  frame: FaceFrame | undefined
+}
+
 /**
  * How a person's tool records a step on timeline sketch `sketch`: given on the plane the sketch stands on now by an
  * object standing at `transform`, kept where the sketch is stored (cad-history recordedOnSketch), as the design hosts
- * record theirs; as given with no timeline sketch. Where the sketch stands is read when this is called: call it as the
- * tool reads the plane, before the engine runs, so a drag while the engine works never shifts what the step is
- * recorded against.
+ * record theirs; as given with no timeline sketch. Where the sketch stands is read once, when this is called, and both
+ * the recorder and `frame` use that read: call it as the tool starts, before the engine runs, and run the engine on
+ * `frame`, so a move of the body while the sketch panel is open or while the engine works never puts the step and the
+ * plane it was worked out on apart.
  */
-export function onSketch(sketch: string | undefined): (params: StepParams, transform: Mat4) => { params: StepParams; transform: Mat4 } {
+export function onSketch(sketch: string | undefined): OnSketch {
   const t = get().timeline
   const k = sketch === undefined ? undefined : t.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === sketch)
-  if (!k) return (params, transform) => ({ params, transform: [...transform] })
+  if (!k) return Object.assign((params: StepParams, transform: Mat4) => ({ params, transform: [...transform] }), { frame: undefined })
   const move = sketchMove(t, k.id, placeOf)
-  return (params, transform) => recordedOnSketch(k, move, transform, params)
+  return Object.assign((params: StepParams, transform: Mat4) => recordedOnSketch(k, move, transform, params), { frame: movedSketch(k, move).frame ?? BED_FRAME })
 }
