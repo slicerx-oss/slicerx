@@ -39,8 +39,7 @@ describe('the thinnest wall', () => {
     // doubled area 0.01 against a longest edge squared of 100: its normal points sideways, at a facet 0.05 mm off
     const needle: V[] = [[0, 0, 0], [10, 0, 0], [5, 0, 0.001]]
     const beside: V[] = [[-5, 0.05, -1], [5, 0.05, 1], [15, 0.05, -1]]
-    const r = minWall([mesh([top, needle, beside, FAR])])
-    expect(r.mm).toBeGreaterThan(2.9)
+    expect(minWall([mesh([top, needle, beside, FAR])]).mm).toBeCloseTo(3, 3)
   })
 
   it('a closed plate 20 x 20 x 0.4 mm still reads its 0.4 mm wall, too thin for twice a 0.4 mm nozzle', () => {
@@ -53,7 +52,7 @@ describe('the thinnest wall', () => {
     expect(minWall([box(20, 2, 0.4)]).mm).toBeCloseTo(0.4, 3)
   })
 
-  it('a wedge tapering to a knife edge, whose top and bottom share that edge, still reads thinner than 0.4 mm', () => {
+  it('a wedge tapering to a knife edge, whose top and bottom share that edge, reads its thin wall', () => {
     // 10 mm long, 20 mm wide, 0.4 mm tall at x = 0 down to nothing at x = 10
     const p: V[] = [[0, 0, 0], [10, 0, 0], [0, 20, 0], [10, 20, 0], [0, 0, 0.4], [0, 20, 0.4]]
     const [a, b, c, d, e, f] = p as [V, V, V, V, V, V]
@@ -64,9 +63,9 @@ describe('the thinnest wall', () => {
       [a, b, e], // side at y = 0
       [c, f, d], // side at y = 20
     ]
-    const r = minWall([mesh(tris)])
-    expect(r.mm).not.toBeNull()
-    expect(r.mm!).toBeLessThan(0.4)
+    // each facet's ray starts at its center, so the reading is the wedge's thickness two thirds of the way to the edge,
+    // 0.4 x (1 - 2/3): thin, as a knife edge is, and far under twice a 0.4 mm nozzle
+    expect(minWall([mesh(tris)]).mm).toBeCloseTo(0.133, 3)
   })
 })
 
