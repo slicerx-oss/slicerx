@@ -136,6 +136,7 @@ export const BUILD_CASES: BuildCase[] = [
     ops: ['geom.extrude', 'geom.build'],
     bodies: [2, 3],
     sizes: [{ axis: 'xy', minMm: 88, maxMm: 120 }],
+    // a one-plan control, so no parts allowance: one approved plan with one sheet for every size, the lid's included
     control: true,
   },
   {
