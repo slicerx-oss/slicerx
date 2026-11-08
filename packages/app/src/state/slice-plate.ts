@@ -24,7 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
-import { activeResume, planFor, RESUME_VOID, resumeVoid, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
+import { activeResume, planFor, RESUME_VOID, resumeVoid, sliceInputsKey, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -241,7 +241,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
     }
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
-    set({ slice: { status: 'done', result, stale: false, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    // An edit made while it ran (the plate's inputs key moved) leaves it stale: it shows, and the next slice replaces it
+    // before anything prints. The key leaves out what does not move layers, such as grams left on a spool.
+    set({ slice: { status: 'done', result, stale: sliceInputsKey(cur) !== stamp.inputs, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
     sliceStage(timed, 'shown')
     markOpenStage('sliced')
   } catch (e) {

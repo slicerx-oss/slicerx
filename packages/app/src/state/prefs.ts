@@ -100,7 +100,7 @@ export interface Prefs {
   easyTouched?: string[] | undefined
   paneSizes?: Record<string, number> | undefined
   spoolLinks?: Record<string, number> | undefined
-  queue?: { id: string; printerId: string; printerName: string; plateName: string; remote: { printerId: string; path: string; name: string }; sha256: string; layers: number; timeS: number; grams: number; options: Record<string, boolean>; startAfter?: string; addedAt: string }[] | undefined
+  queue?: { id: string; printerId: string; printerName: string; plateName: string; remote: { printerId: string; path: string; name: string }; sha256: string; layers: number; timeS: number; grams: number; options: Record<string, boolean>; startAfter?: string; addedAt: string; plate?: string; plan?: string | null }[] | undefined
   pilot?: { mode: 'on' | 'off' | 'unset'; provider?: 'openai' | 'anthropic' | 'local' | 'mimir-cloud'; baseUrl?: string; model?: string } | null | undefined
 }
 
@@ -233,7 +233,10 @@ function queueItem(v: unknown): NonNullable<Prefs['queue']>[number] | undefined 
   const options = record(v['options'], () => true, bool)
   if (!id || !printerId || !printerName || !plateName || !rp || !rpath || !rname || !sha256 || layers === undefined || timeS === undefined || grams === undefined || !addedAt || !options) return undefined
   const startAfter = str(v['startAfter'], 40)
-  return { id, printerId, printerName, plateName, remote: { printerId: rp, path: rpath, name: rname }, sha256, layers, timeS, grams, options, addedAt, ...(startAfter ? { startAfter } : {}) }
+  // The plate it was sliced from and the resume plan that slice used (queue/queue.ts queuedBlock), when it says.
+  const plate = str(v['plate'], 80)
+  const plan = v['plan'] === null ? null : str(v['plan'], 80)
+  return { id, printerId, printerName, plateName, remote: { printerId: rp, path: rpath, name: rname }, sha256, layers, timeS, grams, options, addedAt, ...(startAfter ? { startAfter } : {}), ...(plate ? { plate, plan: plan ?? null } : {}) }
 }
 
 function presetSync(v: unknown): Prefs['presetSync'] | undefined {
