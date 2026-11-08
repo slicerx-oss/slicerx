@@ -235,8 +235,8 @@ export function createGeomWasm(opts: { wasm: string; timeoutMs?: number }): Geom
           let value: unknown
           try {
             value = JSON.parse(m.out)
-          } catch (e) {
-            fail(`unreadable reply: ${e instanceof Error ? e.message : String(e)}`)
+          } catch {
+            fail('unreadable reply')
             return
           }
           done()
