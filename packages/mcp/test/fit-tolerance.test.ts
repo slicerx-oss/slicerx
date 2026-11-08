@@ -49,11 +49,12 @@ async function oneGap(kind: FitGap['kind'] | 'horizontal', gapMm: number, materi
 
 // A cylinder as the engine draws one (build::cylinder through Frame::from_normal): n sides, vertex i at 2 pi i / n from
 // the frame's u axis, which is z for a cylinder along x and -z along y. Its side faces outward, or inward for a bore.
-function cylinder(axis: 'x' | 'y', r: number, n: number, center: V3, lengthMm: number, inner = false): { mesh: HistoryMesh; ring: [number, number][] } {
+function cylinder(axis: 'x' | 'y', r: number, n: number, center: V3, lengthMm: number, inner = false, phase = 0): { mesh: HistoryMesh; ring: [number, number][] } {
   const w: V3 = axis === 'x' ? [1, 0, 0] : [0, 1, 0]
   const u: V3 = axis === 'x' ? [0, 0, 1] : [0, 0, -1]
   const v: V3 = axis === 'x' ? [0, -1, 0] : [-1, 0, 0]
-  const ring = Array.from({ length: n }, (_, i): [number, number] => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)])
+  // phase turns the corners round by that many facets: a half puts a side where a corner was
+  const ring = Array.from({ length: n }, (_, i): [number, number] => [r * Math.cos((2 * Math.PI * (i + phase)) / n), r * Math.sin((2 * Math.PI * (i + phase)) / n)])
   const at = ([a, b]: [number, number], h: number): number[] => [0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * h)
   const positions = [...ring.flatMap((p) => at(p, 0)), ...ring.flatMap((p) => at(p, lengthMm))]
   const indices: number[] = []
@@ -72,14 +73,14 @@ function cylinder(axis: 'x' | 'y', r: number, n: number, center: V3, lengthMm: n
 
 /**
  * fitFacts over a pin lying in its bore, the engine's reply built from the two outlines: the closest gap between them
- * across the axis (the pin's corners against the bore's sides and the other way), above the pin, as fit.check reports
- * a gap under the limit there.
+ * across the axis (the pin's corners against the bore's sides and the other way), above the pin, or below it with
+ * `side`, as fit.check reports a gap under the limit there. `phase` turns both outlines round by that many facets.
  */
-async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR: number, boreSides: number, turnDeg = 0) {
+async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR: number, boreSides: number, turnDeg = 0, side: 'above' | 'below' = 'above', phase = 0) {
   const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
   const center: V3 = [0, 0, 5]
-  const pin = cylinder(axis, pinR, pinSides, center, 10)
-  const bore = cylinder(axis, boreR, boreSides, center, 10, true)
+  const pin = cylinder(axis, pinR, pinSides, center, 10, false, phase)
+  const bore = cylinder(axis, boreR, boreSides, center, 10, true, phase)
   // closest points of two outlines in the frame's (u, v) plane; z is the first coordinate along u, up along x and down along y
   const height = (p: [number, number]): number => (axis === 'x' ? p[0] : -p[0])
   const closest = (pts: [number, number][], ring: [number, number][]) => {
@@ -91,15 +92,18 @@ async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR:
         const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)))
         const q: [number, number] = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
         const d = Math.hypot(p[0] - q[0], p[1] - q[1])
-        // of pairs that tie, the one nearest the top
-        if (d < best.d - 1e-9 || (d <= best.d + 1e-9 && height(p) > height(best.p))) best = { d, p, q }
+        // of pairs that tie, the one nearest the top (the bottom for a gap below)
+        const toward = (z: number): number => (side === 'above' ? z : -z)
+        if (d < best.d - 1e-9 || (d <= best.d + 1e-9 && toward(height(p)) > toward(height(best.p)))) best = { d, p, q }
       }
     return best
   }
   // the gap over the top of the pin, from the corners within 10 degrees of it: the engine reports the closest pair
   // running up and down, which is there when it is the closest of all, as with the same number of sides on pin and
   // bore, where every side ties
-  const up = (p: [number, number]): boolean => height(p) > Math.cos((10 * Math.PI) / 180) * Math.hypot(p[0], p[1])
+  // (or within half a facet and a degree, for an outline of so few sides that no corner is within 10 degrees)
+  const within = Math.max(10, 180 / Math.min(pinSides, boreSides) + 1)
+  const up = (p: [number, number]): boolean => (side === 'above' ? height(p) : -height(p)) > Math.cos((within * Math.PI) / 180) * Math.hypot(p[0], p[1])
   const one = closest(pin.ring.filter(up), bore.ring)
   const other = closest(bore.ring.filter(up), pin.ring)
   const g = one.d <= other.d ? one : { d: other.d, p: other.q, q: other.p }
@@ -113,8 +117,8 @@ async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR:
   const at = ([a, b]: [number, number]): V3 => turn([0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * 5) as V3)
   const from = at(g.p)
   const to = at(g.q)
-  // the gap runs more up than across, as the engine's fit check sorts a gap above or below
-  expect(to[2] - from[2]).toBeGreaterThan(Math.hypot(to[0] - from[0], to[1] - from[1]))
+  // the gap runs more up and down than across, as the engine's fit check sorts a gap above or below
+  expect(Math.abs(to[2] - from[2])).toBeGreaterThan(Math.hypot(to[0] - from[0], to[1] - from[1]))
   const report = {
     parts: [
       { bounds: { min: [-boreR, -boreR, 5 - boreR], max: [boreR, boreR, 5 + boreR] }, item: 0 },
@@ -219,6 +223,24 @@ describe('the fit tolerance', () => {
       expect(fitVerdict(gap, limits), what).toBe('slides')
       expect(gapsItem(fit).pass, what).toBe(true)
     }
+  })
+
+  it('a pin lying in its bore gets the same answer for the gap above it and the gap below it, in 12, 25 and 27 sides', async () => {
+    // a level side at the end the gap is read from: 12 sides turned half a facet have one at the top and the bottom, and
+    // 25 and 27 one at the top, or at the bottom turned half a facet. Below the pin the facets beside its bottom side
+    // rise from it, and above the bore's floor too; the gap is between two round faces whichever end it is read from.
+    for (const [pinSides, boreSides] of [[12, 12], [25, 25], [25, 27], [27, 27]] as const)
+      for (const side of ['above', 'below'] as const) {
+        const phase = pinSides % 2 === 0 ? 0.5 : side === 'above' ? 0 : 0.5
+        const { fit, gap, limits, readMm } = await pinInBore('y', 2.5, pinSides, 2.9, boreSides, 0, side, phase)
+        const what = `${pinSides} and ${boreSides} sides turned ${phase} facets, the gap ${side} the pin, read ${readMm.toFixed(4)} mm`
+        expect(readMm, what).toBeGreaterThan(0.38)
+        expect(readMm, what).toBeLessThan(0.4)
+        expect(gap.flat, what).toBeUndefined()
+        expect(gap.kind, what).toBe('apart')
+        expect(fitVerdict(gap, limits), what).toBe('slides')
+        expect(gapsItem(fit).pass, what).toBe(true)
+      }
   })
 
   it('a gap with one end on a flat face and the other on a round one gets the facet allowance, either way up', async () => {
