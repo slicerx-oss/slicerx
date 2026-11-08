@@ -41,7 +41,7 @@ import { editing, nowOf, saveStep } from './history/ops'
 import { stepNumber } from './history/step-number'
 import { bindNext, sketchNext } from './history/record'
 import { ProjectCard, type Projected } from './project-card'
-import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, solidOnNewSketch, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { goesIntoFace } from './extrude-direction'
@@ -1603,13 +1603,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
   const sketchBody = () => ({ frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}), projections: projected.list, nextProjection: projected.next })
   // A projection's source stays on the sketch item, never on the step: a new sketch with projections goes in the
-  // timeline first and the solid names it, and a finished one takes changed projections first.
-  const keepProjections = async (): Promise<string | null> => {
+  // timeline with the solid that names it (solidOnNewSketch), and a finished one takes changed projections first.
+  const onSketch = async <T,>(apply: () => Promise<T>): Promise<T> => {
     const id = init?.from?.id ?? null
-    if (stepEdit || featureOnly) return id
-    if (!id) return projected.list.length ? finishSketch(sketchBody()).id : null
-    if (JSON.stringify(projected.list) !== JSON.stringify(init?.projected?.list ?? [])) await updateSketch(host.slicer, id, sketchBody())
-    return id
+    if (!stepEdit && !featureOnly && !id && projected.list.length) return solidOnNewSketch(sketchBody(), apply)
+    if (!stepEdit && !featureOnly && id && JSON.stringify(projected.list) !== JSON.stringify(init?.projected?.list ?? [])) await updateSketch(host.slicer, id, sketchBody())
+    sketchNext(id)
+    return apply()
   }
   const go = async () => {
     if (!ready) return
@@ -1629,16 +1629,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (bad) throw new Error(bad)
         bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...into, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
-        sketchNext(await keepProjections())
-        r = stepEdit ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
+        r = await onSketch(() => (stepEdit ? saveSketch(extrudeParams(input)) : applyExtrude(host.slicer, input)))
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
-        sketchNext(await keepProjections())
-        r = stepEdit ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
+        r = await onSketch(() => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input)))
       }
       toast(r.message, r.warn ? 'warn' : 'ok')
       set({ objectTool: null })

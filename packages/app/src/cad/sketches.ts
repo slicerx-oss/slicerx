@@ -10,7 +10,8 @@ import { brandAccent } from '../edition'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
-import { withLast } from '../plate/history'
+import { history, openStep, withLast } from '../plate/history'
+import { sketchNext } from './history/record'
 import { followBodies } from './project-sketch'
 
 type Loader = { loadParts(name: string, parts: PlateEntry['parts']): Promise<MeshHandle> }
@@ -35,6 +36,42 @@ export function finishSketch(s: SketchBody): SketchItem {
   const t = withSketch(get().timeline, { id: `${stepId()}k`, ...body(s) })
   set({ timeline: t })
   return t.items[t.marker - 1] as SketchItem
+}
+
+/**
+ * Extrude or Revolve of a new sketch that holds projections: the sketch goes in the timeline first so the solid can
+ * name it (a projection's source stays on the sketch item), and both go in one undo step, as a plain extrude and its
+ * sketch do. When no feature lands on it (the engine refuses, or a join misses the body), the sketch comes out again
+ * and the undo history is as it was, so a retry makes it afresh instead of leaving the first one behind.
+ */
+export async function solidOnNewSketch<T>(s: SketchBody, apply: () => Promise<T>): Promise<T> {
+  const h = history()
+  const close = openStep()
+  let id: string | null = null
+  let after = ''
+  try {
+    id = finishSketch(s).id
+    after = h.state().revision
+    sketchNext(id)
+    const r = await apply()
+    takeBack(id, after)
+    return r
+  } catch (e) {
+    if (id) takeBack(id, after)
+    throw e
+  } finally {
+    sketchNext(null)
+    close()
+  }
+}
+
+/** Takes a sketch made for a solid out again when no feature names it: by undo while its step holds nothing else. */
+function takeBack(id: string, after: string): void {
+  const t = get().timeline
+  if (!sketchById(t, id) || t.items.some((i) => i.kind === 'feature' && i.sketch === id)) return
+  if (history().state().revision === after && history().undo()) return
+  const at = t.items.findIndex((i) => i.kind === 'sketch' && i.id === id)
+  set({ timeline: { ...t, items: t.items.filter((_, i) => i !== at), marker: at < t.marker ? t.marker - 1 : t.marker } })
 }
 
 /** The sketch with this id, or null. */
