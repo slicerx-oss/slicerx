@@ -6,7 +6,7 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, designNamed, noDesignMessage, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
@@ -41,8 +41,11 @@ export class Designs implements DesignHost {
 
   get(id: string): Design {
     const d = this.all.get(id)
-    if (!d) throw new ToolInputError(`design: no design ${id}; slicerx_design_list lists them`, 'not_found')
-    return d
+    if (d) return d
+    // a design given by its name where its id goes: the one design of that name, else the ids there are
+    const named = designNamed(this.list(), id)
+    if (named) return named
+    throw new ToolInputError(noDesignMessage(id, this.list(), { start: 'slicerx_design_new', list: 'slicerx_design_list' }), 'not_found')
   }
 
   list(): Design[] {
