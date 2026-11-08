@@ -10,7 +10,7 @@ import type { PilotMachine } from '@slicerx/contracts'
  * One way a step counts toward a case: a tool name, or for geom.revolve a turn of less than a full circle (an arc of a
  * ring, as an elbow or a handle can be made).
  */
-export type OpMatch = 'geom.loft' | 'geom.sweep' | 'geom.extrude' | 'geom.revolve' | 'geom.revolve:partial'
+export type OpMatch = 'geom.loft' | 'geom.sweep' | 'geom.extrude' | 'geom.build' | 'geom.revolve' | 'geom.revolve:partial'
 
 /** A size the built part must have: the bounding box along an axis, or its largest side across the bed. */
 export interface SizeCheck {
@@ -19,6 +19,13 @@ export interface SizeCheck {
   minMm: number
   maxMm: number
 }
+
+/**
+ * How a hook on the part is checked. lip: the hook leaves the side of a lofted stem below its top, and its tip rises
+ * above the lowest point of the hook's outer half (a lip that keeps a headband on). leg: the rod's hook hangs a leg
+ * past the bend, at least the rod's thickness plus 5 mm below its top, so a cable cannot slide off the end.
+ */
+export type HookSpec = { kind: 'lip' } | { kind: 'leg'; rodMm: number }
 
 export interface BuildCase {
   id: string
@@ -33,6 +40,8 @@ export interface BuildCase {
   sizes: SizeCheck[]
   /** A boxy part that extrudes build: it must not need a loft or sweep, and it must not be turned down. */
   control?: boolean
+  /** The part has a hook, checked this way. */
+  hook?: HookSpec
 }
 
 const P1S: PilotMachine = { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }
@@ -41,7 +50,7 @@ export const BUILD_CASES: BuildCase[] = [
   {
     id: 'headphone-stand',
     title: 'Headphone stand',
-    // the owner's prompt, word for word: mimir turned it down on 0.2.17, saying the hook and stem need a sweep and a loft
+    // a request an earlier build turned down, saying the hook and stem need a sweep and a loft
     prompt: "Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.",
     machine: P1S,
     ops: ['geom.loft', 'geom.sweep'],
@@ -50,6 +59,7 @@ export const BUILD_CASES: BuildCase[] = [
       { axis: 'z', minMm: 150, maxMm: 256 },
       { axis: 'xy', minMm: 80, maxMm: 256 },
     ],
+    hook: { kind: 'lip' },
   },
   {
     id: 'square-bottle',
@@ -75,6 +85,7 @@ export const BUILD_CASES: BuildCase[] = [
       { axis: 'z', minMm: 70, maxMm: 100 },
       { axis: 'xy', minMm: 40, maxMm: 80 },
     ],
+    hook: { kind: 'leg', rodMm: 10 },
   },
   {
     id: 'mug-handle',
@@ -117,7 +128,7 @@ export const BUILD_CASES: BuildCase[] = [
     title: 'Raspberry Pi 5 case',
     prompt: 'Make a simple two part case for a Raspberry Pi 5: a base tray with standoffs for the board and a lid that sits on top, with openings for the USB, Ethernet and power ports.',
     machine: P1S,
-    ops: ['geom.extrude'],
+    ops: ['geom.extrude', 'geom.build'],
     bodies: [2, 3],
     sizes: [{ axis: 'xy', minMm: 88, maxMm: 120 }],
     control: true,
@@ -127,7 +138,7 @@ export const BUILD_CASES: BuildCase[] = [
     title: 'Hinged box',
     prompt: 'A small box with a hinged lid, 80 by 50 by 35 mm, 2 mm walls, with a pin hinge along the back edge.',
     machine: P1S,
-    ops: ['geom.extrude'],
+    ops: ['geom.extrude', 'geom.build'],
     bodies: [1, 4],
     sizes: [{ axis: 'xy', minMm: 75, maxMm: 100 }],
     control: true,
