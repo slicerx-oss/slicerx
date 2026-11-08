@@ -27,11 +27,12 @@ export function createSlice(shared: ToolShared) {
       const indexes = i.plates ?? all.map((p) => p.index)
       for (const k of [...shared.slices.keys()]) if (!all.some((p) => p.index === k)) shared.slices.delete(k)
       if (indexes.length === 0) return { ok: false, summary: 'No plates to slice. Run arrange first.' }
-      // The run's plate when it is one of these, else the first plate sliced. The fingerprint is read before slicing,
-      // so an edit made while the slice runs leaves it stale.
+      // The run's plate when it is one of these, else the first plate sliced. Its fingerprint is read with its plate and
+      // configuration, once the host has them ready, and before the engine slices, so an edit made while the slice runs
+      // leaves it stale and a slice is never stale the moment it lands.
       const run = ctx.run
       const runPlate = run ? (indexes.includes(run.get().plate) ? run.get().plate : indexes[0]!) : null
-      const fingerprint = runPlate !== null ? (run?.fingerprint(runPlate) ?? '') : ''
+      let fingerprint = ''
       const rows: Cell[][] = []
       const progress: { label: string; fraction: number; note?: string }[] = []
       let time = 0
@@ -41,6 +42,7 @@ export function createSlice(shared: ToolShared) {
       for (const idx of indexes) {
         const plate = await project.plate(idx)
         const config = project.config(idx)
+        if (idx === runPlate) fingerprint = run?.fingerprint(runPlate) ?? ''
         const t0 = performance.now()
         const res = await ctx.host.slicer.slice(
           { plate, config, options: { emitGcode: true, emitPreview: true } },
