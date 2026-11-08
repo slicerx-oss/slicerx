@@ -442,3 +442,4 @@
 .sx-pilot .sheet-rec-unit{flex:none;font-size:12px;color:var(--t-mute)}
 .sx-pilot .sheet-rec-row[data-guess] .sheet-rec-field{border-style:dashed;border-color:color-mix(in srgb,var(--orange) 70%,var(--line));background:color-mix(in srgb,var(--orange) 8%,var(--ink-1))}
 .sx-pilot .sheet-rec-row[data-guess] .sx-scrub-input{color:var(--orange)}
+.sx-pilot .sheet-rec-said{margin:0}

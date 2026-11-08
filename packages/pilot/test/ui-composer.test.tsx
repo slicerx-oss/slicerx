@@ -6,6 +6,7 @@
 // card waits, text in the box answers the card in place of a new message.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PilotAttachment } from '@slicerx/contracts'
+import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Composer, COMPOSER_MAX_LINES, enterSends, useAttachments } from '../ui/index'
 
@@ -113,5 +114,50 @@ describe('the message box while a question card waits', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
     expect(onSend).not.toHaveBeenCalled()
     expect(onAnswer).not.toHaveBeenCalled()
+  })
+})
+
+describe('the message box while a dimension sheet waits', () => {
+  it('says the words go to mimir, and Enter hands them over in place of a new message', () => {
+    const onSend = vi.fn()
+    const onAnswer = vi.fn()
+    const attachments = { list: [], problems: [], add: async () => undefined, remove: () => undefined, clear: () => undefined }
+    render(<Composer attachments={attachments} onSend={onSend} running answering answers="sheet" onAnswer={onAnswer} />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(box.placeholder).toBe('Or tell mimir what to change')
+    expect(box.closest('form')!.getAttribute('data-answers')).toBe('sheet')
+    fireEvent.change(box, { target: { value: 'make it 10 mm taller' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAnswer).toHaveBeenCalledWith('make it 10 mm taller')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box.value).toBe('')
+  })
+})
+
+describe('the message box under fast typing', () => {
+  /** Re-renders the box every millisecond, flipping it between running and not, as a streaming reply does. */
+  function Busy({ onSend }: { onSend: (t: string, a: PilotAttachment[]) => void }) {
+    const attachments = useAttachments()
+    const [tick, setTick] = useState(0)
+    useEffect(() => {
+      const t = setInterval(() => setTick((n) => n + 1), 1)
+      return () => clearInterval(t)
+    }, [])
+    return <Composer attachments={attachments} onSend={onSend} running={tick % 2 === 0} />
+  }
+
+  it('keeps every character typed in bursts between renders, in order', async () => {
+    render(<Busy onSend={vi.fn()} />)
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+    const text = 'Design a Raspberry Pi 5 case: a base with four standoffs, port cutouts and a snap-fit lid.'
+    // keys land as the browser lands them: each one in the box with its input event, several between two renders
+    for (const [i, ch] of [...text].entries()) {
+      setValue.call(box, box.value + ch)
+      box.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }))
+      if (i % 7 === 6) await new Promise((r) => setTimeout(r, 0))
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(box.value).toBe(text)
   })
 })
