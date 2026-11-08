@@ -160,6 +160,28 @@ describe('the send card', () => {
     }
   })
 
+  it('a filament swap between two objects or a support blocker after the card shows turns Print off and says so', async () => {
+    const handle: MeshHandle = { id: 'm1', hash: 'm1', name: 'Clip', triangles: 12, bboxMm: [30, 12, 8], openEdges: 0, parts: [] }
+    const clip = (id: string, x: number, slot: number): PlateEntry => ({ id, name: `Clip ${id}`, handle: { ...handle, id, hash: id }, parts: [{ ...boxMesh(30, 12, 8), name: 'Body', slot }], colors: ['#fff'], transform: compose({ position: [x, 60, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
+    const blocker = { id: 'v1', name: 'Blocker', role: 'support_blocker', handle: { ...handle, id: 'v1', hash: 'v1' }, part: { ...boxMesh(5, 5, 5), name: 'Blocker', slot: 1 }, local: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    // the same slots stay in use and nothing printed is renamed: only the slice's inputs change
+    const edits = [
+      () => set({ plate: get().plate.map((e) => ({ ...e, slotOverrides: { Body: e.id === 'a' ? 2 : 1 } })) }),
+      () => set({ plate: get().plate.map((e) => (e.id === 'a' ? { ...e, volumes: [blocker] } : e)) } as never),
+    ]
+    for (const edit of edits) {
+      set({ plate: [clip('a', 60, 1), clip('b', 120, 2)], layerMarks: {} } as never)
+      const { view } = await card()
+      await checked()
+      fireEvent.click(bedBox())
+      await waitFor(() => expect(printButton().disabled).toBe(false))
+      act(edit)
+      await waitFor(() => expect(screen.getByText('The plate changed after this slice. Slice it again.')).toBeTruthy())
+      expect(printButton().disabled).toBe(true)
+      view.unmount()
+    }
+  })
+
   it('an answer the app cannot deliver says the card is no longer active, with no internal id, and turns it off', async () => {
     const { onCancel, req } = await card()
     onCancel.mockImplementationOnce(async () => Promise.reject(new Error(`No pending approval ${req.id}`)))
