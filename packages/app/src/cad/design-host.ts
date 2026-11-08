@@ -36,7 +36,7 @@ import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
 import { placeOf } from './sketch-place'
-import { ownWaiting, setWaiting } from './waiting'
+import { ownWaiting, projectGeneration, setWaiting } from './waiting'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -291,6 +291,9 @@ export function appDesignHost(loader: Loader): AppDesignHost {
    */
   async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: () => void): Promise<Landed | undefined> {
     guard?.()
+    // built for the project the plate holds as this starts: a new project, or one opened in its place, meanwhile gets
+    // no body from it
+    const project = projectGeneration()
     const r = await runReplay({ history })
     const k = need === undefined ? -1 : history.steps.findIndex((s) => s.id === need)
     if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(`The step did not go through: ${r.status[k]?.message ?? 'the steps before it are broken'}. The design is unchanged.`)
@@ -322,6 +325,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     const placed = moved && 'dxMm' in moved ? placedAfter(history.placed, transform, landedAt) : history.placed
     const step = history.steps.at(-1)?.id
     guard?.()
+    if (projectGeneration() !== project) throw new Error('The project changed while this design was built, so it was not put on the plate.')
     // the room moves are worked out against the plate as it was before the nest; one deleted meanwhile is gone
     const applied: { id: string; name: string; from: Mat4; to: Mat4 }[] = []
     set((s) => {
