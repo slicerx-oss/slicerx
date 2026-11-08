@@ -108,7 +108,7 @@ const NOT_A_PART = String.raw`(?:settings?|quality|speeds?|times?|status|jobs?|f
 const VERB = String.raw`(?<!\b(?:the|a|an|my|your|our|its|this|that|last|next|first|whole)\s+)\b(?:print|send|queue)`
 /**
  * Asking to print or send a part: the verb and what goes ("print it", "print 3 copies", "print bracket.stl", "print the
- * lid"), or where it goes ("send to Printer 3", "print on Bay 2"), a message that starts with the verb ("Print bracket
+ * lid"), or where it goes ("send to Printer 3", "print on Bay 2"), a message that starts with the verb and names a destination ("Print bracket
  * on Bay 2"), the verb at the end ("go ahead and print"), and "start the print".
  */
 const PRINT_IT = new RegExp(
@@ -117,7 +117,7 @@ const PRINT_IT = new RegExp(
     String.raw`${VERB}\s+(?:(?:me|us|out|over)\s+)?[\w-]+\.(?:stl|3mf|step|stp|obj|gcode)\b`,
     String.raw`${VERB}\s+(?:(?:me|us)\s+)?(?:the|my|a|an|another|some)\s+(?!${NOT_A_PART})\w`,
     String.raw`${VERB}\s+(?:on|to)\s+(?:the\s+|my\s+)?(?:printers?|bay|farm|fleet|\w*\d\w*)\b`,
-    String.raw`^\W*(?:(?:please|ok|okay|now|then)\s+)?(?:print|send|queue)\s+(?!(?:(?:the|my|a|an|another|some|your)\s+)?${NOT_A_PART})\w`,
+    String.raw`^\W*(?:(?:please|ok|okay|now|then)\s+)?(?:print|send|queue)\s+(?:(?:me|us)\s+)?(?!(?:(?:the|my|a|an|another|some|your)\s+)?${NOT_A_PART})[\w-]+(?:\s+[\w-]+){0,3}\s+(?:on|to)\s+(?:the\s+|my\s+)?(?:printers?|bay|farm|fleet|\w*\d\w*)\b`,
     String.raw`\b(?:and|please|just|now|then|to)\s+print\s*(?:[.!,]|$)`,
     String.raw`\bstart(?:ing)?\s+(?:the\s+|a\s+|my\s+)?print(?:ing)?\b(?!\s+${NOT_A_PART})`,
   ].join('|'),
