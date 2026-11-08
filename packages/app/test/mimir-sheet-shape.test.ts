@@ -4,10 +4,12 @@
 // plate, with the rows' places moved onto it when mimir gave them around its own origin; a sheet for a new part draws
 // its own solids. Either way the part is its silhouette and its visible edges: an edge hidden behind the part never
 // shows, and a row with no place whose value is an overall size gets that size's line.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { MeshPart, PilotDim, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import type { PlateEntry } from '../src/state/store'
-import { drawPx, drawView, fitScale, rasterize, shapeBounds, shapeOfMesh, shapeOfSolids, SHEET_VIEWS, TRI_BUDGET, VIEW_PX_MAX, VIEWS, viewsFor, type Raster, type Shape, type V3, type ViewName } from '../src/workspaces/mimir/sheet-draw'
+import { drawPx, drawView, fitScale, paintedEdges, rasterize, shapeBounds, shapeOfMesh, shapeOfSolids, SHEET_VIEWS, TRI_BUDGET, VIEW_PX_MAX, VIEWS, viewsFor, type Raster, type Shape, type V3, type ViewName } from '../src/workspaces/mimir/sheet-draw'
 import { alignDims, hasPicture, placeMissing, sharedPicture, sheetPicture } from '../src/workspaces/mimir/sheet-shape'
 
 /** An axis-aligned box as 12 outward triangles. */
@@ -276,6 +278,22 @@ describe('rows placed around mimir\'s own origin', () => {
     expect(out[2]!.at).toEqual({ a: [100, 100, 0], b: [100, 100, 30], off: [-8, 0, 0] })
   })
 
+  // A plate 200 x 200 x 20 standing at x, y 28..228 on a 256 mm bed, its rows around mimir's own corner: the hole's
+  // place falls inside the part's bounds unmoved by chance, so moving row by row split the sheet into two frames.
+  it('moves every row of a sheet in its own frame together, a hole that lands inside the part by chance too', () => {
+    const plate = shapeOfMesh([boxMesh([28, 28, 0], [228, 228, 20])])
+    const length = row('length', 200, { a: [0, 0, 0], b: [200, 0, 0], off: [0, -8, 0] })
+    const width = row('width', 200, { a: [0, 0, 0], b: [0, 200, 0], off: [-8, 0, 0] })
+    const hole = row('hole', 10, { a: [95, 100, 20], b: [105, 100, 20], off: [0, 6, 0] })
+    const out = alignDims([length, width, hole], null, plate)
+    expect(out[0]!.at).toEqual({ a: [28, 28, 0], b: [228, 28, 0], off: [0, -8, 0] })
+    expect(out[1]!.at).toEqual({ a: [28, 28, 0], b: [28, 228, 0], off: [-8, 0, 0] })
+    expect(out[2]!.at).toEqual({ a: [123, 128, 20], b: [133, 128, 20], off: [0, 6, 0] })
+    // the sheet's own solids giving its corner move it the same way
+    const own = shapeOfSolids([{ plane: 'xy', points: [[0, 0], [200, 0], [200, 200], [0, 200]], from: 0, to: 20 }])
+    expect(alignDims([length, width, hole], own, plate)).toEqual(out)
+  })
+
   it('leaves rows inside the part (a hole and its spacing) alone, not snapped to its corner', () => {
     const hole = row('hole', 3, { a: [10, 10, 30], b: [13, 10, 30], off: [0, 6, 0] })
     const pitch = row('pitch', 30, { a: [10, 10, 30], b: [40, 10, 30], off: [0, -6, 0] })
@@ -306,6 +324,39 @@ const STAND: PilotSheet = {
     { ...row('hook_reach', 60, { a: [10, 0, 186], b: [70, 0, 186], off: [0, 0, 10] }), source: 'asked' },
     row('hook_tube', 10, { a: [70, 0, 176], b: [70, 0, 186], off: [12, 0, 0] }),
   ],
+}
+
+/** The pipe elbow's sheet as the sweep it is built as: a 32 mm tube with a 2.5 mm wall bent on 50 mm, 20 mm ends. */
+const ELBOW: PilotSheet = {
+  id: 'elbow',
+  title: '90 degree pipe elbow',
+  views: ['front', 'top', 'side', 'iso'],
+  part: [{ kind: 'sweep', profile: { d: 32, hole: 27 }, path: [[0, 0, 0], [0, 0, 70], [70, 0, 70]], round: 50 }],
+  dims: [
+    { ...row('outside_diameter', 32, { a: [-16, 0, 0], b: [16, 0, 0], off: [0, 0, -8] }), source: 'asked' },
+    { ...row('wall_thickness', 2.5, { a: [13.5, 0, 0], b: [16, 0, 0], off: [0, 0, -16] }), source: 'asked' },
+    { ...row('bend_radius', 50, { a: [50, 0, 20], b: [0, 0, 20], off: [0, 0, 0] }), source: 'asked' },
+    { ...row('end_length', 20, { a: [-16, 0, 0], b: [-16, 0, 20], off: [-10, 0, 0] }), source: 'asked' },
+    { ...row('bend_angle', 90), unit: 'deg', source: 'asked', at: { c: [50, 0, 20], from: [-1, 0, 0], to: [0, 0, 1], r: 20 } },
+  ],
+}
+
+/** True when the segment runs over the part after it has been off it: a leader that crosses the part to its callout. */
+function overPart(part: Raster, [p, q]: [[number, number], [number, number]]): boolean {
+  const on = (x: number, y: number): boolean => {
+    const i = Math.floor(x * part.px)
+    const j = Math.floor(y * part.px)
+    return i >= 0 && j >= 0 && i < part.W && j < part.H && part.cover[j * part.W + i] === 1
+  }
+  const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 2)
+  let off = false
+  for (let s = 0; s <= n; s++) {
+    const t = s / Math.max(1, n)
+    const here = on(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+    if (!here) off = true
+    else if (off) return true
+  }
+  return false
 }
 
 describe('callouts on a crowded sheet', () => {
@@ -381,6 +432,62 @@ describe('callouts on a crowded sheet', () => {
   })
 })
 
+// The elbow's Iso had callout 4 on a leader drawn across the tube to the far side of it.
+describe('leaders to callouts', () => {
+  for (const sheet of [ELBOW, STAND]) {
+    it(`never cross the part on their way to the callout: ${sheet.title}`, () => {
+      const pic = sheetPicture(sheet, [])!
+      for (const [w, h] of [[475, 320], [420, 300], [360, 260]] as [number, number][]) {
+        const flat = Math.min(...(['front', 'side', 'top'] as const).map((v) => fitScale(pic.shape, pic.dims, v, w, h, 24, sheet.views)))
+        for (const v of SHEET_VIEWS) {
+          const drawn = drawView(pic.shape, pic.dims, v, w, h, { pad: 24, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) })
+          for (const d of drawn.dims) if (d.leader) expect(overPart(drawn.part, d.leader), `${w} x ${h} ${v}: leader ${d.n} crosses the part`).toBe(false)
+        }
+      }
+    })
+  }
+
+  // The elbow's end length is placed in the tube's middle plane, which the tube hides in Iso: its lines start where
+  // they come out from behind the tube, not over its near side.
+  it('start a line from a place the part hides where it comes out from behind the part', () => {
+    const pic = sheetPicture(ELBOW, [])!
+    const drawn = drawView(pic.shape, pic.dims, 'iso', 475, 320, { pad: 24, order: ELBOW.views })
+    const end = drawn.dims.find((d) => d.key === 'end_length')!
+    const { W, cover } = drawn.part
+    for (const [p] of end.lines.slice(0, 2)) expect(cover[Math.floor(p[1]) * W + Math.floor(p[0])], `starts at ${p}`).toBe(0)
+    // in Front the same place is on the outline in sight, and its lines start on it
+    const front = drawView(pic.shape, pic.dims, 'front', 475, 320, { pad: 24, order: ELBOW.views })
+    const [fx, fy] = front.dims.find((d) => d.key === 'end_length')!.lines[0]![0]
+    const touches = [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => front.part.cover[(Math.floor(fy) + dy) * front.part.W + Math.floor(fx) + dx] === 1))
+    expect(touches, 'Front: the line starts on the outline').toBe(true)
+  })
+})
+
+describe('the part\'s edges as painted', () => {
+  const shape = shapeOfSolids([{ plane: 'xy', points: [[0, 0], [40, 0], [40, 30], [0, 30]], from: 0, to: 20 }])
+  it('are two device px wide on a 1x screen and three at 2x, grown into the part only', () => {
+    for (const [px, width] of [[1, 2], [2, 3]] as const) {
+      const ras = rasterize(shape, 'front', 260 * px, 140 * px, 5, 20, 120, px)
+      const ink = paintedEdges(ras)
+      for (let i = 0; i < ink.length; i++) {
+        if (ras.edge[i]) expect(ink[i]).toBe(1)
+        if (ink[i] && !ras.edge[i]) expect(ras.cover[i], `pixel ${i} off the part`).toBe(1)
+      }
+      // across the box's left outline, in the middle of its height
+      const y = Math.floor(60 * px)
+      const run = Array.from({ length: 8 * px }, (_, x) => ink[y * ras.W + Math.floor(18 * px) + x]).join('')
+      expect(run.match(/1+/)![0].length, `at ${px}x`).toBe(width)
+    }
+  })
+
+  it('take the theme\'s outline ink, with no color of their own', () => {
+    const css = readFileSync(join(import.meta.dirname, '../src/workspaces/mimir/mimir.css'), 'utf8')
+    const rule = css.match(/\.mimir-ink-edge \{[^}]*\}/)![0]
+    expect(rule).toMatch(/color: var\(--ti-ol\)/)
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+  })
+})
+
 // A pipe bend, a round stem and a vase are drawn as they will be built, and their rows get their callouts on them.
 describe('revolved, swept and lofted parts on the sheet', () => {
   const near = (b: { lo: V3; hi: V3 } | null, lo: V3, hi: V3) => {
@@ -410,6 +517,21 @@ describe('revolved, swept and lofted parts on the sheet', () => {
     expect(calloutsIn(shape, dims)).toEqual(['bend_angle', 'end_length', 'outside_diameter'])
   })
 
+  // looking down a straight tube shows its bore open and its wall round it; a rod of the same size is covered through
+  it('draws a swept tube with its bore open, apart from a solid rod', () => {
+    const path: V3[] = [[0, 0, 0], [0, 0, 40]]
+    const tube = shapeOfSolids([{ kind: 'sweep', profile: { d: 32, hole: 27 }, path }])
+    // each end cap is the outside ring and the bore's
+    expect(tube.polys.map((p) => p.length)).toEqual([2, 2])
+    const top = rasterize(tube, 'top', 200, 200, 4, 100, 100, 1)
+    expect(coverAt(top, onScreen('top', [0, 0, 40], 4, 100, 100))).toBe(0)
+    expect(coverAt(top, onScreen('top', [0, 6, 40], 4, 100, 100))).toBe(0)
+    for (const p of [[14.75, 0, 40], [-14.75, 0, 40], [0, 14.75, 40], [0, -14.75, 40]] as V3[]) expect(coverAt(top, onScreen('top', p, 4, 100, 100)), `wall at ${p}`).toBe(1)
+    const rod = shapeOfSolids([{ kind: 'sweep', profile: { d: 32 }, path }])
+    expect(rod.polys.map((p) => p.length)).toEqual([1, 1])
+    expect(coverAt(rasterize(rod, 'top', 200, 200, 4, 100, 100, 1), onScreen('top', [0, 0, 40], 4, 100, 100))).toBe(1)
+  })
+
   it('draws a revolved stem round, and a part of a turn with its ends closed', () => {
     const full = shapeOfSolids([{ kind: 'revolve', plane: 'xz', points: [[0, 0], [15, 0], [10, 60], [0, 60]], axis: { point: [0, 0], direction: [0, 1] } }])
     near(shapeBounds(full), [-15, -15, 0], [15, 15, 60])
@@ -420,6 +542,41 @@ describe('revolved, swept and lofted parts on the sheet', () => {
     expect(quarter.polys.length).toBe(2)
     near(shapeBounds(quarter), [0, 0, 0], [50, 50, 10])
     expect(calloutsIn(full, [row('base', 30, { a: [-15, 0, 0], b: [15, 0, 0], off: [0, 0, -8] }), row('height', 60, { a: [15, 0, 0], b: [15, 0, 60], off: [8, 0, 0] })])).toEqual(['base', 'height'])
+  })
+
+  // what the schema lets through draws as finite geometry, or nothing: never NaN, never a part across the whole sheet
+  it('draws odd paths, turns and sections finite and in bounds', () => {
+    const ring = { plane: 'xz' as const, points: [[10, 0], [20, 0], [20, 10], [10, 10]] as [number, number][], axis: { point: [0, 0] as [number, number], direction: [0, 1] as [number, number] } }
+    const cases: [string, PilotSheetSolid, number][] = [
+      ['a round far larger than the shorter leg', { kind: 'sweep', profile: { d: 10 }, path: [[0, 0, 0], [0, 0, 20], [200, 0, 20]], round: 500 }, 220],
+      ['two corners close together with a large round', { kind: 'sweep', profile: { d: 10 }, path: [[0, 0, 0], [0, 0, 50], [10, 0, 50], [10, 0, 0]], round: 40 }, 70],
+      ['a path that doubles back', { kind: 'sweep', profile: { d: 10 }, path: [[0, 0, 0], [0, 0, 50], [0, 0, 10]], round: 5 }, 70],
+      ['three points in a line', { kind: 'sweep', profile: { d: 10, hole: 6 }, path: [[0, 0, 0], [0, 0, 25], [0, 0, 50]], round: 10 }, 70],
+      ['a bore as wide as the tube', { kind: 'sweep', profile: { d: 10, hole: 12 }, path: [[0, 0, 0], [0, 0, 50]] }, 70],
+      ['a turn of 0 degrees', { kind: 'revolve', ...ring, angle: 0 }, 50],
+      ['a turn of -90 degrees', { kind: 'revolve', ...ring, angle: -90 }, 50],
+      ['sections out of order', { kind: 'loft', plane: 'xy', sections: [{ at: 80, d: 20 }, { at: 0, d: 60 }, { at: 40, points: [[-10, -10], [10, -10], [10, 10], [-10, 10]] }] }, 100],
+    ]
+    for (const [what, solid, reach] of cases) {
+      const shape = shapeOfSolids([solid])
+      const all = [...shape.tris, ...shape.polys.flat(2).flat()]
+      expect(all.every(Number.isFinite), what).toBe(true)
+      expect(all.length, what).toBeGreaterThan(0)
+      const b = shapeBounds(shape)!
+      for (let k = 0; k < 3; k++) expect(Math.max(Math.abs(b.lo[k]!), Math.abs(b.hi[k]!)), what).toBeLessThanOrEqual(reach)
+      for (const v of SHEET_VIEWS) for (const d of drawView(shape, [], v, 300, 200).dims) expect(d.badge.every(Number.isFinite), what).toBe(true)
+    }
+    // a -90 turn goes the other way round from a 90 one
+    const plus = shapeBounds(shapeOfSolids([{ kind: 'revolve', ...ring, angle: 90 }]))!
+    const minus = shapeBounds(shapeOfSolids([{ kind: 'revolve', ...ring, angle: -90 }]))!
+    expect(Math.sign(plus.hi[1]! + plus.lo[1]!)).toBe(-Math.sign(minus.hi[1]! + minus.lo[1]!))
+  })
+
+  // the sheet's schema takes a revolve as one outline and drops holes, so the drawing never shows a bore it did not get
+  it('draws a revolve from its outline alone, as the sheet takes it', () => {
+    const ring = { kind: 'revolve' as const, plane: 'xz' as const, points: [[10, 0], [20, 0], [20, 10], [10, 10]] as [number, number][], axis: { point: [0, 0] as [number, number], direction: [0, 1] as [number, number] } }
+    const holed = { ...ring, holes: [[[12, 2], [18, 2], [18, 8], [12, 8]]] } as unknown as PilotSheetSolid
+    expect(Array.from(shapeOfSolids([holed]).tris)).toEqual(Array.from(shapeOfSolids([ring]).tris))
   })
 
   it('draws a loft from round to square, its top square in Top', () => {
