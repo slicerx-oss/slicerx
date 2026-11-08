@@ -290,7 +290,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   registry(): AnyTool[]
   knowledge(): KnowledgeBase
   skills(): KbSkill[]
-  /** Drops the chat's print run record, for a chat that is over (deleted, or replaced by a new conversation). A print it started is still watched to its end. */
+  /** Drops the chat's print run record, its toolset state and its capped report, for a chat that is over (deleted, or replaced by a new conversation). A print it started is still watched to its end. */
   forgetRun(sessionId: string): void
   /** True while a run is going, or a card, a question or a sheet waits for its answer here. */
   waiting(): boolean
@@ -1202,6 +1202,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     forgetRun(sessionId: string): void {
       runBook?.forget(sessionId)
+      // the chat is over: its toolset state and capped report go with it
+      sticky.delete(sessionId)
+      caps.delete(sessionId)
     },
     waiting(): boolean {
       return going.size > 0 || pending.size > 0 || asks.size > 0 || sheets.size > 0
