@@ -19,6 +19,13 @@ const ADAPTERS: Record<string, () => LlmAdapter> = {
 /** The mimir cloud provider id. Its requests keep this id so the host sends them to the proxy only. */
 export const MIMIR_CLOUD = 'mimir-cloud'
 
+/**
+ * The most tools mimir cloud's proxy takes in one request (supabase/functions/mimir/shape.ts, MAX_TOOLS); it refuses a
+ * longer list. The desktop app's tab offers more than that (the design tools, slicing, printers, the app's commands, a
+ * command per printer and the connectors' tools), so over it a turn sends the tools it needs first (toolsets.ts).
+ */
+export const MIMIR_CLOUD_MAX_TOOLS = 128
+
 /** Whether mimir cloud may save the chat, read when each request is built. Partner apps pass their own switch here. */
 export interface CloudShare {
   /** false sends x-sx-share: 0, which mimir cloud never saves. */
@@ -79,7 +86,8 @@ export function createTransportClient(transport: LlmTransport, provider: string,
   }
   return {
     provider,
-    ...(adapter.maxTools === undefined ? {} : { maxTools: adapter.maxTools }),
+    // the proxy's own limit, though the Messages API it speaks has none
+    ...(cloud ? { maxTools: MIMIR_CLOUD_MAX_TOOLS } : adapter.maxTools === undefined ? {} : { maxTools: adapter.maxTools }),
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
       let http = adapter.build(req, opts.baseUrl === undefined ? {} : { baseUrl: opts.baseUrl })
       if (cloud) http = { ...http, provider: MIMIR_CLOUD, headers: { ...http.headers, ...cloudHeaders(opts.share?.(), req.session, req.tier) } }

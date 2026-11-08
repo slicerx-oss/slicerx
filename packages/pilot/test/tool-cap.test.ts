@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // OpenAI-style APIs refuse a request with more than 128 tools ("array too long ... maximum length 128"). With more
 // tools than that, a turn sends the core tools, the tools the chat already called and the toolsets the turn needs, by a
-// fixed priority, and says which toolsets it left out. Under the cap, and on Anthropic, every tool goes as before.
+// fixed priority, and says which toolsets it left out. mimir cloud's proxy takes at most 128 too, so it is held to the
+// same cap. Under the cap, and on Anthropic with a key, every tool goes as before.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, DEFAULT_CONFIG, defineTool, type PilotTool, type Toolset } from '../src/index'
+import { readFileSync } from 'node:fs'
+import { createPilot, createTransportClient, DEFAULT_CONFIG, defineTool, MIMIR_CLOUD_MAX_TOOLS, type PilotTool, type Toolset } from '../src/index'
 import { OPENAI_MAX_TOOLS } from '../src/provider/openai'
 import { capTools, TOOLSET_PRIORITY, toolsetOf } from '../src/toolsets'
 
@@ -71,7 +73,9 @@ function sentTools(req: LlmHttpRequest): string[] {
  * A provider stand-in that refuses more than 128 tools the way the OpenAI API does (a 400 the transport throws), and
  * otherwise plays the replies in order. Records every request.
  */
-function provider(kind: 'openai' | 'openai-compatible' | 'anthropic', steps: { call?: string; text?: string }[] = []): LlmTransport & { sent: LlmHttpRequest[] } {
+type Kind = 'openai' | 'openai-compatible' | 'anthropic' | 'mimir-cloud'
+
+function provider(kind: Kind, steps: { call?: string; text?: string }[] = []): LlmTransport & { sent: LlmHttpRequest[] } {
   const sent: LlmHttpRequest[] = []
   let i = 0
   return {
@@ -80,19 +84,21 @@ function provider(kind: 'openai' | 'openai-compatible' | 'anthropic', steps: { c
     async *stream(req) {
       sent.push(req)
       const n = sentTools(req).length
+      // mimir cloud's proxy refuses the request as shape.ts words it
+      if (kind === 'mimir-cloud' && n > 128) throw new Error('400: tools must be a list of at most 128')
       if (kind !== 'anthropic' && n > 128) throw new Error(`400: Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length ${n} instead.`)
-      if (kind === 'anthropic') yield anthropicReply()
+      if (kind === 'anthropic' || kind === 'mimir-cloud') yield anthropicReply()
       else if (kind === 'openai-compatible') yield compatibleReply()
       else yield openAiReply(steps[i++] ?? { text: 'Done.' })
     },
   }
 }
 
-function setup(kind: 'openai' | 'openai-compatible' | 'anthropic', steps: { call?: string; text?: string }[] = [], tools = manyTools()) {
+function setup(kind: Kind, steps: { call?: string; text?: string }[] = [], tools = manyTools()) {
   const llm = provider(kind, steps)
   const lines: string[] = []
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
-  const model = kind === 'anthropic' ? 'claude-haiku-5-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
+  const model = kind === 'anthropic' || kind === 'mimir-cloud' ? 'claude-haiku-5-5' : kind === 'openai' ? 'gpt-5.6-luna' : 'qwen3:8b'
   // one model for every tier, so the log names it
   const { models: _tiers, ...base } = DEFAULT_CONFIG
   const pilot = createPilot({ host, config: { ...base, provider: kind, model, maxSteps: 4 }, policy: DEFAULT_POLICY, builtins: false, tools, log: (line) => lines.push(line) })
@@ -174,6 +180,32 @@ describe('the tool cap on OpenAI-style providers', () => {
     const { pilot, lines } = setup('openai', [{ call: 'core.t1' }, { text: 'Done.' }])
     await say(pilot, 'hello')
     expect(lines).toHaveLength(1)
+  })
+})
+
+describe('the tool cap on mimir cloud', () => {
+  it('is the limit the proxy refuses above (supabase/functions/mimir/shape.ts)', () => {
+    const shape = readFileSync(new URL('../../../supabase/functions/mimir/shape.ts', import.meta.url), 'utf8')
+    expect(Number(/const MAX_TOOLS = (\d+)/.exec(shape)?.[1])).toBe(MIMIR_CLOUD_MAX_TOOLS)
+    expect(MIMIR_CLOUD_MAX_TOOLS).toBe(128)
+    const llm = provider('mimir-cloud')
+    expect(createTransportClient(llm, 'mimir-cloud').maxTools).toBe(MIMIR_CLOUD_MAX_TOOLS)
+    // the same Messages API with a person's own key has no such limit
+    expect(createTransportClient(llm, 'anthropic').maxTools).toBeUndefined()
+  })
+
+  it('answers with 150 tools instead of the proxy refusing the request, every core tool among them, and logs what it left out', async () => {
+    const { pilot, llm, lines } = setup('mimir-cloud')
+    const events = await say(pilot, 'Design a bracket and slice it')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    expect(reply(events)).toBe('Done.')
+    const sent = sentTools(llm.sent[0]!)
+    expect(sent).toHaveLength(MIMIR_CLOUD_MAX_TOOLS)
+    for (let i = 0; i < 10; i++) expect(sent).toContain(`core.t${i}`)
+    expect(sent.filter((n) => n.startsWith('geom.t'))).toHaveLength(60)
+    expect(sent.filter((n) => n.startsWith('settings.t'))).toHaveLength(30)
+    expect(pilot.toolCap('s1')).toMatchObject({ cap: 128, offered: 150, sent: 128 })
+    expect(lines).toEqual([expect.stringContaining('on mimir-cloud takes at most 128')])
   })
 })
 

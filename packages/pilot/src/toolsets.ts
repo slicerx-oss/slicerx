@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Which toolsets a turn sends when a provider takes fewer tools than mimir has. OpenAI-style APIs refuse a request
-// with more than 128 tools, so over that cap a turn sends the core tools, every tool the chat already called and the
-// toolsets the turn needs, then the other toolsets by a fixed priority while they fit whole; the room left goes to the
-// first toolsets in that order that did not fit, tool by tool. The toolsets left out are reported. Under the cap every
-// tool goes, in the same order, exactly as before.
+// Which toolsets a turn sends when a provider takes fewer tools than mimir has. OpenAI-style APIs and mimir cloud's
+// proxy refuse a request with more than 128 tools, so over that cap a turn sends the core tools, every tool the chat
+// already called and the toolsets the turn needs, then the other toolsets by a fixed priority while they fit whole; the
+// room left goes to the first toolsets in that order that did not fit, tool by tool. The toolsets left out are
+// reported. Under the cap every tool goes, in the same order, exactly as before.
 import type { PilotContext } from '@slicerx/contracts'
 import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
 import type { PilotTool, Toolset } from './tool'
