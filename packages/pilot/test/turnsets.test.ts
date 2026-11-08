@@ -308,6 +308,34 @@ describe('a local model in the tab', () => {
     expect(names(c.client.requests[1]!)).not.toContain('geom.array')
   })
 
+  it('counts a design still waiting for its first body only in the chat that made it, and none once its body is gone', async () => {
+    const shapeTools = design.filter((t) => t.name === 'geom.array' || t.name === 'geom.mirror')
+    const waiting = { design: 'd1', name: 'Lid', steps: 0, parts: [] }
+    // the host sees no body on the plate: only the chat that started the design has one to shape
+    const a = env('openai-compatible', [{ calls: [{ name: 'design.new', args: {} }] }, { text: 'Started.' }, { text: 'Which part?' }, { text: 'Which part?' }], { tools: [answering('design.new', { output: waiting }), ...shapeTools], hasDesign: () => false })
+    await run(a.pilot, 'mine', 'Design a lid for a 60 mm jar')
+    await run(a.pilot, 'mine', PROBE)
+    expect(names(a.client.requests[2]!)).toContain('geom.array')
+    await run(a.pilot, 'other', PROBE)
+    expect(names(a.client.requests[3]!)).toContain('design.new')
+    expect(names(a.client.requests[3]!)).not.toContain('geom.array')
+    // the design got its body, and the body was then deleted: nothing is left to shape in the chat that made it either
+    const b = env('openai-compatible', [{ calls: [{ name: 'design.new', args: {} }, { name: 'geom.extrude', args: {} }] }, { text: 'Built.' }, { text: 'Which part?' }], { tools: [answering('design.new', { output: waiting }), answering('geom.extrude', { output: BODY }), ...shapeTools], hasDesign: () => false })
+    await run(b.pilot, 'mine', 'Design a lid for a 60 mm jar')
+    await run(b.pilot, 'mine', PROBE)
+    expect(names(b.client.requests[2]!)).toContain('design.new')
+    // a host that cannot answer leaves the chat with what its own tools made
+    const c = env('openai-compatible', [{ calls: [{ name: 'design.new', args: {} }] }, { text: 'Started.' }, { text: 'Which part?' }], {
+      tools: [answering('design.new', { output: waiting }), ...shapeTools],
+      hasDesign: () => {
+        throw new Error('no plate')
+      },
+    })
+    await run(c.pilot, 'mine', 'Design a lid for a 60 mm jar')
+    await run(c.pilot, 'mine', PROBE)
+    expect(names(c.client.requests[2]!)).toContain('geom.array')
+  })
+
   it('seeds a resumed chat from the host, and keeps no design for it when the host has none', async () => {
     const yes = env('openai-compatible', [{ text: 'Which part?' }], { hasDesign: () => true })
     yes.pilot.resume!('r', [{ user: 'Design a lid', reply: 'Built the lid.' }])
