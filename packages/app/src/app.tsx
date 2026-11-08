@@ -22,6 +22,7 @@ import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
 import { LazySlot, WorkspaceBoundary } from './shell/boundary'
 import { CommandBarSlot } from './shell/command-bar-slot'
+import { commandBarMayOpen } from './shell/command-draft'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { bridgeConnector } from './link/connector'
 import { Status, ToastBridge } from './shell/overlays'
@@ -481,6 +482,7 @@ function useGlobalKeys(order: readonly string[]): void {
       if (get().agreementOpen) return
       if (matchShortcut(e, 'Mod+K')) {
         e.preventDefault()
+        if (!get().commandOpen && !commandBarMayOpen()) return
         set((s) => ({ commandOpen: !s.commandOpen }))
         return
       }
@@ -531,8 +533,8 @@ function useGlobalKeys(order: readonly string[]): void {
       const look = lookCommandFor(e, keymapFor(c.id, c.overrides?.keys ?? {}), { layers: showsLayers(s), onControl: onControl(e.target) })
       if (look) {
         e.preventDefault()
-        if (look === 'palette') set({ commandOpen: true })
-        else runShortcut(look)
+        if (look !== 'palette') runShortcut(look)
+        else if (commandBarMayOpen()) set({ commandOpen: true })
         return
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && s.workspace === 'prepare' && s.selection) {
