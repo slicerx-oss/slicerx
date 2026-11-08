@@ -59,7 +59,9 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
       return {
         status: 'done',
         ...auto,
-        stale: sl.stale,
+        // Out of date also when an edit since changed its G-code (a rename, a layer mark): needsSlice, the rule the plate
+        // list, the footer and app_export_gcode read. Callers pass the store.
+        stale: sl.stale || needsSlice(s as AppState),
         id: r.id,
         engine: r.engine,
         layers: r.layerCount,
