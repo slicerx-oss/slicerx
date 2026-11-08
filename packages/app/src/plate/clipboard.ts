@@ -135,9 +135,13 @@ function union(boxes: Box[]): Box | null {
   return { min, max }
 }
 
-/** A copy of an entry with new ids for the object and its volumes, independent of any instance group. Kept dimensions stay with the original. */
+/**
+ * A copy of an entry with new ids for the object and its volumes, independent of any instance group. Kept dimensions
+ * stay with the original, and so do where a design host landed it and the designs that landing moved over: the copy
+ * was pasted, not landed, and moved nothing, so undoing its step never moves another design.
+ */
 function fresh(e: PlateEntry): PlateEntry {
-  const { instanceOf: _i, dimensions: _d, ...rest } = e
+  const { instanceOf: _i, dimensions: _d, landedAt: _l, roomMoves: _r, ...rest } = e
   return { ...rest, id: newId('obj'), transform: [...e.transform], ...(e.volumes ? { volumes: e.volumes.map((v) => ({ ...v, id: newId('vol') })) } : {}) }
 }
 
