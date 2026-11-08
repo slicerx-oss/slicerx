@@ -5,7 +5,8 @@
 // transcript keeps the sheet and its answer, and closes one left open when the run ends.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PilotSheet, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetOf, sheetTool, type ScriptStep } from '../src/index'
+import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetOf, sheetProblems, sheetTool, type ScriptStep } from '../src/index'
+import { localToolDef, toolSpec } from '../src/tool'
 import { foldEvents, emptyTranscript, startTurn } from '../ui/reduce'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -117,6 +118,130 @@ describe('pilot.sheet', () => {
       expect(await refusal({ dims, part: [PART[0], { kind: 'loft', plane: 'xy', sections: [{ at: 0, d: 60 }, { at: 100 }] }] })).toContain('part 2 (loft) section 2 needs at (mm) and either d (a diameter in mm) or points')
       expect(await refusal({ dims, part: [{ plane: 'xy', points: [[0, 0], [40, 0], [40, 20]], to: 10 }] })).toContain('part 1 (extrude) needs from: a number in mm')
     })
+  })
+
+  // Every bound the sheet had when each kind was its own schema still holds: one bad field per row, each refused with
+  // the part or row named, so a model can fix its sheet and nothing malformed reaches the drawing.
+  describe('keeps every bound on the part and the rows', () => {
+    const at = { a: [0, 0, 0], b: [40, 0, 0], off: [0, -8, 0] }
+    const dims = [
+      { key: 'length', label: 'Length', value: 40, unit: 'mm', source: 'asked', at },
+      { key: 'bore', label: 'Bore', value: 16, unit: 'mm', source: 'asked', at },
+    ]
+    const sq = [[0, 0], [40, 0], [40, 20], [0, 20]]
+    const extrude = { plane: 'xy', points: sq, from: 0, to: 10 }
+    const revolve = { kind: 'revolve', plane: 'xz', points: [[5, 0], [20, 0], [20, 40], [5, 40]], axis: { point: [0, 0], direction: [0, 1] } }
+    const sweep = { kind: 'sweep', profile: { d: 20, hole: 16 }, path: [[0, 0, 0], [0, 0, 50], [50, 0, 50]], round: 25 }
+    const loft = { kind: 'loft', plane: 'xy', sections: [{ at: 0, d: 60 }, { at: 100, d: 30 }] }
+    const ring = (n: number) => Array.from({ length: n }, (_, k) => [Math.cos((k / n) * 2 * Math.PI) * 10, Math.sin((k / n) * 2 * Math.PI) * 10])
+    const line = (n: number) => Array.from({ length: n }, (_, k) => [k, 0, 0])
+    const parts = (solid: Record<string, unknown>) => ({ part: [solid] })
+    const row = (n: number, patch: Record<string, unknown>) => ({ dims: dims.map((d, k) => (k === n ? { ...d, ...patch } : d)), part: [extrude] })
+    const cases: [string, Record<string, unknown>, string][] = [
+      ['a coordinate of 10001 mm', parts({ ...extrude, points: [[0, 0], [10_001, 0], [40, 20]] }), 'part 1 (extrude) needs points'],
+      ['an extrude from 10001 mm', parts({ ...extrude, from: 10_001 }), 'part 1 (extrude) needs from'],
+      ['an extrude to -10001 mm', parts({ ...extrude, to: -10_001 }), 'part 1 (extrude) needs to'],
+      ['an outline of 2 points', parts({ ...extrude, points: [[0, 0], [40, 0]] }), 'part 1 (extrude) needs points'],
+      ['an outline of 201 points', parts({ ...extrude, points: ring(201) }), 'part 1 (extrude) needs points'],
+      ['an outline point of 3 coordinates', parts({ ...extrude, points: [[0, 0, 0], [40, 0], [40, 20]] }), 'part 1 (extrude) needs points'],
+      ['an extrude with no plane', parts({ ...extrude, plane: undefined }), 'part 1 (extrude) needs plane'],
+      ['21 holes', parts({ ...extrude, holes: Array.from({ length: 21 }, () => [[1, 1], [2, 1], [2, 2]]) }), 'part 1 (extrude) needs holes'],
+      ['a hole of 2 points', parts({ ...extrude, holes: [[[1, 1], [2, 1]]] }), 'part 1 (extrude) needs holes'],
+      ['a revolve with no axis', parts({ ...revolve, axis: undefined }), 'part 1 (revolve) needs axis'],
+      ['a revolve axis point of 10001 mm', parts({ ...revolve, axis: { point: [10_001, 0], direction: [0, 1] } }), 'part 1 (revolve) needs axis'],
+      ['a revolve axis direction of 3 coordinates', parts({ ...revolve, axis: { point: [0, 0], direction: [0, 1, 0] } }), 'part 1 (revolve) needs axis'],
+      ['a zero revolve axis', parts({ ...revolve, axis: { point: [0, 0], direction: [0, 0] } }), 'part 1 (revolve) needs axis'],
+      ['a revolve angle of 361', parts({ ...revolve, angle: 361 }), 'part 1 (revolve) needs angle'],
+      ['a revolve angle of -361', parts({ ...revolve, angle: -361 }), 'part 1 (revolve) needs angle'],
+      ['a revolve outline of 2 points', parts({ ...revolve, points: [[5, 0], [20, 0]] }), 'part 1 (revolve) needs points'],
+      ['a revolve with no plane', parts({ ...revolve, plane: undefined }), 'part 1 (revolve) needs plane'],
+      ['a sweep with no profile', parts({ ...sweep, profile: undefined }), 'part 1 (sweep) needs profile'],
+      ['a sweep profile with both d and points', parts({ ...sweep, profile: { d: 20, points: sq } }), 'part 1 (sweep) needs profile'],
+      ['a sweep profile d of 0.05', parts({ ...sweep, profile: { d: 0.05 } }), 'part 1 (sweep) needs profile'],
+      ['a sweep profile d of 10001', parts({ ...sweep, profile: { d: 10_001 } }), 'part 1 (sweep) needs profile'],
+      ['a sweep hole of 0.05', parts({ ...sweep, profile: { d: 20, hole: 0.05 } }), 'part 1 (sweep) needs profile'],
+      ['a sweep hole as wide as d', parts({ ...sweep, profile: { d: 20, hole: 20 } }), 'part 1 (sweep) needs profile'],
+      ['a sweep outline profile with a hole of -1', parts({ ...sweep, profile: { points: sq, hole: -1 } }), 'part 1 (sweep) needs profile'],
+      ['a sweep outline profile of 2 points', parts({ ...sweep, profile: { points: [[0, 0], [1, 0]] } }), 'part 1 (sweep) needs profile'],
+      ['a sweep path of 1 point', parts({ ...sweep, path: [[0, 0, 0]] }), 'part 1 (sweep) needs path'],
+      ['a sweep path of 101 points', parts({ ...sweep, path: line(101) }), 'part 1 (sweep) needs path'],
+      ['a sweep path point of 2 coordinates', parts({ ...sweep, path: [[0, 0], [0, 0, 50]] }), 'part 1 (sweep) needs path'],
+      ['a sweep path point of 10001 mm', parts({ ...sweep, path: [[0, 0, 0], [0, 0, 10_001]] }), 'part 1 (sweep) needs path'],
+      ['a sweep round of -1', parts({ ...sweep, round: -1 }), 'part 1 (sweep) needs round'],
+      ['a sweep round of 10001', parts({ ...sweep, round: 10_001 }), 'part 1 (sweep) needs round'],
+      ['a loft of 1 section', parts({ ...loft, sections: [{ at: 0, d: 60 }] }), 'part 1 (loft) needs sections'],
+      ['a loft of 21 sections', parts({ ...loft, sections: Array.from({ length: 21 }, (_, k) => ({ at: k, d: 10 })) }), 'part 1 (loft) needs sections'],
+      ['a loft section with both d and points', parts({ ...loft, sections: [{ at: 0, d: 60, points: sq }, { at: 100, d: 30 }] }), 'part 1 (loft) section 1 needs'],
+      ['a loft section d of 0.05', parts({ ...loft, sections: [{ at: 0, d: 60 }, { at: 100, d: 0.05 }] }), 'part 1 (loft) section 2 needs'],
+      ['a loft section at 10001 mm', parts({ ...loft, sections: [{ at: 0, d: 60 }, { at: 10_001, d: 30 }] }), 'part 1 (loft) section 2 needs'],
+      ['a loft section outline of 2 points', parts({ ...loft, sections: [{ at: 0, d: 60 }, { at: 100, points: [[0, 0], [1, 0]] }] }), 'part 1 (loft) section 2 needs'],
+      ['a loft with no plane', parts({ ...loft, plane: undefined }), 'part 1 (loft) needs plane'],
+      ['41 solids', { part: Array.from({ length: 41 }, () => extrude) }, 'part takes 1 to 40 solids'],
+      ['no solids', { part: [] }, 'part takes 1 to 40 solids'],
+      ['a row value of 100001', row(0, { value: 100_001 }), 'row 1 (Length) value is outside'],
+      ['a row min of -100001', row(0, { min: -100_001 }), 'row 1 (Length) min is outside'],
+      ['a row max of 100001', row(0, { max: 100_001 }), 'row 1 (Length) max is outside'],
+      ['a row at coordinate of 10001 mm', row(1, { at: { ...at, b: [10_001, 0, 0] } }), 'row 2 (Bore) needs at'],
+      ['a row at point of 4 coordinates', row(1, { at: { ...at, off: [0, -8, 0, 1] } }), 'row 2 (Bore) needs at'],
+      ['a row at missing off', row(1, { at: { a: at.a, b: at.b } }), 'row 2 (Bore) needs at'],
+      ['an angle at with r 0.05', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], to: [0, 1, 0], r: 0.05 } }), 'row 2 (Bore) needs at'],
+      ['an angle at with r 10001', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], to: [0, 1, 0], r: 10_001 } }), 'row 2 (Bore) needs at'],
+      ['an angle at with only c, from and r', row(1, { at: { c: [0, 0, 0], from: [1, 0, 0], r: 10 } }), 'row 2 (Bore) needs at'],
+      ['an angle at with only to', row(1, { at: { to: [0, 1, 0] } }), 'row 2 (Bore) needs at'],
+    ]
+    it.each(cases)('refuses %s', (_, patch, named) => {
+      const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims, ...patch })
+      expect(parsed.success).toBe(false)
+      expect(parsed.error!.issues.map((i) => i.message).join('; ')).toContain(named)
+    })
+
+    it('takes each kind at its bounds', () => {
+      for (const solid of [
+        { ...extrude, points: ring(200), holes: Array.from({ length: 20 }, () => [[1, 1], [2, 1], [2, 2]]), from: -10_000, to: 10_000 },
+        { ...revolve, angle: -360 },
+        { ...sweep, profile: { d: 10_000, hole: 0.1 }, path: line(100), round: 0 },
+        { ...loft, sections: Array.from({ length: 20 }, (_, k) => ({ at: k, d: 0.1 })) },
+      ]) {
+        const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims: [{ ...dims[0], value: 100_000, min: -100_000, max: 100_000 }, { ...dims[1], at: { c: [0, 0, 0], from: [1, 0, 0], to: [0, 1, 0], r: 0.1 } }], part: Array.from({ length: 40 }, () => solid) })
+        expect(parsed.success, JSON.stringify(parsed.error?.issues.slice(0, 2))).toBe(true)
+      }
+    })
+
+    // a kind the sheet does not draw is refused by the schema itself, at that part's kind
+    it('refuses a kind it does not draw', () => {
+      const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims, part: [extrude, { ...extrude, kind: 'cylinder' }] })
+      expect(parsed.success).toBe(false)
+      expect(parsed.error!.issues[0]!.path).toEqual(['part', 1, 'kind'])
+    })
+  })
+
+  // The part is one object whose fields are all optional, so the schema's required list says nothing per kind: what a
+  // model reads in the description is all it has. Each kind keeps its required fields and a working example there, in
+  // the schema a cloud model and MCP clients get and in the one a local model gets.
+  it.each([
+    ['cloud', () => toolSpec(sheetTool()).inputSchema],
+    ['local', () => localToolDef(sheetTool()).parameters],
+  ] as const)('tells a %s model which fields each kind of solid needs', (_, schemaOf) => {
+    type Node = { properties: Record<string, Node>; items: Node; enum?: string[]; description?: string }
+    const schema = schemaOf() as unknown as Node
+    const item = schema.properties['part']!.items
+    expect(item.properties['kind']!.enum).toEqual(['extrude', 'revolve', 'sweep', 'loft'])
+    const byKind = item.description!.split('By kind: ')[1]!.split(/(?=\b(?:revolve|sweep|loft): )/)
+    const needs: Record<string, string[]> = { extrude: ['plane', 'points', 'from', 'to'], revolve: ['plane', 'points', 'axis \\{point, direction\\}'], sweep: ['profile', 'path'], loft: ['plane', 'sections'] }
+    expect(byKind.map((s) => s.match(/^\w+/)![0])).toEqual(Object.keys(needs))
+    for (const text of byKind) {
+      const kind = text.match(/^\w+/)![0]
+      const [fields, example] = text.split('e.g. ')
+      for (const f of needs[kind]!) expect(fields, kind).toMatch(new RegExp(`\\b${f}(?!\\w)`))
+      // its example is a solid the sheet takes as written
+      const solid = JSON.parse(example!.trim().replace(/\.$/, '')) as Record<string, unknown>
+      expect(solid['kind'] ?? 'extrude').toBe(kind)
+      expect(sheetProblems({ title: 'Sizes', views: ['iso'], dims: [], part: [solid] as never }), kind).toEqual([])
+    }
+    const place = schema.properties['dims']!.items.properties['at']!.description!
+    for (const f of ['a', 'b', 'off', 'c', 'from', 'to', 'r']) expect(place).toMatch(new RegExp(`\\b${f}\\b`))
+    // the compact form stays compact
+    expect(JSON.stringify(schema).length).toBeLessThan(4_400)
   })
 
   // The smallest sheet of each kind passes as written, and the sheet carries only the fields of its own kind.
