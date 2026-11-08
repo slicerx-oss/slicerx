@@ -285,14 +285,15 @@ export function appDesignHost(loader: Loader): DesignHost {
     let { transform: landedAt, moved } = landing(id, parts, transform)
     let room: Map<string, { from: Mat4; to: Mat4 }> | undefined
     if (moved && 'offBed' in moved) {
-      // the room is worked out against the plate as it stands when the nest starts; when anything on it moved while the
-      // nest ran, that room may no longer be free, so it is worked out again, and after a few tries the new design
-      // stays where it was built
+      // the room is worked out against the plate as it stands when the nest starts; when anything on it moved, came or
+      // went while the nest ran, that room may no longer be free (or a better one is), so it is worked out again, and
+      // after a few tries the new design stays where it was built
       for (let tries = 0; tries < 3; tries++) {
         const before = new Map(get().plate.map((e) => [e.id, e.transform]))
         const made = await makeRoom(id, parts, transform)
         if (!made) break
-        if (get().plate.some((e) => before.has(e.id) && !same(before.get(e.id)!, e.transform))) continue
+        const now = get().plate
+        if (now.length !== before.size || now.some((e) => !before.has(e.id) || !same(before.get(e.id)!, e.transform))) continue
         landedAt = made.at
         room = made.others
         moved = landShift(transform, landedAt)
