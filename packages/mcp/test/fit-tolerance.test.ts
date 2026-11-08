@@ -7,7 +7,7 @@
 // for pieces that are bodies of one part (after geom.mirror or geom.array), which no tool can name one by one.
 import type { Design as HostDesign, DesignHost, HistoryMesh } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
-import { fitItems, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
+import { fitItems, isNamingMiss, type BodyFacts, type FitFacts, type FitGap } from '../src/design-check'
 import { FIT_TOLERANCE_MM, fitFacts, fitLimits, fitVerdict } from '../src/fit-facts'
 import * as toolset from '../src/toolset'
 import type { ToolContext } from '@slicerx/pilot'
@@ -294,6 +294,57 @@ describe('the pieces item for bodies of one part', () => {
     const got = pieces(fit, ['Left leaf', 'Right leaf', 'Front pin', 'Back pin'])
     expect(got.pass).toBe(true)
     expect(got.got).toBe('4 pieces (Left leaf, Right leaf, Front pin and Back pin are Leaf 1, Leaf 2, Pin 1 and Pin 2, bodies of parts that hold several)')
+  })
+
+  it('fails a mirrored leaf whose part is named for one leaf, saying how to name it, and the miss is only about names', () => {
+    const fit: FitFacts = { limits, pieces: 3, bodies: [{ part: 0, name: 'Left leaf 1', partName: 'Left leaf' }, { part: 0, name: 'Left leaf 2', partName: 'Left leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 2), apart(1, 2)] }
+    const got = pieces(fit, ['Left leaf', 'Right leaf', 'Pin'])
+    expect(got.pass).toBe(false)
+    expect(got.got).toBe(
+      "3 pieces, but Right leaf is not among them: Left leaf 2 is another body of Left leaf (Left leaf), which already answers a piece's name. Bodies of one part take the plan's names only when the part's own name is none of them: build that part under a name that is no piece's and check again, or make each piece a part of its own",
+    )
+    expect(isNamingMiss(got)).toBe(true)
+    // the same part under a name that is no piece's passes
+    const leaves: FitFacts = { ...fit, bodies: [{ part: 0, name: 'Leaf 1', partName: 'Leaf' }, { part: 0, name: 'Leaf 2', partName: 'Leaf' }, { part: 1, name: 'Pin', partName: 'Pin' }] }
+    expect(pieces(leaves, ['Left leaf', 'Right leaf', 'Pin']).pass).toBe(true)
+    // a name no body has, with each body a part of its own, is not a naming miss of this kind
+    const own: FitFacts = { limits, pieces: 2, bodies: [{ part: 0, name: 'Arm', partName: 'Arm' }, { part: 1, name: 'Pin', partName: 'Pin' }], gaps: [apart(0, 1)] }
+    expect(isNamingMiss(pieces(own, ['Lid', 'Tray']))).toBe(false)
+  })
+
+  it("design.check lets a miss only on a part's name pass once without using the fix round", async () => {
+    const report = {
+      parts: [
+        { bounds: { min: [0, 0, 0], max: [1, 1, 0] }, item: 0 },
+        { bounds: { min: [3, 0, 0], max: [4, 1, 0] }, item: 0 },
+        { bounds: { min: [0, 0, 5], max: [1, 1, 5] }, item: 1 },
+      ],
+      gaps: [
+        { parts: [0, 2], gapMm: 0.5, limitMm: 0.3, kind: 'apart', from: [0, 0, 0], to: [0.5, 0, 0] },
+        { parts: [1, 2], gapMm: 0.5, limitMm: 0.3, kind: 'apart', from: [3, 0, 0], to: [3.5, 0, 0] },
+      ],
+      pieces: 3,
+    }
+    // closed 5 mm cubes, so only the pieces item can fail
+    const cube = (name: string, x: number): HistoryMesh => ({ name, slot: 0, positions: [0, 0, 0, 5, 0, 0, 5, 5, 0, 0, 5, 0, 0, 0, 5, 5, 0, 5, 5, 5, 5, 0, 5, 5].map((v, k) => (k % 3 === 0 ? v + x : v)), indices: [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7] })
+    const leaf = designOf([cube('Left leaf', 0), cube('Pin', 10)])
+    const host = { get: () => leaf, list: () => [leaf], call: async (op: string) => (op === 'fit.check' ? report : op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))) } as unknown as DesignHost
+    const plans = toolset.createPlanRegistry()
+    plans.put({ planId: 'hinge', part: 'Mechanism', units: 'mm', features: [], assumptions: [], questions: [], printInPlace: ['Left leaf', 'Right leaf', 'Pin'] }, 'd', 'card')
+    const tool = toolset.designToolset(host, {}, { plans, cardSide: true }).find((x) => x.name === 'design.check')!
+    const check = async () => {
+      const r = await tool.run(tool.input.parse({ planId: 'hinge' }), {} as ToolContext)
+      return { summary: r.summary, out: r.output as { pass: boolean; stop?: string; items: { name: string; pass: boolean }[] } }
+    }
+    const first = await check()
+    expect(first.out.items.filter((i) => !i.pass).map((i) => i.name)).toEqual(['pieces'])
+    expect(first.summary).toContain('This miss does not use the fix round.')
+    expect(plans.get('hinge')).toMatchObject({ namingWaived: true, replaceable: true })
+    expect(plans.get('hinge')?.failedChecks).toBeUndefined()
+    // the second such miss counts, and the one after it uses up the fix round
+    expect((await check()).out.stop).toBeUndefined()
+    expect(plans.get('hinge')?.failedChecks).toBe(1)
+    expect((await check()).out.stop).toContain('The fix round is used')
   })
 
   it('fails when one of the unnamed bodies is a part of its own', () => {

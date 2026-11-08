@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, FIX_ROUNDS, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, isNamingMiss, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
 import type { TextureOpen, TextureSummary } from './design'
 import { ToolInputError } from './errors'
 import { MAX_FILAMENTS } from './filaments'
@@ -556,7 +556,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const which = `${d.name} (${d.id}, ${how})`
       const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
       const output = { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
-      const failedChecks = plans.checked(entry.plan.planId, result.pass, designs.list().map((x) => x.id))
+      const open = designs.list().map((x) => x.id)
+      // a miss only on how a part of several pieces is named is not the part's fault: once per plan it keeps the fix round
+      if (failed.length === 1 && isNamingMiss(failed[0]!) && plans.waiveNaming(entry.plan.planId, open)) return { summary: `${summary}. This miss does not use the fix round.`, output }
+      const failedChecks = plans.checked(entry.plan.planId, result.pass, open)
       if (result.pass || failedChecks <= FIX_ROUNDS) return { summary, output }
       // the second miss: one fix round was the limit, so mimir stops here and says what is off
       const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
