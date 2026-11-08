@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // "Ask me for sizes" goes straight to the dimension sheet with suggested values. Where the sheet is offered, a question
-// card about sizes is not shown: the model is told to put the sizes on the sheet instead, and the next step does.
+// card that mimir marks as asking for the part's sizes (sizes: true) is not shown: the model is told to put the sizes on
+// the sheet instead, and the next step does. The words of the question decide nothing.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { askTool, createPilot, createScriptedClient, DEFAULT_CONFIG, type ScriptStep } from '../src/index'
@@ -10,10 +11,10 @@ import { systemPrompt } from '../src/prompt'
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 
 // the first reply 0.2.17 gave to "a Pi 5 case, ask me for sizes": a card with three buttons and no sheet
-const SIZE_CARD = { name: 'pilot.ask', args: { title: 'Main dimensions', question: 'What main dimensions should I use?', choices: [{ id: 'snug', label: 'Snug fit' }, { id: 'roomy', label: 'Roomy' }, { id: 'tell', label: 'I will tell you' }] } }
+const SIZE_CARD = { name: 'pilot.ask', args: { title: 'Main dimensions', question: 'What main dimensions should I use?', sizes: true, choices: [{ id: 'snug', label: 'Snug fit' }, { id: 'roomy', label: 'Roomy' }, { id: 'tell', label: 'I will tell you' }] } }
 const FAMILY_CARD = { name: 'pilot.ask', args: { title: 'Which Pi', question: 'Is it a Raspberry Pi 4 or a Pi 5?', choices: [{ id: '4', label: 'Pi 4' }, { id: '5', label: 'Pi 5' }] } }
 
-async function run(call: typeof SIZE_CARD, sizesOnSheet: boolean) {
+async function run(call: { name: string; args: { choices: { id: string }[] } & Record<string, unknown> }, sizesOnSheet: boolean) {
   const seen: { ok: boolean; summary: string }[] = []
   const steps: ScriptStep[] = [
     { calls: [call] },
@@ -49,38 +50,42 @@ describe('asked to ask for sizes, mimir shows the sheet', () => {
   })
 })
 
-// A question about the person's own things (how thick their shelf is, which phone they have) is theirs to answer, as
-// the prompt says, so it stays a card. An open question about sizes goes to the sheet, and that redirect is not a
+// mimir marks a question as asking for the part's sizes with sizes: true. Only that sends it to the sheet; a question
+// about the person's own things leaves it off and stays a card, whatever words either uses. The redirect is not a
 // failure: it neither counts toward moving the run to the larger model nor shows as a failed step.
-describe('which size questions go to the sheet', () => {
-  const card = (title: string, question: string) => ({ name: 'pilot.ask', args: { title, question, choices: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Other' }] } })
+describe('only a question marked sizes goes to the sheet', () => {
+  const card = (question: string, sizes?: boolean) => ({ name: 'pilot.ask', args: { title: 'Question', question, ...(sizes === undefined ? {} : { sizes }), choices: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Other' }] } })
+  const shown = async (c: ReturnType<typeof card>, sizesOnSheet = true) => (await run(c, sizesOnSheet)).events.some((e) => e.type === 'ask')
 
-  for (const [title, question] of [
-    ['Shelf', 'How thick is your shelf?'],
-    ['Phone', 'Which size phone do you have, a 15 or a 15 Plus?'],
-    ['Screw', 'Which screw size do you have?'],
-  ] as const) {
-    it(`still shows "${question}"`, async () => {
-      const r = await run(card(title, question) as typeof SIZE_CARD, true)
-      expect(r.events.some((e) => e.type === 'ask')).toBe(true)
-    })
-  }
-
-  // the part being designed is often "your case": a question about what it should be is still open, so it goes to the sheet
-  for (const [title, question] of [
-    ['Case size', 'What size should your case be?'],
-    ['Organizer', 'How big do you want your organizer?'],
-    ['Box', 'Which dimensions should the case have?'],
-  ] as const) {
-    it(`sends "${question}" to the sheet`, async () => {
-      const r = await run(card(title, question) as typeof SIZE_CARD, true)
+  for (const question of ['How much room should there be around the board?', 'What should the case be like inside?'])
+    it(`sends "${question}" to the sheet when marked sizes`, async () => {
+      const r = await run(card(question, true), true)
       expect(r.events.some((e) => e.type === 'ask')).toBe(false)
       expect(r.seen[0]!.summary).toContain('pilot.sheet')
     })
-  }
 
-  it('an open size question redirects without a failed step or a move to the larger model', async () => {
-    const steps: ScriptStep[] = [{ calls: [SIZE_CARD] }, { calls: [card('Sizes', 'How big should the case be?')] }, { text: 'Here is the sheet.' }]
+  for (const question of ['What size should your case be?', 'How big do you want your organizer?', 'How thick is your shelf?', 'What are the dimensions of your phone?'])
+    it(`shows "${question}" when not marked sizes`, async () => {
+      expect(await shown(card(question))).toBe(true)
+      expect(await shown(card(question, false))).toBe(true)
+    })
+
+  it('shows a question marked sizes where the sheet is not offered', async () => {
+    expect(await shown(card('How long should it be?', true), false)).toBe(true)
+  })
+
+  it('offers sizes only on the ask beside the sheet', () => {
+    const shape = (t: ReturnType<typeof askTool>) => Object.keys((t.input as unknown as { shape: Record<string, unknown> }).shape)
+    expect(shape(askTool({ sizesOnSheet: true }))).toContain('sizes')
+    expect(shape(askTool())).not.toContain('sizes')
+  })
+
+  it('the prompt says when to mark a question sizes', () => {
+    expect(systemPrompt('full')).toContain("Set sizes true on a pilot.ask that asks for the part's own sizes, never on one about the person's own things.")
+  })
+
+  it('a question marked sizes redirects without a failed step or a move to the larger model', async () => {
+    const steps: ScriptStep[] = [{ calls: [SIZE_CARD] }, { calls: [card('How big should the case be?', true)] }, { text: 'Here is the sheet.' }]
     const client = createScriptedClient(steps, { chunk: false })
     const config = { ...DEFAULT_CONFIG, models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, billing: 'key' as const, auto: true }
     const p = createPilot({ host, config, policy: DEFAULT_POLICY, client, builtins: false, tools: [askTool({ sizesOnSheet: true })] })

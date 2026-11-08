@@ -7,43 +7,32 @@ import type { PilotDim, PilotDimAt, PilotSheet, PilotSheetBind, PilotSheetSolid 
 import { z } from 'zod'
 import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
-/** A question about sizes, which belongs on the dimension sheet with suggested values rather than on a card of buttons. */
-const SIZE_QUESTION = /\b(?:dimensions?|sizes?|measurements?|how (?:big|wide|tall|long|thick|deep|high|large))\b/i
-/**
- * A question about the person's own things, as they are now (how thick is your shelf, which phone do you have): theirs
- * to answer on a card. "What size should your case be?" asks about the part being designed, so it is not one.
- */
-const THEIR_THINGS = /\b(?:is|are|does|do) your\b|\byour \w+ (?:is|are)\b|\byou (?:have|own|use|got)\b/i
-
-/** An open question about sizes, with no subject the person owns, goes to the sheet. */
-function sheetQuestion(text: string): boolean {
-  return SIZE_QUESTION.test(text) && !THEIR_THINGS.test(text)
-}
-
 /** What the model is told when it asks about sizes on a card where the sheet is offered. */
 export const SIZES_ON_SHEET = 'Not shown: sizes go on the dimension sheet, not a question card. Call pilot.sheet now with a suggested value for each size (source guess unless you know it); the person edits them there.'
 
-/** `sizesOnSheet`: the sheet is offered beside it (the mimir tab), so an open question about sizes goes there instead. */
+const choices = z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(40) })).min(2).max(4)
+const question = { title: z.string().min(2).max(40), question: z.string().min(3).max(160), choices }
+
+/**
+ * `sizesOnSheet`: the sheet is offered beside it (the mimir tab), so the ask takes `sizes`, which mimir sets on a
+ * question asking for the part's sizes: that one goes to the sheet instead. The words of a question decide nothing.
+ */
 export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never> {
-  return defineTool({
+  return defineTool<{ title: string; question: string; choices: { id: string; label: string }[]; sizes?: boolean | undefined }>({
     name: 'pilot.ask',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
       'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question. If they wrote something, treat it as their answer.',
     localDescription:
       'Ask the person a short question (title, question) with two to four fixed choices and wait for the pick, to confirm something before building on it (such as which model a photo shows). Returns the picked choice id, or dismissed when the person turned it down; then every choice on it is turned down: never ask it again, list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows; if you truly need something, ask a different, narrower question. Anything they wrote is their answer.',
-    input: z.object({
-      title: z.string().min(2).max(40),
-      question: z.string().min(3).max(160),
-      choices: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(40) })).min(2).max(4),
-    }),
+    input: opts.sizesOnSheet ? z.object({ ...question, sizes: z.boolean().optional().describe("true: it asks for the part's sizes") }) : z.object(question),
     args: (i) => `"${i.question}"`,
     async run(i, ctx) {
       if (!ctx.ask) return { ok: false, summary: 'Nobody here can answer a question' }
       // a redirect, not a failure: it never counts toward moving the run to the larger model
-      if (opts.sizesOnSheet && sheetQuestion(`${i.title} ${i.question}`)) return { summary: SIZES_ON_SHEET, output: { shown: false, use: 'pilot.sheet' } }
+      if (opts.sizesOnSheet && i.sizes === true) return { summary: SIZES_ON_SHEET, output: { shown: false, use: 'pilot.sheet' } }
       const answer = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
       // turning a question down is an answer, not a failure: the run carries on from it
       if (wasDismissed(answer.id)) {
