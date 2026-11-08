@@ -60,7 +60,16 @@ fn mesh(tris: &[[(f64, f64, f64); 3]]) -> Arc<Mesh> {
 /// A prism of `ring` (counterclockwise points around the origin at half width 15 mm) from z 0 to `base`, under a
 /// frustum to the ring scaled to half width `top` at `base + 2`.
 fn frustum(ring: &[(f64, f64)], base: f64, top: f64) -> Arc<Mesh> {
-    let at = |k: f64, z: f64| ring.iter().map(|&(x, y)| (x * k, y * k, z)).collect::<Vec<_>>();
+    mesh(&frustum_tris(ring, base, top, 0.0))
+}
+
+/// The triangles of [`frustum`], moved `dx` mm along x.
+fn frustum_tris(ring: &[(f64, f64)], base: f64, top: f64, dx: f64) -> Vec<[(f64, f64, f64); 3]> {
+    let at = |k: f64, z: f64| {
+        ring.iter()
+            .map(|&(x, y)| (x * k + dx, y * k, z))
+            .collect::<Vec<_>>()
+    };
     let rings = [at(1.0, 0.0), at(1.0, base), at(top / 15.0, base + 2.0)];
     let n = ring.len();
     let (b, t) = (&rings[0], &rings[2]);
@@ -77,6 +86,16 @@ fn frustum(ring: &[(f64, f64)], base: f64, top: f64) -> Arc<Mesh> {
             tris.push([lo[i], hi[j], hi[i]]);
         }
     }
+    tris
+}
+
+/// Two 1.2 mm tapers side by side, 36 mm apart, one on a 2 mm box and one on a 2.4 mm box: the second stack starts
+/// bridging two layers above the first.
+fn two_tapers() -> Arc<Mesh> {
+    let sq = [(-15.0, -15.0), (15.0, -15.0), (15.0, 15.0), (-15.0, 15.0)];
+    let top = 10.0f64.mul_add(-1.2, 15.0);
+    let mut tris = frustum_tris(&sq, 2.0, top, -18.0);
+    tris.extend(frustum_tris(&sq, 2.4, top, 18.0));
     mesh(&tris)
 }
 
@@ -119,6 +138,11 @@ struct Layer {
 
 /// The bridges by layer, internal bridges included (z in hundredths of a mm).
 fn bridges(gcode: &str) -> BTreeMap<i64, Layer> {
+    bridges_where(gcode, &|_| true)
+}
+
+/// [`bridges`], counting only the moves whose middle x passes `keep`.
+fn bridges_where(gcode: &str, keep: &dyn Fn(f64) -> bool) -> BTreeMap<i64, Layer> {
     let (mut feature, mut z, mut at) = (String::new(), 0i64, (0.0, 0.0));
     let mut dirs: BTreeMap<i64, BTreeMap<i64, f64>> = BTreeMap::new();
     let mut fil: BTreeMap<i64, f64> = BTreeMap::new();
@@ -140,6 +164,7 @@ fn bridges(gcode: &str) -> BTreeMap<i64, Layer> {
         if let Some(e) = word(code, 'E').filter(|e| *e > 0.0)
             && to != at
             && (feature == "Bridge" || feature == "Internal Bridge")
+            && keep(f64::midpoint(at.0, to.0))
         {
             *fil.entry(z).or_insert(0.0) += e;
             let (dx, dy) = (to.0 - at.0, to.1 - at.1);
@@ -220,6 +245,16 @@ fn the_first_bridge_of_a_lone_stack_over_a_45_degree_grid_runs_at_135() {
             &[(z, 135)],
         );
     }
+}
+
+#[test]
+fn a_stack_starting_beside_another_still_gets_the_first_bridge_rule() {
+    // The left taper starts bridging at z 1.4 and the right one at z 1.8. The left stack's bridges are on other
+    // islands, so the right one's first bridge still crosses the grid at 135.
+    // The plate places the pair's middle at x 128.
+    let (g, mid) = (slice(two_tapers(), &[]), 128.0);
+    check("left taper", &bridges_where(&g, &|v| v < mid), &[(1.4, 135)]);
+    check("right taper", &bridges_where(&g, &|v| v > mid), &[(1.8, 135)]);
 }
 
 #[test]
