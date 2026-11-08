@@ -413,8 +413,8 @@ describe('design.check picks the design it checks', () => {
     const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, 'd1', 'card')
     // a read-class client (no cardSide) naming another design for a tied card plan
     await expect(checkOn([a, b], card, { planId: 'box-1', design: 'd2' })).rejects.toThrow(/made in the mimir tab and is already tied to design d1\. It is not tied again/)
-    // nor on the card's own side
-    await expect(checkOn([a, b], card, { planId: 'box-1', design: 'd2' }, undefined, true)).rejects.toThrow(/already tied to design d1/)
+    // nor on the card's own side, where the refusal shows in the mimir card's step row and names no plan or design id
+    await expect(checkOn([a, b], card, { planId: 'box-1', design: 'd2' }, undefined, true)).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
     // naming the design it is tied to checks it and changes nothing
     const { out, plans } = await checkOn([a, b], card, { planId: 'box-1', design: 'd1' })
     expect(out).toMatchObject({ design: 'd1', chosen: 'tied to the plan' })
@@ -479,8 +479,8 @@ describe('design.check picks the design it checks', () => {
     const check = async (args: Record<string, unknown>) => (await tool.run(tool.input.parse(args), {} as ToolContext)).output as { design: string; pass: boolean }
     expect(await check({ planId: 'bracket-1' })).toMatchObject({ design: 'd1', pass: true })
     expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: false })
-    await expect(check({ planId: 'box-1', design: 'd1' })).rejects.toThrow(/already tied to design d2/)
-    await expect(check({ planId: 'box-1', design: 'd0' })).rejects.toThrow(/already tied to design d2/)
+    await expect(check({ planId: 'box-1', design: 'd1' })).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
+    await expect(check({ planId: 'box-1', design: 'd0' })).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
     expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1 })
     expect(plans.get('box-1')?.closed).toBeUndefined()
   })
@@ -508,7 +508,7 @@ describe('design.check picks the design it checks', () => {
     await expect(first.result).resolves.toMatchObject({ design: 'd3', pass: true })
     // the older design moved to the end of the list: still older
     const moved = await run((all) => all.push(all.shift()!), 'd1')
-    await expect(moved.result).rejects.toThrow(/already tied to design d2/)
+    await expect(moved.result).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
     expect(moved.plans.get('box-1')?.design).toBe('d2')
   })
 
@@ -541,7 +541,7 @@ describe('design.check picks the design it checks', () => {
     expect(await check({ planId: 'box-1' })).toMatchObject({ design: 'd2', pass: false })
     all.push(boxDesign('d3', 'Bracket'))
     plans.put({ ...boxPlan, planId: 'bracket-1', part: 'Bracket' }, 'd3', 'card')
-    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/already tied to design d2/)
+    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
     expect(plans.get('box-1')).toMatchObject({ design: 'd2', failedChecks: 1, replaceable: true })
     expect(plans.tiedTo('d3')).toEqual(['bracket-1'])
   })
@@ -558,7 +558,7 @@ describe('design.check picks the design it checks', () => {
     all.push(boxDesign('d2', 'Hinge v2'), boxDesign('d3', 'Hinge v3'))
     expect(await check({ planId: 'box-1', design: 'd2' })).toMatchObject({ design: 'd2', pass: true })
     // the rebuild passed: the plan stays with it
-    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/already tied to design d2/)
+    await expect(check({ planId: 'box-1', design: 'd3' })).rejects.toThrow(/^design: the plan for (?:Hinge|Spacer) was made in the mimir tab and is already tied to its own design\. It is not tied again; check it without design, or check another plan\.$/)
     expect(plans.get('box-1')?.design).toBe('d2')
   })
 
