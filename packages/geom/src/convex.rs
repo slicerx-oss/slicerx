@@ -335,6 +335,14 @@ fn same_plane(a: &Plane, b: &Plane, eps: f64) -> bool {
     vec3::dot(a.normal, b.normal) > 1.0 - 1e-12 && (a.offset - b.offset).abs() <= eps
 }
 
+/// an edge by its ends' places, in a fixed order
+type EdgeAt = [[u64; 3]; 2];
+
+fn edge_at(p: V3, q: V3) -> EdgeAt {
+    let (a, b) = (p.map(f64::to_bits), q.map(f64::to_bits));
+    if a <= b { [a, b] } else { [b, a] }
+}
+
 struct Imprint {
     pos: Vec<V3>,
     tris: Vec<[u32; 3]>,
@@ -348,6 +356,40 @@ impl Imprint {
         }
     }
 
+    /// the edges a split at plane distances `d` may cut: those of each triangle whose cut line meets `l`
+    fn marked(&self, d: &[f64], l: &Aabb) -> HashSet<EdgeAt> {
+        // neighbors split the same edges, so the mesh stays closed; edges go by their ends' places, so both copies of
+        // an edge in a triangle soup split alike
+        let side = |i: u32| d[i as usize].partial_cmp(&0.0).map_or(0, |o| o as i8);
+        let at = |a: u32, b: u32| {
+            let (da, db) = (d[a as usize], d[b as usize]);
+            vec3::lerp(self.pos[a as usize], self.pos[b as usize], da / (da - db))
+        };
+        let mut m = HashSet::new();
+        for &t in &self.tris {
+            let s = t.map(side);
+            if !(s.contains(&-1) && s.contains(&1)) {
+                continue;
+            }
+            let mut ends = Vec::with_capacity(2);
+            let mut crossed = Vec::with_capacity(2);
+            for k in 0..3 {
+                let (a, b) = (t[k], t[(k + 1) % 3]);
+                if s[k] == 0 {
+                    ends.push(self.pos[a as usize]);
+                } else if s[k] * s[(k + 1) % 3] == -1 {
+                    ends.push(at(a, b));
+                    crossed.push(edge_at(self.pos[a as usize], self.pos[b as usize]));
+                }
+            }
+            let [p, q] = [ends[0], ends[ends.len() - 1]];
+            if (0..3).all(|k| p[k].min(q[k]) <= l.max[k] && p[k].max(q[k]) >= l.min[k]) {
+                m.extend(crossed);
+            }
+        }
+        m
+    }
+
     #[allow(clippy::cast_possible_truncation, reason = "vertex counts stay below 2^32")]
     fn split(&mut self, plane: &Plane, eps: f64, limit: Option<&Aabb>) {
         let d: Vec<f64> = self
@@ -359,45 +401,25 @@ impl Imprint {
             })
             .collect();
         let side = |i: u32| d[i as usize].partial_cmp(&0.0).map_or(0, |o| o as i8);
-        let at = |a: u32, b: u32| {
-            let (da, db) = (d[a as usize], d[b as usize]);
-            vec3::lerp(self.pos[a as usize], self.pos[b as usize], da / (da - db))
-        };
-        // with a limit, a triangle splits only where its cut line meets the limit box; the edges it splits are
-        // split in its neighbors too, so the mesh stays closed
-        let marked: Option<HashSet<(u32, u32)>> = limit.map(|l| {
-            let mut m = HashSet::new();
-            for &t in &self.tris {
-                let s = t.map(side);
-                if !(s.contains(&-1) && s.contains(&1)) {
-                    continue;
-                }
-                let mut ends = Vec::with_capacity(2);
-                let mut crossed = Vec::with_capacity(2);
-                for k in 0..3 {
-                    let (a, b) = (t[k], t[(k + 1) % 3]);
-                    if s[k] == 0 {
-                        ends.push(self.pos[a as usize]);
-                    } else if s[k] * s[(k + 1) % 3] == -1 {
-                        ends.push(at(a, b));
-                        crossed.push((a.min(b), a.max(b)));
-                    }
-                }
-                let [p, q] = [ends[0], ends[ends.len() - 1]];
-                if (0..3).all(|k| p[k].min(q[k]) <= l.max[k] && p[k].max(q[k]) >= l.min[k]) {
-                    m.extend(crossed);
-                }
-            }
-            m
-        });
+        let marked = limit.map(|l| self.marked(&d, l));
         let mut cache: HashMap<(u32, u32), u32> = HashMap::new();
         let mut out = Vec::with_capacity(self.tris.len() + self.tris.len() / 8);
         let pos = &mut self.pos;
-        let allowed = |a: u32, b: u32| marked.as_ref().is_none_or(|m| m.contains(&(a.min(b), a.max(b))));
+        let allowed = |pos: &[V3], a: u32, b: u32| {
+            marked
+                .as_ref()
+                .is_none_or(|m| m.contains(&edge_at(pos[a as usize], pos[b as usize])))
+        };
         let mut cross = |pos: &mut Vec<V3>, a: u32, b: u32| -> u32 {
             let key = (a.min(b), a.max(b));
             *cache.entry(key).or_insert_with(|| {
-                let (i, j) = key;
+                // from the end that comes first by place, so both copies of an edge get the same point
+                let (i, j) = if pos[key.0 as usize].map(f64::to_bits) <= pos[key.1 as usize].map(f64::to_bits)
+                {
+                    key
+                } else {
+                    (key.1, key.0)
+                };
                 let (da, db) = (d[i as usize], d[j as usize]);
                 let p = vec3::lerp(pos[i as usize], pos[j as usize], da / (da - db));
                 pos.push(p);
@@ -417,7 +439,7 @@ impl Imprint {
                 .unwrap_or(0);
             let (a, b, c) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
             if s[k] == 0 {
-                if allowed(b, c) {
+                if allowed(pos, b, c) {
                     let x = cross(pos, b, c);
                     out.push([a, b, x]);
                     out.push([a, x, c]);
@@ -426,7 +448,7 @@ impl Imprint {
                 }
                 continue;
             }
-            match (allowed(a, b), allowed(c, a)) {
+            match (allowed(pos, a, b), allowed(pos, c, a)) {
                 (true, true) => {
                     let xab = cross(pos, a, b);
                     let xca = cross(pos, c, a);
@@ -1021,7 +1043,30 @@ mod tests {
         assert!(m.edge_report().is_watertight(), "{:?}", m.edge_report());
         let ring = poly2d::Polygon::simple(poly2d::circle([0.0, 0.0], 3.0, 48));
         assert!((m.volume() - (3000.0 - ring.area() * 5.0)).abs() < 1e-6);
-        assert!(m.triangles.len() < 1000, "{}", m.triangles.len());
+        // 38004 before the cut lines were kept to their faces, 812 after
+        assert!(m.triangles.len() < 1050, "{}", m.triangles.len());
+    }
+
+    #[test]
+    fn a_hole_in_a_triangle_soup_stays_closed() {
+        // each triangle keeps its own corners, as some exporters write them: both copies of an edge split alike
+        let slab = build::box_mesh([0.0; 3], [30.0, 20.0, 5.0]);
+        let soup = TriMesh::new(
+            slab.triangles.iter().flat_map(|&t| slab.corners(t)).collect(),
+            (0..slab.triangles.len())
+                .map(|i| {
+                    let i = u32::try_from(i * 3).unwrap();
+                    [i, i + 1, i + 2]
+                })
+                .collect(),
+        );
+        // away from both diagonals of the top and bottom
+        let f = Frame::from_normal([20.0, 5.0, 0.0], [0.0, 0.0, 1.0], None).unwrap();
+        let hole = ConvexSolid::cylinder(&f, 3.0, -1.0, 6.0, 48).unwrap();
+        let m = subtract(&soup, &hole).unwrap();
+        assert!(m.edge_report().is_watertight(), "{:?}", m.edge_report());
+        let ring = poly2d::Polygon::simple(poly2d::circle([0.0, 0.0], 3.0, 48));
+        assert!((m.volume() - (3000.0 - ring.area() * 5.0)).abs() < 1e-6);
     }
 
     #[test]
