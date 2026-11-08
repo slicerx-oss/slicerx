@@ -36,7 +36,7 @@ import { splineCurveRefs, toSolver } from './sketch-constraints'
 import { fromLoops, toLoops } from './sketch-model'
 import { bodyRevisions } from './body-revisions'
 import { placeOf } from './sketch-place'
-import { setWaiting } from './waiting'
+import { ownWaiting, setWaiting } from './waiting'
 import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -440,6 +440,8 @@ export function appDesignHost(loader: Loader): AppDesignHost {
 class Waiting extends Map<string, { name: string; history: History; transform: Mat4 }> {
   /** Set once the host goes away: a call still under way on it then keeps its designs to itself, never shared. */
   private gone = false
+  /** Lets every waiting design go when the project is cleared (waiting.ts forgetWaiting). */
+  private readonly release = ownWaiting(() => this.clear())
   override set(id: string, w: { name: string; history: History; transform: Mat4 }): this {
     if (!this.gone) setWaiting(id, w.transform)
     return super.set(id, w)
@@ -448,6 +450,7 @@ class Waiting extends Map<string, { name: string; history: History; transform: M
   dispose(): void {
     this.clear()
     this.gone = true
+    this.release()
   }
   override delete(id: string): boolean {
     setWaiting(id, null)
