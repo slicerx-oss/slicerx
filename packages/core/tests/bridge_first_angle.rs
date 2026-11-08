@@ -17,7 +17,8 @@
 #![allow(
     clippy::disallowed_methods,
     clippy::cast_possible_truncation,
-    reason = "a G-code reader for the test"
+    clippy::cast_precision_loss,
+    reason = "a G-code reader for the test: layer heights in hundredths of a mm"
 )]
 
 use serde_json::{Value, json};
@@ -117,6 +118,31 @@ fn cone() -> Arc<Mesh> {
         })
         .collect();
     frustum(&ring, 2.0, 3.0)
+}
+
+/// A stepped top in one island: a 60 by 30 mm block whose left half stops at z 2 and right half at z 2.4, so the right
+/// half starts bridging two layers above the left, beside it over the same sparse infill.
+fn stepped() -> Arc<Mesh> {
+    let prof = [
+        (-30.0, 0.0),
+        (30.0, 0.0),
+        (30.0, 2.4),
+        (0.0, 2.4),
+        (0.0, 2.0),
+        (-30.0, 2.0),
+    ];
+    let at = |i: usize, y: f64| (prof[i].0, y, prof[i].1);
+    let mut tris = Vec::new();
+    for i in 0..prof.len() {
+        let j = (i + 1) % prof.len();
+        tris.push([at(i, -15.0), at(j, -15.0), at(j, 15.0)]);
+        tris.push([at(i, -15.0), at(j, 15.0), at(i, 15.0)]);
+    }
+    for [a, b, c] in [[0, 1, 4], [1, 3, 4], [1, 2, 3], [0, 4, 5]] {
+        tris.push([at(a, -15.0), at(b, -15.0), at(c, -15.0)]);
+        tris.push([at(a, 15.0), at(c, 15.0), at(b, 15.0)]);
+    }
+    mesh(&tris)
 }
 
 fn x_mark() -> Arc<Mesh> {
@@ -255,6 +281,26 @@ fn a_stack_starting_beside_another_still_gets_the_first_bridge_rule() {
     let (g, mid) = (slice(two_tapers(), &[]), 128.0);
     check("left taper", &bridges_where(&g, &|v| v < mid), &[(1.4, 135)]);
     check("right taper", &bridges_where(&g, &|v| v > mid), &[(1.8, 135)]);
+}
+
+#[test]
+fn the_higher_step_of_a_stepped_top_gets_the_first_bridge_rule() {
+    // The left half's bridge below reaches over the step for its anchors, but it lies under none of the right half's
+    // bridge, so the right half's first bridge is the first of its own stack and crosses the grid at 135.
+    let (g, mid) = (slice(stepped(), &[]), 128.0);
+    let left = bridges_where(&g, &|v| v < mid - 1.0);
+    let right = bridges_where(&g, &|v| v > mid + 1.0);
+    // The right half's own first bridge: its lowest layer with real filament (the left bridge's strands reach a
+    // couple of mm over the step on the layer below).
+    let own = |m: &BTreeMap<i64, Layer>| m.iter().find(|(_, l)| l.e > 10.0).map(|(z, _)| *z);
+    let (Some(lz), Some(rz)) = (own(&left), own(&right)) else {
+        panic!("both halves bridge: left {left:?}, right {right:?}");
+    };
+    assert!(
+        rz > lz,
+        "the right half starts higher: left {left:?}, right {right:?}"
+    );
+    check("right half", &right, &[(rz as f64 / 100.0, 135)]);
 }
 
 #[test]
