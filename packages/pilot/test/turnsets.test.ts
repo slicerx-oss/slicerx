@@ -72,8 +72,9 @@ describe('the set a request picks', () => {
     expect(turnSetsOf({ name: 'geom.extrude' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.loft' })).toEqual(new Set(['build']))
     expect(turnSetsOf({ name: 'geom.sweep' })).toEqual(new Set(['build']))
-    // a face or an outline projected into a sketch, then extruded, is a build
-    expect(turnSetsOf({ name: 'design.sketch_project' })).toEqual(new Set(['build']))
+    // a face or an outline projected into a sketch, then extruded, is a build; projecting into a built part's sketch
+    // is an edit, beside the sketch tools and edge picks it needs
+    expect(turnSetsOf({ name: 'design.sketch_project' })).toEqual(new Set(['build', 'edit']))
     expect(turnSetsOf({ name: 'geom.mirror' })).toEqual(new Set(['shape']))
     expect(turnSetsOf({ name: 'design.timeline' })).toEqual(new Set(['edit']))
     // a design tool no list names yet still lands in a set
