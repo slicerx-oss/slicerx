@@ -158,7 +158,9 @@ export interface SliceStamp {
  */
 export function outputKey(s: AppState): string {
   const marks = printed({ [s.activePlate]: s.layerMarks[s.activePlate] ?? [] })
-  return hash(JSON.stringify([marks, fullPlate(s).map((e) => [e.id, e.name]), s.profile?.shippedGcode ?? null]))
+  // Only objects that print carry a label in the G-code.
+  const names = fullPlate(s).filter((e) => e.printable !== false).map((e) => [e.id, e.name])
+  return hash(JSON.stringify([marks, names, s.profile?.shippedGcode ?? null]))
 }
 
 /** The stamp of a slice of the shown plate starting now. */
@@ -183,6 +185,16 @@ export function stampBlock(s: AppState, stamp: SliceStamp | undefined): string |
   // An edit after it landed that changes its G-code but not its layers (a renamed object, a pause, the profile's G-code
   // no longer trusted as shipped), with auto slice off: the file would carry the old labels or marks.
   return outputKey(s) !== stamp.output ? STALE_SLICE : null
+}
+
+/**
+ * Whether the shown plate needs a slice before its G-code goes anywhere: none done, a stale one, or one whose G-code
+ * an edit since has changed (a rename, a mark, the G-code trust: stampBlock's STALE_SLICE). The one rule Export plate
+ * 3MF's reslice, the bridge's slice and mimir's slice read.
+ */
+export function needsSlice(s: AppState): boolean {
+  const sl = s.slice
+  return sl.status !== 'done' || sl.stale || stampBlock(s, sl.stamp) === STALE_SLICE
 }
 
 /**
