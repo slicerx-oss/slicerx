@@ -12,6 +12,7 @@ import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, projectionsOut,
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
+import { closureByPosition, notClosedWords, type Closure } from './closure'
 import { nozzleOr } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
@@ -1298,10 +1299,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const info = defineTool({
     name: 'geom.info',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
-    description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step. With --app, read the body in the open project without changing its history.',
+    description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step; a part is closed when, with corners at the same point taken as one, every edge has exactly two faces, as the slicer reads it, and the summary says what keeps a part open. With --app, read the body in the open project without changing its history.',
     localDescription:
       'Read a model or a design back: bounds, volume, surface area, triangle count, watertight and shells; a design per part, now or right after a given step. More: kb.search "modeling tools".',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg }),
@@ -1311,12 +1312,18 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const d = designOf(i.design)
         const parts = await partsAt(designs(), d, i.step)
         const out = []
+        const shut: Closure[] = []
         for (const [k, p] of parts.entries()) {
           const w = bakeMesh(p, d.transform)
-          out.push({ part: k, name: p.name, slot: p.slot, ...(await engine('info', { mesh: { positions: Array.from(w.positions), indices: Array.from(w.indices) } })) })
+          // closed as the slicer reads it, welded by position: the engine's own reading goes by triangle index
+          const c = closureByPosition(w.positions, w.indices)
+          shut.push(c)
+          const { watertight, ...edges } = c
+          out.push({ part: k, name: p.name, slot: p.slot, ...(await engine('info', { mesh: { positions: Array.from(w.positions), indices: Array.from(w.indices) } })), edges, watertight })
         }
-        const closed = out.every((p) => (p as { watertight?: unknown }).watertight === true)
-        return { summary: `${out.length} part${out.length === 1 ? '' : 's'}, ${closed ? 'closed' : 'not closed'}`, output: { design: d.id, ...(i.step !== undefined ? { step: i.step } : {}), parts: out } }
+        const closed = shut.every((c) => c.watertight)
+        const why = notClosedWords(shut.reduce((a, c) => ({ boundaryEdges: a.boundaryEdges + c.boundaryEdges, nonManifoldEdges: a.nonManifoldEdges + c.nonManifoldEdges, flippedEdges: a.flippedEdges + c.flippedEdges }), { boundaryEdges: 0, nonManifoldEdges: 0, flippedEdges: 0 }))
+        return { summary: `${out.length} part${out.length === 1 ? '' : 's'}, ${closed ? 'closed' : `not closed (${why})`}`, output: { design: d.id, ...(i.step !== undefined ? { step: i.step } : {}), parts: out } }
       }
       const out = await call('info', { mesh: { stlPath: await path(i.model!) } })
       return { summary: `${out['watertight'] === true ? 'Closed' : 'Not closed'}, ${Math.round(Number(out['volumeMm3'] ?? 0))} mm3, ${String(out['components'] ?? '?')} shell(s)`, output: out }
