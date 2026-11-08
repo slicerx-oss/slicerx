@@ -200,7 +200,8 @@ jobs:
     needs: detect
     if: needs.detect.outputs.node == 'true' && needs.detect.outputs.queued != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # a change to mimir's pilot runs most of the app and pilot tests here, about 20 minutes on a hosted runner
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
