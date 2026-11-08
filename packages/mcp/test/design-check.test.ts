@@ -806,6 +806,23 @@ describe('design.put_plan', () => {
     expect(plans.get('client-59')?.origin).toBe('client')
   })
 
+  it('is 1.1.0, keeps the kinds of each size, drops an empty kinds map, and refuses kinds that name no size', async () => {
+    const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
+    expect(set.find((t) => t.name === 'design.put_plan')!.version).toBe('1.1.0')
+    const features = [{ name: 'Wheel', sizes: { spokes: 5, rake: 12 }, kinds: { spokes: 'count', rake: 'angle' } }, { name: 'Rim', sizes: { width: 8 }, kinds: {} }]
+    await run('design.put_plan', { plan: { ...boxPlan, planId: 'kinds-1', features } })
+    expect(plans.get('kinds-1')!.plan.features).toEqual([features[0], { name: 'Rim', sizes: { width: 8 } }])
+    // a kind for a size the feature does not have is refused, naming the feature and its sizes
+    const input = set.find((t) => t.name === 'design.put_plan')!.input
+    const bad = input.safeParse({ plan: { ...boxPlan, features: [{ name: 'Wheel', sizes: { spokes: 5 }, kinds: { spoke: 'count' } }] } })
+    expect(bad.success).toBe(false)
+    expect(bad.error!.issues.map((i) => i.message)).toEqual(['kinds names spoke, which is not a size of Wheel; its sizes are spokes'])
+    const h = await connect({ geomEngine: engine })
+    const r = await h.call('slicerx_design_put_plan', { plan: { ...boxPlan, planId: 'mcp-2', features: [{ name: 'Wheel', sizes: { spokes: 5 }, kinds: { spoke: 'count' } }] } })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('kinds names spoke, which is not a size of Wheel; its sizes are spokes')
+  })
+
   it('is read class, and is on the MCP server as slicerx_design_put_plan', async () => {
     const { set } = tools([])
     expect(set.find((t) => t.name === 'design.put_plan')?.permission).toBe('read')

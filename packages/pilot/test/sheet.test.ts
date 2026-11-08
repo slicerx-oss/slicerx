@@ -388,6 +388,20 @@ describe('pilot.sheet', () => {
     expect((JSON.parse(seen[0]!) as { summary: string }).summary).toContain('They had typed on it: Width 5 (was 4), Teeth 21 mm (was 20); keep those.')
   })
 
+  it('refuses a row whose kind and unit disagree, naming the row and what to give', () => {
+    const one = (unit: string, kind: string) => sheetTool().input.safeParse({ title: 'Sizes', views: ['front'], dims: [{ key: 'lean', label: 'Lean', value: 15, unit, kind, source: 'guess' }] })
+    const said = (unit: string, kind: string) => {
+      const r = one(unit, kind)
+      return r.success ? 'ok' : r.error.issues.map((i) => i.message).join('; ')
+    }
+    expect(said('deg', 'length')).toBe('row 1 (Lean) is kind length but unit deg; give unit mm or %, or kind angle')
+    expect(said('%', 'count')).toBe('row 1 (Lean) is kind count but unit %; give unit mm, or kind length')
+    expect(said('%', 'angle')).toBe('row 1 (Lean) is kind angle but unit %; give unit mm or deg, or kind length')
+    expect(said('deg', 'count')).toBe('row 1 (Lean) is kind count but unit deg; give unit mm, or kind angle')
+    for (const [unit, kind] of [['mm', 'count'], ['mm', 'angle'], ['deg', 'angle'], ['mm', 'length'], ['%', 'length']]) expect(said(unit!, kind!), `${unit} ${kind}`).toBe('ok')
+    expect(sheetTool().localDescription).toMatch(/\bkind\b/)
+  })
+
   // A pipe bend, a round stem and a tapered vase cannot be extruded outlines; the sheet takes them as they will be built.
   it('shows a sheet whose part is a revolve, a sweep or a loft', async () => {
     const at = { a: [-16, 0, 0], b: [16, 0, 0], off: [0, 0, -8] }
