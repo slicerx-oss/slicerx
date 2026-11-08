@@ -308,14 +308,15 @@ describe('a local model in the tab', () => {
     expect(names(c.client.requests[1]!)).not.toContain('geom.array')
   })
 
-  it('counts a design still waiting for its first body only in the chat that made it, and none once its body is gone', async () => {
+  it('builds while a design is still waiting for its first body, in the chat that made it too, when the host sees no body', async () => {
     const shapeTools = design.filter((t) => t.name === 'geom.array' || t.name === 'geom.mirror')
     const waiting = { design: 'd1', name: 'Lid', steps: 0, parts: [] }
-    // the host sees no body on the plate: only the chat that started the design has one to shape
+    // the host sees no body on the plate: with nothing there to shape, the chat that started the design builds too
     const a = env('openai-compatible', [{ calls: [{ name: 'design.new', args: {} }] }, { text: 'Started.' }, { text: 'Which part?' }, { text: 'Which part?' }], { tools: [answering('design.new', { output: waiting }), ...shapeTools], hasDesign: () => false })
     await run(a.pilot, 'mine', 'Design a lid for a 60 mm jar')
     await run(a.pilot, 'mine', PROBE)
-    expect(names(a.client.requests[2]!)).toContain('geom.array')
+    expect(names(a.client.requests[2]!)).toContain('design.new')
+    expect(names(a.client.requests[2]!)).not.toContain('geom.array')
     await run(a.pilot, 'other', PROBE)
     expect(names(a.client.requests[3]!)).toContain('design.new')
     expect(names(a.client.requests[3]!)).not.toContain('geom.array')
