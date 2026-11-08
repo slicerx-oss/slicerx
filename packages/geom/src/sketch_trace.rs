@@ -707,7 +707,7 @@ impl Budget {
         if self.0 == 0 {
             return Err(Error::invalid(
                 "image",
-                "the trace needs more work than one call allows; raise Smoothing or Remove specks under, or use a simpler image",
+                "this image takes too long to trace; raise Smoothing or Remove specks under, or use a simpler image",
             ));
         }
         Ok(())
@@ -2777,11 +2777,7 @@ mod tests {
         let r = traced.shapes.iter().try_for_each(|s| {
             fit_ring(&s.outer, &o, 0.5, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], &[], &mut tiny).map(|_| ())
         });
-        assert!(
-            r.unwrap_err()
-                .to_string()
-                .contains("more work than one call allows")
-        );
+        assert!(r.unwrap_err().to_string().contains("takes too long to trace"));
     }
 
     /// A grainy, busy image whose first fit crosses itself in places.
@@ -3067,6 +3063,31 @@ mod tests {
                 .zip(&rings)
                 .all(|(l, r)| l.segments.len() < r.len() / 2)
         );
+        assert!(sketch::check(&loops).ok);
+    }
+
+    #[test]
+    fn traced_rings_that_still_cross_are_refused_rather_than_tried_forever() {
+        // two squares that overlap, neither with a fit: kept as traced they cross, and there is nothing left to fit
+        let (a, b) = (square_ring(0.0, 10.0, true), square_ring(5.0, 15.0, true));
+        let err = untangle(REFITS, MAX_SEGMENTS)
+            .run(&[&a, &b], &mut [None, None], &mut Budget(FIT_BUDGET))
+            .unwrap_err();
+        assert!(err.to_string().contains("too small to draw"), "{err}");
+    }
+
+    #[test]
+    fn a_crossing_with_no_piece_to_pin_keeps_its_ring_as_traced_in_the_first_round() {
+        // the outer fitted as a circle through its hole: a circle has no pieces, so there is nothing to fit tighter
+        let (rings, mut fitted) = crossed_pair();
+        fitted[0] = Some(sketch_fit::circle([10.0, 10.0], 10.0));
+        let refs: Vec<&Vec<V2>> = rings.iter().collect();
+        let rounds = untangle(REFITS, MAX_SEGMENTS)
+            .run(&refs, &mut fitted, &mut Budget(FIT_BUDGET))
+            .unwrap();
+        assert_eq!(rounds, 1);
+        let loops: Vec<Loop> = fitted.into_iter().flatten().collect();
+        assert_eq!(loops[0].segments.len(), rings[0].len());
         assert!(sketch::check(&loops).ok);
     }
 
