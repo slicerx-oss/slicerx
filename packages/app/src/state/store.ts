@@ -112,6 +112,17 @@ export interface PlateEntry {
   dimensions?: Dimension[]
   /** The CAD steps done to this object since it was imported or made (docs/cad-history.md). */
   history?: History
+  /**
+   * Where a design host last landed this design on the plate (cad/design-host.ts). While it still stands there, the
+   * person has not moved it since, so the host may move it over to make room for another design. Not saved.
+   */
+  landedAt?: number[]
+  /**
+   * The designs this design's landing moved over to make room, with where each stood and went, the step that landed it,
+   * and where it was built with the landing moves it had then: undoing that step through the design tools moves each
+   * back that still stands where it went, and this design waits where it was built, so a redo lands it again. Not saved.
+   */
+  roomMoves?: { step: string; moves: { id: string; from: number[]; to: number[] }[]; built: number[]; placed?: [number, number] }
 }
 
 /** A history step open for editing: the object shows the result before it while its tool panel is open. */

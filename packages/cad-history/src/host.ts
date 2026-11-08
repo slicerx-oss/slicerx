@@ -82,8 +82,8 @@ export interface DesignHost {
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
   /**
-   * A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. Given `design`, its
-   * plane comes in that design's frame (design-frame.ts); without, in the plate's.
+   * A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. Its plane is where
+   * the sketch stands now (design-frame.ts frameNow): given `design`, in that design's frame; without, in the plate's.
    */
   sketch?(id: string, design?: string): SketchItem
   /**

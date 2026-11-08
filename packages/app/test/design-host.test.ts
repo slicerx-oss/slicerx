@@ -5,7 +5,7 @@
 // the object's history like a person's edit; a step that fails leaves the design as it was; undone steps come back.
 // Runs against the geometry engine (live wasm when built, recorded replies otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import type { HistoryMesh, StepParams } from '@slicerx/cad-history'
+import { IDENTITY, movedFrame, sketchMove, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost, DesignNotFound } from '../src/cad/design-host'
 import { toPart } from '../src/cad/history/ops'
@@ -167,10 +167,16 @@ describe('the app design host', () => {
     expect(placedOnBed(get().plate.find((p) => p.id === d.id)!, get().bed)).toBe(false)
   })
 
-  /** The origin of a timeline sketch's frame, or null when it has none. */
+  /**
+   * Where a timeline sketch's plane stands on the plate now, its stored frame moved with the design it moves with
+   * (cad-history sketchMove), or null when it is on the bed where it was stored.
+   */
   const sketchAt = (id: string) => {
-    const k = get().timeline.items.find((i) => i.id === id)
-    return k?.kind === 'sketch' ? (k.frame?.origin ?? null) : undefined
+    const t = get().timeline
+    const k = t.items.find((i) => i.id === id)
+    if (k?.kind !== 'sketch') return undefined
+    const m = sketchMove(t, id, (b) => get().plate.find((p) => p.id === b)?.transform)
+    return m.every((v, i) => v === IDENTITY[i]) ? (k.frame?.origin ?? null) : movedFrame(k.frame, m).origin
   }
   /** A first body for an empty design: a box around the origin, added as parts (no engine call). */
   const firstBody = (host: ReturnType<typeof appDesignHost>, d: Parameters<ReturnType<typeof appDesignHost>['add']>[0], half = 7.5) =>
@@ -184,7 +190,11 @@ describe('the app design host', () => {
     const k = host.addSketch!(circle)
     await firstBody(host, d)
     expect(d.landed).toEqual({ dxMm: 128, dyMm: 128 })
-    expect(get().timeline.items.find((i) => i.id === k.id)).toMatchObject({ kind: 'sketch', frame: { origin: [128, 128, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] } })
+    expect(sketchAt(k.id)).toEqual([128, 128, 0])
+    // stored where it was drawn, and moving with the design it was drawn for
+    expect(get().timeline.items.find((i) => i.id === k.id)).toMatchObject({ kind: 'sketch', drawnFor: [{ design: d.id }] })
+    // in its design's frame it is on the bed, where it was drawn
+    expect(host.sketch!(k.id, d.id).frame?.origin ?? [0, 0, 0]).toEqual([0, 0, 0])
   })
 
   it('moves a kept sketch once: a later design landing leaves it, and a sketch drawn in plate coordinates', async () => {
