@@ -12,6 +12,7 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyExtrude } from '../src/cad/cad-ops'
 import { appDesignHost } from '../src/cad/design-host'
+import { waitingAt } from '../src/cad/waiting'
 import { beginEdit, cancelEdit, nowOf, runReplay, saveEdit, toPart } from '../src/cad/history/ops'
 import { rollTo } from '../src/cad/history/rollback'
 import { finishSketch } from '../src/cad/sketches'
@@ -21,6 +22,7 @@ import { writeProject } from '../src/export/threemf'
 import { NO_MARGINS, printsOnBed, setMarginSource } from '../src/plate/arrange'
 import { copySelection, pasteClipboard } from '../src/plate/clipboard'
 import { getArrangeOptions, setInstanceCount } from '../src/plate/edit'
+import { duplicatePlate } from '../src/plate/plates'
 import { createHistory } from '../src/plate/history'
 import { heldBodies, startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
@@ -1203,7 +1205,9 @@ describe('copies of a design whose landing made room', () => {
     set((s) => ({ bed: { ...s.bed, widthMm: 512, depthMm: 512 } }))
     return { planter, saucer }
   }
-  const standing = (id: string) => ({ transform: [...entry(id).transform], placed: entry(id).history?.placed })
+  /** An object wherever it is: on the plate shown or on another plate. */
+  const anywhere = (id: string): PlateEntry => [...get().plate, ...get().plates.flatMap((p) => p.objects)].find((e) => e.id === id)!
+  const standing = (id: string) => ({ transform: [...anywhere(id).transform], placed: anywhere(id).history?.placed })
 
   it.each([
     ['pasted', (saucer: string) => {
@@ -1215,17 +1219,32 @@ describe('copies of a design whose landing made room', () => {
       expect(setInstanceCount(saucer, 2)).toBe(true)
       return get().plate.find((e) => e.instanceOf === saucer)!.id
     }],
+    ['on a duplicated plate', (saucer: string) => {
+      const before = new Set(get().plate.map((e) => e.id))
+      expect(duplicatePlate()).not.toBeNull()
+      // the copy plate shows, with a copy of each object at the same place
+      expect(get().plate.some((e) => before.has(e.id))).toBe(false)
+      return get().plate.find((e) => e.name === anywhere(saucer).name)!.id
+    }],
   ])('leaves the others where they stand when the step of a copy %s is undone', { timeout: 60_000 }, async (_how, copyOf) => {
     const run = toolsOn(appDesignHost(loader))
     const { planter, saucer } = await landedPair(run)
     const was = { planter: standing(planter), saucer: standing(saucer) }
     const copy = copyOf(saucer)
     expect(copy).toBeDefined()
+    // a copy was not landed and moved nothing: neither stays with it, on any copy made
+    for (const e of get().plate.filter((x) => x.id !== planter && x.id !== saucer)) {
+      expect(e.landedAt).toBeUndefined()
+      expect(e.roomMoves).toBeUndefined()
+    }
+    const stood = [...entry(copy).transform]
     await run('design.undo', { design: copy })
     expect(get().plate.some((e) => e.id === copy)).toBe(false)
+    // it waits where it stood, not where the original was built before its landing
+    expect(waitingAt(copy)).toEqual(stood)
     expect({ planter: standing(planter), saucer: standing(saucer) }).toEqual(was)
     // the original's own undo still moves the planter back
-    expect(entry(saucer).roomMoves?.moves.map((m) => m.id)).toEqual([planter])
+    expect(anywhere(saucer).roomMoves?.moves.map((m) => m.id)).toEqual([planter])
   })
 })
 
