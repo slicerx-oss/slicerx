@@ -105,7 +105,7 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 }
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
-function toolsFor(loader: Loader): PilotTool<never>[] {
+export function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
   // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
