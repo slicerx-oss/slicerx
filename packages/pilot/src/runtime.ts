@@ -547,6 +547,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const printInPlace = new Map<string, boolean>()
   // Sessions whose sheet changed sizes after a print-in-place plan was approved: the plan is made again before a build.
   const planAgain = new Set<string>()
+  // Sessions that confirmed a sheet with the gap rows: the rows were for the planned part, so the next run's sheets
+  // get none unless a new print-in-place plan is approved (a part the person asks for instead skips the plan).
+  const gapSheet = new Set<string>()
   const usedSheet = new Set<string>()
   // Sessions whose last run stopped at its step or tool call limit with the part unfinished: "keep going" builds the
   // rest of the same part, so the sheet confirmed for it still holds, for that part's design only.
@@ -994,6 +997,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           // rows are the fit rule's guesses, which the plan does not hold)
           const own = new Set(gaps.map((g) => g.key))
           if (answer.confirmed && printInPlace.get(sessionId) === false && answer.changed.some((k) => !own.has(k))) planAgain.add(sessionId)
+          if (answer.confirmed && gaps.length) gapSheet.add(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -1600,6 +1604,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           carried.add(sessionId)
           usedSheet.add(sessionId)
         } else carried.delete(sessionId)
+        if (gapSheet.delete(sessionId)) printInPlace.delete(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {
