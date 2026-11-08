@@ -20,7 +20,7 @@ import { createCombinedPlanner, createKb, createProfileStore, pilotTools, servic
 import { createSlicerxServer, type ServerContext } from './server'
 import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
-import { cadTools } from './cad'
+import { cadTools, type SketchVia } from './cad'
 import { cloudTools, type CloudOptions } from './cloud'
 import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
@@ -208,15 +208,29 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project, geom: geomCall })
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
+  const sketchVia: SketchVia = {}
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
-  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans: opts.plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
+  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, sketchVia, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans: opts.plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.
   const serverHas = (object: string): boolean => project.current?.objects().some((o) => o.id === object || o.name === object) ?? false
   const route = (t: PilotTool<never>[]) => (appLink ? routeToApp(t, appLink, productName(), { required: opts.app === 'required', serverHas, serverProject: () => project.current !== undefined }) : t)
   const geom = route(here)
+  // design.trace_image traces here, where a large image is no burden, then adds its loops through design.sketch as the
+  // client would, so they land in the app while its link answers
+  const sketchTool = geom.find((t) => t.name === 'design.sketch')
+  if (sketchTool) sketchVia.run = (args, ctx) => sketchTool.run(sketchTool.input.parse(args) as never, ctx as never)
+  // its default center is the middle of the app's bed, read from the plate list; a link that does not answer leaves it
+  // to this server's bed
+  if (appLink) {
+    sketchVia.bedMiddle = async () => {
+      const bed = await appLink.call<{ bed?: { widthMm?: number; depthMm?: number; centerMm?: [number, number] } }>('plate.list').then((r) => r.bed, () => undefined)
+      if (bed?.centerMm) return bed.centerMm
+      return bed?.widthMm && bed.depthMm ? [bed.widthMm / 2, bed.depthMm / 2] : undefined
+    }
+  }
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)

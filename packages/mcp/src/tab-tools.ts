@@ -192,10 +192,11 @@ export type CardPlans = ReturnType<typeof createCardPlans>
 /**
  * The tab's tools: its own (the question, the lookup card, the dimension sheet and its binding, and `plan`), then
  * `extra` (the design toolset). The tab's own tools win, and the design toolset's design.put_plan (a client plan kept
- * with no card, for MCP clients) stays out: plans in the tab are made on the card.
+ * with no card, for MCP clients) stays out: plans in the tab are made on the card. So does design.trace_image for now:
+ * in the tab the person traces with the sketch tool's dialog.
  */
 export function mimirTabTools(plan: PilotTool<never>, extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
   const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), plan]
-  const names = new Set([...own.map((t) => t.name), 'design.put_plan'])
+  const names = new Set([...own.map((t) => t.name), 'design.put_plan', 'design.trace_image'])
   return [...own, ...extra.filter((t) => !names.has(t.name))]
 }

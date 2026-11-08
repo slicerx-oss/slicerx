@@ -9,7 +9,7 @@
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
 import { bakeMesh, curveWords, customHoleProblem, keyOfTriangle, projectionsOut, stepName, type FaceFrame, type HoleSpec, type ProjectMode, type ProjectSource, type SketchConstraint, type SketchItem, type SketchLoop, type StepParams } from '@slicerx/cad-history'
-import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type Tri } from '@slicerx/pilot'
+import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type ToolOutput, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { nozzleOr } from './design-check'
@@ -323,9 +323,21 @@ export interface CadFiles {
   call: GeomCall
   path(model: string): Promise<string>
   stl(stlPath: string): Float32Array
+  /** A PNG or JPEG's bytes, from inside the directories this server may read. */
+  image?(path: string): Uint8Array
 }
 
-export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined }): PilotTool<never>[] {
+/** The design.sketch the client sees (routed to the app once the tools are), so a trace lands where design.sketch puts it. */
+export interface SketchVia {
+  run?: (args: Record<string, unknown>, ctx: unknown) => Promise<ToolOutput>
+  /** The bed's middle on the plate the app shows, when its link answers. */
+  bedMiddle?: () => Promise<[number, number] | undefined>
+}
+
+/** An image past this many bytes is refused before it is decoded. */
+const IMAGE_BYTES = 30 * 1024 * 1024
+
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
   const call = deps.files.call
   const path = (model: string): Promise<string> => deps.files.path(model)
   const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
@@ -334,6 +346,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return deps.designs.get(id)
   }
   const designs = (): DesignHost => deps.designs!
+  const readImage = (p: string): Uint8Array => {
+    if (!deps.files.image) throw new ToolInputError('image: this server reads no files; pass the image as base64', 'not_supported')
+    return deps.files.image(p)
+  }
   const manifestOf = (d: Design, revision?: string) => {
     const host = designs()
     if (!host.revision) throw new ToolInputError('This host cannot bind topology to a body revision.', 'not_supported')
@@ -934,6 +950,104 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const traceImage = defineTool({
+    name: 'design.trace_image',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Trace a PNG or JPEG into a finished sketch in the open project's design timeline, as Trace image in the sketch tool does: the inside (dark or light areas, opaque areas, or picked colors) is found, specks are cleaned away, and its edges become loops of lines, arcs, circles and splines (holes stay loops inside), ready to edit, dimension, or pass as sketch to slicerx_geom_extrude or slicerx_geom_revolve. The image is traced on this server, so it may be large; the loops then go to the timeline as slicerx_design_sketch sends them. Use dry_run to tune the settings first, and preview_image to see the loops over the image. Returns the sketch id, its loops, how many of each curve, the size, what was cleaned away, and the sketch check.`,
+    input: z
+      .object({
+        image: z
+          .union([z.object({ path: z.string().min(1).describe('A .png, .jpg or .jpeg file inside the directories this server may read') }), z.object({ base64: z.string().min(1).describe('The file itself as base64') })])
+          .describe('The image, as {path} or {base64}; at most 30 MB'),
+        mode: z.enum(['auto', 'dark', 'light', 'color', 'alpha']).optional().describe('What is inside: auto (opaque areas when the image has transparency, else the dark side of an automatic split), dark, light, color (near a picked color) or alpha (opaque areas)'),
+        threshold: z.number().min(0).max(255).optional().describe('Luminance 0 to 255 between inside and outside, for dark and light; automatic when absent'),
+        colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/, 'a color is #rrggbb')).min(1).max(8).optional().describe('For mode color: up to 8 colors as #rrggbb'),
+        color_tolerance: z.number().min(0).max(100).optional().describe('How near a picked color a pixel must be, 0 to 100; 12 when absent'),
+        speck_mm2: z.number().min(0).optional().describe('Specks and pinholes under this area are cleaned away, mm²; 0.5 when absent'),
+        smoothing_mm: z.number().min(0.01).max(10).optional().describe('How far a fitted curve may stray from the traced edge, mm; half a working pixel when absent'),
+        fit: z.enum(['lines', 'arcs', 'curves']).optional().describe('lines, arcs (lines and arcs) or curves (lines, arcs and splines, the default)'),
+        corner_angle_deg: z.number().min(1).max(179).optional().describe('A turn sharper than this is a corner; 50 when absent'),
+        width_mm: z.number().positive().max(10_000).optional().describe('The trace is this wide; 50 mm when no size is given'),
+        height_mm: z.number().positive().max(10_000).optional().describe('The trace is this tall'),
+        mm_per_px: z.number().positive().max(100).optional().describe('mm per pixel of the image as given'),
+        center: vec2.optional().describe("Where the middle of the trace lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
+        frame: frameRef.optional(),
+        max_side_px: z.number().int().min(16).max(4096).optional().describe('The image is shrunk to this long side before tracing; 2048 when absent'),
+        dry_run: z.boolean().optional().describe('Trace and report without adding anything to the timeline'),
+        preview_image: z.boolean().optional().describe('Also return a PNG of the image with the loops drawn over it'),
+      })
+      .superRefine((args, ctx) => {
+        const sizes = [args.width_mm, args.height_mm, args.mm_per_px].filter((v) => v !== undefined).length
+        if (sizes > 1) ctx.addIssue({ code: 'custom', path: ['width_mm'], message: 'give one of width_mm, height_mm and mm_per_px' })
+        if (args.mode === 'color' && !args.colors) ctx.addIssue({ code: 'custom', path: ['colors'], message: 'mode color needs colors' })
+      }),
+    async run(i, ctx) {
+      const bytes = 'path' in i.image ? readImage(i.image.path) : Buffer.from(i.image.base64, 'base64')
+      if (bytes.length > IMAGE_BYTES) throw new ToolInputError(`image: the file is ${kb(bytes.length)}, over the 30 MB a trace takes. Export it smaller first.`)
+      if (!deps.files.engine && !deps.designs) throw new ToolInputError('Tracing needs the sx-geom engine, which this server did not find.', 'not_supported')
+      // the middle of the plane, as the sketch panel and design.sketch_svg start it: the bed's middle on the bed (the
+      // app's bed while its link answers, else this server's), the frame's origin on a plane or face
+      const local = deps.designs?.bed?.()
+      const middle = i.frame || i.center ? undefined : ((await deps.sketchVia?.bedMiddle?.()) ?? (local ? ([local.widthMm / 2, local.depthMm / 2] as [number, number]) : undefined))
+      const center = i.center ?? middle ?? [0, 0]
+      const options = plain<Record<string, unknown>>({
+        mode: i.mode,
+        threshold: i.threshold,
+        colors: i.colors?.map((c) => c.toLowerCase()),
+        colorTolerance: i.color_tolerance,
+        speckMm2: i.speck_mm2,
+        smoothingMm: i.smoothing_mm,
+        fit: i.fit,
+        cornerAngleDeg: i.corner_angle_deg,
+        widthMm: i.width_mm,
+        heightMm: i.height_mm,
+        mmPerPx: i.mm_per_px,
+        center,
+        maxSidePx: i.max_side_px,
+        previewImage: i.preview_image,
+      })
+      const req = { image: { base64: Buffer.from(bytes).toString('base64') }, options }
+      const out = deps.files.engine ? await call('sketch.trace', req) : await engine('sketch.trace', req)
+      const loopsIn = out['loops'] as Loops
+      const check = (out['check'] ?? {}) as { ok?: boolean; areaMm2?: number; loops?: { index: number; role: string; areaMm2: number; lengthMm: number }[]; issues?: { kind: string; message: string }[] }
+      const issues = check.issues ?? []
+      const counts = out['counts'] as { lines: number; arcs: number; splines: number; circles: number }
+      const size = out['sizeMm'] as [number, number]
+      const dropped = out['dropped'] as { specks: number; holes: number }
+      const warnings = (out['warnings'] ?? []) as string[]
+      const holes = (check.loops ?? []).filter((l) => l.role === 'hole').length
+      const n = (v: number, one: string) => `${v} ${one}${v === 1 ? '' : 's'}`
+      const curves = [n(counts.lines, 'line'), n(counts.arcs, 'arc'), n(counts.splines, 'spline'), n(counts.circles, 'circle')].filter((t) => !t.startsWith('0 ')).join(', ')
+      const shape = `${n(loopsIn.length, 'loop')}${holes ? ` (${n(holes, 'hole')})` : ''}, ${curves}, ${size.map((v) => Math.round(v * 100) / 100).join(' x ')} mm`
+      const cleaned = dropped.specks || dropped.holes ? `Removed ${[dropped.specks ? n(dropped.specks, 'speck') : '', dropped.holes ? n(dropped.holes, 'pinhole') : ''].filter(Boolean).join(' and ')}.` : ''
+      const problems = check.ok === false ? `${n(issues.length, 'problem')} to fix before it makes a solid: ${issues.slice(0, 5).map((x) => x.message).join(' ')}` : ''
+      const tail = [cleaned, problems, ...warnings.map((w) => `${w[0]!.toUpperCase()}${w.slice(1)}.`)].filter(Boolean)
+      const report = { counts, sizeMm: size, mmPerPx: out['mmPerPx'], imagePx: out['imagePx'], workingPx: out['workingPx'], dropped, mode: out['mode'], ...(out['threshold'] !== undefined ? { threshold: out['threshold'] } : {}), check: { ok: check.ok, areaMm2: check.areaMm2, loops: check.loops, issues }, warnings }
+      const preview = typeof out['previewPng'] === 'string' ? { images: [{ mime: 'image/png' as const, data: out['previewPng'] }] } : {}
+      if (i.dry_run) {
+        const head = `Traced, nothing added: ${shape}`
+        return { summary: tail.length ? `${head}. ${tail.join(' ')}` : head, output: { loops: loopsIn, ...report }, ...preview }
+      }
+      // the loops go on as design.sketch takes them: a spline that cannot be drawn never reaches the timeline
+      const bad = undrawable(issues, loopsIn)
+      if (bad.length) throw new ToolInputError(`image: ${bad.map((x) => x.message).join(' ')} Raise smoothing_mm or speck_mm2.`)
+      if (loopsIn.length > 256) throw new ToolInputError(`image: the trace has ${loopsIn.length} loops and a sketch takes 256. Raise speck_mm2 to clean away the small ones, or trace part of the image.`)
+      const args = plain<Record<string, unknown>>({ loops: loopsIn, ...(i.frame ? { frame: i.frame } : {}) })
+      const sent = new TextEncoder().encode(JSON.stringify(args)).length
+      if (sent > SVG_ARGS) throw new ToolInputError(`image: the trace's loops come to ${kb(sent)}, and the app link takes ${kb(SVG_ARGS)}. Raise smoothing_mm or speck_mm2, fit to curves, or trace part of the image; dry_run shows the counts without adding anything.`)
+      const added = deps.sketchVia?.run ? await deps.sketchVia.run(args, ctx) : await sketch.run(sketch.input.parse(args) as never, ctx as never)
+      const made = (added.output ?? {}) as { id?: string; name?: string; in?: string }
+      const head = `${made.name ?? 'The sketch'} is in the timeline: ${shape}`
+      return {
+        summary: tail.length ? `${head}. ${tail.join(' ')}` : head,
+        output: { id: made.id, name: made.name, loops: loopsIn, ...report, ...(made.in ? { in: made.in } : {}) },
+        ...preview,
+      }
+    },
+  })
+
   const push = defineTool({
     name: 'geom.push_pull',
     version: '1.2.0',
@@ -1378,5 +1492,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, sketchSvg, traceImage, extrude, revolve, loft, sweep, sketchProject, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }
