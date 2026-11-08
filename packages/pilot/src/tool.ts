@@ -168,8 +168,9 @@ export interface PilotTool<I = unknown> {
   description: string
   /**
    * The description a local model gets, whose whole context is MIMIR_CONTEXT tokens (context.ts): what the tool does,
-   * its required arguments and every rule `description` states, in fewer words. Unset sends `description`. A cloud
-   * model, MCP clients and the read-backs always get `description`.
+   * its required arguments and every rule `description` states, in fewer words. A rule needed only now and then may
+   * instead live in a knowledge base entry the description names (`More: kb.search "hole tool".`). Unset sends
+   * `description`. A cloud model, MCP clients and the read-backs always get `description`.
    */
   localDescription?: string
   source: ToolSource
@@ -261,8 +262,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * against `inp`, the same schema as zod writes it for the tool's input. Dropped: the safe integer range zod gives an
  * integer with no bounds of its own; `additionalProperties: {}` (any value, as with no keyword); `propertyNames` of
  * plain strings (every JSON key is one); and `additionalProperties: false` on an object whose input form leaves it
- * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. Everything
- * else, every type, bound, enum, default, required list and description, stays as it is.
+ * open, since the tool strips unknown keys there rather than refusing them. A strict object keeps it. A tuple of one
+ * kind is written as the plain array it equals (sameTuple). Everything else, every type, bound, enum, default,
+ * required list and description, stays as it is.
  */
 function leanSchema(out: unknown, inp: unknown): unknown {
   if (!isRecord(out)) return out
@@ -279,7 +281,25 @@ function leanSchema(out: unknown, inp: unknown): unknown {
     else if (SCHEMA_MAP.has(k) && isRecord(v)) lean[k] = Object.fromEntries(Object.entries(v).map(([p, s]) => [p, leanSchema(s, isRecord(iv) ? iv[p] : undefined)]))
     else lean[k] = v
   }
-  return lean
+  return sameTuple(lean)
+}
+
+/**
+ * A tuple whose places all take the same schema (a point [u, v] or [x, y, z]) as the plain array it equals: `items`
+ * that schema with the same minItems and maxItems, instead of a copy of it per place and `items: false`. A point costs
+ * a local model about a third fewer tokens this way, and takes exactly the same values.
+ */
+function sameTuple(s: Record<string, unknown>): Record<string, unknown> {
+  const places = s.prefixItems
+  if (!Array.isArray(places) || places.length === 0 || s.items !== false || s.minItems !== places.length || s.maxItems !== places.length) return s
+  const one = JSON.stringify(places[0])
+  if (!places.every((p) => JSON.stringify(p) === one)) return s
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(s)) {
+    if (k === 'prefixItems') out.items = places[0]
+    else if (k !== 'items') out[k] = v
+  }
+  return out
 }
 
 /**
