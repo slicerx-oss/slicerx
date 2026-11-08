@@ -46,7 +46,7 @@ import { createTransportClient, errorText, type CloudShare } from './provider/cl
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, ASK_DISMISSED, ASK_SAID_MAX, localToolDef, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { capLine, capTools, LOAD_TOOLS_TOOL, loadToolsTool, localTurnTools, stickyCapTools, stickyToolsets, toolsetOf, turnNeeds, type StickyToolsets, type ToolCapReport } from './toolsets'
-import { DESIGN_MADE, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
+import { designMade, inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
@@ -74,6 +74,13 @@ export interface CreatePilotOptions {
   share?: () => CloudShare
   kb?: KnowledgeBase
   project?: () => PilotProject | undefined
+  /**
+   * Whether the open project holds a design to shape (the app: its design host's list, the objects on the plate with a
+   * history and the designs with no body yet). Asked when a turn starts and when a chat is resumed, so a new chat, a
+   * reloaded one and a mimir rebuilt for another model all see a design that is there, and a deleted one is gone. Unset
+   * (or throwing), a chat has a design once one of its own tools made or opened one (turnsets.ts designMade).
+   */
+  hasDesign?: () => boolean
   planner?: SettingsPlanner
   store?: SessionStore
   /** Extra tools (skills from packages/pilot/skills are included by default). */
@@ -384,8 +391,23 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const picked = new Map<string, TurnSet>()
   /** The set each chat's last turn ended on, which a request with no words for a set keeps. */
   const lastSet = new Map<string, TurnSet>()
-  /** The chats with a design to shape: one of their tools made or opened one (turnsets.ts DESIGN_MADE). */
+  /**
+   * The chats with a design to shape: one of their tools made or opened one (turnsets.ts designMade), or the host said
+   * its project holds one. The host's answer, when it gives one, wins at the start of each turn (designedNow).
+   */
   const designed = new Set<string>()
+  /** Whether chat `sessionId` has a design to shape now: the host's answer, kept in `designed`, else what the chat made. */
+  const designedNow = (sessionId: string): boolean => {
+    let there: boolean | undefined
+    try {
+      there = opts.hasDesign?.()
+    } catch {
+      there = undefined
+    }
+    if (there === true) designed.add(sessionId)
+    else if (there === false) designed.delete(sessionId)
+    return designed.has(sessionId)
+  }
   if (turnSets) {
     const t = turnSetTool((sessionId, set) => picked.set(sessionId, set)) as AnyTool
     add(t)
@@ -726,7 +748,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
       if (e.type === 'tool_call') called.set(e.callId, e.tool)
-      if (e.type === 'tool_result' && e.ok && DESIGN_MADE(called.get(e.callId) ?? '')) designed.add(sessionId)
+      if (e.type === 'tool_result' && e.ok && designMade(called.get(e.callId) ?? '', e.output)) designed.add(sessionId)
       if (e.type === 'tool_result' && e.ok && called.get(e.callId) === 'design.check' && (e.output as { pass?: unknown } | undefined)?.pass === false) checkMissed = true
       // building takes tries; only other failures count toward moving up
       if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) fails++
@@ -1067,6 +1089,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         messages.push({ role: 'assistant', content: t.reply || '(No reply.)' })
       }
       history.set(sessionId, messages)
+      // the text holds no tool results, so whether the chat has a design comes from the host
+      if (turnSets) designedNow(sessionId)
     },
     async answer(askId: string, choiceId: string | null, said?: string): Promise<void> {
       const open = asks.get(askId)
@@ -1151,7 +1175,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         })
         let done: PilotEvent & { type: 'done' }
         try {
-          const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId), { design: designed.has(sessionId) }) : undefined
+          const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId), { design: designedNow(sessionId) }) : undefined
           done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context, sliceToPrint: !local }), startSet)
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })
