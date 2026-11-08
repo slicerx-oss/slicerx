@@ -228,8 +228,9 @@ fn sketch_svg_op(req: &Value) -> Result<Value> {
     to_value(&crate::sketch_svg::sketch_svg(&text, &opts)?)
 }
 
-/// `{image: {base64} | {path} | {rgba, width, height}, options}`: a PNG or JPEG file, or pixels already decoded (rgba
-/// base64, rows from the top), traced into sketch loops.
+/// `{image: {base64} | {path} | {rgba, width, height, fileWidth?, fileHeight?}, options}`: a PNG or JPEG file, or pixels
+/// already decoded (rgba base64, rows from the top, shrunk from a file of the size given when they were), traced into
+/// sketch loops.
 #[cfg(feature = "trace")]
 fn sketch_trace_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     use crate::raster::{self, Raster};
@@ -253,7 +254,22 @@ fn sketch_trace_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
             return Err(Error::invalid("image", "rgba holds width x height x 4 bytes"));
         }
         let px = data.as_chunks::<4>().0.to_vec();
-        let r = Raster::new(w, h, px).map_err(|_| Error::invalid("image", "rgba pixels"))?;
+        let mut r = Raster::new(w, h, px).map_err(|_| Error::invalid("image", "rgba pixels"))?;
+        // the file the pixels were shrunk from, so a pixel size means the same as for the file itself
+        let file: Option<usize> = field_or(image, "fileWidth", None)?;
+        let file_h: Option<usize> = field_or(image, "fileHeight", None)?;
+        match (file, file_h) {
+            (None, None) => {}
+            (Some(fw), Some(fh)) if (1..=65_535).contains(&fw) && (1..=65_535).contains(&fh) => {
+                r.file_size = (fw, fh);
+            }
+            _ => {
+                return Err(Error::invalid(
+                    "image",
+                    "fileWidth and fileHeight come together, each 1 to 65535",
+                ));
+            }
+        }
         return to_value(&sketch_trace::sketch_trace(Cow::Owned(r), &opts)?);
     }
     let file = if let Some(b) = image.get("base64").and_then(Value::as_str) {
