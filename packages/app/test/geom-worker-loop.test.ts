@@ -147,7 +147,8 @@ describe('the geometry worker loop', () => {
       if (i === 1) void handle({ cancel: 1 })
     }
     await handle({ id: 1, op: 'history.replay', request: {} })
-    expect(posted).toEqual([{ started: 1 }, { id: 1, error: 'Canceled', memoryBytes: 0 }])
+    // each step it reaches says so first, for its own time limit on the page
+    expect(posted).toEqual([{ started: 1 }, { step: 1 }, { step: 1 }, { id: 1, error: 'Canceled', memoryBytes: 0 }])
     expect(e.ran).toEqual(['step 0', 'step 1'])
   })
 })
