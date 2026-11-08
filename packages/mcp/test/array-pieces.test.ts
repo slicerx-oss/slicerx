@@ -169,4 +169,27 @@ describe('pieces made as separate array copies', () => {
     expect(p.arrayOf).toBe('Segment 1')
     expect(p.parts.map((m) => m.name)).toEqual(['Segment 1 2', 'Segment 1 3'])
   })
+
+  it('geom.array records the part it copied only by a name the project file keeps, 120 characters at most', async () => {
+    const recorded = async (name: string) => {
+      const seg = block(name, 0)
+      const d = designOf([seg], [add([seg], 'Add it')])
+      const added: StepParams[] = []
+      const host = {
+        get: () => d,
+        call: async () => ({ transforms: [0, 1].map((k) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, k * PITCH, 0, 0, 1]) }),
+        add: async (_d: HostDesign, _part: number, params: StepParams) => {
+          added.push(params)
+        },
+      } as unknown as DesignHost
+      const tool = modelingTools({ files: { call: async () => ({}), mesh: async () => ({ stlPath: '' }) }, designs: host }).find((t) => t.name === 'geom.array')!
+      await tool.run(tool.input.parse({ design: 'd1', part: 0, spec: { kind: 'linear', count: 2, step: [PITCH, 0, 0] }, merge: false }), {} as ToolContext)
+      return added[0] as Extract<StepParams, { op: 'parts.add' }>
+    }
+    expect((await recorded('x'.repeat(120))).arrayOf).toBe('x'.repeat(120))
+    // an imported part's long name: the copies are still made, with no link a reopened project would drop
+    const long = await recorded('y'.repeat(121))
+    expect(long.parts).toHaveLength(1)
+    expect('arrayOf' in long).toBe(false)
+  })
 })
