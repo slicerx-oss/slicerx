@@ -135,6 +135,35 @@ const edgeNear = (ras: Raster, [x, y]: [number, number], d: number): boolean => 
   return false
 }
 const coverAt = (ras: Raster, [x, y]: [number, number]): number => ras.cover[y * ras.W + x]!
+/** The groups of touching pixels (sides or corners) a mask has, each with its size across and down. */
+function clusters(mask: Uint8Array, W: number, H: number): { n: number; w: number; h: number }[] {
+  const seen = new Uint8Array(mask.length)
+  const out: { n: number; w: number; h: number }[] = []
+  for (let s = 0; s < mask.length; s++) {
+    if (!mask[s] || seen[s]) continue
+    let [n, x0, y0, x1, y1] = [0, Infinity, Infinity, -1, -1]
+    const stack = [s]
+    seen[s] = 1
+    while (stack.length) {
+      const i = stack.pop()!
+      const x = i % W
+      const y = (i - x) / W
+      n++
+      ;[x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)]
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const j = (y + dy) * W + x + dx
+          if (x + dx >= 0 && y + dy >= 0 && x + dx < W && y + dy < H && mask[j] && !seen[j]) {
+            seen[j] = 1
+            stack.push(j)
+          }
+        }
+      }
+    }
+    out.push({ n, w: x1 - x0 + 1, h: y1 - y0 + 1 })
+  }
+  return out
+}
 
 /** A mesh of the given triangles, three corners each. */
 const triMesh = (tris: V3[][]): MeshPart => ({ name: 'T', slot: 1, positions: new Float32Array(tris.flat(2)), indices: new Uint32Array(tris.flatMap((_, i) => [3 * i, 3 * i + 1, 3 * i + 2])) })
@@ -205,6 +234,40 @@ describe('the rasterizer on faces that are not square to the view', () => {
     const iso = rasterize(shape, 'iso', 300, 300, k, 150, 200, 1)
     expect(edgeNear(iso, onScreen('iso', [0, 0, 30], k, 150, 200), 3)).toBe(false)
     for (const a of [-90, -45, 0, 180]) expect(edgeNear(iso, onScreen('iso', [20 * Math.cos((a * Math.PI) / 180), 20 * Math.sin((a * Math.PI) / 180), 30], k, 150, 200), 1), `rim at ${a}`).toBe(true)
+  })
+
+  // The elbow's round end in Top, its bend's outline and inside corner in Iso and its straight end in Right had dark
+  // clusters and a stray line beside the outline: facets that graze the view slope so steeply that a neighbor on the
+  // same smooth surface read as another surface behind it.
+  it('draws the pipe elbow\'s round outline as clean lines, with no clusters or stray line beside them', () => {
+    const shape = shapeOfSolids(ELBOW.part as PilotSheetSolid[])
+    // each view's lines as painted: the outline, plus the bore's rim where the open end faces the view (touching the
+    // outline when drawn small), and nothing else: no group of them under 10 px across
+    const most: Record<ViewName, number> = { front: 1, top: 1, side: 2, iso: 2 }
+    for (const [w, h, px] of [[475, 320, 2], [475, 320, 1], [178, 133, 2]] as const) {
+      const flat = Math.min(...(['front', 'side', 'top'] as const).map((v) => fitScale(shape, ELBOW.dims, v, w, h, 24, ELBOW.views)))
+      for (const v of SHEET_VIEWS) {
+        const r = drawView(shape, ELBOW.dims, v, w, h, { pad: 24, px, order: ELBOW.views, ...(v === 'iso' ? {} : { scale: flat }) }).part
+        const parts = clusters(paintedEdges(r), r.W, r.H)
+        const what = `${v} at ${w} x ${h}, ${px}x: ${parts.map((c) => `${c.w} x ${c.h}`).join(', ')}`
+        expect(parts.length, what).toBeLessThanOrEqual(most[v])
+        for (const c of parts) expect(Math.max(c.w, c.h), what).toBeGreaterThanOrEqual(10 * px)
+      }
+    }
+  })
+
+  it('draws the straight end in Right with a line at each side only, none beside the left one', () => {
+    const shape = shapeOfSolids(ELBOW.part as PilotSheetSolid[])
+    const [k, ox, oy] = [5, 150, 470]
+    const side = rasterize(shape, 'side', 300, 500, k, ox, oy, 2)
+    // from below the bore's rim (z 54) down to the tube's foot, every row has its line at the outline's two sides
+    for (let z = 50; z > 2; z -= 1) {
+      const y = onScreen('side', [0, 0, z], 2 * k, 2 * ox, 2 * oy)[1]
+      const row = Array.from({ length: side.W }, (_, x) => x)
+      const cov = row.filter((x) => side.cover[y * side.W + x])
+      const lines = row.filter((x) => side.edge[y * side.W + x])
+      expect(lines.every((x) => x <= cov[0]! + 1 || x >= cov.at(-1)! - 1), `z ${z}: lines at ${lines.join(', ')} for a tube from ${cov[0]} to ${cov.at(-1)}`).toBe(true)
+    }
   })
 
   it('leaves a hole through a cap open', () => {
