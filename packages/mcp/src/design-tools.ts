@@ -198,7 +198,7 @@ export function landedNote(l: NonNullable<Design['landed']>, name = 'The part'):
     return `${name} does not fit on the bed. Make it smaller or undo the step.`
   }
   if ('offBed' in l) return 'The part does not fit on the bed anywhere, so it stays where it was built, off the bed.'
-  return `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm as a whole. Its coordinates stay the design's own.`
+  return `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm. Its coordinates are now the plate's.`
 }
 
 function stepRow(d: Design, i: number): Record<string, unknown> {
