@@ -260,6 +260,91 @@ describe('stickyCapTools', () => {
   })
 })
 
+const TOOLSET_PRIORITY_KEYS: Toolset[] = ['core', 'cad', 'settings', 'printers', 'fleets', 'theme']
+
+describe('stickyCapTools ranks what a chat wants', () => {
+  // core 10, two sets of 70 that cannot both go whole beside it: whichever ranks higher goes whole
+  const two = [...Array.from({ length: 10 }, (_, i) => tool(`core.t${i}`, 'core')), ...Array.from({ length: 70 }, (_, i) => tool(`geom.t${i}`, 'cad')), ...Array.from({ length: 70 }, (_, i) => tool(`settings.t${i}`, 'settings'))]
+  type Rank = 'loaded' | 'protect' | 'needs' | 'lastOffer' | 'lastNeeds' | 'used' | 'none'
+  const ranks: Rank[] = ['loaded', 'protect', 'needs', 'lastOffer', 'lastNeeds', 'used', 'none']
+  const place = (rank: Record<Toolset, Rank | undefined>) => {
+    const pick = (r: Rank): Toolset[] => (['cad', 'settings'] as Toolset[]).filter((s) => rank[s] === r)
+    const st = state({ lastOffer: new Set(pick('lastOffer')), lastNeeds: new Set(pick('lastNeeds')), used: new Map(pick('used').map((s) => [s, { turn: 1, calls: 1 }])) })
+    return stickyCapTools(two, { cap: 128, needs: new Set(pick('needs')), called: new Set(), protect: new Set([...pick('protect'), ...pick('loaded')]), loaded: new Set(pick('loaded')), state: st })
+  }
+
+  it('goes loaded > protect > needs > lastOffer > lastNeeds > used > none, for every pair, whichever set is which', () => {
+    for (let hi = 0; hi < ranks.length; hi++)
+      for (let lo = hi + 1; lo < ranks.length; lo++)
+        for (const [a, b] of [['cad', 'settings'], ['settings', 'cad']] as [Toolset, Toolset][]) {
+          const got = place({ [a]: ranks[hi], [b]: ranks[lo] } as Record<Toolset, Rank>)
+          const label = `${ranks[hi]} over ${ranks[lo]} (${a} first)`
+          expect({ label, sets: got.sets.includes(a), other: got.sets.includes(b) }).toEqual({ label, sets: true, other: false })
+          expect(got.tools.length + 1).toBeLessThanOrEqual(128)
+        }
+  })
+
+  it('gives the same tools whatever order the state was built in', () => {
+    const all = manyTools()
+    const names = ['printer.t3', 'theme.t2', 'fleet.t1', 'geom.t9', 'settings.t4']
+    const sets: Toolset[] = ['core', 'cad', 'settings', 'printers']
+    const base = { cap: 128, needs: ['printers', 'fleets'] as Toolset[], protect: ['theme', 'cad'] as Toolset[], called: names, sets, offer: ['settings', 'theme'] as Toolset[], used: [['printers', { turn: 2, calls: 2 }], ['cad', { turn: 1, calls: 3 }], ['fleets', { turn: 2, calls: 1 }]] as [Toolset, { turn: number; calls: number }][] }
+    const run = (shuffle: <X>(l: X[]) => X[]) =>
+      stickyCapTools(all, {
+        cap: base.cap,
+        needs: new Set(shuffle([...base.needs])),
+        called: new Set(shuffle([...base.called])),
+        protect: new Set(shuffle([...base.protect])),
+        state: state({ sets: shuffle([...base.sets]).sort((x, y) => (x === 'core' ? -1 : y === 'core' ? 1 : 0)), used: new Map(shuffle([...base.used])), lastOffer: new Set(shuffle([...base.offer])), lastNeeds: new Set(shuffle([...base.needs])) }),
+      })
+    const want = run((l) => l)
+    let seed = 7
+    const mix = <X,>(l: X[]): X[] => {
+      for (let i = l.length - 1; i > 0; i--) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        const j = seed % (i + 1)
+        ;[l[i], l[j]] = [l[j]!, l[i]!]
+      }
+      return l
+    }
+    // every toolset tied on rank, so only the priority order breaks the tie, never an insertion order
+    const tied = (shuffle: <X>(l: X[]) => X[]) =>
+      stickyCapTools(all, {
+        cap: 128,
+        needs: new Set(shuffle<Toolset>(['cad', 'settings', 'printers', 'fleets', 'theme'])),
+        called: new Set(),
+        protect: new Set(),
+        state: state({ used: new Map(shuffle<[Toolset, { turn: number; calls: number }]>([['cad', { turn: 1, calls: 1 }], ['settings', { turn: 1, calls: 1 }], ['printers', { turn: 1, calls: 1 }], ['fleets', { turn: 1, calls: 1 }], ['theme', { turn: 1, calls: 1 }]])) }),
+      })
+    const tiedWant = tied((l) => l)
+    for (let i = 0; i < 40; i++) expect(tied(mix).tools.map((t) => t.name)).toEqual(tiedWant.tools.map((t) => t.name))
+    for (let i = 0; i < 40; i++) {
+      const got = run(mix)
+      expect(got.tools.map((t) => t.name)).toEqual(want.tools.map((t) => t.name))
+      expect(got.sets).toEqual(want.sets)
+      expect(got.report).toEqual(want.report)
+    }
+  })
+
+  it('picks the same toolsets, and as many tools of each, when the offered tools arrive in another order', () => {
+    const all = manyTools()
+    const opts = { cap: 128, needs: new Set<Toolset>(['printers']), called: new Set(['theme.t2']), protect: new Set<Toolset>(), state: state({ sets: ['core', 'cad', 'settings'] }) }
+    // a toolset that goes in part sends its first tools in the order given, so the order moves which ones; the counts and the whole toolsets do not move
+    const shape = (got: { tools: PilotTool<never>[]; sets: Toolset[] }) => ({ sets: got.sets, count: Object.fromEntries(TOOLSET_PRIORITY_KEYS.map((k) => [k, got.tools.filter((t) => toolsetOf(t) === k).length])) })
+    const want = shape(stickyCapTools(all, opts))
+    for (const order of [[...all].reverse(), [...all.slice(75), ...all.slice(0, 75)]]) expect(shape(stickyCapTools(order, opts))).toEqual(want)
+  })
+
+  it('keeps core and stays at the cap when the tools called alone fill the room', () => {
+    const big = [...Array.from({ length: 10 }, (_, i) => tool(`core.t${i}`, 'core')), ...Array.from({ length: 140 }, (_, i) => tool(`geom.t${i}`, 'cad'))]
+    const called = new Set(Array.from({ length: 130 }, (_, i) => `geom.t${i}`))
+    const got = stickyCapTools(big, { cap: 128, needs: new Set(), called, protect: new Set(['cad']), state: state({ sets: ['core', 'cad'] }) })
+    const names = got.tools.map((t) => t.name)
+    for (let i = 0; i < 10; i++) expect(names).toContain(`core.t${i}`)
+    expect(got.tools.length + 1).toBeLessThanOrEqual(128)
+  })
+})
+
 describe('a capped chat keeps its tools', () => {
   it('sends the same tools on every step of a turn, and on the next turn on the same topic', async () => {
     const { say } = setup('mimir-cloud', [{ call: 'printer.t1' }, { call: 'printer.t2' }, { text: 'Printing.' }, { call: 'printer.t1' }, { text: 'Still printing.' }])
@@ -457,5 +542,105 @@ describe('uncapped and local chats send what they sent before', () => {
     }
     // every tool here is in a toolset
     expect(tools.every((t) => toolsetOf(t))).toBe(true)
+  })
+})
+
+describe('a capped chat keeps its state per chat', () => {
+  // core 10, cad 50, settings 30, printers 50, fleets 10: the printers go whole only when something asks for them
+  const sets: [string, Toolset, number][] = [
+    ['core.t', 'core', 10],
+    ['geom.t', 'cad', 50],
+    ['settings.t', 'settings', 30],
+    ['printer.t', 'printers', 50],
+    ['fleet.t', 'fleets', 10],
+  ]
+  const tools = sets.flatMap(([prefix, set, n]) => Array.from({ length: n }, (_, i) => tool(`${prefix}${i}`, set)))
+  const offer = { text: 'Done. Want me to send it to the printer?' }
+
+  it('an offer in one chat does not give another chat the printers on "yes please"', async () => {
+    const { say } = setup('mimir-cloud', [offer, { text: 'Sent.' }, { text: 'Which one?' }], tools)
+    await say('Design a bracket and slice it', 's1')
+    const one = await say('yes please', 's1')
+    expect(inSet(toolsOf(one[0]!), 'printer.')).toBe(50)
+    const other = await say('yes please', 's2')
+    expect(inSet(toolsOf(other[0]!), 'printer.')).toBeLessThan(50)
+  })
+
+  it('forgetRun drops the chat\'s sticky state and capped report, and leaves other chats alone', async () => {
+    const { say, pilot } = setup('mimir-cloud', [offer, offer, { text: 'Sent.' }, { text: 'Sent.' }], tools)
+    await say('Design a bracket and slice it', 's1')
+    await say('Design a bracket and slice it', 's2')
+    expect(pilot.toolCap('s1')).not.toBeNull()
+    pilot.forgetRun('s1')
+    expect(pilot.toolCap('s1')).toBeNull()
+    expect(pilot.toolCap('s2')).not.toBeNull()
+    // s1 is a new chat now: the old offer is gone, s2 still has its own
+    const one = await say('yes please', 's1')
+    expect(inSet(toolsOf(one[0]!), 'printer.')).toBeLessThan(50)
+    const two = await say('yes please', 's2')
+    expect(inSet(toolsOf(two[0]!), 'printer.')).toBe(50)
+  })
+
+  it('a chat restored on a fresh pilot starts from the messages only: what was offered, needed and called before is lost', async () => {
+    const { say } = setup('mimir-cloud', [offer, { call: 'printer.t3' }, { text: 'Sent.' }, { text: 'Sent.' }], tools)
+    await say('Design a bracket and slice it', 's1')
+    const live = await say('yes please', 's1')
+    expect(inSet(toolsOf(live[0]!), 'printer.')).toBe(50)
+    // the app restores a chat as its user and reply text (pilot.resume), not its tool calls or the pilot's own notes
+    const fresh = setup('mimir-cloud', [{ text: 'Sent.' }], tools)
+    expect(fresh.pilot.resume).toBeDefined()
+    fresh.pilot.resume?.('s1', [{ user: 'Design a bracket and slice it', reply: offer.text }])
+    const restored = await fresh.say('yes please', 's1')
+    expect(inSet(toolsOf(restored[0]!), 'printer.')).toBeLessThan(50)
+    expect(toolsOf(restored[0]!).length).toBeLessThanOrEqual(128)
+    expect(toolsOf(restored[0]!).at(-1)).toBe(LOAD_TOOLS_TOOL)
+  })
+
+  it('a reply that mentions many words does not push out what this message needs', async () => {
+    const chatty = { text: 'To make the file I looked at how the quality settings look, then open the project and the theme.' }
+    const { say } = setup('mimir-cloud', [chatty, { text: 'It is idle.' }], tools)
+    const one = await say('hello', 's1')
+    expect(inSet(toolsOf(one[0]!), 'printer.')).toBeLessThan(50)
+    const two = await say('Is the printer done yet?', 's1')
+    const names = toolsOf(two[0]!)
+    expect(inSet(names, 'printer.')).toBe(50)
+    expect(names.length).toBeLessThanOrEqual(128)
+  })
+
+  it('"no thanks" after an offer stays under the cap with core', async () => {
+    const { say } = setup('mimir-cloud', [offer, { text: 'Okay.' }, { text: 'Which one?' }], tools)
+    await say('Design a bracket and slice it', 's1')
+    const declined = await say('no thanks', 's1')
+    for (let i = 0; i < 10; i++) expect(toolsOf(declined[0]!)).toContain(`core.t${i}`)
+    expect(toolsOf(declined[0]!).length).toBeLessThanOrEqual(128)
+    // the decline reply is "Okay.", so it names nothing and the old offer is gone
+    const later = await say('yes please', 's1')
+    expect(toolsOf(later[0]!).length).toBeLessThanOrEqual(128)
+  })
+
+  it('sends the same tools whatever order the tools were registered in', async () => {
+    const a = setup('mimir-cloud', [{ call: 'printer.t1' }, { text: 'Printing.' }, { text: 'Still.' }], tools)
+    const b = setup('mimir-cloud', [{ call: 'printer.t1' }, { text: 'Printing.' }, { text: 'Still.' }], [...tools].reverse())
+    const ra = [...(await a.say('How is the printer doing?')), ...(await a.say('Is the printer done yet?'))]
+    const rb = [...(await b.say('How is the printer doing?')), ...(await b.say('Is the printer done yet?'))]
+    expect(new Set(ra.map(toolsJson)).size).toBe(1)
+    expect(new Set(rb.map(toolsJson)).size).toBe(1)
+    // a toolset that goes in part sends its first tools in registration order, so compare the count per toolset
+    const count = (names: string[]) => ['core.', 'geom.', 'settings.', 'printer.', 'fleet.'].map((p) => inSet(names, p))
+    expect(count(toolsOf(rb[0]!))).toEqual(count(toolsOf(ra[0]!)))
+  })
+
+  it('a tool called that the request did not carry runs, and the next request carries it, keeps core and stays at the cap', async () => {
+    const { pilot, llm } = setup('mimir-cloud', [{ call: 'theme.t3' }, { text: 'Done.' }], manyTools())
+    const got: { ok: boolean; summary: string }[] = []
+    for await (const e of pilot.run('s1', 'hello')) if (e.type === 'tool_result') got.push({ ok: e.ok, summary: e.summary })
+    expect(got).toEqual([{ ok: true, summary: 'theme.t3 ran' }])
+    const sent = llm.sent
+    expect(sent).toHaveLength(2)
+    expect(toolsOf(sent[0]!)).not.toContain('theme.t3')
+    const next = toolsOf(sent[1]!)
+    expect(next).toContain('theme.t3')
+    for (let i = 0; i < 10; i++) expect(next).toContain(`core.t${i}`)
+    expect(next.length).toBeLessThanOrEqual(128)
   })
 })
