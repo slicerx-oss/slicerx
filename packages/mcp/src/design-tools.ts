@@ -523,15 +523,13 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     const all = designs.list()
     const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase())
     if (named.length === 1) return { design: named[0]!, how: 'matched by name' }
-    if (named.length > 1)
-      throw new ToolInputError(
-        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and ${named.length} open designs are named ${entry.plan.part}. Which design is it? ${named.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
-      )
-    if (all.length === 0) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
-    if (all.length > 1)
-      throw new ToolInputError(
-        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and no open design is named ${entry.plan.part}. Which design is it? Open: ${all.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
-      )
+    // on the card's own side the refusal is the mimir card's step row, so it names the part and the designs, no ids
+    const card = opts.cardSide === true
+    const plan = card ? `the plan for ${entry.plan.part}` : `plan ${entry.plan.planId} (${entry.plan.part})`
+    const listed = (ds: readonly HostDesign[]): string => ds.map((d) => (card ? d.name : `${d.name} (${d.id})`)).join(', ')
+    if (named.length > 1) throw new ToolInputError(`design: ${plan} is not tied to a design and ${named.length} open designs are named ${entry.plan.part}. Which design is it? ${listed(named)}. Check again with design set to its id.`)
+    if (all.length === 0) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against ${card ? 'its plan' : `plan ${entry.plan.planId}`}.`)
+    if (all.length > 1) throw new ToolInputError(`design: ${plan} is not tied to a design and no open design is named ${entry.plan.part}. Which design is it? Open: ${listed(all)}. Check again with design set to its id.`)
     return { design: all[0]!, how: 'latest' }
   }
 
