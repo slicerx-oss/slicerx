@@ -4,6 +4,8 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-11-08
+
 ### Added
 
 - Paint up to filament 32. `MAX_PAINT_STATE` is 32, and `decodeTree` and `encodeTree` take a `PaintScheme`: `run` (the default, the `paint_*` attributes, where 19 is `1FC` and 32 is `EFC`) or `escape` (the `slic3rpe:*` attributes and the facets JSON, where 17 and up are E and an 8-bit value, so 32 is `0FEC`).

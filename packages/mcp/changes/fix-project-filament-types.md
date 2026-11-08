@@ -1,3 +1,0 @@
-### Fixed
-
-- `slicerx_slice_file` 1.9.0 and `slicerx_estimate_file` 1.7.0 with `project_settings` and a `machine:` profile open a Bambu Studio, OrcaSlicer or PrusaSlicer project with the filament type it names for each filament (`filament_type`), as the app's project open now does. A PETG or TPU filament slices on the printer's PETG or TPU filament under the project's own values (cooling, speeds, retraction, pressure advance, the nozzle checks); a filament the project names no type for stays PLA. Before, every filament sliced as PLA, so the 2.85 mm TPU of an H3C project and the PETG of a PrusaSlicer project took PLA's settings.
