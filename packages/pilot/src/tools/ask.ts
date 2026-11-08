@@ -125,12 +125,12 @@ export function sheetBindTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'After building from a sheet, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again.',
+      'After building from a sheet, never before, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again. With no row to tie, do not call it.',
     input: z.object({
       design: z.string().min(1).max(80),
       binds: z
         .array(z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), step: z.number().int().min(1).max(1000), scale: z.number().min(-1000).max(1000).optional(), offset: z.number().min(-100_000).max(100_000).optional() }))
-        .min(1)
+        .min(1, 'give at least one row; tie rows once the part is built, and skip this call when no row sets one step')
         .max(30),
     }),
     args: (i) => `${i.binds.length} rows to ${i.design}`,
