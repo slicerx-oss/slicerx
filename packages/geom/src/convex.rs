@@ -52,20 +52,34 @@ impl ConvexSolid {
         Self::prism(frame, &poly2d::circle([0.0, 0.0], r, segments), h0, h1)
     }
 
-    /// the solid as a closed mesh, its faces cut from squares `size` across about `center`
+    /// the solid as a closed mesh, cut to a box around itself and `near`; none when it runs out of any such box
     #[allow(clippy::cast_possible_truncation, reason = "a convex solid has few corners")]
-    pub fn to_mesh(&self, center: V3, size: f64) -> TriMesh {
+    pub fn to_mesh(&self, near: &Aabb) -> Option<TriMesh> {
+        // the solid's own extent first, from faces cut far wider than any part
+        const FAR: f64 = 1e6;
+        let rings = |center: V3, size: f64| -> Vec<Vec<V3>> {
+            self.faces(center, size)
+                .into_iter()
+                .filter_map(|f| f.rings.into_iter().next())
+                .collect()
+        };
+        let own = ring_bounds(&rings(near.center(), FAR))?;
+        if (0..3).any(|k| own.max[k] - own.min[k] > FAR) {
+            return None;
+        }
+        let both = union(&own, near);
+        let size = both.diagonal().max(1.0) * 4.0;
         let mut out = TriMesh::default();
-        for f in self.faces(center, size) {
-            let ring = &f.rings[0];
+        for ring in rings(both.center(), size) {
             let base = out.positions.len() as u32;
-            out.positions.extend(ring);
+            out.positions.extend(&ring);
             for i in 1..ring.len() as u32 - 1 {
                 out.triangles.push([base, base + i, base + i + 1]);
             }
         }
         // each face clips its corners on its own: the same corner a few float steps apart
-        out.weld(size * 1e-9)
+        let out = out.weld(size * 1e-9);
+        out.edge_report().is_watertight().then_some(out)
     }
 
     pub fn faces(&self, center: V3, size: f64) -> Vec<Face> {
@@ -1095,6 +1109,29 @@ mod tests {
         assert!(m.edge_report().is_watertight(), "{:?}", m.edge_report());
         let ring = poly2d::Polygon::simple(poly2d::circle([0.0, 0.0], 3.0, 48));
         assert!((m.volume() - (3000.0 - ring.area() * 5.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_long_cutter_on_a_small_part_makes_a_closed_tool() {
+        // 400 mm long against a 10 mm part: its faces are cut to a box around the cutter too, not the part alone
+        let f = Frame::from_normal([0.0; 3], [1.0, 0.0, 0.0], None).unwrap();
+        let rod = ConvexSolid::cylinder(&f, 2.0, -200.0, 200.0, 24).unwrap();
+        let near = Aabb {
+            min: [-5.0; 3],
+            max: [5.0; 3],
+        };
+        let m = rod.to_mesh(&near).unwrap();
+        assert!(m.edge_report().is_watertight());
+        let b = m.bounds().unwrap();
+        assert!((b.max[0] - b.min[0] - 400.0).abs() < 1e-6, "{b:?}");
+        // a half space runs out of every box
+        let half = ConvexSolid {
+            planes: vec![Plane {
+                normal: [0.0, 0.0, 1.0],
+                offset: 0.0,
+            }],
+        };
+        assert!(half.to_mesh(&near).is_none());
     }
 
     #[test]
