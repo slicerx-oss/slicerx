@@ -1427,13 +1427,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cargo build -p sx-cli --release
       - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      # One pack of the integrator kit, as npm would publish its packages, for the three checks below.
+      - run: node scripts/pack-integrator-kit.mjs "$RUNNER_TEMP/kit"
       # The integrator sample, installed from packed tarballs the way an outside app gets the packages.
       - run: node examples/integrator-sample/scripts/integration.mjs
         env:
           SLICERX_SX_BIN: ${{ github.workspace }}/target/release/sx
+          SPOOLHOUSE_KIT: ${{ runner.temp }}/kit
       # The optional STEP reader tarball of the kit: an app with only the MCP installed is told to add it, and with both
       # installed the server reads a STEP file. Like the sample above, npm installs the MCP's dependencies from the registry.
       - run: pnpm test:kit-step
+        env:
+          SX_KIT_DIR: ${{ runner.temp }}/kit
+      # The kit's self-contained MCP server: kit-manifest.json and SHA256SUMS.txt list its zip, it runs with no
+      # node_modules, carries its license texts, and reads a STEP file with the kit's reader tarball.
+      - run: pnpm test:kit-standalone
+        env:
+          SX_KIT_DIR: ${{ runner.temp }}/kit
 
   # The heavy-work lock of the self-hosted CI (scripts/ci/heavy.sh), on a temporary lock.
   heavy-lock:
