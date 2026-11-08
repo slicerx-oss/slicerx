@@ -282,6 +282,28 @@ mod tests {
     }
 
     #[test]
+    fn a_mip_level_keeps_the_texture_rounding() {
+        // 0 and 7 average onto a step that textures round down to 3, where trace rounds up to 4
+        let img = Image::from_rgba(2, 1, vec![[0, 0, 0, 255], [7, 7, 7, 255]]).unwrap();
+        assert_eq!(img.levels[1].px, vec![[3, 3, 3, 255]]);
+    }
+
+    #[test]
+    fn a_png_over_100_megapixels_is_left_out_as_too_large() {
+        let mut file = crate::raster::tests::png(1, 1, 3, &[0; 3], None);
+        file[16..20].copy_from_slice(&16_000u32.to_be_bytes());
+        file[20..24].copy_from_slice(&16_000u32.to_be_bytes());
+        let crc = crate::raster::tests::crc32(&file[12..29]);
+        file[29..33].copy_from_slice(&crc.to_be_bytes());
+        let why = decode(&file).err().unwrap();
+        assert_eq!(why, Unusable::TooLarge);
+        assert_eq!(
+            why.note("big.png"),
+            "The texture big.png is too large to read, so it is left out."
+        );
+    }
+
+    #[test]
     fn a_png_over_the_largest_side_is_reduced_while_it_decodes() {
         let (w, h) = (MAX_SIDE + 8, 4);
         let mut rgb = Vec::with_capacity(w * h * 3);
