@@ -812,10 +812,97 @@ function bounds(shape: Shape, raws: readonly RawDim[], view: ViewName): { x0: nu
   return x0 === Infinity ? { x0: -1, y0: -1, x1: 1, y1: 1 } : { x0, y0, x1, y1 }
 }
 
+/** How far out a size may move to clear the part in Iso, as a share of how far out it was set. */
+const CLEAR_MAX = 3
+/** The steps it moves out by, as a share of how far out it was set. */
+const CLEAR_STEP = 0.25
+/**
+ * The least room between a size's line and the part in Iso, in px: room for an extension line that comes out from
+ * behind the part to show (it starts 3 px clear of the part and needs 4 px to be drawn shortened, unhide), and a little.
+ */
+export const CLEAR_ROOM_PX = 10
+
+/**
+ * The rows as Iso draws them. A size set out from the part (a diameter under a tube's foot) can still run across the
+ * part in Iso, or close under it, since the plane it sits in passes behind the part's near side there. Each size whose
+ * line comes within CLEAR_ROOM_PX of the part, at `k` px per mm, moves further out along its own way out, in steps of
+ * a quarter of how far out it was set, until it is that far clear (at most three times further out). Every size set
+ * out the same way moves out by the most any of them needed, so a stack of sizes keeps its order and spacing. Sizes
+ * measured over the part (with no way out) stay where they are.
+ */
+export function clearInIso(shape: Shape, dims: readonly PilotDim[], k: number): PilotDim[] {
+  const P = project('iso')
+  const outs = dims.filter((d) => d.at && 'a' in d.at && len(d.at.off) > 0)
+  if (!outs.length || !shape.pts.length) return [...dims]
+  // the part drawn small, about 240 px across, which is enough to tell how near a line runs to it
+  const b = bounds(shape, [], 'iso')
+  const s = 240 / Math.max(1e-6, b.x1 - b.x0, b.y1 - b.y0)
+  const room = Math.max(1.5, (CLEAR_ROOM_PX / Math.max(1e-6, k)) * s)
+  const edge = Math.ceil(room) + 2
+  const [W, H] = [Math.ceil((b.x1 - b.x0) * s) + 2 * edge, Math.ceil((b.y1 - b.y0) * s) + 2 * edge]
+  const [ox, oy] = [edge - b.x0 * s, edge - b.y0 * s]
+  const ras = rasterize(shape, 'iso', W, H, s, ox, oy, 1)
+  // each pixel's distance to the part, in px (two passes of a 3-4 chamfer, a third of a px off at worst)
+  const far = new Float32Array(W * H)
+  for (let i = 0; i < far.length; i++) far[i] = ras.cover[i] ? 0 : Infinity
+  const pass = (from: number, to: number, step: number, look: [number, number, number][]) => {
+    for (let y = from; y !== to; y += step) {
+      for (let x = step > 0 ? 0 : W - 1; step > 0 ? x < W : x >= 0; x += step) {
+        let v = far[y * W + x]!
+        for (const [dx, dy, c] of look) {
+          const [nx, ny] = [x + dx * step, y + dy * step]
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H) v = Math.min(v, far[ny * W + nx]! + c)
+        }
+        far[y * W + x] = v
+      }
+    }
+  }
+  const look: [number, number, number][] = [[-1, 0, 1], [0, -1, 1], [-1, -1, Math.SQRT2], [1, -1, Math.SQRT2]]
+  pass(0, H, 1, look)
+  pass(H - 1, -1, -1, look)
+  const near = (x: number, y: number): boolean => {
+    const [cx, cy] = [Math.floor(x * s + ox), Math.floor(y * s + oy)]
+    return cx >= 0 && cy >= 0 && cx < W && cy < H && far[cy * W + cx]! < room
+  }
+  const tooNear = (a: V3, c: V3): boolean => {
+    const [p, q] = [P(a), P(c)]
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * s * 2))
+    for (let i = 0; i <= n; i++) if (near(p[0] + ((q[0] - p[0]) * i) / n, p[1] + ((q[1] - p[1]) * i) / n)) return true
+    return false
+  }
+  const way = (off: V3): string => nrm(off).map((v) => v.toFixed(3)).join(',')
+  // the most each way out needs, in mm
+  const need = new Map<string, number>()
+  for (const d of outs) {
+    const at = d.at as Extract<PilotDimAt, { a: V3 }>
+    for (let m = 0; m <= CLEAR_MAX + 1e-9; m += CLEAR_STEP) {
+      const off = mul(at.off, 1 + m)
+      if (tooNear(add(at.a, off), add(at.b, off))) continue
+      if (m > 0) need.set(way(at.off), Math.max(need.get(way(at.off)) ?? 0, m * len(at.off)))
+      break
+    }
+  }
+  if (!need.size) return [...dims]
+  return dims.map((d) => {
+    if (!d.at || !('a' in d.at) || len(d.at.off) === 0) return d
+    const more = need.get(way(d.at.off))
+    return more ? { ...d, at: { ...d.at, off: add(d.at.off, mul(nrm(d.at.off), more)) } } : d
+  })
+}
+
+const fit = (b: { x0: number; y0: number; x1: number; y1: number }, w: number, h: number, pad: number): number =>
+  Math.max(0.01, Math.min((w - 2 * pad) / Math.max(1e-6, b.x1 - b.x0), (h - 2 * pad) / Math.max(1e-6, b.y1 - b.y0)))
+
+/**
+ * The rows as a view draws them: Iso moves the ones that would run across the part (clearInIso), giving their lines
+ * their room at `scale`, or at the most the part alone could be drawn at in a w x h cell.
+ */
+const placedIn = (shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, pad: number, scale?: number): readonly PilotDim[] =>
+  view === 'iso' ? clearInIso(shape, dims, scale ?? fit(bounds(shape, [], view), w, h, pad)) : dims
+
 /** Pixels per mm that fit a view's drawing in a w x h cell with `pad` around it. */
 export function fitScale(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, pad: number, order: readonly ViewName[] = []): number {
-  const b = bounds(shape, rawDims(dims, view, viewsFor(dims, order)), view)
-  return Math.max(0.01, Math.min((w - 2 * pad) / Math.max(1e-6, b.x1 - b.x0), (h - 2 * pad) / Math.max(1e-6, b.y1 - b.y0)))
+  return fit(bounds(shape, rawDims(placedIn(shape, dims, view, w, h, pad), view, viewsFor(dims, order)), view), w, h, pad)
 }
 
 export const BADGE_R = 10
@@ -879,9 +966,9 @@ export function unhide(l: [P2, P2], hiddenAt: (t: number) => boolean): [P2, P2] 
 export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, opts: { scale?: number; pad?: number; order?: readonly ViewName[]; px?: number; part?: Raster } = {}): DrawnView {
   const pad = opts.pad ?? 30
   const px = opts.px ?? 1
-  const raws = rawDims(dims, view, viewsFor(dims, opts.order ?? []))
+  const raws = rawDims(placedIn(shape, dims, view, w, h, pad, opts.scale), view, viewsFor(dims, opts.order ?? []))
   const b = bounds(shape, raws, view)
-  const k = opts.scale ?? fitScale(shape, dims, view, w, h, pad, opts.order)
+  const k = opts.scale ?? fit(b, w, h, pad)
   const ox = (w - (b.x1 - b.x0) * k) / 2 - b.x0 * k
   const oy = (h - (b.y1 - b.y0) * k) / 2 - b.y0 * k
   const S = (p: P2): P2 => [r1(p[0] * k + ox), r1(p[1] * k + oy)]
