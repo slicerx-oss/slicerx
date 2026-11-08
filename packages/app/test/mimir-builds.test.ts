@@ -5,8 +5,8 @@
 // every step in the object's history like a person's edit. Runs against the geometry engine (live wasm when built,
 // recorded replies otherwise).
 import type { MeshHandle, MeshPart, PilotEvent } from '@slicerx/contracts'
-import type { HistoryMesh } from '@slicerx/cad-history'
-import { designToolset } from '@slicerx/mcp/toolset'
+import { stepName, type HistoryMesh } from '@slicerx/cad-history'
+import { designCheck, designToolset } from '@slicerx/mcp/toolset'
 import type { ToolRowModel } from '@slicerx/pilot/ui'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
@@ -68,6 +68,13 @@ describe('scripted mimir builds', () => {
     const holes = Math.PI * (15 * 15 + 2 * 2.25 * 2.25) * 3
     expect(volume(e!.parts)).toBeCloseTo(150.4 * 110.4 * 3 - holes, -2)
     expect(events.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
+    // the extrude names the feature it builds, as mimir is told to, so a plan with that feature finds its step: the
+    // tool's own step name ("Sketch extrude 3 mm") says nothing about the feature and stands for none
+    const steps = e!.history!.steps
+    expect(steps.map((s) => s.feature)).toEqual(['plate with holes'])
+    const plan = { planId: 'backplate', part: 'Thermostat backplate', units: 'mm' as const, features: [{ name: 'plate with holes', kind: 'extrude', sizes: { width: 150.4, height: 110.4, thickness: 3 } }], assumptions: [], questions: [] }
+    const body = { size: { x: 150.4, y: 110.4, z: 3 }, holes: [], features: steps.length, steps: steps.map((s) => stepName(s)), tags: steps.map((s) => s.feature ?? null), watertight: true, minWallMm: 3 }
+    expect(designCheck(plan, body, 0.4).items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
   })
 
   it('makes a box with 2 mm walls and a lid whose lip fits inside it', async () => {
