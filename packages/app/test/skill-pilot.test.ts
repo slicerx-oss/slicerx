@@ -118,4 +118,21 @@ describe('a setup answer that waited out free mimir\'s per-minute limit', () => 
     expect(reply.unsure).toBeFalsy()
     expect(onboarding.status()).toBe('ready')
   })
+
+  it('marks the setup rate limited when mimir gave up waiting, with its line that it stopped', async () => {
+    // the proxy answers slow_down to every request, so mimir stops after a minute of waiting
+    const client: LlmClient = {
+      provider: 'mimir-cloud',
+      async *stream() {
+        yield { type: 'error', message: 'Slow down a moment, then try again.', retryable: false, code: 'slow_down' }
+        yield { type: 'done', stop: 'error' }
+      },
+    }
+    const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client, sleep: async () => undefined })
+    const onboarding = createSkillPilot(pilot, 's1')
+    const reply = await onboarding.ask({ step: 'printer', text: 'Which nozzle?', form: {} })
+    expect(reply.text).toMatch(/^Free mimir is still at its limit for this minute/)
+    expect(reply.unsure).toBe(true)
+    expect(onboarding.status()).toBe('rate-limited')
+  })
 })
