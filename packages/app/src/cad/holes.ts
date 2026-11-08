@@ -57,7 +57,7 @@ async function applyPartStep(
 ): Promise<{ message: string; warn: boolean }> {
   const e = get().plate.find((p) => p.id === objectId)
   const part = e?.parts[partIndex]
-  if (!e || !part) throw new Error('That object is gone.')
+  if (!e || !part) throw goneError(objectId)
   reserveStepId()
   if (e.history?.exact) {
     const next = withStep(e, partIndex, params, undefined, true)
