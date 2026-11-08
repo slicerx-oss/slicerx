@@ -7,16 +7,14 @@
 use crate::error::{Error, Result};
 use crate::fm::Fm;
 use crate::poly2d;
-use crate::sketch::{self, CLOSE_MM, Loop, MAX_MM, Segment, SketchCheck};
-use crate::sketch_spline;
+use crate::sketch::{self, CLOSE_MM, Loop, MAX_MM, SketchCheck};
+use crate::sketch_fit::{self, Builder, MAX_SAMPLES, MIN_MM, bez, circumcenter, dist, sub2};
 use crate::svg::{self, Mat, Seg, Sub, apply, mul};
 use crate::vec3::V2;
 use serde::{Deserialize, Serialize};
 
-// shorter than this a piece is dropped
-const MIN_MM: f64 = 1e-4;
-// most points one curve takes
-const MAX_SAMPLES: usize = 64;
+pub use crate::sketch_fit::Counts;
+
 // most path pieces one file may have, so the fit stays bounded
 const MAX_PIECES: usize = 50_000;
 // the finest tolerance a fit is asked for
@@ -46,14 +44,6 @@ impl Default for SvgSketchOptions {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub struct Counts {
-    pub lines: usize,
-    pub arcs: usize,
-    pub splines: usize,
-    pub circles: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SvgSketch {
@@ -63,52 +53,6 @@ pub struct SvgSketch {
     pub mm_per_unit: f64,
     pub check: SketchCheck,
     pub warnings: Vec<String>,
-}
-
-fn sub2(a: V2, b: V2) -> V2 {
-    [a[0] - b[0], a[1] - b[1]]
-}
-
-fn dist(a: V2, b: V2) -> f64 {
-    (a[0] - b[0]).m_hypot(a[1] - b[1])
-}
-
-fn bez(p: &[V2; 4], t: f64) -> V2 {
-    let u = 1.0 - t;
-    let (w0, w1, w2, w3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
-    [
-        w0 * p[0][0] + w1 * p[1][0] + w2 * p[2][0] + w3 * p[3][0],
-        w0 * p[0][1] + w1 * p[1][1] + w2 * p[2][1] + w3 * p[3][1],
-    ]
-}
-
-fn circumcenter(a: V2, b: V2, c: V2) -> Option<V2> {
-    let d = 2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
-    let scale = dist(a, b).max(dist(a, c)).max(1e-9);
-    if d.abs() < 1e-9 * scale * scale {
-        return None;
-    }
-    let (a2, b2, c2) = (
-        a[0] * a[0] + a[1] * a[1],
-        b[0] * b[0] + b[1] * b[1],
-        c[0] * c[0] + c[1] * c[1],
-    );
-    Some([
-        (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d,
-        (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d,
-    ])
-}
-
-/// how far `p` is from the segment `a`-`b`
-fn to_segment(p: V2, a: V2, b: V2) -> f64 {
-    let ab = sub2(b, a);
-    let l2 = ab[0] * ab[0] + ab[1] * ab[1];
-    let t = if l2 > 0.0 {
-        (((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / l2).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    dist(p, [a[0] + t * ab[0], a[1] + t * ab[1]])
 }
 
 /// what one svg curve becomes; a spline says whether it met the tolerance
@@ -152,16 +96,7 @@ fn cubic(p: [V2; 4], tol: f64) -> Piece {
     loop {
         let through: Vec<V2> = (0..=n).map(|k| bez(&p, k as f64 / n as f64)).collect();
         // the error at matching t, a few points inside each span
-        let off = sketch_spline::spans(&through, false)
-            .iter()
-            .enumerate()
-            .flat_map(|(j, b)| {
-                (1..4).map(move |q| {
-                    let s = f64::from(q) / 4.0;
-                    dist(bez(b, s), bez(&p, (j as f64 + s) / n as f64))
-                })
-            })
-            .fold(0.0, f64::max);
+        let off = sketch_fit::spline_error(&through, |j, s| bez(&p, (j as f64 + s) / n as f64));
         let met = off <= tol;
         if met || n >= MAX_SAMPLES {
             return Piece::Spline(through[1..n].to_vec(), met);
@@ -176,64 +111,18 @@ fn keeps_circles(m: &Mat) -> bool {
     (m[0] * m[2] + m[1] * m[3]).abs() <= 1e-9 * u && (u - v).abs() <= 1e-9 * u
 }
 
-struct Builder {
-    segs: Vec<Segment>,
-    // each arc's center and radius, for loops that are whole circles
-    round: Vec<Option<(V2, f64)>>,
-    at: V2,
-    // splines that missed the tolerance at the most points
-    missed: usize,
-}
-
-impl Builder {
-    fn line(&mut self, to: V2) {
-        if dist(self.at, to) < MIN_MM {
-            return;
-        }
-        self.segs.push(Segment {
-            kind: "line".into(),
-            to: Some(to),
-            ..Segment::default()
-        });
-        self.round.push(None);
-        self.at = to;
-    }
-
-    fn arc(&mut self, to: V2, through: V2, center: V2, radius: f64) {
-        // a sliver of an arc is a line; the three point form refuses it
-        if dist(self.at, to) < MIN_MM || to_segment(through, self.at, to) < MIN_MM {
-            self.line(to);
-        } else {
-            self.segs.push(Segment {
-                kind: "arc".into(),
-                to: Some(to),
-                through: Some(through),
-                ..Segment::default()
-            });
-            self.round.push(Some((center, radius)));
-            self.at = to;
-        }
-    }
-
-    fn cubic(&mut self, c1: V2, c2: V2, to: V2, tol: f64) {
-        match cubic([self.at, c1, c2, to], tol) {
-            Piece::Line => self.line(to),
-            Piece::Arc {
-                through,
-                center,
-                radius,
-            } => self.arc(to, through, center, radius),
-            Piece::Spline(points, met) => {
-                self.missed += usize::from(!met);
-                self.segs.push(Segment {
-                    kind: "spline".into(),
-                    to: Some(to),
-                    points,
-                    ..Segment::default()
-                });
-                self.round.push(None);
-                self.at = to;
-            }
+/// adds a cubic to `b` as a line, an arc or a spline; counts a spline that missed the tolerance
+fn add_cubic(b: &mut Builder, c1: V2, c2: V2, to: V2, tol: f64, missed: &mut usize) {
+    match cubic([b.at, c1, c2, to], tol) {
+        Piece::Line => b.line(to),
+        Piece::Arc {
+            through,
+            center,
+            radius,
+        } => b.arc(to, through, center, radius),
+        Piece::Spline(points, met) => {
+            *missed += usize::from(!met);
+            b.spline(to, points);
         }
     }
 }
@@ -241,17 +130,14 @@ impl Builder {
 /// one subpath as a loop, closed back to its start, or None when nothing of it is left; counts missed fits
 fn to_loop(sub: &Sub, m: &Mat, tol: f64, missed: &mut usize) -> Option<Loop> {
     let start = apply(m, sub.start);
-    let mut b = Builder {
-        segs: Vec::new(),
-        round: Vec::new(),
-        at: start,
-        missed: 0,
-    };
+    let mut b = Builder::new(start);
     let mut cur = sub.start;
     for &seg in &sub.segs {
         match seg {
             Seg::Line(to) => b.line(apply(m, to)),
-            Seg::Cubic(c1, c2, to) => b.cubic(apply(m, c1), apply(m, c2), apply(m, to), tol),
+            Seg::Cubic(c1, c2, to) => {
+                add_cubic(&mut b, apply(m, c1), apply(m, c2), apply(m, to), tol, missed)
+            }
             Seg::Arc {
                 rx,
                 ry,
@@ -272,7 +158,7 @@ fn to_loop(sub: &Sub, m: &Mat, tol: f64, missed: &mut usize) -> Option<Loop> {
                     // an ellipse, or a skewed circle: each quarter as a curve
                     Some(_) => {
                         for [c1, c2, end] in svg::arc_to_cubics(cur, rx, ry, rot, large, sweep, to) {
-                            b.cubic(apply(m, c1), apply(m, c2), apply(m, end), tol);
+                            add_cubic(&mut b, apply(m, c1), apply(m, c2), apply(m, end), tol, missed);
                         }
                     }
                     None => b.line(apply(m, to)),
@@ -281,74 +167,7 @@ fn to_loop(sub: &Sub, m: &Mat, tol: f64, missed: &mut usize) -> Option<Loop> {
         }
         cur = seg.to();
     }
-    if dist(b.at, start) >= CLOSE_MM {
-        b.line(start);
-    } else if let Some(last) = b.segs.last_mut() {
-        last.to = Some(start);
-    }
-    *missed += b.missed;
-    if b.segs.len() < 2 {
-        return None;
-    }
-    // arcs round one center all the way are a circle
-    if let Some(Some((c, r))) = b.round.first().copied() {
-        let whole = b
-            .round
-            .iter()
-            .all(|x| x.is_some_and(|(c2, r2)| dist(c, c2) <= tol && (r - r2).abs() <= tol));
-        if whole {
-            return Some(Loop {
-                kind: Some("circle".into()),
-                center: Some(c),
-                diameter_mm: Some(2.0 * r),
-                ..Loop::default()
-            });
-        }
-    }
-    Some(Loop {
-        start: Some(start),
-        segments: b.segs,
-        ..Loop::default()
-    })
-}
-
-// to a millionth of a mm, and never -0
-fn tidy(v: f64) -> f64 {
-    (v * 1e6).round() / 1e6 + 0.0
-}
-
-fn tidy2(p: V2) -> V2 {
-    [tidy(p[0]), tidy(p[1])]
-}
-
-fn tidy_loop(l: &mut Loop) {
-    l.start = l.start.map(tidy2);
-    l.center = l.center.map(tidy2);
-    l.diameter_mm = l.diameter_mm.map(tidy);
-    for s in &mut l.segments {
-        s.to = s.to.map(tidy2);
-        s.through = s.through.map(tidy2);
-        for p in &mut s.points {
-            *p = tidy2(*p);
-        }
-    }
-}
-
-fn count(loops: &[Loop]) -> Counts {
-    let mut n = Counts::default();
-    for l in loops {
-        if l.kind.as_deref() == Some("circle") {
-            n.circles += 1;
-        }
-        for s in &l.segments {
-            match s.kind.as_str() {
-                "line" => n.lines += 1,
-                "arc" => n.arcs += 1,
-                _ => n.splines += 1,
-            }
-        }
-    }
-    n
+    b.finish(tol)
 }
 
 /// the closed paths of `svg` as sketch loops, holes kept as loops inside; strokes and fills alike, open strokes left out
@@ -476,15 +295,7 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
             ),
         ));
     }
-    let mid = [f64::midpoint(lo[0], hi[0]), f64::midpoint(lo[1], hi[1])];
-    let place: Mat = [
-        f,
-        0.0,
-        0.0,
-        f,
-        opts.center[0] - f * mid[0],
-        opts.center[1] - f * mid[1],
-    ];
+    let place: Mat = sketch_fit::placement(lo, hi, f, opts.center);
     let mut missed = 0usize;
     let mut loops: Vec<Loop> = kept
         .iter()
@@ -497,15 +308,15 @@ pub fn sketch_svg(svg: &str, opts: &SvgSketchOptions) -> Result<SvgSketch> {
             if missed == 1 { "stays" } else { "stay" }
         ));
     }
-    loops.iter_mut().for_each(tidy_loop);
+    loops.iter_mut().for_each(sketch_fit::tidy_loop);
     if loops.is_empty() {
         return Err(Error::mesh("svg", "the artwork has no closed shapes"));
     }
     Ok(SvgSketch {
-        counts: count(&loops),
+        counts: sketch_fit::count(&loops),
         check: sketch::check(&loops),
         loops,
-        size_mm: [tidy(w * f), tidy(h * f)],
+        size_mm: [sketch_fit::tidy(w * f), sketch_fit::tidy(h * f)],
         mm_per_unit: s * f,
         warnings,
     })
@@ -516,6 +327,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::float_cmp)]
     use super::*;
     use crate::sketch::Role;
+    use crate::sketch_fit::to_segment;
 
     fn wrap(body: &str) -> String {
         format!(

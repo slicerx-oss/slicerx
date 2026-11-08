@@ -80,6 +80,8 @@ pub mod sketch_corner;
 #[cfg(feature = "cad")]
 pub mod sketch_edit;
 #[cfg(feature = "cad")]
+pub mod sketch_fit;
+#[cfg(feature = "cad")]
 pub mod sketch_loft;
 #[cfg(feature = "cad")]
 pub mod sketch_project;
