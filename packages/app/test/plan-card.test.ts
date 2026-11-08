@@ -302,6 +302,28 @@ describe('the plan card', () => {
     expect(field(/^Spring, Steps$/).value).toBe('2.1235')
   })
 
+  it('reads each size by the kind the plan gives it, over its key, and Go sends the kind-aware values', async () => {
+    // width is a length by its key and teeth a count; the plan says otherwise, so the plan wins
+    const odd: PlanInput = { ...BOX, features: [{ name: 'Gear', sizes: { width: 4, teeth: 20, pitch: 30 }, kinds: { width: 'count', teeth: 'length', pitch: 'angle' } }], overall: undefined, holes: undefined }
+    render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...odd }, picked: null, actionable: false }))
+    expect(savedRows()).toEqual(['Width 4', 'Teeth 20 mm', 'Pitch 30°'])
+    cleanup()
+    const { result } = await shown(odd)
+    expect(field(/^Gear, Width$/).value).toBe('4')
+    expect(field(/^Gear, Teeth, millimeters$/).value).toBe('20')
+    expect(field(/^Gear, Pitch, degrees$/).value).toBe('30')
+    const width = field(/^Gear, Width$/)
+    fireEvent.change(width, { target: { value: '5.4' } })
+    fireEvent.keyDown(width, { key: 'Enter' })
+    const teeth = field(/^Gear, Teeth, millimeters$/)
+    fireEvent.change(teeth, { target: { value: '20.5' } })
+    fireEvent.keyDown(teeth, { key: 'Enter' })
+    await waitFor(() => expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Your changes go with Go'))
+    fireEvent.click(screen.getByTestId('mimir-plan-go'))
+    const out = (await result()).output as { edits: PartPlan }
+    expect(out.edits.features[0]).toEqual({ name: 'Gear', sizes: { width: 5, teeth: 20.5, pitch: 30 }, kinds: { width: 'count', teeth: 'length', pitch: 'angle' } })
+  })
+
   it('never converts a count or an angle in an inch plan', async () => {
     const gear: PlanInput = { ...BOX, units: 'in', features: [{ name: 'Gear', sizes: { teeth: 20, draft: 1.5, thickness: 0.25 } }], overall: undefined, holes: undefined }
     render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...gear }, picked: null, actionable: false }))

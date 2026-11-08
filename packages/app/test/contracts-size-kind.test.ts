@@ -5,7 +5,7 @@
 // degrees, and anything else is a length in the plan's units. An inch plan never converts a count or an angle, and a
 // sheet row given in mm reads the same way. Ambiguous keys (walls, taper) stay lengths.
 import { describe, expect, it } from 'vitest'
-import { dimText, dimUnit, sizeKind, sizeLabelKey, sizeText, sizeUnit, wholeCount } from '@slicerx/contracts/size-kind'
+import { dimText, dimUnit, kindOf, sizeKind, sizeLabelKey, sizeText, sizeUnit, wholeCount } from '@slicerx/contracts/size-kind'
 
 describe('sizeKind', () => {
   it('reads a count from its key', () => {
@@ -136,5 +136,25 @@ const REAL_KEYS: [string, 'count' | 'angle' | 'length'][] = [
 describe('the real keys table', () => {
   it.each(REAL_KEYS)('%s reads as a %s', (key, kind) => {
     expect(sizeKind(key)).toBe(kind)
+  })
+})
+
+describe('an explicit kind', () => {
+  it('beats the key both ways, and the key decides only when no kind is given', () => {
+    expect(kindOf('width', 'count')).toBe('count')
+    expect(kindOf('teeth', 'length')).toBe('length')
+    expect(kindOf('pitch', 'angle')).toBe('angle')
+    expect(kindOf('teeth')).toBe('count')
+    expect(kindOf('width')).toBe('length')
+    for (const [key, kind] of REAL_KEYS) expect(kindOf(key), key).toBe(kind)
+  })
+
+  it('sets a sheet row\'s unit over its key, and a length keeps percent', () => {
+    expect(dimUnit({ key: 'width', unit: 'mm', kind: 'count' })).toBe('')
+    expect(dimUnit({ key: 'teeth', unit: 'mm', kind: 'length' })).toBe('mm')
+    expect(dimUnit({ key: 'pitch', unit: 'mm', kind: 'angle' })).toBe('°')
+    expect(dimUnit({ key: 'infill', unit: '%', kind: 'length' })).toBe('%')
+    expect(dimText({ key: 'width', unit: 'mm', kind: 'count' }, 4)).toBe('4')
+    expect(sizeLabelKey('lean_deg', 'angle')).toBe('lean')
   })
 })

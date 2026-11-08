@@ -1,0 +1,4 @@
+### Changed
+
+- `slicerx_design_put_plan` 1.1.0 takes `kinds` on each feature: what each size measures, `count`, `angle` or `length`, by the size's key (such as `{ "teeth": "count", "draft": "angle" }`). A size with no kind is read by its key, as before, so a plan without `kinds` is unchanged; any other value is refused with `invalid_input`. `slicerx_design_check` reads the same plan shape and still holds no feature size to the body.
+- `slicerx_app_sheet_ask` 1.2.0 takes `kind` on each row of `dims`: `count`, `angle` or `length`. It sets how mimir's sheet shows the row over the row's key: a count with no unit, an angle in degrees and a length in mm (or `%` when the row's unit is `%`). `slicerx_mimir_session` reports a waiting row's `unit` by it (`count`, `deg`, `mm` or `%`). A row with no kind is read by its key, as before.
