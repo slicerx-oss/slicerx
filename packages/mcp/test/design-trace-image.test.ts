@@ -11,7 +11,7 @@ import { deflateSync } from 'node:zlib'
 import type { Design, DesignHost, SketchItem, SketchLoop } from '@slicerx/cad-history'
 import { describe, expect, it, vi } from 'vitest'
 import { routeToApp, type AppLinkCaller } from '../src/app-route'
-import { cadTools, traceRefusal, wireSketchVia, type SketchVia } from '../src/cad'
+import { cadTools, traceLoopTooLong, traceRefusal, wireSketchVia, type SketchVia } from '../src/cad'
 import { readTraceImage } from '../src/geom'
 import type { PathPolicy } from '../src/models'
 import { designToolset, NO_CAD_FILES, NO_ENGINE_HOST } from '../src/toolset'
@@ -212,6 +212,25 @@ describe('design.trace_image: reading and refusing', () => {
     await expect(run('design.trace_image', { image: { base64: Buffer.alloc(30 * 1024 * 1024 + 3).toString('base64') } })).rejects.toThrow(/over the 30 MB a trace takes/)
     await expect(run('design.trace_image', { image: { base64: '====' } })).rejects.toThrow(/the file is empty/)
     expect(engine).not.toHaveBeenCalled()
+  })
+
+  it('refuses a loop longer than a sketch loop takes in its own option names, and a dry run says so', async () => {
+    // 600 short lines round one outline: well under the bytes the link carries, over the 512 pieces a loop takes
+    const segments = Array.from({ length: 600 }, (_, k) => {
+      const a = ((k + 1) / 600) * 2 * Math.PI
+      return { type: 'line', to: [Math.round(100 * Math.cos(a)) / 10, Math.round(100 * Math.sin(a)) / 10] }
+    })
+    const long = { start: [10, 0], segments }
+    const { run, sketches } = host(reply({ loops: [long] }))
+    await expect(run('design.trace_image', { image: { base64: 'AA' } })).rejects.toThrow('image: loop 1 has 600 pieces and a sketch loop takes 512. Raise smoothing_mm, fit to curves, or raise speck_mm2.')
+    expect(sketches).toHaveLength(0)
+    const dry = await run('design.trace_image', { image: { base64: 'AA' }, dry_run: true })
+    expect(dry.summary).toMatch(/Adding it would be refused: loop 1 has 600 pieces and a sketch loop takes 512\. Raise smoothing_mm/)
+    expect(dry.output).toMatchObject({ refused: 'image: loop 1 has 600 pieces and a sketch loop takes 512. Raise smoothing_mm, fit to curves, or raise speck_mm2.' })
+    // the limits are design.sketch's own
+    expect(traceLoopTooLong([{ start: [0, 0], segments: segments.slice(0, 512) }] as never)).toBeUndefined()
+    expect(traceLoopTooLong([{ points: Array.from({ length: 4097 }, () => [0, 0]) }] as never)).toBe('loop 1 has 4097 points and a sketch loop takes 4096')
+    expect(traceLoopTooLong([{ start: [0, 0], segments: [{ type: 'spline', to: [1, 1], points: Array.from({ length: 513 }, () => [0, 0]) }] }] as never)).toBe('loop 1 has a spline through 513 points and a sketch spline takes 512')
   })
 
   it('sends colors in lowercase, and gives engine refusals in its own option names', async () => {
