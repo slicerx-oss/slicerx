@@ -17,6 +17,7 @@ const DESTRUCTIVE = /(^|-)(delete|print|send-to|archive|erase|remove-account|pub
  */
 const EXCEPTIONS: Record<string, string> = {
   'upload-publish': 'the release gate publishes its own test design; nothing goes live before a person approves it in review',
+  'resume-print-everything': 'clears the kept resume plan so the plate slices in full again; nothing prints or sends',
   'unsaved-cancel': 'closes Save changes first? and keeps everything as it is',
   'upload-cancel': 'closes the upload form; nothing was sent',
   'creator-cancel': 'closes the creator page editor without saving',

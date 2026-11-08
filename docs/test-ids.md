@@ -255,6 +255,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `lp-from-sleipnir`, `lp-flat` | Start over from sleipnir's plan, or from a flat line at the plate's layer height |
 | `lp-summary` | The line under the fields: the layer count, the thinnest and thickest layer, and the printer's range |
 | `lp-apply` | Apply, the dialog's primary: off until something changed |
+| `resume-plan-again`, `resume-print-everything` | Plan again and Print everything again, after the footer's note that the kept resume plan no longer matches the plate: the first opens the resume dialog, the second clears the plan so the plate slices in full |
+| `resume-elsewhere` | The footer's note that a resume plan is kept for another plate, so this one prints in full |
+| `resume-kept` | In the resume dialog, the note that the plate's kept plan no longer matches it, with Print everything again |
+| `resume-elsewhere-dialog` | In the resume dialog, the note that a plan is kept for another plate and a plan made here replaces it |
 
 ## Slice: objects and Export
 
@@ -634,6 +638,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | Test id | Why it is not `danger-` |
 | --- | --- |
 | `upload-publish` | The release gate publishes its own test design; nothing goes live before a person approves it in review |
+| `resume-print-everything` | Clears the kept resume plan so the plate slices in full again; nothing prints or sends |
 | `unsaved-cancel` | Closes Save changes first? and keeps everything as it is |
 | `upload-cancel` | Closes the upload form; nothing was sent |
 | `creator-cancel` | Closes the creator page editor without saving |
