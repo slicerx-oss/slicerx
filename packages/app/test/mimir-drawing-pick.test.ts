@@ -6,7 +6,7 @@
 import type { PilotDim, PilotSheetSolid } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { drawingPick, FIRST_PANE, foldDrawing, PANE_NAMES, PANE_VIEWS, paneOffered, panesFor, paneShowing, PHONE_PANES, pickFor, pickPane, showPane, START, toggleFold, type PhonePane } from '../src/workspaces/mimir/drawing-pick'
-import { drawView, fitScale, viewsFor, type ViewName } from '../src/workspaces/mimir/sheet-draw'
+import { drawView, fitScale, shapeOfSolids, viewsFor, type ViewName } from '../src/workspaces/mimir/sheet-draw'
 import { backplatePart, boxPart, clipPart, standPart } from '../src/workspaces/mimir/scripts'
 
 /** A scripted sheet's rows with their places on its drawing, at the values the script gives them. */
@@ -70,9 +70,9 @@ describe('the phone drawing pick', () => {
     for (const [w, h] of [[326, 120], [356, 133]] as const) {
       for (const pane of PHONE_PANES) {
         const cw = Math.floor(w / PANE_VIEWS[pane].length)
-        const flat = Math.min(...(['front', 'side', 'top'] as const).map((v) => fitScale(p.part as PilotSheetSolid[], dims, v, cw, h, 24, order)))
+        const flat = Math.min(...(['front', 'side', 'top'] as const).map((v) => fitScale(shapeOfSolids(p.part as PilotSheetSolid[]), dims, v, cw, h, 24, order)))
         for (const view of PANE_VIEWS[pane]) {
-          const drawn = drawView(p.part as PilotSheetSolid[], dims, view, cw, h, { pad: 24, order, ...(view === 'iso' ? {} : { scale: flat }) })
+          const drawn = drawView(shapeOfSolids(p.part as PilotSheetSolid[]), dims, view, cw, h, { pad: 24, order, ...(view === 'iso' ? {} : { scale: flat }) })
           if (view === 'iso') expect(drawn.dims).toHaveLength(dims.length)
           for (const d of drawn.dims) {
             expect(d.badge[0], `${d.key} in ${view} at ${cw} px`).toBeGreaterThanOrEqual(10)
@@ -96,12 +96,12 @@ describe('the phone drawing pick', () => {
     expect(offers({ a: ['side', 'iso'], b: ['front', 'iso'], c: ['top', 'iso'] })).toEqual(['main', 'front', 'side'])
   })
 
-  it("leaves out the views a scripted sheet draws no callout in: Front for the flat backplate and the clip, Right for the box and the stand", () => {
+  it("leaves out the views a scripted sheet draws no callout in: Front for the flat backplate and the clip, Right for the box", () => {
     type Make = (v: Record<string, number>) => { part: unknown[]; at: Record<string, { at: unknown }> }
     const cases: [string, Make, Record<string, number>, ViewName[], PhonePane[]][] = [
       ['backplate', backplatePart, { plate_width: 150.4, plate_height: 110.4, thickness: 3, center_hole: 30, screw_hole: 4.5, screw_spacing: 60 }, ['top', 'side'], ['main', 'side']],
       ['box', boxPart, { width: 80, depth: 60, height: 40, wall: 2, lid_fit: 0.2, lip: 3 }, ['iso', 'front'], ['main', 'front']],
-      ['stand', standPart, { phone_width: 72, phone_thickness: 8.5, case_allowance: 1.5, lean: 70, stand_width: 70, base_depth: 80, lip_height: 12 }, ['side', 'front'], ['main', 'front']],
+      ['stand', standPart, { phone_width: 72, phone_thickness: 8.5, case_allowance: 1.5, lean: 70, stand_width: 70, base_depth: 80, lip_height: 12 }, ['side', 'front'], ['main', 'front', 'side']],
       ['clip', clipPart, { length: 30, width: 12, height: 8 }, ['iso', 'top'], ['main', 'side']],
     ]
     for (const [name, make, v, order, want] of cases) {
@@ -109,7 +109,7 @@ describe('the phone drawing pick', () => {
       expect(panesFor(viewsFor(dims, order)), name).toEqual(want)
       // what it leaves out really draws no callout, and what it offers draws at least one
       for (const pane of PHONE_PANES) {
-        const drawn = PANE_VIEWS[pane].reduce((n, view) => n + drawView(make(v).part as PilotSheetSolid[], dims, view, 300, 200, { pad: 24, order }).dims.length, 0)
+        const drawn = PANE_VIEWS[pane].reduce((n, view) => n + drawView(shapeOfSolids(make(v).part as PilotSheetSolid[]), dims, view, 300, 200, { pad: 24, order }).dims.length, 0)
         expect(drawn > 0, `${name}, ${pane}`).toBe(want.includes(pane))
       }
     }

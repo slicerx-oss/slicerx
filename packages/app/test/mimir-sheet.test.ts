@@ -6,7 +6,7 @@
 // cancels ends the script with nothing built.
 import type { PilotDim, PilotEvent, PilotSheet, PilotSheetSolid } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { drawView, fitScale, readsIn, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
+import { drawView, fitScale, readsIn, shapeOfSolids, SHEET_VIEWS, solidFaces, viewsFor, type V3 } from '../src/workspaces/mimir/sheet-draw'
 import { backplatePart, boxPart, SCRIPTS, standPart } from '../src/workspaces/mimir/scripts'
 import { mimirTools, scriptedMimir } from '../src/workspaces/mimir/scripted'
 import { sheetMode, sheetUi, setShownSheet } from '../src/workspaces/mimir/sheet-ui'
@@ -72,11 +72,11 @@ describe('the sheet drawing', () => {
     for (const p of parts) {
       const dims = Object.entries(p.at).map(([k, v]) => dim(k, (v as { at: PilotDim['at'] }).at))
       for (const [w, h] of [[380, 330], [250, 200]] as const) {
-        const scale = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(p.part as PilotSheetSolid[], dims, v, w, h, 34)))
+        const scale = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(shapeOfSolids(p.part as PilotSheetSolid[]), dims, v, w, h, 34)))
         let callouts = 0
         for (const v of SHEET_VIEWS) {
-          const drawn = drawView(p.part as PilotSheetSolid[], dims, v, w, h, { pad: 34, ...(v === 'iso' ? {} : { scale }) })
-          expect(drawn.faces.length).toBeGreaterThan(0)
+          const drawn = drawView(shapeOfSolids(p.part as PilotSheetSolid[]), dims, v, w, h, { pad: 34, ...(v === 'iso' ? {} : { scale }) })
+          expect(drawn.part.cover.some((c) => c === 1)).toBe(true)
           callouts += drawn.dims.length
           for (const d of drawn.dims) {
             expect(d.badge[0]).toBeGreaterThanOrEqual(10)
@@ -103,11 +103,13 @@ describe('the sheet drawing', () => {
 
   it('draws the part at one scale in the flat views when given one', () => {
     const dims = [dim('w', { a: [0, 0, 0], b: [10, 0, 0], off: [0, 0, -5] })]
-    const a = drawView([CUBE], dims, 'front', 300, 300, { scale: 5 })
-    const b = drawView([CUBE], dims, 'top', 300, 300, { scale: 5 })
+    const a = drawView(shapeOfSolids([CUBE]), dims, 'front', 300, 300, { scale: 5 })
+    const b = drawView(shapeOfSolids([CUBE]), dims, 'top', 300, 300, { scale: 5 })
+    // the columns the part covers
     const width = (v: typeof a) => {
-      const xs = v.faces.flatMap((f) => f.points.split(' ').map((p) => Number(p.split(',')[0])))
-      return Math.max(...xs) - Math.min(...xs)
+      const { W, H, cover } = v.part
+      const xs = Array.from({ length: W }, (_, x) => x).filter((x) => Array.from({ length: H }, (_, y) => cover[y * W + x]).some((c) => c === 1))
+      return xs.at(-1)! - xs[0]! + 1
     }
     expect(width(a)).toBeCloseTo(50, 0)
     expect(width(b)).toBeCloseTo(50, 0)
@@ -144,7 +146,7 @@ describe('the sheet in the view', () => {
 
 describe('scripted sheets', () => {
   it('give every part a drawing that places each size on the part', async () => {
-    for (const [message, unplaced] of [['wall mount for my thermostat', []], ['a box with a lid', ['lid_fit']], ['a stand for my phone', ['phone_width']]] as const) {
+    for (const message of ['wall mount for my thermostat', 'a box with a lid', 'a stand for my phone']) {
       const p = scriptedMimir(SCRIPTS, mimirTools())
       let shown: PilotSheet | null = null
       for await (const e of p.run('s', message)) {
@@ -155,7 +157,8 @@ describe('scripted sheets', () => {
         }
       }
       expect(shown?.part?.length, message).toBeGreaterThan(0)
-      expect(shown!.dims.filter((d) => !d.at).map((d) => d.key)).toEqual(unplaced)
+      // every row has its place, so every row has its callout
+      expect(shown!.dims.filter((d) => !d.at).map((d) => d.key), message).toEqual([])
     }
   })
 

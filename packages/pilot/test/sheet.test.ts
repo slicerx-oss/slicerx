@@ -12,9 +12,9 @@ const host = { printers: { list: async () => [], plugins: async () => [] } as un
 const pilot = (steps: ScriptStep[]) => createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), sheetBindTool()] })
 
 const DIMS = [
-  { key: 'phone_width', label: 'Phone width', value: 71.5, unit: 'mm', source: 'lookup', sourceTitle: 'apple.com', sourceUrl: 'https://www.apple.com/iphone/compare/' },
-  { key: 'case_allowance', label: 'Case allowance', value: 1.5, unit: 'mm', min: 0, max: 5, source: 'guess' },
-  { key: 'lean', label: 'Lean angle', value: 70, unit: 'deg', min: 45, max: 85, source: 'guess' },
+  { key: 'phone_width', label: 'Phone width', value: 71.5, unit: 'mm', source: 'lookup', sourceTitle: 'apple.com', sourceUrl: 'https://www.apple.com/iphone/compare/', at: { a: [10, -35, 6], b: [10, 35, 6], off: [0, 0, 20] } },
+  { key: 'case_allowance', label: 'Case allowance', value: 1.5, unit: 'mm', min: 0, max: 5, source: 'guess', at: { a: [8, -35, 6], b: [9.5, -35, 6], off: [0, 0, 10] } },
+  { key: 'lean', label: 'Lean angle', value: 70, unit: 'deg', min: 45, max: 85, source: 'guess', at: { c: [20, -35, 6], from: [1, 0, 0], to: [0.34, 0, 0.94], r: 18 } },
 ]
 const PART = [{ plane: 'xz', points: [[0, 0], [80, 0], [80, 6], [0, 6]], from: -35, to: 35 }]
 const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS, part: PART } }
@@ -70,6 +70,21 @@ describe('pilot.sheet', () => {
     expect(none.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('needs part') })
     const one = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Bore', dims: [DIMS[1]] } }] }], () => ({}))
     expect(one.some((e) => e.type === 'sheet')).toBe(true)
+  })
+
+  // Every row has a callout: a sheet of several sizes that leaves a row off the drawing is sent back, naming the row.
+  it('refuses a sheet of several sizes with a row that has no place on the drawing', async () => {
+    const dims = [DIMS[0], { ...DIMS[1], at: undefined }, DIMS[2]]
+    const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims, part: PART } }] }], () => ({}))
+    expect(events.some((e) => e.type === 'sheet')).toBe(false)
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('case_allowance has none') })
+  })
+
+  // A sheet for a part already built names its design and draws it as built, so it needs no solids of its own.
+  it('shows a sheet for a built design with no part of its own, and carries the design', async () => {
+    const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Case sizes', dims: DIMS, design: 'obj_case' } }] }], () => ({}))
+    expect(events.find((e) => e.type === 'sheet')).toMatchObject({ sheet: { title: 'Case sizes', design: 'obj_case' } })
+    expect((events.find((e) => e.type === 'sheet') as { sheet: PilotSheet }).sheet.part).toBeUndefined()
   })
 
   it('carries the part and each row\'s place on its drawing', async () => {

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The dimension sheet's drawing: the part a sheet describes, drawn front, top, right and iso, with each size as a
-// dimension line and a numbered callout that matches its row. Pure geometry, in screen pixels, so the drawing
-// component only paints it.
+// dimension line and a numbered callout that matches its row. The part is the design as built when the sheet changes
+// one, else the sheet's own solids, drawn the same way: its silhouette and its visible edges, as a technical drawing
+// shows a part. Pure geometry, in screen pixels, so the drawing component only paints it.
 import type { PilotDim, PilotDimAt, PilotSheetSolid } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
@@ -30,8 +31,6 @@ export const VIEWS: Record<ViewName, { d: V3; r: V3; u: V3; label: string }> = {
 
 /** The four views of the sheet, in their places: front and top on the left, right and iso beside them. */
 export const SHEET_VIEWS: readonly ViewName[] = ['front', 'side', 'top', 'iso']
-
-const LIGHT = nrm([0.35, -0.55, 0.75])
 
 export interface Face {
   pts: V3[]
@@ -97,12 +96,172 @@ export function viewsFor(dims: readonly PilotDim[], order: readonly ViewName[]):
   return out
 }
 
-export interface DrawnFace {
-  points: string
-  /** Its outline and holes as one path, holes cut out with even-odd. */
-  path: string
-  /** How much of the part's light color it takes, 38 to 100. */
-  light: number
+/**
+ * What a view draws: planar polygons in the part's mm with Z up, each an outline and the holes in it. A sheet's own
+ * solids become their faces, and a built design's mesh its triangles, so both draw the same way.
+ */
+export interface Shape {
+  polys: V3[][][]
+  /** Every corner once per polygon ring, for the bounds. */
+  pts: V3[]
+}
+
+/** The shape of a sheet's solids: each solid's sides and caps. */
+export function shapeOfSolids(part: readonly PilotSheetSolid[]): Shape {
+  const polys = part.flatMap(solidFaces).map((f) => [f.pts, ...(f.holes ?? [])])
+  return { polys, pts: polys.flatMap((p) => p[0]!) }
+}
+
+/** A mesh as world triangles, `positions` and `indices` as the engine gives them, already in the design's frame. */
+export interface SheetMesh {
+  positions: ArrayLike<number>
+  indices: ArrayLike<number>
+}
+
+/** The shape of a built design: every triangle of its parts. */
+export function shapeOfMesh(meshes: readonly SheetMesh[]): Shape {
+  const polys: V3[][][] = []
+  const pts: V3[] = []
+  for (const m of meshes) {
+    const at = (i: number): V3 => [m.positions[3 * i]!, m.positions[3 * i + 1]!, m.positions[3 * i + 2]!]
+    for (let t = 0; t + 2 < m.indices.length; t += 3) {
+      const tri = [at(m.indices[t]!), at(m.indices[t + 1]!), at(m.indices[t + 2]!)]
+      polys.push([tri])
+    }
+    for (let i = 0; 3 * i + 2 < m.positions.length; i++) pts.push(at(i))
+  }
+  return { polys, pts }
+}
+
+/** The shape's bounds in mm: least and most corner. */
+export function shapeBounds(shape: Shape): { lo: V3; hi: V3 } | null {
+  if (!shape.pts.length) return null
+  const lo: V3 = [Infinity, Infinity, Infinity]
+  const hi: V3 = [-Infinity, -Infinity, -Infinity]
+  for (const p of shape.pts) for (let k = 0; k < 3; k++) ((lo[k] = Math.min(lo[k]!, p[k]!)), (hi[k] = Math.max(hi[k]!, p[k]!)))
+  return { lo, hi }
+}
+
+/**
+ * The view drawn as a technical drawing: which pixels the part covers (its silhouette) and which are its visible edges,
+ * at `px` device pixels per screen pixel. An edge is where the surface folds (faces more than EDGE_DEG apart), where one
+ * surface passes in front of another, and the outline. Each pixel keeps the nearest surface, so hidden edges never show.
+ */
+export interface Raster {
+  W: number
+  H: number
+  px: number
+  cover: Uint8Array
+  edge: Uint8Array
+}
+
+/** Faces meeting at more than this read as an edge; a round's facets meet at less. */
+const EDGE_DEG = 28
+const EDGE_COS = Math.cos((EDGE_DEG * Math.PI) / 180)
+
+/** A polygon's normal by Newell's method, unit length; zero for one with no area. */
+function newell(ring: readonly V3[]): V3 {
+  const n: V3 = [0, 0, 0]
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!
+    const b = ring[(i + 1) % ring.length]!
+    n[0] += (a[1] - b[1]) * (a[2] + b[2])
+    n[1] += (a[2] - b[2]) * (a[0] + b[0])
+    n[2] += (a[0] - b[0]) * (a[1] + b[1])
+  }
+  return nrm(n)
+}
+
+/**
+ * Draws a shape into a W x H raster: `toScreen` maps a point to device pixels (x right, y down) and its depth (larger
+ * nearer the viewer), the same for every point, so a polygon's depth is a plane over its pixels.
+ */
+export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k: number, ox: number, oy: number, px: number): Raster {
+  const { r, u, d } = VIEWS[view]
+  const n = W * H
+  const depth = new Float32Array(n).fill(-Infinity)
+  const owner = new Int32Array(n).fill(-1)
+  // per polygon: its normal and how its depth changes per device pixel across and down
+  const normals: V3[] = []
+  const grad: [number, number][] = []
+  const S = k * px
+  shape.polys.forEach((rings, pi) => {
+    const nn = newell(rings[0]!)
+    normals.push(nn)
+    const nd = dot(nn, d)
+    // seen edge on: it covers no pixel of its own, its neighbors draw the line
+    if (Math.abs(nd) < 1e-4) {
+      grad.push([0, 0])
+      return
+    }
+    // on the plane, depth moves by -(n.r)/(n.d) per mm right and +(n.u)/(n.d) per mm down the screen
+    const gx = -dot(nn, r) / nd / S
+    const gy = dot(nn, u) / nd / S
+    grad.push([gx, gy])
+    const scr = rings.map((ring) => ring.map((p): [number, number] => [(dot(p, r) * k + ox) * px, (-dot(p, u) * k + oy) * px]))
+    const p0 = rings[0]![0]!
+    const s0 = scr[0]![0]!
+    const z0 = dot(p0, d)
+    let y0 = Infinity
+    let y1 = -Infinity
+    for (const ring of scr) for (const q of ring) ((y0 = Math.min(y0, q[1])), (y1 = Math.max(y1, q[1])))
+    const ya = Math.max(0, Math.ceil(y0 - 0.5))
+    const yb = Math.min(H - 1, Math.floor(y1 - 0.5))
+    const xs: number[] = []
+    for (let y = ya; y <= yb; y++) {
+      const cy = y + 0.5
+      xs.length = 0
+      for (const ring of scr) {
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i]!
+          const b = ring[(i + 1) % ring.length]!
+          if (a[1] > cy !== b[1] > cy) xs.push(a[0] + ((cy - a[1]) * (b[0] - a[0])) / (b[1] - a[1]))
+        }
+      }
+      xs.sort((p, q) => p - q)
+      for (let j = 0; j + 1 < xs.length; j += 2) {
+        const xa = Math.max(0, Math.ceil(xs[j]! - 0.5))
+        const xb = Math.min(W - 1, Math.floor(xs[j + 1]! - 0.5))
+        for (let x = xa; x <= xb; x++) {
+          const z = z0 + (x + 0.5 - s0[0]) * gx + (cy - s0[1]) * gy
+          const i = y * W + x
+          if (z > depth[i]!) {
+            depth[i] = z
+            owner[i] = pi
+          }
+        }
+      }
+    }
+  })
+  const cover = new Uint8Array(n)
+  const edge = new Uint8Array(n)
+  for (let i = 0; i < n; i++) cover[i] = owner[i]! >= 0 ? 1 : 0
+  // how far depth may stray from the nearer pixel's plane before it is another surface: a pixel and a half, or 0.05 mm
+  const tol = Math.max(0.05, 1.5 / S)
+  const differs = (i: number, j: number, dx: number, dy: number): boolean => {
+    const a = owner[i]!
+    const b = owner[j]!
+    if (a < 0 && b < 0) return false
+    if (a < 0 || b < 0 || a === b) return a !== b
+    if (Math.abs(dot(normals[a]!, normals[b]!)) < EDGE_COS) return true
+    const [gx, gy] = grad[a]!
+    return Math.abs(depth[j]! - (depth[i]! + gx * dx + gy * dy)) > tol
+  }
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x
+      if (x + 1 < W && differs(i, i + 1, 1, 0)) {
+        // the line goes on the nearer side, so an edge in front of a far face draws on the near face
+        if (owner[i]! >= 0 && (owner[i + 1]! < 0 || depth[i]! >= depth[i + 1]!)) edge[i] = 1
+        else edge[i + 1] = 1
+      }
+      if (y + 1 < H && differs(i, i + W, 0, 1)) {
+        if (owner[i]! >= 0 && (owner[i + W]! < 0 || depth[i]! >= depth[i + W]!)) edge[i] = 1
+        else edge[i + W] = 1
+      }
+    }
+  }
+  return { W, H, px, cover, edge }
 }
 
 export interface DrawnDim {
@@ -121,7 +280,8 @@ export interface DrawnDim {
 }
 
 export interface DrawnView {
-  faces: DrawnFace[]
+  /** The part, as a raster of its silhouette and visible edges over the w x h cell. */
+  part: Raster
   dims: DrawnDim[]
 }
 
@@ -177,25 +337,26 @@ function rawDims(dims: readonly PilotDim[], view: ViewName, shown: Map<string, V
 }
 
 /** The bounds of a view's part and dimension lines, in mm on screen axes. */
-function bounds(faces: readonly Face[], raws: readonly RawDim[], view: ViewName): { x0: number; y0: number; x1: number; y1: number } {
+function bounds(shape: Shape, raws: readonly RawDim[], view: ViewName): { x0: number; y0: number; x1: number; y1: number } {
   const P = project(view)
-  const pts: P2[] = faces.flatMap((f) => f.pts.map(P))
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+  const take = (p: P2) => {
+    x0 = Math.min(x0, p[0])
+    y0 = Math.min(y0, p[1])
+    x1 = Math.max(x1, p[0])
+    y1 = Math.max(y1, p[1])
+  }
+  for (const p of shape.pts) take(P(p))
   for (const r of raws) {
-    if (r.dimLine) pts.push(...r.dimLine)
-    if (r.arc) pts.push(...r.arc)
+    if (r.dimLine) r.dimLine.forEach(take)
+    if (r.arc) r.arc.forEach(take)
   }
-  if (!pts.length) return { x0: -1, y0: -1, x1: 1, y1: 1 }
-  return {
-    x0: Math.min(...pts.map((p) => p[0])),
-    y0: Math.min(...pts.map((p) => p[1])),
-    x1: Math.max(...pts.map((p) => p[0])),
-    y1: Math.max(...pts.map((p) => p[1])),
-  }
+  return x0 === Infinity ? { x0: -1, y0: -1, x1: 1, y1: 1 } : { x0, y0, x1, y1 }
 }
 
 /** Pixels per mm that fit a view's drawing in a w x h cell with `pad` around it. */
-export function fitScale(part: readonly PilotSheetSolid[], dims: readonly PilotDim[], view: ViewName, w: number, h: number, pad: number, order: readonly ViewName[] = []): number {
-  const b = bounds(part.flatMap(solidFaces), rawDims(dims, view, viewsFor(dims, order)), view)
+export function fitScale(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, pad: number, order: readonly ViewName[] = []): number {
+  const b = bounds(shape, rawDims(dims, view, viewsFor(dims, order)), view)
   return Math.max(0.01, Math.min((w - 2 * pad) / Math.max(1e-6, b.x1 - b.x0), (h - 2 * pad) / Math.max(1e-6, b.y1 - b.y0)))
 }
 
@@ -204,33 +365,26 @@ const BADGE_R = 10
 const RIM: readonly P2[] = Array.from({ length: 8 }, (_, i) => [Math.cos((i * Math.PI) / 4), Math.sin((i * Math.PI) / 4)] as P2)
 
 /**
- * One view of the sheet, fitted in a w x h cell at `scale` pixels per mm (or its own fit when absent): the visible
- * faces back to front, shaded, and the sizes that read in it with their callouts. Callouts that would overlap are moved
- * apart along their own way out, and none leaves the cell.
+ * One view of the sheet, fitted in a w x h cell at `scale` pixels per mm (or its own fit when absent): the part as its
+ * silhouette and visible edges (`px` device pixels per screen pixel, 1 by default), and the sizes that read in it with
+ * their callouts. Callouts that would overlap are moved apart along their own way out, and none leaves the cell.
  */
-export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotDim[], view: ViewName, w: number, h: number, opts: { scale?: number; pad?: number; order?: readonly ViewName[] } = {}): DrawnView {
+export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, opts: { scale?: number; pad?: number; order?: readonly ViewName[]; px?: number } = {}): DrawnView {
   const pad = opts.pad ?? 30
-  const d = VIEWS[view].d
-  const all = part.flatMap(solidFaces)
+  const px = opts.px ?? 1
   const raws = rawDims(dims, view, viewsFor(dims, opts.order ?? []))
-  const b = bounds(all, raws, view)
-  const k = opts.scale ?? fitScale(part, dims, view, w, h, pad, opts.order)
+  const b = bounds(shape, raws, view)
+  const k = opts.scale ?? fitScale(shape, dims, view, w, h, pad, opts.order)
   const ox = (w - (b.x1 - b.x0) * k) / 2 - b.x0 * k
   const oy = (h - (b.y1 - b.y0) * k) / 2 - b.y0 * k
-  const P = project(view)
   const S = (p: P2): P2 => [r1(p[0] * k + ox), r1(p[1] * k + oy)]
-  const SP = (p: V3): P2 => S(P(p))
-  const seen = all.filter((f) => dot(f.n, d) > 1e-6).map((f) => ({ f, z: f.pts.reduce((s, p) => s + dot(p, d), 0) / f.pts.length }))
-  seen.sort((x, y) => x.z - y.z)
-  const ring = (pts: readonly V3[]): string => `M${pts.map((p) => SP(p).join(' ')).join('L')}Z`
-  const faces = seen.map(({ f }) => ({
-    points: f.pts.map((p) => SP(p).join(',')).join(' '),
-    path: ring(f.pts) + (f.holes ?? []).map(ring).join(''),
-    light: Math.round(38 + 62 * Math.max(0, dot(f.n, LIGHT))),
-  }))
+  const part = rasterize(shape, view, Math.max(1, Math.round(w * px)), Math.max(1, Math.round(h * px)), k, ox, oy, px)
   // the part on screen: a size measured over it gets its callout off it, on a leader
-  const polys = seen.map(({ f }) => f.pts.map(SP))
-  const inside = (p: P2): boolean => polys.some((poly) => inPoly(p, poly))
+  const inside = (p: P2): boolean => {
+    const x = Math.floor(p[0] * px)
+    const y = Math.floor(p[1] * px)
+    return x >= 0 && y >= 0 && x < part.W && y < part.H && part.cover[y * part.W + x] === 1
+  }
   const placed: P2[] = []
   const drawn = raws.map((r): DrawnDim => {
     const lines = r.lines.map(([p, q]) => [S(p), S(q)] as [P2, P2])
@@ -285,23 +439,20 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
       for (let tries = 0; tries < 12 && (clash(badge) || onPart(badge)); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
     }
     badge = [r1(Math.min(w - BADGE_R - 2, Math.max(BADGE_R + 2, badge[0]))), r1(Math.min(h - BADGE_R - 2, Math.max(BADGE_R + 2, badge[1])))]
+    // kept in the cell it landed on another callout or on the part: the nearest free spot around it, off the part when
+    // there is one, so a callout never covers the part it labels
+    if (clash(badge) || onPart(badge)) {
+      const spots: P2[] = []
+      for (let rr = 8; rr < w + h; rr += 6) for (let a = 0; a < 16; a++) spots.push([r1(badge[0] + rr * Math.cos((a * Math.PI) / 8)), r1(badge[1] + rr * Math.sin((a * Math.PI) / 8))])
+      badge = spots.find(free) ?? spots.find((b) => !clash(b) && inCell(b)) ?? badge
+    }
     placed.push(badge)
     const gap = Math.hypot(badge[0] - m[0], badge[1] - m[1])
     // every callout that does not sit on its own line gets a leader to it, so its target is never a guess
     const leader: [P2, P2] | null = gap > BADGE_R + 5 ? [m, [r1(badge[0] - ((badge[0] - m[0]) / gap) * BADGE_R), r1(badge[1] - ((badge[1] - m[1]) / gap) * BADGE_R)]] : null
     return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], leader, inside: leads, arrows, arc, badge }
   })
-  return { faces, dims: drawn }
-}
-
-/** Whether a point is inside a polygon (even-odd). */
-function inPoly(p: P2, poly: readonly P2[]): boolean {
-  let hit = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [a, b] = [poly[i]!, poly[j]!]
-    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) hit = !hit
-  }
-  return hit
+  return { part, dims: drawn }
 }
 
 /** An arrowhead at `tip`, pointing away from `from`. */

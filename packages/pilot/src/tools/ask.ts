@@ -92,15 +92,16 @@ export function sheetTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change). A sheet with one row asks for one number. Give the part as extruded outlines and where each row sits on it (at), so the sheet draws it with numbered callouts.',
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built: each body as an extruded outline (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), never boxes standing in for it. For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
-      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit; use it whenever a size matters and you are not sure of it. Give each its best value, unit and source. Returns the values to build with and which the person changed, or that they canceled (then build nothing and ask what to change). One row asks for one number. Give the part as extruded outlines and where each row sits on it (at), so the sheet draws numbered callouts.',
+      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit; use it whenever a size matters and you are not sure of it. Give each its best value, unit and source. Returns the values to build with and which the person changed, or that they canceled (then build nothing and ask what to change). One row asks for one number. With several rows each needs at, where it sits on the part. New part: part as it will be built (hollow walls as outline plus hole, posts, lid beside base), not stand-in boxes. Built part: design, its id, with at in its coordinates.',
     input: z
       .object({
         title: z.string().min(2).max(60),
         views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['top', 'front', 'side', 'iso']),
         dims: z.array(dim).min(1).max(30),
         part: z.array(solid).min(1).max(40).optional(),
+        design: z.string().min(1).max(80).optional().describe('The id of a design already built that this sheet changes: the drawing shows it as built, and at is in its coordinates'),
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
@@ -108,9 +109,12 @@ export function sheetTool(): PilotTool<never> {
     args: (i) => `"${i.title}", ${i.dims.length} sizes`,
     async run(i, ctx) {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
-      // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw
-      if (i.dims.length > 1 && !i.part?.length) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part, the part as extruded outlines, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
-      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}) })
+      // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw, and a place on it for
+      // every row, so each row has its callout
+      if (i.dims.length > 1 && !i.part?.length && !i.design) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part, the part as extruded outlines, or design, the id of the built design it changes, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
+      const unplaced = i.dims.length > 1 ? i.dims.filter((d) => !d.at).map((d) => d.key) : []
+      if (unplaced.length) return { ok: false, summary: `Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing; ${unplaced.join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} none. Send it again with them.` }
+      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}), ...(i.design ? { design: i.design } : {}) })
       // words written while it waited set it aside: they are the person's answer, as for a dismissed question
       if (!answer.confirmed && answer.said) return { ok: false, summary: `Set aside; the person wrote instead: "${answer.said}". Build nothing from this sheet: do what they wrote, and show a new sheet if sizes still need confirming.`, output: answer }
       if (!answer.confirmed) return { ok: false, summary: 'Canceled; build nothing until the sizes are confirmed', output: answer }
