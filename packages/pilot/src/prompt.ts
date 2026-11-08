@@ -33,9 +33,12 @@ const BIND_LINE = `- Once the part is built, never before, tie the sheet's sizes
 const CHECK_LINE = `- After the last feature of a planned part, call design.check with the plan's planId (and the design id when it asks which). If items fail, fix those items in one round and call design.check again. If any item still fails, never say the part is done: stop building, list each failed item plainly, with what the plan wants and what the part has, and ask the person how to go on (design.check says so too, and checks that plan no more). A part with no plan: read it back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 
+// with design.plan every step of a planned feature names it, so design.check ties the steps to the plan by that tag
+const FEATURE_LINE = `- On every step of a planned feature, pass feature with its name exactly as the plan has it. Leave it off finishing steps the plan does not list.`
+
 /** The design tool lines, with the plan only when design.plan is offered and the check only when both it and design.check are. */
 const buildLines = (has: HasTool): string =>
-  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? PLAN_LINE : STEPS_LINE, BIND_LINE, has('design.check') && has('design.plan') ? CHECK_LINE : READ_BACK_LINE].join('\n')
+  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? `${PLAN_LINE}\n${FEATURE_LINE}` : STEPS_LINE, BIND_LINE, has('design.check') && has('design.plan') ? CHECK_LINE : READ_BACK_LINE].join('\n')
 
 // What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is
 // out of scope, even in one part of it, is turned down before any build call or size question, and the closest version

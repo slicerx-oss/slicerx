@@ -159,10 +159,10 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
     else delete d.landed
   }
 
-  async function addStep(d: Design, part: number, params: StepParams, label: string | undefined, o: { sketch?: string; expectedRevision?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
+  async function addStep(d: Design, part: number, params: StepParams, label: string | undefined, o: { sketch?: string; expectedRevision?: string; feature?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
     guard(d.id, o?.expectedRevision)
     const s = stored(d)
-    const step: Step = { id: nextStepId(), part, transform: [...s.transform], params, ...(label ? { label } : {}), ...(o?.sketch ? { sketch: o.sketch } : {}) }
+    const step: Step = { id: nextStepId(), part, transform: [...s.transform], params, ...(label ? { label } : {}), ...(o?.sketch ? { sketch: o.sketch } : {}), ...(o?.feature ? { feature: o.feature } : {}) }
     const history = appendStep(d.history, step)
     const r = await run(history)
     const st = r.status[r.status.length - 1]

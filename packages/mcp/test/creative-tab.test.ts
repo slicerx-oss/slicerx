@@ -185,8 +185,7 @@ describe('the default answer to a clarifying question', () => {
   })
 
   it('goes to a question card as the person\'s words, once, and the reply is not answered again', async () => {
-    // a question about sizes goes to the sheet instead (tab-tools.ts), so the card asks something else
-    const card = { calls: [{ name: 'pilot.ask', args: { title: 'Opening', question: 'Which side should the opening face?', choices: [{ id: 'front', label: 'Front' }, { id: 'back', label: 'Back' }] } }] }
+    const card = { calls: [{ name: 'pilot.ask', args: { title: 'Size', question: 'How long should it be?', choices: [{ id: 'short', label: '80 mm' }, { id: 'long', label: '120 mm' }] } }] }
     const client = createScriptedClient([card, { text: 'Which color?' }, build], { chunk: false })
     const run = await runPrompt(P, { geom: undefined, client })
     expect(run.answered).toBe(true)
