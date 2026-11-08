@@ -97,11 +97,14 @@ const writeIn = <T,>(o: LandIn, fn: () => T): T => (o.step ? o.step.write(fn) : 
 export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn = {}): Promise<Landed> {
   const operation = input.spec.operation ?? 'new'
   const target = targetOf(input.target, operation)
+  // where the sketch and the body stand as the engine starts: the step is recorded against them (onSketch)
+  const record = onSketch(o.sketch)
+  const at = target ? [...target.entry.transform] : undefined
   reserveStepId()
   if (target?.entry.history?.exact || (!target && exactSolids())) {
     const params = extrudeParams(input)
     if (target && input.target) {
-      const kept = onSketch(o.sketch, params, target.entry.transform)
+      const kept = record(params, target.entry.transform)
       const next = withStep(target.entry, input.target.partIndex, kept.params, kept.transform, true, o.sketch)
       await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id, undefined, undefined, undefined, o.step)
       return { message: `${operation === 'cut' ? 'Cut' : 'Joined'} ${input.name} ${operation === 'cut' ? 'from' : 'to'} ${target.entry.name}.`, warn: false }
@@ -118,7 +121,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn 
     const move = compose({ position: [-cx, -cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
     const parts = world.map(p => bake(p, move))
     const handle = await host.loadParts(input.name, parts)
-    const kept = onSketch(o.sketch, params, transform)
+    const kept = record(params, transform)
     const saved: History = { ...history, steps: history.steps.map(s => ({ ...s, params: kept.params, transform: kept.transform })) }
     const made: PlateEntry = { id: newId(), name: input.name, handle, parts, colors: [brandAccent()], transform, history: saved }
     writeIn(o, () => set(s => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
@@ -134,7 +137,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn 
     ...(input.fontBase64 ? { fontBase64: input.fontBase64 } : {}),
     ...(input.pattern ? { pattern: input.pattern } : {}),
   })
-  return land(host, r, operation, input.target, input.name, extrudeParams(input), o)
+  return land(host, r, operation, input.target, input.name, extrudeParams(input), o, record, at)
 }
 
 /** The history step an extrude records; the font is remembered for this session by name. */
@@ -160,9 +163,11 @@ export async function applyRevolve(host: Loader, input: RevolveInput, o: LandIn 
   const operation = input.operation ?? 'new'
   const target = targetOf(input.target, operation)
   const { target: _t, name, ...req } = input
+  const record = onSketch(o.sketch)
+  const at = target ? [...target.entry.transform] : undefined
   reserveStepId()
   const r = await revolveSketch({ ...req, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
-  return land(host, r, operation, input.target, name, revolveParams(input), o)
+  return land(host, r, operation, input.target, name, revolveParams(input), o, record, at)
 }
 
 function targetOf(t: { objectId: string; partIndex: number } | undefined, operation: string): { entry: PlateEntry; part: MeshPart } | null {
@@ -172,8 +177,12 @@ function targetOf(t: { objectId: string; partIndex: number } | undefined, operat
   return operation !== 'new' && entry && part ? { entry, part } : null
 }
 
-/** Puts an extrude or revolve result on the plate in one store update, so undo takes it back in one step. */
-async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; report: ExtrudeReport }, operation: string, t: { objectId: string; partIndex: number } | undefined, name: string, params: StepParams, o: LandIn): Promise<Landed> {
+/**
+ * Puts an extrude or revolve result on the plate in one store update, so undo takes it back in one step. `record` and
+ * `at` are how the step is recorded and where the body it joins or cuts stood, both read as the engine started: the
+ * result was worked out there, so a drag while the engine ran does not shift the step.
+ */
+async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; report: ExtrudeReport }, operation: string, t: { objectId: string; partIndex: number } | undefined, name: string, params: StepParams, o: LandIn, record: ReturnType<typeof onSketch>, at: Mat4 | undefined): Promise<Landed> {
   const entry = t ? get().plate.find((p) => p.id === t.objectId) : undefined
   const part = entry?.parts[t?.partIndex ?? 0]
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
@@ -199,7 +208,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
     // drawn on a finished sketch: kept where the sketch is stored, as the design tools keep their steps
-    const kept = onSketch(o.sketch, params, entry.transform)
+    const kept = record(params, at ?? entry.transform)
     const history = withStep(entry, t.partIndex, kept.params, kept.transform, false, o.sketch)
     // checked before the write, so a step's first change never lands without the solid: the object is there, and did
     // not take an exact history meanwhile that this result would drop (commitMade refuses that)
@@ -219,7 +228,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const handle = await host.loadParts(name, [local])
   const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
   // The body's history starts with the step that made it, so its sketch or shape stays editable.
-  const kept = onSketch(o.sketch, params, transform)
+  const kept = record(params, transform)
   const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(kept.params, kept.transform, o.sketch) }
   writeIn(o, () => set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
   markStale()

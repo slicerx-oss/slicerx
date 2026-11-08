@@ -1325,3 +1325,35 @@ describe('a sketch drawn for a design that waits again', () => {
     expect(onPlate(d)).toEqual({ min: [118, 118, 0], max: [138, 138, 3] })
   })
 })
+
+describe('a Model extrude on a finished sketch while its design is dragged', () => {
+  it('records the step where the sketch stood when the extrude started, so the sketch keeps its frame', async () => {
+    const host = appDesignHost(loader)
+    const run = toolsOn(host)
+    const d = await landedBlock(run)
+    const k = String((await run('design.sketch', { design: d, frame: { origin: [0, 0, 10], normal: [0, 0, 1] }, loops: square(0, 0, 6) })).output['id'])
+    const frame = structuredClone(sketchItem(k).frame)
+    const shown = sketchScene(sketchItem(k))!.frame
+    // the person drags the block while the engine cuts: the cut was worked out on the block where it stood
+    const inner = geom()
+    let once = true
+    setGeomProvider({ call: (op, req, signal) => {
+      if (op === 'shape.extrude' && once) {
+        once = false
+        drag(d, 10, 0)
+      }
+      return inner.call(op, req, signal)
+    } })
+    const made = await applyExtrude(loader, { frame: shown, shape: { type: 'sketch', loops: sketchItem(k).loops }, placement: {}, spec: { distanceMm: 4, extent: 'oneSide', operation: 'cut' }, target: { objectId: d, partIndex: 0 }, name: 'Sketch body' }, { sketch: k })
+    expect(made.missed).toBeUndefined()
+    expect(volume(entry(d).parts)).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
+    // stored as it was, and read on the block where it stands now
+    expect(sketchItem(k).frame).toEqual(frame)
+    expect(host.sketch!(k, d).frame?.origin).toEqual([10, 0, 10])
+    // the timeline replays the cut where it was made: the hole stays in the middle of the block
+    const r = await runReplay({ history: historyOf(get().timeline, d)! })
+    expect(volume(r.parts.map(toPart))).toBeCloseTo(BLOCK_MM3 - holeMm3(4), 0)
+    const step = historyOf(get().timeline, d)!.steps.at(-1)!
+    expect([step.transform[12], step.transform[13]]).toEqual([128, 128])
+  })
+})
