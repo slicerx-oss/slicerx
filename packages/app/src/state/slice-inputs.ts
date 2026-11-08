@@ -13,6 +13,21 @@ export const printed = (marks: AppState['layerMarks']): string => JSON.stringify
 export const slotsRead = (slots: AppState['printerSlots']): string => JSON.stringify(slots.map((slot) => [slot.id, slot.material ?? null, slot.color ?? null]))
 
 /**
+ * State outside INPUTS that goes into the slice's configuration: the nozzle volume and an opened project's flush
+ * volumes (the flush matrix), and the values its printer G-code names that no setting models (slice-plate.ts
+ * plateSliceConfig). They change only with the printer's model or an opened project, so they are kept apart from
+ * INPUTS: the slice key reads them, and a change to them leaves a finished slice stale (resume-tops.ts stampBlock).
+ */
+export const KEY_CONFIG = ['printerNozzleVolume', 'projectFlush', 'projectScriptKeys'] as const satisfies readonly (keyof AppState)[]
+
+/**
+ * The KEY_CONFIG values as one string to compare. The nozzle volume and the project's flush matrix go only into a
+ * multi-color plate's configuration (filament/slot-config.ts slotConfig), so `multi` false leaves them out.
+ */
+export const configRead = (s: Pick<AppState, (typeof KEY_CONFIG)[number]>, multi: boolean): string =>
+  JSON.stringify(KEY_CONFIG.map((k) => (multi || k === 'projectScriptKeys' ? (s[k] ?? null) : null)))
+
+/**
  * True when any slice input differs between the two states. A note on a layer mark alone changes nothing printed, and
  * neither does a spool reload that only changes the grams left or the tag (slotsRead).
  */
