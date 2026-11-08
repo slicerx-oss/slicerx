@@ -87,7 +87,7 @@ function sizeMatch(got: number[], want: number[]): { pass: boolean; note: string
 }
 
 // words a step's own name carries whatever it builds ("Sketch extrude 5 mm"), which say nothing about the feature
-const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
+const STEP_WORDS = new Set(['sketch', 'extrude', 'revolve', 'pull', 'push', 'step', 'copies', 'shape', 'new', 'join', 'add', 'solid', 'solids', 'subtract', 'separate', 'copy', 'wall', 'walls', 'array', 'merged', 'cut', 'keep', 'the', 'and', 'for', 'with', 'four', 'two', 'three', 'six', 'eight', 'all', 'each'])
 
 /** A word made single: "holes" is "hole", "boxes" is "box", "assemblies" is "assembly"; "glass" stays. */
 function single(w: string): string {
