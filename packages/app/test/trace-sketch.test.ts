@@ -120,7 +120,7 @@ describe('Trace image: the form', () => {
     expect(fromLoops(reply().loops)).toHaveLength(2)
   })
 
-  it("stays out of the assistant tab's tools, where the person traces with the dialog", () => {
+  it("stays out of the mimir tab's tools, where the person traces with the dialog", () => {
     const tool = (name: string) => ({ name }) as PilotTool<never>
     const names = mimirTools([tool('design.trace_image'), tool('design.sketch_svg'), tool('design.sketch')]).map((t) => t.name)
     expect(names).not.toContain('design.trace_image')
