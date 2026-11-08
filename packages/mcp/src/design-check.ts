@@ -393,6 +393,9 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   // the same bodies with their part answering a name too: a mirrored leaf whose part is named for one leaf, or a piece
   // merged into another beside a mirrored part. The names cannot tell them apart, so it fails, saying how to name it
   const standIn = fit.pieces === pieces.length && !shared && missing.length > 0 && free.length === missing.length && free.every((b) => (bodiesIn.get(fit.bodies[b]!.part) ?? 0) > 1 && answered.has(fit.bodies[b]!.part))
+  // every body left over a part of its own, as many as the names left over, with the count right: only the names are
+  // off, which the model fixes by naming the parts, not by rebuilding them
+  const renameOnly = fit.pieces === pieces.length && !shared && !standIn && missing.length > 0 && free.length === missing.length && free.every((b) => bodiesIn.get(fit.bodies[b]!.part) === 1)
   let got: string
   // names an array copy answers by its place in the row, said so, as the bodies of one part are
   const sources = [...new Set(copied.map(([, b]) => fit.bodies[b]!.array!.of))]
@@ -404,6 +407,13 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     const parts = [...new Set(free.map((b) => fit.bodies[b]!.part))]
     const whose = parts.map((k) => `${fit.bodies.find((b) => b.part === k)!.partName ?? `part ${k + 1}`} (${listAnd(answeredBy.get(k) ?? [])})`)
     got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them: ${listAnd(free.map(name))} ${free.length === 1 ? 'is another body' : 'are other bodies'} of ${listAnd(whose)}, which already ${parts.length === 1 ? 'answers' : 'answer'} a piece's name. Bodies of one part take the plan's names only when the part's own name is none of them: build that part under a name that is no piece's and check again, or make each piece a part of its own`
+  } else if (renameOnly) {
+    const pairs = renames(missing, free.map(name))
+    const off = pairs.map(([p, b]) => `${b} is not named ${p}`)
+    const rest = free.map(name).filter((b) => !pairs.some(([, x]) => x === b))
+    if (rest.length) off.push(`${pairs.length ? 'the other pieces left over are' : rest.length === 1 ? 'the piece left over is' : 'the pieces left over are'} ${listAnd(rest)}`)
+    const one = missing.length === 1
+    got = `${fit.pieces} pieces, but ${listAnd(missing)} ${one ? 'is' : 'are'} not among them: ${off.join('; ')}. ${one ? 'It is a piece' : 'Each is a piece'} of its own, so only the ${one ? 'name is' : 'names are'} off: give ${one ? 'the part its plan name' : rest.length ? "each part one of the plan's names" : 'each part its plan name'} and check again, without changing its shape`
   } else if (fit.pieces === pieces.length && missing.length) got = `${fit.pieces} pieces, but ${listAnd(missing)} ${missing.length === 1 ? 'is' : 'are'} not among them (the bodies are ${listAnd(fit.bodies.map((b) => b.name))}); name each piece as the plan does`
   else if (fit.pieces === pieces.length) got = `${fit.pieces} pieces${byCopy ? ` (${byCopy})` : ''}`
   else if (fit.pieces < pieces.length) {
@@ -419,7 +429,7 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
     got = `${fit.pieces} pieces, ${fit.pieces - pieces.length} more than planned${extra.length ? ` (${listAnd(extra)})` : ''}; join each loose body to the piece it belongs to`
   }
   const items: CheckItem[] = [{ name: 'pieces', want, got, pass: named }]
-  if (standIn) NAMING_MISS.add(items[0]!)
+  if (standIn || renameOnly) NAMING_MISS.add(items[0]!)
 
   // gaps: every touch and tight gap, then pieces that meet no other piece
   const gapsWant = `at least ${mm(limits.sideMm)} side by side and ${mm(limits.verticalMm)} above or below between moving pieces (${limits.material.toUpperCase()}, ${mm(limits.nozzleMm)} nozzle, ${mm(limits.layerHeightMm)} layers)`
@@ -445,6 +455,27 @@ export function fitItems(pieces: readonly string[], body: BodyFacts): CheckItem[
   const least = fit.gaps.reduce((a, g) => (g.gapMm < a.gapMm ? g : a))
   items.push({ name: 'gaps', want: gapsWant, got: `smallest gap ${gapMm(least.gapMm)}, between ${pair(least)}`, pass: true })
   return items
+}
+
+/**
+ * Which body left over each missing plan name most likely is, for saying what to rename: a body whose name starts with
+ * the plan name as whole words (Segment 1 head for Segment 1) when only one does, then the last name with the last body.
+ * Matching stays exact; this only words the miss.
+ */
+function renames(missing: readonly string[], left: readonly string[]): [string, string][] {
+  const key = (v: string): string => v.trim().toLowerCase()
+  const out: [string, string][] = []
+  const names = [...missing]
+  const bodies = [...left]
+  for (const p of missing) {
+    const starts = bodies.filter((b) => key(b).startsWith(`${key(p)} `))
+    if (starts.length !== 1 || missing.filter((q) => key(starts[0]!).startsWith(`${key(q)} `)).length !== 1) continue
+    out.push([p, starts[0]!])
+    names.splice(names.indexOf(p), 1)
+    bodies.splice(bodies.indexOf(starts[0]!), 1)
+  }
+  if (names.length === 1 && bodies.length === 1) out.push([names[0]!, bodies[0]!])
+  return missing.flatMap((p) => out.filter(([q]) => q === p))
 }
 
 /**
