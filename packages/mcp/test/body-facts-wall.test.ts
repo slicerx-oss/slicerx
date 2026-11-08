@@ -3,7 +3,7 @@
 // The thinnest wall design.check reads skips what booleans leave where faces meet: a facet folded under its neighbor,
 // a needle with no reliable normal and a speck far smaller than a nozzle. A live Pi 5 case read 0.001 mm and a headphone
 // stand 0 mm from such facets, so both failed "minimum wall" though their walls were 1.1 mm and more, and mimir could
-// not call either finished.
+// not call either finished. A planter with 3 mm walls read 0.025 mm the same way, from a needle at a drain hole rim.
 import { describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
 
@@ -40,6 +40,19 @@ describe('the thinnest wall', () => {
     const needle: V[] = [[0, 0, 0], [10, 0, 0], [5, 0, 0.001]]
     const beside: V[] = [[-5, 0.05, -1], [5, 0.05, 1], [15, 0.05, -1]]
     expect(minWall([mesh([top, needle, beside, FAR])]).mm).toBeCloseTo(3, 3)
+  })
+
+  it('a needle lying in the floor at a drain hole rim reads the 3 mm floor, not the hole wall its ray grazes', () => {
+    // from a planter built as a 120 mm cylinder, a 114 mm cut down to a 3 mm floor and five 6 mm drain holes: at the
+    // rim of the hole around (30, 0), the subtract left a needle facet in the bottom face, 0.016 mm long, and the hole's
+    // wall facet beside it leans 0.004 mm over its 3 mm height. The needle's ray goes up along that wall and met it
+    // 0.025 mm up, so design.check failed "minimum wall" at 0.03 mm on a part whose walls are 3 mm.
+    const needle: V[] = [[32.91094207763672, 0.7071242928504944, 0], [32.910587310791016, 0.7081326842308044, 0], [32.90554428100586, 0.7225484251976013, 0]]
+    const holeWall: V[] = [[32.70290756225586, 1.3016512393951416, 3], [32.910587310791016, 0.7081326842308044, 0], [32.91094207763672, 0.7071242928504944, 0]]
+    // a plain facet of the bottom beside the needle, facing down, and the floor's top face 3 mm over it, facing up
+    const bottom: V[] = [[31, -2, 0], [29, -0.5, 0], [32, -0.5, 0]]
+    const floorTop: V[] = [[20, -10, 3], [45, -10, 3], [32, 20, 3]]
+    expect(minWall([mesh([needle, holeWall, bottom, floorTop])]).mm).toBeCloseTo(3, 3)
   })
 
   it('a closed plate 20 x 20 x 0.4 mm still reads its 0.4 mm wall, too thin for twice a 0.4 mm nozzle', () => {
