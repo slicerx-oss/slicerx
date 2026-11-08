@@ -4,7 +4,7 @@
 // app runs on the plate) over every part as the design holds it, with the limits from the fit rule (the fit_check
 // skill's assessFit) for the printer's nozzle, layer height and material. design.check and geom.fit_check read it.
 import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
-import { assessFit, lineWidthFor, printInPlaceClearance, type ClearanceProfile, type FitResult } from '@slicerx/pilot'
+import { assessFit, clearanceProfileOf, lineWidthFor, printInPlaceClearance, type ClearanceProfile, type FitResult } from '@slicerx/pilot'
 import { NEAR_MM, nozzleOr, type FitFacts, type FitGap, type FitLimits } from './design-check'
 
 type V3 = [number, number, number]
@@ -15,6 +15,16 @@ export type FitProfile = ClearanceProfile
 /** The smallest print-in-place gaps for a profile: the gap the fit rule suggests, side by side and above or below. */
 export function fitLimits(p: FitProfile = {}): FitLimits {
   return printInPlaceClearance({ ...p, nozzleMm: nozzleOr(p.nozzleMm) })
+}
+
+/**
+ * The limits for a run: its machine's nozzle and material and the layer height it set, under each value the host gives
+ * (`given`, such as the app's loaded filament). design.plan and design.check both read it, so a plan's gaps are held to
+ * the same rule before and after building.
+ */
+export function runFitLimits(context: Parameters<typeof clearanceProfileOf>[0] | undefined, given: FitProfile = {}): FitLimits {
+  const set = Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)) as FitProfile
+  return fitLimits({ ...clearanceProfileOf(context ?? {}), ...set })
 }
 
 /**
