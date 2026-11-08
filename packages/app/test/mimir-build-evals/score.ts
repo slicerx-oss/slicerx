@@ -3,8 +3,9 @@
 // Scores one build eval run on two counts. Geometry: the steps a good build uses ran, the part is one closed solid (or
 // the bodies the case allows), its walls print, it fits the bed and its main sizes are near the request, read on each
 // body or assembly rather than on the plate, since parts are laid out apart to print. Turns: the
-// person sends one message, confirms the dimension sheet once and presses Go on the plan once; any other answer,
-// question card or nudge is an extra turn, and one extra turn fails the run however good the part is.
+// person sends one message, confirms the dimension sheet once and presses Go on the plan once (once for each part
+// when the message asks for separate parts); any other answer, question card or nudge is an extra turn, and one extra
+// turn fails the run however good the part is.
 import type { MeshPart, PilotEvent } from '@slicerx/contracts'
 import { bedFit, bodyBoxes, bodyCount, closure, minWall, type BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
 import type { BuildCase, HookSpec, OpMatch, SizeCheck } from './cases'
@@ -14,7 +15,10 @@ export interface Check {
   detail: string
 }
 
-/** Something the person did in the run, in order. The first message, one sheet confirm and one Go are free. */
+/**
+ * Something the person did in the run, in order. The first message, one sheet confirm and one Go are free, or one sheet
+ * and one Go for each part when the message asks for separate parts.
+ */
 export type UserTurn =
   | { kind: 'message'; text: string }
   | { kind: 'sheet'; title: string }
@@ -50,14 +54,17 @@ function matches(step: { tool: string; input: unknown }, m: OpMatch): boolean {
   return typeof angle === 'number' && Math.abs(angle) < 360
 }
 
-/** Every extra turn: answers to questions, nudges, and any sheet or Go after the first. */
-export function extraTurns(turns: readonly UserTurn[]): UserTurn[] {
+/**
+ * Every extra turn: answers to questions, nudges, and any sheet or Go past the first, or past one for each of `parts`
+ * when the message asks for that many separate parts.
+ */
+export function extraTurns(turns: readonly UserTurn[], parts = 1): UserTurn[] {
   let sheets = 0
   let gos = 0
   return turns.filter((t, i) => {
     if (t.kind === 'message') return i > 0
-    if (t.kind === 'sheet') return ++sheets > 1
-    if (t.kind === 'go') return ++gos > 1
+    if (t.kind === 'sheet') return ++sheets > parts
+    if (t.kind === 'go') return ++gos > parts
     return true
   })
 }
@@ -277,8 +284,9 @@ export function scoreCase(c: BuildCase, run: { events: readonly PilotEvent[]; tu
   const used = [...new Set(steps.filter((s) => s.tool.startsWith('geom.')).map((s) => s.tool))]
   const hit = c.ops.filter((m) => steps.some((s) => matches(s, m)))
   const ops: Check = { pass: hit.length > 0, detail: `${hit.length ? `used ${hit.join(', ')}` : `none of ${c.ops.join(', ')}`}; steps ${used.join(', ') || 'none'}` }
-  const extra = extraTurns(run.turns)
-  const turns: Check = { pass: extra.length === 0, detail: extra.length ? extra.map((t) => (t.kind === 'nudge' ? `nudge (${t.why})` : t.kind === 'answer' ? `answer "${t.question.slice(0, 40)}"` : `another ${t.kind}`)).join(', ') : 'one message, sheet and Go only' }
+  const parts = c.parts ?? 1
+  const extra = extraTurns(run.turns, parts)
+  const turns: Check = { pass: extra.length === 0, detail: extra.length ? extra.map((t) => (t.kind === 'nudge' ? `nudge (${t.why})` : t.kind === 'answer' ? `answer "${t.question.slice(0, 40)}"` : `another ${t.kind}`)).join(', ') : parts > 1 ? `one message, and a sheet and Go for each of ${parts} parts only` : 'one message, sheet and Go only' }
   const refused = !run.firstBuilt && classifyNoBuild(run.firstReply) === 'declined'
   const built = run.parts.length > 0
   const out: CaseScore = { built, refused, ops, geometry: false, extra: extra.length, turns, pass: false }
