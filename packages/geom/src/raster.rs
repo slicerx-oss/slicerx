@@ -17,6 +17,9 @@ const MAX_JPEG_SIDE: usize = 2 * MAX_SIDE;
 const MAX_PIXELS: usize = 100_000_000;
 /// The largest file read.
 pub const MAX_BYTES: usize = 30 << 20;
+/// The most a JPEG may ask the decoder to set aside: an 8192 px square baseline photo, or a progressive one of about
+/// 30 megapixels at 4:4:4, whose coefficients are all kept until its last scan.
+const MAX_DECODE_BYTES: usize = 256 << 20;
 
 /// Pixels in sRGB with straight alpha, rows from the top.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +251,14 @@ type Frame = (u8, usize, usize);
 
 /// A JPEG's frame kind and size from its frame header, before anything decodes.
 fn jpeg_frame(bytes: &[u8]) -> Option<Frame> {
+    let i = jpeg_sof(bytes)?;
+    let h = u16::from_be_bytes([*bytes.get(i + 5)?, *bytes.get(i + 6)?]);
+    let w = u16::from_be_bytes([*bytes.get(i + 7)?, *bytes.get(i + 8)?]);
+    Some((*bytes.get(i + 1)?, usize::from(w), usize::from(h)))
+}
+
+/// Where a JPEG's frame header starts, at its marker.
+fn jpeg_sof(bytes: &[u8]) -> Option<usize> {
     let mut i = 2;
     loop {
         // stray bytes before a marker are skipped, as the decoder skips them
@@ -269,14 +280,43 @@ fn jpeg_frame(bytes: &[u8]) -> Option<Frame> {
                 }
                 // every start of frame but huffman tables (c4), the reserved c8 and arithmetic conditioning (cc)
                 if (0xC0..=0xCF).contains(&m) && !matches!(m, 0xC4 | 0xC8 | 0xCC) {
-                    let h = u16::from_be_bytes([*bytes.get(i + 5)?, *bytes.get(i + 6)?]);
-                    let w = u16::from_be_bytes([*bytes.get(i + 7)?, *bytes.get(i + 8)?]);
-                    return Some((m, usize::from(w), usize::from(h)));
+                    return Some(i);
                 }
                 i += 2 + len;
             }
         }
     }
+}
+
+/// Refuses a JPEG whose frame header asks for more decoding memory than [`MAX_DECODE_BYTES`], or for more blocks
+/// than its bytes could hold, before the decoder sets aside anything for it.
+fn jpeg_budget(bytes: &[u8], sof: usize, (kind, w, h): Frame) -> std::result::Result<(), Unusable> {
+    // each component's sampling factors, in three bytes after the count
+    let n = usize::from(*bytes.get(sof + 9).ok_or(Unusable::Damaged)?);
+    let comps = bytes.get(sof + 10..sof + 10 + 3 * n).ok_or(Unusable::Damaged)?;
+    let factors: Vec<(usize, usize)> = comps
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|c| (usize::from(c[1] >> 4).max(1), usize::from(c[1] & 15).max(1)))
+        .collect();
+    let (hmax, vmax) = factors.iter().fold((1, 1), |m, &(a, b)| (m.0.max(a), m.1.max(b)));
+    let mcus = w.div_ceil(8 * hmax) * h.div_ceil(8 * vmax);
+    // the first scan codes every block in a bit at least
+    let blocks = mcus * factors.iter().map(|&(a, b)| a * b).max().unwrap_or(1);
+    if bytes.len() < blocks / 8 {
+        return Err(Unusable::Damaged);
+    }
+    // the RGB output, and for a progressive frame two bytes for each coefficient of every block, kept to the end
+    let coefficients: usize = if kind == 0xC2 {
+        factors.iter().map(|&(a, b)| mcus * a * b * 64 * 2).sum()
+    } else {
+        0
+    };
+    if w * h * 3 + coefficients > MAX_DECODE_BYTES {
+        return Err(Unusable::TooLarge);
+    }
+    Ok(())
 }
 
 /// k x k blocks of pixels averaged in linear light, k rows at a time.
@@ -322,7 +362,7 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
     // the decoder reports a size over its limits as a damaged file, so the size is read first
-    if let Some((kind, w, h)) = jpeg_frame(bytes) {
+    if let (Some(sof), Some((kind, w, h))) = (jpeg_sof(bytes), jpeg_frame(bytes)) {
         // within these sides a JPEG is always under the pixel limit
         if w > MAX_JPEG_SIDE || h > MAX_JPEG_SIDE {
             return Err(Unusable::TooLarge);
@@ -331,6 +371,7 @@ fn decode_jpeg(bytes: &[u8]) -> std::result::Result<Decoded, Unusable> {
         if kind > 0xC2 {
             return Err(Unusable::Unsupported);
         }
+        jpeg_budget(bytes, sof, (kind, w, h))?;
     }
     let options = DecoderOptions::default()
         .jpeg_set_out_colorspace(ColorSpace::RGB)
@@ -879,6 +920,293 @@ pub(crate) mod tests {
             }
             let _ = jpeg_frame(&bytes);
             let _ = decode(&bytes);
+        }
+    }
+
+    /// A whole JPEG of kind `m` (baseline or progressive) for `w` x `h` with `comps` components at 4:4:4, whose one
+    /// scan is `fill` zero bytes: each block is a 0 bit for a DC of 0 (and a 0 bit for its end), so mid gray. A
+    /// progressive scan reads its marker right after the last block, so its fill is exactly a bit a block.
+    fn flat_jpeg(m: u8, w: u16, h: u16, comps: u8, fill: usize) -> Vec<u8> {
+        let mut q = vec![0u8];
+        q.extend_from_slice(&[1; 64]);
+        let table = |class: u8| {
+            let mut t = vec![class, 1];
+            t.extend_from_slice(&[0; 15]);
+            t.push(0);
+            segment(0xC4, &t)
+        };
+        let mut f = vec![8];
+        f.extend_from_slice(&h.to_be_bytes());
+        f.extend_from_slice(&w.to_be_bytes());
+        f.push(comps);
+        let mut s = vec![comps];
+        for c in 1..=comps {
+            f.extend_from_slice(&[c, 0x11, 0]);
+            s.extend_from_slice(&[c, 0x00]);
+        }
+        // a progressive frame's first scan is the DC alone
+        s.extend_from_slice(if m == 0xC2 { &[0, 0, 0] } else { &[0, 63, 0] });
+        let mut j = jpeg(&[
+            &segment(0xDB, &q),
+            &table(0x00),
+            &table(0x10),
+            &segment(m, &f),
+            &segment(0xDA, &s),
+        ]);
+        j.resize(j.len() + fill, 0);
+        j.extend_from_slice(&[0xFF, 0xD9]);
+        j
+    }
+
+    #[test]
+    fn a_jpeg_header_asking_for_more_memory_than_its_bytes_or_the_budget_allow_is_refused_before_it_decodes()
+    {
+        // a valid flat baseline square at the bytes it needs decodes to mid gray
+        let r = decode(&flat_jpeg(0xC0, 4096, 4096, 1, 512 * 512 * 2 / 8)).unwrap();
+        assert_eq!((r.w, r.h), (4096, 4096));
+        assert_eq!(r.px[0], [128, 128, 128, 255]);
+        // a progressive color photo of 12 megapixels is within the budget
+        let r = decode(&flat_jpeg(0xC2, 4000, 3000, 3, (500 * 375 * 3usize).div_ceil(8))).unwrap();
+        assert_eq!((r.w, r.h), (4000, 3000));
+        // the largest square in a few bytes: too few for its blocks
+        assert_eq!(
+            decode(&flat_jpeg(0xC0, 8192, 8192, 1, 16)).err(),
+            Some(Unusable::Damaged)
+        );
+        assert_eq!(
+            decode(&flat_jpeg(0xC2, 8192, 8192, 3, 16)).err(),
+            Some(Unusable::Damaged)
+        );
+        // with bytes for its first scan, a progressive square still keeps 400 MB of coefficients
+        assert_eq!(
+            decode(&flat_jpeg(0xC2, 8192, 8192, 3, 1024 * 1024 / 8 + 64)).err(),
+            Some(Unusable::TooLarge)
+        );
+        // a frame header cut short in its components is damaged
+        let mut cut = jpeg(&[&sof(0xC0, 64, 64)]);
+        cut.truncate(cut.len() - 2);
+        cut[5] = 11;
+        assert_eq!(decode(&cut).err(), Some(Unusable::Damaged));
+    }
+
+    /// A PNG of `w` x `h` of `depth` bit samples in color `kind` (0 gray, 2 RGB, 3 palette, 4 gray and alpha, 6
+    /// RGBA), Adam7 interlaced or not, with `extra` chunks before the pixels; `data` is the rows packed, top first.
+    fn png_of(
+        w: usize,
+        h: usize,
+        depth: u8,
+        kind: u8,
+        interlace: bool,
+        data: &[u8],
+        extra: &[([u8; 4], &[u8])],
+    ) -> Vec<u8> {
+        let channels = match kind {
+            2 => 3,
+            4 => 2,
+            6 => 4,
+            _ => 1,
+        };
+        let bpp = channels * usize::from(depth) / 8;
+        let mut raw = Vec::new();
+        let passes: &[(usize, usize, usize, usize)] = if interlace {
+            &[
+                (0, 0, 8, 8),
+                (4, 0, 8, 8),
+                (0, 4, 4, 8),
+                (2, 0, 4, 4),
+                (0, 2, 2, 4),
+                (1, 0, 2, 2),
+                (0, 1, 1, 2),
+            ]
+        } else {
+            &[(0, 0, 1, 1)]
+        };
+        for &(x0, y0, dx, dy) in passes {
+            if x0 >= w || y0 >= h {
+                continue;
+            }
+            for y in (y0..h).step_by(dy) {
+                raw.push(0);
+                for x in (x0..w).step_by(dx) {
+                    let at = (y * w + x) * bpp;
+                    raw.extend_from_slice(&data[at..at + bpp]);
+                }
+            }
+        }
+        let mut out = vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10];
+        let mut chunk = |kind: &[u8; 4], data: &[u8]| {
+            out.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+            let mut body = kind.to_vec();
+            body.extend_from_slice(data);
+            out.extend_from_slice(&body);
+            out.extend_from_slice(&crc32(&body).to_be_bytes());
+        };
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&u32::try_from(w).unwrap().to_be_bytes());
+        ihdr.extend_from_slice(&u32::try_from(h).unwrap().to_be_bytes());
+        ihdr.extend_from_slice(&[depth, kind, 0, 0, u8::from(interlace)]);
+        chunk(b"IHDR", &ihdr);
+        for (k, d) in extra {
+            chunk(k, d);
+        }
+        chunk(b"IDAT", &miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6));
+        chunk(b"IEND", &[]);
+        out
+    }
+
+    #[test]
+    fn interlaced_16_bit_palette_and_gray_alpha_pngs_decode_to_their_pixels() {
+        // gray and alpha
+        let r = decode(&png_of(2, 1, 8, 4, false, &[10, 20, 200, 255], &[])).unwrap();
+        assert_eq!(r.px, vec![[10, 10, 10, 20], [200, 200, 200, 255]]);
+        // 16 bit RGBA keeps the high byte of each sample
+        let r = decode(&png_of(
+            1,
+            1,
+            16,
+            6,
+            false,
+            &[0x12, 0x34, 0xAB, 0xCD, 0xFF, 0xFF, 0x80, 0x00],
+            &[],
+        ))
+        .unwrap();
+        assert_eq!(r.px, vec![[0x12, 0xAB, 0xFF, 0x80]]);
+        // 16 bit gray
+        let r = decode(&png_of(2, 1, 16, 0, false, &[0, 0, 0xFF, 0xFF], &[])).unwrap();
+        assert_eq!(r.px, vec![[0, 0, 0, 255], [255, 255, 255, 255]]);
+        // a palette with alpha for its first entry only
+        let plte: &[u8] = &[255, 0, 0, 0, 0, 255];
+        let r = decode(&png_of(
+            2,
+            1,
+            8,
+            3,
+            false,
+            &[0, 1],
+            &[(*b"PLTE", plte), (*b"tRNS", &[128])],
+        ))
+        .unwrap();
+        assert_eq!(r.px, vec![[255, 0, 0, 128], [0, 0, 255, 255]]);
+        // a palette with no alpha
+        let r = decode(&png_of(2, 1, 8, 3, false, &[1, 0], &[(*b"PLTE", plte)])).unwrap();
+        assert_eq!(r.px, vec![[0, 0, 255, 255], [255, 0, 0, 255]]);
+        // Adam7 gives the same pixels as the plain file, at every size round the pass grid
+        for (w, h) in [(1, 1), (3, 2), (9, 9), (13, 5)] {
+            let rgb: Vec<u8> = (0..w * h * 3)
+                .map(|i| u8::try_from(i * 7 % 251).unwrap())
+                .collect();
+            let plain = decode(&png_of(w, h, 8, 2, false, &rgb, &[])).unwrap();
+            let laced = decode(&png_of(w, h, 8, 2, true, &rgb, &[])).unwrap();
+            assert_eq!(laced, plain, "{w} x {h}");
+            let rgba: Vec<u8> = (0..w * h * 8)
+                .map(|i| u8::try_from(i * 13 % 253).unwrap())
+                .collect();
+            let plain = decode(&png_of(w, h, 16, 6, false, &rgba, &[])).unwrap();
+            let laced = decode(&png_of(w, h, 16, 6, true, &rgba, &[])).unwrap();
+            assert_eq!(laced, plain, "16 bit {w} x {h}");
+        }
+        // an interlaced image cannot be reduced while it decodes, so one over the largest side is refused
+        let wide = vec![9u8; (MAX_SIDE + 1) * 3];
+        assert_eq!(
+            decode(&png_of(MAX_SIDE + 1, 1, 8, 2, true, &wide, &[])).err(),
+            Some(Unusable::TooLarge)
+        );
+        let r = decode(&png_of(MAX_SIDE, 1, 8, 2, true, &wide[..MAX_SIDE * 3], &[])).unwrap();
+        assert_eq!((r.w, r.h, r.px[MAX_SIDE - 1]), (MAX_SIDE, 1, [9, 9, 9, 255]));
+    }
+
+    /// Asserts that `bytes` decodes to a whole raster or is refused, and never panics.
+    fn decodes_or_refuses(bytes: &[u8], what: &str) {
+        if let Ok(r) = decode(bytes) {
+            assert!(r.w > 0 && r.h > 0 && r.px.len() == r.w * r.h, "{what}");
+        }
+    }
+
+    #[test]
+    fn damaged_and_hostile_pngs_never_panic() {
+        let rgb: Vec<u8> = (0..12 * 10 * 3).map(|i| u8::try_from(i % 256).unwrap()).collect();
+        let plte: Vec<u8> = (0..12).collect();
+        for good in [
+            png_of(12, 10, 8, 2, false, &rgb, &[]),
+            png_of(12, 10, 8, 2, true, &rgb, &[]),
+            png_of(
+                4,
+                2,
+                8,
+                3,
+                false,
+                &[0, 1, 2, 3, 3, 2, 1, 0],
+                &[(*b"PLTE", &plte), (*b"tRNS", &[0, 9])],
+            ),
+        ] {
+            assert!(decode(&good).is_ok());
+            // cut at every length, and each byte turned over
+            for n in 0..good.len() {
+                decodes_or_refuses(&good[..n], &format!("cut at {n}"));
+                let mut bad = good.clone();
+                bad[n] ^= 0xFF;
+                decodes_or_refuses(&bad, &format!("byte {n} turned"));
+            }
+        }
+        let gray = vec![7u8; 16 * 16];
+        let cases: Vec<(&str, Vec<u8>)> = vec![
+            // pixels that inflate far past the rows the header declares
+            ("bomb", {
+                let mut f = png_of(16, 16, 8, 0, false, &gray, &[]);
+                let big = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; 8 << 20], 9);
+                let mut body = b"IDAT".to_vec();
+                body.extend_from_slice(&big);
+                f.truncate(33);
+                f.extend_from_slice(&u32::try_from(big.len()).unwrap().to_be_bytes());
+                f.extend_from_slice(&body);
+                f.extend_from_slice(&crc32(&body).to_be_bytes());
+                f.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82]);
+                f
+            }),
+            ("empty IDAT", {
+                let mut f = png_of(16, 16, 8, 0, false, &gray, &[]);
+                f.truncate(33);
+                let body = b"IDAT".to_vec();
+                f.extend_from_slice(&[0, 0, 0, 0]);
+                f.extend_from_slice(&body);
+                f.extend_from_slice(&crc32(&body).to_be_bytes());
+                f.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82]);
+                f
+            }),
+            (
+                "a palette of 300 entries",
+                png_of(2, 1, 8, 3, false, &[0, 1], &[(*b"PLTE", &[5; 900])]),
+            ),
+            (
+                "alpha for more entries than the palette",
+                png_of(
+                    2,
+                    1,
+                    8,
+                    3,
+                    false,
+                    &[0, 1],
+                    &[(*b"PLTE", &[5; 6]), (*b"tRNS", &[1; 9])],
+                ),
+            ),
+            (
+                "an index past the palette",
+                png_of(2, 1, 8, 3, false, &[0, 7], &[(*b"PLTE", &[5; 6])]),
+            ),
+            ("no palette", png_of(2, 1, 8, 3, false, &[0, 1], &[])),
+            ("a bad checksum", {
+                let mut f = png_of(16, 16, 8, 0, false, &gray, &[]);
+                let n = f.len();
+                f[n - 13] ^= 0xFF;
+                f
+            }),
+        ];
+        for (what, bytes) in &cases {
+            decodes_or_refuses(bytes, what);
+        }
+        // the bomb gives the declared rows and no more
+        if let Ok(r) = decode(&cases[0].1) {
+            assert_eq!((r.w, r.h), (16, 16));
         }
     }
 }
