@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ bytes: 0, loads: 0 }))
 vi.mock('../src/geom/brep', () => ({ loadBrep: async () => { state.loads++; return { memoryBytes: () => state.bytes, call: (op: string) => { if (op === 'fail') throw new Error('failed'); return {} } } } }))
-vi.mock('../src/geom/modules', () => ({ engineModules: () => ({ run: async () => ({}), full: async () => ({}) }) }))
+vi.mock('../src/geom/modules', () => ({ engineModules: () => ({ run: async () => ({}), module: async () => ({ operations: new Set(), call: () => ({}) }), core: async () => true, full: async () => true }) }))
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.resetModules() })
 
 it('reports the lazy exact heap after growth and on error replies', async () => {
@@ -14,13 +14,15 @@ it('reports the lazy exact heap after growth and on error replies', async () => 
   vi.stubGlobal('self', worker)
   await import('../src/geom/geom-worker')
   const send = async (op: string) => { await worker.onmessage!({ data: { id: 1, op, request: {} } }); return postMessage.mock.lastCall![0] as { memoryBytes: number; error?: string } }
-  expect((await send('mesh.info')).memoryBytes).toBe(0)
+  expect(await send('mesh.info')).toMatchObject({ result: {}, memoryBytes: 0 })
   expect(state.loads).toBe(0)
   state.bytes = 16 * 1024 * 1024
   expect((await send('brep.count')).memoryBytes).toBe(state.bytes)
   state.bytes = 300 * 1024 * 1024
   expect(await send('brep.fail')).toMatchObject({ error: 'failed', memoryBytes: state.bytes })
-  expect((await send('mesh.info')).memoryBytes).toBe(state.bytes)
+  const last = await send('mesh.info')
+  expect(last).toMatchObject({ result: {}, memoryBytes: state.bytes })
+  expect(last.error).toBeUndefined()
   expect(state.loads).toBe(1)
 })
 
