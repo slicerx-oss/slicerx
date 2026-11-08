@@ -94,6 +94,14 @@ describe('a sheet before the first build', () => {
     expect(ran).toEqual([])
   })
 
+  // A lid for the box: its sheet confirmed, then the box's own sheet confirmed to check the fit. The box's sheet adds
+  // no new part and takes none back, so the lid still builds.
+  it('keeps a new part\'s confirmation after a later sheet of a part already built is confirmed', async () => {
+    const built = { name: 'pilot.sheet', args: { ...SHEET.args, design: 'obj_box' } }
+    const { ran } = await play([{ calls: [SHEET] }, { calls: [built] }, { calls: [EXTRUDE] }, { text: 'Built.' }])
+    expect(ran).toEqual(['geom.extrude:new'])
+  })
+
   it('lets edits to a part through without a sheet', async () => {
     const { ran } = await play([{ calls: [{ name: 'geom.extrude', args: { operation: 'cut', part: 0 } }] }, { text: 'Cut.' }])
     expect(ran).toEqual(['geom.extrude:cut'])
