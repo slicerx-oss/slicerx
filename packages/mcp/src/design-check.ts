@@ -128,7 +128,7 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
  */
 function openWords(why: string | undefined): string {
   if (!why) return 'open'
-  if (/more than two faces/.test(why)) return `open: ${why} (surfaces that touch without joining); repair the part or rebuild that join`
+  if (/more than two faces/.test(why)) return `open: ${why} (surfaces that touch without joining, which repair leaves as they are); rebuild that join so the shapes overlap a little`
   return `open: ${why}; repair the part or rebuild the step that left it open`
 }
 
