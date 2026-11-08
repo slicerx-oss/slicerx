@@ -45,14 +45,43 @@ describe('replayed geometry replies', () => {
     expect(r.stale).toEqual([])
   })
 
-  it('with pooled replies, answers a request the test did not record from another test of the file', async () => {
-    const replies = { a: [{ op: 'nest.arrange', request: digest({ a: 1 }), reply: { from: 'a' } }], b: [{ op: 'nest.footprint', request: digest({ b: 1 }), reply: { from: 'b' } }] }
-    const r = replayEngine('fixtures/x.json.gz', replies, true)
+  // Two tests of a file, each with its own recorded list. A call that is in the other test's list is no answer for this one.
+  const two = (): ReturnType<typeof replayEngine> => replayEngine('fixtures/x.json.gz', {
+    a: [{ op: 'nest.arrange', request: digest({ a: 1 }), reply: { from: 'a' } }],
+    b: [{ op: 'nest.footprint', request: digest({ b: 1 }), reply: { from: 'b' } }, { op: 'nest.arrange', request: digest({ b: 2 }), reply: { from: 'b2' } }],
+  })
+
+  it('replays only the running test\'s own list: a wrong extra call that another test recorded still fails', async () => {
+    const r = two()
     r.start('b')
-    expect(await r.engine('nest.arrange', { a: 1 })).toEqual({ from: 'a' })
-    expect(await r.engine('nest.footprint', { b: 1 })).toEqual({ from: 'b' })
-    await expect(r.engine('nest.arrange', { a: 2 })).rejects.toBeInstanceOf(ReplayMismatch)
+    await expect(r.engine('nest.arrange', { a: 1 })).rejects.toBeInstanceOf(ReplayMismatch)
     expect(r.stale).toHaveLength(1)
+    expect(r.stale[0]).toContain('call 1 is nest.arrange, recorded as nest.footprint')
+  })
+
+  it('fails a call that skips ahead in the test\'s own list, and one that repeats a call', async () => {
+    const r = two()
+    r.start('b')
+    // The second recorded call, made first.
+    await expect(r.engine('nest.arrange', { b: 2 })).rejects.toBeInstanceOf(ReplayMismatch)
+    expect(r.stale[0]).toContain('call 1 is nest.arrange, recorded as nest.footprint')
+    // After the miss the first recorded call is made, but the list has moved on: it does not hold it at call 2.
+    await expect(r.engine('nest.footprint', { b: 1 })).rejects.toBeInstanceOf(ReplayMismatch)
+    expect(r.stale).toHaveLength(2)
+    const again = two()
+    again.start('b')
+    expect(await again.engine('nest.footprint', { b: 1 })).toEqual({ from: 'b' })
+    await expect(again.engine('nest.footprint', { b: 1 })).rejects.toBeInstanceOf(ReplayMismatch)
+  })
+
+  it('answers each test from its own list in order, whatever the order the tests run in', async () => {
+    const r = two()
+    r.start('b')
+    expect(await r.engine('nest.footprint', { b: 1 })).toEqual({ from: 'b' })
+    expect(await r.engine('nest.arrange', { b: 2 })).toEqual({ from: 'b2' })
+    r.start('a')
+    expect(await r.engine('nest.arrange', { a: 1 })).toEqual({ from: 'a' })
+    expect(r.stale).toEqual([])
   })
 
   it('names the fixture and how to record it again when a request differs', async () => {
