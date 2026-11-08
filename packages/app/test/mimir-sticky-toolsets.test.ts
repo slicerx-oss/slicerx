@@ -19,6 +19,8 @@ import { pilotFeature } from '../src/features/pilot/index'
 import { storeFeature } from '../src/features/store/index'
 import { setupCommands } from '../src/first-run/look'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
+import { runCall } from '../src/app-link/methods'
+import { setTabChat } from '../src/app-link/sessions'
 import { setHostSlices } from '../src/state/model-mode'
 import { get, set } from '../src/state/store'
 import { resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
@@ -163,5 +165,22 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
     // the printer tools were called in the last turn, so all of them stay, and the mesh toolset the message asks for (its cut tool here) comes in
     expect(before).toEqual(expect.arrayContaining(EVERY_PRINTER))
     expect(after).toEqual(expect.arrayContaining([...PRINTING, ...EVERY_PRINTER, 'cut']))
+  })
+
+  it('reads what the open chat sent over the app link: the toolsets in and left out, and pilot.load_tools', async () => {
+    const { say } = await chat([{ text: OFFER }, { text: 'Sending it now.' }])
+    await say('Make a wall hook for a 6 mm screw')
+    await say('yes please')
+    setTabChat('s')
+    try {
+      const tab = (await runCall('mimir.tab', {})) as { tools: string[]; capped: { cap: number; offered: number; sent: number; toolsets: string[]; leftOut: string[]; partial: { toolset: string; sent: number; of: number }[]; loader: string } | null }
+      expect(tab.tools).toHaveLength(168)
+      expect(tab.capped).toMatchObject({ cap: CAP, offered: 168, sent: CAP, loader: 'pilot.load_tools' })
+      expect(tab.capped!.toolsets).toEqual(expect.arrayContaining(['core', 'cad', 'settings']))
+      // the printers fill the rest of the room: every printer's commands, not yet every connector's tools
+      expect(tab.capped!.partial).toEqual([{ toolset: 'printers', sent: 45, of: 64 }])
+    } finally {
+      setTabChat(null)
+    }
   })
 })

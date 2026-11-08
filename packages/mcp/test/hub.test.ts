@@ -607,7 +607,7 @@ describe('the mimir tab through a scripted hub', () => {
     const h = await connect(link(hub))
     const model = await h.call('slicerx_mimir_tab')
     expect(model.isError, text(model)).toBeFalsy()
-    expect(data<{ output: unknown }>(model).output).toEqual({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'], turns: null })
+    expect(data<{ output: unknown }>(model).output).toEqual({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'], turns: null, capped: null })
     expect(JSON.stringify(model)).not.toMatch(/sk-never/)
     expect(text(model)).toMatch(/runs anthropic on Auto: claude-haiku-5-5, and claude-sonnet-5-5 for a picture/)
     const local = await h.call('slicerx_mimir_tab')
@@ -628,6 +628,32 @@ describe('the mimir tab through a scripted hub', () => {
     expect(text(scripted)).toMatch(/scripted replies: no model is set up/)
     const none = await h.call('slicerx_mimir_tab')
     expect(text(none)).toMatch(/has not been opened/)
+  })
+
+  it('reads what a chat over the tool limit sent: the toolsets in and left out, and the tool mimir loads one with', async () => {
+    const capped = { cap: 128, offered: 168, sent: 128, toolsets: ['core', 'cad', 'settings'], leftOut: ['printers', 'project', 'kb'], partial: [{ toolset: 'printers', sent: 45, of: 64 }, { toolset: 'kb', sent: 'x' }], loader: 'pilot.load_tools', key: 'sk-never' }
+    const answers = [
+      { link: 'model', provider: 'mimir-cloud', model: 'claude-haiku-5-5', auto: null, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new'], capped },
+      { link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: null, local: false, where: 'remote', tools: ['pilot.sheet'], capped: null },
+      { link: 'scripted', provider: 'scripted', model: 'scripted', auto: null, tools: [], capped },
+    ]
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method !== 'mimir.tab') throw { code: 'bad_request', message: `unknown method ${method}` }
+      return answers.shift()
+    })
+    const h = await connect(link(hub))
+    const over = await h.call('slicerx_mimir_tab')
+    expect(over.isError, text(over)).toBeFalsy()
+    // only the fields a client needs, and a malformed partial entry is dropped
+    expect(data<{ output: { capped: unknown } }>(over).output.capped).toEqual({ cap: 128, offered: 168, sent: 128, toolsets: ['core', 'cad', 'settings'], leftOut: ['printers', 'project', 'kb'], partial: [{ toolset: 'printers', sent: 45, of: 64 }], loader: 'pilot.load_tools' })
+    expect(JSON.stringify(over)).not.toMatch(/sk-never/)
+    expect(text(over)).toMatch(/sent 128 of 168 tools \(the limit is 128\); left out: printers, project, kb/)
+    const under = await h.call('slicerx_mimir_tab')
+    expect(data<{ output: { capped: unknown } }>(under).output.capped).toBeNull()
+    expect(text(under)).not.toMatch(/left out/)
+    // scripted replies have no model, so no limit
+    const scripted = await h.call('slicerx_mimir_tab')
+    expect(data<{ output: { capped: unknown } }>(scripted).output.capped).toBeNull()
   })
 
   it('says how to reach the app without sx-link', async () => {
