@@ -6,7 +6,8 @@
 // (slicing, settings, the project, the knowledge base and the app's commands), or the printers. The set is
 // read from the request's words; a request with no such words keeps the chat's last set. A model that needs a tool of
 // another set loads it with pilot.tools, and calling a tool of another set loads that set for the next step, so a
-// turn never gets stuck without a tool. A cloud model is not affected: every turn sends every tool, as before.
+// turn never gets stuck without a tool. A cloud model is not affected: every turn sends every tool, up to the
+// provider's tool limit (toolsets.ts).
 import type { PilotAttachment } from '@slicerx/contracts'
 import { z } from 'zod'
 import { toolGroupOf, type GroupedTool } from './surfaces'
