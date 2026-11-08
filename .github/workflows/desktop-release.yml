@@ -90,9 +90,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --filter "@slicerx/desktop..." --filter "@slicerx/mcp..."
       # The engine's WASM build runs binaryen's wasm-opt.
+      - name: binaryen cache key
+        id: binaryen-key
+        shell: bash
+        run: sh scripts/install-binaryen.sh --key | sed 's/^/key=/' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/binaryen-dl
+          key: ${{ steps.binaryen-key.outputs.key }}
       - name: binaryen
         shell: bash
-        run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+        run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" "$RUNNER_TEMP/binaryen-dl" >> "$GITHUB_PATH"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # The app bundles the WASM slicer for the browser fallback path.
       - run: pnpm --filter @slicerx/slicer build:wasm
       # The CAD engine runs in a worker from its own WASM module; the bundler only ships it when the file exists at build time.

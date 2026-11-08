@@ -4,11 +4,20 @@
 # Downloads binaryen at the version the engine's WASM module is sized with, checks the archive's
 # SHA-256 and unpacks it into <dir>. Prints the directory that holds wasm-opt, for PATH:
 #
-#   sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+#   sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" "$RUNNER_TEMP/binaryen-dl" >> "$GITHUB_PATH"
+#   sh scripts/install-binaryen.sh --key        prints the cache key for the download folder (version and platform)
+#
+# The archive is kept in the second folder (default: <dir>), which a job can cache. An archive there that matches the
+# SHA-256 is used without a request; otherwise it is downloaded with the job's GITHUB_TOKEN when set (see
+# scripts/ci/gh-download.sh).
 set -eu
 version=133
-dir=${1:?usage: install-binaryen.sh <dir>}
-command -v cygpath >/dev/null && dir=$(cygpath -u "$dir")
+case ${1:-} in
+  --key) dir=- ;;
+  *) dir=${1:?usage: install-binaryen.sh <dir> [<download dir>] | --key} ;;
+esac
+dl=${2:-$dir}
+command -v cygpath >/dev/null && [ "$dir" != - ] && dir=$(cygpath -u "$dir") && dl=$(cygpath -u "$dl")
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) asset=x86_64-linux sum=2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 ;;
   Linux-aarch64) asset=aarch64-linux sum=89c07ea56faf38d0fbecf36ca8ec0721756716185f265b568e133d427f299bf8 ;;
@@ -20,15 +29,25 @@ case "$(uname -s)-$(uname -m)" in
     exit 1
     ;;
 esac
+if [ "$dir" = - ]; then
+  echo "binaryen-$version-$asset"
+  exit 0
+fi
 file=binaryen-version_$version-$asset.tar.gz
-mkdir -p "$dir"
-curl -fsSL -o "$dir/$file" "https://github.com/WebAssembly/binaryen/releases/download/version_$version/$file"
-got=$( (sha256sum "$dir/$file" 2>/dev/null || shasum -a 256 "$dir/$file") | cut -d ' ' -f 1)
+sha_of() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d ' ' -f 1; }
+mkdir -p "$dir" "$dl"
+if [ -f "$dl/$file" ] && [ "$(sha_of "$dl/$file")" = "$sum" ]; then
+  echo "install-binaryen: using $file from $dl" >&2
+else
+  sh "$(dirname "$0")/ci/gh-download.sh" "https://github.com/WebAssembly/binaryen/releases/download/version_$version/$file" "$dl/$file" >&2
+fi
+got=$(sha_of "$dl/$file")
 if [ "$got" != "$sum" ]; then
+  rm -f "$dl/$file"
   echo "install-binaryen: $file has SHA-256 $got, expected $sum" >&2
   exit 1
 fi
-tar xzf "$dir/$file" -C "$dir"
-rm "$dir/$file"
+tar xzf "$dl/$file" -C "$dir"
+if [ "$dl" = "$dir" ]; then rm "$dir/$file"; fi
 bin="$dir/binaryen-version_$version/bin"
 if command -v cygpath >/dev/null; then cygpath -w "$bin"; else (cd "$bin" && pwd); fi
