@@ -1627,6 +1627,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }
   // one press at a time: Enter in a number field runs Extrude again while the first is still working otherwise
   const [press] = useState(oneAtATime)
+  // whether this editor is still open, for a solid that lands after it closed or another sketch opened in its place
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
   const go = () => press(async () => {
     if (!ready) return
     setBusy(true)
@@ -1654,7 +1662,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
         r = await onSketch((step, sketch) => (stepEdit ? saveSketch(revolveParams(input)) : applyRevolve(host.slicer, input, { step, sketch })))
       }
-      afterSolid(r, setNote)
+      afterSolid(r, setNote, () => alive.current)
     } catch (e) {
       setNote(sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined))
     } finally {
