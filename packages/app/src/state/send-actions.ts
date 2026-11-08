@@ -345,6 +345,12 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
         return 'done'
       }
       const remote = await conn!.printers.upload(printer.id, file, token)
+      // The upload is a wait too: a plan kept, cleared or voided, or another plate shown meanwhile, and it does not start.
+      const afterUpload = start ? stillSendable() : null
+      if (afterUpload) {
+        toast(`${afterUpload} ${file.name} is on ${printer.name}, but it did not start.`, 'error')
+        return 'done'
+      }
       if (start) {
         await conn!.printers.start({ ...remote, sha256: remote.sha256 ?? file.sha256 }, opts, token)
         toast(`${plateName} started on ${printer.name}`, 'ok')
