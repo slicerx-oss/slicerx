@@ -23,7 +23,9 @@ const result = (id: string): SliceResult =>
 const app = vi.hoisted(() => ({ next: 'app_1' }))
 vi.mock('../src/state/actions', async (orig) => ({
   ...(await orig<typeof import('../src/state/actions')>()),
-  slicePlate: async () => {
+  // the run reads its fingerprint as the slice is stamped, as the real slicePlate calls onStamp
+  slicePlate: async (_host: unknown, opts?: { onStamp?: (at: ReturnType<typeof get>) => void }) => {
+    opts?.onStamp?.(get())
     set((st) => ({ slicesDone: st.slicesDone + 1, slice: { status: 'done', result: result(app.next), stale: false } }))
   },
 }))

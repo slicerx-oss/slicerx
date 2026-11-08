@@ -175,12 +175,13 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
       : {
           ...c,
           run: async (_input?: unknown, cx?: CommandToolContext) => {
-            // the plate and its fingerprint are read before slicing, so an edit made while the slice runs leaves it stale
             const before = get()
             const plate = Math.max(1, before.plates.findIndex((p) => p.id === before.activePlate) + 1)
-            const fingerprint = cx?.run?.fingerprint(plate)
+            // The fingerprint is read as the slice is stamped (after the profile and the bed for a new filament or printer
+            // have loaded), so a slice is current when it lands, and an edit made while it runs leaves it stale.
+            let fingerprint: string | undefined
             // Only the plate asked for slices: another plate shown before it starts slices nothing (slicePlate `plate`).
-            await slicePlate(host, { plate: before.activePlate })
+            await slicePlate(host, { plate: before.activePlate, onStamp: () => (fingerprint = cx?.run?.fingerprint(plate)) })
             const after = get()
             const s = after.slice
             // Another plate showed before or while it sliced: the plate asked for has no new slice, and whatever is on
