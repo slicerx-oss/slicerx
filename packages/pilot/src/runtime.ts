@@ -281,21 +281,72 @@ export const RUNTIME_NOTES: ReadonlySet<string> = new Set([WRAP_NOTE, CUT_NOTE])
 const CLIPPED_NOTE = 'This call was cut off at the output limit before its arguments were complete, so it did not run. Send a smaller call: fewer solids, profiles and holes, or build the part in steps.'
 /**
  * A modeling or mesh step whose geometry call was stopped at its time limit (@slicerx/contracts geom-limits.ts), asked
- * for again with the same input in the same turn while its design is unchanged: it would stop the same way, so it is
- * not run again. Only a geometry change to that design that goes through (a geom.* step that is not a read, or
- * design.edit_step, undo, redo or roll) lets it run again (CHANGES_GEOMETRY).
+ * for again with the same input on the same target in the same turn while that target is unchanged: it would stop the
+ * same way, so it is not run again. Only a geometry change to that target that goes through (a geom.* step that is
+ * not a read, or design.edit_step, undo or redo) lets it run again (CHANGES_GEOMETRY, stepTarget).
  */
 export const STOPPED_AGAIN_LINE = 'This exact step was stopped at its time limit earlier in this turn, so it was not run again. Try a smaller version, or say what stopped.'
 /** Said for the model when it ends a run without a word, even after being asked. */
 export const NO_REPLY_LINE = 'I stopped before I had an answer. Try the request again with fewer details at once, or split it into steps.'
 const STOPPED_LINE = 'I stopped there, and nothing else was changed.'
 
-/** The design tools that change a design's geometry besides its geom.* steps: an edit, an undo, a redo or a roll. */
-const CHANGES_GEOMETRY: ReadonlySet<string> = new Set(['design.edit_step', 'design.undo', 'design.redo', 'design.roll'])
+/** The design tools that change a design's geometry besides its geom.* steps: an edit, an undo or a redo. */
+const CHANGES_GEOMETRY: ReadonlySet<string> = new Set(['design.edit_step', 'design.undo', 'design.redo'])
 
 /** A value as JSON with its object keys in order, so the same input sent with its keys in another order reads the same. */
 function sortedJson(v: unknown): string {
   return JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x))
+}
+
+/** A design's name as the design tools match it: case and spacing aside. */
+const designNameKey = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/** The design ids this turn's tool answers named, and the ids each design name stands for. */
+interface SeenDesigns {
+  ids: Set<string>
+  names: Map<string, Set<string>>
+}
+
+/** Notes the designs a tool's answer names: its own design and name, and each one in a `designs` list. */
+function noteDesigns(output: unknown, seen: SeenDesigns): void {
+  const one = (d: unknown): void => {
+    const { design, name } = (d ?? {}) as { design?: unknown; name?: unknown }
+    if (typeof design !== 'string' || !design) return
+    seen.ids.add(design)
+    if (typeof name === 'string' && name) seen.names.set(designNameKey(name), (seen.names.get(designNameKey(name)) ?? new Set()).add(design))
+  }
+  one(output)
+  const list = (output as { designs?: unknown } | null | undefined)?.designs
+  if (Array.isArray(list)) list.forEach(one)
+}
+
+/**
+ * What a step works on, the same way when it is stopped, asked for again and changed: the design it names (by id, or
+ * by a name this turn's answers tied to one id), else the mesh model it names, else for a geom.* step the part this
+ * run started last, else nothing in particular ('').
+ */
+function stepTarget(toolName: string, input: unknown, started: readonly StartedPart[] | undefined, seen: SeenDesigns): string {
+  const { design, model } = (input ?? {}) as { design?: unknown; model?: unknown }
+  if (typeof design === 'string' && design) {
+    const ids = seen.ids.has(design) ? undefined : seen.names.get(designNameKey(design))
+    return `design ${ids?.size === 1 ? [...ids][0] : design}`
+  }
+  if (typeof model === 'string' && model) return `model ${model}`
+  const last = toolName.startsWith('geom.') ? started?.at(-1)?.id : undefined
+  return last ? `design ${last}` : ''
+}
+
+/** A turn's stopped steps: each target's tool and input keys (stepInput), and the designs seen for stepTarget. */
+interface TurnStops {
+  timedOut: Map<string, Set<string>>
+  seen: SeenDesigns
+}
+
+/** A step's input without its target, which stepTarget keys on its own. */
+function stepInput(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const { design: _d, model: _m, ...rest } = input as Record<string, unknown>
+  return rest
 }
 
 /** The JSON a tool result becomes for the model, with untrusted output wrapped as data. */
@@ -738,7 +789,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, timedOut: Map<string, string>, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>, stops: TurnStops, loader?: AnyTool): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
     // pilot.load_tools is not one of the offered tools: only a capped request carries it, made for that step, and a
     // call to it from a step that did not carry it is an unknown tool
     const tool = findTool(call.name) ?? (call.name === LOAD_TOOLS_TOOL ? loader : undefined)
@@ -773,11 +824,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     const input = parsed.data
     // the same step with the same input, after its geometry call was stopped at its time limit this turn, on the same
-    // design: the one it names, or with no design named, a geom.* step's part started last (as stepOn reads it)
-    const again = `${tool.name} ${sortedJson(input)}`
-    const named = (input as { design?: unknown } | null)?.design
-    const design = typeof named === 'string' ? named : tool.name.startsWith('geom.') ? (runPart.get(sessionId)?.at(-1)?.id ?? '') : ''
-    if (timedOut.get(again) === design) {
+    // target (stepTarget): a design named by id or name, or with none named, the part this run started last
+    const again = `${tool.name} ${sortedJson(stepInput(input))}`
+    const target = stepTarget(tool.name, input, runPart.get(sessionId), stops.seen)
+    if (stops.timedOut.get(target)?.has(again)) {
       emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: STOPPED_AGAIN_LINE })
       return { message: JSON.stringify({ ok: false, blocked: true, message: STOPPED_AGAIN_LINE }), stop: false }
@@ -902,12 +952,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     } catch (e) {
       out = { ok: false, summary: errorText(e) }
     }
-    // A step stopped for good is not run again as it was on that design. A geometry change to the design that goes
-    // through (a geom.* step that is not a read, or an edit, undo, redo or roll) may be the smaller version the refusal
-    // asked for, so the steps stopped on that design may run again after it; nothing else lets them.
+    // A step stopped for good is not run again as it was on that target. A geometry change to the target that goes
+    // through (a geom.* step that is not a read, or an edit, undo or redo) may be the smaller version the refusal
+    // asked for, so the steps stopped on that target may run again after it; nothing else lets them.
     const geometry = (tool.name.startsWith('geom.') && (tool.permissionFor?.(input) ?? tool.permission) !== 'read') || CHANGES_GEOMETRY.has(tool.name)
-    if (out.ok === false && isGeomStuckFinal(out.summary)) timedOut.set(again, design)
-    else if (out.ok !== false && geometry) for (const [key, on] of timedOut) if (on === design) timedOut.delete(key)
+    if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(target, (stops.timedOut.get(target) ?? new Set()).add(again))
+    else if (out.ok !== false && geometry) stops.timedOut.delete(target)
+    if (out.ok !== false) noteDesigns(out.output, stops.seen)
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -945,9 +996,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
-    // modeling and mesh steps stopped at a geometry time limit this turn, by tool and input, with the design each was
-    // on; one leaves once a geometry change to its design goes through (STOPPED_AGAIN_LINE)
-    const timedOut = new Map<string, string>()
+    // modeling and mesh steps stopped at a geometry time limit this turn, by target and then tool and input; a target's
+    // steps leave once a geometry change to it goes through (STOPPED_AGAIN_LINE). The designs this turn's answers named
+    // tie a design name to its id.
+    const stops: TurnStops = { timedOut: new Map(), seen: { ids: new Set(), names: new Map() } }
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
     let usageIn = 0
@@ -1257,7 +1309,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
-        const res = await execute(call, sessionId, context, watch, signal, citations, cards, timedOut, loader)
+        const res = await execute(call, sessionId, context, watch, signal, citations, cards, stops, loader)
         stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
