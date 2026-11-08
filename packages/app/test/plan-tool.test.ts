@@ -263,6 +263,13 @@ describe('design.plan and design.check share one registry', () => {
     expect(mimirPlans.get(planId)?.design).toBe('d3')
   })
 
+  it('a geometry step that names the design by its title ties the plan to the id the step resolved', async () => {
+    const [extrude] = withPlanTies([fake('geom.extrude', 'slice', { design: 'd5', name: 'Headphone stand' })])
+    const { planId } = (await planTool().run(BOX as never, go)).output as { planId: string }
+    await extrude!.run({ design: 'Headphone stand' } as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBe('d5')
+  })
+
   it('sizes past the plan maximum are refused by the shared shape', () => {
     expect(PartPlanSchema.safeParse({ planId: 'p', ...BOX, overall: { x: PLAN_SIZE_MAX + 1, y: 1, z: 1 } }).success).toBe(false)
     expect(() => mimirPlans.put({ planId: 'p', ...BOX, overall: { x: -1, y: 1, z: 1 } })).toThrow()

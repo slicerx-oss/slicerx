@@ -17,7 +17,7 @@
 //
 // Left out, and said so by the tools: exact designs (the developer exact-solids option, off in the app too) and sketch
 // constraints (the app's own sketch solver).
-import { appendStep, bakeMesh, HISTORY_VERSION, IDENTITY, landEdit, landNew, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
+import { appendStep, bakeMesh, designNamed, HISTORY_VERSION, IDENTITY, landEdit, landNew, noDesignMessage, replayHistory, withSketch, type BedLanding, type Design, type DesignCommit, type DesignHost, type EngineCall, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams, type StepStatus, type Timeline } from '@slicerx/cad-history'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import type { Bed } from '@slicerx/contracts'
 import { boxInBed, sepOf } from '@slicerx/settings/box-pack'
@@ -179,12 +179,12 @@ export function headlessDesignHost(engine: EngineCall, opts: HeadlessDesignOptio
   const host: DesignHost = {
     call: (op, request) => engine(op, request),
     revision(id) {
-      host.get(id)
-      return current(id)
+      return current(host.get(id).id)
     },
     get(id) {
-      const d = all.get(id)
-      if (!d) throw Object.assign(new Error(`design: no design ${id}; design.list lists them`), { code: 'not_found' })
+      // a design given by its name where its id goes: the one design of that name, as the app and MCP hosts take it
+      const d = all.get(id) ?? designNamed([...all.values()], id)
+      if (!d) throw Object.assign(new Error(noDesignMessage(id, [...all.values()], { start: 'design.new', list: 'design.list' })), { code: 'not_found' })
       return copy(d)
     },
     list: () => [...all.values()].map((d) => copy(d)),
