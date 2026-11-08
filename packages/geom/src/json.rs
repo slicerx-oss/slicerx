@@ -1954,4 +1954,145 @@ mod tests {
             assert!(call("sketch.trace", &bad.to_string()).is_err(), "{bad}");
         }
     }
+
+    /// a bore or channel cut by the subtract tool into a turned or lofted part, then a rod joined after it
+    #[cfg(feature = "cad")]
+    mod turned {
+        use super::*;
+        use crate::fm::Fm as _;
+
+        fn faced(op: &str, req: &Value) -> std::result::Result<Value, String> {
+            let mut r = req.clone();
+            r["withFaces"] = json!(true);
+            call(op, &r.to_string())
+                .map(|s| serde_json::from_str(&s).unwrap())
+                .map_err(|e| e.to_string())
+        }
+
+        fn part(out: &Value) -> Value {
+            json!({ "mesh": out["mesh"] })
+        }
+
+        /// a d110 disc with a stem revolved up from it, as a stand is drawn: `profile` in the stem's own (radius, height)
+        fn turned_stem(profile: &[[f64; 2]]) -> Value {
+            let base = faced(
+                "shape.extrude",
+                &json!({ "frame": { "origin": [150, 0, 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                    "shape": { "type": "circle", "diameterMm": 110 }, "spec": { "distanceMm": 6 } }),
+            )
+            .unwrap();
+            faced(
+                "sketch.revolve",
+                &json!({ "frame": { "origin": [150, 0, 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] },
+                    "loops": [{ "points": profile }], "axis": { "point": [0, 0], "direction": [0, 1] },
+                    "operation": "join", "target": part(&base) }),
+            )
+            .unwrap()
+        }
+
+        /// a d24.4 bore down the stem from its top at 160 mm to 20 mm, as the subtract tool cuts it
+        fn bored(stem: &Value) -> Value {
+            faced(
+                "subtract",
+                &json!({ "mesh": part(stem), "solids": [{ "type": "cylinder", "origin": [150, 0, 20], "axis": [0, 0, 1],
+                    "diameterMm": 24.4, "heightMm": 145 }] }),
+            )
+            .unwrap()
+        }
+
+        /// a d12 rod along x from `x`, `len` long, 100 mm up: joined as an extrude, and as a union with a built rod
+        fn rods_join(body: &Value, x: f64, len: f64) {
+            let ex = faced(
+                "shape.extrude",
+                &json!({ "frame": { "origin": [x, 0, 100], "normal": [1, 0, 0], "u": [0, 1, 0], "v": [0, 0, 1] },
+                    "shape": { "type": "circle", "diameterMm": 12 }, "spec": { "distanceMm": len, "operation": "join" },
+                    "target": part(body) }),
+            )
+            .unwrap_or_else(|e| panic!("rod at x {x}: {e}"));
+            assert_eq!(ex["watertight"], true, "rod at x {x}");
+            let rod = run(
+                "build",
+                &json!({ "solids": [{ "type": "cylinder", "origin": [x, 0, 100], "axis": [1, 0, 0], "diameterMm": 12, "heightMm": len }] }),
+            );
+            let un = faced(
+                "boolean",
+                &json!({ "op": "union", "a": [part(body)], "b": [part(&rod)] }),
+            )
+            .unwrap_or_else(|e| panic!("union at x {x}: {e}"));
+            assert_eq!(un["watertight"], true, "union at x {x}");
+        }
+
+        #[test]
+        fn a_bore_down_a_flared_turned_stem_stays_light_and_joins_after_it_store() {
+            // a tube whose wall flares out at the foot, its hole the bore's own size: on main the bore split every long
+            // facet of the stem and the disc (14776 triangles became 64180), and each rod after it was refused for
+            // collapsed triangles
+            let mut profile = vec![[12.2, 5.99]];
+            profile.extend((0..=16).map(|i| {
+                let z = 5.99 + 154.01 * f64::from(i) / 16.0;
+                [14.0 + 8.0 * (-(z - 6.0) / 30.0).m_exp(), z]
+            }));
+            profile.push([12.2, 160.0]);
+            let stem = turned_stem(&profile);
+            let b = bored(&stem);
+            let (before, after) = (
+                stem["triangles"].as_u64().unwrap(),
+                b["triangles"].as_u64().unwrap(),
+            );
+            assert!(after < before + 1000, "{before} became {after}");
+            assert_eq!(b["watertight"], true);
+            // through the outer wall into the bore, and from inside the wall
+            rods_join(&b, 124.0, 20.0);
+            rods_join(&b, 138.0, 10.0);
+        }
+
+        #[test]
+        fn a_bore_down_a_solid_turned_stem_takes_the_cutter_s_volume() {
+            let stem = turned_stem(&[[0.0, 5.99], [16.0, 5.99], [16.0, 160.0], [0.0, 160.0]]);
+            let b = bored(&stem);
+            let (before, after) = (
+                stem["triangles"].as_u64().unwrap(),
+                b["triangles"].as_u64().unwrap(),
+            );
+            assert!(after < before + 1000, "{before} became {after}");
+            // the cutter is a 48 sided prism, 140 mm of it inside the stem
+            let r = 12.2f64;
+            let want = 0.5 * 48.0 * r * r * (std::f64::consts::TAU / 48.0).m_sin() * 140.0;
+            let removed = b["removedVolumeMm3"].as_f64().unwrap();
+            assert!((removed - want).abs() < 1e-3, "{removed} vs {want}");
+            rods_join(&b, 124.0, 20.0);
+        }
+
+        #[test]
+        fn a_channel_cut_up_into_a_lofted_cavity_floor_stays_light() {
+            let ring = |z: f64, d: f64| {
+                json!({ "frame": { "origin": [150, 0, z], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                    "loops": [{ "type": "circle", "center": [0, 0], "diameterMm": d }] })
+            };
+            let body = faced(
+                "sketch.loft",
+                &json!({ "profiles": [ring(0.0, 90.0), ring(30.0, 70.0), ring(70.0, 60.0), ring(100.0, 80.0)] }),
+            )
+            .unwrap();
+            let cavity = faced(
+                "sketch.loft",
+                &json!({ "profiles": [ring(8.0, 70.0), ring(30.0, 60.0), ring(70.0, 50.0), ring(100.01, 70.0)],
+                    "operation": "cut", "target": part(&body) }),
+            )
+            .unwrap();
+            let ch = faced(
+                "subtract",
+                &json!({ "mesh": part(&cavity), "solids": [{ "type": "cylinder", "origin": [150, 0, -1], "axis": [0, 0, 1],
+                    "diameterMm": 12, "heightMm": 9.5 }] }),
+            )
+            .unwrap();
+            let (before, after) = (
+                cavity["triangles"].as_u64().unwrap(),
+                ch["triangles"].as_u64().unwrap(),
+            );
+            assert!(after < before + 1000, "{before} became {after}");
+            assert_eq!(ch["watertight"], true);
+            rods_join(&ch, 100.0, 30.0);
+        }
+    }
 }
