@@ -395,11 +395,18 @@ describe('design.check gives a plan one fix round', () => {
   const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }
   type Out = { pass: boolean; stop?: string; repeated?: boolean; items: { name: string; pass: boolean }[] }
 
-  /** A scripted run: design.check called again and again on one host, counting the geometry calls it makes. */
+  /**
+   * A scripted run: design.check called again and again on one host, counting the geometry work it does: engine calls
+   * and reads of a design's body (closure is read from the body without the engine).
+   */
   function run(designs: HostDesign[] = [boxDesign('d1', 'Spacer')]) {
     const plans = createPlanRegistry()
-    const host = hostOf(designs)
     let calls = 0
+    const watched = designs.map((d) => {
+      const parts = d.parts
+      return Object.defineProperty({ ...d }, 'parts', { get: () => (calls++, parts), enumerable: true }) as HostDesign
+    })
+    const host = hostOf(watched)
     const counted = { ...host, call: async (op: string, req: unknown) => (calls++, host.call(op as never, req as never)) } as unknown as DesignHost
     const tool = designToolset(counted, {}, { plans }).find((t) => t.name === 'design.check')!
     const check = async (planId = 'box-1') => {
