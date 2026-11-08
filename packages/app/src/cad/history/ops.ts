@@ -138,8 +138,8 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     guard?.()
     const still = get().historyEdit
     // a body the edit hid comes back for the commit, the edit open when this started or one opened while it ran; one
-    // deleted while this ran stays gone
-    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: hidden || still.hidden ? fullPlate(s) : s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
+    // deleted while this ran stays gone (the edit open when it started had it on the plate)
+    if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: hidden || (still !== open && still.hidden) ? fullPlate(s) : s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
     // checked before the write, so a step's first change never lands without it: the object is there, and did not
@@ -288,8 +288,16 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
   const step: Step = { ...keep, params, transform: [...ed.entry.transform], ...typed, ...kept }
   const follow = followFor(before, step)
   const steps = h.steps.map((s, i) => (i === ed.index ? (follow ? { ...step, follow } : step) : s))
-  // A body that was hidden while its step was open comes back for the replay.
-  if (!get().plate.some((e) => e.id === ed.entry.id)) quietly(() => set((s) => ({ plate: [...s.plate, ed.entry] })))
+  // A body that was hidden while its step was open comes back for the replay, and the edit no longer hides it: a body
+  // deleted while the replay runs stays gone.
+  if (!get().plate.some((e) => e.id === ed.entry.id))
+    quietly(() =>
+      set((s) => {
+        if (!s.historyEdit) return { plate: [...s.plate, ed.entry] }
+        const { hidden: _h, ...shown } = s.historyEdit
+        return { plate: [...s.plate, ed.entry], historyEdit: shown }
+      }),
+    )
   return applyHistory(host, ed.entry.id, { ...h, steps })
 }
 
