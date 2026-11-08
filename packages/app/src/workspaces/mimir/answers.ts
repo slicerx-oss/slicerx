@@ -61,7 +61,7 @@ export function answersReachTheirRun(pilot: Pilot): Pilot {
   const missing = (what: string) => Promise.reject(new Error(`No ${what} here`))
   pilot.resolveApproval = (requestId, decision) => first((a) => a.resolveApproval(requestId, decision))
   if (mine.answer) pilot.answer = (askId, choiceId, said) => first((a) => a.answer?.(askId, choiceId, said) ?? missing('question'))
-  if (mine.answerSheet) pilot.answerSheet = (sheetId, values) => first((a) => a.answerSheet?.(sheetId, values) ?? missing('sheet'))
+  if (mine.answerSheet) pilot.answerSheet = (sheetId, values, said) => first((a) => a.answerSheet?.(sheetId, values, said) ?? missing('sheet'))
   // a hold applies where the chat's run is going; a runtime with no run going for the chat ignores it
   if (mine.hold)
     pilot.hold = (sessionId, on) => {

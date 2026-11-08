@@ -102,6 +102,29 @@ describe('pilot.sheet', () => {
     expect(JSON.parse(seen[0]!)).toMatchObject({ ok: false, result: { confirmed: false } })
   })
 
+  // Words written to mimir while the sheet waits set it aside: nothing is built from it, and the next step reads them.
+  it('sets the sheet aside for words the person wrote while it waited, and hands the words on', async () => {
+    const seen: string[] = []
+    const p = pilot([
+      { calls: [SHEET] },
+      (messages) => {
+        const last = messages.at(-1)
+        seen.push(last?.role === 'tool' ? last.content : '')
+        return { text: 'Making it taller.' }
+      },
+    ])
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'A phone stand')) {
+      events.push(e)
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, null, '  make it 10 mm taller  ')
+    }
+    expect(events.find((e) => e.type === 'sheet_answered')).toMatchObject({ answer: { confirmed: false, changed: [], said: 'make it 10 mm taller' } })
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('Set aside; the person wrote instead: "make it 10 mm taller"') })
+    expect(JSON.parse(seen[0]!)).toMatchObject({ ok: false, result: { confirmed: false, said: 'make it 10 mm taller' } })
+    // words only set a sheet aside: with values they are left out
+    expect(answerOf({ id: 's', title: 'T', views: ['iso'], dims: DIMS as PilotSheet['dims'] }, null, 'taller')).toMatchObject({ confirmed: false, said: 'taller' })
+  })
+
   it('closes a sheet nobody answered when the run ends, as not confirmed', () => {
     const sheet = { id: 'sheet_1', title: 'Sizes', views: ['iso' as const], dims: DIMS as PilotSheet['dims'] }
     const t = foldEvents([{ type: 'sheet', sheet }, { type: 'done', stopReason: 'canceled', ms: 5 }], startTurn(emptyTranscript(), { user: 'hi' }, 0))

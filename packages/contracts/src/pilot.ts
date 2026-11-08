@@ -303,11 +303,15 @@ export interface PilotSheetBind {
   offset?: number
 }
 
-/** The person's answer to a sheet: every value as confirmed, and the keys they changed. Not confirmed when they canceled it. */
+/**
+ * The person's answer to a sheet: every value as confirmed, and the keys they changed. Not confirmed when they canceled
+ * it, or set it aside by writing to mimir instead (`said`, their words).
+ */
 export interface PilotSheetAnswer {
   confirmed: boolean
   values: Record<string, number>
   changed: string[]
+  said?: string
 }
 
 /** One answer on a choice card. */
@@ -514,8 +518,12 @@ export interface Pilot {
    * instead of picking (a dismiss only), trimmed and kept to 1000 characters. Runtimes without questions leave it out.
    */
   answer?(askId: string, choiceId: string | null, said?: string): Promise<void>
-  /** Answers a dimension sheet: the values as the person left them, or null when they canceled it. Runtimes without sheets leave it out. */
-  answerSheet?(sheetId: string, values: Record<string, number> | null): Promise<void>
+  /**
+   * Answers a dimension sheet: the values as the person left them, or null when they canceled it. `said` is what the
+   * person wrote to mimir while the sheet waited, which sets it aside (with null values), trimmed and kept to 1000
+   * characters. Runtimes without sheets leave it out.
+   */
+  answerSheet?(sheetId: string, values: Record<string, number> | null, said?: string): Promise<void>
   /**
    * Picks a conversation back up after a reload: the person's messages and the replies, in order, become the session's
    * history, so the next message has its context. Does nothing for a session that already has history. Runtimes
