@@ -16,7 +16,7 @@ import { exportAllPlates, exportGcode3mf } from '../src/export/actions'
 import { HostContext } from '../src/host'
 import { builtinCommands } from '../src/commands/builtin'
 import { plateCommands } from '../src/plate/commands'
-import { printBlock } from '../src/plate/heimdall'
+import { export3mfBlock, printBlock } from '../src/plate/heimdall'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { needsSlice, planFor, printEverythingAgain, RESUME_VOID, resumeFor, resumeState, setResume, SLICE_NOT_CURRENT, sliceInputsKey } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
@@ -30,6 +30,9 @@ import { ExportMenu } from '../src/workspaces/prepare/object-actions'
 import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 import { PreviewPlates } from '../src/workspaces/preview/preview-plates'
 import { platesState } from '../src/app-link/plate-state'
+import { collisionsReadback } from '../src/app-link/ui'
+import { appState } from '../src/agent-bridge/page'
+import { PlatePicker } from '../src/workspaces/prepare/plate-picker'
 
 const part = { ...boxMesh(10, 10, 1), name: 'Body', slot: 1 }
 const box: PlateEntry = { id: 'a', name: 'Box', handle: { id: 'a', hash: 'a', name: 'a', triangles: 12, bboxMm: [10, 10, 1], openEdges: 0, parts: [{ name: 'Body', slot: 1, triangles: 12 }] }, parts: [part], colors: ['#fff'], transform: compose({ position: [60, 60, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
@@ -1032,3 +1035,82 @@ describe('round 21: a slice already marked stale reads as before, whatever else 
     expect([...footer.querySelectorAll('.app-err')].map((p) => p.textContent)).toEqual([])
   })
 })
+
+describe('follow-up: a real block wins over the reslice Export plate 3MF does, and every reader agrees on a rename', () => {
+  const HIT = { kind: 'nozzle', severity: 'hit', part: 'a', hitId: 'b', layer: 1, zMm: 0.2, depthMm: 0.4 }
+  /** Puts a strike in the slice on screen, as heimdall reports one. */
+  const strike = () => {
+    const sl = get().slice
+    if (sl.status !== 'done') throw new Error('no slice')
+    set({ slice: { ...sl, result: { ...sl.result, collisions: [HIT] } } } as never)
+  }
+  const COLLISION = 'heimdall found a collision on this plate. See it in Slice, apply a fix or change the plate, and slice again.'
+
+  it('keeps Export plate 3MF off with the collision when an object is renamed after a slice that struck', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    strike()
+    expect(export3mfBlock(get())).toBe(COLLISION)
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(printBlock(get())).toBe(STALE_SLICE)
+    expect(export3mfBlock(get())).toBe(COLLISION)
+  })
+
+  it('keeps the collision first the other way round too: a slice marked stale, then renamed', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    strike()
+    markStale()
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(printBlock(get())).toBe(COLLISION)
+    expect(export3mfBlock(get())).toBe(COLLISION)
+  })
+
+  it('still passes a rename with nothing else in the way, and keeps a slice already stale as any stale slice', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(printBlock(get())).toBe(STALE_SLICE)
+    expect(export3mfBlock(get())).toBeNull()
+    markStale()
+    expect(printBlock(get())).toBeNull()
+    expect(export3mfBlock(get())).toBeNull()
+  })
+
+  it("keeps a plan's own reason over the reslice pass", async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    plan()
+    expect(export3mfBlock(get())).toBe(SLICE_NOT_CURRENT)
+  })
+
+  it('shows a rename since the slice as Settings changed on the plate picker', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    render(wrap(e.host, createElement(PlatePicker)))
+    const current = () => screen.getByTestId('plate-picker-current').getAttribute('data-tip-body')
+    expect(current()).toContain('sliced.')
+    act(() => set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) }))
+    expect(current()).toContain('settings changed.')
+  })
+
+  it('reads a rename since the slice as stale in the collision readback and leaves out its warnings in app_state', async () => {
+    const e = engine()
+    set({ autoSlice: false } as never)
+    await slicePlate(e.host)
+    const sl = get().slice
+    if (sl.status !== 'done') throw new Error('no slice')
+    set({ slice: { ...sl, result: { ...sl.result, warnings: [{ code: 'thin_wall', message: 'Thin wall' }] } } } as never)
+    expect(collisionsReadback(get())?.stale).toBe(false)
+    expect((appState(get()) as { plate: { warnings: { code: string }[] } }).plate.warnings.map((w) => w.code)).toEqual(['thin_wall'])
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    expect(collisionsReadback(get())?.stale).toBe(true)
+    expect((appState(get()) as { plate: { warnings: { code: string }[] } }).plate.warnings.map((w) => w.code)).toEqual([])
+  })
+})
+
