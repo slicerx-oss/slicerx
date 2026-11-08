@@ -455,9 +455,10 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
    */
   const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'given' | 'matched by name' | 'latest' } => {
     if (given) {
-      if (entry.origin === 'card' && entry.design && entry.design !== given)
-        throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
+      // a design given by its name is the design it names, so it is compared and tied by its id
       const design = designs.get(given)
+      if (entry.origin === 'card' && entry.design && entry.design !== design.id)
+        throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
       if (entry.origin === 'card' && entry.design) return { design, how: 'tied to the plan' }
       if (entry.origin === 'card' && !opts.cardSide) return { design, how: 'given' }
       plans.tie(entry.plan.planId, design.id)

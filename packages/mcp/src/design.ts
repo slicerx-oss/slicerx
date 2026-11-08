@@ -31,8 +31,7 @@ export class Designs implements DesignHost {
   constructor(readonly deps: DesignDeps) {}
 
   revision(id: string): string {
-    this.get(id)
-    return this.revisions.current(id)
+    return this.revisions.current(this.get(id).id)
   }
 
   call(op: string, request: unknown): Promise<unknown> {
