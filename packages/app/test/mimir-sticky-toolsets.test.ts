@@ -184,7 +184,7 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
     await say('yes please')
     setTabChat('s')
     try {
-      const tab = (await runCall('mimir.tab', {})) as { tools: string[]; capped: { cap: number; offered: number; sent: number; toolsets: string[]; leftOut: string[]; partial: { toolset: string; sent: number; of: number }[]; loader: string } | null }
+      const tab = (await runCall('mimir.tab', {})) as { tools: string[]; capped: { cap: number; offered: number; sent: number; toolsets: string[]; leftOut: string[]; partial: { toolset: string; sent: number; of: number }[]; loader: string | null } | null }
       expect(tab.tools.length).toBeGreaterThan(CAP)
       expect(tab.capped).toMatchObject({ cap: CAP, offered: tab.tools.length, sent: CAP, loader: 'pilot.load_tools' })
       expect(tab.capped!.toolsets).toEqual(expect.arrayContaining(['core', 'cad', 'settings']))
@@ -193,6 +193,32 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
       expect(tab.capped!.partial[0]!.sent).toBeGreaterThanOrEqual(EVERY_PRINTER.length)
     } finally {
       setTabChat(null)
+    }
+  })
+
+  it('reads no loader over the app link on a local model over the limit, which has no pilot.load_tools', async () => {
+    // a local turn always carries the app's commands, so enough of them push its pick over the limit
+    const extra = registerCommands(Array.from({ length: 90 }, (_, i) => ({ id: `probe-command-${i}`, title: `Probe command ${i}`, section: 'view' as const, tool: { permission: 'read' as const }, run: () => undefined })))
+    try {
+      resetTabMimir()
+      set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } as never })
+      const llm = transport([{ text: 'Done.' }])
+      const pilot = await tabMimir(hostFor('desktop', llm), NEUTRAL)
+      for await (const _ of pilot.run('s', 'Print it on Bay 2')) void _
+      expect(toolNames(llm.sent[0]!).length).toBe(CAP)
+      expect(toolNames(llm.sent[0]!)).not.toContain('pilot.load_tools')
+      setTabChat('s')
+      try {
+        const tab = (await runCall('mimir.tab', {})) as { local: boolean; capped: { cap: number; loader: string | null } | null }
+        expect(tab.local).toBe(true)
+        expect(tab.capped).not.toBeNull()
+        expect(tab.capped!.cap).toBe(CAP)
+        expect(tab.capped!.loader).toBeNull()
+      } finally {
+        setTabChat(null)
+      }
+    } finally {
+      extra()
     }
   })
 })
