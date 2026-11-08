@@ -101,6 +101,16 @@ describe('the sheet record', () => {
     expect(screen.queryByTestId('mimir-sheet-open')).toBeNull()
   })
 
+  it('says a sheet set aside for a message built nothing, and how many typed sizes went with it', () => {
+    const values = { phone_width: 71.5, lean: 70, stand_width: 70 }
+    const { rerender } = render(<SheetRecord sheet={SHEET} answer={{ confirmed: false, values, changed: [], said: 'x' }} />)
+    expect(screen.getByText('Set aside for your message, nothing built')).toBeTruthy()
+    rerender(<SheetRecord sheet={SHEET} answer={{ confirmed: false, values, changed: ['lean'], said: 'x' }} />)
+    expect(screen.getByText('Set aside for your message with 1 size changed, nothing built')).toBeTruthy()
+    rerender(<SheetRecord sheet={SHEET} answer={{ confirmed: false, values, changed: ['lean', 'stand_width'], said: 'x' }} />)
+    expect(screen.getByText('Set aside for your message with 2 sizes changed, nothing built')).toBeTruthy()
+  })
+
   it('drops the guess tag once the sheet is confirmed as shown', () => {
     render(<SheetRecord sheet={SHEET} answer={{ confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }} />)
     expect(row('lean').textContent).not.toContain('guess')

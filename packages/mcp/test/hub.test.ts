@@ -533,6 +533,21 @@ describe('turning down the question mimir waits on, through a scripted hub', () 
     expect(text(out)).toMatch(/Set mimir's size sheet aside/)
   })
 
+  // A 1.0 client calls dismiss with no ids whenever something waits; the app leaves a waiting sheet alone then.
+  it('sends no sheetId unless the client gives one, so a call with no ids never reaches a waiting sheet', async () => {
+    const seen: Record<string, unknown>[] = []
+    const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, (method, args) => {
+      if (method !== 'mimir.dismiss') return {}
+      seen.push(args)
+      if (args['sheetId'] === undefined) throw { code: 'not_found', message: 'mimir is not waiting on a question or a size sheet' }
+      return { sessionId: 's_1', sheetId: args['sheetId'], canceled: true }
+    })))
+    const old = await h.call('slicerx_mimir_dismiss', { said: 'never mind' })
+    expect(old.isError).toBe(true)
+    expect(text(old)).toMatch(/not_found/)
+    expect(seen).toEqual([{ said: 'never mind' }])
+  })
+
   it('a stale askId is not_found, a long said is invalid_input before anything is sent, and a closed tab is not_configured', async () => {
     const a = app()
     const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, a.handle)))

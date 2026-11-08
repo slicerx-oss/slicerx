@@ -17,7 +17,7 @@ import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, startNewChat, tabTools, useTabMimir } from './session'
 import { editRow } from './sheet-drive'
-import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, sheetUi, typedValues, useSheetUi, type ShownSheet } from './sheet-ui'
+import { openSheet, setDraft, setSheetActions, setSheetAside, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
 import { hasPicture } from './sheet-shape'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
@@ -185,7 +185,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       open: () => openChoice(shown.current),
       dismiss: (askId, said) => pilot.answer?.(askId, null, said) ?? Promise.reject(new Error('No question here')),
       sheet: () => openSheetCard(shown.current),
-      setAside: (sheetId, said) => pilot.answerSheet?.(sheetId, said ? typedValues(sheetUi.getState()) : null, said) ?? Promise.reject(new Error('No sheet here')),
+      setAside: (sheetId, said) => setSheetAside(pilot, sheetId, said),
     })
     return () => setMimirCards(null)
   }, [sessionId, live, pilot])
@@ -490,7 +490,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           answers={open === null && waiting !== null ? 'sheet' : 'choice'}
           onAnswer={(text) => {
             // sizes typed on the waiting sheet go along with the words, so setting it aside never drops them
-            const landed = open ? pilot.answer?.(open.askId, null, text) : waiting ? pilot.answerSheet?.(waiting, typedValues(sheetUi.getState()), text) : undefined
+            const landed = open ? pilot.answer?.(open.askId, null, text) : waiting ? setSheetAside(pilot, waiting, text) : undefined
             landed?.catch((e: unknown) => console.warn('mimir: the written answer did not land', e))
           }}
         />

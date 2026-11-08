@@ -106,10 +106,14 @@ function statsOf(events: readonly PilotEvent[]) {
     else if (e.type === 'sheet') sheets++
     else if (e.type === 'lookup') lookups++
     else if (e.type === 'sheet_answered') {
-      if (e.answer?.confirmed) confirmed++
+      // sizes changed count on the sheets confirmed, the ones a part was built from; sizes typed on a sheet then set
+      // aside went to mimir with the words and built nothing
+      if (e.answer?.confirmed) {
+        confirmed++
+        changed += e.answer.changed?.length ?? 0
+      }
       // set aside by words written while it waited, which is not a cancel
       else if (e.answer?.said) setAside++
-      changed += e.answer?.changed?.length ?? 0
     }
   }
   return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed, questionsDismissed: dismissed, sheetsSetAside: setAside }

@@ -16,4 +16,7 @@ it('slicerx_mimir_dismiss is 1.1.0 and says it sets a waiting size sheet aside, 
   expect(tool?.version).toBe('1.1.0')
   expect(tool?.description).toMatch(/sets the sheet aside/)
   expect(tool?.description).toMatch(/never confirms a sheet/)
+  // a 1.0 client sends no ids; it must never set a sheet aside or cancel it
+  expect(tool?.description).toMatch(/a call without sheetId never touches one/)
+  expect((tool?.input as unknown as { shape: Record<string, { description?: string }> }).shape['sheetId']?.description).toMatch(/only when this is given/)
 })
