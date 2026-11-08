@@ -44,35 +44,49 @@ async function run(pilot: ReturnType<typeof env>['pilot'], session: string, mess
 const names = (req: { tools: readonly { name: string }[] }) => req.tools.map((t) => t.name)
 
 describe('the set a request picks', () => {
-  it.each<[string, TurnSet | undefined, TurnSet]>([
-    ['A 30 mm cube with a fillet', undefined, 'build'],
-    ['Design a wall hook for a 6 mm screw', undefined, 'build'],
-    ['Make a hook and then slice it for my A1', undefined, 'build'],
-    ['Mirror the bracket and add a pattern of four holes', 'build', 'shape'],
+  // [request, the set the chat's last turn ended on, whether the chat has a design yet, the set it starts on]
+  it.each<[string, TurnSet | undefined, boolean, TurnSet]>([
+    ['A 30 mm cube with a fillet', undefined, false, 'build'],
+    ['Design a wall hook for a 6 mm screw', undefined, false, 'build'],
+    ['Make a hook and then slice it for my A1', undefined, false, 'build'],
+    ['Mirror the bracket and add a pattern of four holes', 'build', true, 'shape'],
     // a new part with shaping words in it still builds: nothing is there to shape yet, or it opens on a new part
-    ["Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.", undefined, 'build'],
-    ['Make a box with a pattern of vent holes', 'shape', 'build'],
-    ['Make it hollow', 'build', 'shape'],
-    // shaping an existing part keeps the shape set even when it opens on "make a"
-    ['Make a pattern of six vent holes in the lid', 'build', 'shape'],
-    ['Make a pattern of four holes on it', 'build', 'shape'],
-    ['Make a mirrored copy of the bracket', 'build', 'shape'],
-    ['Make a cut out in the lid', 'build', 'shape'],
-    // a fresh chat with a part noun in it is not a new part unless it asks for one
-    ['Mirror the bracket', undefined, 'shape'],
-    ['Split the case in half', undefined, 'shape'],
-    ['Make the base thicker', 'build', 'edit'],
-    ['Undo that step', 'shape', 'edit'],
-    ['What layer height and infill should I print the bracket with?', 'build', 'app'],
-    ['Slice the plate and send it to my printer', undefined, 'app'],
-    ['Why is my PETG stringing?', undefined, 'app'],
-    ["How's my print going?", 'app', 'print'],
-    ['Pause the printer', 'build', 'print'],
-    ['ok, go ahead', 'app', 'app'],
-    ['ok, go ahead', 'build', 'build'],
-    ['hello', undefined, 'build'],
-  ])('%s (after %s) is %s', (message, last, want) => {
-    expect(turnSet(message, [], last)).toBe(want)
+    ["Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.", undefined, false, 'build'],
+    ['Make a box with a pattern of vent holes', 'shape', true, 'build'],
+    ['Make it hollow', 'build', true, 'shape'],
+    // a new part named with a shaping word builds, before the chat has a design and after
+    ...['Make a hollow vase', 'Make me a hollow vase', 'Make a hollow cylinder 40 mm across and 60 mm tall', 'Make a split ring', 'Make a split ring clamp for a 25 mm pipe', 'Make an engraved name tag', 'Make an engraved keychain tag with my name', 'Make a mirror frame', 'Make a mirror mount', 'Design a mirror frame', 'Make a split keyboard stand', 'Design an engraved nameplate', 'Make a patterned lid', 'Make an embossed coaster', 'Make a text sign that says OPEN'].flatMap((m): [string, TurnSet | undefined, boolean, TurnSet][] => [
+      [m, undefined, false, 'build'],
+      [m, 'build', false, 'build'],
+      [m, 'build', true, 'build'],
+    ]),
+    // with no design yet there is nothing to shape, so a request that asks for a part builds whatever words it has
+    ['I need a box with a pattern of vent holes', undefined, false, 'build'],
+    ['A hollow box 50 mm on each side with a lid', undefined, false, 'build'],
+    ['Make a pattern of six vent holes in the lid', 'build', false, 'build'],
+    // shaping the chat's design keeps the shape set even when it opens on "make a"
+    ['Make a pattern of six vent holes in the lid', 'build', true, 'shape'],
+    ['Make a pattern of four holes on it', 'build', true, 'shape'],
+    ['Make an array of pegs along the edge', 'build', true, 'shape'],
+    ['Make a mirrored copy of the bracket', 'build', true, 'shape'],
+    ['Make a copy of the hook on the other side', 'build', true, 'shape'],
+    ['Make a cut out in the lid', 'build', true, 'shape'],
+    ['Make a cutout on the front for the USB port', 'build', true, 'shape'],
+    // a shaping of a part the request names ("the bracket") is not a new part, with or without a design in the chat
+    ['Mirror the bracket', undefined, false, 'shape'],
+    ['Split the case in half', undefined, false, 'shape'],
+    ['Make the base thicker', 'build', true, 'edit'],
+    ['Undo that step', 'shape', true, 'edit'],
+    ['What layer height and infill should I print the bracket with?', 'build', true, 'app'],
+    ['Slice the plate and send it to my printer', undefined, false, 'app'],
+    ['Why is my PETG stringing?', undefined, false, 'app'],
+    ["How's my print going?", 'app', false, 'print'],
+    ['Pause the printer', 'build', true, 'print'],
+    ['ok, go ahead', 'app', false, 'app'],
+    ['ok, go ahead', 'build', true, 'build'],
+    ['hello', undefined, false, 'build'],
+  ])('%s (after %s, design %s) is %s', (message, last, design, want) => {
+    expect(turnSet(message, [], last, { design })).toBe(want)
   })
 
   it('builds from a picture or a drawing', () => {
@@ -150,6 +164,32 @@ describe('a local model in the tab', () => {
     expect(names(client.requests[2]!)).toContain('geom.mirror')
     await run(pilot, 's', 'Now design a lid for it')
     expect(names(client.requests[3]!)).toContain('design.new')
+  })
+
+  it('builds a new part named with a shaping word in a fresh chat', async () => {
+    const { pilot, client } = env('openai-compatible', [{ text: 'What size?' }, { text: 'Built.' }])
+    await run(pilot, 's', 'Make a hollow vase')
+    expect(names(client.requests[0]!)).toEqual(expect.arrayContaining(['design.new', 'geom.extrude']))
+    await run(pilot, 't', 'Make an engraved name tag')
+    expect(names(client.requests[1]!)).toContain('design.new')
+  })
+
+  it('shapes the chat design for "make a pattern of", and builds it when the chat has no design yet', async () => {
+    const { pilot, client } = env('openai-compatible', [
+      { calls: [{ name: 'design.new', args: {} }] },
+      { text: 'Made the lid.' },
+      { text: 'Patterned.' },
+      { text: 'Hi.' },
+      { text: 'Which part?' },
+    ])
+    await run(pilot, 'made', 'Design a lid for a 60 mm jar')
+    await run(pilot, 'made', 'Make a pattern of six vent holes in the lid')
+    expect(names(client.requests[2]!)).toEqual(expect.arrayContaining(['geom.array', 'geom.mirror']))
+    expect(names(client.requests[2]!)).not.toContain('design.new')
+    // the last turn ended on build, but no design came of it, so there is nothing to put a pattern in yet
+    await run(pilot, 'none', 'hello')
+    await run(pilot, 'none', 'Make a pattern of six vent holes in the lid')
+    expect(names(client.requests[4]!)).toContain('design.new')
   })
 
   it('lists every set for the read-back', () => {
