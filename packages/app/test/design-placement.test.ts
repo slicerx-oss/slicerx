@@ -20,7 +20,7 @@ import { readProject, readProjectsWithGeom } from '../src/export/import3mf'
 import { writeProject } from '../src/export/threemf'
 import { NO_MARGINS, printsOnBed, setMarginSource } from '../src/plate/arrange'
 import { copySelection, pasteClipboard } from '../src/plate/clipboard'
-import { setInstanceCount } from '../src/plate/edit'
+import { getArrangeOptions, setInstanceCount } from '../src/plate/edit'
 import { createHistory } from '../src/plate/history'
 import { heldBodies, startTimeline } from '../src/plate/timeline'
 import { bounds } from '../src/plate/transform'
@@ -347,17 +347,84 @@ describe('a second design that needs room', () => {
   })
 })
 
-/** The planter and the saucer both print where they stand, and their middles are far enough apart that they do not overlap. */
+/** Parts standing at `transform` seen from above: the convex hull of their points on the plate, counterclockwise. */
+function outline(parts: readonly Pick<MeshPart, 'positions'>[], transform: readonly number[]): [number, number][] {
+  const pts: [number, number][] = []
+  for (const m of parts) for (let i = 0; i + 2 < m.positions.length; i += 3) {
+    const [x, y, z] = [m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!]
+    pts.push([transform[0]! * x + transform[4]! * y + transform[8]! * z + transform[12]!, transform[1]! * x + transform[5]! * y + transform[9]! * z + transform[13]!])
+  }
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const cross = (o: number[], a: number[], b: number[]) => (a[0]! - o[0]!) * (b[1]! - o[1]!) - (a[1]! - o[1]!) * (b[0]! - o[0]!)
+  const half = (list: [number, number][]) => {
+    const h: [number, number][] = []
+    for (const p of list) {
+      while (h.length >= 2 && cross(h[h.length - 2]!, h[h.length - 1]!, p) <= 1e-9) h.pop()
+      h.push(p)
+    }
+    return h.slice(0, -1)
+  }
+  return [...half(pts), ...half([...pts].reverse())]
+}
+
+/**
+ * How far apart two convex outlines are, mm: the shortest distance between them, or, when they overlap, below zero by
+ * how deep (the least overlap over the sides' normals).
+ */
+function gapBetween(a: readonly [number, number][], b: readonly [number, number][]): number {
+  let least = Infinity
+  for (const poly of [a, b]) for (let i = 0; i < poly.length; i++) {
+    const [p, q] = [poly[i]!, poly[(i + 1) % poly.length]!]
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1])
+    const n = [(q[1] - p[1]) / len, (p[0] - q[0]) / len]
+    const span = (pl: readonly [number, number][]) => pl.map((v) => v[0] * n[0]! + v[1] * n[1]!)
+    const [sa, sb] = [span(a), span(b)]
+    least = Math.min(least, Math.min(Math.max(...sa), Math.max(...sb)) - Math.max(Math.min(...sa), Math.min(...sb)))
+  }
+  // some side's normal separates them: the shortest distance from a corner of one to a side of the other
+  if (least < 0) {
+    const toSide = (v: [number, number], p: [number, number], q: [number, number]) => {
+      const d = [q[0] - p[0], q[1] - p[1]]
+      const t = Math.max(0, Math.min(1, ((v[0] - p[0]) * d[0]! + (v[1] - p[1]) * d[1]!) / (d[0]! ** 2 + d[1]! ** 2)))
+      return Math.hypot(v[0] - p[0] - t * d[0]!, v[1] - p[1] - t * d[1]!)
+    }
+    let gap = Infinity
+    for (const [x, y] of [[a, b], [b, a]] as const) for (const v of x) for (let i = 0; i < y.length; i++) gap = Math.min(gap, toSide(v, y[i]!, y[(i + 1) % y.length]!))
+    return gap
+  }
+  return -least
+}
+
+/** How far apart objects `a` and `b` stand on the plate, by their outlines (gapBetween). */
+const gapOf = (a: string, b: string) => gapBetween(outline(entry(a).parts, entry(a).transform), outline(entry(b).parts, entry(b).transform))
+
+/** The planter and the saucer both print where they stand, at least the space arrange keeps between objects apart. */
 function expectApart(planter: string, saucer: string): void {
   expect(printsOnBed(entry(planter), get().bed)).toBe(true)
   expect(printsOnBed(entry(saucer), get().bed)).toBe(true)
-  const center = (id: string) => {
-    const b = onPlate(id)
-    return [(b.min[0]! + b.max[0]!) / 2, (b.min[1]! + b.max[1]!) / 2]
-  }
-  const [p, s] = [center(planter), center(saucer)]
-  expect(Math.hypot(p[0]! - s[0]!, p[1]! - s[1]!)).toBeGreaterThanOrEqual(flat(135) + flat(145))
+  expect(gapOf(planter, saucer)).toBeGreaterThanOrEqual(getArrangeOptions().gapMm - 0.01)
 }
+
+describe('the clearance the room tests check', () => {
+  /** An octagonal prism `d` mm across its corners, a corner toward +X, as a mesh around the origin. */
+  const octagon = (d: number): Pick<MeshPart, 'positions'> => ({ positions: new Float32Array(Array.from({ length: 16 }, (_, i) => [(d / 2) * Math.cos((i % 8) * Math.PI / 4), (d / 2) * Math.sin((i % 8) * Math.PI / 4), i < 8 ? 0 : 10]).flat()) })
+  const at = (x: number, y: number) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1]
+  const planter = (x: number, y: number) => outline([octagon(135)], at(x, y))
+  const saucer = (x: number, y: number) => outline([octagon(145)], at(x, y))
+
+  it('fails a planter and saucer that meet corner to corner, which their middles\' distance alone lets pass', () => {
+    // 131 mm apart along the line through their corners: more than their two flats' distances from the middle added
+    // (129.4 mm), so far enough apart by the middles, but corners 140 mm from middle to middle overlap, 9 mm along that
+    // line (8.3 mm across the nearest sides)
+    expect(131).toBeGreaterThanOrEqual(flat(135) + flat(145))
+    expect(gapBetween(planter(0, 0), saucer(131, 0))).toBeCloseTo(-9 * Math.cos(Math.PI / 8), 4)
+    // side to side, the same distance is clear: 1.6 mm between the flats facing each other
+    const a = Math.PI / 8
+    expect(gapBetween(planter(0, 0), saucer(131 * Math.cos(a), 131 * Math.sin(a)))).toBeCloseTo(131 - flat(135) - flat(145), 4)
+    // and two that keep arrange's 6 mm corner to corner pass
+    expect(gapBetween(planter(0, 0), saucer(146, 0))).toBeCloseTo(6, 4)
+  })
+})
 
 /** Moves object `id` on the plate by (dx, dy) mm, as a person drags it. */
 function drag(id: string, dx: number, dy: number): void {
