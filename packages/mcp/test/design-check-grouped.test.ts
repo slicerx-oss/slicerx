@@ -141,4 +141,18 @@ describe('design.check matches steps to the feature they build', () => {
     const r = designCheck(plan, { ...body, steps: ['Mounting plate', 'Mounting hole', 'Mounting hole', 'Mounting hole', 'Mounting hole'], features: 5 }, 0.4)
     expect(item(r, 'feature count')).toMatchObject({ pass: true })
   })
+
+  it('on a tie, the feature with fewer words left over takes the step ("Hole" goes to Hole, not Mounting hole)', () => {
+    const plan: PartPlan = { ...piCase, features: [{ name: 'Mounting hole', sizes: {} }, { name: 'Hole', sizes: {} }], overall: undefined }
+    const r = designCheck(plan, { ...body, steps: ['Mounting hole', 'Hole'], features: 2 }, 0.4)
+    expect(item(r, 'feature count')).toMatchObject({ pass: true })
+  })
+
+  for (const [feature, step] of [['Boxes', 'Box'], ['Assemblies', 'Assembly'], ['Switches', 'Switch'], ['Glass', 'Glass'], ['Holes', 'Hole'], ['Slots', 'Slot'], ['Bosses', 'Boss']] as const)
+    it(`the plural "${feature}" matches a step named "${step}"`, () => {
+      const plan: PartPlan = { ...piCase, features: [{ name: 'Base', sizes: {} }, { name: feature, sizes: {} }], overall: undefined }
+      const r = designCheck(plan, { ...body, steps: ['Base', step], features: 2 }, 0.4)
+      expect(item(r, 'feature count')).toMatchObject({ pass: true })
+    })
 })
+
