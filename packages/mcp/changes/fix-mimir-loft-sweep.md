@@ -7,6 +7,7 @@
 - `slicerx_geom_hole` 1.1.1: the description says it changes a hole that is already there and never makes a new one, which is a circle loop cut with the extrude tool. A pick that finds no hole is refused with the same note.
 - `slicerx_design_check` with `design` given by its name: the plan is compared and tied by the design's id, so a plan tied to a design is checked when the design is named either way.
 - `slicerx_geom_hole` and `slicerx_geom_push_pull` refusals on a topology reference report `bodyId` as the design's id when the design was given by its name.
+- Design tools on the app's plate: a first body built off the bed, or a part an edit takes off it, moves onto the bed as a whole and keeps its coordinates. Points given and read back stay in the design's own frame, so steps given in that frame after the move still meet the body; before, the design's coordinates became the plate's and such a step missed it. The note on the call that moved it says it moved as a whole and that its coordinates stay the design's own. A finished sketch passed as `sketch`, `sketches`, `profile_sketch` or `path_sketch` comes in that design's frame.
 
 ### Fixed
 
