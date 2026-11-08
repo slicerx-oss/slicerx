@@ -1824,6 +1824,91 @@ mod tests {
 
     #[cfg(feature = "trace")]
     #[test]
+    fn sketch_trace_pixels_carry_their_file_size_and_take_a_path_and_every_mode() {
+        // a 40 px black square on clear, 60 px across, and the same at half size
+        let px = |n: usize, lo: usize, hi: usize, out: [u8; 4]| -> Vec<u8> {
+            (0..n * n)
+                .flat_map(|i| {
+                    let (x, y) = (i % n, i / n);
+                    if (lo..hi).contains(&x) && (lo..hi).contains(&y) {
+                        [0, 0, 0, 255]
+                    } else {
+                        out
+                    }
+                })
+                .collect()
+        };
+        let (big, small) = (
+            px(60, 10, 50, [255, 255, 255, 255]),
+            px(30, 5, 25, [255, 255, 255, 255]),
+        );
+        let png = crate::raster::tests::png(60, 60, 4, &big, None);
+        let options = json!({ "mmPerPx": 0.5, "center": [0, 0] });
+        let size = |out: &Value, want: f64| {
+            for v in out["sizeMm"].as_array().unwrap() {
+                assert!((v.as_f64().unwrap() - want).abs() < 0.05, "{out}");
+            }
+        };
+        let file = run(
+            "sketch.trace",
+            &json!({ "image": { "base64": base64_encode(&png) }, "options": options }),
+        );
+        size(&file, 20.0);
+        // pixels shrunk from the file give the file's size in mm when they say how big the file was
+        let shrunk = run(
+            "sketch.trace",
+            &json!({ "image": { "rgba": base64_encode(&small), "width": 30, "height": 30, "fileWidth": 60, "fileHeight": 60 }, "options": options }),
+        );
+        size(&shrunk, 20.0);
+        assert_eq!(shrunk["imagePx"], json!([60, 60]));
+        assert_eq!(shrunk["mmPerPx"], json!(0.5));
+        // without it the pixels are the file
+        let own = run(
+            "sketch.trace",
+            &json!({ "image": { "rgba": base64_encode(&small), "width": 30, "height": 30 }, "options": options }),
+        );
+        size(&own, 10.0);
+        // a path is read through the host's files
+        let files = |p: &str| -> Result<Vec<u8>> {
+            if p == "art/square.png" {
+                Ok(png.clone())
+            } else {
+                Err(Error::invalid("path", format!("{p}: not found")))
+            }
+        };
+        let req = json!({ "image": { "path": "art/square.png" }, "options": options });
+        let by_path: Value =
+            serde_json::from_str(&call_with_files("sketch.trace", &req.to_string(), &files).unwrap())
+                .unwrap();
+        assert_eq!(by_path["loops"], file["loops"]);
+        assert!(call("sketch.trace", &req.to_string()).is_err());
+        // alpha on a transparent image traces the opaque part, and on an opaque one the whole image
+        let clear = px(60, 10, 50, [255, 255, 255, 0]);
+        let alpha = json!({ "mode": "alpha", "mmPerPx": 0.5 });
+        let opaque_part = run(
+            "sketch.trace",
+            &json!({ "image": { "rgba": base64_encode(&clear), "width": 60, "height": 60 }, "options": alpha }),
+        );
+        assert_eq!(opaque_part["mode"], "alpha");
+        size(&opaque_part, 20.0);
+        let whole = run(
+            "sketch.trace",
+            &json!({ "image": { "rgba": base64_encode(&big), "width": 60, "height": 60 }, "options": alpha }),
+        );
+        size(&whole, 30.0);
+        let too_wide = vec![0u8; 4097 * 4];
+        for bad in [
+            json!({ "image": { "rgba": base64_encode(&too_wide), "width": 4097, "height": 1 } }),
+            json!({ "image": { "rgba": base64_encode(&small[..small.len() - 4]), "width": 30, "height": 30 } }),
+            json!({ "image": { "rgba": base64_encode(&small), "width": 30, "height": 30, "fileWidth": 0, "fileHeight": 60 } }),
+            json!({ "image": { "rgba": base64_encode(&small), "width": 30, "height": 30, "fileWidth": 60 } }),
+        ] {
+            assert!(call("sketch.trace", &bad.to_string()).is_err(), "{bad}");
+        }
+    }
+
+    #[cfg(feature = "trace")]
+    #[test]
     fn sketch_trace_takes_a_file_or_pixels_and_its_loops_extrude() {
         // a 40 px black square on white, 60 px across
         let mut rgba = Vec::new();
