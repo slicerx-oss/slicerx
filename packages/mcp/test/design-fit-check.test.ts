@@ -154,7 +154,7 @@ describe('design.check on a print-in-place plan', () => {
   it('pieces fail when the plan names pieces the design does not have', async () => {
     const t = await pinInArm(3.8, 3)
     const { out } = await t.check(planOf(['Lid', 'Tray']))
-    expect(item(out, 'pieces')).toEqual({ name: 'pieces', want: '2 separate pieces (Lid, Tray)', got: '2 pieces, but Lid and Tray are not among them (the bodies are Arm and Pin); name each piece as the plan does', pass: false })
+    expect(item(out, 'pieces')).toEqual({ name: 'pieces', want: '2 separate pieces (Lid, Tray)', got: "2 pieces, but Lid and Tray are not among them: the pieces left over are Arm and Pin. Each is a piece of its own, so only the names are off: give each part one of the plan's names and check again, without changing its shape", pass: false })
     // names match without regard to case
     expect(item((await t.check(planOf(['arm', 'PIN'], { planId: 'pip-2' }))).out, 'pieces')).toMatchObject({ got: '2 pieces', pass: true })
   })
