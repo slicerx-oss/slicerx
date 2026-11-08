@@ -972,6 +972,32 @@ describe('a solid from a new sketch with a projection', () => {
     expect(undo.state().undo).toBe(0)
   })
 
+  it('says why in a toast when a join misses after another sketch opened in its place, and leaves that sketch open', async () => {
+    set({ plate: [body('b', 10)], objectTool: 'sketch', toast: null })
+    undo.clear()
+    const s = drawn()
+    // the editor that pressed Extrude, while it is open
+    let first = true
+    const release = holding()
+    nextExtrude = 'miss'
+    const missed = solidOnNewSketch(s, extrudeOf(s, { operation: 'join' }, 'b'))
+    const landed = solidOnNewSketch(s, extrudeOf(s))
+    await tick()
+    // the person opens another sketch while the engine works: the sketch tool is open again, in a new editor
+    first = false
+    release()
+    const notes: string[] = []
+    const r = await missed
+    afterSolid(r, (text) => notes.push(text), () => first)
+    expect(notes).toEqual([])
+    expect(get().toast).toMatchObject({ text: r.message, tone: 'warn' })
+    // a solid that lands for the old editor does not close the new one
+    afterSolid(await landed, (text) => notes.push(text), () => first)
+    expect(notes).toEqual([])
+    expect(get().objectTool).toBe('sketch')
+    expect(get().toast).toMatchObject({ text: expect.stringMatching(/^Added Sketch body/), tone: 'ok' })
+  })
+
   it('keeps the editor open with why when a join misses, the drawing kept and nothing in the timeline or the undo history', async () => {
     set({ plate: [body('b', 10)], objectTool: 'sketch' })
     undo.clear()
