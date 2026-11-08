@@ -4,6 +4,7 @@
 // booleans. Loads on first use in a worker. A host can provide its own (for example native code in
 // the desktop app) with setGeomProvider.
 import type { FaceSurface, MeshPart } from '@slicerx/contracts'
+import { geomCallLimitMs, geomStuckMessage } from '@slicerx/contracts/geom-limits'
 import type { LoadError } from './modules'
 import { workerAnswered, workerEnded, workerStarted } from './worker-memory'
 
@@ -34,6 +35,20 @@ export const BIG_BYTES = 256 * 1024 * 1024
 export const CANCEL_GRACE_MS = 500
 
 const INTERRUPTED = 'The geometry engine was interrupted by a canceled edit. Retry the operation.'
+
+/**
+ * How long a call may run in the engine once it starts, by operation (@slicerx/contracts geom-limits.ts): at the limit
+ * its worker ends, the calls queued behind it go to a fresh one, and the call is refused with what to try. A replay's
+ * limit counts from each of its steps. A test sets a shorter one with setGeomCallLimit.
+ */
+let limitOf: (op: string) => number = geomCallLimitMs
+
+export function setGeomCallLimit(limit: ((op: string) => number) | null): void {
+  limitOf = limit ?? geomCallLimitMs
+}
+
+/** The refusal of a call stopped at its limit. It is never sent again: the same call would stop the same way. */
+const stuck = (op: string, ms: number): Error => new Error(geomStuckMessage(op, ms))
 
 /**
  * The app's own geometry worker: its answers and failures so far, by operation, the last failure's message, and the
@@ -114,11 +129,19 @@ function workerProvider(): GeomProvider {
   const canceled = new Map<number, ReturnType<typeof setTimeout> | null>()
   // calls made while a canceled one may still end the worker: sent once it answers, or to the next worker
   let held: Call[] = []
+  // the time limit of each call running in the engine (limitOf)
+  const deadlines = new Map<number, ReturnType<typeof setTimeout>>()
+  const unlimit = (id: number) => {
+    clearTimeout(deadlines.get(id))
+    deadlines.delete(id)
+  }
   const release = () => {
     if (idle) clearTimeout(idle)
     idle = null
     for (const t of canceled.values()) if (t) clearTimeout(t)
     canceled.clear()
+    for (const t of deadlines.values()) clearTimeout(t)
+    deadlines.clear()
     started.clear()
     unstarted.clear()
     going.clear()
@@ -167,6 +190,23 @@ function workerProvider(): GeomProvider {
   const interruptAfterGrace = (id: number) => {
     canceled.set(id, setTimeout(interrupt, CANCEL_GRACE_MS))
   }
+  // A call still running at its limit is refused and its worker ends, as for a cancel: nobody may be there to cancel
+  // it (a mimir run), and every call queued behind it would wait for good.
+  const limit = (id: number, op: string) => {
+    unlimit(id)
+    const ms = limitOf(op)
+    deadlines.set(
+      id,
+      setTimeout(() => {
+        deadlines.delete(id)
+        const p = pending.get(id)
+        pending.delete(id)
+        unstarted.delete(id)
+        p?.reject(stuck(op, ms))
+        interrupt()
+      }, ms),
+    )
+  }
   endIfIdle = () => {
     if (pending.size > 0) return false
     release()
@@ -179,7 +219,7 @@ function workerProvider(): GeomProvider {
     const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
     worker = current
     workerStarted(current, 'shared')
-    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number }>) => {
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError } | { started: number } | { ready: number } | { step: number }>) => {
       if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
@@ -196,11 +236,19 @@ function workerProvider(): GeomProvider {
       }
       if ('started' in e.data) {
         const id = e.data.started
+        const op = unstarted.get(id)?.op
         started.add(id)
-        if (unstarted.get(id)?.op !== 'history.replay') unstarted.delete(id)
+        if (op !== 'history.replay') unstarted.delete(id)
         if (canceled.has(id)) interruptAfterGrace(id)
+        else if (op !== undefined && pending.has(id)) limit(id, op)
         return
       }
+      if ('step' in e.data) {
+        // a replay's next step: its limit starts again
+        if (deadlines.has(e.data.step)) limit(e.data.step, 'history.replay')
+        return
+      }
+      unlimit(e.data.id)
       started.delete(e.data.id)
       unstarted.delete(e.data.id)
       going.delete(e.data.id)
@@ -234,6 +282,7 @@ function workerProvider(): GeomProvider {
           if (!p) return
           pending.delete(id)
           unstarted.delete(id)
+          unlimit(id)
           p.reject(new DOMException('Canceled', 'AbortError'))
           if (held.some((c) => c.id === id)) {
             held = held.filter((c) => c.id !== id)
@@ -337,7 +386,10 @@ export function soloCall<T>(op: string, request: unknown, transfer: Transferable
   const w = worker
   workerStarted(w, 'solo')
   let fail: (e: Error) => void = () => undefined
+  // its time limit, from when the engine starts it (limitOf)
+  let deadline: ReturnType<typeof setTimeout> | undefined
   const stop = () => {
+    clearTimeout(deadline)
     worker?.terminate()
     workerEnded(worker)
     worker = null
@@ -349,8 +401,14 @@ export function soloCall<T>(op: string, request: unknown, transfer: Transferable
       calls.lastError = e.message
       reject(e)
     }
-    w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string } | { loadError: LoadError }>) => {
+    w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string } | { loadError: LoadError } | { started: number }>) => {
       if ('loadError' in e.data) return noteLoadError(e.data.loadError)
+      if ('started' in e.data) {
+        if (e.data.started !== 1 || !worker) return
+        const ms = limitOf(op)
+        deadline = setTimeout(() => fail(stuck(op, ms)), ms)
+        return
+      }
       // a spare's own start-up answer (startSpareGeomWorker) is not this call's
       if (e.data.id !== 1) return
       if (e.data.error !== undefined) return fail(new Error(e.data.error))

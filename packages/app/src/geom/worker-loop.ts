@@ -5,7 +5,7 @@
 // worker then sends {ready} when it reaches the call and runs it on the page's {go}, or answers it canceled on {skip},
 // so a call canceled while it waited behind a running one never runs. The worker says when each call starts, right
 // before the engine runs it and after any build it needs has loaded, so the page can end a worker stuck in a canceled
-// call.
+// call, or in one past its time limit; a replay also says when each of its steps starts ({step}).
 
 export interface WorkerJobs {
   /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself. */
@@ -35,6 +35,8 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
         const result = await jobs.replay(request, async () => {
           await new Promise((r) => setTimeout(r, 0))
           if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
+          // each step has a time limit of its own on the page (client.ts, setGeomCallLimit)
+          post({ step: id })
         })
         canceled.delete(id)
         answer(id, { result })
