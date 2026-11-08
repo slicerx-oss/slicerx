@@ -521,6 +521,46 @@ describe('slicerx_design_check', () => {
     expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: false })
   })
 
+  // geom.build, geom.subtract, geom.mirror, a separate geom.array, geom.cut and geom.hollow all build shape, and their
+  // own default names ("Add Solids 1", "Subtract 1 solid", "Mirror copy") say nothing about the feature
+  it('a base plate built with geom.build and a cable notch cut with geom.subtract, both unnamed, pass the feature check', async () => {
+    const plans = createPlanRegistry()
+    const h = await connect({ geomEngine: engine, plans })
+    const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: T }>(r).output
+    }
+    const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
+    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 5] }] })
+    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'box', min: [15, -1, -1], max: [25, 5, 6] }] })
+    plans.put({ planId: 'notch-1', part: 'Plate', units: 'mm', features: [{ name: 'Base plate', sizes: { width: 40 } }, { name: 'Cable notch', sizes: { width: 10 } }], assumptions: [], questions: [] })
+    const r = await ok<Check>('slicerx_design_check', { planId: 'notch-1' })
+    expect(r.body.steps).toEqual(['Add Solids 1', 'Subtract 1 solid'])
+    expect(r.body.free).toEqual([true, true])
+    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
+  })
+
+  it('every shaping tool records a free step under its own default name', async () => {
+    const plans = createPlanRegistry()
+    const h = await connect({ geomEngine: engine, plans })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<void> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+    }
+    const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Tools' })).output.design
+    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 10] }] })
+    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'cylinder', origin: [10, 10, -1], axis: [0, 0, 1], diameterMm: 3, heightMm: 12 }] })
+    await ok('slicerx_geom_mirror', { design, plane: { axis: 'x', at: 0 }, copy: true })
+    await ok('slicerx_geom_array', { design, part: 0, spec: { kind: 'linear', count: 2, step: [0, 60, 0] }, merge: false })
+    await ok('slicerx_geom_cut', { design, plane: { axis: 'z', at: 8 }, keep: 'below' })
+    await ok('slicerx_geom_hollow', { design, wall_mm: 2 })
+    plans.put({ planId: 'tools-1', part: 'Tools', units: 'mm', features: [{ name: 'Block', sizes: { width: 40 } }], assumptions: [], questions: [] })
+    const r = data<{ output: Check }>(await h.call('slicerx_design_check', { planId: 'tools-1' })).output
+    expect(r.body.steps).toEqual(['Add Solids 1', 'Hole 3 mm', 'Mirror copy', 'Array of 2, separate', 'Cut, keep below', 'Hollow, 2 mm walls'])
+    expect(r.body.free).toEqual([true, true, true, true, true, true])
+  })
+
   it('a 6 mm hole built at 5 mm fails that item only', async () => {
     const { h } = await plate(5, 5)
     const res = await h.call('slicerx_design_check', { planId: 'plate-1' })
