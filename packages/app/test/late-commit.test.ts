@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A modeling job reads an object, waits on the engine, then writes. What the person did meanwhile stays: a move or a
-// recolor during the wait is kept, and an object deleted meanwhile takes nothing, nor do others get duplicated.
+// recolor during the wait is kept, an object deleted meanwhile takes nothing, nor do others get duplicated, and a body
+// hidden for an edit of its first step comes back with the result.
 import { afterEach, expect, it } from 'vitest'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { IDENTITY, clearReplayCache, type HistoryMesh } from '@slicerx/cad-history'
@@ -115,4 +116,31 @@ it('a cut of an object moved meanwhile changes nothing', async () => {
   g.finish()
   expect(await task).toBe(0)
   expect(get().plate.map((p) => [p.id, p.transform[12]])).toEqual([['a', 50]])
+})
+
+it('a history replay while the body is off the plate for an edit of its first step brings it back with the result', async () => {
+  setGeomProvider({ call: async <T>(_op: string, req: unknown) => ({ mesh: (req as { mesh: unknown }).mesh }) as T })
+  const original = entry('body')
+  const other = entry('other')
+  // beginEdit of a body's first step: the body leaves the plate while its step is edited on the bed
+  set({ plate: [other], historyEdit: { objectId: original.id, index: 0, original } })
+  await applyHistory({ loadParts: async () => handle }, original.id, { version: 1, base: [mesh()], steps: [] })
+  expect(get().historyEdit).toBeNull()
+  expect(get().plate.map((p) => p.id)).toEqual(['other', 'body'])
+  expect(get().plate[1]!.history?.base).toHaveLength(1)
+})
+
+it('a history replay for an object deleted meanwhile with one of its steps open writes nothing and brings nothing back', async () => {
+  setGeomProvider({ call: async <T>(_op: string, req: unknown) => ({ mesh: (req as { mesh: unknown }).mesh }) as T })
+  const original = entry('body')
+  const other = entry('other')
+  // a later step open: the body stays on the plate, rolled back
+  set({ plate: [original, other], historyEdit: { objectId: original.id, index: 1, original } })
+  const g = gate()
+  const task = applyHistory(g.host, original.id, { version: 1, base: [mesh()], steps: [] })
+  await g.atLoad
+  set({ plate: [other] })
+  g.finish()
+  await expect(task).rejects.toThrow()
+  expect(get().plate.map((p) => p.id)).toEqual(['other'])
 })
