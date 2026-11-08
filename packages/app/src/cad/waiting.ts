@@ -8,6 +8,11 @@ import type { Mat4 } from '@slicerx/cad-history'
 const waiting = new Map<string, Mat4>()
 /** How each live design host lets its waiting designs go (cad/design-host.ts). */
 const owners = new Set<() => void>()
+/** Which project the plate holds: one more each time the project is cleared (forgetWaiting). */
+let generation = 0
+
+/** The project the plate holds now; a body built for an earlier one is not put on the plate. */
+export const projectGeneration = (): number => generation
 
 /** A design host's way to let its waiting designs go, called by forgetWaiting; returns how to take it back. */
 export function ownWaiting(forget: () => void): () => void {
@@ -20,6 +25,7 @@ export function ownWaiting(forget: () => void): () => void {
  * opened in its place), so none of them can land on the plate now.
  */
 export function forgetWaiting(): void {
+  generation++
   for (const forget of [...owners]) forget()
   waiting.clear()
 }
