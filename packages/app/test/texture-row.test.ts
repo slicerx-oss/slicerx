@@ -13,7 +13,7 @@ import { HostContext } from '../src/host'
 import { history, inStep } from '../src/plate/history'
 import { commitStroke } from '../src/plate/paint'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { rememberTexture, type TextureSource } from '../src/plate/texture-paint'
+import { forgetTexture, rememberTexture, type TextureSource } from '../src/plate/texture-paint'
 import { identity } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { TextureRow } from '../src/workspaces/prepare/texture-row'
@@ -39,6 +39,8 @@ beforeEach(() => {
   history().clear()
   engine = vi.fn(async () => reply as unknown)
   setGeomProvider({ call: engine as never })
+  // The remembered textures outlive a test: one that remembers a texture for b must not give it to the next.
+  forgetTexture('b')
   rememberTexture('a', src)
 })
 afterEach(() => {

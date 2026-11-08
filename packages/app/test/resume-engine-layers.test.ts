@@ -85,7 +85,12 @@ function engineHost(kind: 'desktop' | 'web' = 'desktop', threads = 1): { host: H
 const LIMITS = { layer_height: 0.2, initial_layer_print_height: 0.2, min_layer_height: [0.08], max_layer_height: [0.28], brim_width: 0 }
 
 /** A 10 x 10 mm box `h` mm tall, alone on the plate, with `paint` when given. */
+// What the tests of the slice inputs key put in the store (a printer, its nozzles, presets, a profile) would stay for the
+// tests that run after them, and a slice reads it: it makes the plate's key another one than the stored plan was made for.
+const START = (({ printerModel, profile, userPresets, printerNozzles, printerExtruders, printerSlots, slotMatch, fileSlotTypes, fileSlotVendors, tower, towerFromProject, projectTowers }) => ({ printerModel, profile, userPresets, printerNozzles, printerExtruders, printerSlots, slotMatch, fileSlotTypes, fileSlotVendors, tower, towerFromProject, projectTowers }))(get())
+
 function onePlate(h: number, overrides: Record<string, unknown>, extra: Partial<PlateEntry> = {}): MeshPart {
+  set(START)
   const part = { ...boxMesh(10, 10, h), name: 'Body', slot: 1 }
   const box: PlateEntry = { id: 'a', name: 'Box', handle: { id: 'box', hash: 'box', name: 'box', triangles: 12, bboxMm: [10, 10, h], openEdges: 0, parts: [{ name: 'Body', slot: 1, triangles: 12 }] }, parts: [part], colors: ['#fff', '#000'], transform: compose({ position: [100, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }), ...extra }
   set({ plate: [box], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], activePlate: 'plate-1', resume: null, slice: { status: 'idle' }, calibration: {}, layerMarks: {}, objectSettings: {}, overrides: { ...LIMITS, ...overrides }, easy: { ...get().easy, varyLayerHeight: false } })
@@ -408,7 +413,7 @@ const TUNED = { id: 'u1', kind: 'filament', name: 'Mine', values: { filament_shr
 describe('the slice inputs key', () => {
   beforeEach(() => {
     onePlate(1, {})
-    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], printerSlots: [{ id: 'A1', material: 'PLA', color: '#ffffff', remainingG: 600, remainingPct: 60, spoolUid: 'tag-1', spoolmanId: 3 }], userPresets: [TUNED, { id: 'u2', kind: 'filament', name: 'Plain', values: { nozzle_temperature: [215] }, createdAt: 1, updatedAt: 1 }, { id: 'u3', kind: 'process', name: 'Fine', values: { layer_height: 0.12 }, createdAt: 1, updatedAt: 1 }], printerModel: { id: 'p1', vendor: 'Bambu Lab', model: 'A1' }, printerNozzles: { p1: 0.4, p2: 0.4 }, printerExtruders: {}, slotMatch: {}, fileSlotTypes: [], fileSlotVendors: [] } as never)
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: get().plate, settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [], settings: {} }], printerSlots: [{ id: 'A1', material: 'PLA', color: '#ffffff', remainingG: 600, remainingPct: 60, spoolUid: 'tag-1', spoolmanId: 3 }], userPresets: [TUNED, { id: 'u2', kind: 'filament', name: 'Plain', values: { nozzle_temperature: [215] }, createdAt: 1, updatedAt: 1 }, { id: 'u3', kind: 'process', name: 'Fine', values: { layer_height: 0.12 }, createdAt: 1, updatedAt: 1 }], printerModel: { id: 'p1', vendor: 'Bambu Lab', model: 'A1' }, printerNozzles: { p1: 0.4, p2: 0.4 }, printerExtruders: {}, slotMatch: {}, fileSlotTypes: [], fileSlotVendors: [], profile: { nozzle: 0.4 } } as never)
   })
   const entry = (patch: Record<string, unknown>) => set({ plate: get().plate.map((e) => ({ ...e, ...patch })) })
   const meta = (patch: Record<string, unknown>) => set({ plates: get().plates.map((p) => (p.id === 'plate-1' ? { ...p, settings: { ...p.settings, ...patch } } : p)) })

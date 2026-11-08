@@ -51,10 +51,12 @@ describe('auto-pick for a part with no filament of its own', () => {
   })
 
   it('remembers the spool used last per printer', () => {
-    expect(lastSpool('bay-1')).toBeUndefined()
-    noteLastSpool('bay-1', 3)
-    expect(lastSpool('bay-1')).toBe(3)
-    expect(lastSpool('bay-2')).toBeUndefined()
+    // Printers of its own: the module keeps what it was told for the rest of the file, whichever test ran first and
+    // whatever the storage holds, and other tests note a spool for bay-1.
+    expect(lastSpool('bay-memory-1')).toBeUndefined()
+    noteLastSpool('bay-memory-1', 3)
+    expect(lastSpool('bay-memory-1')).toBe(3)
+    expect(lastSpool('bay-memory-2')).toBeUndefined()
   })
 
   it('puts new parts on the picked spool and leaves parts with their own filament', () => {

@@ -5,7 +5,7 @@
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
 import { collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
 import { noteOf } from '../src/send/check-lines'
@@ -68,6 +68,12 @@ function entry(id: string, name: string) {
 }
 
 describe('heimdall in the app', () => {
+  // Jumping to a strike and applying a fix leave the store with a selection and a ring round the parts they picked,
+  // and a mark steps back while that ring is on. Each test starts without them, whichever test ran before it.
+  beforeEach(() => {
+    set({ plate: [], pickRing: null, selection: null, selectedIds: [], strikePick: null, strikeHover: null, strikeJump: null })
+  })
+
   it('holds Print back on a hit and only warns on a close call', () => {
     set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close]), stale: false } })
     expect(printBlock(get())).toBe('heimdall found a collision on this plate. See it in Slice, apply a fix or change the plate, and slice again.')

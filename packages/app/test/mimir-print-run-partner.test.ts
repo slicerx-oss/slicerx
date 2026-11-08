@@ -65,7 +65,7 @@ async function turn(groups: ToolGroups, calls: Call[], onSend?: (request: Approv
   const options = tabPilotOptions(host, { llm: noLlm, config: DEFAULT_CONFIG, kb: await bundledKb(), tools: DESIGN_TOOLS, commands: [SLICE], toolGroups: groups })
   const pilot = createPilot({ ...options, client: createScriptedClient([...calls.map((c) => ({ calls: [c] })), { text: 'Done.' }], { chunk: false }) })
   const events: PilotEvent[] = []
-  for await (const ev of pilot.run('tab', 'go', {})) {
+  for await (const ev of pilot.run(session, 'go', {})) {
     events.push(ev)
     if (ev.type !== 'approval_request') continue
     if (ev.request.tool === 'printer.queue') onSend?.(ev.request, ev.builtin, pilot)
@@ -81,8 +81,13 @@ const stateOf = (steps: ReturnType<typeof runSteps>) => Object.fromEntries(steps
 
 const ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5 4h14"/></svg>')}`
 const before = currentEdition()
+// The tab's print run host is one object for the whole file, and the run book it keeps holds each chat's run by id. A test
+// is a new chat, so it reads no printer or slice that another test's chat picked.
+let session = 'tab'
+let chats = 0
 
 beforeEach(() => {
+  session = `tab-${++chats}`
   set({ plate: [bracket], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', overrides: {}, objectSettings: {}, printerId: null, printerSlots: [], slice: { status: 'idle' }, approval: null })
 })
 
@@ -113,7 +118,7 @@ describe('a partner edition keeps the print run', () => {
     expect(results.get('printer.queue')).not.toMatchObject({ ok: true })
     expect(asked).toEqual([])
     expect(get().printerId).toBeNull()
-    const run = pilot.printRun?.('tab')!
+    const run = pilot.printRun?.(session)!
     expect(run.slice).toMatchObject({ sliceId: 's1', stale: false })
     expect(run.printerId).toBeNull()
     expect(run.send).toBeNull()
@@ -132,14 +137,14 @@ describe('a partner edition keeps the print run', () => {
         { name: 'slice', args: {} },
         { name: 'printer.queue', args: { printerId: 'bench', plate: 1 } },
       ],
-      (request, builtin, p) => sent.push({ request, builtin, steps: stateOf(runSteps(p.printRun?.('tab')!, groups)) }),
+      (request, builtin, p) => sent.push({ request, builtin, steps: stateOf(runSteps(p.printRun?.(session)!, groups)) }),
     )
     expect(offered).not.toContain('design.new')
     expect(offered).not.toContain('geom.info')
     expect(offered).toEqual(expect.arrayContaining(['run.target', 'app.slice', 'printer.queue']))
     // the printer the person named, on the spool of the material they named
     expect(results.get('run.target')).toMatchObject({ ok: true })
-    expect(pilot.printRun?.('tab')).toMatchObject({ printerId: 'bench', slots: { 1: '1' } })
+    expect(pilot.printRun?.(session)).toMatchObject({ printerId: 'bench', slots: { 1: '1' } })
     expect(get().printerId).toBe('bench')
     expect(results.get('app.slice')).toMatchObject({ ok: true })
     expect(results.get('slice')).toMatchObject({ ok: true })
