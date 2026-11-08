@@ -59,7 +59,8 @@ export function addPlate(settings: PlateSettings = activeMeta()?.settings ?? {},
 
 /**
  * Copies a plate with everything on it: objects at the same places, volumes, paint, part and object settings, instance
- * groups, and the plate's own sequence, bed type and filament order. The copy sits after the original and is shown.
+ * groups, and the plate's own sequence, bed type and filament order. Not where a design host landed an object or what
+ * that landing moved. The copy sits after the original and is shown.
  * One undo step takes it away. Returns the new plate's id, or null when the plate does not exist.
  */
 export function duplicatePlate(id: string = get().activePlate): string | null {
@@ -69,7 +70,9 @@ export function duplicatePlate(id: string = get().activePlate): string | null {
   const objects = id === s.activePlate ? s.plate : src.objects
   const ids = new Map(objects.map((o) => [o.id, `obj_${Date.now().toString(36)}c${(++seq).toString(36)}`]))
   const volId = () => `vol_${Date.now().toString(36)}c${(++seq).toString(36)}`
-  const copies: PlateEntry[] = objects.map((o) => ({
+  // where a design host landed an object, and the designs that landing moved over, stay with the original, as a paste's
+  // and an instance's do (clipboard.ts fresh, edit.ts copyOf): the copy was not landed and moved nothing
+  const copies: PlateEntry[] = objects.map(({ landedAt: _l, roomMoves: _r, ...o }) => ({
     ...o,
     id: ids.get(o.id)!,
     transform: [...o.transform],
