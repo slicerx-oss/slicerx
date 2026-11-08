@@ -170,7 +170,12 @@ const toPlate1 = () => set({ plates: get().plates.map((p) => (p.id === 'plate-2'
 const wrap = (host: Host, el: ReturnType<typeof createElement>) => createElement(QueryClientProvider, { client: new QueryClient() }, createElement(HostContext.Provider, { value: host }, createElement(EditionContext.Provider, { value: NEUTRAL }, el)))
 
 let capture: Capture | null = null
+// The tower spot an opened project brings stays in the store until something moves it, and a plate's key reads it, so the
+// tests that open one would leave it to every test that runs after them.
+const towerAtStart = get().tower
+
 beforeEach(() => {
+  set({ tower: towerAtStart, towerFromProject: false, projectTowers: {} } as never)
   set({ plate: [box], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Plate 2', objects: [other], settings: {} }], activePlate: 'plate-1', resume: null, slice: { status: 'idle' }, preview: null, calibration: {}, layerMarks: {}, objectSettings: {}, overrides: {}, printerSlots: [], historyEdit: null, toast: null, printSheet: null, queue: [] } as never)
 })
 afterEach(() => {

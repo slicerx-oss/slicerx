@@ -373,7 +373,8 @@ describe('one print sequence for the plate', () => {
   it('follows Print sequence on a plate without its own, and the plate wins when it has one', async () => {
     const { plateConfig } = await import('../src/plate/plates')
     const { plateSliceConfig } = await import('../src/state/slice-plate')
-    set({ plate: two, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', overrides: { ...A1, print_sequence: 'by object' } })
+    // The A1 profile is named here: without a printer the head is the generic one and a close pair is only a close call.
+    set({ plate: two, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', overrides: { ...A1, print_sequence: 'by object' }, profile: profileOf('bambu-a1') })
     expect(plateConfig(get().plates[0])).not.toHaveProperty('print_sequence')
     expect(plateSliceConfig(get(), get().plates[0])['print_sequence']).toBe('by object')
     // By object from the settings alone gets the heads-up as the plate's own choice does.

@@ -53,8 +53,11 @@ describe('opening a project when its G-code check fails', () => {
   it.each(FAILURES)('still applies the project settings when the check %s', async (_name, review) => {
     let done = false
     const opening = openModelBytes(hostWith(review), 'figure.3mf', project(), undefined, { fresh: true }).then(() => { done = true })
-    // The clock runs ahead while the open loads its modules, so a check that never answers is given up on.
-    for (let i = 0; i < 400 && !done; i++) {
+    // The clock runs ahead while the open loads its modules, so a check that never answers is given up on. The loop is
+    // bounded by real time, not by a count of turns: this test can be the first of the file to open a project, and its
+    // cold module loads take more turns than any count, which left the check's clock stopped before it started.
+    const until = Date.now() + 45_000
+    while (!done && Date.now() < until) {
       await vi.advanceTimersByTimeAsync(1_000)
       await new Promise((resolve) => setImmediate(resolve))
     }
