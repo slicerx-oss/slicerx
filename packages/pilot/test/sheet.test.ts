@@ -5,7 +5,7 @@
 // transcript keeps the sheet and its answer, and closes one left open when the run ends.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PilotSheet, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetTool, type ScriptStep } from '../src/index'
+import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetOf, sheetTool, type ScriptStep } from '../src/index'
 import { foldEvents, emptyTranscript, startTurn } from '../ui/reduce'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
@@ -77,7 +77,68 @@ describe('pilot.sheet', () => {
     const dims = [DIMS[0], { ...DIMS[1], at: undefined }, DIMS[2]]
     const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims, part: PART } }] }], () => ({}))
     expect(events.some((e) => e.type === 'sheet')).toBe(false)
-    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('case_allowance has none') })
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('row 2 (Case allowance) needs at: {"a": [x, y, z], "b": [x, y, z], "off": [x, y, z]} in mm') })
+  })
+
+  // A first sheet sent back names the exact field that is missing and the shape it needs, so the next one is right.
+  describe('a sheet sent back', () => {
+    const at = { a: [0, 0, 0], b: [40, 0, 0], off: [0, -8, 0] }
+    const dims = [
+      { key: 'length', label: 'Length', value: 40, unit: 'mm', source: 'asked', at },
+      { key: 'bore', label: 'Bore', value: 16, unit: 'mm', source: 'asked', at },
+    ]
+    const refusal = async (args: Record<string, unknown>): Promise<string> => {
+      const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', ...args } }] }], () => ({}))
+      expect(events.some((e) => e.type === 'sheet')).toBe(false)
+      const r = events.find((e) => e.type === 'tool_result') as { ok: boolean; summary: string }
+      expect(r.ok).toBe(false)
+      return r.summary
+    }
+
+    it('names a row with no place, by its number and label', async () => {
+      expect(await refusal({ dims: [dims[0], { ...dims[1], at: undefined }], part: PART })).toContain('row 2 (Bore) needs at: {"a": [x, y, z], "b": [x, y, z], "off": [x, y, z]} in mm')
+    })
+
+    it('names a row whose place is missing a coordinate', async () => {
+      expect(await refusal({ dims: [dims[0], { ...dims[1], at: { a: [0, 0, 0], b: [16, 0] } }], part: PART })).toContain('row 2 (Bore) needs at: {"a": [x, y, z], "b": [x, y, z], "off": [x, y, z]} in mm')
+    })
+
+    it('says what part takes when a sheet of several sizes has none', async () => {
+      expect(await refusal({ dims })).toContain('needs part: [solid, ...]')
+    })
+
+    it('names a sweep profile with neither d nor points', async () => {
+      const sweep = { kind: 'sweep', profile: { hole: 16 }, path: [[0, 0, 0], [0, 0, 50]] }
+      expect(await refusal({ dims, part: [sweep] })).toContain('part 1 (sweep) needs profile: {"d": diameter in mm} (with "hole" for a bore) or {"points": [[x, y], ...]}')
+    })
+
+    it('names what a revolve, a loft and an extrude are missing', async () => {
+      expect(await refusal({ dims, part: [{ kind: 'revolve', plane: 'xz', points: [[5, 0], [20, 0], [20, 40]] }] })).toContain('part 1 (revolve) needs axis: {"point": [x, y], "direction": [x, y]}')
+      expect(await refusal({ dims, part: [PART[0], { kind: 'loft', plane: 'xy', sections: [{ at: 0, d: 60 }, { at: 100 }] }] })).toContain('part 2 (loft) section 2 needs at (mm) and either d (a diameter in mm) or points')
+      expect(await refusal({ dims, part: [{ plane: 'xy', points: [[0, 0], [40, 0], [40, 20]], to: 10 }] })).toContain('part 1 (extrude) needs from: a number in mm')
+    })
+  })
+
+  // The smallest sheet of each kind passes as written, and the sheet carries only the fields of its own kind.
+  it('takes a minimal revolve, sweep and loft sheet, and keeps only each kind\'s own fields', () => {
+    const at = { a: [0, 0, 0], b: [20, 0, 0], off: [0, 0, -8] }
+    const dims = [
+      { key: 'd', label: 'Diameter', value: 40, unit: 'mm', source: 'asked', at },
+      { key: 'h', label: 'Height', value: 40, unit: 'mm', source: 'asked', at },
+    ]
+    const solids = [
+      { kind: 'revolve', plane: 'xz', points: [[5, 0], [20, 0], [20, 40], [5, 40]], axis: { point: [0, 0], direction: [0, 1] } },
+      { kind: 'sweep', profile: { d: 20 }, path: [[0, 0, 0], [0, 0, 50]] },
+      { kind: 'loft', plane: 'xy', sections: [{ at: 0, d: 60 }, { at: 100, d: 30 }] },
+    ]
+    for (const solid of solids) {
+      const parsed = sheetTool().input.safeParse({ title: 'Sizes', dims, part: [solid] })
+      expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
+      expect(sheetOf(parsed.data as unknown as Parameters<typeof sheetOf>[0]).part).toEqual([solid])
+    }
+    // a field of another kind is dropped, not carried
+    const extra = sheetTool().input.safeParse({ title: 'Sizes', dims, part: [{ ...solids[0], holes: [[[0, 0], [1, 0], [1, 1]]], from: 0 }] })
+    expect(sheetOf(extra.data as unknown as Parameters<typeof sheetOf>[0]).part).toEqual([solids[0]])
   })
 
   // A sheet for a part already built names its design and draws it as built, so it needs no solids of its own.
