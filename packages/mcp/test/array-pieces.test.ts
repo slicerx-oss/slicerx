@@ -5,7 +5,7 @@
 // the part it copied and each copy's place in the row. The plans and body names are the ones a live run of the mimir
 // tab sent and got back (an articulated lizard and a planetary gear). The engine's fit check reply is built here from
 // the meshes: one body per part, each next to the one after it in the row.
-import type { Design as HostDesign, DesignHost, HistoryMesh, Step, StepParams } from '@slicerx/cad-history'
+import { historyFiles, parseHistories, type Design as HostDesign, type DesignHost, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { describe, expect, it } from 'vitest'
 import { fitItems, type BodyFacts } from '../src/design-check'
 import { fitFacts, fitLimits } from '../src/fit-facts'
@@ -48,6 +48,9 @@ function engine(touch: ReadonlySet<number> = new Set()): DesignHost {
     },
   } as unknown as DesignHost
 }
+
+/** The copies the design's array steps recorded, by name (what fit facts reads). */
+const arrayCopiesOf = (d: HostDesign): string[] => d.history.steps.flatMap((s) => (s.params.op === 'parts.add' && typeof s.params.arrayOf === 'string' ? [s.params.arrayOf] : []))
 
 const piecesOf = async (d: HostDesign, plan: string[], touch?: ReadonlySet<number>) => {
   const fit = await fitFacts(engine(touch), d, limits)
@@ -191,5 +194,72 @@ describe('pieces made as separate array copies', () => {
     const long = await recorded('y'.repeat(121))
     expect(long.parts).toHaveLength(1)
     expect('arrayOf' in long).toBe(false)
+  })
+})
+
+describe('geom.array copies of a part whose name has edges', () => {
+  type Added = Extract<StepParams, { op: 'parts.add' }>
+  /** geom.array with separate copies of a part by this name, as the tool runs it: the design it leaves, and the step it recorded. */
+  async function arrayed(name: string, count = 3) {
+    const seg = block(name, 0)
+    const d = designOf([seg], [add([seg], 'Add it')])
+    const host = {
+      get: () => d,
+      call: async () => ({ transforms: Array.from({ length: count }, (_, k) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, k * PITCH, 0, 0, 1]) }),
+      // as the design store does: the step is kept and its parts join the design
+      add: async (_d: HostDesign, _part: number, params: StepParams) => {
+        d.history.steps.push(step(params))
+        d.status.push({ state: 'done' } as HostDesign['status'][number])
+        if (params.op === 'parts.add') d.parts.push(...params.parts)
+      },
+    } as unknown as DesignHost
+    const tool = modelingTools({ files: { call: async () => ({}), mesh: async () => ({ stlPath: '' }) }, designs: host }).find((t) => t.name === 'geom.array')!
+    await tool.run(tool.input.parse({ design: 'd1', part: 0, spec: { kind: 'linear', count, step: [PITCH, 0, 0] }, merge: false }), {} as ToolContext)
+    return { d, recorded: d.history.steps[1]!.params as Added }
+  }
+  /** The design as a saved project gives it back: its steps through the project file, its parts as they were. */
+  function reopened(d: HostDesign): HostDesign {
+    const files = new Map(historyFiles([{ id: 'o1', history: d.history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    return { ...d, history: parseHistories(files, new Set(['1'])).get('1')! }
+  }
+
+  it('records no part copied for a name of blank space, though the copies are made', async () => {
+    for (const name of ['   ', '\t', ' \n ']) {
+      const { d, recorded } = await arrayed(name)
+      expect(recorded.parts, JSON.stringify(name)).toHaveLength(2)
+      expect('arrayOf' in recorded, JSON.stringify(name)).toBe(false)
+      expect(arrayCopiesOf(d), JSON.stringify(name)).toEqual([])
+    }
+  })
+
+  it('matches the copies of a part named with space before or after it, saved and reopened too', async () => {
+    for (const name of ['  Segment 1', 'Segment 1  ', '  Segment 1 ']) {
+      const { d, recorded } = await arrayed(name)
+      // kept as written; the copies are named from it as written
+      expect(recorded.arrayOf, JSON.stringify(name)).toBe(name)
+      expect(recorded.parts.map((m) => m.name)).toEqual([`${name} 2`, `${name} 3`])
+      for (const [what, design] of [['as made', d], ['reopened', reopened(d)]] as const) {
+        const { fit, pieces } = await piecesOf(design, segments(3))
+        expect(fit.bodies.map((b) => b.array), `${JSON.stringify(name)} ${what}`).toEqual([{ of: name, n: 1 }, { of: name, n: 2 }, { of: name, n: 3 }])
+        expect(pieces.pass, `${JSON.stringify(name)} ${what}`).toBe(true)
+      }
+    }
+  })
+
+  it('names the copies of a part of 120 characters 122 characters long, which still match, saved and reopened too', async () => {
+    // 118 characters and " 1": the plan's own name for copy 2 is 118 characters and " 2", which only the array step gives
+    const base = 'a'.repeat(118)
+    const name = `${base} 1`
+    expect(name).toHaveLength(120)
+    const { d, recorded } = await arrayed(name)
+    expect(recorded.arrayOf).toBe(name)
+    expect(recorded.parts.map((m) => m.name)).toEqual([`${name} 2`, `${name} 3`])
+    expect(recorded.parts.map((m) => m.name.length)).toEqual([122, 122])
+    const plan = [1, 2, 3].map((n) => `${base} ${n}`)
+    for (const [what, design] of [['as made', d], ['reopened', reopened(d)]] as const) {
+      const { fit, pieces } = await piecesOf(design, plan)
+      expect(fit.bodies.map((b) => b.array), what).toEqual([{ of: name, n: 1 }, { of: name, n: 2 }, { of: name, n: 3 }])
+      expect(pieces.pass, what).toBe(true)
+    }
   })
 })
