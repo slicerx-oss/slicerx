@@ -10,12 +10,12 @@ describe('the prompt builds what was asked in one plan', () => {
   for (const scope of ['full', 'cad'] as const) {
     it(`${scope}: one sheet and one plan for all of it, built after one Go`, () => {
       const text = systemPrompt(scope)
-      for (const key of ['is one part', 'one sheet with every size', 'one plan with every feature', 'after one Go']) expect(text).toContain(key)
+      expect(text).toMatch(/is one part: one sheet with every size, one plan with every feature, all built after one Go without stopping between features\./)
     })
 
     it(`${scope}: a lid prints open and flat beside the base`, () => {
       const text = systemPrompt(scope)
-      for (const key of ['prints open and flat', 'beside the base', 'never on top']) expect(text).toContain(key)
+      expect(text).toMatch(/A lid or moving piece prints open and flat: a lid top down on the bed beside the base, 10 mm apart, never on top\./)
     })
   }
 
