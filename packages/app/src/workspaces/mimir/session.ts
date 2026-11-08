@@ -29,7 +29,7 @@ import { isStandInLlm } from '../../pilot-connect/stand-in-llm'
 import { slicePlate } from '../../state/actions'
 import { plateSliceConfig } from '../../state/slice-plate'
 import { hostSlices } from '../../state/model-mode'
-import { get, useApp, type PilotPref } from '../../state/store'
+import { get, useApp, type AppState, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
 import { cardPlans } from './plan-tool'
@@ -148,12 +148,19 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
           ...c,
           run: async (_input?: unknown, cx?: CommandToolContext) => {
             const before = get()
-            const plate = Math.max(1, before.plates.findIndex((p) => p.id === before.activePlate) + 1)
-            // The fingerprint is read as the slice is stamped (after the profile and the bed for a new filament or printer
-            // have loaded), so a slice is current when it lands, and an edit made while it runs leaves it stale.
-            let fingerprint: string | undefined
+            const numberOf = (s: AppState): number => Math.max(1, s.plates.findIndex((p) => p.id === s.activePlate) + 1)
+            let plate = numberOf(before)
+            // The plate, its fingerprint and the configuration are read as the slice is stamped (after the profile and the
+            // bed for a new filament or printer have loaded), so a slice is current when it lands, and an edit made while it
+            // runs leaves it stale. The plate's number is read then too: a plate deleted or moved while the profile loaded
+            // moves the shown plate's number, and the fingerprint names the plate it reads.
+            let stamped: { at: AppState; fingerprint: string | undefined } | undefined
+            const onStamp = (at: AppState): void => {
+              plate = numberOf(at)
+              stamped = { at, fingerprint: cx?.run?.fingerprint(plate) }
+            }
             // Only the plate asked for slices: another plate shown before it starts slices nothing (slicePlate `plate`).
-            await slicePlate(host, { plate: before.activePlate, onStamp: () => (fingerprint = cx?.run?.fingerprint(plate)) })
+            await slicePlate(host, { plate: before.activePlate, onStamp })
             const after = get()
             const s = after.slice
             // Another plate showed before or while it sliced: the plate asked for has no new slice, and whatever is on
@@ -175,9 +182,15 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
             // only a slice this call made is recorded: when none ran (a host that cannot slice), the one on screen was
             // recorded by whatever made it, and recording it again would stamp it with this moment's plate
             const made = after.slicesDone > before.slicesDone
+            // A plate deleted or moved while it sliced: the number it was stamped with now names another plate, so the
+            // slice is not recorded under it.
+            if (made && stamped && numberOf(after) !== plate) return { status: 'stale', message: STALE_REPLY }
+            const fingerprint = stamped?.fingerprint
             if (made && cx?.run && fingerprint !== undefined) cx.run.update({ plate, slice: { sliceId: r.id, plate, at: new Date().toISOString(), ...figures, fingerprint, stale: false } })
-            // printer.queue sends the runtime's slice of the plate, so this slice replaces any older one there
-            if (made) cx?.sliced?.(plate, r, plateSliceConfig(before, before.plates.find((p) => p.id === before.activePlate)))
+            // printer.queue sends the runtime's slice of the plate, so this slice replaces any older one there, with the
+            // configuration it was stamped with (a refused project setting dropped, the plate as it then was)
+            const at = stamped?.at ?? before
+            if (made) cx?.sliced?.(plate, r, plateSliceConfig(at, at.plates.find((p) => p.id === at.activePlate)))
             return { status: 'done', sliceId: r.id, ...figures }
           },
         },
