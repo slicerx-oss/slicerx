@@ -62,6 +62,15 @@ describe('the desktop plate check', () => {
     expect(tauri.calls).toEqual([])
   })
 
+  it('takes a check the shell stopped for a newer check or an arrange as aborted, and passes other errors on', async () => {
+    tauri.answer = async () => Promise.reject('plate check skipped: a newer one was asked for')
+    await expect(createTauriSlicer().checkPlate!(req)).rejects.toMatchObject({ name: 'AbortError' })
+    tauri.answer = async () => Promise.reject('plate check canceled: the plate is being arranged')
+    await expect(createTauriSlicer().checkPlate!(req)).rejects.toMatchObject({ name: 'AbortError' })
+    tauri.answer = async () => Promise.reject('unknown mesh 9')
+    await expect(createTauriSlicer().checkPlate!(req)).rejects.toBe('unknown mesh 9')
+  })
+
   it('refuses an answer whose certainty does not match its collisions one for one', async () => {
     tauri.answer = async () => ({ ...found, certainty: [] })
     await expect(createTauriSlicer().checkPlate!(req)).rejects.toThrow(/certainty/)

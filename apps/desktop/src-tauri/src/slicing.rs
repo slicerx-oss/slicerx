@@ -357,10 +357,13 @@ pub fn cancel_slice(job: u32, state: State<'_, Slicer>) {
 
 /// What a plate check a newer one overtook answers.
 const CHECK_SKIPPED: &str = "plate check skipped: a newer one was asked for";
+/// What a plate check an arrange started after it stopped answers.
+const CHECK_CANCELED: &str = "plate check canceled: the plate is being arranged";
 
 /// heimdall's check of a by-object plate before a slice ([`sx_core::api::check_plate`]), on the blocking pool, so the
-/// window never waits on it. `job` numbers the page's checks: they run one at a time, and one still waiting when a
-/// newer one is asked for is skipped with an error. It slices nothing and keeps or touches no session.
+/// window never waits on it. `job` numbers the page's checks: they run one at a time, and one a newer check or an
+/// arrange overtakes stops with an error, waiting or running, so it never holds the pool for a plate nobody waits on.
+/// It slices nothing and keeps or touches no session.
 #[tauri::command]
 pub async fn check_plate(
     request: String,
@@ -368,31 +371,58 @@ pub async fn check_plate(
     state: State<'_, Slicer>,
 ) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
-    let meshes = lock(&state.meshes).clone();
-    let checks = state.checks.clone();
-    checks.newest.fetch_max(job, Ordering::Relaxed);
-    tauri::async_runtime::spawn_blocking(move || run_check(&req, &meshes, &checks, job))
+    let (meshes, checks, arranges) = begin_check(&state, job);
+    tauri::async_runtime::spawn_blocking(move || run_check(&req, &meshes, &checks, job, arranges))
         .await
         .map_err(|e| e.to_string())?
 }
 
-/// The checks the page asked for: the newest one's number, and a lock held while one runs.
+/// The checks the page asked for: the newest one's number, how many arranges have started, and a lock held while
+/// one runs.
 #[derive(Default, Clone)]
 struct Checks {
     newest: Arc<AtomicU32>,
+    arranges: Arc<AtomicU32>,
     running: Arc<Mutex<()>>,
 }
 
-/// Runs check `job` once the one before it is done, unless a newer one was asked for in the meantime.
+/// Check `job` asked for: the meshes it checks, the checks, and the arranges started so far.
+fn begin_check(state: &Slicer, job: u32) -> (HashMap<u32, Arc<Mesh>>, Checks, u32) {
+    let meshes = lock(&state.meshes).clone();
+    let checks = state.checks.clone();
+    checks.newest.fetch_max(job, Ordering::Relaxed);
+    let arranges = checks.arranges.load(Ordering::Relaxed);
+    (meshes, checks, arranges)
+}
+
+/// An arrange starting: every check asked for before it stops, and the meshes it lays out.
+fn begin_arrange(state: &Slicer) -> HashMap<u32, Arc<Mesh>> {
+    state.checks.arranges.fetch_add(1, Ordering::Relaxed);
+    lock(&state.meshes).clone()
+}
+
+/// Runs check `job` once the one before it is done. A newer check asked for, or an arrange started after `arranges`
+/// of them, stops it, before it starts or as it runs (between objects, bands of layers and moves), with an error and
+/// no answer.
 fn run_check(
     req: &SliceRequest,
     meshes: &HashMap<u32, Arc<Mesh>>,
     checks: &Checks,
     job: u32,
+    arranges: u32,
 ) -> Result<serde_json::Value, String> {
+    let newer = || checks.newest.load(Ordering::Relaxed) > job;
+    let arranged = || checks.arranges.load(Ordering::Relaxed) != arranges;
+    let stopped = || {
+        if newer() {
+            CHECK_SKIPPED.to_string()
+        } else {
+            CHECK_CANCELED.to_string()
+        }
+    };
     let _one = lock(&checks.running);
-    if checks.newest.load(Ordering::Relaxed) > job {
-        return Err(CHECK_SKIPPED.into());
+    if newer() || arranged() {
+        return Err(stopped());
     }
     let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
         r.parse::<u32>()
@@ -403,7 +433,10 @@ fn run_check(
                 reason: format!("unknown mesh {r}"),
             })
     };
-    let check = sx_core::api::check_plate(req, &lookup).map_err(|e| e.to_string())?;
+    let check = match sx_core::api::check_plate_until(req, &lookup, &|| newer() || arranged()) {
+        Err(Error::Cancelled) => return Err(stopped()),
+        other => other.map_err(|e| e.to_string())?,
+    };
     serde_json::to_value(&check).map_err(|e| e.to_string())
 }
 
@@ -411,7 +444,8 @@ fn run_check(
 /// so the window never waits on it: the layout sx and the MCP server give the same plate, from the meshes the page
 /// loaded (by id, nothing sent again). The answer is the engine's report: each placed object's new transform, the
 /// objects with no room, and with `newPlates` their layouts on new plates. `on_layout` gets the plate's first layout
-/// before the plate check runs on it, so the page shows it at once. It slices nothing and keeps or touches no session.
+/// before the plate check runs on it, so the page shows it at once. A page check asked for before it stops, so the
+/// arrange never waits on the pool behind it. It slices nothing and keeps or touches no session.
 #[tauri::command]
 pub async fn arrange_plate(
     request: String,
@@ -419,7 +453,7 @@ pub async fn arrange_plate(
     state: State<'_, Slicer>,
 ) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
-    let meshes = lock(&state.meshes).clone();
+    let meshes = begin_arrange(&state);
     tauri::async_runtime::spawn_blocking(move || {
         run_arrange(req, &meshes, &mut |v| {
             // A page that went away is not an error: the layout still comes back.
@@ -708,9 +742,8 @@ mod tests {
     fn check(state: &Slicer, request: &serde_json::Value, job: u32) -> Result<serde_json::Value, String> {
         let req: SliceRequest =
             serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
-        let meshes = lock(&state.meshes).clone();
-        state.checks.newest.fetch_max(job, Ordering::Relaxed);
-        run_check(&req, &meshes, &state.checks, job)
+        let (meshes, checks, arranges) = begin_check(state, job);
+        run_check(&req, &meshes, &checks, job, arranges)
     }
 
     #[test]
@@ -756,6 +789,111 @@ mod tests {
         let mut lost = request.clone();
         lost["plate"]["objects"][0]["mesh"] = serde_json::json!(999);
         assert!(check(&state, &lost, 6).is_err());
+    }
+
+    /// `n` copies of one 20 mm cube `h` mm tall, all on one spot of the P1S bed, printed by object: every band of each
+    /// copy meets every other copy, so its plate check runs a long time (8 copies 200 mm tall: about 20 s in a test
+    /// build; 50 copies: minutes).
+    fn stacked(state: &Slicer, n: usize, h: f32) -> serde_json::Value {
+        let mut request = by_object_pair(state, 3.0);
+        let mesh = add(state, "tall.stl", &cube_stl(20.0, 20.0, h));
+        let objects: Vec<serde_json::Value> = (0..n)
+            .map(|k| serde_json::json!({ "id": format!("c{k}"), "name": format!("c{k}"), "mesh": mesh, "transform": at(118.0, 118.0, 0.0) }))
+            .collect();
+        request["plate"]["objects"] = objects.into();
+        request
+    }
+
+    /// Runs `f` on a thread of its own and waits at most `limit` for its answer: a test that fails here does not wait
+    /// for the rest of a long run.
+    fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(limit).ok()
+    }
+
+    /// Waits until a check holds the checks' lock, then a little longer, so the check is well into its walk.
+    fn while_checking(checks: &Checks) {
+        let t = Instant::now();
+        while checks.running.try_lock().is_ok() {
+            assert!(t.elapsed() < Duration::from_secs(60), "no check started");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    #[test]
+    fn an_arrange_stops_a_stale_plate_check_instead_of_waiting_behind_it() {
+        let state = Arc::new(Slicer::default());
+        let request = stacked(&state, 8, 200.0);
+        let t = Instant::now();
+        arrange_now(&state, &request).expect("the copies arrange");
+        let alone = t.elapsed();
+        // The check of the plate as it opened is still running when Arrange starts.
+        let stale = {
+            let (state, request) = (state.clone(), request.clone());
+            std::thread::spawn(move || check(&state, &request, 1))
+        };
+        while_checking(&state.checks);
+        let bound = alone * 2 + Duration::from_secs(3);
+        let t = Instant::now();
+        let arranged = {
+            let (state, request) = (state.clone(), request.clone());
+            within(bound, move || arrange_now(&state, &request))
+        };
+        let busy = t.elapsed();
+        eprintln!("arrange alone {alone:?}, beside a stale check {busy:?}");
+        assert!(
+            arranged.is_some_and(|a| a.is_ok()),
+            "Arrange waited behind the stale check: over {bound:?}, {alone:?} alone"
+        );
+        let answer = within(Duration::from_secs(10), move || {
+            stale.join().expect("the check thread")
+        });
+        assert_eq!(
+            answer,
+            Some(Err(CHECK_CANCELED.to_string())),
+            "the stale check stops with no answer"
+        );
+    }
+
+    #[test]
+    fn a_newer_plate_check_stops_the_one_running() {
+        let state = Arc::new(Slicer::default());
+        let stale = stacked(&state, 50, 40.0);
+        let pair = by_object_pair(&state, 3.0);
+        let alone = check(&state, &pair, 1).expect("the pair checks");
+        let older = {
+            let (state, stale) = (state.clone(), stale.clone());
+            std::thread::spawn(move || check(&state, &stale, 2))
+        };
+        while_checking(&state.checks);
+        let t = Instant::now();
+        let newer = {
+            let state = state.clone();
+            within(Duration::from_secs(10), move || check(&state, &pair, 3))
+        };
+        eprintln!("the newer check answered in {:?}", t.elapsed());
+        let newer = newer
+            .expect("the newer check waited behind the older one")
+            .expect("the pair checks");
+        // Its answer is the one it gives alone (the timing aside).
+        assert_eq!(newer["collisions"], alone["collisions"]);
+        assert_eq!(newer["certainty"], alone["certainty"]);
+        let older = within(Duration::from_secs(10), move || {
+            older.join().expect("the check thread")
+        });
+        assert_eq!(older, Some(Err(CHECK_SKIPPED.to_string())));
+    }
+
+    /// Arranges `request` as the arrange command does, with its first layout let go.
+    fn arrange_now(state: &Slicer, request: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let req: SliceRequest =
+            serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
+        let meshes = begin_arrange(state);
+        run_arrange(req, &meshes, &mut |_| {})
     }
 
     fn arrange(state: &Slicer, request: &serde_json::Value) -> Result<serde_json::Value, String> {
