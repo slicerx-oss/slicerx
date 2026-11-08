@@ -345,16 +345,8 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             if solids.is_empty() {
                 return Err(Error::invalid("solids", "needs at least one solid"));
             }
-            let mut out = m.clone();
-            for c in &convex_pieces(&solids)? {
-                // a cutter face flush with a body face goes past it
-                out = convex::subtract(
-                    &out,
-                    &convex::overshoot_flush(c, &out, crate::solids::OVERSHOOT_MM),
-                )?;
-            }
-            let mut out = emboss::merge_coplanar_changed(&out, &m)?;
-            convex::flip_needles(&mut out);
+            #[allow(unused_mut, reason = "faces are added only in builds with the cad feature")]
+            let mut out = cut_out(&m, &solids)?;
             // The faces, found here on the f64 result: the answer rounds the corners to f32, and after that a
             // corner the cut left on a chord of a hole's wall reads as a seam, so the wall no longer fits a cylinder.
             // What the part's own faces knew (a wall an earlier cut found, the keys) carries over.
@@ -674,6 +666,76 @@ pub(crate) fn read_model(req: &Value, files: FileLoader<'_>) -> Result<import::I
             ));
         }
     })
+}
+
+/// the part with the solids cut out by convex cuts; where those leave it open or crossing itself at storage precision
+/// (a bore that runs along a round the part already has), the boolean engine cuts it instead
+fn cut_out(m: &TriMesh, solids: &[SolidSpec]) -> Result<TriMesh> {
+    let mut out = m.clone();
+    let mut cutters = Vec::new();
+    for c in &convex_pieces(solids)? {
+        // a cutter face flush with a body face goes past it
+        let c = convex::overshoot_flush(c, &out, crate::solids::OVERSHOOT_MM);
+        out = convex::subtract(&out, &c)?;
+        cutters.push(c);
+    }
+    let mut out = emboss::merge_coplanar_changed(&out, m)?;
+    convex::flip_needles(&mut out);
+    let Some(b) = m.bounds() else {
+        return Ok(out);
+    };
+    if crate::boolean::stores_clean(&out) || !crate::boolean::stores_clean(m) {
+        return Ok(out);
+    }
+    let (c, s) = (b.center(), b.diagonal().max(1.0) * 4.0);
+    let tools: Vec<TriMesh> = cutters.iter().map(|k| k.to_mesh(c, s)).collect();
+    let opts = crate::boolean::BooleanOptions::default();
+    if let Ok((r, mut report)) = crate::boolean::boolean(
+        std::slice::from_ref(m),
+        &tools,
+        crate::boolean::BoolOp::Difference,
+        &opts,
+    ) {
+        let r = settle(crate::boolean::tidy(r, &mut report));
+        if crate::boolean::stores_clean(&r) {
+            return Ok(r);
+        }
+    }
+    Ok(out)
+}
+
+/// a cut's result with the slivers it leaves where its cutter runs along the part settled, so it stores: needles
+/// turned away, and corners a float step or two apart made one
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "rounding to the f32 the result is stored in"
+)]
+fn settle(mut r: TriMesh) -> TriMesh {
+    convex::flip_needles(&mut r);
+    if crate::boolean::stores_clean(&r) {
+        return r;
+    }
+    for p in &mut r.positions {
+        *p = p.map(|v| f64::from(v as f32));
+    }
+    let mut r = r.weld(r.bounds().map_or(1e-6, |b| b.diagonal() * 1e-7));
+    r.faces = None;
+    r.triangles
+        .retain(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
+    // two triangles on the same corners facing apart are a fin of no volume: both go
+    let mut seen: std::collections::HashMap<[u32; 3], usize> = std::collections::HashMap::new();
+    for t in &r.triangles {
+        let mut k = *t;
+        k.sort_unstable();
+        *seen.entry(k).or_default() += 1;
+    }
+    r.triangles.retain(|t| {
+        let mut k = *t;
+        k.sort_unstable();
+        seen.get(&k) == Some(&1)
+    });
+    convex::flip_needles(&mut r);
+    r
 }
 
 fn convex_pieces(specs: &[SolidSpec]) -> Result<Vec<convex::ConvexSolid>> {
@@ -2039,8 +2101,8 @@ mod tests {
                 stem["triangles"].as_u64().unwrap(),
                 b["triangles"].as_u64().unwrap(),
             );
-            // 15234 now
-            assert!(after * 20 < before * 21, "{before} became {after}");
+            // 15854 now
+            assert!(after * 10 < before * 11, "{before} became {after}");
             assert_eq!(b["watertight"], true);
             // through the outer wall into the bore, and from inside the wall
             rods_join(&b, 124.0, 20.0);
@@ -2098,6 +2160,75 @@ mod tests {
             let (before, after) = (caps(&disc), caps(&cut));
             assert!(before.len() > 100, "{}", before.len());
             assert_eq!(before, after);
+        }
+
+        /// a 12 mm thick d110 disc at (128, 128) with a stem turned up from it, then a bore of `d` from below
+        fn stand_bore(profile: &[[f64; 2]], d: f64) -> (Value, Value) {
+            let base = faced(
+                "shape.extrude",
+                &json!({ "frame": { "origin": [128, 128, 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                    "shape": { "type": "circle", "diameterMm": 110 }, "spec": { "distanceMm": 12 } }),
+            )
+            .unwrap();
+            let stem = faced(
+                "sketch.revolve",
+                &json!({ "frame": { "origin": [128, 128, 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] },
+                    "loops": [{ "points": profile }], "axis": { "point": [0, 0], "direction": [0, 1] },
+                    "operation": "join", "target": part(&base) }),
+            )
+            .unwrap();
+            let bore = faced(
+                "subtract",
+                &json!({ "mesh": part(&stem), "solids": [{ "type": "cylinder", "origin": [128, 128, -1], "axis": [0, 0, 1],
+                    "diameterMm": d, "heightMm": 14 }] }),
+            )
+            .unwrap();
+            (stem, bore)
+        }
+
+        #[test]
+        fn a_bore_along_a_turned_hole_of_its_own_size_stays_closed() {
+            // the stem's hole is 25 mm where it meets the disc, as the bore is: the bore's edges run along the hole's
+            // rim and the convex cut left the part open (21 open edges), which repair could not always close
+            let (_, bore) = stand_bore(
+                &[
+                    [12.5, 6.0],
+                    [15.0, 6.0],
+                    [15.0, 12.0],
+                    [11.0, 162.0],
+                    [8.5, 162.0],
+                    [12.5, 12.0],
+                ],
+                25.0,
+            );
+            assert_eq!(bore["watertight"], true, "{}", bore["edges"]);
+            let fixed = run("repair", &json!({ "mesh": bore["mesh"] }));
+            assert_eq!(fixed["report"]["watertight"], true, "{}", fixed["report"]);
+        }
+
+        #[test]
+        fn a_rod_joins_a_stem_whose_bore_crosses_its_hole_at_a_shallow_angle() {
+            // a 24.4 mm bore meets a hole that closes in from 25 mm at a shallow angle: the convex cut crosses itself
+            // once stored, so the boolean engine cuts it, and a rod joined after it still stores
+            let (_, bore) = stand_bore(
+                &[
+                    [12.0, 6.0],
+                    [15.0, 6.0],
+                    [15.0, 14.0],
+                    [11.0, 162.0],
+                    [8.5, 162.0],
+                    [12.5, 14.0],
+                ],
+                24.4,
+            );
+            assert_eq!(bore["watertight"], true);
+            let ex = faced(
+                "shape.extrude",
+                &json!({ "frame": { "origin": [138, 131, 155], "normal": [1, 0, 0], "u": [0, 1, 0], "v": [0, 0, 1] },
+                    "shape": { "type": "circle", "diameterMm": 12 }, "spec": { "distanceMm": 50, "operation": "join" },
+                    "target": part(&bore) }),
+            );
+            assert!(ex.is_ok(), "{ex:?}");
         }
 
         #[test]
