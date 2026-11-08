@@ -647,14 +647,19 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
 
 /**
  * The edges as they are painted: about 1.5 screen px wide (2 device px at the least, so a 1x screen gets more than a
- * hairline), grown right and down into the part only, so the silhouette keeps its size over the card.
+ * hairline), grown right and down into the part only, so the silhouette keeps its size over the card. A lone edge
+ * pixel with no edge beside it (a speck where a round's facets graze the view) is left out, so curves stay clean.
  */
 export function paintedEdges(r: Raster): Uint8Array {
   const grow = Math.max(2, Math.round(1.5 * r.px)) - 1
   const out = new Uint8Array(r.edge.length)
+  const lone = (x: number, y: number): boolean => {
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if ((i || j) && x + i >= 0 && y + j >= 0 && x + i < r.W && y + j < r.H && r.edge[(y + j) * r.W + x + i]) return false
+    return true
+  }
   for (let y = 0; y < r.H; y++) {
     for (let x = 0; x < r.W; x++) {
-      if (!r.edge[y * r.W + x]) continue
+      if (!r.edge[y * r.W + x] || lone(x, y)) continue
       for (let j = 0; j <= grow && y + j < r.H; j++) {
         for (let i = 0; i <= grow && x + i < r.W; i++) {
           const k = (y + j) * r.W + x + i

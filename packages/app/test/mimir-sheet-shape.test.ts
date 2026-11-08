@@ -465,12 +465,20 @@ describe('leaders to callouts', () => {
 
 describe('the part\'s edges as painted', () => {
   const shape = shapeOfSolids([{ plane: 'xy', points: [[0, 0], [40, 0], [40, 30], [0, 30]], from: 0, to: 20 }])
+  it('leave out a lone speck with no edge beside it, and keep every line', () => {
+    const ras = { W: 8, H: 8, px: 1, cover: new Uint8Array(64).fill(1), edge: new Uint8Array(64), depth: new Float32Array(64) }
+    ras.edge[2 * 8 + 2] = 1
+    for (let x = 1; x < 7; x++) ras.edge[6 * 8 + x] = 1
+    const ink = paintedEdges(ras)
+    expect(ink[2 * 8 + 2]).toBe(0)
+    for (let x = 1; x < 7; x++) expect(ink[6 * 8 + x]).toBe(1)
+  })
+
   it('are two device px wide on a 1x screen and three at 2x, grown into the part only', () => {
     for (const [px, width] of [[1, 2], [2, 3]] as const) {
       const ras = rasterize(shape, 'front', 260 * px, 140 * px, 5, 20, 120, px)
       const ink = paintedEdges(ras)
       for (let i = 0; i < ink.length; i++) {
-        if (ras.edge[i]) expect(ink[i]).toBe(1)
         if (ink[i] && !ras.edge[i]) expect(ras.cover[i], `pixel ${i} off the part`).toBe(1)
       }
       // across the box's left outline, in the middle of its height
