@@ -5,7 +5,7 @@
 // on real designs, whose facts are read from the body the steps made.
 import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
 import { createPlanRegistry, designCheck, FIX_ROUNDS, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { designToolset } from '../src/toolset'
@@ -285,11 +285,16 @@ describe('minWall', () => {
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
-/** A design of one closed box part, no steps, on a host whose engine says every mesh is closed and finds no holes. */
+/** A design of one closed box part, no steps, on a host whose engine finds no holes and is never asked whether a part is closed. */
 const boxDesign = (id: string, name: string): HostDesign => {
   const m = meshOf(boxTris([0, 0, 0], [40, 20, 5]))
   return { id, name, history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [{ name, slot: 0, ...m }], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
 }
+/** Every op the hosts below were asked to run; design.check must never ask for info. */
+const engineOps: string[] = []
+afterAll(() => {
+  expect(engineOps).not.toContain('info')
+})
 const hostOf = (all: HostDesign[]): DesignHost =>
   ({
     get: (id: string) => {
@@ -301,7 +306,10 @@ const hostOf = (all: HostDesign[]): DesignHost =>
     create: async () => Promise.reject(new Error('not here')),
     add: async () => Promise.reject(new Error('not here')),
     replay: async () => {},
-    call: async (op: string) => (op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))),
+    call: async (op: string) => {
+      engineOps.push(op)
+      return Promise.reject(new Error(op === 'info' ? 'design.check reads closure itself, not from the engine' : 'no hole there'))
+    },
   }) as unknown as DesignHost
 
 const boxPlan: PartPlan = { planId: 'box-1', part: 'Spacer', units: 'mm', features: [], overall: { x: 40, y: 20, z: 5 }, assumptions: [], questions: [] }
