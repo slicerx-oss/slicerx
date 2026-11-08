@@ -14,6 +14,13 @@ export interface MimirScript {
   /** Words in the message that pick this script. */
   match: RegExp
   steps: ScriptStep[]
+  /** Only in a build for the end-to-end tests (`build.e2e`): a script that exists to show a line on screen, not one a person asks for. */
+  testOnly?: true
+}
+
+/** The scripts this build answers with: a build for the end-to-end tests has them all, any other leaves out the test-only ones. */
+export function scriptsFor(scripts: readonly MimirScript[], e2e: boolean): MimirScript[] {
+  return e2e ? [...scripts] : scripts.filter((s) => !s.testOnly)
 }
 
 /** The text of the last thing the person said: their request, without the app's context the runtime puts before it. */
