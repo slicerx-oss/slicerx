@@ -167,33 +167,55 @@ export function startsPart(name: string, input: unknown): boolean {
   return op === undefined || op === 'new'
 }
 /**
- * A second design.new in one reply that starts the same part again: a step that went wrong is fixed in the design already
- * started, not by starting the part again beside it. A separate part the message or its plan names starts its own design.
+ * Why a second design.new in one reply is a restart of a part the reply started: that part has no body yet, its last
+ * step did not go through, or the new name is that part's name again (restartOf).
  */
-export const ONE_PART_NOTE = (name: string, id: string): string =>
-  `Nothing was started. ${name} (${id}) is the part this reply builds, and this starts it again, so fix it there: a step that did not go through changed nothing, and design.undo takes back the last step that did. To add a separate part that the message or its plan names, start it with design.new under that part's own name.`
-/** The code on that refusal, so a replay of a reply recorded before it can tell (the creative eval). */
-export const SAME_PART = 'same_part'
-/** Words in a part's name that say nothing about which part it is: versions, retries and filler. */
-const PART_FILLER = new Set(['an', 'the', 'and', 'or', 'of', 'for', 'with', 'to', 'in', 'on', 'at', 'by', 'as', 'it', 'its', 'part', 'piece', 'design', 'new', 'version', 'copy', 'again', 'retry', 'redo', 'fixed', 'fix', 'clean', 'cleaner', 'separate', 'second', 'third', 'another', 'one', 'two', 'three', 'rev', 'try', 'attempt', 'final', 'updated', 'better', 'improved', 'sturdier', 'stronger'])
-/** The words of a part's name or a request that tell parts apart, lowercase and singular. */
-export function partWords(text: string): Set<string> {
-  const out = new Set<string>()
-  for (const w of text.toLowerCase().match(/[a-z]+/g) ?? []) {
-    const one = w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w
-    if (one.length < 2 || PART_FILLER.has(one) || PART_FILLER.has(w)) continue
-    out.add(one)
-  }
-  return out
+export type Restart = 'no_body' | 'failed' | 'same_name'
+/** A part a reply started with design.new: whether it has a body yet, and whether its last step did not go through. */
+interface StartedPart {
+  id: string
+  name: string
+  body: boolean
+  failed: boolean
 }
 /**
- * Whether a design.new named `name` starts a separate part rather than one of the `started` parts again: its name has a
- * word that `named` (the person's message and the approved plan) holds and no started part's name does.
+ * The answer to a second design.new in one reply that starts a part again: a step that went wrong is fixed in the design
+ * already started, not by starting the part again beside it. A separate part waits until the started one has a body.
  */
-export function separatePart(name: string, started: readonly string[], named: string): boolean {
-  const before = new Set(started.flatMap((n) => [...partWords(n)]))
-  const asked = partWords(named)
-  return [...partWords(name)].some((w) => !before.has(w) && asked.has(w))
+export const ONE_PART_NOTE = (name: string, id: string, why: Restart): string => {
+  const reason =
+    why === 'no_body'
+      ? `${name} (${id}), the part this reply started, has no body yet`
+      : why === 'failed'
+        ? `the last step on ${name} (${id}), the part this reply started, did not go through`
+        : `this name starts ${name} (${id}), a part this reply already started, again`
+  return `Nothing was started, since ${reason}. Fix the part you started: design.undo takes back the last step that went through, a step that did not go through changed nothing, and the next step goes on in ${id}. A separate part gets its own design.new under its own name once the part you started has a body.`
+}
+/** The code on that refusal, so a replay of a reply recorded before it can tell (the creative eval). */
+export const SAME_PART = 'same_part'
+/** Words in a part's name that only say which try or version it is. */
+const VERSION_WORDS = new Set(['new', 'again', 'retry', 'redo', 'redone', 'fix', 'fixed', 'corrected', 'improved', 'better', 'updated', 'revised', 'rework', 'reworked', 'final', 'version', 'ver', 'rev', 'copy', 'attempt', 'try', 'another', 'second', 'alt'])
+/**
+ * The words of a part's name, lowercase, in any script, without version words ("v2", "rev3", "new", "fixed"). A bare
+ * number is a version word too, unless `numbered`: in "Bracket 1" and "Bracket 2" the number tells the parts apart.
+ */
+function nameWords(name: string, numbered: boolean): string[] {
+  const words = name.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
+  return words.filter((w) => !VERSION_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w) && (numbered || !/^\d+$/.test(w)))
+}
+/**
+ * The started part a design.new named `name` starts again, by name alone: its name without version words is that part's
+ * name, or holds every word of it ("Cable clip 3 mm" after "Cable clip", "Box with lid" after "Box"). Undefined when the
+ * name is another part's. Only names are compared, never the person's message, so it reads the same in any language.
+ */
+export function restartOf<T extends { name: string }>(name: string, started: readonly T[]): T | undefined {
+  return started.findLast((part) => {
+    const numbered = /\d/.test(part.name.replace(/\b(v|ver|rev|mk)\d+\b/gi, ''))
+    const was = nameWords(part.name, numbered)
+    const now = new Set(nameWords(name, numbered))
+    if (was.length === 0) return now.size === 0
+    return was.every((w) => now.has(w))
+  })
 }
 /** The answer to a new part started before its sizes were confirmed on a sheet. */
 export const SHEET_FIRST_NOTE = 'Nothing was built. Before a new part, show its sizes with pilot.sheet (views top, front, side and iso) and wait for the person to confirm them, then build with the confirmed values. A size the person gave in the request goes on the sheet as asked.'
@@ -224,17 +246,6 @@ export function planLimits(call: Pick<LlmToolCall, 'name' | 'arguments'>, result
     return { steps: Math.min(PLAN_STEPS_MAX, at.step + room), calls: Math.min(PLAN_CALLS_PER_STEP * PLAN_STEPS_MAX, at.calls + PLAN_CALLS_PER_STEP * room) }
   } catch {
     return undefined
-  }
-}
-
-/** The part and feature names of a design.plan call, the parts an approved plan names. */
-function planNames(args: string): string {
-  try {
-    const p = JSON.parse(args || '{}') as { part?: unknown; features?: unknown }
-    const features = Array.isArray(p.features) ? p.features.map((f) => (f as { name?: unknown } | null)?.name) : []
-    return [p.part, ...features].filter((n): n is string => typeof n === 'string').join('\n')
-  } catch {
-    return ''
   }
 }
 
@@ -411,13 +422,40 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // the designs each session's confirmed sheet started parts in, and the sessions whose run carries that sheet over
   const sheetDesigns = new Map<string, Set<string>>()
   const carried = new Set<string>()
-  // the designs each session's current run started with design.new: a second design.new in the same run that starts one
-  // of them again is refused, and a separate part the message or its plan names goes on (separatePart)
-  const runPart = new Map<string, { id: string; name: string }[]>()
-  // what the person's message in each session's current run says, and the session's last approved plan (its part and
-  // features): the parts a reply may start
-  const requests = new Map<string, string>()
-  const planned = new Map<string, string>()
+  // the designs each session's current run started with design.new, whether each has a body and whether its last step
+  // went through: a second design.new in the same run that starts one of them again is refused (restartOf)
+  const runPart = new Map<string, StartedPart[]>()
+  // A step on a part the run started: a call that changes a design (not a read) in that part's design, or with no
+  // design named, a modeling step in the part started last. It marks the part as having a body once a step makes one,
+  // and as failed while its last step did not go through.
+  const stepOn = (sessionId: string, call: LlmToolCall, message: string): void => {
+    const parts = runPart.get(sessionId)
+    const tool = findTool(call.name)
+    if (!parts?.length || !tool || call.name === 'design.new') return
+    let input: unknown
+    let permission: string
+    try {
+      input = JSON.parse(call.arguments.trim() || '{}')
+      permission = tool.permissionFor?.(input) ?? tool.permission
+    } catch {
+      input = undefined
+      permission = tool.permission
+    }
+    if (permission === 'read') return
+    const design = (input as { design?: unknown } | null | undefined)?.design
+    const part = typeof design === 'string' ? parts.find((p) => p.id === design) : call.name.startsWith('geom.') ? parts.at(-1) : undefined
+    if (!part) return
+    part.failed = !message.startsWith('{"ok":true')
+    if (part.failed) return
+    if (startsPart(call.name, input)) part.body = true
+    try {
+      // a step that reads the design back says whether it has a body now (an undo can take the only one away)
+      const after = (JSON.parse(message) as { result?: { design?: unknown; parts?: unknown } }).result
+      if (after?.design === part.id && Array.isArray(after.parts)) part.body = after.parts.length > 0
+    } catch {
+      // a long answer is cut short and no longer parses; the call itself still counts
+    }
+  }
   const startedUnder = (sessionId: string, design: string): void => {
     const set = sheetDesigns.get(sessionId) ?? new Set<string>()
     set.add(design)
@@ -700,14 +738,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const input = parsed.data
     const began = tool.name === 'design.new' ? runPart.get(sessionId) : undefined
     if (began?.length) {
+      // the part started last must have a body and its last step must have gone through before another part starts,
+      // and a part already started is never started again under its own name
+      const last = began.at(-1)!
       const name = (input as { name?: unknown } | null)?.name
-      const named = `${requests.get(sessionId) ?? ''}\n${planned.get(sessionId) ?? ''}`
-      if (typeof name !== 'string' || !separatePart(name, began.map((b) => b.name), named)) {
-        // the note names the started part this one repeats, or the first when no name says
-        const words = partWords(typeof name === 'string' ? name : '')
-        const same = began.findLast((b) => [...partWords(b.name)].some((w) => words.has(w))) ?? began[0]!
-        return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(same.name, same.id) }), stop: false }
-      }
+      const same = restartOf(typeof name === 'string' ? name : '', began)
+      const refused: [StartedPart, Restart] | undefined = last.failed ? [last, 'failed'] : !last.body ? [last, 'no_body'] : same ? [same, 'same_name'] : undefined
+      if (refused) return { message: JSON.stringify({ ok: false, blocked: true, code: SAME_PART, message: ONE_PART_NOTE(refused[0].name, refused[0].id, refused[1]) }), stop: false }
     }
     let starting = false
     if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
@@ -831,8 +868,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     emit(result)
     // the part this chat prints is the design it started last
     if (tool.name === 'design.new' && out.ok !== false) {
-      const made = out.output as { design?: unknown; name?: unknown } | undefined
-      if (typeof made?.design === 'string' && made.design) runPart.set(sessionId, [...(runPart.get(sessionId) ?? []), { id: made.design, name: typeof made.name === 'string' && made.name ? made.name : 'The design' }])
+      const made = out.output as { design?: unknown; name?: unknown; parts?: unknown } | undefined
+      // a design started from a model has its body at once
+      const body = Array.isArray(made?.parts) && made.parts.length > 0
+      if (typeof made?.design === 'string' && made.design) runPart.set(sessionId, [...(runPart.get(sessionId) ?? []), { id: made.design, name: typeof made.name === 'string' && made.name ? made.name : 'The design', body, failed: false }])
     }
     if (runBook && builtin && tool.name === 'design.new' && out.ok !== false) {
       const design = (out.output as { design?: unknown } | undefined)?.design
@@ -851,7 +890,6 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
 
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done'; capped?: true }> {
     runPart.delete(sessionId)
-    requests.set(sessionId, messages.findLast((m) => m.role === 'user')?.content ?? '')
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
@@ -1146,6 +1184,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
         const res = await execute(call, sessionId, context, watch, signal, citations, cards)
+        stepOn(sessionId, call, res.message)
         if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
           why = 'struggle'
@@ -1156,7 +1195,6 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         // the person's Go on a plan: the run gets the steps and calls the plan needs, so it builds all of it
         const more = planLimits(call, res.message, { step, calls })
         if (more) {
-          planned.set(sessionId, planNames(call.arguments))
           maxSteps = Math.max(maxSteps, more.steps)
           maxToolCalls = Math.max(maxToolCalls, more.calls)
         }
