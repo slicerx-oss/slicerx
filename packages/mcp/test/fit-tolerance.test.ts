@@ -379,6 +379,55 @@ describe('the fit tolerance', () => {
     for (const at of [[10, 4.9], [10, 5.1], [10, 4.5]] as [number, number][]) await expectFlat(`slotted plate, from ${at.join(', ')}`, (g) => stacked(plate, slotted, g, at, { step: 0.2 }))
   })
 
+  /**
+   * fitFacts over a plate's top at z 5 under a bottom face of the upper body that is a level strip `stripMm` wide (along x,
+   * 20 mm long) with a chamfer 3 mm wide on each side, rising away from it by `left` and `right` degrees (none: the strip
+   * ends at a wall). The gap runs from the plate straight up to the middle of the strip.
+   */
+  const chamfered = async (stripMm: number, left: number | null, right: number | null, gapMm: number, turnDeg = 0) => {
+    const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
+    const z = 5 + gapMm
+    const h = stripMm / 2
+    // x breaks across the bottom face, each with its height
+    const cols: [number, number][] = [[-h, z], [h, z]]
+    if (left !== null) cols.unshift([-h - 3, z + 3 * Math.tan((left * Math.PI) / 180)])
+    if (right !== null) cols.push([h + 3, z + 3 * Math.tan((right * Math.PI) / 180)])
+    const [cos, sin] = [Math.cos((turnDeg * Math.PI) / 180), Math.sin((turnDeg * Math.PI) / 180)]
+    const positions: number[] = []
+    for (const [x, zz] of cols) for (const y of [0, 20]) positions.push(x * cos - y * sin, x * sin + y * cos, zz)
+    const indices: number[] = []
+    for (let i = 0; i + 1 < cols.length; i++) {
+      const [a, b, c, d] = [i * 2, i * 2 + 1, i * 2 + 3, i * 2 + 2]
+      // wound to face down
+      indices.push(a, b, c, a, c, d)
+    }
+    const upper: HistoryMesh = { name: 'Pin', slot: 0, positions, indices }
+    const lower = face('Arm', [[-10, -5, 10, 25]], 5, 0.5, true, turnDeg)
+    const p: [number, number] = [-10 * 0 + 0 * cos - 10 * sin, 0 * sin + 10 * cos]
+    const report = {
+      parts: [
+        { bounds: { min: [0, 0, 0], max: [1, 1, 5] }, item: 0 },
+        { bounds: { min: [0, 0, z], max: [1, 1, 6] }, item: 1 },
+      ],
+      gaps: [{ parts: [0, 1], gapMm, limitMm: limits.verticalMm, kind: 'vertical', from: [...p, 5], to: [...p, z] }],
+      pieces: 2,
+    }
+    const fit = await fitFacts({ call: async () => report } as unknown as DesignHost, designOf([lower, upper]), limits)
+    return { gap: fit.gaps[0]!, limits }
+  }
+
+  it('a level strip with a chamfer on one side only, or on both sides steeper than 30 degrees, stays a flat face', async () => {
+    for (const strip of [1.5, 2.5]) {
+      for (const [left, right] of [[10, null], [null, 20], [29, null], [31, 31], [40, 40], [10, 40]] as const) {
+        const { gap, limits } = await chamfered(strip, left, right, 0.38)
+        const what = `${strip} mm strip, chamfers ${left} and ${right}`
+        expect(gap.flat, what).toBe(true)
+        expect(gap.kind, what).toBe('vertical')
+        expect(fitVerdict(gap, limits), what).toBe('fuses')
+      }
+    }
+  })
+
   it('a flat gap above and below and its verdict agree at float error under the limit', async () => {
     for (const under of [5e-7, 7e-7]) {
       const { gap, limits } = await oneGap('vertical', 0.4 - under)
