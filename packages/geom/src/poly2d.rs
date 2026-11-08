@@ -652,6 +652,37 @@ fn to_segment(p: V2, a: V2, b: V2) -> f64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn simplify_ring_keeps_the_corners_and_drops_points_within_the_tolerance() {
+        // a square with a point midway along each side, one of them a little off the side
+        let ring: Vec<V2> = vec![
+            [0.0, 0.0],
+            [1.0, 0.004],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [2.0, 2.0],
+            [1.0, 2.0],
+            [0.0, 2.0],
+            [0.0, 1.0],
+        ];
+        let corners = vec![[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]];
+        assert_eq!(simplify_ring(&ring, 0.01), corners);
+        assert_eq!(
+            simplify_ring_keep(&ring, 0.01),
+            [true, false, true, false, true, false, true, false]
+        );
+        // under the tolerance the point off the side stays
+        assert_eq!(
+            simplify_ring_keep(&ring, 0.001),
+            [true, true, true, false, true, false, true, false]
+        );
+        // four points or fewer, or no tolerance, keep every point
+        assert_eq!(simplify_ring(&corners, 10.0), corners);
+        assert_eq!(simplify_ring(&ring, 0.0), ring);
+        assert_eq!(simplify_ring(&ring, -1.0), ring);
+        assert!(simplify_ring(&[], 1.0).is_empty());
+    }
+
     fn tri_area(pts: &[V2], tris: &[[u32; 3]]) -> f64 {
         tris.iter()
             .map(|t| orient(pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize]) * 0.5)
