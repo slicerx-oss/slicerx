@@ -8,7 +8,7 @@ import type { Bed, CommandSpec, MeshPart, PilotEvent, PilotMachine } from '@slic
 import { neutralEdition, type EditionConfig } from '@slicerx/edition-config'
 import { modelById } from '@slicerx/printer-catalog'
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
-import { SAME_PART, type LlmClient, type LlmMessage, type ToolHost } from '@slicerx/pilot'
+import { PLAN_LEFT_CODE, SAME_PART, type LlmClient, type LlmMessage, type ToolHost } from '@slicerx/pilot'
 import { assessFit, createEvalEnv, createScriptedClient, noteApprovals, type EvalHosts, type ScriptStepData } from '@slicerx/pilot/evals'
 import { createCardPlans, createPlanRegistry, tabToolset } from '../../src/toolset'
 import { headlessDesignHost, plainBed } from './design-host'
@@ -208,6 +208,8 @@ export interface PromptRun {
   gaps?: GapReport
   /** The model asked (in its reply, or with pilot.ask), and the eval gave it the default answer. */
   answered: boolean
+  /** mimir went on once with the plan approved in the run unfinished (the plan_left note); a live capture stamps it. */
+  planGoesOn?: true
   /** Why the recording no longer stands for what a live run would do (replay only). */
   stale?: string
   error?: string
@@ -222,6 +224,22 @@ export const STALE_TOOLS = 'recorded before the eval had the tab\'s design tools
  * go to a design that was never made.
  */
 export const STALE_RESTART = 'recorded before mimir refused a design.new that starts the same part again (same_part): the replay met that refusal, so a live run captures it again'
+
+/**
+ * Why a recording that gets mimir's note about an unfinished plan is stale: it was captured before mimir went on with a
+ * plan approved in the run (plan_left), so the replay sends a note the model never answered, and what follows is not
+ * what a live run would do.
+ */
+export const STALE_PLAN_GOES_ON = 'recorded before mimir went on with an approved plan it had not finished (plan_left): the replay got that note, which the model never answered, so a live run captures it again'
+
+/**
+ * Whether a replay's run counts toward the score. A recording that got the plan_left note it was never captured with
+ * stands for no reply of the model's, so it is listed as stale and left out, never scored as a failure. Other stale
+ * recordings are scored as before.
+ */
+export function replayScored(run: Pick<PromptRun, 'stale'>): boolean {
+  return run.stale !== STALE_PLAN_GOES_ON
+}
 
 /** Whether a request carries mimir's refusal of a design.new that starts the reply's part again. */
 function restartRefused(messages: readonly LlmMessage[]): boolean {
@@ -244,9 +262,11 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
  * with DEFAULT_ANSWER and lets the model go on (`defaultAnswer`, on unless false; the card and the reply share the one
  * answer). A replay answers only when the recording was captured with the answer (`answerRecorded`); a recorded
  * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset) and one whose
- * reply met the refusal of a restarted part though it was captured before that refusal (STALE_RESTART, `samePart` unset).
+ * reply met the refusal of a restarted part though it was captured before that refusal (STALE_RESTART, `samePart` unset),
+ * or got the note that its approved plan is unfinished though it was captured before that note (STALE_PLAN_GOES_ON,
+ * `planGoesOn` unset).
  */
-export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
+export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
   const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
   const steps: ScriptStepData[] = []
   // a replay that met the refusal of a restarted part: the recording's later steps no longer stand for a live run
@@ -383,6 +403,11 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     }
   }
   if (restarted) stale ??= STALE_RESTART
+  // mimir went on with its unfinished plan: a live capture stamps it, and a replay captured without the stamp is stale
+  if (events.some((e) => e.type === 'error' && e.code === PLAN_LEFT_CODE)) {
+    run.planGoesOn = true
+    if (!opts.client && opts.planGoesOn !== true) stale ??= STALE_PLAN_GOES_ON
+  }
   if (stale) run.stale = stale
   if (error) run.error = error
   return run
