@@ -20,7 +20,8 @@
 // answered, and it ended without building) or none. When it asks, in its reply or on a question card, the eval answers
 // once with run.ts DEFAULT_ANSWER and lets it go on; --no-default-answer turns that off. A replay answers only for a
 // recording captured with the answer, and marks a recorded question without one stale. A recording from before the
-// tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again. The log
+// tab's tools (it called text_to_part or no tool) replays as stale too, until a live run captures it again, and so does
+// one whose reply starts the same part again with a second design.new, which mimir now refuses. The log
 // rows go to @slicerx/pilot's evals LOG.md and results.jsonl, beside the other mimir evals.
 // --provider anthropic is the API mimir's default model runs on; its key comes from ANTHROPIC_API_KEY (or
 // SLICERX_ANTHROPIC_API_KEY), and its cache writes and reads are priced the way mimir cloud bills them (live.ts).
