@@ -272,8 +272,11 @@ export function sketchFromSvg(svg: string, options: SvgSketchOptions = {}, signa
 
 export type SketchTraceMode = 'auto' | 'dark' | 'light' | 'color' | 'alpha'
 
-/** A PNG or JPEG file as base64, or decoded pixels (row by row from the top, 4 bytes each) as base64. */
-export type SketchTraceImage = { base64: string } | { rgba: string; width: number; height: number }
+/**
+ * A PNG or JPEG file as base64, or decoded pixels (row by row from the top, 4 bytes each) as base64, with the size of
+ * the file they were shrunk from so a pixel size means the same as for the file.
+ */
+export type SketchTraceImage = { base64: string } | { rgba: string; width: number; height: number; fileWidth?: number; fileHeight?: number }
 
 export interface SketchTraceOptions {
   /** auto: opaque areas when the image has transparency, else the dark side of an automatic split. */
