@@ -6,7 +6,7 @@
 // any build of it. The tools are mimir tools, so the permission gate applies:
 // analysis is a read, anything that writes a new mesh is in the slice class.
 import { spawn } from 'node:child_process'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
@@ -17,7 +17,7 @@ import { checkReadable, resolveModel, ToolInputError, type PathPolicy } from './
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
 import { modelArg, vec3, type GeomCall } from './args'
-import type { CadFiles } from './cad'
+import { IMAGE_BYTES, imageTooLarge, type CadFiles } from './cad'
 import { readStlPositions } from './mesh'
 
 export { modelArg, vec3, type GeomCall }
@@ -92,8 +92,18 @@ export function geomCaller(deps: GeomToolDeps): GeomCall {
 /** The images design.trace_image reads. */
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg']
 
+/** A PNG or JPEG for design.trace_image: a file inside the directories this server may read, with an image's extension
+ * (after links are followed), and no larger than a trace takes, all checked before a byte of it is read. */
+export function readTraceImage(policy: PathPolicy, p: string): Uint8Array {
+  const real = checkReadable(policy, p, IMAGE_EXTENSIONS)
+  if (!IMAGE_EXTENSIONS.includes(extname(real).toLowerCase())) throw new ToolInputError(`image: ${basename(real)} is not a PNG or JPEG. Pass a .png, .jpg or .jpeg file.`, 'unsupported_format')
+  const size = statSync(real).size
+  if (size > IMAGE_BYTES) throw imageTooLarge(size)
+  return readFileSync(real)
+}
+
 export function cadFiles(deps: GeomToolDeps): CadFiles {
-  return { engine: Boolean(deps.bin), call: geomCaller(deps), path: (model) => resolveModel(deps.policy, model), stl: (stlPath) => readStlPositions(readFileSync(stlPath)), image: (p) => readFileSync(checkReadable(deps.policy, p, IMAGE_EXTENSIONS)) }
+  return { engine: Boolean(deps.bin), call: geomCaller(deps), path: (model) => resolveModel(deps.policy, model), stl: (stlPath) => readStlPositions(readFileSync(stlPath)), image: (p) => readTraceImage(deps.policy, p) }
 }
 
 /** The engine as a history replay calls it: JSON in, meshes back as numbers (with their faces), no files. */

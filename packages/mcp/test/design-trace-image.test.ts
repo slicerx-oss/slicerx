@@ -2,13 +2,18 @@
 // Copyright (C) 2026 The SlicerX contributors
 // design.trace_image: a PNG or JPEG, by path or as base64, is traced through the engine's sketch.trace on this side and
 // its loops go to the timeline through design.sketch; a dry run only reports. With the real engine, a traced
-// rectangle extrudes to the volume its size says.
-import { writeFileSync } from 'node:fs'
+// rectangle extrudes to the volume its size says. A path is checked for its folder, type and size before it is read,
+// and with the app linked the loops go through the routed design.sketch, centered on the app's bed.
+import { closeSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import type { Design, DesignHost, SketchItem, SketchLoop } from '@slicerx/cad-history'
 import { describe, expect, it, vi } from 'vitest'
-import { cadTools } from '../src/cad'
+import { routeToApp, type AppLinkCaller } from '../src/app-route'
+import { cadTools, traceRefusal, wireSketchVia, type SketchVia } from '../src/cad'
+import { readTraceImage } from '../src/geom'
+import type { PathPolicy } from '../src/models'
 import { designToolset, NO_CAD_FILES, NO_ENGINE_HOST } from '../src/toolset'
 import { built, connect, data, GEOM_BUILD } from './helpers'
 
@@ -154,6 +159,121 @@ describe('design.trace_image', () => {
     // loops over what the app link carries
     const wide = host(reply({ loops: Array.from({ length: 250 }, () => ({ start: [0.123456, 0.123456], segments: Array.from({ length: 8 }, () => ({ type: 'line', to: [10.123456, 10.123456] })) })) }))
     await expect(wide.run('design.trace_image', { image: { base64: 'AA' } })).rejects.toThrow(/the trace's loops come to \d+(\.\d)? KB, and the app link takes 63\.5 KB/)
+  })
+})
+
+describe('design.trace_image: reading and refusing', () => {
+  /** A folder the server may read, a file outside it, and the policy. */
+  function place() {
+    const root = mkdtempSync(join(tmpdir(), 'slicerx-trace-'))
+    const art = join(root, 'art')
+    mkdirSync(art)
+    const policy: PathPolicy = { allowDirs: [art], outDir: join(root, 'out'), allowUrls: false }
+    return { root, art, policy }
+  }
+
+  it('reads a PNG or JPEG inside the allowed folders only, and checks its type and size before reading it', () => {
+    const { root, art, policy } = place()
+    try {
+      writeFileSync(join(art, 'rect.png'), RECT)
+      expect(Buffer.from(readTraceImage(policy, join(art, 'rect.png')))).toEqual(RECT)
+      writeFileSync(join(art, 'notes.txt'), 'hello')
+      expect(() => readTraceImage(policy, join(art, 'notes.txt'))).toThrow(expect.objectContaining({ code: 'unsupported_format', message: expect.stringMatching(/notes\.txt is not a PNG or JPEG/) }))
+      writeFileSync(join(root, 'outside.png'), RECT)
+      expect(() => readTraceImage(policy, join(root, 'outside.png'))).toThrow(expect.objectContaining({ code: 'path_not_allowed' }))
+      mkdirSync(join(art, 'folder.png'))
+      expect(() => readTraceImage(policy, join(art, 'folder.png'))).toThrow(/is not a file/)
+      // over 30 MB is refused from its size alone
+      const big = join(art, 'big.png')
+      const fd = openSync(big, 'w')
+      ftruncateSync(fd, 30 * 1024 * 1024 + 1)
+      closeSync(fd)
+      expect(() => readTraceImage(policy, big)).toThrow(/the file is 30720 KB, over the 30 MB a trace takes/)
+      // a link is judged by what it points at
+      let linked = true
+      try {
+        symlinkSync(join(root, 'outside.png'), join(art, 'out.png'))
+        symlinkSync(join(art, 'notes.txt'), join(art, 'notes.png'))
+      } catch {
+        // creating links needs a right this account may not have
+        linked = false
+      }
+      if (linked) {
+        expect(() => readTraceImage(policy, join(art, 'out.png'))).toThrow(expect.objectContaining({ code: 'path_not_allowed' }))
+        expect(() => readTraceImage(policy, join(art, 'notes.png'))).toThrow(expect.objectContaining({ code: 'unsupported_format' }))
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses base64 over 30 MB or of nothing before the engine runs', async () => {
+    const { engine, run } = host()
+    await expect(run('design.trace_image', { image: { base64: Buffer.alloc(30 * 1024 * 1024 + 3).toString('base64') } })).rejects.toThrow(/over the 30 MB a trace takes/)
+    await expect(run('design.trace_image', { image: { base64: '====' } })).rejects.toThrow(/the file is empty/)
+    expect(engine).not.toHaveBeenCalled()
+  })
+
+  it('sends colors in lowercase, and gives engine refusals in its own option names', async () => {
+    const { engine, run } = host()
+    await run('design.trace_image', { image: { base64: 'AA' }, mode: 'color', colors: ['#FF00aA'], dry_run: true })
+    expect(engine.mock.calls[0]![1]).toMatchObject({ options: { mode: 'color', colors: ['#ff00aa'] } })
+    engine.mockRejectedValueOnce(new Error('image: more than 2000 loops; raise Remove specks under, or use a simpler image'))
+    await expect(run('design.trace_image', { image: { base64: 'AA' } })).rejects.toThrow('image: more than 2000 loops; raise speck_mm2, or lower max_side_px or use a simpler image')
+    engine.mockRejectedValueOnce(new Error('image: nothing is near the picked colors; pick another color or raise the tolerance'))
+    await expect(run('design.trace_image', { image: { base64: 'AA' }, mode: 'color', colors: ['#000000'] })).rejects.toThrow('pick another color or raise color_tolerance')
+    expect(traceRefusal(new Error('the outlines run too close together to keep apart within 20000 segments; lower Smoothing or raise Remove specks under'))).toMatchObject({ message: 'the outlines run too close together to keep apart within 20000 segments; lower smoothing_mm or raise speck_mm2' })
+  })
+
+  it('keeps a spline that cannot be drawn out of the timeline, and needs a host with a timeline', async () => {
+    const wavy: SketchLoop[] = [{ start: [0, 0], segments: [{ type: 'spline', to: [10, 0], points: [[5, 0], [5, 0]] }, { type: 'line', to: [0, 0] }] }]
+    const dense = { loop: 0, kind: 'tooDense', message: 'Loop 1: spline segment 1 bends too sharply to draw within 0.01 mm; spread its points out.' }
+    const bad = host(reply({ loops: wavy, check: { ok: false, polygons: [], areaMm2: 0, loops: [], issues: [dense] } }))
+    await expect(bad.run('design.trace_image', { image: { base64: 'AA' } })).rejects.toThrow(/image: Loop 1: spline segment 1 bends too sharply.*Raise smoothing_mm or speck_mm2\./)
+    expect(bad.sketches).toHaveLength(0)
+    const engine = vi.fn(async () => reply())
+    const bare: DesignHost = { ...NO_ENGINE_HOST, call: engine as DesignHost['call'] }
+    const tool = designToolset(bare).find((t) => t.name === 'design.trace_image')!
+    await expect(tool.run(tool.input.parse({ image: { base64: 'AA' } }) as never, {} as never)).rejects.toThrow(/Finished sketches live in the design timeline of the project open in the app/)
+  })
+
+  it("adds through the design.sketch the client sees, routed to the app, centered on the app's bed", async () => {
+    const calls: [string, unknown][] = []
+    let bed: unknown = { shape: 'rectangle', widthMm: 256, depthMm: 220, heightMm: 250 }
+    const call = vi.fn(async (method: string, args?: Record<string, unknown>) => {
+      calls.push([method, args])
+      if (method === 'plate.list') {
+        if (bed === 'closed') throw Object.assign(new Error('app_closed'), { code: 'app_closed' })
+        return { bed, objects: [] }
+      }
+      return { summary: 'Sketch 2', output: { id: 'k2', name: 'Sketch 2' } }
+    }) as AppLinkCaller['call']
+    const engine = vi.fn(async (_op: string, _req: unknown) => reply())
+    const h: DesignHost = { ...NO_ENGINE_HOST, call: engine as DesignHost['call'] }
+    const via: SketchVia = {}
+    const routed = routeToApp(designToolset(NO_ENGINE_HOST), { call }, 'SlicerX')
+    wireSketchVia(via, routed, { call })
+    const tool = cadTools({ files: NO_CAD_FILES, designs: h, sketchVia: via }).find((t) => t.name === 'design.trace_image')!
+    const run = (input: Record<string, unknown>) => tool.run(tool.input.parse(input) as never, {} as never)
+    const out = await run({ image: { base64: 'AA' } })
+    expect(engine.mock.calls[0]![1]).toMatchObject({ options: { center: [128, 110] } })
+    expect(calls.at(-1)).toEqual(['design.sketch', { loops: LOOPS }])
+    expect(out.output).toMatchObject({ id: 'k2', name: 'Sketch 2', in: 'app' })
+    // a round bed gives its center; a frame goes on to design.sketch with the frame's origin as the middle
+    bed = { shape: 'round', diameterMm: 180, heightMm: 200, centerMm: [90, 90] }
+    await run({ image: { base64: 'AA' }, dry_run: true })
+    expect(engine.mock.calls[1]![1]).toMatchObject({ options: { center: [90, 90] } })
+    await run({ image: { base64: 'AA' }, frame: { origin: [0, 0, 5], normal: [0, 0, 1] } })
+    expect(engine.mock.calls[2]![1]).toMatchObject({ options: { center: [0, 0] } })
+    expect(calls.at(-1)).toEqual(['design.sketch', { loops: LOOPS, frame: { origin: [0, 0, 5], normal: [0, 0, 1] } }])
+    // with the app closed there is no bed to read
+    bed = 'closed'
+    expect(await via.bedMiddle!()).toBeUndefined()
+    // with no link the server's own design.sketch adds it, and there is no app bed to ask for
+    const own: SketchVia = {}
+    wireSketchVia(own, designToolset(NO_ENGINE_HOST))
+    expect(own.run).toBeTypeOf('function')
+    expect(own.bedMiddle).toBeUndefined()
   })
 })
 

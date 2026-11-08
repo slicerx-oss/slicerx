@@ -20,7 +20,7 @@ import { createCombinedPlanner, createKb, createProfileStore, pilotTools, servic
 import { createSlicerxServer, type ServerContext } from './server'
 import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
-import { cadTools, type SketchVia } from './cad'
+import { cadTools, wireSketchVia, type SketchVia } from './cad'
 import { cloudTools, type CloudOptions } from './cloud'
 import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
@@ -217,19 +217,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const serverHas = (object: string): boolean => project.current?.objects().some((o) => o.id === object || o.name === object) ?? false
   const route = (t: PilotTool<never>[]) => (appLink ? routeToApp(t, appLink, productName(), { required: opts.app === 'required', serverHas, serverProject: () => project.current !== undefined }) : t)
   const geom = route(here)
-  // design.trace_image traces here, where a large image is no burden, then adds its loops through design.sketch as the
-  // client would, so they land in the app while its link answers
-  const sketchTool = geom.find((t) => t.name === 'design.sketch')
-  if (sketchTool) sketchVia.run = (args, ctx) => sketchTool.run(sketchTool.input.parse(args) as never, ctx as never)
-  // its default center is the middle of the app's bed, read from the plate list; a link that does not answer leaves it
-  // to this server's bed
-  if (appLink) {
-    sketchVia.bedMiddle = async () => {
-      const bed = await appLink.call<{ bed?: { widthMm?: number; depthMm?: number; centerMm?: [number, number] } }>('plate.list').then((r) => r.bed, () => undefined)
-      if (bed?.centerMm) return bed.centerMm
-      return bed?.widthMm && bed.depthMm ? [bed.widthMm / 2, bed.depthMm / 2] : undefined
-    }
-  }
+  wireSketchVia(sketchVia, geom, appLink)
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)

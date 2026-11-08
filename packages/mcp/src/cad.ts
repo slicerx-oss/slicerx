@@ -16,6 +16,7 @@ import { nozzleOr } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
+import type { AppLinkCaller } from './app-route'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import { verifyHole } from './hole-verification'
@@ -334,8 +335,43 @@ export interface SketchVia {
   bedMiddle?: () => Promise<[number, number] | undefined>
 }
 
-/** An image past this many bytes is refused before it is decoded. */
-const IMAGE_BYTES = 30 * 1024 * 1024
+/**
+ * Points design.trace_image at the design.sketch a client sees: it traces here, where a large image is no burden, then
+ * adds its loops through `tools`' design.sketch as the client would, so they land in the app while its link answers.
+ * Its default center is then the middle of the app's bed, read from the plate list; a link that does not answer leaves
+ * it to this server's bed.
+ */
+export function wireSketchVia(via: SketchVia, tools: readonly PilotTool<never>[], appLink?: AppLinkCaller): void {
+  const sketchTool = tools.find((t) => t.name === 'design.sketch')
+  if (sketchTool) via.run = (args, ctx) => sketchTool.run(sketchTool.input.parse(args) as never, ctx as never)
+  if (!appLink) return
+  via.bedMiddle = async () => {
+    const bed = await appLink.call<{ bed?: { widthMm?: number; depthMm?: number; centerMm?: [number, number] } }>('plate.list').then((r) => r.bed, () => undefined)
+    if (bed?.centerMm) return bed.centerMm
+    return bed?.widthMm && bed.depthMm ? [bed.widthMm / 2, bed.depthMm / 2] : undefined
+  }
+}
+
+/** An engine refusal of a trace in this tool's words: the Trace image dialog's settings by their option names, and the
+ * working size, which the dialog does not have. */
+export function traceRefusal(e: unknown): unknown {
+  if (!(e instanceof Error)) return e
+  e.message = e.message
+    .replace(/Remove specks under/g, 'speck_mm2')
+    .replace(/\bSmoothing\b/g, 'smoothing_mm')
+    .replace(/the tolerance/g, 'color_tolerance')
+    .replace(/what to trace or the threshold/g, 'mode or threshold')
+    .replace(/use a simpler image/g, 'lower max_side_px or use a simpler image')
+  return e
+}
+
+/** An image past this many bytes is refused before it is read. */
+export const IMAGE_BYTES = 30 * 1024 * 1024
+
+/** The refusal of an image of `bytes` over IMAGE_BYTES. */
+export function imageTooLarge(bytes: number): ToolInputError {
+  return new ToolInputError(`image: the file is ${kb(bytes)}, over the 30 MB a trace takes. Export it smaller first.`)
+}
 
 export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined; sketchVia?: SketchVia }): PilotTool<never>[] {
   const call = deps.files.call
@@ -918,7 +954,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         width_mm: z.number().positive().max(10_000).optional().describe('The trace is this wide; 50 mm when no size is given'),
         height_mm: z.number().positive().max(10_000).optional().describe('The trace is this tall'),
         mm_per_px: z.number().positive().max(100).optional().describe('mm per pixel of the image as given'),
-        center: vec2.optional().describe("Where the middle of the trace lands, sketch mm; when absent, the middle of the plane: the bed's middle on the bed, the frame's origin on a plane or face"),
+        center: vec2.optional().describe("Where the middle of the trace lands, sketch mm; when absent, the middle of the plane: on the bed, the middle of the app's bed while the app is linked, else this server's bed, else the origin; on a plane or face, the frame's origin"),
         frame: frameRef.optional(),
         max_side_px: z.number().int().min(16).max(4096).optional().describe('The image is shrunk to this long side before tracing; 2048 when absent'),
         dry_run: z.boolean().optional().describe('Trace and report without adding anything to the timeline'),
@@ -931,7 +967,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       }),
     async run(i, ctx) {
       const bytes = 'path' in i.image ? readImage(i.image.path) : Buffer.from(i.image.base64, 'base64')
-      if (bytes.length > IMAGE_BYTES) throw new ToolInputError(`image: the file is ${kb(bytes.length)}, over the 30 MB a trace takes. Export it smaller first.`)
+      if (bytes.length > IMAGE_BYTES) throw imageTooLarge(bytes.length)
+      if (bytes.length === 0) throw new ToolInputError('image: the file is empty. Pass a PNG or JPEG as {path} or {base64}.')
       if (!deps.files.engine && !deps.designs) throw new ToolInputError('Tracing needs the sx-geom engine, which this server did not find.', 'not_supported')
       // the middle of the plane, as the sketch panel and design.sketch_svg start it: the bed's middle on the bed (the
       // app's bed while its link answers, else this server's), the frame's origin on a plane or face
@@ -955,7 +992,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         previewImage: i.preview_image,
       })
       const req = { image: { base64: Buffer.from(bytes).toString('base64') }, options }
-      const out = deps.files.engine ? await call('sketch.trace', req) : await engine('sketch.trace', req)
+      const out = await (deps.files.engine ? call('sketch.trace', req) : engine('sketch.trace', req)).catch((e: unknown) => {
+        throw traceRefusal(e)
+      })
       const loopsIn = out['loops'] as Loops
       const check = (out['check'] ?? {}) as { ok?: boolean; areaMm2?: number; loops?: { index: number; role: string; areaMm2: number; lengthMm: number }[]; issues?: { kind: string; message: string }[] }
       const issues = check.issues ?? []
