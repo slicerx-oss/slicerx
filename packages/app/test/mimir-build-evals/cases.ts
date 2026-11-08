@@ -33,7 +33,7 @@ export interface BuildCase {
   /** The person's one message. */
   prompt: string
   machine: PilotMachine
-  /** At least one successful step of one of these kinds. */
+  /** At least one successful step of one of these kinds (any of them, not all). */
   ops: OpMatch[]
   /** Separate solid bodies a good result has, inclusive. */
   bodies: [number, number]
@@ -177,6 +177,7 @@ export const BUILD_CASES: BuildCase[] = [
     ],
   },
   {
+    // a control: scored on closure, body count, wall, bed fit and size only; the C opening and snap tab are not read
     id: 'cable-clip',
     title: 'Cable clip with a snap tab',
     prompt: 'A cable clip to screw under my desk: a 30 by 20 mm base, 3 mm thick, with a countersunk screw hole, and a C shaped clip on top for an 8 mm cable with a snap tab at the opening so the cable clicks in. Round off the outside edges.',
@@ -191,6 +192,7 @@ export const BUILD_CASES: BuildCase[] = [
     control: true,
   },
   {
+    // a control: scored on closure, body count, wall, bed fit and size only; the lean, lip and cable gap are not read
     id: 'phone-stand-lip',
     title: 'Phone stand with an angled lip',
     prompt: 'A phone stand for my desk, 80 mm wide, that holds the phone leaning back at about 60 degrees, with an angled lip at the front 10 mm tall so it does not slide off and a gap in the lip for the charging cable.',

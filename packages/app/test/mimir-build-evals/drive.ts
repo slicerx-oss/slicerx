@@ -154,7 +154,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const events: PilotEvent[] = []
   const turns: UserTurn[] = []
   const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? (opts.client ? 480_000 : 120_000))
+  const limitMs = opts.timeoutMs ?? (opts.client ? 480_000 : 120_000)
+  const timer = setTimeout(() => ac.abort(), limitMs)
   const turn = async (message: string): Promise<string> => {
     let text = ''
     for await (const ev of pilot.run(`eval-${c.id}`, message, { signal: ac.signal })) {
@@ -199,6 +200,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   } finally {
     clearTimeout(timer)
   }
+  // an abort ends the turn quietly (it reads as a canceled reply), so say it here or a stalled run scores as a finished one
+  if (ac.signal.aborted && !error) error = `stopped after ${limitMs / 1000} s`
   const parts = placed(get().plate)
   const score = scoreCase(c, { events, turns, parts, firstReply, firstBuilt, bed: buildVolume(c.machine.printer), wallMm: Math.round(2 * c.machine.nozzle * 1000) / 1000 })
   const results = new Map(events.flatMap((e) => (e.type === 'tool_result' ? [[e.callId, e] as const] : [])))
