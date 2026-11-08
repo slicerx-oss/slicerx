@@ -7,7 +7,7 @@
 import { MessageChannel, type MessagePort } from 'node:worker_threads'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CANCEL_GRACE_MS, endIdleGeomWorker, geom, setGeomProvider } from '../src/geom/client'
-import { workerLoop, type WorkerJobs, type WorkerMessage } from '../src/geom/worker-loop'
+import { replayStepOf, workerLoop, type WorkerJobs, type WorkerMessage } from '../src/geom/worker-loop'
 
 /** A stand-in engine: `slow` calls `hooks.slow` while it runs, `load` waits for `hooks.load` before it can run. */
 function standIn() {
@@ -27,7 +27,7 @@ function standIn() {
     },
     async replay(_request, yieldStep) {
       for (let i = 0; i < 5; i++) {
-        await yieldStep()
+        await yieldStep({ op: 'simplify', name: `Simplify ${i}` })
         ran.push(`step ${i}`)
         hooks.step?.(i)
       }
@@ -147,8 +147,21 @@ describe('the geometry worker loop', () => {
       if (i === 1) void handle({ cancel: 1 })
     }
     await handle({ id: 1, op: 'history.replay', request: {} })
-    // each step it reaches says so first, for its own time limit on the page
-    expect(posted).toEqual([{ started: 1 }, { step: 1 }, { step: 1 }, { id: 1, error: 'Canceled', memoryBytes: 0 }])
+    // it says when it waits between steps and which step it starts, for each step's own time limit on the page
+    expect(posted).toEqual([
+      { started: 1 },
+      { yielded: 1 },
+      { step: 1, op: 'simplify', name: 'Simplify 0' },
+      { yielded: 1 },
+      { step: 1, op: 'simplify', name: 'Simplify 1' },
+      { yielded: 1 },
+      { id: 1, error: 'Canceled', memoryBytes: 0 },
+    ])
     expect(e.ran).toEqual(['step 0', 'step 1'])
+  })
+
+  it("tells the page a history step's operation and the name a person knows it by", () => {
+    expect(replayStepOf({ params: { op: 'simplify', targetRatio: 0.25 } })).toEqual({ op: 'simplify', name: 'Simplify to 25 %' })
+    expect(replayStepOf({ params: { op: 'simplify', targetRatio: 0.25 }, label: 'Lighter body' })).toEqual({ op: 'simplify', name: 'Lighter body' })
   })
 })

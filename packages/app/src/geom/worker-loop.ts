@@ -5,7 +5,9 @@
 // worker then sends {ready} when it reaches the call and runs it on the page's {go}, or answers it canceled on {skip},
 // so a call canceled while it waited behind a running one never runs. The worker says when each call starts, right
 // before the engine runs it and after any build it needs has loaded, so the page can end a worker stuck in a canceled
-// call, or in one past its time limit; a replay also says when each of its steps starts ({step}).
+// call, or in one past its time limit; a replay also says when it waits between steps ({yielded}) and when each of its
+// steps starts ({step}).
+import { stepName, type Step } from '@slicerx/cad-history'
 
 export interface WorkerJobs {
   /** Waits for what the call needs (an engine build, the B-rep kernel), then hands back the engine call itself. */
@@ -27,6 +29,11 @@ export interface ReplayStep {
   name: string
 }
 
+/** What the page is told of a history step a replay is about to run. */
+export function replayStepOf(step: Pick<Step, 'params' | 'label'>): ReplayStep {
+  return { op: step.params.op, name: stepName(step) }
+}
+
 export type WorkerPost = (message: unknown, transfer?: Transferable[]) => void
 
 export type WorkerMessage = { id: number; op: string; request: unknown; gate?: boolean } | { cancel: number } | { go: number } | { skip: number }
@@ -42,6 +49,8 @@ export function workerLoop(post: WorkerPost, jobs: WorkerJobs): (data: WorkerMes
       if (op === 'history.replay') {
         post({ started: id })
         const result = await jobs.replay(request, async (step) => {
+          // between steps the worker answers other calls, so the page holds this replay's limit until its next step
+          post({ yielded: id })
           await new Promise((r) => setTimeout(r, 0))
           if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
           // each step has a time limit of its own on the page (client.ts, setGeomCallLimit)
