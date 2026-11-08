@@ -1305,21 +1305,7 @@ mod tests {
     #[test]
     fn a_check_told_to_stop_partway_through_a_long_walk_stops_at_once() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        const IDS: [&str; 6] = ["s0", "s1", "s2", "s3", "s4", "s5"];
-        let config = golden::plates()
-            .into_iter()
-            .next()
-            .map(|p| p.config)
-            .unwrap_or_default();
-        let p = golden::Plate {
-            name: "six 40 mm posts on one spot, P1S",
-            printer_id: Some("bambu-p1s"),
-            config,
-            objects: IDS
-                .iter()
-                .map(|id| (*id, golden::cuboid([0.0; 3], [20.0, 20.0, 40.0]), [100.0, 100.0]))
-                .collect(),
-        };
+        let p = posts();
         let (req, meshes) = golden::request(&p);
         let load = golden::loader(&p, meshes);
         let reads = AtomicUsize::new(0);
@@ -1329,7 +1315,7 @@ mod tests {
         })
         .unwrap_or_else(|e| panic!("{}: {e}", p.name));
         let n = reads.load(Ordering::Relaxed);
-        let slack = 4 * IDS.len() + 8;
+        let slack = 4 * p.objects.len() + 8;
         assert!(
             n > 20 * slack,
             "the walk reads the stop between its moves: {n} reads"
@@ -1344,6 +1330,57 @@ mod tests {
                 after <= slack,
                 "told to stop at read {at} of {n}, it read the stop {after} more times"
             );
+        }
+    }
+
+    /// Six 40 mm posts on one spot of a P1S printed by object: every band of each meets every other post, so the walk
+    /// is long.
+    fn posts() -> golden::Plate {
+        const IDS: [&str; 6] = ["s0", "s1", "s2", "s3", "s4", "s5"];
+        let config = golden::plates()
+            .into_iter()
+            .next()
+            .map(|p| p.config)
+            .unwrap_or_default();
+        golden::Plate {
+            name: "six 40 mm posts on one spot, P1S",
+            printer_id: Some("bambu-p1s"),
+            config,
+            objects: IDS
+                .iter()
+                .map(|id| (*id, golden::cuboid([0.0; 3], [20.0, 20.0, 40.0]), [100.0, 100.0]))
+                .collect(),
+        }
+    }
+
+    /// A stop that says so once and then takes it back still ends the check with no answer: the first stop holds, so
+    /// the moves it skipped never pass for a clear plate.
+    #[test]
+    fn a_stop_said_once_holds_when_it_is_taken_back() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let mut plates = golden::plates();
+        plates.push(posts());
+        for p in plates {
+            let (req, meshes) = golden::request(&p);
+            let load = golden::loader(&p, meshes);
+            let reads = AtomicUsize::new(0);
+            crate::api::check_plate_until(&req, &load, &|| {
+                reads.fetch_add(1, Ordering::Relaxed);
+                false
+            })
+            .unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            let n = reads.load(Ordering::Relaxed);
+            for at in [0, 1, n / 4, n / 2, 3 * n / 4, n.saturating_sub(1)] {
+                let seen = AtomicUsize::new(0);
+                let once = crate::api::check_plate_until(&req, &load, &|| {
+                    seen.fetch_add(1, Ordering::Relaxed) == at
+                });
+                assert!(
+                    matches!(once, Err(crate::error::Error::Cancelled)),
+                    "{}: told to stop at read {at} of {n} only, it answered",
+                    p.name
+                );
+            }
         }
     }
 }

@@ -2196,12 +2196,23 @@ pub fn check_plate(
 
 /// [`check_plate`], ending with [`Error::Cancelled`] once `stop` says so: it is read before the walk, and between
 /// objects, bands of layers and moves in it, so a check nobody waits for any more lets go of the pool within one move
-/// of each object it is walking. A check that is not stopped answers as [`check_plate`] does.
+/// of each object it is walking. The first stop holds: a `stop` that takes it back later still ends the check, so moves
+/// it skipped never pass for a clear plate. A check that is not stopped answers as [`check_plate`] does.
 pub fn check_plate_until(
     req: &SliceRequest,
     meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
-    stop: &(dyn Fn() -> bool + Sync),
+    asked: &(dyn Fn() -> bool + Sync),
 ) -> Result<crate::collide::check::PlateCheck> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let said = AtomicBool::new(false);
+    // `asked` is still read every time, so a caller can count the reads.
+    let latched = || {
+        if asked() {
+            said.store(true, Ordering::Relaxed);
+        }
+        said.load(Ordering::Relaxed)
+    };
+    let stop: &(dyn Fn() -> bool + Sync) = &latched;
     let timer = crate::platform::Timer::start();
     let (config, issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
