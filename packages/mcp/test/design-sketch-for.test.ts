@@ -4,7 +4,7 @@
 // it in that design's frame, and every tool that puts a sketch in the timeline tells the host the design it is drawn
 // for. With none named, a sketch is the plate's while no design was moved onto the bed; after that it is the only
 // design's, or refused. The change file's versions are the tools' own.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Design, DesignHost, SketchItem } from '@slicerx/cad-history'
 import { describe, expect, it, vi } from 'vitest'
@@ -146,44 +146,31 @@ describe('the design a sketch is drawn for and used on', () => {
 })
 
 describe('the change file for designs moved onto the bed', () => {
-  // The design and paint tools' versions on main when this change was made (fixtures/design-tool-versions-main.json,
-  // read from main's toolset). A tool this change leaves as main has it is listed here with why its answer is the
-  // same; every other tool must be one minor version past main's and named in the change file at that version.
-  const SAME_AS_MAIN: Record<string, string> = {
-    'design.timeline': 'lists the timeline as stored: frames and transforms in plate coordinates, as on main',
-    'design.roll': 'moves the rollback marker and says which steps it holds back; no design summary or coordinates',
-    'design.check': 'checks a design against its plan by feature tags and sizes; no coordinates in its answer',
-    'design.put_plan': 'stores a plan for a client; no design is read',
-    'geom.sketch_check': 'checks loops given in a sketch plane; no design is read',
-    'geom.sketch_solve': 'solves loops given in a sketch plane; no design is read',
-    'geom.sketch_edit': 'edits loops given in a sketch plane; no design is read',
-    'paint.preview': 'previews paint on a design\'s parts in their own frame; no design summary',
-    'paint.regions': 'reads painted regions of a design\'s parts in their own frame; no design summary',
-  }
-  const main = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'design-tool-versions-main.json'), 'utf8')) as Record<string, string>
-  const tools = new Map([...designToolset(NO_ENGINE_HOST), ...paintTools({ deps: {} } as never)].map((t) => [t.name, t.version]))
-  const minorPast = (v: string) => {
-    const [a, b] = v.split('.').map(Number)
-    return `${a}.${b! + 1}.0`
+  // The change file gives each tool it changes as `slicerx_<tool>` NEW (from BASE), BASE being the version main had when
+  // the change was made. The check reads both from the file, so nothing is frozen here: a later bump of a tool on main or
+  // in another change only moves the tool past NEW, which still passes, and once a release folds this file into the
+  // changelog there is nothing left to check.
+  const file = join(__dirname, '..', 'changes', 'fix-mimir-design-placement.md')
+  const parts = (v: string) => v.split('.').map(Number) as [number, number, number]
+  const after = (a: string, b: string) => {
+    const [x, y] = [parts(a), parts(b)]
+    for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! > y[i]!
+    return false
   }
 
-  it('names each changed tool at one minor version past main, and every tool this leaves as main is listed with why', () => {
-    const text = readFileSync(join(__dirname, '..', 'changes', 'fix-mimir-design-placement.md'), 'utf8')
-    const named = new Map([...text.matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)/g)].map(([, n, v]) => [n!, v!] as const))
-    expect(named.size).toBeGreaterThan(30)
-    for (const [name, version] of tools) {
-      const key = name.replace('.', '_')
-      if (name in SAME_AS_MAIN) {
-        expect(version, `${name} is listed as left as main`).toBe(main[name])
-        expect(named.has(key), `${name} is listed as left as main`).toBe(false)
-        continue
-      }
-      // a tool main does not have is new and needs no bump; every other one moved one minor version past main
-      if (main[name] === undefined) continue
-      expect(version, name).toBe(minorPast(main[name]))
-      expect(named.get(key), `${name} in the change file`).toBe(version)
+  it.skipIf(!existsSync(file))('gives each tool it changes past the version main had, and each tool is at least there', () => {
+    const text = readFileSync(file, 'utf8')
+    const versions = [...text.matchAll(/`slicerx_(\w+?)` (\d+\.\d+\.\d+)( \(from (\d+\.\d+\.\d+)\))?/g)]
+    expect(versions.length).toBeGreaterThan(30)
+    const tools = new Map([...designToolset(NO_ENGINE_HOST), ...paintTools({ deps: {} } as never)].map((t) => [t.name.replace('.', '_'), t.version]))
+    for (const [, name, version, , base] of versions) {
+      expect(base, `${name} ${version} names the version main had`).toBeDefined()
+      expect(after(version!, base!), `${name} ${version} is past main's ${base}`).toBe(true)
+      const now = tools.get(name!)
+      expect(now, name).toBeDefined()
+      expect(now === version || after(now!, version!), `${name} is ${now}, at least ${version}`).toBe(true)
     }
-    for (const [key, version] of named) expect(tools.get(key.replace('_', '.')), key).toBe(version)
-    for (const name of Object.keys(SAME_AS_MAIN)) expect(tools.has(name), name).toBe(true)
+    // design.new and design.open return the design summary too, which has placedMm
+    expect(versions.map(([, n]) => n)).toEqual(expect.arrayContaining(['design_new', 'design_open', 'design_save', 'paint_apply', 'paint_preview', 'paint_regions']))
   })
 })

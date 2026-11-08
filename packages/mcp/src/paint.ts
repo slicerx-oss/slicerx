@@ -86,7 +86,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.0.2',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
@@ -178,7 +178,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const read = defineTool({
     name: 'paint.regions',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description: 'Read a design\'s paint back: for one layer, each part\'s painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. Optionally a picture (PNG only with image: true).',
