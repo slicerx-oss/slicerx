@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/pilot. See README.md for the public API.
-export { createPilot, isRuntimeNote, RUNTIME_NOTES, type CreatePilotOptions, type PilotHost } from './runtime'
+export { createPilot, isRuntimeNote, RUNTIME_NOTES, type CreatePilotOptions, type PilotHost, type PlanMarks } from './runtime'
 export { PLAN_LEFT_CODE, planLeft, unsettledQuestion, type PlanLeft } from './plan-left'
 export { ASSISTANT_NAME, assistantBrand, assistantName, assistantText, setAssistantBrand, setAssistantName } from './name'
 export { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'

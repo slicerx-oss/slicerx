@@ -561,7 +561,17 @@ export interface PlanEntry {
 
   /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
   closed?: { summary: string; output: Record<string, unknown> }
+
+  /**
+   * The person changed sizes on a sheet after the plan was approved and before its part was built, so the plan no
+   * longer says what to build: design.check refuses it and it ties to no design, until a new design.plan is answered.
+   */
+  stale?: true
 }
+
+/** design.check's answer for a plan whose sizes changed after it was approved (PlanEntry.stale), naming no id. */
+export const stalePlanNote = (part: string): string =>
+  `Nothing was checked. The person changed sizes after the plan for ${part} was approved, so the part is not checked against it. Call design.plan again with the confirmed sizes and the same printInPlace, build from that plan and check against it.`
 
 /**
  * Fix rounds a plan gets after a failed design.check: one. The check after it that fails too is the last; it says to
@@ -579,7 +589,10 @@ export interface PlanRegistry {
    * `origin` defaults to 'client'. A client plan whose planId belongs to a card plan is refused (throws).
    */
   put(plan: PartPlan, design?: string, origin?: PlanOrigin): void
-  /** Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such plan. */
+  /**
+   * Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such
+   * plan, or it is stale (its part waits for a new plan).
+   */
   tie(planId: string, design: string): boolean
   /**
    * Ties a plan whose last check failed to the new design its part was rebuilt in, once: the next replacement waits for
@@ -602,6 +615,10 @@ export interface PlanRegistry {
   waiveNaming(planId: string, open: readonly string[]): boolean
   /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
   close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
+  /** Marks a kept plan stale: sizes changed after it was approved. False when there is no such plan. */
+  stale(planId: string): boolean
+  /** Clears a plan's stale mark, once a new plan for its part was answered (approved or declined). */
+  fresh(planId: string): void
   get(planId: string): PlanEntry | undefined
   /** The plan put last (of `origin` alone, when given), or undefined when there is none. */
   latest(origin?: PlanOrigin): PartPlan | undefined
@@ -626,7 +643,7 @@ export function createPlanRegistry(): PlanRegistry {
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
       const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.replaceable ? { replaceable: was.replaceable } : {}), ...(was?.openAtFail ? { openAtFail: was.openAtFail } : {}), ...(was?.namingWaived ? { namingWaived: was.namingWaived } : {}), ...(was?.closed ? { closed: was.closed } : {}), ...(was?.stale ? { stale: was.stale } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -634,7 +651,7 @@ export function createPlanRegistry(): PlanRegistry {
     },
     tie(planId, design) {
       const entry = plans.get(planId)
-      if (!entry) return false
+      if (!entry || entry.stale) return false
       entry.design = design
       return true
     },
@@ -672,6 +689,16 @@ export function createPlanRegistry(): PlanRegistry {
     close(planId, last) {
       const entry = plans.get(planId)
       if (entry) entry.closed = last
+    },
+    stale(planId) {
+      const entry = plans.get(planId)
+      if (!entry) return false
+      entry.stale = true
+      return true
+    },
+    fresh(planId) {
+      const entry = plans.get(planId)
+      if (entry) delete entry.stale
     },
     get: (planId) => plans.get(planId),
     latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,

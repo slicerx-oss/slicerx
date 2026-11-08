@@ -602,6 +602,43 @@ describe('design.check picks the design it checks', () => {
   })
 })
 
+describe('a plan whose sizes changed after it was approved', () => {
+  it('is refused by design.check in plain words, without using a check, until it is made fresh', async () => {
+    const plans = createPlanRegistry()
+    plans.put(boxPlan, 'd1', 'card')
+    expect(plans.stale('box-1')).toBe(true)
+    expect(plans.get('box-1')?.stale).toBe(true)
+    const tool = designToolset(hostOf([boxDesign('d1', 'Spacer')]), {}, { plans, cardSide: true }).find((t) => t.name === 'design.check')!
+    const refused = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext).then(
+      () => null,
+      (e: Error) => e.message,
+    )
+    expect(refused).toContain('The person changed sizes after the plan for Spacer was approved')
+    expect(refused).toContain('design.plan')
+    expect(refused).not.toMatch(/box-1|d1/)
+    expect(plans.get('box-1')?.failedChecks).toBeUndefined()
+    plans.fresh('box-1')
+    expect(plans.get('box-1')?.stale).toBeUndefined()
+    const r = await tool.run(tool.input.parse({ planId: 'box-1' }), {} as ToolContext)
+    expect((r.output as { pass: boolean }).pass).toBe(true)
+  })
+
+  it('is not tied to a design while it waits, and is tied once it is fresh; a plan it does not have is not marked', () => {
+    const plans = createPlanRegistry()
+    plans.put(boxPlan, undefined, 'card')
+    plans.stale('box-1')
+    expect(plans.tie('box-1', 'd1')).toBe(false)
+    expect(plans.get('box-1')?.design).toBeUndefined()
+    plans.fresh('box-1')
+    expect(plans.tie('box-1', 'd1')).toBe(true)
+    expect(plans.stale('nope')).toBe(false)
+    // an edit put under its planId keeps the mark
+    plans.stale('box-1')
+    plans.put({ ...boxPlan, overall: { x: 60, y: 20, z: 5 } }, 'd1', 'card')
+    expect(plans.get('box-1')?.stale).toBe(true)
+  })
+})
+
 describe('design.check gives a plan one fix round', () => {
   // a spacer built 5 mm tall, planned 6 mm: every check of it fails on the overall size
   const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }
