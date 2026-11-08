@@ -164,6 +164,60 @@ describe('the gaps on a print-in-place sheet', () => {
     expect(early.built).toEqual(['geom.extrude'])
   })
 
+  // the hinge's plan and a spacer's sheet, and a run of messages in one chat with each sheet answered in turn: the tool
+  // replies other than design.plan's, and the names geom.extrude built
+  const HINGE = { name: 'design.plan', args: { part: 'Hinge', printInPlace: ['Leaf', 'Pin'] } }
+  const SPACER = { name: 'pilot.sheet', args: { title: 'Spacer', dims: [{ key: 'height', label: 'Height', value: 20, unit: 'mm', source: 'asked' }] } }
+  async function chat(steps: ScriptStep[], messages: string[], answers: Record<string, number>[]) {
+    const built: string[] = []
+    const extrude = defineTool({
+      name: 'geom.extrude',
+      version: '1.0.0',
+      source: 'command',
+      permission: 'read',
+      description: 'test',
+      input: z.object({}).passthrough(),
+      async run(i: { name?: string }) {
+        built.push(i.name ?? '')
+        return { summary: 'Done', output: { design: 'd1' } }
+      },
+    }) as PilotTool<never>
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), plan, stub('design.new'), extrude] })
+    const summaries: string[] = []
+    const calls = new Map<string, string>()
+    let k = 0
+    for (const message of messages)
+      for await (const e of p.run('s', message) as AsyncIterable<PilotEvent>) {
+        if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answers[k++] ?? {})
+        if (e.type === 'tool_call') calls.set(e.callId, e.tool)
+        if (e.type === 'tool_result' && calls.get(e.callId) !== 'design.plan') summaries.push(e.summary)
+      }
+    return { summaries, built }
+  }
+
+  it('stop asking for the plan again in a later run that drops the print-in-place part', async () => {
+    // run 1 changes the hinge's width on its sheet and ends before a new plan; run 2 asks for a spacer instead
+    const { summaries, built } = await chat(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { text: 'I will plan it again.' }, { calls: [SPACER] }, { calls: [{ name: 'geom.extrude', args: { name: 'Spacer' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge', 'Forget it, make me a 20 mm spacer'],
+      [{ width: 60 }, {}],
+    )
+    expect(summaries[0]).toContain(PLAN_AGAIN_NOTE)
+    expect(summaries.slice(1).join(' ')).not.toContain(PLAN_AGAIN_NOTE)
+    expect(built).toEqual(['Spacer'])
+  })
+
+  it('stop asking for the plan again when the person declines the new plan: the part is built from the sheet', async () => {
+    const { summaries, built } = await chat(
+      [{ calls: [HINGE] }, { calls: [SHEET] }, { calls: [{ name: 'design.plan', args: { part: 'Declined', printInPlace: ['Leaf', 'Pin'] } }] }, { calls: [{ name: 'geom.extrude', args: { name: 'Leaf' } }] }, { text: 'Done.' }],
+      ['A print-in-place hinge'],
+      [{ width: 60 }],
+    )
+    expect(summaries[0]).toContain(PLAN_AGAIN_NOTE)
+    expect(summaries.join(' ')).not.toContain('Nothing was built')
+    expect(built).toEqual(['Leaf'])
+  })
+
   it('come from the fit rule profile of the run', () => {
     expect(clearanceProfileOf({})).toEqual({ nozzleMm: undefined, material: undefined })
     expect(clearanceProfileOf({ machine: { nozzle: 0.6, material: 'TPU' }, overrides: { layer_height: 'x' } })).toEqual({ nozzleMm: 0.6, material: 'TPU' })

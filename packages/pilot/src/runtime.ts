@@ -546,7 +546,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // nothing at all for a plan the person did not approve.
   const printInPlace = new Map<string, boolean>()
   // Sessions whose sheet changed sizes after a print-in-place plan was approved: the plan is made again before a build.
+  // It belongs to that plan, so it ends with it (endPrintInPlace) and when the person declines the new plan.
   const planAgain = new Set<string>()
+  const endPrintInPlace = (sessionId: string): void => {
+    printInPlace.delete(sessionId)
+    planAgain.delete(sessionId)
+  }
+  // whether a build waits for the print-in-place plan to be made again: only while that plan's part is unbuilt and
+  // design.plan is there to make it
+  const waitsForPlan = (sessionId: string): boolean => planAgain.has(sessionId) && printInPlace.get(sessionId) === false && findTool('design.plan') !== undefined
   // Sessions that confirmed a sheet with the gap rows: the rows were for the planned part, so the next run's sheets
   // get none unless a new print-in-place plan is approved (a part the person asks for instead skips the plan).
   const gapSheet = new Set<string>()
@@ -921,13 +929,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const under = sheetDesigns.get(sessionId)
       const elsewhere = carried.has(sessionId) && typeof design === 'string' && under !== undefined && under.size > 0 && !under.has(design)
       if (!confirmed.has(sessionId) || elsewhere) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
-      if (planAgain.has(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
+      if (waitsForPlan(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
       usedSheet.add(sessionId)
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
       else starting = true
     }
     // the planned part is being built: a sheet from here on is another part's
-    if (startsPart(tool.name, input)) printInPlace.delete(sessionId)
+    if (startsPart(tool.name, input)) endPrintInPlace(sessionId)
     const project = opts.project?.()
     const ctx: ToolContext = {
       host: opts.host,
@@ -1041,7 +1049,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.ok === false && isGeomStuckFinal(out.summary)) stops.timedOut.set(stopKey, (stops.timedOut.get(stopKey) ?? new Set()).add(again))
     else if (out.ok !== false && geometry && stopKey !== MODEL_KEY) for (const key of keysOf(stopKey, stops.seen)) stops.timedOut.delete(key)
     if (out.ok !== false) noteDesigns(out.output, stops)
-    if (tool.name === 'pilot.sheet' && planAgain.has(sessionId) && out.ok !== false) out = { ...out, summary: `${out.summary}. ${PLAN_AGAIN_NOTE}` }
+    if (tool.name === 'pilot.sheet' && waitsForPlan(sessionId) && out.ok !== false) out = { ...out, summary: `${out.summary}. ${PLAN_AGAIN_NOTE}` }
     // an engine refusal shows in plain words; the model reads the engine's text with how to try again
     const plain = out.ok === false ? plainRefusal(out.summary) : undefined
     const result: Extract<PilotEvent, { type: 'tool_result' }> = { type: 'tool_result', callId: call.id, ok: out.ok !== false, summary: plain?.shown ?? out.summary, ms: now() - t0 }
@@ -1060,8 +1068,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       else printInPlace.delete(sessionId)
       planAgain.delete(sessionId)
     }
+    // a plan the person turns down ends the print-in-place plan before it: the part is built from the confirmed sheet
+    if (tool.name === 'design.plan' && (out.output as { accepted?: unknown } | undefined)?.accepted === false) endPrintInPlace(sessionId)
     if (tool.name === 'design.new' && out.ok !== false && printInPlace.has(sessionId)) {
-      if (printInPlace.get(sessionId)) printInPlace.delete(sessionId)
+      if (printInPlace.get(sessionId)) endPrintInPlace(sessionId)
       else printInPlace.set(sessionId, true)
     }
     // the part this chat prints is the design it started last
@@ -1607,7 +1617,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           carried.add(sessionId)
           usedSheet.add(sessionId)
         } else carried.delete(sessionId)
-        if (gapSheet.delete(sessionId)) printInPlace.delete(sessionId)
+        if (gapSheet.delete(sessionId)) endPrintInPlace(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {
