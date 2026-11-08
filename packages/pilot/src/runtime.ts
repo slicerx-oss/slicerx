@@ -107,22 +107,23 @@ const sameName = (a: string, b: string): boolean => a.trim().toLowerCase() === b
 
 /** Words in a part's name that only say which try or version it is. */
 const PART_VERSION_WORDS: ReadonlySet<string> = new Set(['new', 'again', 'retry', 'redo', 'redone', 'fix', 'fixed', 'corrected', 'improved', 'better', 'updated', 'revised', 'rework', 'reworked', 'final', 'version', 'ver', 'rev', 'copy', 'attempt', 'try', 'another', 'second', 'alt'])
-/** Words that name no part: in "Hinge for my door" only hinge and door do. */
-const FILLER_WORDS: ReadonlySet<string> = new Set(['a', 'an', 'the', 'of', 'for', 'my', 'your', 'our', 'and', 'or', 'with', 'to', 'in', 'on', 'at', 'by', 'this', 'that', 'it'])
-const hasNumber = (name: string): boolean => /\d/.test(name.replace(/\b(v|ver|rev|mk)\d+\b/gi, ''))
 /**
- * The words of a part's name, lowercase, in any script, without version words ("v2", "rev3", "new", "fixed") or filler
- * ("the", "my"). A bare number is a version word too, unless `numbered` (the other name has one as well).
+ * Words that name no part: in "Hinge for my door" only hinge and door do, and "print-in-place" and "fit" say how a part
+ * prints, not which part it is.
  */
-function partNameWords(name: string, numbered: boolean): string[] {
+const FILLER_WORDS: ReadonlySet<string> = new Set(['a', 'an', 'the', 'of', 'for', 'my', 'your', 'our', 'and', 'or', 'with', 'to', 'in', 'on', 'at', 'by', 'this', 'that', 'it', 'print', 'place', 'fit'])
+/**
+ * The words of a part's name, lowercase, in any script, without version words ("v2", "rev3", "new", "fixed"), filler
+ * ("the", "my") or bare numbers: a number says which one ("Spacer 3", "Hinge 2"), never which part.
+ */
+function partNameWords(name: string): string[] {
   const words = name.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []
-  return words.filter((w) => !PART_VERSION_WORDS.has(w) && !FILLER_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w) && (numbered || !/^\d+$/.test(w)))
+  return words.filter((w) => !PART_VERSION_WORDS.has(w) && !FILLER_WORDS.has(w) && !/^(v|ver|rev|mk)\d+$/.test(w) && !/^\d+$/.test(w))
 }
 /** A design's name and a planned part's name share a word that names the part: "Hinge v2" and "Print-in-place hinge". */
 const sharesWord = (a: string, b: string): boolean => {
-  const numbered = hasNumber(a) && hasNumber(b)
-  const theirs = new Set(partNameWords(b, numbered))
-  return partNameWords(a, numbered).some((w) => theirs.has(w))
+  const theirs = new Set(partNameWords(b))
+  return partNameWords(a).some((w) => theirs.has(w))
 }
 
 /** The sheet rows that are the fit rule's gaps: a print-in-place plan holds none of them, whoever filled them in. */
