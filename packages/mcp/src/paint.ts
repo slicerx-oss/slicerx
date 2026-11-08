@@ -86,7 +86,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const preview = defineTool({
     name: 'paint.preview',
-    version: '1.1.0',
+    version: '1.0.2',
     source: 'command',
     permission: 'read',
     description:
@@ -142,7 +142,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const apply = defineTool({
     name: 'paint.apply',
-    version: '1.1.0',
+    version: '1.0.0',
     source: 'command',
     permission: 'slice',
     description: "Apply a paint preview as a step in the design's history (it replays, saves with slicerx_design_save and undoes with slicerx_design_undo). Refused when the design changed since the preview; preview again then. Returns the paint read back, which matches the preview.",
@@ -178,7 +178,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
 
   const read = defineTool({
     name: 'paint.regions',
-    version: '1.1.0',
+    version: '1.0.0',
     source: 'command',
     permission: 'read',
     description: 'Read a design\'s paint back: for one layer, each part\'s painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. Optionally a picture (PNG only with image: true).',
