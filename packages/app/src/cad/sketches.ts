@@ -7,7 +7,7 @@ import { historyOf, stepId, withoutTaken, withSketch, type FaceFrame, type Proje
 import type { MeshHandle } from '@slicerx/contracts'
 import { useSyncExternalStore } from 'react'
 import { brandAccent } from '../edition'
-import { get, markStale, set, type PlateEntry } from '../state/store'
+import { get, markStale, set, toast, type PlateEntry } from '../state/store'
 import { colorsFor } from './commit'
 import { cancelEdit, runReplay, toPart, withStatus } from './history/ops'
 import { newStep, withLast, type UndoStep } from '../plate/history'
@@ -70,6 +70,17 @@ export function oneAtATime(): <T>(run: () => Promise<T>) => Promise<T | undefine
       busy = false
     }
   }
+}
+
+/**
+ * What the sketch editor does with an Extrude or Revolve that went through: one that changed nothing (a join that
+ * misses the body) keeps the editor and the drawing open with why as its note, as a refusal does, so the distance
+ * or direction can be fixed and pressed again; one that landed closes the editor with a toast.
+ */
+export function afterSolid(r: { message: string; warn: boolean; missed?: true | undefined }, note: (text: string) => void): void {
+  if (r.missed) return note(r.message)
+  toast(r.message, r.warn ? 'warn' : 'ok')
+  set({ objectTool: null })
 }
 
 /** The sketch with this id, or null. */

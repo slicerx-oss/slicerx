@@ -13,7 +13,7 @@ import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
 import { addsTo, bodyOf, changeProjection, faceSource, followBodies, projectNow } from '../src/cad/project-sketch'
-import { finishSketch, oneAtATime, sketchById, solidOnNewSketch, updateSketch } from '../src/cad/sketches'
+import { afterSolid, finishSketch, oneAtATime, sketchById, solidOnNewSketch, updateSketch } from '../src/cad/sketches'
 import { applyExtrude, applyRevolve, type ExtrudeInput } from '../src/cad/cad-ops'
 import { setGeomProvider } from '../src/geom/client'
 import { createHistory, history, type UndoStep } from '../src/plate/history'
@@ -878,6 +878,31 @@ describe('a solid from a new sketch with a projection', () => {
     // once it is done, the next press runs
     await gate(() => solidOnNewSketch(s, extrudeOf(s)))
     expect(get().plate).toHaveLength(3)
+  })
+
+  it('keeps the editor open with why when a join misses, the drawing kept and nothing in the timeline or the undo history', async () => {
+    set({ plate: [body('b', 10)], objectTool: 'sketch' })
+    undo.clear()
+    const s = drawn()
+    nextExtrude = 'miss'
+    const r = await solidOnNewSketch(s, extrudeOf(s, { operation: 'join' }, 'b'))
+    expect(r).toMatchObject({ missed: true, warn: true, message: expect.stringMatching(/does not reach the body/) })
+    const notes: string[] = []
+    afterSolid(r, (text) => notes.push(text))
+    expect(notes).toEqual([r.message])
+    expect(get().objectTool).toBe('sketch')
+    expect(kinds()).toEqual([])
+    expect(undo.state().undo).toBe(0)
+    // pressed again the right way, the same drawing makes the sketch and the solid as one step
+    const done = await solidOnNewSketch(s, extrudeOf(s))
+    afterSolid(done, (text) => notes.push(text))
+    expect(notes).toHaveLength(1)
+    expect(get().objectTool).toBeNull()
+    expect(kinds()).toEqual(['sketch', 'feature'])
+    expect(get().timeline.items[0]).toMatchObject({ name: 'Sketch 1' })
+    expect(undo.state().undo).toBe(1)
+    set((st) => ({ plate: [...st.plate, body('x', 4)] }))
+    expect(undo.state().undo).toBe(2)
   })
 })
 
