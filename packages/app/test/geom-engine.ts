@@ -91,8 +91,8 @@ function pairIds(rec: unknown, now: unknown, ids: Map<string, string>): void {
   else if (rec && now && typeof rec === 'object' && typeof now === 'object') for (const k of Object.keys(rec)) pairIds((rec as Record<string, unknown>)[k], (now as Record<string, unknown>)[k], ids)
 }
 
-/** `v` with every recorded id swapped for the live one. */
-function withIds<T>(v: T, ids: Map<string, string>): T {
+/** `v` with every recorded id swapped for the live one. Exported for its test. */
+export function withIds<T>(v: T, ids: Map<string, string>): T {
   if (!ids.size) return v
   // One pass over the text: ids from different tests run on one counter, so a live id can be another recorded id (recorded
   // ...85 and ...86, live ...86 and ...87), and swapping one id after another would swap the same text twice.
@@ -119,7 +119,7 @@ export class ReplayMismatch extends Error {
 }
 
 /** The replaying provider over the replies in `file` (or `recorded`); `stale` lists every call that did not match. */
-export function replayGeom(file: string, recorded?: Replies, pooled = false) {
+export function replayGeom(file: string, recorded?: Replies) {
   const replies = recorded ?? (existsSync(file) ? (JSON.parse((file.endsWith('.gz') ? gunzipSync(readFileSync(file)) : readFileSync(file)).toString('utf8')) as Replies) : {})
   if (Array.isArray(replies)) throw new Error(`${file} is in the old one list form: record it again with SX_GEOM_RECORD=1`)
   const stale: string[] = []
@@ -156,23 +156,9 @@ export function replayGeom(file: string, recorded?: Replies, pooled = false) {
         }
         return paired
       }
-      const here = replies[key]?.[next]
-      let r = here
-      let paired = here ? matches(here) : null
-      if (paired) next++
-      else if (pooled) {
-        // A test starts with an empty replay cache (useGeomEngine), so it makes calls that were recorded in another
-        // test only, where a step it needs was already cached. The engine answers a request the same way wherever it
-        // is asked, so any recorded reply to this op and request stands in.
-        for (const list of Object.values(replies)) {
-          const found = list.find((c) => (paired = matches(c)) !== null)
-          if (found) {
-            r = found
-            break
-          }
-        }
-        if (!paired) next++
-      } else next++
+      const r = replies[key]?.[next]
+      let paired = r ? matches(r) : null
+      next++
       if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
       if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
       if (!paired) {
@@ -213,7 +199,7 @@ export function useGeomEngine(name: string, options: { compressed?: boolean; fre
     if (liveEngine) {
       engine = await wasmGeom((r) => (recorded[testKey()] ??= []).push(r))
     } else {
-      engine = replay = replayGeom(fixture, undefined, options.freshCache === true)
+      engine = replay = replayGeom(fixture)
     }
     setGeomProvider(provider)
   })
@@ -222,9 +208,8 @@ export function useGeomEngine(name: string, options: { compressed?: boolean; fre
   // The replay cache (packages/cad-history) outlives a test, and a step it holds makes no engine call. Recorded replies
   // are counted per call, so a test that ran after another one that cached the same steps asked for fewer calls than
   // were recorded and failed, in some orders only. With `freshCache` each test makes every call it needs, live or
-  // recorded, and a replayed call that is not at its place in the test's own list is looked up by op and request across
-  // the file's recording. A file whose recording was made that way needs no option; one recorded with the cache warm
-  // and run in the file's order replays as it was recorded.
+  // recorded, and replays only its own list, in order. A file whose recording was made that way needs no option; one
+  // recorded with the cache warm and run in the file's order replays as it was recorded.
   beforeEach(() => {
     if (options.freshCache) clearReplayCache()
     setGeomProvider(provider)
