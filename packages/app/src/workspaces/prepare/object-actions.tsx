@@ -82,7 +82,7 @@ export function ExportMenu({ open, onClose, align = 'start' }: MenuProps) {
         </>
       )}
       <MenuHeading>For the printer</MenuHeading>
-      <MenuItem icon="send-to-printer" data-testid="export-gcode-3mf" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => run(() => exportGcode3mf(host))}>
+      <MenuItem icon="send-to-printer" data-testid="export-gcode-3mf" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => !unsafe && run(() => exportGcode3mf(host))}>
         Sliced plate as .gcode.3mf
       </MenuItem>
       <MenuItem icon="plates" data-testid="export-all-plates" disabled={plates < 2} aria-disabled={allBlocked ? true : undefined} {...(allBlocked ? tipAttrs({ title: 'Every plate, sliced', reason: allBlocked }) : {})} onClick={() => run(() => exportAllPlates(host))}>
