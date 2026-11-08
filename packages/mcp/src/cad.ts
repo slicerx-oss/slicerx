@@ -362,6 +362,8 @@ export function traceRefusal(e: unknown): unknown {
     .replace(/the tolerance/g, 'color_tolerance')
     .replace(/what to trace or the threshold/g, 'mode or threshold')
     .replace(/use a simpler image/g, 'lower max_side_px or use a simpler image')
+  // a file too large to read is refused before it is shrunk, so the working size cannot help
+  if (/is too large to read/.test(e.message)) e.message += '. max_side_px shrinks the image only after it is read, so it does not help here'
   return e
 }
 
