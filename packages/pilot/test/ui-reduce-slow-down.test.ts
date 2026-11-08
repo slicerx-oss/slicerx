@@ -6,10 +6,13 @@
 // the history a restored chat gives the model, as it is in the live run.
 import type { PilotEvent } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
+import { SLOW_DOWN_LINE, SLOW_DOWN_NOTICE, SLOW_DOWN_WENT_ON, SLOW_DOWN_CANCELED } from '../src/slow-down-lines'
 import { emptyTranscript, foldEvents, restoredTranscript, startTurn, transcriptTurns, type Block, type Transcript } from '../ui/reduce'
 
 const NOTICE = 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.'
-const GIVE_UP = 'Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
+const GIVE_UP = 'Free mimir is still at its limit, so mimir stopped here. Say keep going in a minute to carry on.'
+const WENT_ON = 'Free mimir hit its limit for this minute, so mimir waited a moment, then went on.'
+const CANCELED = 'Free mimir hit its limit for this minute, so mimir stopped waiting when you canceled.'
 const waiting: PilotEvent = { type: 'error', message: NOTICE, retryable: false, code: 'slow_down', waiting: true }
 const gaveUp: PilotEvent = { type: 'error', message: GIVE_UP, retryable: true, code: 'slow_down' }
 const say = (text: string): PilotEvent[] => [{ type: 'text', delta: text }, { type: 'text_done' }]
@@ -51,6 +54,52 @@ describe('slow_down lines in one reply', () => {
   it('a waiting line with another code is not replaced', () => {
     const other: PilotEvent = { type: 'error', message: 'Busy, waiting.', retryable: false, code: 'busy', waiting: true }
     expect(shape(fold([other, gaveUp]))).toEqual(['error:waiting', 'error:gave_up'])
+  })
+})
+
+const texts = (s: Transcript): string[] => lines(s).flatMap((b) => (b.kind === 'error' ? [b.message] : []))
+
+describe('the waiting line settles when the wait is over', () => {
+  it('keeps the strings in slow-down-lines', () => {
+    expect([SLOW_DOWN_NOTICE, SLOW_DOWN_LINE, SLOW_DOWN_WENT_ON, SLOW_DOWN_CANCELED]).toEqual([NOTICE, GIVE_UP, WENT_ON, CANCELED])
+  })
+
+  it('stays as it is while the run waits', () => {
+    expect(texts(fold([waiting]))).toEqual([NOTICE])
+  })
+
+  it('turns to past tense once the run goes on', () => {
+    expect(texts(fold([waiting, ...say('Built the base.')]))).toEqual([WENT_ON])
+    expect(texts(fold([waiting, ...step('c1'), { type: 'done', stopReason: 'end', ms: 5 }]))).toEqual([WENT_ON])
+  })
+
+  it('settles every streak that was gone on from', () => {
+    expect(texts(fold([waiting, ...step('c1'), waiting, ...step('c2')]))).toEqual([WENT_ON, WENT_ON])
+  })
+
+  it('says it stopped waiting when the run is canceled mid wait', () => {
+    expect(texts(fold([waiting, { type: 'done', stopReason: 'canceled', ms: 5 }]))).toEqual([CANCELED])
+  })
+
+  it('a settled line is not taken over by a later line about the limit', () => {
+    const s = fold([waiting, ...say('Built.'), gaveUp])
+    expect(texts(s)).toEqual([WENT_ON, GIVE_UP])
+  })
+
+  it('keeps the waiting mark so a client can tell the wait', () => {
+    const b = lines(fold([waiting, ...say('Built.')]))[0]
+    expect(b).toMatchObject({ kind: 'error', waiting: true, code: 'slow_down' })
+  })
+})
+
+describe('the settled waiting line in a restored chat', () => {
+  it('stays settled and out of the reply the model is given', () => {
+    const s = restoredTranscript(fold([waiting, ...say('Built the base.'), { type: 'done', stopReason: 'end', ms: 5 }]))
+    expect(texts(s)).toEqual([WENT_ON])
+    expect(transcriptTurns(s)).toEqual([{ user: 'A Pi case', reply: 'Built the base.' }])
+    const c = restoredTranscript(fold([waiting, { type: 'done', stopReason: 'canceled', ms: 5 }]))
+    expect(texts(c)).toEqual([CANCELED])
+    expect(transcriptTurns(c)).toEqual([{ user: 'A Pi case', reply: '' }])
   })
 })
 

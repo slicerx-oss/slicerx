@@ -152,7 +152,7 @@ describe('a slow_down from the proxy mid-build', () => {
     const lines = foldEvents(first).turns.at(-1)!.blocks.filter((b) => b.kind === 'error' || (b.kind === 'say' && /limit|slow down/i.test(b.text)))
     expect(lines).toEqual([expect.objectContaining({ kind: 'error', message: SLOW_DOWN_LINE, code: 'slow_down' })])
     expect(lines[0]).not.toHaveProperty('waiting')
-    expect(SLOW_DOWN_LINE).toBe('Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.')
+    expect(SLOW_DOWN_LINE).toBe('Free mimir is still at its limit, so mimir stopped here. Say keep going in a minute to carry on.')
     expect(said(first)).not.toContain(SLOW_DOWN_LINE)
     expect(s.log).toEqual(['Base', 'Base hollow'])
     // the proxy takes calls again: "keep going" builds the lid under the sheet already confirmed
