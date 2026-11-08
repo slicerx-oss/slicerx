@@ -9,11 +9,18 @@ import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
 /** A question about sizes, which belongs on the dimension sheet with suggested values rather than on a card of buttons. */
 const SIZE_QUESTION = /\b(?:dimensions?|sizes?|measurements?|how (?:big|wide|tall|long|thick|deep|high|large))\b/i
+/** A question about the person's own things (how thick your shelf is, which phone you have): theirs to answer on a card. */
+const THEIR_THINGS = /\b(?:your|yours|which)\b|\byou (?:have|own|use|got)\b/i
+
+/** An open question about sizes, with no subject the person owns, goes to the sheet. */
+function sheetQuestion(text: string): boolean {
+  return SIZE_QUESTION.test(text) && !THEIR_THINGS.test(text)
+}
 
 /** What the model is told when it asks about sizes on a card where the sheet is offered. */
 export const SIZES_ON_SHEET = 'Not shown: sizes go on the dimension sheet, not a question card. Call pilot.sheet now with a suggested value for each size (source guess unless you know it); the person edits them there.'
 
-/** `sizesOnSheet`: the sheet is offered beside it (the mimir tab), so a question about sizes goes there instead. */
+/** `sizesOnSheet`: the sheet is offered beside it (the mimir tab), so an open question about sizes goes there instead. */
 export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never> {
   return defineTool({
     name: 'pilot.ask',
@@ -32,7 +39,8 @@ export function askTool(opts: { sizesOnSheet?: boolean } = {}): PilotTool<never>
     args: (i) => `"${i.question}"`,
     async run(i, ctx) {
       if (!ctx.ask) return { ok: false, summary: 'Nobody here can answer a question' }
-      if (opts.sizesOnSheet && SIZE_QUESTION.test(`${i.title} ${i.question}`)) return { ok: false, summary: SIZES_ON_SHEET }
+      // a redirect, not a failure: it never counts toward moving the run to the larger model
+      if (opts.sizesOnSheet && sheetQuestion(`${i.title} ${i.question}`)) return { summary: SIZES_ON_SHEET, output: { shown: false, use: 'pilot.sheet' } }
       const answer = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
       // turning a question down is an answer, not a failure: the run carries on from it
       if (wasDismissed(answer.id)) {
