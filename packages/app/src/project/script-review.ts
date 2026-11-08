@@ -31,7 +31,7 @@ export function recognizedScript(key: string, value: unknown, model: string | un
 provideScriptRecognition(recognizedScript)
 
 /** How long the open waits for the engine's script review before it goes on without one. */
-const REVIEW_WAIT_MS = 15_000
+export const REVIEW_WAIT_MS = 15_000
 
 /** Read-back only. The caller supplies the selection made before importing the project's printer names. */
 export async function reviewImportedScripts(slicer: SlicerHost, settings: Record<string, unknown>, selected: ScriptIdentity | null): Promise<ProjectScriptReview[]> {
