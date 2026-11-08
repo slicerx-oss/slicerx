@@ -188,7 +188,8 @@ export function startEngineCheck(host: Pick<Host, 'slicer'>, delayMs = CHECK_DEL
     }, CHECK_SLOW_MS)
     try {
       const req = await checkRequest(slicer, s)
-      if (ac.signal.aborted) return null
+      // An arrange that started meanwhile checks its own layout; this plate is no longer the one shown.
+      if (ac.signal.aborted || get().arranging) return null
       const key = JSON.stringify(req)
       let result = kept.get(key)
       if (!result) {

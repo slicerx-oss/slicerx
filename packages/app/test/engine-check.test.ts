@@ -20,7 +20,7 @@ import { applyPlateCheckFix } from '../src/plate/heimdall-fix'
 import { clearanceTrouble, sequenceProblem } from '../src/plate/sequence-check'
 import { arrangePlate } from '../src/plate/edit'
 import { beginLiveEdit, endLiveEdit } from '../src/state/live-edit'
-import { get, set } from '../src/state/store'
+import { appStore, get, set } from '../src/state/store'
 import { EngineWarning, PreflightWarning } from '../src/workspaces/prepare/seq-warning'
 
 function box(w: number, d: number, h: number) {
@@ -64,7 +64,7 @@ beforeAll(async () => void (await Promise.all([import('../src/state/slice-plate'
 let stop: (() => void) | null = null
 beforeEach(() => {
   vi.useFakeTimers()
-  set({ plate: close30(), plates: plates('by-object'), activePlate: 'p1', overrides: { ...A1 }, profile: { printerId: 'bambu-a1' } as never, slice: { status: 'idle' }, liveEdit: false, historyEdit: null, plateLoading: false, calibration: {}, layerMarks: {}, resume: null, selection: null, selectedIds: [], toast: null })
+  set({ plate: close30(), plates: plates('by-object'), activePlate: 'p1', overrides: { ...A1 }, profile: { printerId: 'bambu-a1' } as never, slice: { status: 'idle' }, liveEdit: false, historyEdit: null, plateLoading: false, arranging: null, calibration: {}, layerMarks: {}, resume: null, selection: null, selectedIds: [], toast: null })
 })
 afterEach(() => {
   stop?.()
@@ -160,6 +160,22 @@ describe('when the plate check runs', () => {
     await vi.waitFor(() => expect(asked).toHaveLength(2))
     asked[1]!.fail(new Error('unknown mesh 9'))
     await vi.waitFor(() => expect(get().plateCheck.status).toBe('error'))
+  })
+
+  it('drops a check whose request is still being built when Arrange starts, and checks again after it', async () => {
+    const { h, asked } = host()
+    // Arrange starts while the check builds its request.
+    const off = appStore.subscribe((now, prev) => {
+      if (now.plateCheck.status === 'running' && prev.plateCheck.status !== 'running' && !now.arranging) set({ arranging: { done: 0, total: 2 } })
+    })
+    stop = startEngineCheck(h)
+    await settle(CHECK_DELAY_MS + 10)
+    await settle(50)
+    off()
+    expect(asked).toHaveLength(0)
+    set({ arranging: null })
+    await settle(CHECK_DELAY_MS + 10)
+    await vi.waitFor(() => expect(asked).toHaveLength(1))
   })
 
   it('says it is checking only once a run takes a moment', async () => {
