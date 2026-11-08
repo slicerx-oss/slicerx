@@ -90,7 +90,8 @@ describe('mimir sessions over the app link', () => {
   it('say which error lines were free mimir waiting out its limit and going on, with their code', async () => {
     const s = createMemorySessionStore()
     const notice = 'Free mimir hit its limit for this minute, so mimir is waiting a moment, then going on.'
-    const line = 'Free mimir is still at its limit for this minute, so I stopped here. Say keep going in a minute and I will carry on where I left off.'
+    const wentOn = 'Free mimir hit its limit for this minute, so mimir waited a moment, then went on.'
+    const line = 'Free mimir is still at its limit, so mimir stopped here. Say keep going in a minute to carry on.'
     const events: PilotEvent[] = [
       start('mimir_w', '2026-10-12T12:00:00Z'),
       { type: 'error', message: notice, retryable: false, code: 'slow_down', waiting: true },
@@ -104,7 +105,7 @@ describe('mimir sessions over the app link', () => {
     setSessionSource({ store: s })
     const out = (await runCall('mimir.session', { id: 'mimir_w' })) as { turns: { steps: Record<string, unknown>[] }[] }
     expect(out.turns[0]!.steps).toEqual([
-      { kind: 'error', message: notice, code: 'slow_down', waiting: true },
+      { kind: 'error', message: wentOn, code: 'slow_down', waiting: true },
       { kind: 'tool', tool: 'geom.extrude', state: 'ok', summary: 'Extruded: step 1, Base' },
       { kind: 'error', message: line, code: 'slow_down' },
     ])
