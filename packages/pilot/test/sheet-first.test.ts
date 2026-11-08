@@ -76,6 +76,24 @@ describe('a sheet before the first build', () => {
     expect(ran).toEqual([])
   })
 
+  // "yes, build it as shown" typed while a second sheet waits sets that sheet aside; the sizes confirmed on the first
+  // still stand, so the build goes through instead of asking for the same sheet again.
+  it('keeps an earlier confirmation when a later sheet is set aside by words', async () => {
+    const ran: string[] = []
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [SHEET] }, { calls: [SHEET] }, { calls: [EXTRUDE] }, { text: 'Built.' }], { chunk: false }), builtins: false, tools: [sheetTool(), geom('geom.extrude', ran)] })
+    let n = 0
+    for await (const e of p.run('s', 'A box')) if (e.type === 'sheet') void (n++ === 0 ? p.answerSheet!(e.sheet.id, {}) : p.answerSheet!(e.sheet.id, null, 'yes build it as shown'))
+    expect(n).toBe(2)
+    expect(ran).toEqual(['geom.extrude:new'])
+  })
+
+  // A sheet of the sizes of a part already built confirms that part's sizes, not a new part's.
+  it('still refuses a new part after confirming the sheet of a part already built', async () => {
+    const built = { name: 'pilot.sheet', args: { ...SHEET.args, design: 'obj_box' } }
+    const { ran } = await play([{ calls: [built] }, { calls: [EXTRUDE] }, { text: 'Nothing built.' }])
+    expect(ran).toEqual([])
+  })
+
   it('lets edits to a part through without a sheet', async () => {
     const { ran } = await play([{ calls: [{ name: 'geom.extrude', args: { operation: 'cut', part: 0 } }] }, { text: 'Cut.' }])
     expect(ran).toEqual(['geom.extrude:cut'])

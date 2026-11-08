@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { LinkError, runCall } from '../src/app-link/methods'
 import { AppLinkPrompt, ARM_MS } from '../src/app-link/prompt'
 import { clientSheets } from '../src/app-link/sheets'
+import { get, set, type PlateEntry } from '../src/state/store'
 
 const A = { id: 'c1', name: 'Print Helper' }
 const B = { id: 'c2', name: 'Other' }
@@ -100,5 +101,18 @@ describe('client sheets over the app link', () => {
     fireEvent.click(screen.getByTestId('app-link-sheet-confirm'))
     await vi.waitFor(async () => expect(((await runCall('sheet.get', { sheetId: asked.sheetId }, A)) as { state: string }).state).toBe('confirmed'))
     expect(await runCall('sheet.get', { sheetId: asked.sheetId }, A)).toMatchObject({ state: 'confirmed', answer: { confirmed: true, values: { bore: 6.2, wall: 2.4 }, changed: ['wall'] } })
+  })
+
+  it('keep the built design a sheet changes, and refuse one that is not on the plate', async () => {
+    const before = get().plate
+    const entry = { id: 'obj_clip', name: 'Clip', parts: [{ name: 'Clip', slot: 1, positions: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) }], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], colors: [], handle: {} } as unknown as PlateEntry
+    set({ plate: [entry] })
+    try {
+      const asked = (await runCall('sheet.ask', { ...SHEET, design: 'obj_clip' }, A)) as { sheetId: string }
+      expect(clientSheets.getState().sheets.find((x) => x.sheet.id === asked.sheetId)?.sheet.design).toBe('obj_clip')
+      expect(await code(runCall('sheet.ask', { ...SHEET, design: 'obj_gone' }, B))).toBe('not_found')
+    } finally {
+      set({ plate: before })
+    }
   })
 })

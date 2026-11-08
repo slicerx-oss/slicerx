@@ -22,6 +22,25 @@ describe('app sheet tools', () => {
     expect(call).toHaveBeenLastCalledWith('sheet.get', { sheetId: 'csheet_1' })
   })
 
+  it('pass the built design a sheet changes on to the app, with the rows placed on it', async () => {
+    const call = vi.fn(async () => ({ sheetId: 'csheet_2', state: 'waiting' }))
+    const [ask] = appSheetTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+    const sheet = {
+      title: 'Case sizes',
+      design: 'obj_case',
+      dims: [
+        { key: 'length', label: 'Length', value: 96, unit: 'mm', source: 'asked', at: { a: [100, 80, 0], b: [196, 80, 0], off: [0, 0, -8] } },
+        { key: 'width', label: 'Width', value: 68, unit: 'mm', source: 'asked', at: { a: [196, 80, 0], b: [196, 148, 0], off: [8, 0, 0] } },
+      ],
+    }
+    await ask!.run(ask!.input.parse(sheet) as never, {} as never)
+    expect(call).toHaveBeenCalledWith('sheet.ask', expect.objectContaining({ design: 'obj_case', dims: expect.arrayContaining([expect.objectContaining({ key: 'width', at: sheet.dims[1]!.at })]) }))
+    // its text tells a client about part, at and design
+    expect(ask!.description).toMatch(/\bdesign\b/)
+    expect(ask!.description).toMatch(/\bat\b/)
+    expect(ask!.description).toMatch(/revolve, sweep or loft/)
+  })
+
   it('check the sheet before it leaves', () => {
     const [ask] = appSheetTools({ call: vi.fn() } as unknown as AppLinkCaller, 'SlicerX')
     expect(ask!.input.safeParse({ title: 'Clip', dims: [] }).success).toBe(false)

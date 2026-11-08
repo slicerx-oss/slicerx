@@ -4,7 +4,7 @@
 // dimension line and a numbered callout that matches its row. The part is the design as built when the sheet changes
 // one, else the sheet's own solids, drawn the same way: its silhouette and its visible edges, as a technical drawing
 // shows a part. Pure geometry, in screen pixels, so the drawing component only paints it.
-import type { PilotDim, PilotDimAt, PilotSheetSolid } from '@slicerx/contracts'
+import type { PilotDim, PilotDimAt, PilotSheetExtrude, PilotSheetLoft, PilotSheetRevolve, PilotSheetSolid, PilotSheetSweep } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 export type ViewName = 'front' | 'top' | 'side' | 'iso'
@@ -38,7 +38,7 @@ export interface Face {
   holes?: V3[][]
 }
 
-const to3 = (plane: PilotSheetSolid['plane'], u: number, v: number, t: number): V3 => (plane === 'xy' ? [u, v, t] : plane === 'xz' ? [u, t, v] : [t, u, v])
+const to3 = (plane: PilotSheetExtrude['plane'], u: number, v: number, t: number): V3 => (plane === 'xy' ? [u, v, t] : plane === 'xz' ? [u, t, v] : [t, u, v])
 
 const area = (pts: readonly P2[]): number => pts.reduce((s, p, i) => {
   const q = pts[(i + 1) % pts.length]!
@@ -49,7 +49,7 @@ const area = (pts: readonly P2[]): number => pts.reduce((s, p, i) => {
 const orient = (pts: readonly P2[], ccw: boolean): P2[] => (area(pts) > 0 === ccw ? [...pts] : [...pts].reverse())
 
 /** A solid's faces: a side for each edge of its outline and holes, and its two caps (holes cut through them). */
-export function solidFaces(s: PilotSheetSolid): Face[] {
+export function solidFaces(s: PilotSheetExtrude): Face[] {
   const lo = Math.min(s.from, s.to)
   const hi = Math.max(s.from, s.to)
   const outer = orient(s.points, true)
@@ -97,48 +97,344 @@ export function viewsFor(dims: readonly PilotDim[], order: readonly ViewName[]):
 }
 
 /**
- * What a view draws: planar polygons in the part's mm with Z up, each an outline and the holes in it. A sheet's own
- * solids become their faces, and a built design's mesh its triangles, so both draw the same way.
+ * What a view draws, in the part's mm with Z up: planar polygons, each an outline and the holes in it (a sheet's
+ * extruded solids), and triangles, nine numbers each (a built design's mesh, and a sheet's revolves, sweeps and lofts).
+ * Flat typed arrays, so a mesh of hundreds of thousands of triangles costs no object per triangle.
  */
 export interface Shape {
   polys: V3[][][]
-  /** Every corner once per polygon ring, for the bounds. */
-  pts: V3[]
+  tris: Float32Array
+  /** Every corner, three numbers each, for the bounds. */
+  pts: Float32Array
+  /** The mesh had more triangles than the drawing takes, so it is drawn simplified (TRI_BUDGET). */
+  simplified: boolean
 }
 
-/** The shape of a sheet's solids: each solid's sides and caps. */
+/** The most triangles a drawing rasterizes: a denser mesh is simplified to about this many first. */
+export const TRI_BUDGET = 80_000
+
+const pushTri = (out: number[], a: V3, b: V3, c: V3): void => {
+  out.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2])
+}
+const pushQuad = (out: number[], a: V3, b: V3, c: V3, d: V3): void => {
+  pushTri(out, a, b, c)
+  pushTri(out, a, c, d)
+}
+
+/** A circle of radius `r` as a 32 sided outline, counterclockwise. */
+const circle = (r: number, c: P2 = [0, 0], n = 32): P2[] => Array.from({ length: n }, (_, i) => [c[0] + r * Math.cos((2 * Math.PI * i) / n), c[1] + r * Math.sin((2 * Math.PI * i) / n)] as P2)
+
+/** A profile turned about an axis in its own plane; the open ends of a partial turn are capped. */
+function revolveInto(s: PilotSheetRevolve, polys: V3[][][], out: number[]): void {
+  const angle = Math.min(360, Math.max(1, Math.abs(s.angle ?? 360)))
+  const full = angle >= 359.99
+  const n = Math.max(4, Math.ceil(angle / 7.5))
+  const o = to3(s.plane, s.axis.point[0], s.axis.point[1], 0)
+  const ax = nrm(to3(s.plane, s.axis.direction[0], s.axis.direction[1], 0))
+  if (len(ax) === 0) return
+  const turn = (p: V3, th: number): V3 => {
+    const v = sub(p, o)
+    const c = Math.cos(th)
+    return add(o, add(add(mul(v, c), mul(cross(ax, v), Math.sin(th))), mul(ax, dot(ax, v) * (1 - c))))
+  }
+  const rings = [orient(s.points, true), ...(s.holes ?? []).map((h) => orient(h, false))].map((r) => r.map(([u, v]) => to3(s.plane, u, v, 0)))
+  const th = (k: number): number => (((s.angle ?? 360) < 0 ? -1 : 1) * angle * Math.PI * k) / (180 * n)
+  for (const ring of rings) {
+    let prev = ring.map((p) => turn(p, 0))
+    for (let k = 1; k <= n; k++) {
+      const next = full && k === n ? ring.map((p) => turn(p, 0)) : ring.map((p) => turn(p, th(k)))
+      for (let i = 0; i < ring.length; i++) {
+        const j = (i + 1) % ring.length
+        pushQuad(out, prev[i]!, prev[j]!, next[j]!, next[i]!)
+      }
+      prev = next
+    }
+  }
+  if (!full) for (const k of [0, n]) polys.push(rings.map((r) => r.map((p) => turn(p, th(k)))))
+}
+
+/** A path with each inner corner bent on radius `round` (kept to the room its two sides leave). */
+export function roundPath(path: readonly V3[], round: number): V3[] {
+  const pts = path.filter((p, i) => i === 0 || len(sub(p, path[i - 1]!)) > 1e-9)
+  if (round <= 0 || pts.length < 3) return pts
+  const out: V3[] = [pts[0]!]
+  let room = len(sub(pts[1]!, pts[0]!))
+  for (let i = 1; i + 1 < pts.length; i++) {
+    const p = pts[i]!
+    const din = nrm(sub(p, pts[i - 1]!))
+    const dout = nrm(sub(pts[i + 1]!, p))
+    const turn = Math.acos(Math.max(-1, Math.min(1, dot(din, dout))))
+    const lenOut = len(sub(pts[i + 1]!, p))
+    if (turn < 1e-3 || turn > Math.PI - 1e-3) {
+      out.push(p)
+      room = lenOut
+      continue
+    }
+    // the bend starts and ends this far from the corner, at most half of each side when the next corner bends too
+    const t = Math.min(round * Math.tan(turn / 2), room, i + 2 < pts.length ? lenOut / 2 : lenOut)
+    const r = t / Math.tan(turn / 2)
+    const a = sub(p, mul(din, t))
+    const c = add(p, mul(nrm(sub(dout, din)), r / Math.cos(turn / 2)))
+    const va = sub(a, c)
+    const vb = sub(add(p, mul(dout, t)), c)
+    const steps = Math.max(4, Math.ceil(turn / (Math.PI / 24)))
+    for (let k = 0; k <= steps; k++) {
+      // the arc from a to b about c, by spherical interpolation of the two radii
+      const f = k / steps
+      const w1 = Math.sin((1 - f) * turn) / Math.sin(turn)
+      const w2 = Math.sin(f * turn) / Math.sin(turn)
+      out.push(add(c, add(mul(va, w1), mul(vb, w2))))
+    }
+    room = lenOut - t
+  }
+  out.push(pts.at(-1)!)
+  return out
+}
+
+/** A profile carried along a path, its frame turned along with the path; its two ends are capped. */
+function sweepInto(s: PilotSheetSweep, polys: V3[][][], out: number[]): void {
+  const path = roundPath(s.path, s.round ?? 0)
+  if (path.length < 2) return
+  const prof = 'd' in s.profile && s.profile.d !== undefined ? [circle(s.profile.d / 2), ...(s.profile.hole ? [circle(s.profile.hole / 2).reverse()] : [])] : 'points' in s.profile ? [orient(s.profile.points, true)] : []
+  if (!prof.length) return
+  const last = path.length - 1
+  const tangent = (i: number): V3 => nrm(add(i > 0 ? nrm(sub(path[i]!, path[i - 1]!)) : [0, 0, 0], i < last ? nrm(sub(path[i + 1]!, path[i]!)) : [0, 0, 0]))
+  let t = tangent(0)
+  const ref: V3 = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]
+  let nx = nrm(sub(ref, mul(t, dot(ref, t))))
+  const frames: V3[][][] = []
+  for (let i = 0; i <= last; i++) {
+    if (i > 0) {
+      t = tangent(i)
+      // carried along: the last normal with its part along the new tangent taken out
+      const m = sub(nx, mul(t, dot(nx, t)))
+      if (len(m) > 1e-9) nx = nrm(m)
+    }
+    const by = cross(t, nx)
+    frames.push(prof.map((ring) => ring.map(([u, v]) => add(path[i]!, add(mul(nx, u), mul(by, v))))))
+  }
+  for (let i = 0; i < last; i++) {
+    frames[i]!.forEach((ring, r) => {
+      const next = frames[i + 1]![r]!
+      for (let a = 0; a < ring.length; a++) {
+        const b = (a + 1) % ring.length
+        pushQuad(out, ring[a]!, ring[b]!, next[b]!, next[a]!)
+      }
+    })
+  }
+  polys.push(frames[0]!, frames[last]!)
+}
+
+/** An outline resampled to `n` points evenly along its length. */
+function resample(pts: readonly P2[], n: number): P2[] {
+  if (pts.length === n) return [...pts]
+  const seg = pts.map((p, i) => Math.hypot(pts[(i + 1) % pts.length]![0] - p[0], pts[(i + 1) % pts.length]![1] - p[1]))
+  const total = seg.reduce((s, l) => s + l, 0) || 1
+  const out: P2[] = []
+  let i = 0
+  let acc = 0
+  for (let k = 0; k < n; k++) {
+    const want = (total * k) / n
+    while (i < pts.length - 1 && acc + seg[i]! < want) acc += seg[i++]!
+    const f = seg[i]! > 0 ? (want - acc) / seg[i]! : 0
+    const a = pts[i]!
+    const b = pts[(i + 1) % pts.length]!
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f])
+  }
+  return out
+}
+
+/** Outlines at offsets along the plane's third axis, joined in order, each turned to start nearest the last; both ends are capped. */
+function loftInto(s: PilotSheetLoft, polys: V3[][][], out: number[]): void {
+  const secs = [...s.sections].sort((a, b) => a.at - b.at)
+  if (secs.length < 2) return
+  const outlines = secs.map((sec) => orient('d' in sec && sec.d !== undefined ? circle(sec.d / 2, [0, 0], 48) : (sec as { points: [number, number][] }).points, true))
+  const same = outlines.every((o) => o.length === outlines[0]!.length)
+  const n = same ? outlines[0]!.length : Math.min(96, Math.max(...outlines.map((o) => o.length), 48))
+  const rings: P2[][] = []
+  for (const o of outlines) {
+    const r = resample(o, n)
+    const prev = rings.at(-1)
+    if (!prev) {
+      rings.push(r)
+      continue
+    }
+    // the start that puts each point nearest the last outline's, so the sides do not twist
+    let best = 0
+    let bestD = Infinity
+    for (let k = 0; k < n; k++) {
+      let d = 0
+      for (let i = 0; i < n; i++) d += Math.hypot(r[(i + k) % n]![0] - prev[i]![0], r[(i + k) % n]![1] - prev[i]![1])
+      if (d < bestD) ((bestD = d), (best = k))
+    }
+    rings.push(r.map((_, i) => r[(i + best) % n]!))
+  }
+  const rings3 = rings.map((r, k) => r.map(([u, v]) => to3(s.plane, u, v, secs[k]!.at)))
+  for (let k = 0; k + 1 < rings3.length; k++) {
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      pushQuad(out, rings3[k]![i]!, rings3[k]![j]!, rings3[k + 1]![j]!, rings3[k + 1]![i]!)
+    }
+  }
+  polys.push([rings3[0]!], [rings3.at(-1)!])
+}
+
+/** The shape of a sheet's solids: an extrude's sides and caps, and a revolve's, sweep's or loft's surface. */
 export function shapeOfSolids(part: readonly PilotSheetSolid[]): Shape {
-  const polys = part.flatMap(solidFaces).map((f) => [f.pts, ...(f.holes ?? [])])
-  return { polys, pts: polys.flatMap((p) => p[0]!) }
+  const polys: V3[][][] = []
+  const tri: number[] = []
+  for (const s of part) {
+    if (s.kind === 'revolve') revolveInto(s, polys, tri)
+    else if (s.kind === 'sweep') sweepInto(s, polys, tri)
+    else if (s.kind === 'loft') loftInto(s, polys, tri)
+    else for (const f of solidFaces(s)) polys.push([f.pts, ...(f.holes ?? [])])
+  }
+  const corners: number[] = []
+  for (const p of polys) for (const q of p[0]!) corners.push(q[0], q[1], q[2])
+  for (const v of tri) corners.push(v)
+  return { polys, tris: new Float32Array(tri), pts: new Float32Array(corners), simplified: false }
 }
 
-/** A mesh as world triangles, `positions` and `indices` as the engine gives them, already in the design's frame. */
+/** A mesh as the engine gives it: `positions` and `indices`, in the part's own frame. */
 export interface SheetMesh {
   positions: ArrayLike<number>
   indices: ArrayLike<number>
 }
 
-/** The shape of a built design: every triangle of its parts. */
-export function shapeOfMesh(meshes: readonly SheetMesh[]): Shape {
-  const polys: V3[][][] = []
-  const pts: V3[] = []
+/**
+ * The shape of a built design: every triangle of its parts, moved by `t` (a column-major 4 x 4, the plate entry's
+ * transform) when given. Above `budget` triangles the mesh is simplified (simplifyTris), so a dense part draws in time.
+ */
+export function shapeOfMesh(meshes: readonly SheetMesh[], t?: ArrayLike<number>, budget = TRI_BUDGET): Shape {
+  let nt = 0
+  let nv = 0
   for (const m of meshes) {
-    const at = (i: number): V3 => [m.positions[3 * i]!, m.positions[3 * i + 1]!, m.positions[3 * i + 2]!]
-    for (let t = 0; t + 2 < m.indices.length; t += 3) {
-      const tri = [at(m.indices[t]!), at(m.indices[t + 1]!), at(m.indices[t + 2]!)]
-      polys.push([tri])
-    }
-    for (let i = 0; 3 * i + 2 < m.positions.length; i++) pts.push(at(i))
+    nt += Math.floor(m.indices.length / 3)
+    nv += Math.floor(m.positions.length / 3)
   }
-  return { polys, pts }
+  const pts = new Float32Array(3 * nv)
+  let tris: Float32Array = new Float32Array(9 * nt)
+  let pv = 0
+  let pt = 0
+  for (const m of meshes) {
+    const p = m.positions
+    const base = pv
+    for (let i = 0; 3 * i + 2 < p.length; i++) {
+      const x = p[3 * i]!
+      const y = p[3 * i + 1]!
+      const z = p[3 * i + 2]!
+      if (t) {
+        pts[3 * pv] = t[0]! * x + t[4]! * y + t[8]! * z + t[12]!
+        pts[3 * pv + 1] = t[1]! * x + t[5]! * y + t[9]! * z + t[13]!
+        pts[3 * pv + 2] = t[2]! * x + t[6]! * y + t[10]! * z + t[14]!
+      } else {
+        pts[3 * pv] = x
+        pts[3 * pv + 1] = y
+        pts[3 * pv + 2] = z
+      }
+      pv++
+    }
+    const ix = m.indices
+    const end = 3 * Math.floor(ix.length / 3)
+    for (let k = 0; k < end; k++) {
+      const v = base + ix[k]!
+      tris[pt++] = pts[3 * v]!
+      tris[pt++] = pts[3 * v + 1]!
+      tris[pt++] = pts[3 * v + 2]!
+    }
+  }
+  let simplified = false
+  if (nt > budget) {
+    tris = simplifyTris(tris, budget)
+    simplified = true
+  }
+  return { polys: [], tris, pts, simplified }
+}
+
+/**
+ * About `budget` triangles drawn in place of a denser mesh: corners that fall in one cell of a grid merge at their
+ * mean, and triangles left with no area drop out. The cell is sized from the surface's area so one pass usually lands
+ * under the budget; each further pass takes a coarser grid.
+ */
+export function simplifyTris(tris: Float32Array, budget: number): Float32Array {
+  const n = tris.length / 9
+  let area = 0
+  const lo: V3 = [Infinity, Infinity, Infinity]
+  const hi: V3 = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < tris.length; i += 3) for (let k = 0; k < 3; k++) ((lo[k] = Math.min(lo[k]!, tris[i + k]!)), (hi[k] = Math.max(hi[k]!, tris[i + k]!)))
+  for (let t = 0; t < n; t++) {
+    const o = 9 * t
+    const ux = tris[o + 3]! - tris[o]!
+    const uy = tris[o + 4]! - tris[o + 1]!
+    const uz = tris[o + 5]! - tris[o + 2]!
+    const vx = tris[o + 6]! - tris[o]!
+    const vy = tris[o + 7]! - tris[o + 1]!
+    const vz = tris[o + 8]! - tris[o + 2]!
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2
+  }
+  // a closed surface on a grid of cell c keeps about two triangles per cell it passes through
+  let cell = Math.max(1e-6, Math.sqrt((2 * area) / budget) * 1.15)
+  for (let pass = 0; pass < 8; pass++) {
+    const nx = Math.floor((hi[0] - lo[0]) / cell) + 1
+    const ny = Math.floor((hi[1] - lo[1]) / cell) + 1
+    const ids = new Map<number, number>()
+    const sum: number[] = []
+    const of = new Int32Array(3 * n)
+    for (let i = 0; i < 3 * n; i++) {
+      const x = tris[3 * i]!
+      const y = tris[3 * i + 1]!
+      const z = tris[3 * i + 2]!
+      const key = Math.floor((x - lo[0]) / cell) + nx * (Math.floor((y - lo[1]) / cell) + ny * Math.floor((z - lo[2]) / cell))
+      let id = ids.get(key)
+      if (id === undefined) {
+        id = sum.length / 4
+        ids.set(key, id)
+        sum.push(0, 0, 0, 0)
+      }
+      sum[4 * id] = sum[4 * id]! + x
+      sum[4 * id + 1] = sum[4 * id + 1]! + y
+      sum[4 * id + 2] = sum[4 * id + 2]! + z
+      sum[4 * id + 3] = sum[4 * id + 3]! + 1
+      of[i] = id
+    }
+    let kept = 0
+    for (let t = 0; t < n; t++) if (of[3 * t] !== of[3 * t + 1] && of[3 * t + 1] !== of[3 * t + 2] && of[3 * t] !== of[3 * t + 2]) kept++
+    if (kept > budget && pass < 7) {
+      cell *= 1.3
+      continue
+    }
+    const out = new Float32Array(9 * kept)
+    let o = 0
+    for (let t = 0; t < n; t++) {
+      const a = of[3 * t]!
+      const b = of[3 * t + 1]!
+      const c = of[3 * t + 2]!
+      if (a === b || b === c || a === c) continue
+      for (const id of [a, b, c]) {
+        const w = sum[4 * id + 3]!
+        out[o++] = sum[4 * id]! / w
+        out[o++] = sum[4 * id + 1]! / w
+        out[o++] = sum[4 * id + 2]! / w
+      }
+    }
+    return out
+  }
+  return tris
 }
 
 /** The shape's bounds in mm: least and most corner. */
 export function shapeBounds(shape: Shape): { lo: V3; hi: V3 } | null {
-  if (!shape.pts.length) return null
+  const p = shape.pts
+  if (!p.length) return null
   const lo: V3 = [Infinity, Infinity, Infinity]
   const hi: V3 = [-Infinity, -Infinity, -Infinity]
-  for (const p of shape.pts) for (let k = 0; k < 3; k++) ((lo[k] = Math.min(lo[k]!, p[k]!)), (hi[k] = Math.max(hi[k]!, p[k]!)))
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const v = p[i + k]!
+      if (v < lo[k]!) lo[k] = v
+      if (v > hi[k]!) hi[k] = v
+    }
+  }
   return { lo, hi }
 }
 
@@ -156,7 +452,7 @@ export interface Raster {
 }
 
 /** Faces meeting at more than this read as an edge; a round's facets meet at less. */
-const EDGE_DEG = 28
+export const EDGE_DEG = 28
 const EDGE_COS = Math.cos((EDGE_DEG * Math.PI) / 180)
 
 /** A polygon's normal by Newell's method, unit length; zero for one with no area. */
@@ -172,32 +468,48 @@ function newell(ring: readonly V3[]): V3 {
   return nrm(n)
 }
 
+/** The most device pixels one view's raster takes; a bigger cell draws coarser and its canvas is scaled up. */
+export const VIEW_PX_MAX = 1_200_000
+
+/** Device pixels per screen pixel for a w x h view: the screen's ratio up to 2, less when that passes VIEW_PX_MAX. */
+export function drawPx(w: number, h: number, ratio = 1): number {
+  const want = Math.min(2, Math.max(1, ratio))
+  return Math.max(0.25, Math.min(want, Math.sqrt(VIEW_PX_MAX / Math.max(1, w * h))))
+}
+
 /**
- * Draws a shape into a W x H raster: `toScreen` maps a point to device pixels (x right, y down) and its depth (larger
- * nearer the viewer), the same for every point, so a polygon's depth is a plane over its pixels.
+ * Draws a shape into a W x H raster: a point maps to device pixels (x right, y down) as (p.r k + ox, -p.u k + oy) times
+ * `px`, and to its depth p.d (larger nearer the viewer), the same for every point, so a face's depth is a plane over
+ * its pixels. Polygons own the first indices and triangles the rest.
  */
 export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k: number, ox: number, oy: number, px: number): Raster {
   const { r, u, d } = VIEWS[view]
   const n = W * H
+  const P = shape.polys.length
+  const T = shape.tris.length / 9
   const depth = new Float32Array(n).fill(-Infinity)
   const owner = new Int32Array(n).fill(-1)
-  // per polygon: its normal and how its depth changes per device pixel across and down
-  const normals: V3[] = []
-  const grad: [number, number][] = []
+  // per face: its normal and how its depth changes per device pixel across and down
+  const normals = new Float32Array(3 * (P + T))
+  const grad = new Float32Array(2 * (P + T))
   const S = k * px
+  // on a face's plane, depth moves by -(n.r)/(n.d) per mm right and +(n.u)/(n.d) per mm down the screen
+  const slope = (f: number, nx: number, ny: number, nz: number): boolean => {
+    normals[3 * f] = nx
+    normals[3 * f + 1] = ny
+    normals[3 * f + 2] = nz
+    const nd = nx * d[0] + ny * d[1] + nz * d[2]
+    // seen edge on: it covers no pixel of its own, its neighbors draw the line
+    if (Math.abs(nd) < 1e-4) return false
+    grad[2 * f] = -(nx * r[0] + ny * r[1] + nz * r[2]) / nd / S
+    grad[2 * f + 1] = (nx * u[0] + ny * u[1] + nz * u[2]) / nd / S
+    return true
+  }
   shape.polys.forEach((rings, pi) => {
     const nn = newell(rings[0]!)
-    normals.push(nn)
-    const nd = dot(nn, d)
-    // seen edge on: it covers no pixel of its own, its neighbors draw the line
-    if (Math.abs(nd) < 1e-4) {
-      grad.push([0, 0])
-      return
-    }
-    // on the plane, depth moves by -(n.r)/(n.d) per mm right and +(n.u)/(n.d) per mm down the screen
-    const gx = -dot(nn, r) / nd / S
-    const gy = dot(nn, u) / nd / S
-    grad.push([gx, gy])
+    if (!slope(pi, nn[0], nn[1], nn[2])) return
+    const gx = grad[2 * pi]!
+    const gy = grad[2 * pi + 1]!
     const scr = rings.map((ring) => ring.map((p): [number, number] => [(dot(p, r) * k + ox) * px, (-dot(p, u) * k + oy) * px]))
     const p0 = rings[0]![0]!
     const s0 = scr[0]![0]!
@@ -233,19 +545,85 @@ export function rasterize(shape: Shape, view: ViewName, W: number, H: number, k:
       }
     }
   })
+  const tr = shape.tris
+  const [rx, ry, rz] = r
+  const [ux, uy, uz] = u
+  const [dx, dy, dz] = d
+  for (let t = 0; t < T; t++) {
+    const o = 9 * t
+    const ax = tr[o]!
+    const ay = tr[o + 1]!
+    const az = tr[o + 2]!
+    const e1x = tr[o + 3]! - ax
+    const e1y = tr[o + 4]! - ay
+    const e1z = tr[o + 5]! - az
+    const e2x = tr[o + 6]! - ax
+    const e2y = tr[o + 7]! - ay
+    const e2z = tr[o + 8]! - az
+    let nx = e1y * e2z - e1z * e2y
+    let ny = e1z * e2x - e1x * e2z
+    let nz = e1x * e2y - e1y * e2x
+    const nl = Math.hypot(nx, ny, nz)
+    if (nl === 0) continue
+    nx /= nl
+    ny /= nl
+    nz /= nl
+    const f = P + t
+    if (!slope(f, nx, ny, nz)) continue
+    const gx = grad[2 * f]!
+    const gy = grad[2 * f + 1]!
+    // the corners on screen, in device pixels
+    const sx0 = ((ax * rx + ay * ry + az * rz) * k + ox) * px
+    const sy0 = (-(ax * ux + ay * uy + az * uz) * k + oy) * px
+    const sx1 = sx0 + (e1x * rx + e1y * ry + e1z * rz) * S
+    const sy1 = sy0 - (e1x * ux + e1y * uy + e1z * uz) * S
+    const sx2 = sx0 + (e2x * rx + e2y * ry + e2z * rz) * S
+    const sy2 = sy0 - (e2x * ux + e2y * uy + e2z * uz) * S
+    const twice = (sx1 - sx0) * (sy2 - sy0) - (sx2 - sx0) * (sy1 - sy0)
+    if (twice === 0) continue
+    const sg = twice > 0 ? 1 : -1
+    const xa = Math.max(0, Math.ceil(Math.min(sx0, sx1, sx2) - 0.5))
+    const xb = Math.min(W - 1, Math.floor(Math.max(sx0, sx1, sx2) - 0.5))
+    const ya = Math.max(0, Math.ceil(Math.min(sy0, sy1, sy2) - 0.5))
+    const yb = Math.min(H - 1, Math.floor(Math.max(sy0, sy1, sy2) - 0.5))
+    if (xa > xb || ya > yb) continue
+    const z0 = ax * dx + ay * dy + az * dz
+    // edge functions, signed so the inside is positive, stepped across each row
+    const A0 = (sy1 - sy2) * sg
+    const A1 = (sy2 - sy0) * sg
+    const A2 = (sy0 - sy1) * sg
+    for (let y = ya; y <= yb; y++) {
+      const cy = y + 0.5
+      const cx = xa + 0.5
+      let w0 = ((sx2 - sx1) * (cy - sy1) - (sy2 - sy1) * (cx - sx1)) * sg
+      let w1 = ((sx0 - sx2) * (cy - sy2) - (sy0 - sy2) * (cx - sx2)) * sg
+      let w2 = ((sx1 - sx0) * (cy - sy0) - (sy1 - sy0) * (cx - sx0)) * sg
+      let z = z0 + (cx - sx0) * gx + (cy - sy0) * gy
+      let i = y * W + xa
+      for (let x = xa; x <= xb; x++, i++) {
+        if (w0 >= 0 && w1 >= 0 && w2 >= 0 && z > depth[i]!) {
+          depth[i] = z
+          owner[i] = f
+        }
+        w0 += A0
+        w1 += A1
+        w2 += A2
+        z += gx
+      }
+    }
+  }
   const cover = new Uint8Array(n)
   const edge = new Uint8Array(n)
   for (let i = 0; i < n; i++) cover[i] = owner[i]! >= 0 ? 1 : 0
   // how far depth may stray from the nearer pixel's plane before it is another surface: a pixel and a half, or 0.05 mm
   const tol = Math.max(0.05, 1.5 / S)
-  const differs = (i: number, j: number, dx: number, dy: number): boolean => {
+  const differs = (i: number, j: number, ddx: number, ddy: number): boolean => {
     const a = owner[i]!
     const b = owner[j]!
     if (a < 0 && b < 0) return false
     if (a < 0 || b < 0 || a === b) return a !== b
-    if (Math.abs(dot(normals[a]!, normals[b]!)) < EDGE_COS) return true
-    const [gx, gy] = grad[a]!
-    return Math.abs(depth[j]! - (depth[i]! + gx * dx + gy * dy)) > tol
+    if (Math.abs(normals[3 * a]! * normals[3 * b]! + normals[3 * a + 1]! * normals[3 * b + 1]! + normals[3 * a + 2]! * normals[3 * b + 2]!) < EDGE_COS) return true
+    return Math.abs(depth[j]! - (depth[i]! + grad[2 * a]! * ddx + grad[2 * a + 1]! * ddy)) > tol
   }
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -346,7 +724,9 @@ function bounds(shape: Shape, raws: readonly RawDim[], view: ViewName): { x0: nu
     x1 = Math.max(x1, p[0])
     y1 = Math.max(y1, p[1])
   }
-  for (const p of shape.pts) take(P(p))
+  const { r: vr, u: vu } = VIEWS[view]
+  const q = shape.pts
+  for (let i = 0; i + 2 < q.length; i += 3) take([q[i]! * vr[0] + q[i + 1]! * vr[1] + q[i + 2]! * vr[2], -(q[i]! * vu[0] + q[i + 1]! * vu[1] + q[i + 2]! * vu[2])])
   for (const r of raws) {
     if (r.dimLine) r.dimLine.forEach(take)
     if (r.arc) r.arc.forEach(take)
@@ -360,16 +740,46 @@ export function fitScale(shape: Shape, dims: readonly PilotDim[], view: ViewName
   return Math.max(0.01, Math.min((w - 2 * pad) / Math.max(1e-6, b.x1 - b.x0), (h - 2 * pad) / Math.max(1e-6, b.y1 - b.y0)))
 }
 
-const BADGE_R = 10
-/** Points around a callout's rim, for keeping it off the part. */
-const RIM: readonly P2[] = Array.from({ length: 8 }, (_, i) => [Math.cos((i * Math.PI) / 4), Math.sin((i * Math.PI) / 4)] as P2)
+export const BADGE_R = 10
+/** The least room between two callouts' edges, in px. */
+export const BADGE_GAP = 6
+
+/** Offsets over a callout's disk and just past its rim, every 2 px, for keeping the whole callout off the part. */
+const DISK: readonly P2[] = (() => {
+  const out: P2[] = []
+  const R = BADGE_R + 2
+  for (let y = -R; y <= R; y += 2) for (let x = -R; x <= R; x += 2) if (x * x + y * y <= R * R) out.push([x, y])
+  for (let i = 0; i < 24; i++) out.push([R * Math.cos((i * Math.PI) / 12), R * Math.sin((i * Math.PI) / 12)])
+  return out
+})()
+
+/** The distance from point p to the segment a b. */
+function toSegment(p: P2, a: P2, b: P2): number {
+  const vx = b[0] - a[0]
+  const vy = b[1] - a[1]
+  const l2 = vx * vx + vy * vy
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / l2))
+  return Math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy)
+}
+
+/** True when the segments a b and c d cross away from their ends. */
+function crosses(a: P2, b: P2, c: P2, d: P2): boolean {
+  const side = (p: P2, q: P2, r: P2): number => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+  const d1 = side(c, d, a)
+  const d2 = side(c, d, b)
+  const d3 = side(a, b, c)
+  const d4 = side(a, b, d)
+  return d1 * d2 < 0 && d3 * d4 < 0
+}
 
 /**
  * One view of the sheet, fitted in a w x h cell at `scale` pixels per mm (or its own fit when absent): the part as its
- * silhouette and visible edges (`px` device pixels per screen pixel, 1 by default), and the sizes that read in it with
- * their callouts. Callouts that would overlap are moved apart along their own way out, and none leaves the cell.
+ * silhouette and visible edges (`px` device pixels per screen pixel, 1 by default; `part` reuses a raster already drawn
+ * at the same fit), and the sizes that read in it with their callouts. A callout sits off the part (its whole disk),
+ * clear of the other callouts and of every dimension line, and inside the cell; one that moved from its line gets a
+ * leader, and leaders do not cross.
  */
-export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, opts: { scale?: number; pad?: number; order?: readonly ViewName[]; px?: number } = {}): DrawnView {
+export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName, w: number, h: number, opts: { scale?: number; pad?: number; order?: readonly ViewName[]; px?: number; part?: Raster } = {}): DrawnView {
   const pad = opts.pad ?? 30
   const px = opts.px ?? 1
   const raws = rawDims(dims, view, viewsFor(dims, opts.order ?? []))
@@ -378,15 +788,17 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
   const ox = (w - (b.x1 - b.x0) * k) / 2 - b.x0 * k
   const oy = (h - (b.y1 - b.y0) * k) / 2 - b.y0 * k
   const S = (p: P2): P2 => [r1(p[0] * k + ox), r1(p[1] * k + oy)]
-  const part = rasterize(shape, view, Math.max(1, Math.round(w * px)), Math.max(1, Math.round(h * px)), k, ox, oy, px)
+  const W = Math.max(1, Math.round(w * px))
+  const H = Math.max(1, Math.round(h * px))
+  const part = opts.part && opts.part.W === W && opts.part.H === H ? opts.part : rasterize(shape, view, W, H, k, ox, oy, px)
   // the part on screen: a size measured over it gets its callout off it, on a leader
   const inside = (p: P2): boolean => {
     const x = Math.floor(p[0] * px)
     const y = Math.floor(p[1] * px)
     return x >= 0 && y >= 0 && x < part.W && y < part.H && part.cover[y * part.W + x] === 1
   }
-  const placed: P2[] = []
-  const drawn = raws.map((r): DrawnDim => {
+  // every size's own lines first, so no callout lands on a line drawn after it
+  const shaped = raws.map((r) => {
     const lines = r.lines.map(([p, q]) => [S(p), S(q)] as [P2, P2])
     const arrows: [P2, P2][] = []
     let dimLines: [P2, P2][] = []
@@ -408,17 +820,35 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
     }
     const arc = r.arc ? r.arc.map(S) : null
     if (arc && arc.length > 1) arrows.push([arc[0]!, arc[1]!], [arc.at(-1)!, arc.at(-2)!])
+    const segs: [P2, P2][] = [...lines, ...dimLines, ...(arc ? arc.slice(1).map((p, i) => [arc[i]!, p] as [P2, P2]) : [])]
+    return { r, lines: [...lines, ...dimLines], arrows, arc, segs }
+  })
+  const allSegs = shaped.flatMap((s) => s.segs)
+  const placed: P2[] = []
+  const leaders: [P2, P2][] = []
+  const drawn = shaped.map(({ r, lines, arrows, arc }): DrawnDim => {
     const pl = Math.hypot(r.push[0], r.push[1]) || 1
     let ux = r.push[0] / pl
     let uy = r.push[1] / pl
     const m = S(r.mid)
-    const clash = (b: P2): boolean => placed.some((p) => Math.hypot(p[0] - b[0], p[1] - b[1]) < 2 * BADGE_R + 3)
-    // a callout never sits on the part: its center and its rim stay off it, and it stays in the cell
-    const onPart = (b: P2): boolean => inside(b) || RIM.some(([cx, cy]) => inside([b[0] + cx * (BADGE_R + 2), b[1] + cy * (BADGE_R + 2)]))
-    const inCell = (b: P2): boolean => b[0] >= BADGE_R + 2 && b[0] <= w - BADGE_R - 2 && b[1] >= BADGE_R + 2 && b[1] <= h - BADGE_R - 2
-    const free = (b: P2): boolean => !clash(b) && !onPart(b) && inCell(b)
+    const leaderOf = (bd: P2): [P2, P2] | null => {
+      const gap = Math.hypot(bd[0] - m[0], bd[1] - m[1])
+      return gap > BADGE_R + 5 ? [m, [r1(bd[0] - ((bd[0] - m[0]) / gap) * BADGE_R), r1(bd[1] - ((bd[1] - m[1]) / gap) * BADGE_R)]] : null
+    }
+    const clash = (bd: P2): boolean => placed.some((p) => Math.hypot(p[0] - bd[0], p[1] - bd[1]) < 2 * BADGE_R + BADGE_GAP)
+    // the whole disk off the part, not only its center and a few rim points: a thin arm fits between those
+    const onPart = (bd: P2): boolean => DISK.some(([dx, dy]) => inside([bd[0] + dx, bd[1] + dy]))
+    const inCell = (bd: P2): boolean => bd[0] >= BADGE_R + 2 && bd[0] <= w - BADGE_R - 2 && bd[1] >= BADGE_R + 2 && bd[1] <= h - BADGE_R - 2
+    // clear of every size's lines and every leader drawn so far, and its own leader crossing none of them or another callout
+    const onLines = (bd: P2): boolean => allSegs.some(([p, q]) => toSegment(bd, p, q) < BADGE_R + 1) || leaders.some(([p, q]) => toSegment(bd, p, q) < BADGE_R + 2)
+    const tangled = (bd: P2): boolean => {
+      const l = leaderOf(bd)
+      return !!l && (leaders.some(([p, q]) => crosses(l[0], l[1], p, q)) || placed.some((p) => toSegment(p, l[0], l[1]) < BADGE_R + 2))
+    }
+    const free = (bd: P2): boolean => inCell(bd) && !clash(bd) && !onPart(bd) && !onLines(bd) && !tangled(bd)
+    const loose = (bd: P2): boolean => inCell(bd) && !clash(bd) && !onPart(bd)
     const leads = inside(m) && (ux !== 0 || uy !== 0)
-    let badge: P2
+    let tries: P2[]
     if (leads) {
       // out past the part's edge on the nearer side along its way out, then a callout's width further
       const exit = (vx: number, vy: number): number => {
@@ -428,29 +858,33 @@ export function drawView(shape: Shape, dims: readonly PilotDim[], view: ViewName
       }
       if (exit(-ux, -uy) < exit(ux, uy) - 1) [ux, uy] = [-ux, -uy]
       const reach = exit(ux, uy) + BADGE_R + 6
-      const at = (k: number, out: number): P2 => [m[0] + ux * (reach + out) - uy * k, m[1] + uy * (reach + out) + ux * k]
+      const at = (s: number, out: number): P2 => [r1(m[0] + ux * (reach + out) - uy * s), r1(m[1] + uy * (reach + out) + ux * s)]
       // a callout already there: beside it along the outline, then the other side, then further out
-      const steps = [0, 1, -1, 2, -2, 3, -3].map((i) => i * (2 * BADGE_R + 5))
-      const tries = [0, 8, 16, 24, 32].flatMap((out) => steps.map((k) => at(k, out)))
-      badge = tries.find(free) ?? tries.find((b) => !clash(b)) ?? at(0, 0)
+      const steps = [0, 1, -1, 2, -2, 3, -3].map((i) => i * (2 * BADGE_R + BADGE_GAP))
+      tries = [0, 10, 20, 30, 40].flatMap((out) => steps.map((s) => at(s, out)))
     } else {
-      badge = [m[0] + ux * (BADGE_R + 3), m[1] + uy * (BADGE_R + 3)]
-      // apart from the callouts already placed and off the part, then inside the cell
-      for (let tries = 0; tries < 12 && (clash(badge) || onPart(badge)); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
+      // beside its own line, then further out along its way out
+      const out = ux === 0 && uy === 0 ? ([0, -1] as P2) : ([ux, uy] as P2)
+      tries = Array.from({ length: 14 }, (_, i): P2 => [r1(m[0] + out[0] * (BADGE_R + 3 + 8 * i)), r1(m[1] + out[1] * (BADGE_R + 3 + 8 * i))])
     }
+    // then the nearest spot around the size itself, never around a spot pushed into a corner of the cell
+    const around = (ok: (p: P2) => boolean): P2 | null => {
+      for (let rr = 2 * BADGE_R; rr < w + h; rr += 6) {
+        const n = Math.max(16, Math.ceil((2 * Math.PI * rr) / 10))
+        for (let a = 0; a < n; a++) {
+          const p: P2 = [r1(m[0] + rr * Math.cos((a * 2 * Math.PI) / n)), r1(m[1] + rr * Math.sin((a * 2 * Math.PI) / n))]
+          if (ok(p)) return p
+        }
+      }
+      return null
+    }
+    let badge = tries.find(free) ?? around(free) ?? tries.find(loose) ?? around(loose) ?? tries[0]!
     badge = [r1(Math.min(w - BADGE_R - 2, Math.max(BADGE_R + 2, badge[0]))), r1(Math.min(h - BADGE_R - 2, Math.max(BADGE_R + 2, badge[1])))]
-    // kept in the cell it landed on another callout or on the part: the nearest free spot around it, off the part when
-    // there is one, so a callout never covers the part it labels
-    if (clash(badge) || onPart(badge)) {
-      const spots: P2[] = []
-      for (let rr = 8; rr < w + h; rr += 6) for (let a = 0; a < 16; a++) spots.push([r1(badge[0] + rr * Math.cos((a * Math.PI) / 8)), r1(badge[1] + rr * Math.sin((a * Math.PI) / 8))])
-      badge = spots.find(free) ?? spots.find((b) => !clash(b) && inCell(b)) ?? badge
-    }
     placed.push(badge)
-    const gap = Math.hypot(badge[0] - m[0], badge[1] - m[1])
     // every callout that does not sit on its own line gets a leader to it, so its target is never a guess
-    const leader: [P2, P2] | null = gap > BADGE_R + 5 ? [m, [r1(badge[0] - ((badge[0] - m[0]) / gap) * BADGE_R), r1(badge[1] - ((badge[1] - m[1]) / gap) * BADGE_R)]] : null
-    return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], leader, inside: leads, arrows, arc, badge }
+    const leader = leaderOf(badge)
+    if (leader) leaders.push(leader)
+    return { key: r.key, n: r.n, guess: r.guess, lines, leader, inside: leads, arrows, arc, badge }
   })
   return { part, dims: drawn }
 }

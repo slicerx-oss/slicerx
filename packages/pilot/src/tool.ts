@@ -95,6 +95,8 @@ export interface ToolContext {
   ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<AskAnswer>
   /** Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. */
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
+  /** True when a built design with this id is there for a sheet to draw; absent where the host has no plate. */
+  sheetDesign?(id: string): boolean
   /** Ties the last sheet's rows to the steps they set; false when this run showed no sheet. */
   bindSheet?(design: string, binds: PilotSheetBind[]): boolean
   /** The chat's print run; present only when the host keeps print runs. */

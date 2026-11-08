@@ -270,16 +270,50 @@ type Vec3 = [number, number, number]
 export type PilotDimAt = { a: Vec3; b: Vec3; off: Vec3 } | { c: Vec3; from: Vec3; to: Vec3; r: number }
 
 /**
- * One solid of the part as the sheet draws it before it is built: an outline in a plane, extruded along the third
- * axis from `from` to `to`. In 'xy' the points are (x, y) and it extrudes along Z; in 'xz' (x, z) along Y; in 'yz'
- * (y, z) along X. Holes are outlines inside it.
+ * One solid of the part as the sheet draws it before it is built. Without `kind` (or with 'extrude') it is an outline in a
+ * plane, extruded along the third axis from `from` to `to`: in 'xy' the points are (x, y) and it extrudes along Z; in
+ * 'xz' (x, z) along Y; in 'yz' (y, z) along X. Holes are outlines inside it. A revolve, a sweep and a loft draw the
+ * part as it will be built when no extruded outline can (a pipe bend, a round stem, a vase).
  */
-export interface PilotSheetSolid {
+export type PilotSheetSolid = PilotSheetExtrude | PilotSheetRevolve | PilotSheetSweep | PilotSheetLoft
+
+export interface PilotSheetExtrude {
+  kind?: 'extrude'
   plane: 'xy' | 'xz' | 'yz'
   points: [number, number][]
   holes?: [number, number][][]
   from: number
   to: number
+}
+
+/** A profile in a plane (as an extrude's), turned `angle` degrees (360 when left out) about an axis in that plane. */
+export interface PilotSheetRevolve {
+  kind: 'revolve'
+  plane: 'xy' | 'xz' | 'yz'
+  points: [number, number][]
+  holes?: [number, number][][]
+  /** A point on the axis and its direction, both in the plane's own two coordinates. */
+  axis: { point: [number, number]; direction: [number, number] }
+  angle?: number
+}
+
+/**
+ * A profile carried along a path: a round one of diameter `d` (with a bore `hole` across, for a tube) or an outline
+ * (`points`, `holes`) around the path, and the path's points in the part's mm. `round` bends each corner of the path
+ * on that radius, as a pipe bend does.
+ */
+export interface PilotSheetSweep {
+  kind: 'sweep'
+  profile: { d: number; hole?: number } | { points: [number, number][] }
+  path: [number, number, number][]
+  round?: number
+}
+
+/** Outlines at offsets along the plane's third axis (`at`), joined in order: a round one of diameter `d`, or `points`. */
+export interface PilotSheetLoft {
+  kind: 'loft'
+  plane: 'xy' | 'xz' | 'yz'
+  sections: ({ at: number; d: number } | { at: number; points: [number, number][] })[]
 }
 
 /** The sizes a part is built from, for the person to confirm or edit before mimir builds it. */
@@ -307,7 +341,8 @@ export interface PilotSheetBind {
 
 /**
  * The person's answer to a sheet: every value as confirmed, and the keys they changed. Not confirmed when they canceled
- * it, or set it aside by writing to mimir instead (`said`, their words).
+ * it, or set it aside by writing to mimir instead (`said`, their words; the values and keys changed are then the sizes
+ * they had typed on it).
  */
 export interface PilotSheetAnswer {
   confirmed: boolean
@@ -522,8 +557,9 @@ export interface Pilot {
   answer?(askId: string, choiceId: string | null, said?: string): Promise<void>
   /**
    * Answers a dimension sheet: the values as the person left them, or null when they canceled it. `said` is what the
-   * person wrote to mimir while the sheet waited, which sets it aside (with null values), trimmed and kept to 1000
-   * characters. Runtimes without sheets leave it out.
+   * person wrote to mimir while the sheet waited, which sets it aside (nothing is confirmed), trimmed and kept to 1000
+   * characters; the values then are the sizes they had typed on it, or null when they typed none. Runtimes without
+   * sheets leave it out.
    */
   answerSheet?(sheetId: string, values: Record<string, number> | null, said?: string): Promise<void>
   /**
