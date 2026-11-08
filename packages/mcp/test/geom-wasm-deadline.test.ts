@@ -111,7 +111,7 @@ describe('the Node geometry host', () => {
 
   it('fails a call whose reply does not read, and the next call still runs', async () => {
     const geom = createGeomWasm({ wasm })
-    await expect(geom.run('junk', {})).rejects.toThrow(/^sx-geom junk: unreadable reply/)
+    await expect(geom.run('junk', {})).rejects.toThrow(/^sx-geom junk: unreadable reply$/)
     await expect(geom.run('info', {})).resolves.toEqual({ ok: true })
   })
 
