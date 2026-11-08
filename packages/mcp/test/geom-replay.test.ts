@@ -3,13 +3,14 @@
 // A recorded geometry reply that no longer matches the request a test makes fails that test, naming the fixture and
 // how to record it again, even when the code under test catches the engine's error and falls back. A real engine
 // failure still falls back as before.
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import type { EngineCall } from '@slicerx/cad-history'
 import type { SettingValue } from '@slicerx/contracts'
-import { ReplayMismatch, digest, replayEngine, type Recorded } from './geom-engine'
+import { ReplayMismatch, digest, replayEngine, writeRecording, type Recorded } from './geom-engine'
 import { boxStl, connect, data, type Harness } from './helpers'
 
 const FIXTURE = join(__dirname, 'fixtures', 'arrange-zones.json.gz')
@@ -126,5 +127,57 @@ describe('replayed geometry replies', () => {
     const res = await call(h, 'slicerx_arrange', { count: 20 })
     expect(res.ok, res.summary).toBe(true)
     expect(await placed(h)).toBe(20)
+  })
+})
+
+describe('recorded calls a test did not make', () => {
+  const list = (): ReturnType<typeof replayEngine> => replayEngine('fixtures/x.json.gz', {
+    t: [{ op: 'nest.footprint', request: digest({ a: 1 }), reply: 1 }, { op: 'nest.arrange', request: digest({ a: 2 }), reply: 2 }],
+  })
+
+  it('lists the recorded calls after the last one the test made', async () => {
+    const r = list()
+    r.start('t')
+    expect(r.unused()).toEqual(['call 1 (nest.footprint)', 'call 2 (nest.arrange)'])
+    await r.engine('nest.footprint', { a: 1 })
+    expect(r.unused()).toEqual(['call 2 (nest.arrange)'])
+    await r.engine('nest.arrange', { a: 2 })
+    expect(r.unused()).toEqual([])
+    expect(r.stale).toEqual([])
+  })
+
+  it('lists nothing for a test with no recording, and starts again with the next test', async () => {
+    const r = list()
+    r.start('none')
+    expect(r.unused()).toEqual([])
+    r.start('t')
+    await r.engine('nest.footprint', { a: 1 })
+    r.start('t')
+    expect(r.unused()).toHaveLength(2)
+  })
+})
+
+describe('writing a recording', () => {
+  const dir = (): string => mkdtempSync(join(tmpdir(), 'sx-rec-'))
+
+  it('writes the calls a run recorded', () => {
+    const d = dir()
+    const file = join(d, 'x.json.gz')
+    expect(writeRecording(file, { t: [{ op: 'a', request: 'r', reply: 2 }] })).toBe(true)
+    expect(JSON.parse(gunzipSync(readFileSync(file)).toString('utf8'))).toEqual({ t: [{ op: 'a', request: 'r', reply: 2 }] })
+    rmSync(d, { recursive: true })
+  })
+
+  it('leaves the fixture alone when the run recorded no calls', () => {
+    const d = dir()
+    const file = join(d, 'x.json.gz')
+    writeFileSync(file, 'keep')
+    expect(writeRecording(file, {})).toBe(false)
+    expect(writeRecording(file, { t: [] })).toBe(false)
+    expect(readFileSync(file, 'utf8')).toBe('keep')
+    const none = join(d, 'none.json.gz')
+    expect(writeRecording(none, {})).toBe(false)
+    expect(existsSync(none)).toBe(false)
+    rmSync(d, { recursive: true })
   })
 })

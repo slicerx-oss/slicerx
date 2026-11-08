@@ -3,8 +3,11 @@
 // A recorded geometry reply that no longer matches the request a test makes is kept as out of date, naming the
 // fixture and how to record it again, so the test fails even when the code under test catches the error and falls
 // back (useGeomEngine fails it after the test).
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ReplayMismatch, replayGeom, withIds } from './geom-engine'
+import { ReplayMismatch, replayGeom, withIds, writeRecording } from './geom-engine'
 
 describe('replayed geometry replies', () => {
   const one = () => replayGeom('fixtures/x.json', { t: [{ op: 'nest.arrange', request: { a: 1 }, reply: { ok: true } }] })
@@ -97,5 +100,57 @@ describe('swapping recorded ids for the live ones', () => {
     expect(withIds({ d1: 'd1', n: 5, list: [{ d1: null }] }, ids)).toEqual({ d2: 'd2', n: 5, list: [{ d2: null }] })
     const v = { d1: 1 }
     expect(withIds(v, new Map())).toBe(v)
+  })
+})
+
+describe('recorded calls a test did not make', () => {
+  const list = () => replayGeom('fixtures/x.json', {
+    t: [{ op: 'nest.footprint', request: { a: 1 }, reply: 1 }, { op: 'nest.arrange', request: { a: 2 }, reply: 2 }],
+  })
+
+  it('lists the recorded calls after the last one the test made', async () => {
+    const r = list()
+    r.start('t')
+    expect(r.unused()).toEqual(['call 1 (nest.footprint)', 'call 2 (nest.arrange)'])
+    await r.call('nest.footprint', { a: 1 })
+    expect(r.unused()).toEqual(['call 2 (nest.arrange)'])
+    await r.call('nest.arrange', { a: 2 })
+    expect(r.unused()).toEqual([])
+    expect(r.stale).toEqual([])
+  })
+
+  it('lists nothing for a test with no recording, and starts again with the next test', async () => {
+    const r = list()
+    r.start('none')
+    expect(r.unused()).toEqual([])
+    r.start('t')
+    await r.call('nest.footprint', { a: 1 })
+    r.start('t')
+    expect(r.unused()).toHaveLength(2)
+  })
+})
+
+describe('writing a recording', () => {
+  const dir = () => mkdtempSync(join(tmpdir(), 'sx-rec-'))
+
+  it('writes the calls a run recorded', () => {
+    const d = dir()
+    const file = join(d, 'x.json')
+    expect(writeRecording(file, { t: [{ op: 'a', request: 1, reply: 2 }] }, false)).toBe(true)
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ t: [{ op: 'a', request: 1, reply: 2 }] })
+    rmSync(d, { recursive: true })
+  })
+
+  it('leaves the fixture alone when the run recorded no calls', () => {
+    const d = dir()
+    const file = join(d, 'x.json')
+    writeFileSync(file, '{"keep":[]}\n')
+    expect(writeRecording(file, {}, false)).toBe(false)
+    expect(writeRecording(file, { t: [] }, false)).toBe(false)
+    expect(readFileSync(file, 'utf8')).toBe('{"keep":[]}\n')
+    const none = join(d, 'none.json')
+    expect(writeRecording(none, {}, false)).toBe(false)
+    expect(existsSync(none)).toBe(false)
+    rmSync(d, { recursive: true })
   })
 })
