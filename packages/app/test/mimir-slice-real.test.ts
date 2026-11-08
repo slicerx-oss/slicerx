@@ -51,12 +51,12 @@ const SLICE: CommandSpec = { id: 'slice', title: 'Slice the plate', section: 'sl
 const QUEUE = { name: 'printer.queue', args: { printerId: 'bench', plate: 1 } }
 
 /** The tab's runtime with an engine that slices at once (`primeTower` when asked) and printers that keep uploads. */
-async function tab(opts: { tower?: boolean; during?: () => void } = {}) {
+async function tab(opts: { tower?: boolean; during?: () => void; load?: () => void } = {}) {
   let n = 0
   const uploaded: string[] = []
   const requests: { config: Record<string, unknown> }[] = []
   const slicer = {
-    loadModel: async (m: { id?: string }) => handle(m.id ?? 'm'),
+    loadModel: async (m: { id?: string }) => (opts.load?.(), handle(m.id ?? 'm')),
     release: () => undefined,
     getPreview: async () => rawPreview(),
     slice: async (req: { config: Record<string, unknown> }) => (requests.push(req), opts.during?.(), { id: `r${++n}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 60, filamentMm: [1, 1], filamentG: [1, 1], cost: 0, toolChanges: 1 }, stageMicros: {}, wallMs: 1, ...(opts.tower ? { primeTower: { x: 200, y: 200, width: 35, depth: 35 } } : {}) }) as unknown as SliceResult,
@@ -76,16 +76,17 @@ async function tab(opts: { tower?: boolean; during?: () => void } = {}) {
   return { options, uploaded, requests }
 }
 
-/** One chat: a turn of `before` then app.slice, then a turn that queues. Cards are answered as a person would. */
-async function sliceThenQueue(options: Awaited<ReturnType<typeof tab>>['options'], edit: () => void) {
-  const steps = [{ calls: [{ name: 'app.slice', args: {} }] }, { text: 'Sliced.' }, { calls: [QUEUE] }, { text: 'Done.' }]
+/** One chat: `edit`, a turn that slices (app.slice, or the tool named), then a turn that queues. Cards are answered as a person would. */
+async function sliceThenQueue(options: Awaited<ReturnType<typeof tab>>['options'], edit: () => void, opts: { tool?: string; session?: string } = {}) {
+  const session = opts.session ?? 'tab'
+  const steps = [{ calls: [{ name: opts.tool ?? 'app.slice', args: {} }] }, { text: 'Sliced.' }, { calls: [QUEUE] }, { text: 'Done.' }]
   const pilot = createPilot({ ...options, client: createScriptedClient(steps, { chunk: false }) })
   const cards: ApprovalRequest[] = []
   const run = async () => {
-    for await (const ev of pilot.run('tab', 'go', {})) {
+    for await (const ev of pilot.run(session, 'go', {})) {
       if (ev.type !== 'approval_request') continue
       cards.push(ev.request)
-      const send = pilot.printRun?.('tab')?.send
+      const send = pilot.printRun?.(session)?.send
       if (ev.request.tool === 'printer.queue' && send) sendLedger.mark(ev.request.id, send.printerId, send.sha256, ev.request.expiresAt)
       await pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
     }
@@ -93,7 +94,7 @@ async function sliceThenQueue(options: Awaited<ReturnType<typeof tab>>['options'
   // the edit lands just before the slice turn, so the profile layer is still rebuilding as the slice starts
   edit()
   await run()
-  const sliced = pilot.printRun?.('tab')?.slice
+  const sliced = pilot.printRun?.(session)?.slice
   await run()
   return { sliced, cards: cards.filter((c) => c.tool === 'printer.queue') }
 }
@@ -206,6 +207,26 @@ describe("mimir's real slice is current when it lands", () => {
     // the configuration sliced lists both slots, from the rebuilt layer
     expect(requests[0]!.config['filament_flow_ratio']).toHaveLength(2)
     expect(pilot.printRun?.('slot-move')?.slice).toMatchObject({ sliceId: 'r1', stale: false })
+  })
+
+  it('a part moved while its paint loads for the slice tool: the slice reads stale and printer.queue refuses it', async () => {
+    // a painted part goes to the engine as a copy loaded with its paint, so the plate's geometry is read while it loads
+    set({ plate: [{ ...part('painted', 60, 1), paint: { 0: { seam: { 0: '8' } } } }] })
+    await profileReady()
+    let moved = false
+    const { options, uploaded } = await tab({
+      load: () => {
+        if (moved) return
+        moved = true
+        set({ plate: get().plate.map((e) => ({ ...e, transform: compose({ position: [90, 100, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })) })
+      },
+    })
+    const r = await sliceThenQueue(options, () => undefined, { tool: 'slice', session: 'paint-load' })
+    expect(moved).toBe(true)
+    // the engine sliced the part where it was before the move, so the slice is not the plate as it is now
+    expect(r.sliced).toMatchObject({ sliceId: 'r1', stale: true })
+    expect(r.cards).toHaveLength(0)
+    expect(uploaded).toEqual([])
   })
 
   it('a two-color plate with an auto tower: the slice is current after it lands and printer.queue sends it', async () => {

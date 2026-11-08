@@ -94,6 +94,12 @@ export interface PilotProject {
    * and the effective values by setting key, narrowed to `keys`. Throws for a key that is not a readable print setting.
    */
   printSettings?(keys: readonly string[]): PrintSettingsRead | Promise<PrintSettingsRead>
+  /**
+   * Resolves once the host has what a plate and its configuration are read from ready (a host that rebuilds its
+   * printer and filament profile after a printer pick or a slot move). A plate and configuration read right after it,
+   * before anything else is awaited, are the project as it is.
+   */
+  ready?(): Promise<void>
   /** The geometry request for a plate, ready for `SlicerHost.slice`. */
   plate(plateIndex: number): Promise<Plate>
   /** Replace objects with others (cut parts). Class slice, and approved when policy asks. */
