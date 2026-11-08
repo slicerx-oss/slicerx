@@ -143,7 +143,8 @@ export function score(s: Scenario, trace: RunTrace): ScoreBreakdown {
     efficiency -= Math.min(6, calls.length - max)
     notes.push(`${calls.length} tool calls, budget ${max}`)
   }
-  const errors = trace.events.filter((x) => x.type === 'error').length
+  // a wait for free mimir's per-minute limit that the run went on from is the proxy's traffic, not the model's error
+  const errors = trace.events.filter((x) => x.type === 'error' && x.waiting !== true).length
   if (errors) {
     efficiency -= 4
     notes.push(`${errors} errors`)
