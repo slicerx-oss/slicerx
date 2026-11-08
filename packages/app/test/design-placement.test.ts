@@ -1312,6 +1312,15 @@ describe('copies of a design whose landing made room', () => {
       expect(setInstanceCount(saucer, 2)).toBe(true)
       return get().plate.find((e) => e.instanceOf === saucer)!.id
     }],
+    ['added as an instance of an instance', (saucer: string) => {
+      expect(setInstanceCount(saucer, 2)).toBe(true)
+      const first = get().plate.find((e) => e.instanceOf === saucer)!.id
+      // the count set on the instance itself: the group grows from it
+      expect(setInstanceCount(first, 3)).toBe(true)
+      const copies = get().plate.filter((e) => e.instanceOf === saucer)
+      expect(copies).toHaveLength(2)
+      return copies.at(-1)!.id
+    }],
     ['on a duplicated plate', (saucer: string) => {
       const before = new Set(get().plate.map((e) => e.id))
       expect(duplicatePlate()).not.toBeNull()
@@ -1338,6 +1347,23 @@ describe('copies of a design whose landing made room', () => {
     expect({ planter: standing(planter), saucer: standing(saucer) }).toEqual(was)
     // the original's own undo still moves the planter back
     expect(anywhere(saucer).roomMoves?.moves.map((m) => m.id)).toEqual([planter])
+  })
+
+  it('never moves a pasted copy of the planter for a later design\'s room, as one a landing put there', { timeout: 60_000 }, async () => {
+    const run = toolsOn(appDesignHost(loader))
+    const { planter } = await landedPair(run)
+    set({ selection: planter, selectedIds: [planter] })
+    expect(copySelection()).toBe(1)
+    const copy = pasteClipboard()[0]!
+    expect(entry(copy).landedAt).toBeUndefined()
+    expect(entry(copy).history?.placed).toEqual(entry(planter).history?.placed)
+    const t = [...entry(copy).transform]
+    // a bowl that needs room on the bed with the three
+    const bowl = String((await run('design.new', { name: 'Bowl' })).output['design'])
+    // the bowl makes room by moving the planter and saucer the landings put there, never the copy
+    expect((await run('geom.extrude', { design: bowl, shape: pot(300), distance_mm: 20 })).summary).toMatch(/Planter moved by .*Saucer moved by .* to make room/)
+    expect(entry(copy).transform).toEqual(t)
+    expect(entry(bowl).roomMoves?.moves.map((m) => m.id) ?? []).not.toContain(copy)
   })
 })
 
