@@ -205,8 +205,7 @@ fn turn(spec: &ArraySpec) -> Option<Turn> {
     })
 }
 
-/// a faceted round on the array's axis: its radius, heights along the axis, facet count, the angle of its first
-/// corner, and its side triangles
+/// a faceted round on the array's axis
 struct Round {
     radius: f64,
     h: (f64, f64),
@@ -218,11 +217,7 @@ struct Round {
 /// how close corners must be to count as on one round, in mm
 const ROUND_TOL: f64 = 1e-4;
 
-/// What to join once and what to copy when the part's rounds on the array's axis are lined up with the copies,
-/// or none when it has none to line up: copies whose facets miss each other by microns leave slivers in every
-/// union after them. A plain revolve is rebuilt with a facet count that is a multiple of the steps and copied.
-/// Any other part gets each misaligned round wrapped in such a prism, a few microns out; the prisms are joined
-/// once and only the part outside them is copied, since every copy of a prism is the prism.
+/// what to join once and what to copy, with the rounds on the axis lined up so copies don't leave slivers
 fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Vec<TriMesh>, TriMesh)>> {
     let local: Vec<V3> = mesh
         .positions
@@ -281,9 +276,29 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
         })
         .collect();
     sides.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut flat = vec![false; local.len()];
+    for tri in &mesh.triangles {
+        let [a, b, c] = tri.map(at);
+        if vec3::normalize(vec3::tri_normal(a, b, c)).is_some_and(|n| n[2].abs() > 1.0 - 1e-6) {
+            for &i in tri {
+                if let Some(f) = flat.get_mut(i as usize) {
+                    *f = true;
+                }
+            }
+        }
+    }
     sides
         .chunk_by(|a, b| b.0 - a.0 < ROUND_TOL)
         .filter_map(|group| {
+            // ends on flat faces across the axis: a sphere's middle band is no cylinder
+            let capped = group
+                .iter()
+                .filter_map(|g| mesh.triangles.get(g.1))
+                .flatten()
+                .all(|&i| flat.get(i as usize).copied().unwrap_or(false));
+            if !capped {
+                return None;
+            }
             let radius = group.iter().map(|g| g.0).sum::<f64>() / group.len() as f64;
             let mut corners: Vec<V3> = group
                 .iter()
@@ -318,8 +333,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
                 let k = (a - phase) / pitch;
                 (k - k.round()).abs() * pitch < eps
             });
-            // a tessellated round, not a polygon: its facets sit within 0.05 mm of the circle, and wrapping it
-            // moves the surface out by at most 0.01 mm
+            // a tessellated round, not a polygon; the wrap moves it out at most 0.01 mm
             let half = (PI / facets).m_cos();
             let fine = radius * (1.0 - half) <= 0.05 && radius * (1.0 / half - 1.0) <= 0.01;
             (regular && fine && 2 * angles.len() >= facets as usize).then(|| Round {
@@ -352,8 +366,7 @@ fn plain(mesh: &TriMesh, local: &[V3], r: &Round) -> bool {
         && mesh.edge_report().is_watertight()
 }
 
-/// The round as a prism of `facets` sides from its first corner, its caps fanned from the axis so every copy is
-/// the same triangles. Wrapped, its sides touch the round's circle from outside, so it holds the old facets.
+/// the round as a prism with fanned caps, so every copy is the same triangles; wrapped, it holds the old facets
 #[allow(clippy::cast_possible_truncation, reason = "vertex counts stay below 2^32")]
 fn prism(mesh: &TriMesh, local: &[V3], t: &Turn, r: &Round, facets: usize, wrap: bool) -> TriMesh {
     let f = &t.frame;
@@ -441,9 +454,7 @@ fn prism(mesh: &TriMesh, local: &[V3], t: &Turn, r: &Round, facets: usize, wrap:
     out
 }
 
-/// The copies, each corner within a micron of a corner of `once` or of an earlier copy moved onto it, without the
-/// copies that land on one kept before: they add nothing to a union, and exact corners let the kernel see faces
-/// that meet.
+/// the copies snapped onto earlier corners, without exact duplicates, which add nothing to a union
 fn distinct(part: &TriMesh, ts: &[Mat4], once: &[TriMesh]) -> Vec<TriMesh> {
     let mut seen: HashMap<[i64; 3], V3> = HashMap::new();
     for &p in once.iter().flat_map(|m| &m.positions) {
@@ -493,8 +504,7 @@ fn near(seen: &HashMap<[i64; 3], V3>, p: V3) -> Option<V3> {
     })
 }
 
-/// the triangles as grid corners, each turned to start at its least corner, sorted: equal for meshes that are the
-/// same triangles in any order
+/// the triangles as sorted grid corners, equal for the same triangles in any order
 fn shape(m: &TriMesh) -> Vec<[[i64; 3]; 3]> {
     let mut out: Vec<[[i64; 3]; 3]> = m
         .triangles
@@ -640,7 +650,7 @@ mod tests {
 
     #[test]
     fn a_hub_with_one_tooth_arrayed_about_the_hub_makes_a_gear() {
-        // a 100 facet hub of r 9.5 with one tooth, as a client drew it
+        // a 100 facet hub of r 9.5 with one tooth, from a recorded session
         let v: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
         let nums = |k: &str| {
@@ -684,5 +694,56 @@ mod tests {
         let m = build::box_mesh([-5.0, -5.0, 0.0], [5.0, 5.0, 4.0]);
         let (u, r, _) = joined(&m, &around_z(4, [0.0; 3]));
         assert!((u.volume() - 400.0).abs() < 1e-9 && r.shells == 1 && r.watertight);
+    }
+
+    #[test]
+    fn only_faceted_rounds_on_the_array_axis_are_lined_up() {
+        let lined = |m: &TriMesh, spec: &ArraySpec| {
+            lined_up(m, &turn(spec).unwrap(), BooleanOptions::default()).unwrap()
+        };
+        let cyl = build::cylinder(&crate::vec3::Frame::WORLD, 9.5, 0.0, 10.0, 100);
+        // another center or another axis: the part stays as it is
+        assert!(lined(&cyl, &around_z(12, [30.0, 0.0, 0.0])).is_none());
+        let about_x = ArraySpec::Circular {
+            count: 12,
+            center: [0.0; 3],
+            axis: Some([1.0, 0.0, 0.0]),
+            angle_deg: None,
+            rotate_copies: None,
+        };
+        assert!(lined(&cyl, &about_x).is_none());
+        // a hexagon is a polygon, not a round, and a sphere has no straight sides
+        let hex = build::cylinder(&crate::vec3::Frame::WORLD, 9.5, 0.0, 10.0, 6);
+        assert!(lined(&hex, &around_z(4, [0.0; 3])).is_none());
+        for rings in [32, 33] {
+            let ball = build::uv_sphere([0.0; 3], 9.5, rings, 64);
+            assert!(lined(&ball, &around_z(12, [0.0; 3])).is_none(), "{rings} rings");
+        }
+        // the round on the axis: a plain one is rebuilt, a hub is wrapped at most 0.01 mm out
+        let (once, part) = lined(&cyl, &around_z(12, [0.0; 3])).unwrap();
+        assert!(once.is_empty() && part.triangles.len() == 4 * 108);
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/array-hub-tooth.json")).unwrap();
+        let nums = |k: &str| {
+            v[k].as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_f64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "fixture indices"
+        )]
+        let idx: Vec<u32> = nums("indices").iter().map(|&i| i as u32).collect();
+        let hub = TriMesh::from_flat(&nums("positions"), &idx).unwrap();
+        let (once, _) = lined(&hub, &around_z(12, [0.0; 3])).unwrap();
+        let out = once
+            .iter()
+            .flat_map(|m| &m.positions)
+            .map(|&p| radius_of(p))
+            .fold(0.0, f64::max);
+        assert!(once.len() == 1 && out > 9.5 && out - 9.5 <= 0.01, "{out}");
     }
 }

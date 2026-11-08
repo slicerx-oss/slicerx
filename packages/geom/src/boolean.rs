@@ -17,12 +17,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// What one join may hand the kernel, in triangles: each step counts its two inputs, and a robust step also counts
-/// them again over its progress reports. A join past it stops with an error people can act on, not after minutes.
+/// triangles one join may hand the kernel before it stops with an error, not after minutes
 pub const WORK_BUDGET: u64 = 20_000_000;
 
-/// The work a join has handed the kernel so far. The exact engine reports once a step and the robust one about
-/// every 1% of each of its phases, whatever the step costs, so the count is of triangles, not of reports.
+/// triangles handed to the kernel so far; report counts don't follow cost, so triangles are counted
 #[derive(Clone)]
 struct Work {
     budget: u64,
@@ -39,7 +37,7 @@ impl Work {
         }
     }
 
-    /// false once past the budget, when the token also stops a step in progress
+    /// false past the budget, which also cancels the step in progress
     fn add(&self, n: u64) -> bool {
         let within = self.done.fetch_add(n, Ordering::Relaxed).saturating_add(n) <= self.budget;
         if !within {
@@ -47,6 +45,12 @@ impl Work {
         }
         within
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// what the last join on this thread handed the kernel
+    static SPENT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 fn too_long() -> Error {
@@ -232,7 +236,7 @@ impl Solid {
         })
     }
 
-    /// `unclean`: some input of this step, here or folded into `self`, was unclean
+    /// `unclean`: an input folded in so far was unclean
     fn apply(
         &self,
         other: &Self,
@@ -244,8 +248,7 @@ impl Solid {
         let robust = match opts.engine {
             Engine::Robust => true,
             Engine::Exact => false,
-            // judged by the inputs, not by a step's own result: slivers the exact engine leaves read as
-            // self-intersections, and the robust engine took minutes on them
+            // by the inputs: exact slivers read as self-intersections and the robust engine stalls on them
             Engine::Auto => opts.keep_inverted || unclean,
         };
         if !robust && (self.soup || other.soup) {
@@ -482,6 +485,8 @@ pub(crate) fn boolean_within(
         }
     };
     let result = result.map(|(s, _)| s);
+    #[cfg(test)]
+    SPENT.set(work.done.load(Ordering::Relaxed));
     let Some(result) = result else {
         return Err(Error::invalid("meshes", "needs at least one mesh"));
     };
@@ -770,5 +775,46 @@ mod tests {
         assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
         let (u, r) = boolean_within(&copies[..3], &[], BoolOp::Union, o, WORK_BUDGET).unwrap();
         assert!(r.watertight && r.engine == "exact" && u.volume() > copies[0].volume());
+    }
+
+    #[test]
+    fn big_real_joins_stay_well_inside_the_budget() {
+        let o = BooleanOptions::default();
+        // twelve 64 sided tubes with a 2 mm wall, overlapping in a ring
+        let ring = |r: f64| crate::poly2d::circle([0.0, 0.0], r, 64);
+        let mut hole = ring(8.0);
+        hole.reverse();
+        let tube = build::extrude(
+            &[crate::poly2d::Polygon {
+                outer: ring(10.0),
+                holes: vec![hole],
+            }],
+            &crate::vec3::Frame::WORLD,
+            0.0,
+            20.0,
+        )
+        .unwrap();
+        let spec = crate::array::ArraySpec::Circular {
+            count: 12,
+            center: [15.0, 0.0, 0.0],
+            axis: None,
+            angle_deg: None,
+            rotate_copies: None,
+        };
+        let (u, r) = crate::array::merged(&tube, &spec, &o).unwrap();
+        let spent = SPENT.get();
+        assert!(
+            r.watertight && r.shells == 1 && u.volume() > tube.volume(),
+            "{r:?}"
+        );
+        assert!(spent < WORK_BUDGET / 100, "{spent}");
+        // two dense spheres and a torus
+        let a = build::uv_sphere([0.0; 3], 20.0, 64, 128);
+        let b = build::uv_sphere([15.0, 0.0, 0.0], 20.0, 64, 128);
+        let t = build::torus([0.0, 0.0, 0.0], 25.0, 6.0, 128, 48);
+        let (_, r) = boolean(&[a, b, t], &[], BoolOp::Union, &o).unwrap();
+        let spent = SPENT.get();
+        assert!(r.watertight, "{r:?}");
+        assert!(spent < WORK_BUDGET / 20, "{spent}");
     }
 }
