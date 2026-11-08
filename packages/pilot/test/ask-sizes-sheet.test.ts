@@ -36,7 +36,6 @@ describe('asked to ask for sizes, mimir shows the sheet', () => {
   it('turns a question card about sizes into a note to use the sheet, showing no card', async () => {
     const r = await run(SIZE_CARD, true)
     expect(r.events.some((e) => e.type === 'ask')).toBe(false)
-    expect(r.seen[0]).toMatchObject({ ok: false })
     expect(r.seen[0]!.summary).toContain('pilot.sheet')
   })
 
@@ -47,5 +46,36 @@ describe('asked to ask for sizes, mimir shows the sheet', () => {
 
   it('the prompt says to show the sheet at once when asked to ask for sizes', () => {
     expect(systemPrompt('full')).toContain('Asked to ask for sizes, show the sheet with suggested values at once, never a question first.')
+  })
+})
+
+// A question about the person's own things (how thick their shelf is, which phone they have) is theirs to answer, as
+// the prompt says, so it stays a card. An open question about sizes goes to the sheet, and that redirect is not a
+// failure: it neither counts toward moving the run to the larger model nor shows as a failed step.
+describe('which size questions go to the sheet', () => {
+  const card = (title: string, question: string) => ({ name: 'pilot.ask', args: { title, question, choices: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Other' }] } })
+
+  for (const [title, question] of [
+    ['Shelf', 'How thick is your shelf?'],
+    ['Phone', 'Which size phone do you have, a 15 or a 15 Plus?'],
+    ['Screw', 'Which screw size do you have?'],
+  ] as const) {
+    it(`still shows "${question}"`, async () => {
+      const r = await run(card(title, question) as typeof SIZE_CARD, true)
+      expect(r.events.some((e) => e.type === 'ask')).toBe(true)
+    })
+  }
+
+  it('an open size question redirects without a failed step or a move to the larger model', async () => {
+    const steps: ScriptStep[] = [{ calls: [SIZE_CARD] }, { calls: [card('Sizes', 'How big should the case be?')] }, { text: 'Here is the sheet.' }]
+    const client = createScriptedClient(steps, { chunk: false })
+    const config = { ...DEFAULT_CONFIG, models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, billing: 'key' as const, auto: true }
+    const p = createPilot({ host, config, policy: DEFAULT_POLICY, client, builtins: false, tools: [askTool({ sizesOnSheet: true })] })
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'Make me a Raspberry Pi 5 case. Ask me for sizes.')) events.push(e)
+    expect(events.some((e) => e.type === 'ask')).toBe(false)
+    expect(events.filter((e) => e.type === 'tool_result').map((e) => (e as { ok: boolean }).ok)).toEqual([true, true])
+    expect(events.some((e) => e.type === 'model_switch')).toBe(false)
+    expect(new Set(client.requests.filter((q) => !q.webSearch).map((q) => q.model))).toEqual(new Set(['claude-haiku-5-5']))
   })
 })
