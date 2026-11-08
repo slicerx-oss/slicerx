@@ -472,7 +472,8 @@ export type PilotEvent =
   | { type: 'model_switch'; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
   /**
    * `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). `waiting`: the run waits a moment and goes on by
-   * itself (free mimir's per-minute limit), so this is no failure; a later error with the same code takes its place.
+   * itself (free mimir's per-minute limit), so this is no failure; the next error with the same code takes its place
+   * when nothing came after it.
    */
   | { type: 'error'; message: string; retryable: boolean; code?: string; waiting?: boolean }
   | { type: 'done'; stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error'; ms: number }
