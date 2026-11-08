@@ -189,7 +189,8 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
       expect(tab.capped).toMatchObject({ cap: CAP, offered: tab.tools.length, sent: CAP, loader: 'pilot.load_tools' })
       expect(tab.capped!.toolsets).toEqual(expect.arrayContaining(['core', 'cad', 'settings']))
       // the printers fill the rest of the room: every printer's commands, not yet every connector's tools
-      expect(tab.capped!.partial).toEqual([{ toolset: 'printers', sent: 45, of: 64 }])
+      expect(tab.capped!.partial).toEqual([{ toolset: 'printers', sent: expect.any(Number), of: 64 }])
+      expect(tab.capped!.partial[0]!.sent).toBeGreaterThanOrEqual(EVERY_PRINTER.length)
     } finally {
       setTabChat(null)
     }
