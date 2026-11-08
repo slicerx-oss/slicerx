@@ -204,6 +204,10 @@ const dim = z.object({
   at: at.optional(),
 })
 
+/** The units a row of each stated kind may give, and the kind a unit other than mm means. */
+const UNITS_OF_KIND: Record<(typeof SIZE_KINDS)[number], readonly ('mm' | 'deg' | '%')[]> = { count: ['mm'], angle: ['mm', 'deg'], length: ['mm', '%'] }
+const KIND_OF_UNIT = { mm: 'length', deg: 'angle', '%': 'length' } as const
+
 type SheetIn = { title: string; views: PilotSheet['views']; dims: z.infer<typeof dim>[]; part?: SolidIn[] | undefined; design?: string | undefined }
 
 /** Every field the sheet's part and places are missing or have wrong, with the row or part named. */
@@ -212,6 +216,8 @@ export function sheetProblems(i: SheetIn): Issue[] {
   if (i.part && (i.part.length < 1 || i.part.length > 40)) out.push({ path: ['part'], message: 'part takes 1 to 40 solids' })
   i.part?.forEach((x, n) => out.push(...solidProblems(x, n)))
   i.dims.forEach((d, n) => {
+    // a kind and a unit that disagree (a length in degrees, a count in percent) would show the row wrong, so it is refused
+    if (d.kind && !UNITS_OF_KIND[d.kind].includes(d.unit)) out.push({ path: ['dims', n, 'kind'], message: `row ${n + 1} (${d.label}) is kind ${d.kind} but unit ${d.unit}; give unit ${UNITS_OF_KIND[d.kind].join(' or ')}, or kind ${KIND_OF_UNIT[d.unit]}` })
     for (const f of ['value', 'min', 'max'] as const) if (d[f] !== undefined && !(Math.abs(d[f]) <= 100_000)) out.push({ path: ['dims', n, f], message: `row ${n + 1} (${d.label}) ${f} is outside -100000 to 100000` })
     if (d.at && !atOk(d.at)) out.push({ path: ['dims', n, 'at'], message: `row ${n + 1} (${d.label}) needs at: ${SHAPE.at}` })
   })

@@ -100,6 +100,7 @@ const BUILD_PINS: Record<string, string[]> = {
 const TWIN_RULES: Record<string, string[]> = {
   'geom.boolean': ['removes', 'keeps what they share'],
   'design.check': ['a step or more tagged with each planned feature'],
+  'design.plan': ['kinds', 'count or angle'],
   'geom.chamfer': ["edge's own face", 'distance2_mm'],
   'geom.fillet': ['edge_pick'],
   'geom.hole': ['counterbore', 'countersink', 'never makes a new hole'],
