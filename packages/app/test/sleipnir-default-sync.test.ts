@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// An opened Orca or Bambu Studio project turns sleipnir off for that project only, also while profile sync follows the store.
+// An opened project with its own fixed layers turns sleipnir off for that project only, also while profile sync follows the store.
 // Profile sync subscribes to the store for the rest of the module's life and has no way to stop, so this runs in a file of its own:
 // beside the tests of sleipnir-default.test.ts it marked every later change to the layer height as the person's choice.
 import type { Host, MeshHandle } from '@slicerx/contracts'
