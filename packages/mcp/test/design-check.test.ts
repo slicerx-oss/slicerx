@@ -524,6 +524,18 @@ describe('slicerx_design_check', () => {
     expect(again.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
   })
 
+  it('keeps the tags through design.save and design.open, so the reopened plate still passes its plan', async () => {
+    const { ok, design } = await plate(5, 6)
+    const saved = await ok<{ path: string }>('slicerx_design_save', { design })
+    const opened = (await ok<{ designs: { design: string }[] }>('slicerx_design_open', { path: saved.path })).designs
+    expect(opened).toHaveLength(1)
+    const steps = await ok<{ steps: { feature?: string }[] }>('slicerx_design_steps', { design: opened[0]!.design })
+    expect(steps.steps.map((st) => st.feature)).toEqual(['plate', 'hole'])
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1', design: opened[0]!.design })
+    expect(r.body.tags).toEqual(['plate', 'hole'])
+    expect(r.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
+  })
+
   it('an untagged plate falls back to step names: the default extrude name stands for no feature', async () => {
     const { ok } = await plate(5, 6, {}, [undefined, undefined])
     const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })

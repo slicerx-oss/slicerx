@@ -3,7 +3,7 @@
 // Every kind of history step the tools record comes back from the project file, so a project with a hole, a
 // thread or a shell opens with its whole history (@slicerx/cad-history read.ts checks each step's parameters).
 import { describe, expect, it } from 'vitest'
-import { historyFiles, parseHistories, type History, type StepParams } from '@slicerx/cad-history'
+import { historyFiles, parseHistories, parseTimeline, timelineFiles, timelineOf, type FeatureItem, type History, type StepParams } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -31,6 +31,26 @@ describe('history steps in the project file', () => {
     const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params: STEPS[2]!, label: 'Walls' }] }
     const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
     expect(parseHistories(files, new Set(['1'])).get('1')?.steps[0]?.label).toBe('Walls')
+  })
+
+  it("keeps the plan feature each step was tagged with, through a version 2 and a version 3 file", () => {
+    const history: History = {
+      version: 1,
+      base: [boxMesh(10, 10, 5)],
+      steps: [
+        { id: 's1', part: 0, transform: T, params: STEPS[0]!, feature: ' Base plate ' },
+        { id: 's2', part: 0, transform: T, params: STEPS[2]!, feature: 'Mounting holes' },
+        { id: 's3', part: 0, transform: T, params: STEPS[3]! },
+        { id: 's4', part: 0, transform: T, params: STEPS[3]!, feature: 'x'.repeat(80) },
+        { id: 's5', part: 0, transform: T, params: STEPS[3]!, feature: '   ' },
+      ],
+    }
+    const bytes = (list: { name: string; data: string | Uint8Array }[]) => new Map(list.map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    const want = ['Base plate', 'Mounting holes', undefined, 'x'.repeat(60), undefined]
+    const v2 = parseHistories(bytes(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]]))), new Set(['1'])).get('1')!
+    expect(v2.steps.map((st) => st.feature)).toEqual(want)
+    const v3 = parseTimeline(bytes(timelineFiles(timelineOf([{ id: 'o1', history }]), new Map([['o1', 1]]))), new Set(['1']))!
+    expect(v3.items.filter((i): i is FeatureItem => i.kind === 'feature').map((f) => f.feature)).toEqual(want)
   })
 
   it('drops a step whose parameters are wrong', () => {
