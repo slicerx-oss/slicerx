@@ -177,7 +177,8 @@ function arrayCopies(d: HostDesign): Map<string, { of: string; n: number }> {
 
 const pairKey = ([a, b]: readonly [number, number]): string => `${Math.min(a, b)} ${Math.max(a, b)}`
 
-type Flat = { z: number; min: [number, number]; max: [number, number] }
+/** A facet facing straight up or down: its height, its corners seen from above, and their box for a quick test. */
+type Flat = { z: number; xy: [[number, number], [number, number], [number, number]]; min: [number, number]; max: [number, number] }
 
 /**
  * How straight up (or down) a facet must face to be part of a flat face: flat faces are drawn exactly, while the
@@ -186,13 +187,13 @@ type Flat = { z: number; min: [number, number]; max: [number, number] }
 const LEVEL = 1 - 1e-6
 
 /**
- * How wide, both ways seen from above, the level facets around a gap's end must be for it to be on a flat face. A pin
- * lying flat in its bore can have a level facet strip along its top; the strip is one chord wide (0.6 mm on a 2.5 mm
- * pin drawn in 25 sides, less on finer ones), so it is no flat face.
+ * How wide a disc of level facets near a gap's end must be for it to be on a flat face. A pin lying flat in its bore
+ * can have a level facet strip along its top; the strip is one chord wide (0.6 mm on a 2.5 mm pin drawn in 25 sides,
+ * less on finer ones), so it is no flat face, whichever way the pin runs.
  */
 const FLAT_SPAN_MM = 1
 
-/** The mesh's facets that face straight up (or down), each as its height and its box seen from above. */
+/** The mesh's facets that face straight up (or down), each as its height and its corners seen from above. */
 function flats(m: Mesh, up: boolean): Flat[] {
   const out: Flat[] = []
   const at = (i: number, k: number): number => m.positions[i * 3 + k]!
@@ -205,13 +206,27 @@ function flats(m: Mesh, up: boolean): Flat[] {
     if (l < 1e-12 || (up ? nz : -nz) / l < LEVEL) continue
     const xs = [at(i, 0), at(j, 0), at(k, 0)]
     const ys = [at(i, 1), at(j, 1), at(k, 1)]
-    out.push({ z: (at(i, 2) + at(j, 2) + at(k, 2)) / 3, min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
+    out.push({ z: (at(i, 2) + at(j, 2) + at(k, 2)) / 3, xy: [[xs[0]!, ys[0]!], [xs[1]!, ys[1]!], [xs[2]!, ys[2]!]], min: [Math.min(...xs), Math.min(...ys)], max: [Math.max(...xs), Math.max(...ys)] })
   }
   return out
 }
 
-/** Whether a flat facet holds the point, seen from above and in height, within ON_FACE_MM. */
-const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM && p[0] >= f.min[0] - ON_FACE_MM && p[0] <= f.max[0] + ON_FACE_MM && p[1] >= f.min[1] - ON_FACE_MM && p[1] <= f.max[1] + ON_FACE_MM
+/** How far a point lies from the facet seen from above: 0 inside it, else the distance to its nearest edge. */
+function apart(f: Flat, x: number, y: number): number {
+  const [a, b, c] = f.xy
+  const side = (p: [number, number], q: [number, number]): number => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0])
+  const s = [side(a, b), side(b, c), side(c, a)]
+  if (s.every((v) => v >= 0) || s.every((v) => v <= 0)) return 0
+  const edge = (p: [number, number], q: [number, number]): number => {
+    const [dx, dy] = [q[0] - p[0], q[1] - p[1]]
+    const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (y - p[1]) * dy) / (dx * dx + dy * dy || 1)))
+    return Math.hypot(x - p[0] - t * dx, y - p[1] - t * dy)
+  }
+  return Math.min(edge(a, b), edge(b, c), edge(c, a))
+}
+
+/** Whether a flat facet holds the point: at its height and on it seen from above, each within ON_FACE_MM. */
+const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM && apart(f, p[0], p[1]) <= ON_FACE_MM
 
 /**
  * Whether the gap's own ends lie on a top face of the lower body (at `low`) and a bottom face of the upper one (at
@@ -221,35 +236,36 @@ const holds = (f: Flat, p: V3): boolean => Math.abs(f.z - p[2]) <= ON_FACE_MM &&
 function restsOn(tops: readonly Flat[], bottoms: readonly Flat[], gapMm: number, low: V3, high: V3): boolean {
   if (high[2] - low[2] < gapMm - ON_FACE_MM) return false
   const t = tops.filter((f) => holds(f, low))
-  if (!t.length || !wide(t, tops)) return false
+  if (!t.length || !wide(low, tops)) return false
   const u = bottoms.filter((b) => holds(b, high) && t.some((f) => Math.abs(b.z - f.z - gapMm) <= ON_FACE_MM))
-  return u.length > 0 && wide(u, bottoms)
+  return u.length > 0 && wide(high, bottoms)
 }
 
+/** How close to a facet, seen from above, a sample point must be to lie on it: the facets of one face share their edges. */
+const ON_EDGE_MM = 1e-6
+
+/** Directions a disc may lie in from a gap's end, and how far: the end can be at a face's edge or corner. */
+const TURNS = 12
+const REACH_MM = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5]
+
 /**
- * Whether the level facets joined to these (at their height, boxes touching, seen from above) span FLAT_SPAN_MM or
- * more both ways: a flat face, not one strip of facets along a round one.
+ * Whether the level facets at the point's height hold a disc FLAT_SPAN_MM across that the point reaches over level
+ * facets: a flat face, not one strip of facets along a round one. Each disc is tested at its center and TURNS points on
+ * its rim, each inside an actual facet seen from above, so the answer does not depend on how the part is turned.
  */
-function wide(seed: readonly Flat[], all: readonly Flat[]): boolean {
-  const z = seed[0]!.z
-  const level = all.filter((f) => Math.abs(f.z - z) <= ON_FACE_MM)
-  const touches = (a: Flat, b: Flat): boolean => a.min[0] <= b.max[0] + ON_FACE_MM && b.min[0] <= a.max[0] + ON_FACE_MM && a.min[1] <= b.max[1] + ON_FACE_MM && b.min[1] <= a.max[1] + ON_FACE_MM
-  const region = new Set<Flat>(seed)
-  const lo: [number, number] = [Infinity, Infinity]
-  const hi: [number, number] = [-Infinity, -Infinity]
-  const queue = [...seed]
-  while (queue.length) {
-    const f = queue.pop()!
-    for (const k of [0, 1] as const) {
-      lo[k] = Math.min(lo[k], f.min[k])
-      hi[k] = Math.max(hi[k], f.max[k])
+function wide(p: V3, all: readonly Flat[]): boolean {
+  const r = FLAT_SPAN_MM / 2
+  const room = REACH_MM.at(-1)! + r + ON_FACE_MM
+  const level = all.filter((f) => Math.abs(f.z - p[2]) <= ON_FACE_MM && f.min[0] <= p[0] + room && f.max[0] >= p[0] - room && f.min[1] <= p[1] + room && f.max[1] >= p[1] - room)
+  const on = (x: number, y: number): boolean => level.some((f) => x >= f.min[0] - ON_EDGE_MM && x <= f.max[0] + ON_EDGE_MM && y >= f.min[1] - ON_EDGE_MM && y <= f.max[1] + ON_EDGE_MM && apart(f, x, y) <= ON_EDGE_MM)
+  const rim = Array.from({ length: TURNS }, (_, k): [number, number] => [Math.cos((2 * Math.PI * k) / TURNS), Math.sin((2 * Math.PI * k) / TURNS)])
+  const disc = (x: number, y: number): boolean => on(x, y) && rim.every(([c, s]) => on(x + r * c, y + r * s))
+  for (const [c, s] of rim)
+    for (const d of REACH_MM) {
+      // the way from the point (which holds() found on a facet) to the disc's center stays on level facets, so the
+      // disc is on the point's own face
+      if (d > 0 && !on(p[0] + d * c, p[1] + d * s)) break
+      if (disc(p[0] + d * c, p[1] + d * s)) return true
     }
-    if (hi[0] - lo[0] >= FLAT_SPAN_MM && hi[1] - lo[1] >= FLAT_SPAN_MM) return true
-    for (const g of level)
-      if (!region.has(g) && touches(f, g)) {
-        region.add(g)
-        queue.push(g)
-      }
-  }
   return false
 }

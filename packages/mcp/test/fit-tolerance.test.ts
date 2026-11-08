@@ -75,7 +75,7 @@ function cylinder(axis: 'x' | 'y', r: number, n: number, center: V3, lengthMm: n
  * across the axis (the pin's corners against the bore's sides and the other way), above the pin, as fit.check reports
  * a gap under the limit there.
  */
-async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR: number, boreSides: number) {
+async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR: number, boreSides: number, turnDeg = 0) {
   const limits = fitLimits({ nozzleMm: 0.4, layerHeightMm: 0.2, material: 'PLA' })
   const center: V3 = [0, 0, 5]
   const pin = cylinder(axis, pinR, pinSides, center, 10)
@@ -106,7 +106,11 @@ async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR:
   const u: V3 = axis === 'x' ? [0, 0, 1] : [0, 0, -1]
   const v: V3 = axis === 'x' ? [0, -1, 0] : [-1, 0, 0]
   const w: V3 = axis === 'x' ? [1, 0, 0] : [0, 1, 0]
-  const at = ([a, b]: [number, number]): V3 => [0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * 5) as V3
+  // the whole design turned about z through the axis, as a hinge built on a diagonal is
+  const [cos, sin] = [Math.cos((turnDeg * Math.PI) / 180), Math.sin((turnDeg * Math.PI) / 180)]
+  const turn = (p: V3): V3 => [p[0] * cos - p[1] * sin, p[0] * sin + p[1] * cos, p[2]]
+  const turned = (m: HistoryMesh): HistoryMesh => ({ ...m, positions: Array.from({ length: m.positions.length / 3 }, (_, i) => turn([m.positions[i * 3]!, m.positions[i * 3 + 1]!, m.positions[i * 3 + 2]!])).flat() })
+  const at = ([a, b]: [number, number]): V3 => turn([0, 1, 2].map((k) => center[k]! + u[k]! * a + v[k]! * b + w[k]! * 5) as V3)
   const from = at(g.p)
   const to = at(g.q)
   // the gap runs more up than across, as the engine's fit check sorts a gap above or below
@@ -120,7 +124,7 @@ async function pinInBore(axis: 'x' | 'y', pinR: number, pinSides: number, boreR:
     pieces: 2,
   }
   const host = { call: async () => report } as unknown as DesignHost
-  const fit = await fitFacts(host, designOf([bore.mesh, pin.mesh]), limits)
+  const fit = await fitFacts(host, designOf([turned(bore.mesh), turned(pin.mesh)]), limits)
   return { fit, gap: fit.gaps[0]!, limits, readMm: g.d }
 }
 
@@ -185,6 +189,21 @@ describe('the fit tolerance', () => {
       expect(fitVerdict(gap, limits), what).toBe('slides')
       expect(gapsItem(fit).pass, what).toBe(true)
     }
+  })
+
+  it('a pin lying in its bore clears its 0.4 mm gap with the design turned about z: a level strip along it is no flat face at any angle', async () => {
+    // along y, 25 sides on both: the gap runs from the pin's level strip to the bore's. Turned 30 or 45 degrees, each
+    // strip's facets reach several mm both ways seen from above, though the strip is 0.63 mm wide
+    for (const turnDeg of [30, 45])
+      for (const [pinSides, boreSides] of [[25, 25], [25, 27]] as const) {
+        const { fit, gap, limits, readMm } = await pinInBore('y', 2.5, pinSides, 2.9, boreSides, turnDeg)
+        const what = `${pinSides} and ${boreSides} sides turned ${turnDeg} degrees, read ${readMm.toFixed(4)} mm`
+        expect(readMm, what).toBeLessThan(0.4)
+        expect(gap.flat, what).toBeUndefined()
+        expect(gap.kind, what).toBe('apart')
+        expect(fitVerdict(gap, limits), what).toBe('slides')
+        expect(gapsItem(fit).pass, what).toBe(true)
+      }
   })
 
   it('a gap with one end on a flat face and the other on a round one gets the facet allowance, either way up', async () => {
