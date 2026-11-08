@@ -293,7 +293,7 @@ const STAND: PilotSheet = {
   views: ['front', 'top', 'side', 'iso'],
   part: [
     { plane: 'xy', points: Array.from({ length: 32 }, (_, i) => [50 * Math.cos((i * Math.PI) / 16), 50 * Math.sin((i * Math.PI) / 16)] as [number, number]), from: 0, to: 6 },
-    { plane: 'xz', points: [[-15, 6], [15, 6], [10, 186], [-10, 186]], holes: [[[-13, 6], [13, 6], [8, 186], [-8, 186]]], from: -15, to: 15 },
+    { plane: 'xz', points: [[-15, 6], [15, 6], [10, 186], [-10, 186]], from: -15, to: 15 },
     { plane: 'xz', points: [[10, 176], [70, 176], [70, 186], [10, 186]], from: -5, to: 5 },
   ],
   dims: [
