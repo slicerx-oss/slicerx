@@ -21,6 +21,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 type Line = [IntPoint<i32>; 2];
+/// A line in turned plate coordinates, from its lower x.
+type Span = [(i64, i64); 2];
 
 /// What the bridging rule reads about one layer: its infill area and how it is divided, and the
 /// lines of its sparse infill (which anchor the bridges above).
@@ -318,9 +320,36 @@ fn rotate_point(p: IntPoint<i32>, cos: f64, sin: f64) -> (i64, i64) {
     )
 }
 
+/// What [`determine_angle`] found: the strand direction and how the outline voted.
+#[derive(Debug, Clone)]
+struct Vote {
+    /// The strand direction, radians, the bias added.
+    angle: f64,
+    /// Each direction across the anchor line nearest an outline sample (radians, `pi / 2` to `3 pi / 2`, no bias), with
+    /// the number of samples that took it.
+    counts: Vec<(f64, i32)>,
+}
+
+/// How near a voted direction is to a line family's crossing direction to count for that family: half a 5 degree bin.
+const FAMILY_NEAR_DEG: f64 = 2.5;
+
+impl Vote {
+    /// The samples whose direction is within [`FAMILY_NEAR_DEG`] of `dir`, folded: a line family's count when `dir`
+    /// crosses it.
+    fn near(&self, dir: f64) -> i32 {
+        let tol = FAMILY_NEAR_DEG.to_radians();
+        self.counts
+            .iter()
+            .filter(|c| apart(c.0, dir) <= tol)
+            .map(|c| c.1)
+            .sum()
+    }
+}
+
 /// The direction the strands over `area` take: the most common direction across the anchor lines nearest to
 /// its outline, turned a right angle (Orca's `determine_bridging_angle`).
-fn determine_angle(outline: &Shapes, anchors: &[Line], bias: f64) -> f64 {
+/// It also returns how many outline samples voted for each direction.
+fn determine_angle(outline: &Shapes, anchors: &[Line], bias: f64) -> Vote {
     let pi = std::f64::consts::PI;
     let mut counted: BTreeMap<i64, (f64, i32)> = BTreeMap::new();
     let step = f64::from(mm(2.0));
@@ -403,7 +432,299 @@ fn determine_angle(outline: &Shapes, anchors: &[Line], bias: f64) -> f64 {
     if angle == 0.0 {
         angle = 0.001;
     }
-    angle + bias
+    Vote {
+        angle: angle + bias,
+        counts: entries,
+    }
+}
+
+/// A strand direction folded into `[0, pi)`.
+fn fold(a: f64) -> f64 {
+    let pi = std::f64::consts::PI;
+    let r = a.rem_euclid(pi);
+    if r >= pi - 1e-12 { 0.0 } else { r }
+}
+
+/// How far apart two strand directions are, folded (radians, 0 to `pi / 2`).
+fn apart(a: f64, b: f64) -> f64 {
+    let d = fold(a - b);
+    d.min(std::f64::consts::PI - d)
+}
+
+/// The directions of `lines` that carry most of their length, folded, each with its length: the peaks of a 1 degree
+/// histogram, taken from the longest down, at least 10 degrees apart, and kept while they carry a quarter of the first.
+/// Empty unless the peaks hold most of the length, as the lines of a pattern laid on straight lines do.
+fn families(lines: &[Line]) -> Vec<(f64, f64)> {
+    const BINS: usize = 180;
+    let (half, pi) = (std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+    let mut weight = [0.0_f64; BINS];
+    let mut sum = [0.0_f64; BINS];
+    let mut total = 0.0;
+    for l in lines {
+        let d = (f64::from(l[1].x - l[0].x), f64::from(l[1].y - l[0].y));
+        let len = d.0.m_hypot(d.1);
+        if len <= 0.0 {
+            continue;
+        }
+        let a = fold(d.1.m_atan2(d.0));
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a folded angle in whole degrees"
+        )]
+        let k = (a.to_degrees().round() as usize) % BINS;
+        if let (Some(w), Some(s)) = (weight.get_mut(k), sum.get_mut(k)) {
+            *w += len;
+            // The offset from the bin's own degree, so a peak at 0 does not average 0 and 180 to 90.
+            #[allow(clippy::cast_precision_loss, reason = "a bin index")]
+            let off = (a - (k as f64).to_radians() + half).rem_euclid(pi) - half;
+            *s += off * len;
+        }
+        total += len;
+    }
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    let mut taken = [false; BINS];
+    while out.len() < 4 {
+        let mut best: Option<usize> = None;
+        for k in 0..BINS {
+            if taken.get(k).copied().unwrap_or(true) {
+                continue;
+            }
+            if best.is_none_or(|b| weight.get(k) > weight.get(b)) {
+                best = Some(k);
+            }
+        }
+        let Some(k) = best else { break };
+        // The peak with two bins on each side.
+        let (mut w, mut s) = (0.0, 0.0);
+        for j in 0..5 {
+            let i = (k + BINS + j - 2) % BINS;
+            if let Some(t) = taken.get_mut(i) {
+                *t = true;
+            }
+            let (wi, si) = (
+                weight.get(i).copied().unwrap_or(0.0),
+                sum.get(i).copied().unwrap_or(0.0),
+            );
+            #[allow(clippy::cast_precision_loss, reason = "a small offset in degrees")]
+            let shift = ((j as f64) - 2.0).to_radians();
+            w += wi;
+            s += si + shift * wi;
+        }
+        if w <= 0.0 || w < 0.25 * out.first().map_or(0.0, |f| f.1) {
+            break;
+        }
+        #[allow(clippy::cast_precision_loss, reason = "a bin index")]
+        let a = fold((k as f64).to_radians() + s / w);
+        if out.iter().all(|f| apart(f.0, a) >= 10.0_f64.to_radians()) {
+            out.push((a, w));
+        }
+    }
+    if out.iter().map(|f| f.1).sum::<f64>() < 0.6 * total {
+        out.clear();
+    }
+    out
+}
+
+/// The strand direction across one of the line families `fams` (folded), the one nearest the x axis, and of two
+/// equally near the larger angle: on a 45 degree grid, 135 degrees.
+fn family_angle(fams: &[(f64, f64)]) -> Option<f64> {
+    let pi = std::f64::consts::PI;
+    fams.iter().map(|f| fold(f.0 + 0.5 * pi)).min_by(|a, b| {
+        let (da, db) = (a.min(pi - a), b.min(pi - b));
+        if (da - db).abs() < 1e-6 {
+            b.total_cmp(a)
+        } else {
+            da.total_cmp(&db)
+        }
+    })
+}
+
+/// Strand length over `region` (its outline as lines) along the folded direction `angle`, with strands `pitch` apart,
+/// whose both ends land on a run of `solid` (its outline as lines) at least `min_run` long: the run that holds the point
+/// `reach` past the end, or else the point `reach / 2` back inside. Internal units.
+fn anchored_length(region: &[Line], solid: &[Line], angle: f64, pitch: i64, reach: i64, min_run: i64) -> i64 {
+    if region.is_empty() || solid.is_empty() {
+        return 0;
+    }
+    let aligning = -angle + std::f64::consts::FRAC_PI_2;
+    let (cos, sin) = (aligning.m_cos(), aligning.m_sin());
+    // The lines turned so the strands run along y, each from its lower x, sorted by it.
+    let rotated = |lines: &[Line]| -> Vec<Span> {
+        let mut v: Vec<Span> = lines
+            .iter()
+            .map(|l| {
+                let (a, b) = (rotate_point(l[0], cos, sin), rotate_point(l[1], cos, sin));
+                if a.0 <= b.0 { [a, b] } else { [b, a] }
+            })
+            .filter(|l| l[0].0 != l[1].0)
+            .collect();
+        crate::sorting::sort_by_key(&mut v, |l| l[0].0);
+        v
+    };
+    let (area, under) = (rotated(region), rotated(solid));
+    let (Some(x_min), Some(x_max)) = (
+        area.iter().map(|l| l[0].0).min(),
+        area.iter().map(|l| l[1].0).max(),
+    ) else {
+        return 0;
+    };
+    let pitch = pitch.max(1);
+    // A sweep over the strands from left to right, keeping the lines each one crosses.
+    let (mut next_a, mut next_u) = (0, 0);
+    let (mut live_a, mut live_u) = (Vec::<Span>::new(), Vec::<Span>::new());
+    let mut total = 0_i64;
+    let mut x = x_min + pitch / 2;
+    while x < x_max {
+        while let Some(l) = area.get(next_a).filter(|l| l[0].0 <= x) {
+            live_a.push(*l);
+            next_a += 1;
+        }
+        while let Some(l) = under.get(next_u).filter(|l| l[0].0 <= x) {
+            live_u.push(*l);
+            next_u += 1;
+        }
+        live_a.retain(|l| l[1].0 > x);
+        live_u.retain(|l| l[1].0 > x);
+        let ys = crossings(&live_a, x);
+        let solid_ys = crossings(&live_u, x);
+        // Whether y is on solid, and if so whether its run is long enough.
+        let held = |y: i64| -> Option<bool> {
+            let k = solid_ys.partition_point(|&s| s <= y);
+            (k % 2 == 1).then(|| {
+                let lo = k.checked_sub(1).and_then(|i| solid_ys.get(i)).copied();
+                let hi = solid_ys.get(k).copied();
+                lo.zip(hi).is_some_and(|(lo, hi)| hi - lo >= min_run)
+            })
+        };
+        for s in ys.as_chunks::<2>().0 {
+            let (lo, hi) = (s[0], s[1]);
+            let low = held(lo - reach).or_else(|| held(lo + reach / 2)).unwrap_or(false);
+            let high = held(hi + reach).or_else(|| held(hi - reach / 2)).unwrap_or(false);
+            if low && high {
+                total += hi - lo;
+            }
+        }
+        x += pitch;
+    }
+    total
+}
+
+/// What the layer below a bridge offers its first bridge: the line families of its sparse grid, and what it printed
+/// over its infill area other than sparse infill (its solid infill and bridges, not its walls).
+struct Below {
+    families: Vec<(f64, f64)>,
+    solid: Shapes,
+}
+
+/// Whether some strand over `region` lands on `solid` at both ends, each end on a run of it at least two line widths
+/// long, along a direction across or along one of the grid's line families, along the region's own edges, or a multiple
+/// of 5 degrees.
+fn held_anywhere(region: &Shapes, solid: &Shapes, grid: &[(f64, f64)], pitch: f64, width: f64) -> bool {
+    if solid.is_empty() {
+        return false;
+    }
+    let local = outline_lines(&meet(solid, &expand(region, 2.0 * pitch + 3.0 * width)));
+    if local.is_empty() {
+        return false;
+    }
+    let pi = std::f64::consts::PI;
+    let edges = outline_lines(region);
+    let mut dirs: Vec<f64> = Vec::new();
+    let mut add = |a: f64| {
+        let a = fold(a);
+        if dirs.iter().all(|&d| apart(d, a) > 0.5_f64.to_radians()) {
+            dirs.push(a);
+        }
+    };
+    for f in grid {
+        add(f.0 + 0.5 * pi);
+        add(f.0);
+    }
+    // The region's own edge directions: its line families, or else its 8 longest edges of 2 mm or more.
+    let mut own = families(&edges);
+    if own.is_empty() {
+        own = edges
+            .iter()
+            .map(|l| {
+                let d = (f64::from(l[1].x - l[0].x), f64::from(l[1].y - l[0].y));
+                (fold(d.1.m_atan2(d.0)), d.0.m_hypot(d.1))
+            })
+            .filter(|e| e.1 >= f64::from(mm(2.0)))
+            .collect();
+        crate::sorting::sort_by(&mut own, |a, b| b.1.total_cmp(&a.1));
+        own.truncate(8);
+    }
+    for e in own {
+        add(e.0);
+    }
+    for k in 0..36 {
+        add(f64::from(k) * 5.0_f64.to_radians());
+    }
+    let (units, run) = (i64::from(mm(pitch)), i64::from(mm(2.0 * width)));
+    dirs.iter()
+        .any(|&a| anchored_length(&edges, &local, a, units, units, run) > 0)
+}
+
+/// The strand direction of the first bridge of a stack where its vote does not choose (radians, `pi / 2` to
+/// `3 pi / 2`, `bias` added), or `None` to keep the vote. The sparse grid below has two line families, their counts in
+/// `vote` are within 10 percent of their sum and each beats every other direction, and no strand over `region` lands on
+/// solid below at both ends. Then the strands cross the grid along the family nearest the x axis, 135 degrees on a
+/// 45 degree grid. A lone square frame over a 45 degree grid votes almost evenly, and which family won used to depend
+/// on where each outline ring started. `first` says whether the bridge starts its stack (asked only on a near tie), and
+/// `sizes` are the strand spacing and the bridge line width (mm) and the pattern's bias (radians).
+fn first_bridge_angle(
+    vote: &Vote,
+    region: &Shapes,
+    below: &Below,
+    first: &dyn Fn() -> bool,
+    sizes: (f64, f64, f64),
+) -> Option<f64> {
+    let pi = std::f64::consts::PI;
+    let (pitch, width, bias) = sizes;
+    let [a, b] = below.families.as_slice() else {
+        return None;
+    };
+    let (da, db) = (fold(a.0 + 0.5 * pi), fold(b.0 + 0.5 * pi));
+    let (ca, cb) = (vote.near(da), vote.near(db));
+    let tol = FAMILY_NEAR_DEG.to_radians();
+    let other = vote
+        .counts
+        .iter()
+        .filter(|c| apart(c.0, da) > tol && apart(c.0, db) > tol)
+        .map(|c| vote.near(c.0))
+        .max()
+        .unwrap_or(0);
+    let tie = ca + cb > 0 && 10 * (ca - cb).abs() <= ca + cb && ca.min(cb) > other;
+    if !tie || !first() || held_anywhere(region, &below.solid, &below.families, pitch, width) {
+        return None;
+    }
+    let d = fold(family_angle(&below.families)? + bias);
+    Some(if d < 0.5 * pi { d + pi } else { d })
+}
+
+/// The layer below `l` as its first bridge reads it: the line families of the sparse lines more than two spacings `sp`
+/// inside its sparse area (the links between lines run along its edge), and its solid.
+fn below_of(env: &Env<'_>, l: i64, below_lines: &[Line], sp: f64) -> Below {
+    let lower = (env.facts)(l - 1);
+    let inside = lower
+        .as_ref()
+        .map(|f| shrink(&closing(&f.sparse, 0.01), 2.0 * sp))
+        .unwrap_or_default();
+    let lines = clip_lines(below_lines, &inside);
+    Below {
+        families: families(if lines.is_empty() { below_lines } else { &lines }),
+        solid: lower.map_or_else(Shapes::new, |f| {
+            sub(&closing(&f.inner, 0.01), &closing(&f.sparse, 0.01))
+        }),
+    }
+}
+
+/// Whether one of the 5 layers below `l` bridges, so `l` is not the first bridge of its stack.
+fn bridged_below(env: &Env<'_>, l: i64, memo: &Memo) -> bool {
+    (l.saturating_sub(5).max(1)..l)
+        .rev()
+        .any(|j| !cands_of(env, j, memo).is_empty() && !bridge_layer(env, j, memo).is_empty())
 }
 
 fn nearest_line(lines: &[Line], p: (f64, f64)) -> Option<Line> {
@@ -772,6 +1093,8 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
     let below_lines = (env.facts)(l - 1).map(|f| f.segments()).unwrap_or_default();
     let anchors = clip_lines(&below_lines, &shrink(&expansion, sp));
     let internal_unsupported = shrink(&deep, sp * 4.5);
+    // The layer below as a first bridge reads it, worked out once and only when a candidate asks.
+    let mut below: Option<Below> = None;
     let mut done: Vec<Bridged> = Vec::new();
     for cand in &cands {
         let mut to_bridge = meet(&expand(cand, sp), &deep);
@@ -788,9 +1111,18 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
         boundary.extend(outline_lines(&expand(&limiting, 0.3 * env.bridge_spacing)));
         let outline: Shapes = to_bridge.clone();
         let mut angle = if anchors.is_empty() {
-            determine_angle(&outline, &boundary, 0.0)
+            determine_angle(&outline, &boundary, 0.0).angle
         } else {
-            determine_angle(&outline, &anchors, env.angle_bias)
+            let vote = determine_angle(&outline, &anchors, env.angle_bias);
+            let first = || !bridged_below(env, l, memo);
+            first_bridge_angle(
+                &vote,
+                &to_bridge,
+                below.get_or_insert_with(|| below_of(env, l, &below_lines, sp)),
+                &first,
+                (sp, env.bridge_width, env.angle_bias),
+            )
+            .unwrap_or(vote.angle)
         };
         if let Some((deg, relative)) = env.custom_angle.filter(|(d, _)| *d > 0.0) {
             let rad = deg.to_radians();
@@ -1492,6 +1824,114 @@ mod tests {
 
     fn bridged(area: Shapes, angle: f64) -> Bridged {
         Bridged { area, angle }
+    }
+
+    /// Sparse grid lines at `dir` and `dir + 90` degrees, 2 mm apart, crossing at (20.25, 20.25), over the square from
+    /// -40 to 80 mm. That phase leaves the vote over [`frame`] split almost evenly, its winner turning with the ring start.
+    fn grid(dir: f64) -> Vec<Line> {
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        let mut out = Vec::new();
+        for a in [dir, dir + 90.0] {
+            let (c, s) = (a.to_radians().m_cos(), a.to_radians().m_sin());
+            for k in -40..=40 {
+                let o = f64::from(k) * 2.0;
+                let (x, y) = (20.25 - s * o, 20.25 + c * o);
+                out.push([p(x - c * 60.0, y - s * 60.0), p(x + c * 60.0, y + s * 60.0)]);
+            }
+        }
+        out
+    }
+
+    /// A 40 mm square frame 5 mm wide, both rings starting at their corner `start`.
+    fn frame(start: usize) -> Shapes {
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        let mut outer = vec![p(0.0, 0.0), p(40.0, 0.0), p(40.0, 40.0), p(0.0, 40.0)];
+        let mut inner = vec![p(5.0, 5.0), p(5.0, 35.0), p(35.0, 35.0), p(35.0, 5.0)];
+        outer.rotate_left(start);
+        inner.rotate_left(start);
+        vec![vec![outer, inner]]
+    }
+
+    /// Whole degrees from 0 to 179.
+    fn degrees(a: f64) -> i64 {
+        #[allow(clippy::cast_possible_truncation, reason = "whole degrees")]
+        let d = fold(a).to_degrees().round() as i64;
+        d % 180
+    }
+
+    /// The first bridge rule over `region` with the vote over `anchors`, `solid` below and a 45 degree grid: its
+    /// direction in whole degrees, or `None` where it keeps the vote.
+    fn first(region: &Shapes, anchors: &[Line], solid: Shapes, starts: bool) -> Option<i64> {
+        let below = Below {
+            families: families(&grid(45.0)),
+            solid,
+        };
+        let vote = determine_angle(region, anchors, 0.0);
+        first_bridge_angle(&vote, region, &below, &|| starts, (0.45, 0.45, 0.0)).map(degrees)
+    }
+
+    #[test]
+    fn a_first_bridge_whose_vote_splits_evenly_between_the_grid_families_crosses_at_135_from_any_ring_start()
+    {
+        let mut votes = Vec::new();
+        for start in 0..4 {
+            let region = frame(start);
+            let vote = determine_angle(&region, &grid(45.0), 0.0);
+            let (a, b) = (
+                vote.near(45.0_f64.to_radians()),
+                vote.near(135.0_f64.to_radians()),
+            );
+            assert!(
+                10 * (a - b).abs() <= a + b,
+                "start {start}: 45 has {a}, 135 has {b}"
+            );
+            votes.push(degrees(vote.angle));
+            assert_eq!(
+                first(&region, &grid(45.0), Vec::new(), true),
+                Some(135),
+                "start {start}"
+            );
+        }
+        // The vote alone turns with the ring start.
+        assert!(
+            votes.contains(&45) && votes.contains(&135),
+            "votes by start: {votes:?}"
+        );
+    }
+
+    #[test]
+    fn a_first_bridge_with_solid_below_or_a_later_bridge_keeps_the_vote() {
+        let region = frame(0);
+        // Solid inside the frame and all round it: strands across the frame's sides land on it at both ends.
+        let solid = union(
+            &rect(5.0, 5.0, 35.0, 35.0),
+            &sub(&rect(-3.0, -3.0, 43.0, 43.0), &rect(0.0, 0.0, 40.0, 40.0)),
+        );
+        assert_eq!(first(&region, &grid(45.0), solid, true), None);
+        assert_eq!(first(&region, &grid(45.0), Vec::new(), false), None);
+    }
+
+    #[test]
+    fn a_clear_vote_is_kept() {
+        // A 40 by 16 mm bridge whose long sides lie along links of the sparse infill: the vote crosses them at 90.
+        let region = rect(0.0, 0.0, 40.0, 16.0);
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        let mut anchors = grid(45.0);
+        anchors.push([p(-5.0, -0.3), p(45.0, -0.3)]);
+        anchors.push([p(-5.0, 16.3), p(45.0, 16.3)]);
+        assert_eq!(degrees(determine_angle(&region, &anchors, 0.0).angle), 90);
+        assert_eq!(first(&region, &anchors, Vec::new(), true), None);
+    }
+
+    #[test]
+    fn the_grid_family_nearest_the_x_axis_wins() {
+        for (dir, want) in [(45.0, 135), (30.0, 30), (60.0, 150), (0.0, 0)] {
+            assert_eq!(
+                family_angle(&families(&grid(dir))).map(degrees),
+                Some(want),
+                "{dir} degree grid"
+            );
+        }
     }
 
     #[test]
