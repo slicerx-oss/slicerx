@@ -12,7 +12,7 @@ import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG
 import printerModels from '@slicerx/settings/printer-models.json' with { type: 'json' }
 import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scripted'
 import type { LlmMessage } from '../../../pilot/src/provider/types'
-import type { BuildVolume } from '../../../pilot/evals/creative/mesh-checks'
+import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
