@@ -677,12 +677,13 @@ describe('slicerx_design_check', () => {
       expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
     }
     const design = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Tools' })).output.design
-    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [40, 20, 10] }], feature: 'Block' })
-    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'cylinder', origin: [10, 10, -1], axis: [0, 0, 1], diameterMm: 3, heightMm: 12 }], feature: 'Pin hole' })
+    // small bodies and one hollowed part: the hollow's voxel shell is the largest reply the fixture keeps
+    await ok('slicerx_geom_build', { design, solids: [{ type: 'box', min: [0, 0, 0], max: [20, 10, 10] }], feature: 'Block' })
+    await ok('slicerx_geom_subtract', { design, solids: [{ type: 'cylinder', origin: [5, 5, -1], axis: [0, 0, 1], diameterMm: 3, heightMm: 12 }], feature: 'Pin hole' })
     await ok('slicerx_geom_mirror', { design, plane: { axis: 'x', at: 0 }, copy: true, feature: 'Mirror half' })
     await ok('slicerx_geom_array', { design, part: 0, spec: { kind: 'linear', count: 2, step: [0, 60, 0] }, merge: false, feature: 'Copies' })
     await ok('slicerx_geom_cut', { design, plane: { axis: 'z', at: 8 }, keep: 'below', feature: 'Trim' })
-    await ok('slicerx_geom_hollow', { design, wall_mm: 2, feature: 'Shell' })
+    await ok('slicerx_geom_hollow', { design, part: 0, wall_mm: 2, feature: 'Shell' })
     plans.put({ planId: 'tools-1', part: 'Tools', units: 'mm', features: [{ name: 'Block', sizes: { width: 40 } }], assumptions: [], questions: [] })
     const r = data<{ output: Check }>(await h.call('slicerx_design_check', { planId: 'tools-1' })).output
     expect(r.body.steps).toEqual(['Add Solids 1', 'Hole 3 mm', 'Mirror copy', 'Array of 2, separate', 'Cut, keep below', 'Hollow, 2 mm walls'])
