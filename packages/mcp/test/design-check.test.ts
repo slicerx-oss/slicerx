@@ -915,6 +915,11 @@ describe('design.put_plan', () => {
     expect(partPlanSchema.shape.printInPlace.description).toContain('(such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8)')
   })
 
+  it('asks MCP clients for the moving pieces in printInPlace, as the tab asks mimir', () => {
+    const put = designToolset(hostOf([]), {}, {}).find((t) => t.name === 'design.put_plan')!
+    expect(put.description).toContain('when pieces of the part print assembled and move (hinges, chains, gears, jointed, articulated or flexi segments), those pieces by name in printInPlace')
+  })
+
   it('keeps a plan design.check then checks the built part against, tied to its design', async () => {
     // two designs open, neither named as the part: the tie picks the right one
     const { plans, run } = tools([boxDesign('d1', 'Other'), boxDesign('d2', 'Clip')])
