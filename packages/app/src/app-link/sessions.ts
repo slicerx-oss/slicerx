@@ -68,7 +68,8 @@ function compact(turn: Turn, user: { text: string; attachments: string[] } | und
         out.push({ kind: 'plan', steps: b.steps.map((s) => cut(s, 200)) })
         break
       case 'error':
-        out.push({ kind: 'error', message: cut(b.message, 500) })
+        // the code says which limit or refusal it was; waiting marks free mimir's wait for its limit, which it went on from
+        out.push({ kind: 'error', message: cut(b.message, 500), ...(b.code ? { code: b.code } : {}), ...(b.waiting ? { waiting: true } : {}) })
         break
       case 'summary':
         out.push({ kind: 'summary', title: b.title, rows: b.rows })
