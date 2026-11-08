@@ -825,7 +825,7 @@ mod tests {
         let mut arc: Vec<[f64; 2]> = (0..=50)
             .map(|k| {
                 let a = std::f64::consts::PI * (f64::from(k) / 50.0 - 0.5);
-                [9.5 * a.cos(), 9.5 * a.sin()]
+                [9.5 * a.m_cos(), 9.5 * a.m_sin()]
             })
             .collect();
         arc.dedup();
