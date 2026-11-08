@@ -14,7 +14,7 @@ use crate::poly2d::Polygon;
 use crate::solids::SolidSpec;
 #[cfg(feature = "svg")]
 use crate::svg;
-use crate::vec3::{Plane, V3};
+use crate::vec3::{self, Plane, V3};
 use crate::{
     convex, cut, emboss, import, layers, orient, paint_ops, render, repair, resume, simplify, split,
 };
@@ -346,7 +346,7 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 return Err(Error::invalid("solids", "needs at least one solid"));
             }
             #[allow(unused_mut, reason = "faces are added only in builds with the cad feature")]
-            let mut out = cut_out(&m, &solids)?;
+            let mut out = cut_out(&it, &solids)?;
             // The faces, found here on the f64 result: the answer rounds the corners to f32, and after that a
             // corner the cut left on a chord of a hole's wall reads as a seam, so the wall no longer fits a cylinder.
             // What the part's own faces knew (a wall an earlier cut found, the keys) carries over.
@@ -668,9 +668,11 @@ pub(crate) fn read_model(req: &Value, files: FileLoader<'_>) -> Result<import::I
     })
 }
 
-/// the part with the solids cut out by convex cuts; where those leave it open or crossing itself at storage precision
-/// (a bore that runs along a round the part already has), the boolean engine cuts it instead
-fn cut_out(m: &TriMesh, solids: &[SolidSpec]) -> Result<TriMesh> {
+/// the part with the solids cut out by convex cuts, in bed coordinates; where those leave it open or crossing itself
+/// once stored in the part's own frame (a bore that runs along a round the part already has), the boolean engine cuts
+/// it instead
+fn cut_out(it: &crate::json_cad::Item, solids: &[SolidSpec]) -> Result<TriMesh> {
+    let m = it.world();
     let mut out = m.clone();
     let mut cutters = Vec::new();
     for c in &convex_pieces(solids)? {
@@ -679,63 +681,117 @@ fn cut_out(m: &TriMesh, solids: &[SolidSpec]) -> Result<TriMesh> {
         out = convex::subtract(&out, &c)?;
         cutters.push(c);
     }
-    let mut out = emboss::merge_coplanar_changed(&out, m)?;
+    let mut out = emboss::merge_coplanar_changed(&out, &m)?;
     convex::flip_needles(&mut out);
     let Some(b) = m.bounds() else {
         return Ok(out);
     };
-    if crate::boolean::stores_clean(&out) || !crate::boolean::stores_clean(m) {
+    // the full check only where a cheap look finds something wrong, and only for a part that stored clean before
+    if out.triangles.is_empty() {
         return Ok(out);
     }
-    let (c, s) = (b.center(), b.diagonal().max(1.0) * 4.0);
-    let tools: Vec<TriMesh> = cutters.iter().map(|k| k.to_mesh(c, s)).collect();
+    let local = it.to_local(&out)?;
+    if !suspect(&local) || crate::boolean::stores_clean(&local) || !crate::boolean::stores_clean(it.mesh()) {
+        return Ok(out);
+    }
+    let Some(tools) = cutters.iter().map(|k| k.to_mesh(&b)).collect::<Option<Vec<_>>>() else {
+        return Ok(out);
+    };
     let opts = crate::boolean::BooleanOptions::default();
     if let Ok((r, mut report)) = crate::boolean::boolean(
-        std::slice::from_ref(m),
+        std::slice::from_ref(&m),
         &tools,
         crate::boolean::BoolOp::Difference,
         &opts,
     ) {
-        let r = settle(crate::boolean::tidy(r, &mut report));
+        let r = settle(it.to_local(&crate::boolean::tidy(r, &mut report))?);
         if crate::boolean::stores_clean(&r) {
-            return Ok(r);
+            return Ok(it.to_world(&r));
         }
     }
     Ok(out)
 }
 
-/// a cut's result with the slivers it leaves where its cutter runs along the part settled, so it stores: needles
-/// turned away, and corners a float step or two apart made one
+/// true when a cut's result, in the frame it is stored in, is open or has a collapsed or needle thin triangle at f32
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "rounding to the f32 the result is stored in"
+)]
+fn suspect(m: &TriMesh) -> bool {
+    if !m.edge_report().is_watertight() {
+        return true;
+    }
+    let tol = f32_step(m) * 8.0;
+    m.triangles.iter().any(|&t| {
+        let [a, b, c] = m.corners(t).map(|p| p.map(|v| f64::from(v as f32)));
+        let long = [vec3::sub(b, a), vec3::sub(c, b), vec3::sub(a, c)]
+            .map(vec3::len)
+            .into_iter()
+            .fold(0.0, f64::max);
+        vec3::len(vec3::tri_normal(a, b, c)) <= tol * long
+    })
+}
+
+/// an f32 step at the mesh's largest coordinate
+fn f32_step(m: &TriMesh) -> f64 {
+    let big = m.positions.iter().flatten().fold(0.0_f64, |s, c| s.max(c.abs()));
+    big * f64::from(f32::EPSILON)
+}
+
+/// a cut's result, in the frame it is stored in, with the slivers it leaves where its cutter runs along the part
+/// settled: needles turned away, corners about two float steps apart made one, and fins of no volume dropped
 #[allow(
     clippy::cast_possible_truncation,
     reason = "rounding to the f32 the result is stored in"
 )]
 fn settle(mut r: TriMesh) -> TriMesh {
     convex::flip_needles(&mut r);
-    if crate::boolean::stores_clean(&r) {
-        return r;
-    }
     for p in &mut r.positions {
         *p = p.map(|v| f64::from(v as f32));
     }
-    let mut r = r.weld(r.bounds().map_or(1e-6, |b| b.diagonal() * 1e-7));
+    let tol = (f32_step(&r) * 2.5).max(r.bounds().map_or(1e-6, |b| b.diagonal() * 1e-7));
+    let mut r = r.weld(tol);
     r.faces = None;
     r.triangles
         .retain(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]);
-    // two triangles on the same corners facing apart are a fin of no volume: both go
-    let mut seen: std::collections::HashMap<[u32; 3], usize> = std::collections::HashMap::new();
-    for t in &r.triangles {
-        let mut k = *t;
-        k.sort_unstable();
-        *seen.entry(k).or_default() += 1;
-    }
-    r.triangles.retain(|t| {
-        let mut k = *t;
-        k.sort_unstable();
-        seen.get(&k) == Some(&1)
-    });
+    r.triangles = drop_fins(&r.triangles);
     convex::flip_needles(&mut r);
     r
+}
+
+/// the triangles with each pair on the same corners facing apart (a fin of no volume) dropped, and one kept of any
+/// copies that face the same way
+fn drop_fins(tris: &[[u32; 3]]) -> Vec<[u32; 3]> {
+    // a triangle turned to start at its lowest corner; the same corners facing apart give the other two in turn
+    let turned = |[a, b, c]: [u32; 3]| {
+        if a <= b && a <= c {
+            [a, b, c]
+        } else if b <= c {
+            [b, c, a]
+        } else {
+            [c, a, b]
+        }
+    };
+    let key = |u: [u32; 3]| [u[0], u[1].min(u[2]), u[1].max(u[2])];
+    // per corner set: copies facing one way less those facing the other, and whether one is kept yet
+    let mut ways: std::collections::HashMap<[u32; 3], (i64, bool)> = std::collections::HashMap::new();
+    for &t in tris {
+        let u = turned(t);
+        ways.entry(key(u)).or_insert((0, false)).0 += if u[1] < u[2] { 1 } else { -1 };
+    }
+    let mut out = Vec::with_capacity(tris.len());
+    for &t in tris {
+        let u = turned(t);
+        let Some(e) = ways.get_mut(&key(u)) else {
+            continue;
+        };
+        // the way with more copies keeps one; a tie cancels
+        if !e.1 && e.0 != 0 && (e.0 > 0) == (u[1] < u[2]) {
+            e.1 = true;
+            out.push(t);
+        }
+    }
+    out
 }
 
 fn convex_pieces(specs: &[SolidSpec]) -> Result<Vec<convex::ConvexSolid>> {
@@ -2164,26 +2220,95 @@ mod tests {
 
         /// a 12 mm thick d110 disc at (128, 128) with a stem turned up from it, then a bore of `d` from below
         fn stand_bore(profile: &[[f64; 2]], d: f64) -> (Value, Value) {
+            placed_stand_bore(profile, d, 1.0, None)
+        }
+
+        /// `stand_bore` at `k` times the size; with `place`, the bore is cut with the part turned by that angle (degrees)
+        /// about its center and its center moved to that point, as a part moved on the plate is
+        fn placed_stand_bore(
+            profile: &[[f64; 2]],
+            d: f64,
+            k: f64,
+            place: Option<(f64, [f64; 2])>,
+        ) -> (Value, Value) {
+            let at = [128.0, 128.0];
             let base = faced(
                 "shape.extrude",
-                &json!({ "frame": { "origin": [128, 128, 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
-                    "shape": { "type": "circle", "diameterMm": 110 }, "spec": { "distanceMm": 12 } }),
+                &json!({ "frame": { "origin": [at[0], at[1], 0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] },
+                    "shape": { "type": "circle", "diameterMm": 110.0 * k }, "spec": { "distanceMm": 12.0 * k } }),
             )
             .unwrap();
+            let loops: Vec<[f64; 2]> = profile.iter().map(|p| [p[0] * k, p[1] * k]).collect();
             let stem = faced(
                 "sketch.revolve",
-                &json!({ "frame": { "origin": [128, 128, 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] },
-                    "loops": [{ "points": profile }], "axis": { "point": [0, 0], "direction": [0, 1] },
+                &json!({ "frame": { "origin": [at[0], at[1], 0], "normal": [0, -1, 0], "u": [1, 0, 0], "v": [0, 0, 1] },
+                    "loops": [{ "points": loops }], "axis": { "point": [0, 0], "direction": [0, 1] },
                     "operation": "join", "target": part(&base) }),
             )
             .unwrap();
+            let (item, center) = match place {
+                None => (part(&stem), at),
+                Some((deg, to)) => {
+                    let (s, c) = crate::fm::Fm::m_sin_cos(deg.to_radians());
+                    let shift = [to[0] - (c * at[0] - s * at[1]), to[1] - (s * at[0] + c * at[1])];
+                    let t = json!([c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, shift[0], shift[1], 0, 1]);
+                    (json!({ "mesh": stem["mesh"], "transform": t }), to)
+                }
+            };
             let bore = faced(
                 "subtract",
-                &json!({ "mesh": part(&stem), "solids": [{ "type": "cylinder", "origin": [128, 128, -1], "axis": [0, 0, 1],
-                    "diameterMm": d, "heightMm": 14 }] }),
+                &json!({ "mesh": item, "solids": [{ "type": "cylinder", "origin": [center[0], center[1], -k],
+                    "axis": [0, 0, 1], "diameterMm": d * k, "heightMm": 14.0 * k }] }),
             )
             .unwrap();
             (stem, bore)
+        }
+
+        /// true when the reply's mesh stores as it is, in the part's own frame
+        fn stores(v: &Value) -> bool {
+            let p: Vec<f64> = serde_json::from_value(v["mesh"]["positions"].clone()).unwrap();
+            let i: Vec<u32> = serde_json::from_value(v["mesh"]["indices"].clone()).unwrap();
+            crate::boolean::stores_clean(&TriMesh::from_flat(&p, &i).unwrap())
+        }
+
+        const HOLE_AT_BORE: [[f64; 2]; 6] = [
+            [12.5, 6.0],
+            [15.0, 6.0],
+            [15.0, 12.0],
+            [11.0, 162.0],
+            [8.5, 162.0],
+            [12.5, 12.0],
+        ];
+
+        #[test]
+        fn a_bore_along_a_turned_hole_closes_on_a_turned_and_moved_part() {
+            // checked and settled where the part is stored, in its own frame, not on the bed
+            let (_, bore) =
+                placed_stand_bore(&HOLE_AT_BORE, 25.0, 1.0, Some((90.0, [250.987_654, 249.012_345])));
+            assert_eq!(bore["watertight"], true, "{}", bore["edges"]);
+            assert!(stores(&bore));
+            let fixed = run("repair", &json!({ "mesh": bore["mesh"] }));
+            assert_eq!(fixed["report"]["watertight"], true, "{}", fixed["report"]);
+        }
+
+        #[test]
+        fn a_bore_along_a_turned_hole_closes_at_a_quarter_size() {
+            // corners a float step or two apart at bed positions are welded however small the part is
+            let (_, bore) = placed_stand_bore(&HOLE_AT_BORE, 25.0, 0.25, None);
+            assert_eq!(bore["watertight"], true, "{}", bore["edges"]);
+            assert!(stores(&bore));
+        }
+
+        #[test]
+        fn a_fin_goes_and_one_copy_of_a_doubled_face_stays() {
+            let t = [0, 1, 2];
+            assert_eq!(drop_fins(&[t, [3, 1, 0]]), vec![t, [3, 1, 0]]);
+            // facing apart: both go, whatever corner each starts at
+            assert!(drop_fins(&[t, [2, 1, 0]]).is_empty());
+            assert!(drop_fins(&[[1, 2, 0], [0, 2, 1]]).is_empty());
+            // the same way twice: one stays; three one way and one the other: one of the three stays
+            assert_eq!(drop_fins(&[t, [1, 2, 0]]), vec![t]);
+            assert_eq!(drop_fins(&[t, [2, 1, 0], [1, 2, 0], [2, 0, 1]]), vec![t]);
         }
 
         #[test]

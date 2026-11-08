@@ -70,6 +70,20 @@ impl Item {
         }
     }
 
+    /// the part in its own frame, as it is stored
+    pub(crate) fn mesh(&self) -> &TriMesh {
+        &self.mesh
+    }
+
+    /// a mesh in the part's own frame placed on the bed, as `world` places the part
+    pub(crate) fn to_world(&self, m: &TriMesh) -> TriMesh {
+        if self.transform == IDENTITY {
+            m.clone()
+        } else {
+            xform::transformed(m, &self.transform)
+        }
+    }
+
     pub(crate) fn to_local(&self, m: &TriMesh) -> Result<TriMesh> {
         if self.transform == IDENTITY {
             return Ok(m.clone());
