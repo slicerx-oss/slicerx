@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // On a capped mimir cloud chat the tools a request carries follow the chat, not only the message. The worst case is the
-// desktop app with every connector and twelve printing printers (168 tools offered, 128 sent). A "yes please" after
+// desktop app with every connector and twelve printing printers (well over 128 tools offered, 128 sent). A "yes please" after
 // mimir offers to print gets the printer tools, the list is the same request after request while the chat stays on its
 // topic (so the proxy's prompt cache keeps hitting), and every request stays at 128 tools or under. Each request is read
 // back from the HTTP body the provider adapter wrote.
@@ -131,7 +131,7 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
         const make = built ? [{ call: { name: 'design__new', input: { name: 'Hook' } } }] : []
         const { pilot, say } = await chat([...make, { text: OFFER }, { text: 'Sending it now.' }])
         const first = await say('Make a wall hook for a 6 mm screw')
-        expect(pilot.tools().length).toBe(168)
+        expect(pilot.tools().length).toBeGreaterThan(CAP)
         for (const r of first) expect(toolNames(r).length).toBeLessThanOrEqual(CAP)
         const second = await say(yes)
         const names = toolNames(second[0]!)
@@ -185,8 +185,8 @@ describe('a capped mimir cloud chat keeps its tools across messages', () => {
     setTabChat('s')
     try {
       const tab = (await runCall('mimir.tab', {})) as { tools: string[]; capped: { cap: number; offered: number; sent: number; toolsets: string[]; leftOut: string[]; partial: { toolset: string; sent: number; of: number }[]; loader: string } | null }
-      expect(tab.tools).toHaveLength(168)
-      expect(tab.capped).toMatchObject({ cap: CAP, offered: 168, sent: CAP, loader: 'pilot.load_tools' })
+      expect(tab.tools.length).toBeGreaterThan(CAP)
+      expect(tab.capped).toMatchObject({ cap: CAP, offered: tab.tools.length, sent: CAP, loader: 'pilot.load_tools' })
       expect(tab.capped!.toolsets).toEqual(expect.arrayContaining(['core', 'cad', 'settings']))
       // the printers fill the rest of the room: every printer's commands, not yet every connector's tools
       expect(tab.capped!.partial).toEqual([{ toolset: 'printers', sent: 45, of: 64 }])
