@@ -217,6 +217,40 @@ describe('a restart in one reply', () => {
   })
 })
 
+describe('steps sent beside a refused restart', () => {
+  // The model sends the restart and its first feature in one step. It cannot know the new design's id yet, so the
+  // feature names the part already started: it was meant for the restart and must not land on that part.
+  it('skips a change to the started part sent in the same step after the refused design.new', async () => {
+    const built: string[] = []
+    const watchExtrude = defineTool({
+      name: 'geom.extrude',
+      version: '1.0.0',
+      source: 'command',
+      permission: 'slice',
+      description: 'test',
+      input: z.object({ design: z.string(), name: z.string() }),
+      async run(i) {
+        built.push(`${i.design}:${i.name}`)
+        return { summary: `Built ${i.name}`, output: { design: i.design } }
+      },
+    }) as PilotTool<never>
+    const made: string[] = []
+    const seen: string[][] = []
+    const both = { calls: [{ name: 'design.new', args: { name: 'Box v2' } }, { name: 'geom.extrude', args: { design: 'obj_1', name: 'Base' } }, { name: 'geom.info', args: { design: 'obj_1' } }] }
+    const steps: ScriptStep[] = [NEW('Box'), BODY('obj_1', 'Body'), both, (m) => (seen.push(m.slice(-3).map((x) => x.content)), { text: 'Fixing the box.' })]
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [designNew(made), watchExtrude, info] })
+    for await (const _ of p.run('s', 'A box')) void _
+    expect(made).toEqual(['Box'])
+    expect(built).toEqual(['obj_1:Body'])
+    const [refusal, skipped, look] = seen[0]!
+    expect(refusal).toContain(ONE_PART_NOTE('Box', 'obj_1', 'same_name'))
+    expect(JSON.parse(skipped!)).toMatchObject({ ok: false, skipped: true })
+    expect(JSON.parse(skipped!).message).toMatch(/design\.new before it in this step was refused/)
+    // a look changes nothing, so it still runs
+    expect(look).toMatch(/^\{"ok":true/)
+  })
+})
+
 describe('a separate part with a fuller name', () => {
   it.each([
     ['Planter', 'Planter saucer'],
