@@ -176,13 +176,16 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
   if (r.frame === 'target' && entry && part && t) {
     // A shape that misses the body changes nothing and is not a step: the body keeps its mesh too. A join that
-    // would leave pieces floating off the body (text running past the face) counts as a miss.
+    // would leave pieces floating off the body (text running past the face) counts as a miss, and so does one that
+    // adds nothing: a join off the body always adds a piece, so one that adds no volume sits inside it.
     if (!r.report.touches) {
-      const floating = operation === 'join' && Math.abs(r.report.volumeChangeMm3) > 1e-6
+      const adds = Math.abs(r.report.volumeChangeMm3) > 1e-6
       return {
-        message: floating
-          ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'
-          : 'The shape does not reach the body, so nothing changed. Check the distance and the direction.',
+        message: operation !== 'join'
+          ? 'The shape does not reach the body, so nothing changed. Check the distance and the direction.'
+          : adds
+            ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'
+            : 'The shape is already inside the body, so nothing changed. Check the distance and the direction.',
         warn: true,
         missed: true,
       }
