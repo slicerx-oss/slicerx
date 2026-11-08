@@ -156,7 +156,7 @@ pub fn merged(mesh: &TriMesh, spec: &ArraySpec, opts: &BooleanOptions) -> Result
         let copies = distinct(part, &ts, &all);
         all.extend(copies);
     }
-    boolean::boolean(&all, &[], BoolOp::Union, opts)
+    boolean::boolean_array(&all, &[], BoolOp::Union, *opts)
 }
 
 /// a circular array's axis, as a frame with `w` along it, and the copies a full turn would take
@@ -234,11 +234,11 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Ve
     // a wrap fills what it covers: each round must be solid through, its own prism inside the part
     for r in &misaligned {
         let own = prism(mesh, &local, t, r, r.facets, false);
-        let Ok((inside, _)) = boolean::boolean(
+        let Ok((inside, _)) = boolean::boolean_array(
             std::slice::from_ref(&own),
             std::slice::from_ref(mesh),
             BoolOp::Intersection,
-            &opts,
+            opts,
         ) else {
             return Ok(None);
         };
@@ -250,7 +250,7 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<(Ve
         .iter()
         .map(|r| prism(mesh, &local, t, r, facets(r), true))
         .collect();
-    let rest = boolean::boolean(std::slice::from_ref(mesh), &wraps, BoolOp::Difference, &opts)?.0;
+    let rest = boolean::boolean_array(std::slice::from_ref(mesh), &wraps, BoolOp::Difference, opts)?.0;
     Ok(Some((wraps, rest)))
 }
 
@@ -850,7 +850,7 @@ mod tests {
             .iter()
             .map(|t| xform::transformed(&half, t))
             .collect();
-        let (plain, _) = boolean::boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default()).unwrap();
+        let (plain, _) = boolean::boolean_array(&copies, &[], BoolOp::Union, BooleanOptions::default()).unwrap();
         let (u, _, _) = joined(&half, &sweep);
         assert!((u.volume() - plain.volume()).abs() < 1e-9 * plain.volume());
         // a full turn of the half disc: its round is not all material, so it is not wrapped
