@@ -38,7 +38,7 @@ import { sketchScene } from '../src/workspaces/design/finished-sketches'
 import { unzipStored, zip } from '@slicerx/threemf'
 import { useGeomEngine } from './geom-engine'
 
-useGeomEngine('design-placement-replies', { compressed: true })
+useGeomEngine('design-placement-replies', { compressed: true, freshCache: true })
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
 const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(name) }
