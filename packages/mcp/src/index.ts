@@ -182,7 +182,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
     profiles: profileStore,
     kb,
     project,
-    ...(geomBin ? { geom: createGeomCli({ binary: geomBin, timeoutMs: 5 * 60_000 }) } : {}),
+    ...(geomBin ? { geom: createGeomCli({ binary: geomBin }) } : {}),
     today: () => new Date(now()).toISOString().slice(0, 10),
   }
   const gate: GateDeps = {
