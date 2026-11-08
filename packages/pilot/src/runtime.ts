@@ -178,6 +178,9 @@ export function startsPart(name: string, input: unknown): boolean {
   const op = (input as { operation?: unknown } | null)?.operation
   return op === undefined || op === 'new'
 }
+/** Calls that start a design or open one from a file, which can bring bodies with it (design.new from a model). */
+const STARTS_DESIGN: ReadonlySet<string> = new Set(['design.new', 'design.open'])
+
 /**
  * Why a second design.new in one reply is a restart of a part the reply started: that part has no body yet, its last
  * step did not go through, or the new name is that part's name again (restartOf).
@@ -552,9 +555,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     printInPlace.delete(sessionId)
     planAgain.delete(sessionId)
   }
-  // whether a build waits for the print-in-place plan to be made again: only while that plan's part is unbuilt and
-  // design.plan is there to make it
-  const waitsForPlan = (sessionId: string): boolean => planAgain.has(sessionId) && printInPlace.get(sessionId) === false && findTool('design.plan') !== undefined
+  // whether a build waits for the print-in-place plan to be made again: only while that plan's part has no body yet (a
+  // design started for it with design.new still has none) and design.plan is there to make it
+  const waitsForPlan = (sessionId: string): boolean => planAgain.has(sessionId) && printInPlace.has(sessionId) && findTool('design.plan') !== undefined
   // Sessions that confirmed a sheet with the gap rows: the rows were for the planned part, so the next run's sheets
   // get none unless a new print-in-place plan is approved (a part the person asks for instead skips the plan).
   const gapSheet = new Set<string>()
@@ -934,6 +937,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (typeof design === 'string' && design) startedUnder(sessionId, design)
       else starting = true
     }
+    // a design started or opened while the plan waits would be built on its old sizes too
+    if (STARTS_DESIGN.has(tool.name) && waitsForPlan(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: `Nothing was built. ${PLAN_AGAIN_NOTE}` }), stop: false }
     // the planned part is being built: a sheet from here on is another part's
     if (startsPart(tool.name, input)) endPrintInPlace(sessionId)
     const project = opts.project?.()
@@ -1004,7 +1009,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           // a size changed after the print-in-place plan was approved, before its part: the plan is made again (the gap
           // rows are the fit rule's guesses, which the plan does not hold)
           const own = new Set(gaps.map((g) => g.key))
-          if (answer.confirmed && printInPlace.get(sessionId) === false && answer.changed.some((k) => !own.has(k))) planAgain.add(sessionId)
+          if (answer.confirmed && printInPlace.has(sessionId) && answer.changed.some((k) => !own.has(k))) planAgain.add(sessionId)
           if (answer.confirmed && gaps.length) gapSheet.add(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
