@@ -791,8 +791,9 @@ export const SCRIPTS: MimirScript[] = [
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
   { id: 'box', match: /\bbox\b|\blid\b/i, steps: box },
   { id: 'stand', match: /phone|stand/i, steps: stand },
-  // a planned part whose reply stops before the plan is done, so mimir goes on with it (the plan_left line)
-  { id: 'mounting-plate', match: /\bmounting plate\b/i, steps: mountingPlate },
+  // a planned part whose reply stops before the plan is done, so mimir goes on with it (the plan_left line); only in the
+  // build for the end-to-end tests, which shows that line on screen
+  { id: 'mounting-plate', match: /\bmounting plate\b/i, steps: mountingPlate, testOnly: true },
   // after the parts and before the slice: "print it on my A1" models a clip, slices and sends it
   { id: 'print-run', match: /\bprint (?:it|this)\b.*\bon (?:my|the)\b/i, steps: printRun },
   // after the parts, so a part asked for with a slice in the same message is built first
