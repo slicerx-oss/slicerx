@@ -301,14 +301,14 @@ export function appDesignHost(loader: Loader): AppDesignHost {
     let room: Map<string, { from: Mat4; to: Mat4 }> | undefined
     if (moved && 'offBed' in moved) {
       // the room is worked out against the plate as it stands when the nest starts; when anything on it moved, came or
-      // went while the nest ran, that room may no longer be free (or a better one is), so it is worked out again, and
-      // after a few tries the new design stays where it was built
+      // went, or was locked or unlocked, while the nest ran, that room may no longer be free or allowed (or a better one
+      // is), so it is worked out again, and after a few tries the new design stays where it was built
       for (let tries = 0; tries < 3; tries++) {
-        const before = new Map(get().plate.map((e) => [e.id, e.transform]))
+        const before = new Map(get().plate.map((e) => [e.id, { transform: e.transform, locked: !!e.locked }]))
         const made = await makeRoom(id, parts, transform)
         if (!made) break
         const now = get().plate
-        if (now.length !== before.size || now.some((e) => !before.has(e.id) || !same(before.get(e.id)!, e.transform))) continue
+        if (now.length !== before.size || now.some((e) => !before.has(e.id) || !same(before.get(e.id)!.transform, e.transform) || before.get(e.id)!.locked !== !!e.locked)) continue
         landedAt = made.at
         room = made.others
         moved = landShift(transform, landedAt)
@@ -324,7 +324,7 @@ export function appDesignHost(loader: Loader): AppDesignHost {
       applied.length = 0
       const plate = s.plate.map((e) => {
         const r = room?.get(e.id)
-        if (!r || !e.history || !same(e.transform, r.from)) return e
+        if (!r || !e.history || e.locked || !same(e.transform, r.from)) return e
         applied.push({ id: e.id, name: e.name, from: r.from, to: r.to })
         return { ...e, transform: r.to, landedAt: [...r.to], history: withPlaced(e.history, placedAfter(e.history.placed, e.transform, r.to)) }
       })
