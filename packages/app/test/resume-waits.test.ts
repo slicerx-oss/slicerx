@@ -10,7 +10,10 @@ import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type H
 import { boxMesh } from '../src/plate/mesh-ops'
 import { resumeFor, SLICE_NOT_CURRENT } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
+import { EXPORT_SWITCHED, exportAllPlates, exportGcode3mf } from '../src/export/actions'
+import { switchPlate } from '../src/plate/plates'
 import { sendToPrinter, slicePlate, STALE_SLICE } from '../src/state/actions'
+import { notStarted } from '../src/state/send-actions'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { mimirCommands, SWITCHED_REPLY } from '../src/workspaces/mimir/session'
 
@@ -70,6 +73,7 @@ function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare
   const started: unknown[] = []
   const uploads: string[] = []
   const local: unknown[] = []
+  const saved: string[] = []
   const host = {
     kind: 'desktop',
     capabilities: { threads: 1 },
@@ -83,7 +87,7 @@ function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare
         return { id: `r${requests.length}`, engine: 'sx', layerCount: 1, layerZ: Float32Array.from([0.2]), layerTimeS: Float32Array.from([1]), warnings: [], stats: { timeS: 1, filamentMm: [1], filamentG: [1], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1 } as unknown as SliceResult
       },
     },
-    files: { save: async () => undefined },
+    files: { save: async (name: string) => (saved.push(name), { name }) },
     printers: {
       status: async () => ({ state: 'idle' }),
       list: async () => [],
@@ -109,7 +113,7 @@ function engine(opts: { hub?: boolean; upload?: ReturnType<typeof gate>; prepare
     },
     approvals: { register: async () => undefined, grant: async (id: string) => ({ id, token: 't' }) },
   } as unknown as Host
-  return { host, requests, started, uploads, local }
+  return { host, requests, started, uploads, local, saved }
 }
 
 const plan = () => set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.3, 0.4, 0.5, 0.6] }) })
@@ -210,7 +214,7 @@ describe('the waits between the sheet and a start', () => {
     await sent
     expect(e.uploads).toHaveLength(1)
     expect(e.started).toEqual([])
-    expect(get().toast?.text).toBe(`${SLICE_NOT_CURRENT} ${e.uploads[0]} is on Demo 1, but it did not start.`)
+    expect(get().toast?.text).toBe(notStarted('Demo 1', e.uploads[0]!))
     expect(get().toast?.tone).toBe('error')
   })
 
@@ -260,5 +264,40 @@ describe('the waits between the sheet and a start', () => {
     g.open()
     await sent
     expect(e.local).toHaveLength(1)
+  })
+})
+
+describe('export and a plate switch before the slice starts', () => {
+  it('Export every plate exports nothing when another plate shows while a plate waits on the profile', async () => {
+    const e = engine()
+    const g = gate()
+    gates.profile = g.wait
+    const out = exportAllPlates(e.host)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(get().activePlate).toBe('plate-1')
+    switchPlate('plate-2')
+    gates.profile = null
+    g.open()
+    expect(await out).toBe(false)
+    expect(get().toast).toMatchObject({ text: `Plate 1: ${EXPORT_SWITCHED}`, tone: 'error' })
+    expect(e.requests).toEqual([])
+    expect(e.saved).toEqual([])
+  })
+
+  it('Export plate 3MF exports nothing when another plate shows while it waits on the profile, and exports when nothing switched', async () => {
+    const e = engine()
+    const g = gate()
+    gates.profile = g.wait
+    const out = exportGcode3mf(e.host)
+    await new Promise((r) => setTimeout(r, 0))
+    switchPlate('plate-2')
+    gates.profile = null
+    g.open()
+    expect(await out).toBe(false)
+    expect(get().toast).toMatchObject({ text: EXPORT_SWITCHED, tone: 'error' })
+    expect(e.requests).toEqual([])
+    expect(e.saved).toEqual([])
+    expect(await exportGcode3mf(e.host)).toBe(true)
+    expect(e.saved).toHaveLength(1)
   })
 })

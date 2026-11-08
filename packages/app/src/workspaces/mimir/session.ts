@@ -107,8 +107,8 @@ export { modelingCommands }
 /** app.slice's reply when no slice ran and the one on screen no longer matches the plate. */
 export const STALE_REPLY = 'The slice on screen is out of date because the plate changed after it. Slice the plate again.'
 
-/** app.slice's reply when another plate showed while the slice ran, so the plate asked for has no new slice. */
-export const SWITCHED_REPLY = 'Another plate was shown while this one sliced, so its slice was dropped. Show the plate and slice it again.'
+/** app.slice's reply when another plate showed before the slice started or while it ran, so the plate asked for has no new slice. */
+export const SWITCHED_REPLY = 'Another plate was shown before this one finished slicing, so no slice was kept for it. Show the plate and slice it again.'
 
 /** What mimir's tool for a command is made from: id, title, section, workspace, permission and input schema. */
 function commandSignature(c: CommandSpec): string {

@@ -4,9 +4,9 @@
 // once a plan stored them for this plate as it is; otherwise (a reopened project, a resume from the printer list) the
 // engine works them out from the plate as the job sliced it, so the plan never counts in layers of its own making.
 import type { Host } from '@slicerx/contracts'
-import { INPUTS, printed } from '../state/slice-inputs'
+import { INPUTS, printed, slotsRead } from '../state/slice-inputs'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../state/store'
-import { cancelSlice } from '../state/actions'
+import { cancelSlice, STALE_SLICE } from '../state/actions'
 import { plateTower } from './tower'
 
 /** The store as a slice of the shown plate reads it: a history step open for editing slices the whole part. */
@@ -71,7 +71,7 @@ function tunedPresets(s: AppState): unknown[] {
 /** An input as the key reads it, narrowed to what moves the shown plate's layers. */
 function keyOf(k: (typeof KEY_INPUTS)[number], s: AppState, ids: ReadonlySet<string>): unknown {
   // The printer's slots by filament and color, not what is left on a spool or its tag.
-  if (k === 'printerSlots') return s.printerSlots.map((slot) => [slot.id, slot.material ?? null, slot.color ?? null])
+  if (k === 'printerSlots') return slotsRead(s.printerSlots)
   if (k === 'userPresets') return tunedPresets(s)
   // Object settings of this plate's objects only.
   if (k === 'objectSettings') return Object.entries(s.objectSettings).filter(([id]) => ids.has(id)).sort(([x], [y]) => (x < y ? -1 : 1))
@@ -153,7 +153,8 @@ export interface SliceStamp {
 /**
  * What goes into the shown plate's G-code beside its layers, and so is not in sliceInputsKey: the plate's layer marks
  * (pauses, color changes and G-code at a height, as printed), the objects' names (the labels a printer skips objects
- * by) and the profile's own start and end G-code.
+ * by) and whether the profile's G-code is still trusted as shipped (`shippedGcode`, which picks the linter the custom
+ * G-code goes through; the G-code text itself is in the overrides, so in the key).
  */
 export function outputKey(s: AppState): string {
   const marks = printed({ [s.activePlate]: s.layerMarks[s.activePlate] ?? [] })
@@ -178,7 +179,10 @@ export const SLICE_NOT_CURRENT = 'This slice was made for another plate, resume 
 export function stampBlock(s: AppState, stamp: SliceStamp | undefined): string | null {
   if (!stamp) return s.resume ? SLICE_NOT_CURRENT : null
   if (stamp.plate !== s.activePlate) return SLICE_NOT_CURRENT
-  return stamp.plan !== planFor(s, stamp.plate) ? SLICE_NOT_CURRENT : null
+  if (stamp.plan !== planFor(s, stamp.plate)) return SLICE_NOT_CURRENT
+  // An edit after it landed that changes its G-code but not its layers (a renamed object, a pause, the profile's G-code
+  // no longer trusted as shipped), with auto slice off: the file would carry the old labels or marks.
+  return outputKey(s) !== stamp.output ? STALE_SLICE : null
 }
 
 /**
