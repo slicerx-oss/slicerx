@@ -61,7 +61,7 @@ export type Block =
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
-  /** `waiting`: the run waits and goes on by itself; a later error with the same code in the turn takes its place. */
+  /** `waiting`: the run waits and goes on by itself; the next error with the same code takes its place while it is the turn's last block. */
   | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string; waiting?: boolean }
   /**
    * A place for the print run's card: the slice it made, or the print it started. The card reads `Transcript.printRun`
@@ -141,9 +141,14 @@ export function restoredTranscript(t: Transcript): Transcript {
   return { ...t, turns, status: t.status === 'running' ? 'stopped' : t.status, clockStart: null, replaying: false, printRun: t.printRun ?? null, held: false }
 }
 
-/** Each message the person sent and mimir's words in reply, for picking the conversation back up. */
+/**
+ * Each message the person sent and mimir's words in reply, for picking the conversation back up. The line that free
+ * mimir stopped at its limit (slow_down, not a wait it went on from) counts as said, as it is in the live run's history,
+ * so "keep going" reads where it stopped.
+ */
 export function transcriptTurns(t: Transcript): { user: string; reply: string }[] {
-  return t.turns.flatMap((turn) => (turn.user === null ? [] : [{ user: turn.user, reply: turn.blocks.flatMap((b) => (b.kind === 'say' ? [b.text] : [])).join('\n').trim() }]))
+  const said = (b: Block): string[] => (b.kind === 'say' ? [b.text] : b.kind === 'error' && b.code === 'slow_down' && b.waiting !== true ? [b.message] : [])
+  return t.turns.flatMap((turn) => (turn.user === null ? [] : [{ user: turn.user, reply: turn.blocks.flatMap(said).join('\n').trim() }]))
 }
 
 /** Opens a new turn: the person's bubble (when there is a message) and an empty mimir reply under it. */
@@ -463,8 +468,11 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       return { ...s, meter: { ...s.meter, tokens: s.meter.tokens + event.inputTokens + event.outputTokens } }
     case 'error': {
       const line = (id: string): Block => ({ kind: 'error', id, message: event.message, retryable: event.retryable, ...(event.code ? { code: event.code } : {}), ...(event.waiting ? { waiting: true } : {}) })
-      // a wait the run went on from (free mimir's per-minute limit) gives its place to the next line about it
-      const waited = event.code ? lastTurn(s)?.blocks.findLast((b) => b.kind === 'error' && b.waiting === true && b.code === event.code) : undefined
+      // a wait the run went on from (free mimir's per-minute limit) gives its place to the next line about it, only while
+      // it is the reply's last block: the current streak's wait. A wait from an earlier streak, with work done since,
+      // stays where it was, and the new line goes at the end.
+      const last = lastTurn(s)?.blocks.at(-1)
+      const waited = event.code && last?.kind === 'error' && last.waiting === true && last.code === event.code ? last : undefined
       if (waited) return withLastTurn(settleStreams(s), (t) => ({ ...t, blocks: t.blocks.map((b) => (b.id === waited.id ? line(b.id) : b)) }))
       return append(settleStreams(s), line, false)
     }
