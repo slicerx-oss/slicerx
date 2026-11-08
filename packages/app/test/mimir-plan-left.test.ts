@@ -56,6 +56,11 @@ describe('the scripted mounting plate', () => {
     expect(said).toContain('Done: the mounting plate, 80 x 50 x 4 mm with four 4.5 mm screw holes. It matches the plan.')
     expect(get().plate.map((e) => ({ name: e.name, steps: e.history?.steps.length ?? 0 }))).toEqual([{ name: 'Mounting plate', steps: 2 }])
     expect(events.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
+    // the screw hole count stays with its diameter in holes, which the card shows as 4 x 4.5 mm, never as a size in mm
+    const plan = events.find((e): e is Extract<PilotEvent, { type: 'tool_call' }> => e.type === 'tool_call' && e.tool === 'design.plan')
+    const args = plan!.input as { features: { sizes: Record<string, number> }[]; holes?: unknown }
+    expect(args.features.flatMap((f) => Object.keys(f.sizes))).not.toContain('count')
+    expect(args.holes).toEqual([{ name: 'Screw holes', diameter: 4.5, count: 4 }])
   })
 
   it('builds nothing and goes on to nothing when the plan is not approved', async () => {

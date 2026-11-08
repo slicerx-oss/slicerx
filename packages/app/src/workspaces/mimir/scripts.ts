@@ -520,8 +520,10 @@ const mountingPlate: ScriptStep[] = [
             units: 'mm',
             features: [
               { name: 'Plate', kind: 'extrude', sizes: { width: v.width, depth: v.depth, thickness: v.thickness } },
-              { name: 'Screw holes', kind: 'hole', sizes: { diameter: v.hole, count: 4 } },
+              { name: 'Screw holes', kind: 'hole', sizes: {} },
             ],
+            // a count stays with its diameter in holes, which the card shows as 4 x 4.5 mm
+            holes: [{ name: 'Screw holes', diameter: v.hole, count: 4 }],
             assumptions: [`M4 screws, each hole ${v.inset} mm in from both edges`],
             questions: [],
           },
