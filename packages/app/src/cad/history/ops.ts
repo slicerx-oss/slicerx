@@ -8,7 +8,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { evaluateDimensions, type Dimension, type FaceFrame, type MovedFace } from '../../geom/cad'
 import { geom, usesWorker } from '../../geom/client'
-import { quietly } from '../../plate/history'
+import { quietly, type UndoStep } from '../../plate/history'
 import { get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
 import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
@@ -107,8 +107,9 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * A newer call for the same object cancels this one.
  * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; a transform it returns
  * is written with the result, in the same store update, so the edit and the move are one undo step.
+ * `step`, when given, is the undo step the result lands in (plate/history.ts newStep).
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined, step?: UndoStep): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -137,11 +138,13 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
-    const made = commitMade(objectId, (latest) => {
+    // checked before the write, so a step's first change never lands without it
+    if (!get().plate.some((e) => e.id === objectId)) throw abortError()
+    const write = () => commitMade(objectId, (latest) => {
       const transform = land?.(latest, parts)
       return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(transform ? { transform } : {}) }
     }, { exactReplay: next.exact === true })
-    if (!made && still?.objectId !== objectId) throw abortError()
+    if (!(step ? step.write(write) : write())) throw abortError()
     committed?.()
     markStale()
     // sketches that project from this body find it again, and the bodies drawn on them follow

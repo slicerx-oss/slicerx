@@ -15,6 +15,7 @@ import { commitMade } from './commit'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
+import type { UndoStep } from '../plate/history'
 import { brandAccent } from '../edition'
 import { fixedLength } from './units'
 
@@ -68,8 +69,22 @@ export interface ExtrudeInput {
   pattern?: Pattern
 }
 
+/** What an extrude or revolve did, in one sentence. */
+export interface Landed {
+  message: string
+  warn: boolean
+}
+
+/** Where a solid lands: `step`, when given, is the undo step its edit joins (plate/history.ts newStep). */
+export interface LandIn {
+  step?: UndoStep | undefined
+}
+
+/** Runs a landing write in its step, or as an ordinary edit. */
+const writeIn = <T,>(o: LandIn, fn: () => T): T => (o.step ? o.step.write(fn) : fn())
+
 /** Extrudes the shape: a join or a cut replaces the picked part, a new body becomes an object where it was drawn. One sentence on what happened. */
-export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{ message: string; warn: boolean }> {
+export async function applyExtrude(host: Loader, input: ExtrudeInput, o: LandIn = {}): Promise<Landed> {
   const operation = input.spec.operation ?? 'new'
   const target = targetOf(input.target, operation)
   reserveStepId()
@@ -77,7 +92,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
     const params = extrudeParams(input)
     if (target && input.target) {
       const next = withStep(target.entry, input.target.partIndex, params, undefined, true)
-      await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id)
+      await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id, undefined, undefined, undefined, o.step)
       return { message: `${operation === 'cut' ? 'Cut' : 'Joined'} ${input.name} ${operation === 'cut' ? 'from' : 'to'} ${target.entry.name}.`, warn: false }
     }
     const history: History = { ...bodyHistory(params, identity()), exact: true }
@@ -94,7 +109,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
     const handle = await host.loadParts(input.name, parts)
     const saved: History = { ...history, steps: history.steps.map(s => ({ ...s, transform: [...transform] })) }
     const made: PlateEntry = { id: newId(), name: input.name, handle, parts, colors: [brandAccent()], transform, history: saved }
-    set(s => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] }))
+    writeIn(o, () => set(s => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
     markStale()
     return { message: `Added ${input.name}.`, warn: false }
   }
@@ -107,7 +122,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
     ...(input.fontBase64 ? { fontBase64: input.fontBase64 } : {}),
     ...(input.pattern ? { pattern: input.pattern } : {}),
   })
-  return land(host, r, operation, input.target, input.name, extrudeParams(input))
+  return land(host, r, operation, input.target, input.name, extrudeParams(input), o)
 }
 
 /** The history step an extrude records; the font is remembered for this session by name. */
@@ -129,13 +144,13 @@ export interface RevolveInput extends Omit<RevolveRequest, 'target'> {
 }
 
 /** Revolves sketch loops about an axis; lands like an extrude. */
-export async function applyRevolve(host: Loader, input: RevolveInput): Promise<{ message: string; warn: boolean }> {
+export async function applyRevolve(host: Loader, input: RevolveInput, o: LandIn = {}): Promise<Landed> {
   const operation = input.operation ?? 'new'
   const target = targetOf(input.target, operation)
   const { target: _t, name, ...req } = input
   reserveStepId()
   const r = await revolveSketch({ ...req, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
-  return land(host, r, operation, input.target, name, revolveParams(input))
+  return land(host, r, operation, input.target, name, revolveParams(input), o)
 }
 
 function targetOf(t: { objectId: string; partIndex: number } | undefined, operation: string): { entry: PlateEntry; part: MeshPart } | null {
@@ -146,7 +161,7 @@ function targetOf(t: { objectId: string; partIndex: number } | undefined, operat
 }
 
 /** Puts an extrude or revolve result on the plate in one store update, so undo takes it back in one step. */
-async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; report: ExtrudeReport }, operation: string, t: { objectId: string; partIndex: number } | undefined, name: string, params: StepParams): Promise<{ message: string; warn: boolean }> {
+async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; report: ExtrudeReport }, operation: string, t: { objectId: string; partIndex: number } | undefined, name: string, params: StepParams, o: LandIn): Promise<Landed> {
   const entry = t ? get().plate.find((p) => p.id === t.objectId) : undefined
   const part = entry?.parts[t?.partIndex ?? 0]
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
@@ -165,7 +180,9 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
     const history = withStep(entry, t.partIndex, params)
-    if (!commitMade(entry.id, () => ({ handle, parts, ...historyField(history) }))) throw new Error('That object is gone.')
+    // checked before the write, so a step's first change never lands without the solid
+    if (!get().plate.some((e) => e.id === entry.id)) throw new Error('That object is gone.')
+    if (!writeIn(o, () => commitMade(entry.id, () => ({ handle, parts, ...historyField(history) })))) throw new Error('That object is gone.')
     markStale()
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
   }
@@ -179,7 +196,7 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
   // The body's history starts with the step that made it, so its sketch or shape stays editable.
   const made: PlateEntry = { id: newId(), name, handle, parts: [local], colors: entry?.colors.length ? entry.colors : [brandAccent()], transform, history: bodyHistory(params, transform) }
-  set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] }))
+  writeIn(o, () => set((s) => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] })))
   markStale()
   return { message: `Added ${name}, ${volume}.`, warn: false }
 }
