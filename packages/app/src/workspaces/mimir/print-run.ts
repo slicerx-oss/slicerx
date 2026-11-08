@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The app's side of mimir's print run (PrintRunHost). The fingerprint says what a slice was made from: the plate's
-// objects, the printer, the settings and the filaments in use. A slice keeps the fingerprint it was made with, and a
+// objects, the printer, the settings, the filaments in use and what else goes into its G-code (layer marks, object
+// names). A slice keeps the fingerprint it was made with, and a
 // different one now means the plate changed after slicing. The camera and the selection are not part of it. The target
 // is the printer and spools the chat picked: the plate points at the printer and each filament moves to its spool, the
 // same way a pick on the spools does.
@@ -13,7 +14,7 @@ import { effectiveSlot, mapSlot } from '../../filament/slots'
 import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
 import { activeMeta } from '../../plate/plates'
-import { planFor } from '../../plate/resume-tops'
+import { outputKey, planFor } from '../../plate/resume-tops'
 import type { Mat4 } from '../../plate/transform'
 import { fullPlate, get, markStale, set, type AppState, type PlateEntry } from '../../state/store'
 
@@ -79,6 +80,10 @@ export function fingerprintInputs(s: AppState = get(), plate?: number) {
     // The resume plan kept for this plate, by id, and whether it holds: keeping, clearing, replacing or voiding one
     // makes a slice from before it stale, so printer.queue never sends it into the part on the bed.
     resume: meta ? planFor(s, meta.id) : null,
+    // What goes into the plate's G-code beside its layers (outputKey, the rule the app's own Print and Export read):
+    // its layer marks as printed, the names of the objects that print and whether the profile's G-code is trusted as
+    // shipped. A pause or a rename after the slice makes it stale; a color change's slot note or a spool reload does not.
+    output: outputKey(active ? s : { ...s, activePlate: meta?.id ?? s.activePlate, plate: entries, historyEdit: null }),
   }
 }
 
