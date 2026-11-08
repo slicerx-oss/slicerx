@@ -7,6 +7,7 @@ import type { Collision, CollisionFix } from '@slicerx/contracts'
 import type { StrikeMark } from '@slicerx/viewport'
 import type { AppState } from '../state/store'
 import { preflightProblem } from './engine-check'
+import { STALE_SLICE } from '../state/actions'
 import { resumeVoid, stampBlock } from './resume-tops'
 
 const NONE: Collision[] = []
@@ -102,6 +103,15 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
   }
   if (s.slice.status === 'done' && s.slice.stale) return preflightProblem(s)
   return null
+}
+
+/**
+ * Why Export plate 3MF is held back, or null: printBlock's reasons except a slice whose G-code an edit since has
+ * changed (STALE_SLICE: a rename, a layer mark), since exportGcode3mf slices the plate again before it saves.
+ */
+export function export3mfBlock(s: Parameters<typeof printBlock>[0]): string | null {
+  const why = printBlock(s)
+  return why === STALE_SLICE ? null : why
 }
 
 /**

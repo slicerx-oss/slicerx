@@ -11,6 +11,7 @@ import { formatShortcut } from '../../lib/keys'
 import { fitMiddle, textWidth } from '../../lib/mid-truncate'
 import { addPlate, switchPlate } from '../../plate/plates'
 import { filterPlates, plateRows, plateSubtitle, SLICE_STATE_LABEL, stepPlate, type PlateRow } from '../../plate/plate-step'
+import { needsSlice } from '../../plate/resume-tops'
 import { useApp, type PlateEntry } from '../../state/store'
 import type { Bed } from '@slicerx/contracts'
 import { platePicture } from '../preview/plate-render'
@@ -73,7 +74,9 @@ function usePlateRows(): { rows: PlateRow[]; objectsOf: (id: string) => readonly
   const slice = useApp((s) => s.slice)
   // Each finished slice can change another plate's kept slice, so the rows are read again after one.
   const done = useApp((s) => s.slicesDone)
-  const rows = useMemo(() => plateRows({ plates, plate, activePlate: active, slice }), [plates, plate, active, slice, done])
+  // An edit since that changed the shown plate's G-code (a rename, a layer mark) leaves its slice out of date.
+  const outdated = useApp((s) => s.slice.status === 'done' && needsSlice(s))
+  const rows = useMemo(() => plateRows({ plates, plate, activePlate: active, slice }, undefined, () => outdated), [plates, plate, active, slice, done, outdated])
   const objectsOf = useCallback((id: string) => (id === active ? plate : (plates.find((p) => p.id === id)?.objects ?? [])), [plates, plate, active])
   return { rows, objectsOf }
 }
