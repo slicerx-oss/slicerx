@@ -558,6 +558,15 @@ describe('slicerx_design_check', () => {
     expect(again.items.find((i) => i.name === 'feature count')).toMatchObject({ pass: true })
   })
 
+  it('names an untagged step that looks like the missing feature, and says to tag it rather than build it again', async () => {
+    const { ok } = await plate(5, 6, {}, ['plate', undefined])
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    const item = r.items.find((i) => i.name === 'feature count')!
+    // the untagged step still never counts as the feature
+    expect(item.pass).toBe(false)
+    expect(item.got).toContain('step 2 "Hole 6 mm" is untagged: set its feature to "hole" with design.edit_step')
+  })
+
   it('keeps the tags through design.save and design.open, so the reopened plate still passes its plan', async () => {
     const { ok, design } = await plate(5, 6)
     const saved = await ok<{ path: string }>('slicerx_design_save', { design })
