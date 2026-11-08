@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The nozzle volume, an opened project's flush matrix and its G-code values (KEY_CONFIG) sit outside the slice inputs,
-// and no setter marks a slice stale when they change. After a printer change, the new printer's nozzle volume lands
-// after the slice (Prepare sets it once the printer's profile data loads): the app's Print and Export and mimir must all
-// read that slice as stale on a multi-color plate, and auto slice slices again. A single-color plate, whose G-code has
-// no flush volumes, keeps its slice.
+// and no setter marks a slice stale when they change. The profile layer sets a new printer's nozzle volume with that
+// printer's profile (profile-sync.ts), and Prepare sets the same value again when it shows the printer. These tests
+// write the value after the slice, as a slice stamped before either write sees it: the app's Print and Export and mimir
+// must all read that slice as stale on a multi-color plate, and auto slice slices again. A single-color plate, whose
+// G-code has no flush volumes, keeps its slice.
 import type { Host, MeshHandle, SliceResult } from '@slicerx/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { needsSlice, sliceStamp, stampBlock } from '../src/plate/resume-tops'
 import { compose } from '../src/plate/transform'
-import { beginSlice, endSlice, STALE_SLICE } from '../src/state/actions'
+import { beginSlice, cancelSlice, endSlice, STALE_SLICE } from '../src/state/actions'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
@@ -26,31 +27,42 @@ function sliced(plate: PlateEntry[]) {
   set({ slice: { status: 'done', result, stale: false, stamp: sliceStamp(get()) } } as never)
 }
 
-/** A printer change, and the new printer's nozzle volume as Prepare sets it once that printer's profile data loads. */
+/** A printer change, then the new printer's nozzle volume written after it, as the profile layer and Prepare set it. */
 function newPrinter() {
   set({ printerModel: { id: 'xl', vendor: 'Prusa', model: 'XL' } } as never)
   set({ printerNozzleVolume: 140 })
 }
 
 // The watcher's own slice: it starts, shows as running and stays running until `finish`, so a test can change the
-// nozzle volume while it runs. Slices started any other way are the real ones.
-const auto = vi.hoisted(() => ({ started: 0, abort: null as AbortController | null, finish: null as null | (() => void) }))
+// nozzle volume while it runs; `fail` ends it with an error instead. Slices started any other way are the real ones.
+type AutoRun = { abort: AbortController; finish: () => void; fail: () => void }
+const auto = vi.hoisted(() => ({ started: 0, runs: [] as AutoRun[], abort: null as AbortController | null, finish: null as null | (() => void) }))
 vi.mock('../src/state/actions', async (orig) => {
   const real = await orig<typeof import('../src/state/actions')>()
   const { set: put } = await import('../src/state/store')
   return {
     ...real,
-    slicePlate: (_host: unknown, opts?: { auto?: boolean }) => {
+    slicePlate: (_host: unknown, opts?: { auto?: boolean; onBegin?: (abort: AbortController) => void }) => {
       if (!opts?.auto) return real.slicePlate(_host as never, opts)
       auto.started++
       const abort = real.beginSlice()
+      opts.onBegin?.(abort)
       auto.abort = abort
-      put({ slice: { status: 'running', progress: null, startedAt: 0 } } as never)
-      return new Promise<void>((done) => {
-        auto.finish = () => {
-          real.endSlice(abort)
-          done()
+      put({ slice: { status: 'running', progress: null, startedAt: auto.started } } as never)
+      return new Promise<void>((done, failed) => {
+        const run = {
+          abort,
+          finish: () => {
+            real.endSlice(abort)
+            done()
+          },
+          fail: () => {
+            real.endSlice(abort)
+            failed(new Error('engine gone'))
+          },
         }
+        auto.runs.push(run)
+        auto.finish = run.finish
       })
     },
   }
@@ -59,6 +71,7 @@ vi.mock('../src/state/actions', async (orig) => {
 afterEach(() => {
   vi.restoreAllMocks()
   auto.started = 0
+  auto.runs = []
   auto.abort = null
   auto.finish = null
 })
@@ -136,23 +149,147 @@ describe("a nozzle volume that lands after the slice", () => {
     }
   })
 
-  it('a slice someone asked for (Slice, mimir) running when the nozzle volume changes is left to land', async () => {
+  it('a slice someone asked for (Slice, mimir) running when the nozzle volume changes is left to land, then goes stale and auto slice slices again', async () => {
     vi.useFakeTimers()
     const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
     sliced([part('a', 60, 1), part('b', 120, 2)])
     set({ autoSlice: true, autoSliceBySize: false } as never)
     const stop = startAutoSlice(host, 0)
-    // not an auto slice: started outside the watcher, as the Slice button or mimir's app.slice does
+    // not an auto slice: started outside the watcher, as the Slice button or mimir's app.slice does, stamped as it starts
     const abort = beginSlice()
-    set({ slice: { status: 'running' } } as never)
+    const stamp = sliceStamp(get())
+    set({ slice: { status: 'running', progress: null, startedAt: 100 } } as never)
     try {
       set({ printerNozzleVolume: 140 })
       await vi.dynamicImportSettled()
       expect(abort.signal.aborted).toBe(false)
       expect(vi.getTimerCount()).toBe(0)
+      // it lands with the stamp of the old nozzle volume
+      endSlice(abort)
+      set({ slice: { status: 'done', result, stale: false, stamp } } as never)
+      await vi.dynamicImportSettled()
+      const s = get()
+      expect(stampBlock(s, s.slice.status === 'done' ? s.slice.stamp : undefined)).toBe(STALE_SLICE)
+      expect(needsSlice(s)).toBe(true)
+      expect(s.slice.status === 'done' && s.slice.stale).toBe(true)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
     } finally {
       stop()
       endSlice(abort)
+      for (const r of auto.runs) r.finish()
+      vi.useRealTimers()
+    }
+  })
+
+  it('an auto slice that finished: a slice someone starts next is left to land when the nozzle volume changes', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    const abort = { current: null as AbortController | null }
+    try {
+      set({ overrides: {} })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
+      auto.runs[0]!.finish()
+      set({ slice: { status: 'done', result, stale: false, stamp: sliceStamp(get()) } } as never)
+      await vi.advanceTimersByTimeAsync(1)
+      abort.current = beginSlice()
+      set({ slice: { status: 'running', progress: null, startedAt: 100 } } as never)
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(abort.current.signal.aborted).toBe(false)
+      expect(auto.started).toBe(1)
+    } finally {
+      stop()
+      if (abort.current) endSlice(abort.current)
+      vi.useRealTimers()
+    }
+  })
+
+  it('an auto slice that failed: a slice someone starts next is left to land when the nozzle volume changes', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    const abort = { current: null as AbortController | null }
+    try {
+      set({ overrides: {} })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
+      auto.runs[0]!.fail()
+      set({ slice: { status: 'error', message: 'engine gone' } } as never)
+      await vi.advanceTimersByTimeAsync(1)
+      abort.current = beginSlice()
+      set({ slice: { status: 'running', progress: null, startedAt: 100 } } as never)
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(abort.current.signal.aborted).toBe(false)
+      expect(auto.started).toBe(1)
+    } finally {
+      stop()
+      if (abort.current) endSlice(abort.current)
+      vi.useRealTimers()
+    }
+  })
+
+  it('an edit while an auto slice runs: the newer auto slice is the one a nozzle volume change stops', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    try {
+      set({ overrides: {} })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
+      // the edit stops the first and starts a second
+      set({ overrides: { wall_loops: 3 } })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.runs[0]!.abort.signal.aborted).toBe(true)
+      expect(auto.started).toBe(2)
+      // the first unwinds late; the second is still the auto slice
+      auto.runs[0]!.finish()
+      await vi.advanceTimersByTimeAsync(0)
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(auto.runs[1]!.abort.signal.aborted).toBe(true)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(3)
+    } finally {
+      stop()
+      for (const r of auto.runs) r.finish()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a slice someone starts while a canceled auto slice unwinds is left to land when the nozzle volume changes', async () => {
+    vi.useFakeTimers()
+    const host = { slicer: { slice: vi.fn() }, capabilities: { threads: 1 } } as unknown as Host
+    sliced([part('a', 60, 1), part('b', 120, 2)])
+    set({ autoSlice: true, autoSliceBySize: false } as never)
+    const stop = startAutoSlice(host, 0)
+    const abort = { current: null as AbortController | null }
+    try {
+      set({ overrides: {} })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(auto.started).toBe(1)
+      // Cancel: the auto slice is told to stop but has not unwound yet
+      cancelSlice({ quiet: true })
+      // Slice, or mimir's app.slice, starts a slice of its own
+      abort.current = beginSlice()
+      set({ slice: { status: 'running', progress: null, startedAt: 100 } } as never)
+      set({ printerNozzleVolume: 140 })
+      await vi.dynamicImportSettled()
+      expect(abort.current.signal.aborted).toBe(false)
+      expect(auto.started).toBe(1)
+    } finally {
+      stop()
+      if (abort.current) endSlice(abort.current)
+      for (const r of auto.runs) r.finish()
       vi.useRealTimers()
     }
   })
