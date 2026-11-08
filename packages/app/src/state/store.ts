@@ -225,7 +225,7 @@ export interface ModelSource {
 export type SliceState =
   | { status: 'idle' }
   /** `last` is the slice before this one: the screen keeps showing it, as stale, until this one lands. */
-  | { status: 'running'; progress: SliceProgress | null; startedAt: number; last?: SliceResult }
+  | { status: 'running'; progress: SliceProgress | null; startedAt: number; last?: SliceResult; lastStamp?: SliceStamp }
   /** `stamp` is what the slice was made for (plate/resume-tops.ts sliceStamp); Print and Export check it (printBlock). */
   | { status: 'done'; result: SliceResult; stale: boolean; stamp?: SliceStamp }
   /** `code` names a refusal the panels act on: resume_void offers to plan the resume again or clear it. */
@@ -1205,9 +1205,9 @@ export function jobOpened(): void {
 
 /** Any settings or plate change marks a finished slice stale instead of discarding it. */
 /** The slice the screen shows: the finished one, or while a new one runs, the one before it, as stale. */
-export function shownSlice(slice: SliceState): { result: SliceResult; stale: boolean } | null {
+export function shownSlice(slice: SliceState): { result: SliceResult; stale: boolean; stamp?: SliceStamp } | null {
   if (slice.status === 'done') return slice
-  return slice.status === 'running' && slice.last ? { result: slice.last, stale: true } : null
+  return slice.status === 'running' && slice.last ? { result: slice.last, stale: true, ...(slice.lastStamp ? { stamp: slice.lastStamp } : {}) } : null
 }
 
 export function markStale(): void {

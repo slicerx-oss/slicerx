@@ -77,6 +77,7 @@ function engine(opts: { hub?: boolean } = {}) {
   const uploads: string[] = []
   const local: boolean[] = []
   let grantGate: Promise<void> | null = null
+  const grants = { count: 0 }
   let plateCheck = 0
   const exported: string[] = []
   const saved: string[] = []
@@ -123,6 +124,7 @@ function engine(opts: { hub?: boolean } = {}) {
     approvals: {
       register: async () => undefined,
       grant: async (id: string) => {
+        grants.count++
         if (grantGate) await grantGate
         return { id, token: 't' }
       },
@@ -149,7 +151,7 @@ function engine(opts: { hub?: boolean } = {}) {
       go()
     }
   }
-  return { host, requests, exported, saved, started, release, hold, signals, uploads, local, holdGrant }
+  return { host, requests, exported, saved, started, release, hold, signals, uploads, local, holdGrant, grants }
 }
 
 const plan = () => setResume(resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, layerTopsMm: [0.2, 0.3, 0.4, 0.5, 0.6] }))
@@ -525,7 +527,8 @@ describe('round 15: the send paths after their waits', () => {
     const sent = sendToPrinter(e.host, DEMO)
     await vi.waitFor(() => expect(get().printSheet).not.toBeNull())
     act(() => get().printSheet!.resolve({ name: get().printSheet!.name, options: {}, start: true } as never))
-    await new Promise((r) => setTimeout(r, 20))
+    // The plan changes only once the grant is waiting: past the sheet's own check.
+    await vi.waitFor(() => expect(e.grants.count).toBe(1))
     set({ resume: resumeFor(get(), { plan: { resumeLayer: 2, printedHeightMm: 0.4 } }) })
     go()
     await sent
@@ -610,6 +613,7 @@ describe('round 15: Export every plate says why a plate stopped it', () => {
     set({ toast: null } as never)
     expect(await exportAllPlates(e.host)).toBe(false)
     expect(get().toast?.text).toMatch(/^Plate 2: /)
+    expect(get().toast?.text).toContain('Other has no walls')
     expect(get().toast?.text).not.toMatch(/did not slice/)
   })
 })
@@ -702,5 +706,96 @@ describe('round 15: the queue keeps its stamp through a restart', () => {
     expect(back.queue![0]).toMatchObject({ plate: 'plate-1', plan: 'abcd1234' })
     expect(back.queue![1]).toMatchObject({ plate: 'plate-2', plan: null })
     expect(back.queue![2]).not.toHaveProperty('plate')
+  })
+})
+
+describe('round 16: what lands stale, and the routes under a plan', () => {
+  it('lands a slice stale when a pause is added or an object renamed while it runs', async () => {
+    const e = engine()
+    let go = e.hold()
+    let run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(1))
+    set({ layerMarks: { 'plate-1': [{ id: 'm1', z: 0.6, kind: 'pause' }] } } as never)
+    go()
+    await run
+    expect(get().slice).toMatchObject({ status: 'done', stale: true })
+    await slicePlate(e.host)
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    go = e.hold()
+    run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(3))
+    set({ plate: get().plate.map((p) => ({ ...p, name: 'Renamed' })) })
+    go()
+    await run
+    expect(get().slice).toMatchObject({ status: 'done', stale: true })
+    // A mark on another plate does not touch this one's G-code.
+    await slicePlate(e.host)
+    go = e.hold()
+    run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(5))
+    set({ layerMarks: { ...get().layerMarks, 'plate-2': [{ id: 'm2', z: 0.4, kind: 'pause' }] } } as never)
+    go()
+    await run
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+  })
+
+  it('refuses every route after an edit under a plan with no markStale, and keeps the plan through a spool reload', async () => {
+    const e = engine()
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
+    plan()
+    await slicePlate(e.host)
+    expect(printBlock(get())).toBeNull()
+    // A spool reload (grams left only) while the plan is kept: still the plate's slice for its plan.
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 10 }] } as never)
+    set({ printerSlots: [{ id: 'A1', material: 'PLA', color: '#fff', remainingG: 900 }] } as never)
+    expect(printBlock(get())).toBeNull()
+    const queued: QueueItem = { id: 'q1', printerId: 'demo-1', printerName: 'Demo 1', plateName: 'Plate 1', remote: { name: 'plate.gcode' } as never, sha256: 'abc', layers: 1, timeS: 1, grams: 1, options: {} as never, addedAt: '2026-11-07T00:00:00Z', plate: 'plate-1', plan: planFor(get(), 'plate-1') }
+    // An edit the slice does not hear of (auto slice off, no markStale).
+    set({ overrides: { ...get().overrides, wall_loops: 5 } })
+    expect(get().slice).toMatchObject({ status: 'done', stale: false })
+    expect(printBlock(get())).toBe(RESUME_VOID)
+    expect(await exportGcode3mf(e.host)).toBe(false)
+    expect(e.saved).toEqual([])
+    set({ toast: null } as never)
+    await sendToPrinter(e.host, DEMO)
+    expect(get().printSheet).toBeNull()
+    expect(get().toast).toMatchObject({ text: RESUME_VOID, tone: 'error' })
+    await startQueued(e.host, queued)
+    expect(get().toast).toMatchObject({ text: QUEUED_NOT_CURRENT, tone: 'error' })
+    expect(e.started).toEqual([])
+  })
+
+  it('puts a canceled reslice back with its own stamp, judged for its own plate when a plan is kept for another', async () => {
+    const e = engine()
+    await slicePlate(e.host)
+    const stamp = (get().slice as { stamp?: unknown }).stamp
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 }, plate: 'plate-2', inputs: 'x' } })
+    edit()
+    set({ slice: { ...(get().slice as object), stale: true } as never })
+    const go = e.hold()
+    const run = slicePlate(e.host)
+    await vi.waitFor(() => expect(e.requests).toHaveLength(2))
+    cancelSlice({ quiet: true })
+    go()
+    await run
+    expect(get().slice).toMatchObject({ status: 'done', stale: true, stamp })
+    // Stale, so it does not go, but not as another plate's or plan's slice.
+    expect(printBlock(get())).not.toBe(SLICE_NOT_CURRENT)
+    await exportGcode(e.host)
+    expect(get().toast).toMatchObject({ text: 'The plate changed after this slice. Slice it again first.' })
+    expect(e.exported).toEqual([])
+  })
+
+  it('names the plate and the reason when the slice of a plate goes stale while every plate slices', async () => {
+    const e = engine()
+    const slice = e.host.slicer.slice.bind(e.host.slicer)
+    ;(e.host.slicer as { slice: unknown }).slice = async (req: SliceRequest, o?: never) => {
+      // Plate 2 is edited while it slices: a pause added.
+      if (req.plate.objects.some((x) => x.id === 'b')) set({ layerMarks: { ...get().layerMarks, [get().activePlate]: [{ id: 'm', z: 0.4, kind: 'pause' }] } } as never)
+      return slice(req, o)
+    }
+    expect(await exportAllPlates(e.host)).toBe(false)
+    expect(get().toast?.text).toBe('Plate 2: The plate changed after this slice. Slice it again first.')
+    expect(e.saved).toEqual([])
   })
 })

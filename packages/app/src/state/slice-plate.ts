@@ -24,7 +24,7 @@ import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
-import { activeResume, planFor, RESUME_VOID, resumeVoid, sliceInputsKey, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
+import { activeResume, outputKey, planFor, RESUME_VOID, resumeVoid, sliceInputsKey, sliceStamp, sliceState, storedResumeTops } from '../plate/resume-tops'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -157,7 +157,11 @@ export async function plateLayerZ(host: Host, signal: AbortSignal): Promise<numb
 }
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
-export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean } = {}): Promise<void> {
+/**
+ * `plate` is the plate the caller asked for (mimir's slice): when another plate shows by the time the slice would start
+ * (a plate switch while the profile loads or the project G-code question waits), nothing slices.
+ */
+export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: boolean; plate?: string } = {}): Promise<void> {
   // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
   if (!hostSlices()) return
   const timed = sliceStarted(opts.auto === true)
@@ -170,6 +174,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
   }
   // A history step open for editing shows the part as it was before it; the slice is of the whole part.
   const at = get()
+  if (opts.plate !== undefined && at.activePlate !== opts.plate) return
   const s = at.historyEdit ? { ...at, plate: fullPlate(at) } : at
   if (s.plate.length === 0) {
     if (!opts.auto) toast('Add a model to the plate first')
@@ -201,7 +206,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
   const abort = beginSlice()
   // The last slice stays on screen, stale, until this one lands: the panels and the preview never empty in between.
   const before = shownSlice(get().slice)
-  set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
+  set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result, ...(before.stamp ? { lastStamp: before.stamp } : {}) } : {}) } })
   let again = false
   try {
     const { request, toPrint, config, replaces, skippedTools } = await plateSliceRequest(host, s, abort.signal, () => sliceStage(timed, 'objects'))
@@ -241,9 +246,11 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
     }
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
-    // An edit made while it ran (the plate's inputs key moved) leaves it stale: it shows, and the next slice replaces it
-    // before anything prints. The key leaves out what does not move layers, such as grams left on a spool.
-    set({ slice: { status: 'done', result, stale: sliceInputsKey(cur) !== stamp.inputs, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    // An edit made while it ran leaves it stale: it shows, and the next slice replaces it before anything prints. That is
+    // anything in the plate's inputs key or in what else goes into its G-code (a pause or color change, an object's
+    // name, the profile's start G-code), not what changes on its own, such as grams left on a spool.
+    const edited = sliceInputsKey(cur) !== stamp.inputs || outputKey(cur) !== stamp.output
+    set({ slice: { status: 'done', result, stale: edited, stamp }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, pickRing: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
     sliceStage(timed, 'shown')
     markOpenStage('sliced')
   } catch (e) {
@@ -251,7 +258,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean; planning?: 
       // A newer slice may already be running; its state is not ours to reset.
       if (currentSlice(abort)) {
         const cur = get().slice
-        set({ slice: cur.status === 'running' && cur.last ? { status: 'done', result: cur.last, stale: true } : { status: 'idle' } })
+        // The last slice comes back stale with its own stamp, so it is judged for what it was made for.
+        set({ slice: cur.status === 'running' && cur.last ? { status: 'done', result: cur.last, stale: true, ...(cur.lastStamp ? { stamp: cur.lastStamp } : {}) } : { status: 'idle' } })
       }
       return
     }
