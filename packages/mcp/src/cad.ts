@@ -535,11 +535,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
   const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
-  // a finished sketch of the design timeline, in design `design`'s frame: only the app keeps them
-  const finished = (id: string, design: Design) => {
+  // a finished sketch of the design timeline: only the app keeps them
+  const finished = (id: string) => {
     const host = deps.designs
     if (!host?.sketch) throw new ToolInputError(`sketch: finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again`)
-    return host.sketch(id, design.id)
+    return host.sketch(id)
   }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
@@ -765,7 +765,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.sketch !== undefined ? finished(i.sketch, d) : null
+        const k = i.sketch !== undefined ? finished(i.sketch) : null
         const frame = k ? k.frame : frameOf(f)
         const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
         if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
@@ -804,7 +804,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.sketch !== undefined ? finished(i.sketch, d) : null
+        const k = i.sketch !== undefined ? finished(i.sketch) : null
         const frame = k ? k.frame : frameOf(i.frame)
         const drawn = k ? k.loops : i.loops
         if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
@@ -866,7 +866,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const profiles = i.sketches ? i.sketches.map((id) => finished(id, d)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
+        const profiles = i.sketches ? i.sketches.map((id) => finished(id)).map((k) => ({ frame: k.frame, loops: k.loops })) : i.profiles!.map((p, k) => parsedAt(shapeOf(p), p, `profiles.${k}`)).map((f) => profileOut(f, { frame: frameOf(f.frame) }))
         const params: StepParams = plain({ op: 'sketch.loft', profiles, ...loftOpts, operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params)
         return stepOut(d, verb)
@@ -922,9 +922,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       if (i.design) {
         const d = designOf(i.design)
         const part = targetPart(d, i.target, i.part)
-        const k = i.profile_sketch ? finished(i.profile_sketch, d) : null
+        const k = i.profile_sketch ? finished(i.profile_sketch) : null
         const profile = k ? { frame: k.frame, loops: k.loops } : { frame: frameOf(pf), loops: profileLoops!, ...(prof?.open ? { open: true } : {}) }
-        const j = i.path_sketch ? finished(i.path_sketch, d) : null
+        const j = i.path_sketch ? finished(i.path_sketch) : null
         const path = j ? { frame: j.frame, loops: j.loops } : points ? { points } : { frame: frameOf(qf), loops: pathLoops! }
         const params: StepParams = plain({ op: 'sketch.sweep', profile, path, ...(th ? { thicken: th } : {}), operation: i.operation, name: i.name })
         await designs().add(d, i.operation === 'new' ? d.parts.length : (part ?? 0), params)

@@ -112,11 +112,6 @@ export interface PlateEntry {
   dimensions?: Dimension[]
   /** The CAD steps done to this object since it was imported or made (docs/cad-history.md). */
   history?: History
-  /**
-   * How far mimir's design host moved this design to land it on the bed, mm in X and Y (@slicerx/cad-history
-   * landing.ts): its design frame is `transform` moved back by this, so later steps in that frame stay on its body.
-   */
-  placed?: [number, number]
 }
 
 /** A history step open for editing: the object shows the result before it while its tool panel is open. */
