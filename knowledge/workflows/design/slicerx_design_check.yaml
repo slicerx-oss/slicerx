@@ -9,9 +9,9 @@ summary: >
   says item by item what the plan wants and what the body has. A plan gets one
   fix round.
 facts:
-  - {text: "The overall size must be within 0.2 mm or 1 percent, whichever is larger, axis by axis, with z as the print height.", src: [slicerx_app_design]}
+  - {text: "The overall size must be within 0.2 mm or 1 percent, whichever is larger, axis by axis, with z as the print height. Parts laid out side by side are held to the largest.", src: [slicerx_app_design]}
   - {text: "Each named hole's diameter must be within 0.1 mm, and when the plan lists its holes, the body has no holes the plan lacks.", src: [slicerx_app_design]}
-  - {text: "It also checks the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm.", src: [slicerx_app_design]}
+  - {text: "It also checks a step or more tagged with each planned feature (by step names when no step is tagged), that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm.", src: [slicerx_app_design]}
   - {text: "It checks the design tied to the plan, else the one named as the plan's part, else the only one open. With several open, or two named as the part, it asks which: check again with design set to its id.", src: [slicerx_app_design]}
   - {text: "It returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has.", src: [slicerx_app_design]}
   - {text: "A plan gets one fix round. When its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.", src: [slicerx_app_design]}
