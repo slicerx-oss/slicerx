@@ -516,7 +516,11 @@ describe('the pieces item for bodies of one part', () => {
     const host = { get: () => leaf, list: () => [leaf], call: async (op: string) => (op === 'fit.check' ? report : op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))) } as unknown as DesignHost
     const plans = toolset.createPlanRegistry()
     plans.put({ planId: 'hinge', part: 'Mechanism', units: 'mm', features: [], assumptions: [], questions: [], printInPlace: ['Left leaf', 'Right leaf', 'Pin'] }, 'd', 'card')
-    const tool = toolset.designToolset(host, {}, { plans, cardSide: true }).find((x) => x.name === 'design.check')!
+    const tools = toolset.designToolset(host, {}, { plans, cardSide: true })
+    const tool = tools.find((x) => x.name === 'design.check')!
+    // the gaps are looked at first, as design.check asks of a print-in-place plan
+    const fit = tools.find((x) => x.name === 'geom.fit_check')!
+    await fit.run(fit.input.parse({ design: 'd' }), {} as ToolContext)
     const check = async () => {
       const r = await tool.run(tool.input.parse({ planId: 'hinge' }), {} as ToolContext)
       return { summary: r.summary, out: r.output as { pass: boolean; stop?: string; items: { name: string; pass: boolean }[] } }
@@ -546,7 +550,11 @@ describe('the pieces item for bodies of one part', () => {
     const host = { get: () => lizard, list: () => [lizard], call: async (op: string) => (op === 'fit.check' ? report : op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))) } as unknown as DesignHost
     const plans = toolset.createPlanRegistry()
     plans.put({ planId: 'lizard', part: 'Mechanism', units: 'mm', features: [], assumptions: [], questions: [], printInPlace: ['Segment 1', 'Segment 2'] }, 'd', 'card')
-    const tool = toolset.designToolset(host, {}, { plans, cardSide: true }).find((x) => x.name === 'design.check')!
+    const tools = toolset.designToolset(host, {}, { plans, cardSide: true })
+    const tool = tools.find((x) => x.name === 'design.check')!
+    // the gaps are looked at first, as design.check asks of a print-in-place plan
+    const fit = tools.find((x) => x.name === 'geom.fit_check')!
+    await fit.run(fit.input.parse({ design: 'd' }), {} as ToolContext)
     const r = await tool.run(tool.input.parse({ planId: 'lizard' }), {} as ToolContext)
     const out = r.output as { items: { name: string; pass: boolean; got: string }[] }
     expect(out.items.filter((i) => !i.pass).map((i) => i.name)).toEqual(['pieces'])

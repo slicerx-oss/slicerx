@@ -567,6 +567,18 @@ export interface PlanEntry {
    * longer says what to build: design.check refuses it and it ties to no design, until a new design.plan is answered.
    */
   stale?: true
+
+  /** Its last design.check passed; a whole new design of its part is then refused (design.new). */
+  passed?: true
+}
+
+/**
+ * The fit check (geom.fit_check) last run on a design: the design as it was then (designStamp) and the parts it
+ * measured, every part or these. A print-in-place plan is checked only after one on the design as built.
+ */
+export interface FitCheckRun {
+  stamp: string
+  parts: 'all' | readonly number[]
 }
 
 /** design.check's answer for a plan whose sizes changed after it was approved (PlanEntry.stale), naming no id. */
@@ -619,6 +631,10 @@ export interface PlanRegistry {
   stale(planId: string): boolean
   /** Clears a plan's stale mark, once a new plan for its part was answered (approved or declined). */
   fresh(planId: string): void
+  /** Keeps the fit check just run on a design, replacing the one before. */
+  fitChecked(design: string, run: FitCheckRun): void
+  /** The fit check last run on a design, or undefined. */
+  fitCheckOf(design: string): FitCheckRun | undefined
   get(planId: string): PlanEntry | undefined
   /** The plan put last (of `origin` alone, when given), or undefined when there is none. */
   latest(origin?: PlanOrigin): PartPlan | undefined
@@ -637,6 +653,7 @@ export class PlanOwnedError extends Error {
 /** A registry of up to MAX_PLANS card plans and MAX_PLANS client plans, the oldest of each put dropped first. */
 export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
+  const fits = new Map<string, FitCheckRun>()
   return {
     put(plan, design, origin = 'client') {
       const p = partPlanSchema.parse(plan)
@@ -670,7 +687,9 @@ export function createPlanRegistry(): PlanRegistry {
       if (pass) {
         delete entry.replaceable
         delete entry.openAtFail
+        entry.passed = true
       } else {
+        delete entry.passed
         entry.failedChecks = (entry.failedChecks ?? 0) + 1
         entry.replaceable = true
         if (open) entry.openAtFail = [...open]
@@ -700,8 +719,13 @@ export function createPlanRegistry(): PlanRegistry {
       const entry = plans.get(planId)
       if (entry) delete entry.stale
     },
+    fitChecked: (design, run) => void fits.set(design, { stamp: run.stamp, parts: run.parts === 'all' ? 'all' : [...run.parts] }),
+    fitCheckOf: (design) => fits.get(design),
     get: (planId) => plans.get(planId),
     latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,
-    clear: () => plans.clear(),
+    clear: () => {
+      plans.clear()
+      fits.clear()
+    },
   }
 }

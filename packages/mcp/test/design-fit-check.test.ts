@@ -39,8 +39,10 @@ async function harness() {
     return data<{ output: T }>(r).output
   }
   const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Mechanism' })).design
+  // a print-in-place plan is checked after a fit check of the part as built, as design.check asks
   const check = async (plan: PartPlan) => {
     plans.put(plan, design)
+    if (plan.printInPlace) await ok('slicerx_geom_fit_check', { design })
     const r = await h.call('slicerx_design_check', { planId: plan.planId })
     expect(r.isError, text(r)).toBeFalsy()
     return { out: data<{ output: Check }>(r).output, summary: text(r) }

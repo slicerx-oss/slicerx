@@ -224,6 +224,13 @@ describe('the line for parts that move', () => {
     }
   })
 
+  it('measures the gaps with geom.fit_check on the part as built, before design.check, which asks for it', () => {
+    const fit = MOVING_PARTS_LINE.indexOf('run geom.fit_check on the design')
+    expect(fit).toBeGreaterThan(MOVING_PARTS_LINE.indexOf('build each piece as its own body'))
+    expect(MOVING_PARTS_LINE.indexOf('design.check', fit)).toBeGreaterThan(fit)
+    expect(MOVING_PARTS_LINE).toContain('fix any gap it flags')
+  })
+
   it('names jointed, articulated and flexi parts, and a simpler version offered in place of a creature', () => {
     expect(MOVING_PARTS_LINE).toContain('(a hinge, chain, gears, jointed, articulated or flexi segments, including a simpler version offered in place of a creature)')
   })

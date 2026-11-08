@@ -175,6 +175,19 @@ function arrayCopies(d: HostDesign): Map<string, { of: string; n: number }> {
   return new Map([...out].filter((e): e is [string, { of: string; n: number }] => e[1] !== null))
 }
 
+/**
+ * The design as it is now, in a few characters: its steps and, per part, its name, size and a weighted sum of its
+ * corners, so any change to a part's shape or place after a fit check reads as another design.
+ */
+export function designStamp(d: HostDesign): string {
+  const part = (m: HistoryMesh): string => {
+    let sum = 0
+    for (let k = 0; k < m.positions.length; k++) sum += m.positions[k]! * ((k % 7) + 1)
+    return `${m.name}:${m.positions.length}:${m.indices.length}:${sum}`
+  }
+  return `${d.history.steps.length}|${d.parts.map(part).join('|')}`
+}
+
 const pairKey = ([a, b]: readonly [number, number]): string => `${Math.min(a, b)} ${Math.max(a, b)}`
 
 /**

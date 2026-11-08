@@ -11,7 +11,7 @@ import { createApprovalBroker, loadPartsTable, normalizePolicy, type ApprovalBro
 import { createGeomCli } from '@slicerx/pilot/node'
 import { createActionLog } from './actionlog'
 import { DataStore, resolveDataPaths } from './data'
-import type { PlanRegistry } from './design-check'
+import { createPlanRegistry, type PlanRegistry } from './design-check'
 import type { GateDeps } from './gate'
 import { loadPolicy } from './policy'
 import { createDemoPrinters, createLinkPrinters, createRoutedBroker, type PrinterBackend, type PrinterMode } from './printers'
@@ -211,7 +211,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sketchVia: SketchVia = {}
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
-  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, sketchVia, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans: opts.plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
+  // one plan registry for design.check and geom.fit_check, which records the fit checks design.check asks for
+  const plans = opts.plans ?? createPlanRegistry()
+  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs, plans, sketchVia, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm } : {}) }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.
