@@ -5,11 +5,11 @@
 // degrees, and anything else is a length in the plan's units. An inch plan never converts a count or an angle, and a
 // sheet row given in mm reads the same way. Ambiguous keys (walls, taper) stay lengths.
 import { describe, expect, it } from 'vitest'
-import { dimText, dimUnit, sizeKind, sizeLabelKey, sizeText, sizeUnit } from '@slicerx/contracts/size-kind'
+import { dimText, dimUnit, sizeKind, sizeLabelKey, sizeText, sizeUnit, wholeCount } from '@slicerx/contracts/size-kind'
 
 describe('sizeKind', () => {
   it('reads a count from its key', () => {
-    for (const key of ['count', 'Count', 'number', 'n', 'qty', 'teeth', 'segments', 'segment_count', 'holeCount', 'num_teeth', 'n_holes', 'numberOfTeeth', 'count_x', 'sides', 'spokes', 'rows', 'columns', 'copies']) expect(sizeKind(key), key).toBe('count')
+    for (const key of ['count', 'Count', 'number', 'n', 'qty', 'quantity', 'holes', 'teeth', 'segments', 'segment_count', 'holeCount', 'num_teeth', 'n_holes', 'numberOfTeeth', 'count_x', 'sides', 'spokes', 'rows', 'columns', 'copies']) expect(sizeKind(key), key).toBe('count')
   })
 
   it('reads an angle from its key', () => {
@@ -20,8 +20,23 @@ describe('sizeKind', () => {
     for (const key of ['width', 'wall_thickness', 'lipHeight', 'diameter', 'radius', 'pitch', 'tooth_height', 'segment_length', 'total_length', 'count_mm', 'm3-hole', 'x', 'thickness', 'walls', 'taper', '']) expect(sizeKind(key), key).toBe('length')
   })
 
-  it('reads a key ending in a length word as a length, whatever word it starts with', () => {
-    for (const key of ['number_height', 'num_depth', 'n_offset', 'count_width', 'angle_leg_length', 'angle_bracket_width', 'number_spacing', 'n_hole_spacing']) expect(sizeKind(key), key).toBe('length')
+  const LENGTH_WORDS = ['height', 'width', 'depth', 'length', 'thickness', 'diameter', 'radius', 'size', 'spacing', 'pitch', 'offset', 'gap', 'clearance', 'wall', 'margin', 'inset', 'lip']
+
+  it('reads a key that starts with a count word and ends in a length word as a length', () => {
+    for (const key of ['number_height', 'num_depth', 'n_offset', 'count_width', 'number_spacing', 'n_hole_spacing', 'quantity_label_width']) expect(sizeKind(key), key).toBe('length')
+    for (const lead of ['number', 'num', 'n', 'count', 'qty']) for (const word of LENGTH_WORDS) expect(sizeKind(`${lead}_${word}`), `${lead}_${word}`).toBe('length')
+  })
+
+  it('reads a key that starts with angle as an angle, whatever word it ends in', () => {
+    for (const key of ['angle_offset', 'angle_spacing', 'angle_gap', 'angle_pitch', 'angle_leg_length', 'angle_bracket_width']) expect(sizeKind(key), key).toBe('angle')
+    for (const word of LENGTH_WORDS) expect(sizeKind(`angle_${word}`), `angle_${word}`).toBe('angle')
+  })
+
+  it('lets an explicit mm or in suffix win over every other word', () => {
+    for (const key of ['angle_offset_mm', 'angle_spacing_in', 'teeth_mm', 'count_mm', 'draft_angle_mm', 'twist_deg_mm', 'angleBracketWidthMm']) expect(sizeKind(key), key).toBe('length')
+    // in anywhere but last is a word of the key, not a unit
+    expect(sizeKind('n_in_row')).toBe('count')
+    expect(sizeKind('angle_in_plane')).toBe('angle')
   })
 
   it('leaves turns, coils and loops out of the counts, since a helix or spring often has a fraction of one', () => {
@@ -72,5 +87,14 @@ describe('dimUnit and dimText', () => {
     expect(dimText({ key: 'lean', unit: 'deg' }, 70)).toBe('70°')
     expect(dimText({ key: 'infill', unit: '%' }, 15)).toBe('15%')
     expect(dimText({ key: 'width', unit: 'mm' }, 80)).toBe('80 mm')
+  })
+})
+
+describe('wholeCount', () => {
+  it('rounds a typed count to a whole number inside the row\'s own bounds, at least 1 by default', () => {
+    expect([0, 0.4, 0.5, 2.5, 20.4, -3].map((v) => wholeCount(v))).toEqual([1, 1, 1, 3, 20, 1])
+    // a row that allows none keeps 0, and a max of 10.5 keeps the count at 10
+    expect(wholeCount(0.3, 0)).toBe(0)
+    expect(wholeCount(10.5, 1, 10.5)).toBe(10)
   })
 })
