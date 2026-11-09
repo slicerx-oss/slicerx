@@ -12,7 +12,7 @@ import type { GantryHit, GantrySpec } from './gantry'
 import type { ClearanceSpec } from './clearance'
 import type { PickRing } from './pick-rings'
 import type { Guides } from './guides'
-import type { DimensionMark, SketchCursor, SketchScene } from './cadtools'
+import type { DimensionMark, FinishedSketch, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
 import type { ControlsMap, ControlsPresetId } from './controls'
 import type { UiThemeLike, ViewportTheme } from './palette'
@@ -201,6 +201,8 @@ export interface PickEvent {
    * that wants a face gets none; an edge pick uses this to find the outline edge.
    */
   near?: { objectId: string; partIndex: number; triangle: number; point: [number, number, number] }
+  /** The finished sketch under the click, by id, while a tool picks them (setSketchPicking). */
+  sketch?: string
 }
 
 /** One face patch a ray passes through (`pickAll`): where, how deep and which way it faces, in the bed frame. */
@@ -679,7 +681,12 @@ export interface Viewport {
   /** Create Sketch's origin planes, `sizeMm` across through `center` (bed coordinates), or null to hide them. */
   setOriginPlanes(o: { center: [number, number, number]; sizeMm: number } | null): void
   /** Finished sketches drawn on their planes (paths only), outside the sketch tool. An empty list clears them. */
-  setFinishedSketches(scenes: readonly SketchScene[]): void
+  setFinishedSketches(scenes: readonly FinishedSketch[]): void
+  /**
+   * While on (with the probe tool), finished sketches with an id are pickable: the one under the pointer takes the hover
+   * tone and a click on it comes back as the pick event's `sketch`.
+   */
+  setSketchPicking(on: boolean): void
   /** Cuts away the models on the side `normal` points to, through `point` (bed coordinates); null puts them back. */
   setSection(section: { point: [number, number, number]; normal: [number, number, number] } | null): void
   /** Turns the camera to look straight at a plane through `point` along `normal` (bed coordinates), framing `radiusMm`. */
