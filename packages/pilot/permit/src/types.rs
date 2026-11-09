@@ -11,6 +11,8 @@ pub enum PermissionClass {
     Read,
     /// Slice and arrange in the project.
     Slice,
+    /// Take objects off the plate, or delete a plate with its objects.
+    Remove,
     /// Send plates to a printer queue.
     Queue,
     /// Heat or move a printer.

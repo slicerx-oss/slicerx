@@ -4,7 +4,7 @@
 import type { PluginManifest, PrinterInfo, PrinterState } from './printers'
 import type { SizeKind } from './size-kind'
 
-export const PERMISSION_CLASSES = ['read', 'slice', 'queue', 'start', 'profile', 'printer_config', 'share'] as const
+export const PERMISSION_CLASSES = ['read', 'slice', 'remove', 'queue', 'start', 'profile', 'printer_config', 'share'] as const
 export type PermissionClass = (typeof PERMISSION_CLASSES)[number]
 export type PermissionMode = 'allow' | 'ask' | 'off'
 
@@ -12,18 +12,19 @@ export type PermissionMode = 'allow' | 'ask' | 'off'
 export type CorePermissionClass = 'slice' | 'queue' | 'start' | 'profile'
 
 export interface PermissionPolicy {
-  classes: Record<CorePermissionClass, PermissionMode> & Partial<Record<'printer_config' | 'share', PermissionMode>>
+  classes: Record<CorePermissionClass, PermissionMode> & Partial<Record<'remove' | 'printer_config' | 'share', PermissionMode>>
   /** Per printer id. `start: 'allow'` is only valid here, and then covers pause and cancel only; `queue` is never allow. */
   printers?: Record<string, Partial<Record<'queue' | 'start', PermissionMode>>>
 }
 
 export const DEFAULT_POLICY: PermissionPolicy = {
-  classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask', printer_config: 'ask', share: 'ask' },
+  classes: { slice: 'allow', remove: 'ask', queue: 'ask', start: 'ask', profile: 'ask', printer_config: 'ask', share: 'ask' },
 }
 
 /** Labels used by the Permissions panel and the approval card. */
 export const PERMISSION_LABELS: Record<Exclude<PermissionClass, 'read'>, { title: string; detail: string }> = {
   slice: { title: 'Slice and arrange', detail: 'Orient, cut, arrange and slice in your project' },
+  remove: { title: 'Remove from the plate', detail: 'Take objects off the plate, or delete a plate with its objects' },
   queue: { title: 'Queue jobs', detail: 'Send sliced plates to a printer queue' },
   start: { title: 'Start or resume prints', detail: 'Heat up and move a printer' },
   profile: { title: 'Change saved profiles', detail: 'Write to printer and filament profiles' },

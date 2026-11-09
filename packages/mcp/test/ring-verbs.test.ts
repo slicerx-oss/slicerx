@@ -254,7 +254,9 @@ describe('the ring verbs under More, and Lock', () => {
     // The slice leaves it out: less filament, the same as the block alone.
     const left = await grams()
     expect(left).toBeLessThan(both)
-    await call(h, 'slicerx_project_remove_object', { object: 'obj-2' })
+    const asked = await call(h, 'slicerx_project_remove_object', { object: 'obj-2' })
+    expect((asked as unknown as { status: string }).status).toBe('approval_required')
+    expect((await h.call('slicerx_approve', { request_id: (asked as unknown as { request_id: string }).request_id, approve: true })).isError).toBeFalsy()
     expect(await grams()).toBe(left)
 
     // With every object left out, the slice says why.

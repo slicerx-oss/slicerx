@@ -106,11 +106,21 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     duplicate: 'Copy a plate with its objects, copies, paint and settings, and show the new plate. Optionally give a name. New object ids are in entries.',
     rename: 'Rename a plate. Names are trimmed and must be 1 to 40 characters.',
     settings: 'Merge per-plate bedType, sequence, filamentOrder, slotMap, nozzleMap or hotendMap overrides. With replace: true, replace every override; an empty settings object clears them, except layer heights set on the plate itself, which project_layer_profile sets and resets. On a printer whose hotends are its tools (the H3C), the shown plate reads back hotends: each filament in use on its tool and hotend, with the TPU tool flagged.',
-    remove: 'Remove a plate. A populated plate requires deleteObjects: true, which deletes its contents too. Refuses the last plate and locked objects. Undo in the app restores it.',
+    remove: 'Remove a plate. A populated plate requires deleteObjects: true, which deletes its contents too and takes permission class remove, which asks first by default. Refuses the last plate and locked objects. Undo in the app restores it.',
     move: 'Move only the concrete object ids supplied from the shown plate to another plate, arranging into free space. Copies not named stay put. Refuses locked objects or a move where any object does not fit; nothing moves on refusal.',
   }
   const edit = <S extends z.ZodType>(action: keyof typeof appPlateInputs, input: S) => defineTool({
-    name: `app.plate_${action}`, version: action === 'settings' ? '1.2.0' : '1.1.0', source: 'command', permission: 'slice', input,
+    name: `app.plate_${action}`, version: action === 'settings' ? '1.2.0' : action === 'remove' ? '1.2.0' : '1.1.0', source: 'command', permission: 'slice', input,
+    // Deleting a plate's objects takes parts off the plate, so it is the remove class, which asks first by default.
+    ...(action === 'remove'
+      ? {
+          permissionFor: (i: unknown) => ((i as { deleteObjects?: boolean }).deleteObjects ? 'remove' : 'slice'),
+          approval: async (i: unknown) => {
+            const r = i as { plate?: unknown; deleteObjects?: boolean }
+            return { title: r.deleteObjects ? `Remove plate ${String(r.plate)} and the objects on it?` : `Remove plate ${String(r.plate)}?`, lines: [], actions: [] }
+          },
+        }
+      : {}),
     description: `${descriptions[action]} Edits the project open in ${appName} through the app link, with edit permission. Needs Slice open and no tool, load, slice or history edit in progress. One toolbar Undo step; returns every plate and its objects/settings read back, plus changedPlate.`,
     async run(args) {
       const out = await call(link, appName, `plates.${action}`, args as Record<string, unknown>)
