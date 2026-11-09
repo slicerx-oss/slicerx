@@ -22,6 +22,7 @@ import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
 import { cadTools, wireSketchVia, type SketchVia } from './cad'
 import { cloudTools, type CloudOptions } from './cloud'
+import type { HostLookup, PinnedGet } from './url-guard'
 import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
 import { APP_DESIGN_TOOLS, routeToApp } from './app-route'
@@ -120,6 +121,8 @@ export interface SlicerxMcpOptions {
   /** Where saved profile changes go; defaults to ~/.config/slicerx/profiles. */
   profilesDir?: string | undefined
   allowUrls?: boolean | undefined
+  /** How model links are resolved and fetched, one checked hop at a time; tests pass a scripted resolver and transport. */
+  download?: { lookup?: HostLookup; get?: PinnedGet } | undefined
   /**
    * Extra tools in the same style from outside the base kit, such as an edition's cloud slicing
    * tools. They go through the same permission gate; the base server never imports them. One with the
@@ -170,7 +173,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const project: ProjectRef = { current: undefined }
   const nodeSlicer = createNodeSlicerHost(slicer ?? createStubSlicer(), outDir, (config) => project.current?.gcodeIsShipped(config) ?? false)
   const kb = createKb()
-  const policy = { allowDirs: opts.allowDirs?.map((d) => resolve(d)), outDir, allowUrls: opts.allowUrls ?? true, samplesDir: store.paths.samplesDir }
+  const policy = { allowDirs: opts.allowDirs?.map((d) => resolve(d)), outDir, allowUrls: opts.allowUrls ?? true, samplesDir: store.paths.samplesDir, ...opts.download }
   const profileStore = createProfileStore(resolve(opts.profilesDir ?? join(homedir(), '.config', 'slicerx', 'profiles')), localBroker)
   const loaded = opts.policy ? { policy: normalizePolicy(opts.policy), path: undefined } : loadPolicy(opts.policyFile)
   const setup = createMcpSetupHost(printers?.kind === 'link' ? (printers.host as unknown as Parameters<typeof createMcpSetupHost>[0]) : undefined, localBroker)
