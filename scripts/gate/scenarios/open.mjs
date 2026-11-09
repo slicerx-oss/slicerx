@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // b. Opening a Vault design, signed out and signed in: the download shows its progress, the design lands alone on the
-// plate (on the example plate, and on a plate that was cleared), and a plate with changes asks Save project, Don't
-// save or Cancel first. Cancel keeps the plate; Don't save opens the design alone. Save project is never pressed.
+// plate (on the example plate, and on a plate that was cleared). Opening over a plate with changes keeps it as a recent
+// project without asking, says "Your previous plate is saved." with Reopen, and Reopen brings it back with its change.
+// Clear the plate on that plate still asks Save project, Don't save or Cancel first: Cancel keeps the plate, Don't save
+// clears it. Save project is never pressed.
 import { waitUntil } from '../lib/util.mjs'
 
 /** Opens a design through its sheet while sampling the download status; returns the answer and what was seen. */
@@ -62,7 +64,7 @@ async function openAlone(s, id, label) {
   return { listing, state: st }
 }
 
-/** Signed out: on the example plate, on a cleared plate, and the save question on a changed plate. */
+/** Signed out: on the example plate, on a cleared plate, the kept plate and Reopen, and the save question on Clear the plate. */
 export async function openSignedOut(s) {
   const who = await s.user()
   if (who.signedIn) {
@@ -87,9 +89,10 @@ export async function openSignedOut(s) {
   s.check('no example comes back with it', second.state.plate.objects.length >= 1 && !second.state.plate.objects.some((o) => !o.vaultListing))
   await s.shot('opened-cleared', 'Signed out: Cable clip opened on a cleared plate')
 
-  // A change: leave the object out of the print. Then another design asks first. The row's tools show on hover or
-  // focus only (with a mouse), so select the row first, as a person's pointer would reach the row before its eye. The
-  // rows are in the right pane, opened first when the window has it shut.
+  // A change: leave the object out of the print. Opening another design then keeps the changed plate as a recent project
+  // without asking and says so with Reopen. The row's tools show on hover or focus only (with a mouse), so select the row
+  // first, as a person's pointer would reach the row before its eye. The rows are in the right pane, opened first when
+  // the window has it shut.
   const objects = await showObjects(s)
   s.check("the plate's objects list shows", objects.shown, objects.opened.length ? { opened: objects.opened } : undefined)
   await s.click('object-select')
@@ -104,27 +107,46 @@ export async function openSignedOut(s) {
   }
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })
   s.check('changed the plate (left the object out of the print)', !changed.timedOut)
-  const asked = await s.call('app_open_vault_design', { id: 'wall-hook', timeoutMs: 60_000 })
-  s.check('opening another design on a changed plate asks first', /asks whether to save/.test(asked.error ?? ''), asked.error ?? 'it opened without asking')
+
+  await openAlone(s, 'wall-hook', 'on a changed plate, without asking')
+  const asked = await s.state()
+  s.check('opening another design on a changed plate does not ask', asked.unsavedPrompt === null && !(await s.one('unsaved-dialog'))?.visible, asked.unsavedPrompt)
+  const note = await s.waitFor('open-note-text', 'visible', 15_000, 'Your previous plate is saved.')
+  s.check('the note says "Your previous plate is saved."', note, (await s.one('open-note-text'))?.text)
+  const action = await s.one('open-note-action')
+  s.check('the note offers Reopen', action?.visible === true && /^Reopen$/.test(action?.text?.trim() ?? ''), action?.text)
+  await s.shot('kept-note', 'Wall hook opened; the note says the previous plate is saved, with Reopen')
+
+  await s.click('open-note-action')
+  const back = await waitUntil(async () => {
+    const st = await s.state()
+    return !st.plate.loading && alone(st, second.listing.id) ? st : null
+  }, { timeoutMs: 60_000, everyMs: 500 })
+  s.check('Reopen brings the changed plate back alone', !back.timedOut, back.value?.plate.objects.map((o) => `${o.name} (${o.vaultListing ?? 'not from the Vault'})`))
+  s.check('the plate comes back with its change (the object still left out of the print)', back.value?.plate.objects.length === second.state.plate.objects.length && back.value?.plate.objects.every((o) => o.printable === false), back.value?.plate.objects.map((o) => ({ name: o.name, printable: o.printable })))
+  await s.shot('reopened', 'Reopen: Cable clip back, still left out of the print')
+
+  // Clear the plate still asks first on a plate with unsaved changes (the reopened plate comes back unsaved): Save
+  // project, Don't save or Cancel. Cancel keeps the plate; Don't save clears it. Save project is never pressed.
+  const asking = await s.call('app_clear_plate')
+  if (asking.error) throw new Error(`clear the plate: ${asking.error}`)
+  s.check('Clear the plate on the changed plate asks first', Boolean(asking.data?.asking), asking.data?.asking ?? 'it cleared without asking')
   s.check('Save changes first? shows', await s.waitFor('unsaved-dialog', 'visible', 10_000), (await s.one('unsaved-dialog'))?.text)
   const buttons = await Promise.all(['unsaved-save', 'unsaved-discard', 'unsaved-cancel'].map(async (b) => [b, (await s.one(b))?.visible === true]))
   s.check('the question offers Save project, Don\'t save and Cancel', buttons.every(([, v]) => v), Object.fromEntries(buttons))
-  await s.shot('save-question', 'Save changes first? on a changed plate')
+  await s.shot('save-question', 'Save changes first? before Clear the plate on a changed plate')
   await s.click('unsaved-cancel')
   await s.waitFor('unsaved-dialog', 'absent', 10_000)
   const kept = await s.state()
-  s.check('Cancel keeps the plate as it was', kept.plate.objects.length === second.state.plate.objects.length && kept.plate.objects[0]?.printable === false && alone(kept, second.listing.id))
+  s.check('Cancel keeps the plate as it was', kept.plate.objects.length === second.state.plate.objects.length && kept.plate.objects.every((o) => o.printable === false) && alone(kept, second.listing.id))
 
-  const again = s.call('app_open_vault_design', { id: 'wall-hook', timeoutMs: 60_000 })
-  if (!(await s.waitFor('unsaved-dialog', 'visible', 30_000))) s.stop('the question shows again', (await again).error ?? 'no question')
+  const again = await s.call('app_clear_plate')
+  if (again.error) throw new Error(`clear the plate: ${again.error}`)
+  if (!again.data?.asking || !(await s.waitFor('unsaved-dialog', 'visible', 10_000))) s.stop('the question shows again', again.data?.asking ?? 'no question')
   await s.click('unsaved-discard')
-  await again
-  const opened = await waitUntil(async () => {
-    const st = await s.state()
-    return !st.plate.loading && st.plate.objects.length > 0 && st.plate.objects.every((o) => o.vaultListing && o.vaultListing !== second.listing.id) ? st : null
-  }, { timeoutMs: 120_000, everyMs: 500 })
-  s.check('Don\'t save opens the new design alone', !opened.timedOut, opened.value?.plate.objects.map((o) => o.name))
-  await s.shot('dont-save', 'After Don\'t save: Wall hook alone')
+  const cleared = await waitUntil(async () => ((await s.state()).plate.objects.length === 0 ? true : null), { timeoutMs: 15_000, everyMs: 300 })
+  s.check("Don't save clears the plate", !cleared.timedOut, (await s.state()).plate.objects.map((o) => o.name))
+  await s.shot('dont-save', "After Don't save: the plate is empty")
 }
 
 /** Signed in: the same open on a cleared plate, with progress, through the account's session. */
