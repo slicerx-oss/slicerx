@@ -56,6 +56,8 @@ export function SweepTool() {
   })
   const [active, setActive] = useState<Slot>(edit ? 'path' : 'profile')
   const [chosen, setChosen] = useDraft<Result | null>('operation', null)
+  // a refused pick is known before the press and keeps Sweep off until the next pick; `note` is what the engine said after one
+  const [pickNote, setPickNote] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -94,16 +96,17 @@ export function SweepTool() {
     const k = byId.get(id)
     if (!k) return
     setNote(null)
+    setPickNote(null)
     if (active === 'profile') {
       const r = profileOf(k, frameShown(k), 'sweep')
-      if ('why' in r) return setNote(r.why)
+      if ('why' in r) return setPickNote(r.why)
       setProfile({ id })
       if (pth && 'id' in pth && pth.id === id) setPath(null)
       if (!pth || ('id' in pth && pth.id === id)) setActive('path')
       return
     }
     const r = pathOf(k, frameShown(k))
-    if ('why' in r) return setNote(r.why)
+    if ('why' in r) return setPickNote(r.why)
     setPath({ id })
     if (prof && 'id' in prof && prof.id === id) setProfile(null)
     if (!prof) setActive('profile')
@@ -111,11 +114,12 @@ export function SweepTool() {
   const onOther = (hit: PickEvent) => {
     const at = hit.objectId && hit.triangle !== null && hit.point ? { objectId: hit.objectId, partIndex: hit.partIndex ?? 0, triangle: hit.triangle, point: hit.point } : hit.near
     if (!at || at.triangle < 0) return
-    if (active === 'profile') return setNote('Click a sketch for the profile. An edge can be the path.')
+    if (active === 'profile') return setPickNote('Click a sketch for the profile. An edge can be the path.')
     const e = get().plate.find((p) => p.id === at.objectId)
     const part = e?.parts[at.partIndex]
     if (!e || !part) return
     setNote(null)
+    setPickNote(null)
     pickEdge({ mesh: toGeom(part), transform: e.transform }, { triangle: at.triangle, at: at.point }).then(
       (p) => {
         let near: Vec3 | undefined
@@ -125,11 +129,11 @@ export function SweepTool() {
           near = undefined
         }
         const r = edgePathOf(p.chain.length ? p.chain : [p.edge], near)
-        if ('why' in r) return setNote(r.why)
+        if ('why' in r) return setPickNote(r.why)
         setPath({ edge: { name: `An edge of ${e.name}`, path: r.path } })
         if (!prof) setActive('profile')
       },
-      (err: unknown) => setNote(errorText(err)),
+      (err: unknown) => setPickNote(errorText(err)),
     )
   }
   useSketchPicks(marks, onSketch, onOther)
@@ -142,7 +146,18 @@ export function SweepTool() {
     return () => cameraBus()?.guides?.({})
   }, [edgePoints])
 
-  const reason = sweepReason(prof !== null, pth !== null)
+  // what is wrong with the picks as they stand, before the press: a sketch that changed since it was picked, or a
+  // profile that sits away from the path's start
+  const known = useMemo(() => {
+    if (!prof || !pth) return null
+    try {
+      return offPathWords(profileNowOf(prof), pathNowOf(pth))
+    } catch (e) {
+      return errorText(e)
+    }
+  }, [prof, pth, byId])
+  const shown = pickNote ?? known
+  const reason = sweepReason(prof !== null, pth !== null) ?? shown
 
   const apply = async () => {
     if (reason !== null || busy || !prof || !pth) return
@@ -179,11 +194,17 @@ export function SweepTool() {
     <Shell title="Sweep" aside={edit ? `Editing step ${editingNumber(edit.index)}` : prof && pth ? 'Profile and path' : prof ? 'Profile picked' : 'Nothing picked yet'}>
       <PointerHint text="Click the profile sketch, then a sketch or an edge for the path." />
       <ResultChoice id="sweep-result" value={result.op} onChange={setChosen} options={result.options} canInto={result.canInto} editing={edit !== null} />
-      <PickSlot id="sweep-profile" label="Profile" empty="Click a sketch." name={profileName} active={active === 'profile'} onActivate={() => setActive('profile')} />
-      <PickSlot id="sweep-path" label="Path" empty="Click a sketch or an edge." name={pathName} active={active === 'path'} onActivate={() => setActive('path')} />
+      <PickSlot id="sweep-profile" label="Profile" empty="Click a sketch." name={profileName} active={active === 'profile'} onActivate={() => {
+          setPickNote(null)
+          setActive('profile')
+        }} />
+      <PickSlot id="sweep-path" label="Path" empty="Click a sketch or an edge." name={pathName} active={active === 'path'} onActivate={() => {
+          setPickNote(null)
+          setActive('path')
+        }} />
       {/* the path's options (scale, twist, how the change runs) go here, under Path */}
-      {note ? <Message text={note} testId="sweep-message" /> : null}
-      <ToolFooter verb="Sweep" onApply={apply} busy={busy} disabled={reason !== null} reason={reason} />
+      {shown ?? note ? <Message id="sweep-message" text={(shown ?? note)!} testId="sweep-message" /> : null}
+      <ToolFooter verb="Sweep" onApply={apply} busy={busy} disabled={reason !== null} reason={reason} reasonShownAt={shown && reason === shown ? 'sweep-message' : undefined} />
     </Shell>
   )
 }
