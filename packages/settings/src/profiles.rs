@@ -223,7 +223,7 @@ fn merge_written(g: &mut GcodeFile, written: &str) -> Result<(), String> {
     for (k, f) in w.families {
         if g.families.contains_key(&k) {
             return Err(format!(
-                "G-code family {k} is in both gcode.json and gcode-written.json; keep it in one of them"
+                "G-code family {k} is in both gcode.json and gcode-written.json: remove {k} from gcode.json; it is owned by gcode-written.json"
             ));
         }
         g.families.insert(k, f);
@@ -231,7 +231,7 @@ fn merge_written(g: &mut GcodeFile, written: &str) -> Result<(), String> {
     for (k, f) in w.models {
         if g.models.contains_key(&k) {
             return Err(format!(
-                "printer model {k} has a G-code family in both gcode.json and gcode-written.json; keep it in one of them"
+                "printer model {k} is in both gcode.json and gcode-written.json: remove {k} from gcode.json; it is owned by gcode-written.json"
             ));
         }
         g.models.insert(k, f);
@@ -700,7 +700,10 @@ mod tests {
         let family = merge_written(&mut base(), r#"{"families": {"stock": {"start": "G90"}}}"#).unwrap_err();
         assert!(family.contains("family stock is in both"), "{family}");
         let model = merge_written(&mut base(), r#"{"models": {"printer-a": "ours"}}"#).unwrap_err();
-        assert!(model.contains("printer model printer-a"), "{model}");
+        assert!(
+            model.contains("remove printer-a from gcode.json; it is owned by gcode-written.json"),
+            "{model}"
+        );
     }
 
     #[test]
