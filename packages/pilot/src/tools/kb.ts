@@ -167,7 +167,7 @@ export function kbTools(): PilotTool<never>[] {
     version: '1.0.0',
     source: 'kb',
     permission: 'read',
-    description: 'Search the whole knowledge base (filaments, printers, workflows, troubleshooting, settings catalog) when the right entry is not obvious. Returns the best matching entries.',
+    description: 'Search the whole knowledge base (filaments, printers, workflows, troubleshooting, settings catalog) when the right entry is not obvious. Returns the best matches.',
     input: z.object({ query: z.string().min(2), limit: z.number().int().min(1).max(8).optional() }),
     args: (i) => `"${i.query}"`,
     async run(i, ctx) {
