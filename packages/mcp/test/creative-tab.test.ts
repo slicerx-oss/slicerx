@@ -245,3 +245,50 @@ describe('the recordings', () => {
     }
   })
 })
+
+describe('a run that ends early says why', () => {
+  it('reports the provider\'s error when the model fails, not a quiet end', async () => {
+    const down = {
+      provider: 'anthropic',
+      // eslint-disable-next-line require-yield
+      async *stream(): AsyncGenerator<never> {
+        throw new Error('the provider is down')
+      },
+    }
+    const run = await runPrompt(P, { geom: undefined, client: down as never })
+    expect(run.error).toMatch(/ended on an error: .*the provider is down/)
+    expect(run.parsed.pass).toBe(false)
+  })
+
+  it('reports the step cap when the model calls tools until it runs out of steps', async () => {
+    let n = 0
+    const busy = {
+      provider: 'anthropic',
+      async *stream(req: { toolChoice?: string }) {
+        if (req.toolChoice === 'none') yield { type: 'text', delta: 'Still looking.' }
+        else yield { type: 'tool_call', call: { id: `c${++n}`, name: 'design.list', arguments: '{}' } }
+        yield { type: 'done', stop: req.toolChoice === 'none' ? 'end' : 'tool_calls' }
+      },
+    }
+    const run = await runPrompt(P, { geom: undefined, client: busy as never })
+    expect(run.error).toMatch(/step cap/)
+    expect(n).toBeGreaterThan(TAB_MIN_STEPS - 5)
+  })
+
+  it('fails a replay that leaves recorded replies unused, and passes one that uses them all', async () => {
+    // a question is answered once, so the message and the answer take two replies and the third is never asked for
+    const asks = [{ text: 'Which size, 1?' }, { text: 'Which size, 2?' }, { text: 'Which size, 3?' }]
+    const left = await runPrompt(P, { geom: undefined, steps: asks, answerRecorded: true, tabTools: true })
+    expect(left.error).toBe('the replay left 1 recorded reply unused')
+    const used = await runPrompt(P, { geom: undefined, steps: asks.slice(0, 2), answerRecorded: true, tabTools: true })
+    expect(used.error).toBeUndefined()
+    const many = await runPrompt(P, { geom: undefined, steps: asks.slice(0, 1), answerRecorded: false, tabTools: true })
+    expect(many.error).toBeUndefined()
+  })
+
+  it('does not count a live run\'s scripted client as a replay', async () => {
+    const client = createScriptedClient([{ text: 'Which size?' }, { text: 'And?' }, { text: 'More?' }], { chunk: false })
+    const run = await runPrompt(P, { geom: undefined, client })
+    expect(run.error).toBeUndefined()
+  })
+})
