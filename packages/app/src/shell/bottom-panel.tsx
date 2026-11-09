@@ -4,7 +4,7 @@
 // is a real button: Tab reaches it, Enter or Space toggles it, as does Mod+J, focus moving into the panel opens it and
 // Escape closes it and returns focus to the tab. Its context menu pins it open; the pin is remembered per panel with
 // the pane sizes.
-import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
+import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem, useLongPress } from '@slicerx/ui'
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useLookChoice } from '../first-run/look'
 import { set, useApp } from '../state/store'
@@ -79,6 +79,11 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
     }
   }, [open])
 
+  const openMenu = () => {
+    setMenu(true)
+    ctl.current?.menuOpen(true)
+  }
+  const press = useLongPress(openMenu)
   const setPinned = (on: boolean) => set((s) => ({ paneSizes: { ...s.paneSizes, [pinKey]: on ? 1 : 0 } }))
   const hold = { drag: (a: boolean) => ctl.current?.drag(a), menu: (o: boolean) => ctl.current?.menuOpen(o) }
 
@@ -94,10 +99,11 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
           {...(chord ? { shortcut: chord } : {})}
           tip={pinned ? 'Kept open. Right-click to let it open and close by itself.' : 'Opens when the pointer reaches the bottom of the view. Right-click to keep it open.'}
           onToggle={() => ctl.current?.toggle()}
+          longPress={press.bind}
           onContextMenu={(e) => {
             e.preventDefault()
-            setMenu(true)
-            ctl.current?.menuOpen(true)
+            press.cancel()
+            openMenu()
           }}
         />
         <Menu
