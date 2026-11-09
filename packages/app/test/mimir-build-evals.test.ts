@@ -1,7 +1,7 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The mimir build evals: fourteen parts asked for in one message, most needing a loft or a sweep, four boxy controls and
+// The mimir build evals: sixteen parts asked for in one message, most needing a loft or a sweep, four boxy controls and
 // a planter with its saucer asked for as two parts, run through the tab exactly as the desktop app makes it
 // (test/mimir-build-evals/drive.ts) and scored on the part and on the person's turns (score.ts). By default this checks
 // the scoring, and replays offline each case that has a recording in test/mimir-build-evals/recordings (a case without
@@ -76,8 +76,8 @@ describe('build eval scoring', () => {
     expect(scoreCase(box, { events: built, turns: [], parts: [], firstReply: '', firstBuilt: false, bed: { shape: 'rectangular', x: 256, y: 256, z: 256 }, wallMm: 0.8 }).ops.pass).toBe(true)
   })
 
-  it('has the fourteen cases, the headphone stand in the words of the request', () => {
-    expect(BUILD_CASES.map((c) => c.id)).toEqual(['headphone-stand', 'square-bottle', 'cable-hook', 'mug-handle', 'twisted-vase', 'pipe-elbow', 'pi5-case', 'hinged-box', 'flared-vase', 'drawer-handle', 'cable-clip', 'phone-stand-lip', 'planter-saucer', 'coat-hook'])
+  it('has the sixteen cases, the headphone stand in the words of the request', () => {
+    expect(BUILD_CASES.map((c) => c.id)).toEqual(['headphone-stand', 'square-bottle', 'cable-hook', 'mug-handle', 'twisted-vase', 'pipe-elbow', 'pi5-case', 'hinged-box', 'flared-vase', 'drawer-handle', 'cable-clip', 'phone-stand-lip', 'planter-saucer', 'coat-hook', 'watering-spout', 'tapered-hook'])
     expect(BUILD_CASES[0]!.prompt).toBe("Design a headphone stand: a round weighted base, a hollow tapered stem, and a curved hook at the top with a soft lip so the headband doesn't slide off. Ask me for the main sizes first.")
     expect(BUILD_CASES.filter((c) => c.control).map((c) => c.id)).toEqual(['pi5-case', 'hinged-box', 'cable-clip', 'phone-stand-lip'])
     expect(BUILD_CASES.filter((c) => (c.parts ?? 1) > 1).map((c) => c.id)).toEqual(['planter-saucer'])
