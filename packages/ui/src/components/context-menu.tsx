@@ -39,13 +39,69 @@ export function pressStays(from: MenuPoint, now: MenuPoint): boolean {
   return Math.hypot(now.x - from.x, now.y - from.y) <= LONG_PRESS_SLOP
 }
 
-export interface ContextMenuBind {
-  onContextMenu: (e: MouseEvent<HTMLElement>) => void
-  onKeyDown: (e: KeyboardEvent<HTMLElement>) => void
+export interface LongPressBind {
   onPointerDown: (e: PointerEvent<HTMLElement>) => void
   onPointerMove: (e: PointerEvent<HTMLElement>) => void
   onPointerUp: () => void
   onPointerCancel: () => void
+  /** Swallows the click that follows a long press, so lifting the finger does not also press the control. */
+  onClickCapture: (e: MouseEvent<HTMLElement>) => void
+}
+
+/**
+ * Touch has no right click, so a press held for about half a second, without moving or scrolling, stands in for it.
+ * `fire` gets the pressed element and the point of the press. A mouse or a pen does nothing here. Spread `bind` on the
+ * element that also handles `onContextMenu`, and `cancel` when that handler runs so the two never both open it.
+ */
+export function useLongPress(fire: (target: HTMLElement, point: MenuPoint) => void): { bind: LongPressBind; cancel: () => void } {
+  const press = useRef<{ from: MenuPoint; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const fired = useRef(false)
+  const latest = useRef(fire)
+  latest.current = fire
+  const cancel = useCallback(() => {
+    if (press.current) {
+      clearTimeout(press.current.timer)
+      window.removeEventListener('scroll', cancel, true)
+    }
+    press.current = null
+  }, [])
+  useEffect(() => cancel, [cancel])
+  const bind: LongPressBind = {
+    onPointerDown: (e) => {
+      if (e.pointerType !== 'touch') return
+      cancel()
+      fired.current = false
+      const target = e.currentTarget
+      const from = { x: e.clientX, y: e.clientY }
+      window.addEventListener('scroll', cancel, true)
+      press.current = {
+        from,
+        timer: setTimeout(() => {
+          press.current = null
+          window.removeEventListener('scroll', cancel, true)
+          fired.current = true
+          latest.current(target, from)
+        }, LONG_PRESS_MS),
+      }
+    },
+    onPointerMove: (e) => {
+      if (press.current && !pressStays(press.current.from, { x: e.clientX, y: e.clientY })) cancel()
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+    onClickCapture: (e) => {
+      if (!fired.current) return
+      fired.current = false
+      e.preventDefault()
+      e.stopPropagation()
+    },
+  }
+  return { bind, cancel }
+}
+
+export interface ContextMenuBind extends LongPressBind {
+  onContextMenu: (e: MouseEvent<HTMLElement>) => void
+  onKeyDown: (e: KeyboardEvent<HTMLElement>) => void
   'data-ctx': ''
 }
 
@@ -56,7 +112,6 @@ export interface ContextMenuBind {
 export function useContextMenu<T = HTMLElement>(open?: (target: HTMLElement, data: T | undefined) => boolean | void, data?: T) {
   const [at, setAt] = useState<MenuPoint | null>(null)
   const back = useRef<HTMLElement | null>(null)
-  const press = useRef<{ from: MenuPoint; timer: ReturnType<typeof setTimeout>; target: HTMLElement } | null>(null)
   const show = useCallback(
     (target: HTMLElement, point: MenuPoint) => {
       if (open?.(target, data) === false) return
@@ -75,15 +130,12 @@ export function useContextMenu<T = HTMLElement>(open?: (target: HTMLElement, dat
         if (el.isConnected && focusGoesBack(document.activeElement, document.body)) el.focus({ preventScroll: true })
       })
   }, [])
-  const stop = () => {
-    if (press.current) clearTimeout(press.current.timer)
-    press.current = null
-  }
-  useEffect(() => stop, [])
+  const { bind: pressBind, cancel } = useLongPress(show)
   const bind: ContextMenuBind = {
+    ...pressBind,
     onContextMenu: (e) => {
       e.preventDefault()
-      stop()
+      cancel()
       show(e.currentTarget, { x: e.clientX, y: e.clientY })
     },
     onKeyDown: (e) => {
@@ -92,21 +144,6 @@ export function useContextMenu<T = HTMLElement>(open?: (target: HTMLElement, dat
       const r = e.currentTarget.getBoundingClientRect()
       show(e.currentTarget, { x: r.left + Math.min(24, r.width / 2), y: r.bottom })
     },
-    onPointerDown: (e) => {
-      if (e.pointerType !== 'touch') return
-      stop()
-      const target = e.currentTarget
-      const from = { x: e.clientX, y: e.clientY }
-      press.current = { from, target, timer: setTimeout(() => {
-        press.current = null
-        show(target, from)
-      }, LONG_PRESS_MS) }
-    },
-    onPointerMove: (e) => {
-      if (press.current && !pressStays(press.current.from, { x: e.clientX, y: e.clientY })) stop()
-    },
-    onPointerUp: stop,
-    onPointerCancel: stop,
     'data-ctx': '',
   }
   return { at, bind, close, show }

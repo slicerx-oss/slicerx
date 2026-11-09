@@ -7,6 +7,7 @@
 import type { MouseEvent } from 'react'
 import { Icon } from '../icons/icon'
 import { tipAttrs } from './tooltip'
+import type { LongPressBind } from './context-menu'
 
 export type EdgeSide = 'left' | 'right' | 'bottom'
 
@@ -25,6 +26,8 @@ export interface EdgeTabProps {
   /** A second line for the tip. */
   tip?: string
   onContextMenu?: (e: MouseEvent<HTMLButtonElement>) => void
+  /** Handlers from useLongPress, so a long press on touch does what a right click does. */
+  longPress?: LongPressBind
   className?: string
   /** Something in the shut panel wants a look: the tab glows softly in the accent until the panel opens. */
   attention?: boolean
@@ -37,7 +40,7 @@ export function edgeChevron(side: EdgeSide, open: boolean): 'left' | 'right' | '
   return open ? 'right' : 'left'
 }
 
-export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel, tip, onContextMenu, className, attention }: EdgeTabProps) {
+export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel, tip, onContextMenu, longPress, className, attention }: EdgeTabProps) {
   return (
     <button
       type="button"
@@ -51,6 +54,7 @@ export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel
       aria-label={open ? `Close ${label}` : attention ? `Open ${label}, something needs a look` : `Open ${label}`}
       {...tipAttrs({ title: label, ...(tip ? { body: tip } : {}), ...(shortcut ? { key: shortcut } : {}) })}
       onClick={onToggle}
+      {...longPress}
       onContextMenu={onContextMenu}
     >
       {/* chevron-right turned by CSS: it ships with the shell, so the tab draws at first paint */}

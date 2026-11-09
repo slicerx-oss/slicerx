@@ -688,6 +688,28 @@ test.describe('the Filament rail', () => {
     await sidebarDone(page)
   })
 
+  test('a long press on a spool opens its menu on touch; a short touch and a held mouse do not', async ({ page }) => {
+    await sidebarAs(page, { mode: 'simple' })
+    const s = slot(page, 2)
+    const b = (await s.boundingBox())!
+    const at = (pointerType: string) => ({ pointerType, clientX: b.x + b.width / 2, clientY: b.y + b.height / 2, bubbles: true })
+    const menu = page.getByRole('menu', { name: 'Filament slot' })
+    await s.dispatchEvent('pointerdown', at('mouse'))
+    await page.waitForTimeout(700)
+    await expect(menu).toHaveCount(0)
+    await s.dispatchEvent('pointerup', at('mouse'))
+    await s.dispatchEvent('pointerdown', at('touch'))
+    await page.waitForTimeout(200)
+    await s.dispatchEvent('pointerup', at('touch'))
+    await page.waitForTimeout(600)
+    await expect(menu).toHaveCount(0)
+    await s.dispatchEvent('pointerdown', at('touch'))
+    await expect(menu).toBeVisible()
+    await s.dispatchEvent('pointerup', at('touch'))
+    await page.keyboard.press('Escape')
+    await sidebarDone(page)
+  })
+
   test('the menu holds Calibrate, Flush volumes and Swap colors, and Swap colors swaps the two filaments on the plate', async ({ page }) => {
     await sidebarAs(page, { mode: 'simple' })
     await page.getByTestId('slice-filament-menu').click()

@@ -6,7 +6,7 @@
 // three lanes they share a "+N" pin that lists them. A click on a pin jumps there and offers to edit or remove it. A
 // color change can note the filament slot to load; the note is saved with the project and does not change the G-code.
 // The marks go into the next slice as layer G-code.
-import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, useLongPress, type IconName } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
@@ -227,6 +227,8 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
     const r = picked[0]!.el.getBoundingClientRect()
     onPick(picked.flatMap((p) => p.head.ids), { x: r.left, y: r.top - 4 }, picked[0]!.el)
   }
+  // a long press on a pin opens its menu on touch, as a right click does
+  const press = useLongPress((target) => open(heads().filter((h) => h.el === target)))
   const act = (e: MouseEvent<HTMLElement>) => {
     e.preventDefault()
     e.stopPropagation()
@@ -290,9 +292,10 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
             aria-label={label}
             aria-haspopup="menu"
             {...tipAttrs({ title, body })}
-            onPointerDown={(ev) => ((pointer.current = { type: ev.pointerType, x: ev.clientX, y: ev.clientY }), ev.stopPropagation())}
+            {...press.bind}
+            onPointerDown={(ev) => ((pointer.current = { type: ev.pointerType, x: ev.clientX, y: ev.clientY }), press.bind.onPointerDown(ev), ev.stopPropagation())}
             onClick={act}
-            onContextMenu={act}
+            onContextMenu={(ev) => (press.cancel(), act(ev))}
           >
             {group.length > 1 ? <span className="layer-mark-count">+{group.length}</span> : color ? null : <Icon name={ICON[m.kind]} size={12} />}
             {/* the foot of the stem: down to the track, stepping back left to the layer when the head sits right of it */}
@@ -464,16 +467,23 @@ export function LayerTrack({ id, n, top, layerZ, onChange, onJump, onKeyDown }: 
   const marks = useApp((s) => s.layerMarks[plateId]) ?? EMPTY
   const z = layerZ[top - 1] ?? 0
   const share = (layer: number) => (n > 1 ? (layer - 1) / (n - 1) : 0)
+  const openAt = (x: number, y: number) => {
+    // over the track, the layer under the pointer; beside it (the +), the top layer
+    const r = rail.current?.getBoundingClientRect()
+    const layer = r && x >= r.left && x <= r.right ? layerAtPoint(x, r, n) : top
+    if (layer !== top) onJump(layer)
+    setMenu({ at: { x, y }, layer, ids: marksOn(marks, layer, layerZ), from: rail.current?.querySelector('input') ?? null })
+  }
+  // on touch, a long press on the track opens the same menu as a right click
+  const press = useLongPress((_, at) => openAt(at.x, at.y))
   return (
     <div
       className="layer-track"
+      {...press.bind}
       onContextMenu={(e) => {
         e.preventDefault()
-        // over the track, the layer under the pointer; beside it (the +), the top layer
-        const r = rail.current?.getBoundingClientRect()
-        const layer = r && e.clientX >= r.left && e.clientX <= r.right ? layerAtPoint(e.clientX, r, n) : top
-        if (layer !== top) onJump(layer)
-        setMenu({ at: { x: e.clientX, y: e.clientY }, layer, ids: marksOn(marks, layer, layerZ), from: rail.current?.querySelector('input') ?? null })
+        press.cancel()
+        openAt(e.clientX, e.clientY)
       }}
     >
       <div className="layer-track-rail" ref={rail}>

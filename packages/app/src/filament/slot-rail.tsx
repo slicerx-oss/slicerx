@@ -7,7 +7,7 @@
 // Shift+F10); Alt-click selects the objects on it. Hovering or focusing a spool picks its filament out in the viewport.
 // Under the spools: what the target prints with, and why (picked by hand, by color, the spool used last), or that
 // it is another material than the profile's. Every line keeps its height, so nothing moves when one changes.
-import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs } from '@slicerx/ui'
+import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs, useLongPress } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useStore } from 'zustand'
 import { activeMeta } from '../plate/plates'
@@ -137,8 +137,14 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
     moveToSpool(target, s.index)
     if (target.kind === 'filament') setFrom(s.index)
   }
+  // On touch a long press on a spool opens the same menu as a right click.
+  const press = useLongPress((target, at) => {
+    const slot = Number(target.dataset.slot)
+    if (slot) setMenu({ slot, at })
+  })
   const onContext = (e: MouseEvent<HTMLButtonElement>, s: ResolvedSlot) => {
     e.preventDefault()
+    press.cancel()
     setMenu({ slot: s.index, at: { x: e.clientX, y: e.clientY } })
   }
   const onKey = (e: KeyboardEvent<HTMLButtonElement>, s: ResolvedSlot) => {
@@ -191,6 +197,7 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
                     onFocus={() => set({ hoverSlot: s.index })}
                     onBlur={() => set({ hoverSlot: null })}
                     onClick={(e) => onClick(e, s)}
+                    {...press.bind}
                     onContextMenu={(e) => onContext(e, s)}
                     onKeyDown={(e) => onKey(e, s)}
                   >
