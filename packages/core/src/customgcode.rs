@@ -105,15 +105,10 @@ pub(crate) fn first_per_extruder(cfg: &PrintConfig, out: &SliceOutput) -> (Vec<i
 
 /// The bed temperatures of the plate type (`curr_bed_type`) per filament, of the first layer or the others
 /// (Orca: `get_bed_temp_1st_layer_key` and `get_bed_temp_key`).
+/// With no `curr_bed_type`, the printer's `default_bed_type` is the plate type ([`crate::preflight::plate_type`]).
 fn plate_temps(cfg: &PrintConfig, first: bool) -> Vec<f64> {
-    let plate = match cfg.raw.get("curr_bed_type") {
-        Some(Json::String(t)) => crate::preflight::PLATES
-            .iter()
-            .find(|(n, _)| n == t)
-            .map(|(_, k)| *k),
-        _ => None,
-    }
-    .unwrap_or("hot_plate_temp");
+    let typed = crate::preflight::plate_type(&cfg.raw);
+    let plate = typed.map_or("hot_plate_temp", |(_, k)| k);
     let key = |plate: &str| {
         if first {
             format!("{plate}_initial_layer")
@@ -134,12 +129,18 @@ fn plate_temps(cfg: &PrintConfig, first: bool) -> Vec<f64> {
             None => Vec::new(),
         }
     };
-    let fallback = if first {
+    // 0 for the first layer means "as the other layers", as the G-code writer reads it
+    let fallback = if first && cfg.hot_plate_temp_initial_layer > 0.0 {
         cfg.hot_plate_temp_initial_layer
     } else {
         cfg.hot_plate_temp
     };
-    let list = read(&key(plate));
+    // a plate type's temperatures as preflight reads them
+    let list = if typed.is_some() {
+        crate::preflight::plate_layer_temps(&cfg.raw, plate, first)
+    } else {
+        read(&key(plate))
+    };
     if list.is_empty() {
         return vec![fallback];
     }
@@ -762,6 +763,13 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         if !cfg.raw.contains_key(k) {
             c.vars.insert(k.to_owned(), Value::Str(default.to_owned()));
         }
+    }
+    // with no plate type of its own the print is on the printer's default one, which picks the temperatures too
+    if !cfg.raw.contains_key("curr_bed_type")
+        && let Some((name, _)) = crate::preflight::plate_type(&cfg.raw)
+    {
+        c.vars
+            .insert("curr_bed_type".to_owned(), Value::Str(name.to_owned()));
     }
     c
 }
