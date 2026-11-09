@@ -167,10 +167,13 @@ export async function windowsCli<T>(link: Link, dir: string, clientKey: string, 
   })
 }
 
-/** A directory for one test's scratch files and a policy file that allows everything; removed when `use` ends. */
+/**
+ * A directory for one test's scratch files and a policy file that lets project edits run without asking (slice and
+ * remove allowed, the rest at their defaults); removed when `use` ends.
+ */
 export async function scratch<T>(prefix: string, use: (dir: string) => Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), `sx-link-${prefix}-`))
-  writeFileSync(join(dir, 'policy.json'), '{}')
+  writeFileSync(join(dir, 'policy.json'), JSON.stringify({ classes: { remove: 'allow' } }))
   try {
     return await use(dir)
   } finally {

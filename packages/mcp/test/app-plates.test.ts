@@ -42,6 +42,11 @@ describe('app plate tools', () => {
       expect((await tool.run(tool.input.parse(args) as never, {} as never)).output).toBe(state)
       expect(call).toHaveBeenLastCalledWith(`plates.${action}`, args)
     }
+    // Deleting a plate's objects takes parts off the plate: the remove class, which asks first by default.
+    const remove = tools.find((t) => t.name === 'app.plate_remove')!
+    expect(remove.permissionFor?.(remove.input.parse({ plate: 3, deleteObjects: true }) as never)).toBe('remove')
+    expect(remove.permissionFor?.(remove.input.parse({ plate: 3 }) as never)).toBe('slice')
+    expect((await remove.approval!(remove.input.parse({ plate: 3, deleteObjects: true }) as never, {} as never)).title).toBe('Remove plate 3 and the objects on it?')
     for (const code of ['refused', 'denied', 'read_only']) {
       const tool = appPlateTools({ call: refuse(code) }, 'SlicerX').find((t) => t.name === 'app.plate_remove')!
       await expect(tool.run({ plate: 1 } as never, {} as never)).rejects.toMatchObject({ code: 'not_supported' })
@@ -58,6 +63,13 @@ describe('app plate tools', () => {
         }).then(() => { throw new Error('The missing app must fail') }, (e: unknown) => e as { code: number; stdout: string })
         expect(result.code).toBe(1)
         const lines = result.stdout.trim().split('\n').map((line) => JSON.parse(line))
+        if (action === 'remove') {
+          // Deleting a plate's objects asks first under the default policy, before the app is reached; the chain goes on.
+          expect(lines).toHaveLength(2)
+          expect(lines[0]).toMatchObject({ tool: 'slicerx_app_plate_remove', ok: true, output: { status: 'approval_required', permission: 'remove', title: 'Remove plate 3 and the objects on it?' } })
+          expect(lines[1]).toMatchObject({ tool: 'slicerx_app_plates', ok: false, output: { error: { code: 'not_configured' } } })
+          continue
+        }
         expect(lines).toHaveLength(1)
         expect(lines[0]).toMatchObject({ tool: `slicerx_app_plate_${action}`, ok: false, output: { error: { code: 'not_configured' } } })
       }

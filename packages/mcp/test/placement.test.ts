@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { connect, data, noSx, sxBin, sxTimeout, type Harness } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout, text, type Harness } from './helpers'
 
 type Placement = { id: string; objectId: string; copy: number; centerMm: [number, number]; sizeMm: [number, number, number]; manual: boolean }
 type Obj = { id: string; bbox_mm: number[]; plates: number[]; rotate: number[]; scale: number[]; position: number[] | null; settings: Record<string, unknown>; volumes: { id: string; role: string; shape: string; settings?: Record<string, unknown> }[]; model_bounds: { min: number[]; max: number[] } }
@@ -81,8 +81,23 @@ describe('placing objects', () => {
     // Plate 2 is plate 1 now, and holds both objects.
     expect(p.plates.map((x) => [x.index, x.items.map((i) => i.objectId)])).toEqual([[1, ['obj-2', 'obj-1']]])
 
-    await call(h, 'slicerx_project_remove_object', { object: 'obj-2' })
+    // Taking an object off the plate is the remove class, which asks first by default even with slice on Allow.
+    const asked = await call(h, 'slicerx_project_remove_object', { object: 'obj-2' })
+    expect(asked).toMatchObject({ status: 'approval_required', title: 'Remove obj-2?' })
+    expect((await show(h)).objects.map((o) => o.id)).toEqual(['obj-1', 'obj-2'])
+    const approved = await h.call('slicerx_approve', { request_id: (asked as unknown as { request_id: string }).request_id, approve: true })
+    expect(approved.isError, text(approved)).toBeFalsy()
     expect((await show(h)).objects.map((o) => o.id)).toEqual(['obj-1'])
+  })
+
+  it('removes an object without asking when the policy allows remove, and refuses it when remove is off', async () => {
+    const allowed = await project({ policy: { classes: { slice: 'allow', remove: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } } })
+    await call(allowed, 'slicerx_project_add_model', { model: join(allowed.dir, 'cube.stl') })
+    expect((await call(allowed, 'slicerx_project_remove_object', { object: 'obj-2' })).ok).toBe(true)
+    expect((await show(allowed)).objects.map((o) => o.id)).toEqual(['obj-1'])
+    const off = await project({ policy: { classes: { slice: 'allow', remove: 'off', queue: 'ask', start: 'ask', profile: 'ask' } } })
+    expect((await call(off, 'slicerx_project_remove_object', { object: 'obj-1' })).ok).toBe(false)
+    expect((await show(off)).objects.map((o) => o.id)).toEqual(['obj-1'])
   })
 })
 
