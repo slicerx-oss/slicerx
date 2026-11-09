@@ -6,6 +6,7 @@
 import type { IconName } from '@slicerx/ui'
 import type { ToolIconName } from '@slicerx/ui/tool-icons'
 import type { CadTool } from '../../state/store'
+import { sketchesOff, type SolidTool } from '../../cad/sketch-gates'
 
 export type ShelfGroup = 'create' | 'shape' | 'fasten' | 'mesh' | 'utility'
 /** What a tool can start from: a picked object, face or edge. The shelf's next slot offers the tools for the pick. */
@@ -41,6 +42,8 @@ export interface ShelfTool {
   command: string
   /** The picks it starts from, in the next slot's order for each. */
   accepts?: readonly PickKind[]
+  /** Works on finished sketches, so it waits for enough of them (Loft two, Sweep one); sketchOff says why. */
+  sketches?: SolidTool
 }
 
 export const SHELF_TOOLS: readonly ShelfTool[] = [
@@ -49,6 +52,8 @@ export const SHELF_TOOLS: readonly ShelfTool[] = [
   { id: 'measure', label: 'Measure', icon: 'measure', toolIcon: 'measure', tool: 'measure', shelf: { group: 'utility' }, menu: 1, command: 'object-measure' },
   { id: 'array', label: 'Array', icon: 'array-linear', toolIcon: 'array-linear', tool: 'array', needsSelection: true, shelf: { group: 'shape' }, menu: 1, command: 'object-array', accepts: ['object'] },
   { id: 'sketch', label: 'Sketch', icon: 'sketch', toolIcon: 'sketch', tool: 'sketch', tip: 'sketch.enter', modeling: true, shelf: { group: 'create' }, menu: 1, command: 'object-sketch', accepts: ['face'] },
+  { id: 'loft', label: 'Loft', icon: 'loft', toolIcon: 'loft', tool: 'loft', tip: 'cad.loft', modeling: true, sketches: 'loft', shelf: { group: 'create' }, menu: 1, command: 'object-loft' },
+  { id: 'sweep', label: 'Sweep', icon: 'sweep', toolIcon: 'sweep', tool: 'sweep', tip: 'cad.sweep', modeling: true, sketches: 'sweep', shelf: { group: 'create' }, menu: 1, command: 'object-sweep' },
   { id: 'facesvg', label: 'SVG on a face', icon: 'svg-face', toolIcon: 'svg-face', tool: 'facesvg', tip: 'cad.svgFace', modeling: true, shelf: { group: 'create', menu: 'face' }, menu: 1, command: 'object-svg-face' },
   { id: 'push', label: 'Push and pull', icon: 'push-pull', toolIcon: 'push', tool: 'push', tip: 'cad.push', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-push', accepts: ['face'] },
   { id: 'fillet', label: 'Fillet and chamfer', short: 'Fillet', icon: 'fillet-edge', toolIcon: 'fillet', tool: 'fillet', tip: 'cad.fillet', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-fillet', accepts: ['edge'] },
@@ -85,7 +90,7 @@ export function menuEntryTipAttrs(t: ShelfTool): Record<string, string> {
 }
 
 /** Shelf order inside each group, by id; menus sit where their first entry would. */
-const SHELF_ORDER = ['sketch', 'add', 'face', 'push', 'fillet', 'shell', 'subtract', 'cut', 'array', 'holefit', 'thread', 'mesh', 'measure', 'values']
+const SHELF_ORDER = ['sketch', 'loft', 'sweep', 'add', 'face', 'push', 'fillet', 'shell', 'subtract', 'cut', 'array', 'holefit', 'thread', 'mesh', 'measure', 'values']
 
 /** Up to three tools for what is picked, for the shelf's next slot: none when nothing is. */
 export function nextTools(tools: readonly ShelfTool[], pick: PickKind | null): ShelfTool[] {
@@ -150,6 +155,11 @@ const NEXT_ORDER: Record<PickKind, readonly string[]> = {
   round: ['holefit', 'thread'],
   edge: ['fillet'],
   object: ['cut', 'array', 'holefit'],
+}
+
+/** Why a tool that works on finished sketches is off with this many showing, or null (sketchesOff). */
+export function sketchOff(tool: ShelfTool, shown: number): string | null {
+  return tool.sketches ? sketchesOff(tool.sketches, shown) : null
 }
 
 /** The tools this build and these settings offer. */

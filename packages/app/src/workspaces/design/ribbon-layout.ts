@@ -38,7 +38,7 @@ const EXPORT: RibbonItem = { kind: 'menu', id: 'export', label: 'Export', icon: 
 
 export const RIBBON: Readonly<Record<RibbonTab, readonly RibbonGroup[]>> = {
   solid: [
-    { id: 'create', label: 'Create', items: [tool('sketch'), EXTRUDE, REVOLVE, { kind: 'menu', id: 'add', label: 'Add shape', icon: 'box-shape' }, { kind: 'menu', id: 'face', label: 'On a face', icon: 'on-face' }] },
+    { id: 'create', label: 'Create', items: [tool('sketch'), EXTRUDE, REVOLVE, tool('loft'), tool('sweep'), { kind: 'menu', id: 'add', label: 'Add shape', icon: 'box-shape' }, { kind: 'menu', id: 'face', label: 'On a face', icon: 'on-face' }] },
     {
       id: 'modify',
       label: 'Modify',
@@ -69,7 +69,7 @@ export const RIBBON: Readonly<Record<RibbonTab, readonly RibbonGroup[]>> = {
       ],
     },
     { id: 'edit', label: 'Edit', items: [draw('draw-trim', 'Trim', 'trim', 'Trim (T)'), draw('draw-dimension', 'Dimension', 'dimension', 'Dimension (D)'), act('mirror', 'Mirror', 'mirror', 'Mirror the selected loop across a straight line.')] },
-    { id: 'make', label: 'Make', items: [act('look', 'Look at', 'look-at', 'Turn the view square on to the sketch.'), EXTRUDE, REVOLVE] },
+    { id: 'make', label: 'Make', items: [act('look', 'Look at', 'look-at', 'Turn the view square on to the sketch.'), EXTRUDE, REVOLVE, tool('loft'), tool('sweep')] },
   ],
 }
 

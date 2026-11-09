@@ -170,6 +170,8 @@ button.select-pill-made { color: var(--muted); }
 .dtree-part[data-later] { opacity: 0.45; }
 .dtree-part[data-current] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 .dtree-part[data-current] .sx-ic { color: var(--accent); }
+/* the mark a sketch picked for Loft or Sweep shows: its number, or Profile and Path */
+.dtree-pick { margin-left: auto; flex: none; padding: 0 4px; border-radius: var(--r-xs); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .cad-step[data-later] .cad-step-icon, .cad-step[data-later] .cad-step-n { opacity: 0.45; }
 span.cad-step-n, span.cad-step-name { cursor: default; }
 

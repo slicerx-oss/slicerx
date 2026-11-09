@@ -50,6 +50,8 @@ export const TIPS = {
   'cad.push': f('Push and pull', 'Drag a flat face in or out to cut or add material. Hold Shift for 1 mm steps.'),
   'sketch.enter': f('Sketch', 'Draw a 2D shape on the bed or a flat face.'),
   'cad.svgFace': f('SVG on a face', 'Place an SVG outline on a face or the bed, then join, cut or add it.'),
+  'cad.loft': f('Loft', 'A solid through two or more sketches, in the order you pick them.'),
+  'cad.sweep': f('Sweep', 'Carry a profile sketch along a path sketch or an edge.'),
   'cad.fillet': f('Fillet and chamfer', 'Round or bevel straight edges between flat faces; Shift and click adds edges.'),
   'cad.edgeLoop': { ...f('Whole loop', 'Add every edge around the face the last pick was on.'), demo: 'whole-loop' },
   'sketch.corners': { ...f('Round corners', 'Round or bevel corners between two straight lines of the picked loop.'), demo: 'round-corners' },

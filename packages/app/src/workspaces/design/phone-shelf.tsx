@@ -29,7 +29,8 @@ import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
 import { setPhoneSketchSlot, usePhoneSketchUsed } from './phone-slot'
 import { nextPick } from './shelf'
-import { availableTools, nextSlot, pickWords, SHELF_GROUPS, type DialogTool, type ShelfTool } from './shelf-tools'
+import { availableTools, nextSlot, pickWords, SHELF_GROUPS, sketchOff, type DialogTool, type ShelfTool } from './shelf-tools'
+import { shownSketches } from '../../cad/sketch-gates'
 import { ViewRing } from './view-ring'
 import { SelectOtherList } from './select-other-list'
 import './phone-model.css'
@@ -74,6 +75,7 @@ function SlotButton({ icon, label, pressed, expanded, onClick, testId, disabled 
 export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
+  const sketchCount = useApp((s) => shownSketches(s.timeline).length)
   const pickKey = useApp((s) => {
     const p = nextPick(s)
     return p ? `${p.kind}:${p.count}` : ''
@@ -137,7 +139,7 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
     setMenu(null)
     void fn().catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'))
   }
-  const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
+  const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading') || sketchOff(t, sketchCount) !== null
   const choose = (t: ShelfTool) => {
     setMenu(null)
     if (t.run === 'repair') return run(() => repairSelected(host.slicer))

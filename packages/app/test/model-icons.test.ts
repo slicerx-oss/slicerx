@@ -43,6 +43,12 @@ describe('Model icons', () => {
     expect(stepIcon(step({ op: 'shape.extrude', shape: { type: 'circle' }, spec: { operation: 'cut' } }))).toBe('hole-fit')
   })
 
+  it('shows a loft or sweep step with the icon of the tool that made it', () => {
+    const icon = (id: string) => SHELF_TOOLS.find((t) => t.id === id)?.icon
+    expect(stepIcon(step({ op: 'sketch.loft' }))).toBe(icon('loft'))
+    expect(stepIcon(step({ op: 'sketch.sweep' }))).toBe(icon('sweep'))
+  })
+
   it('shows the sketch icon only on the sketch sub-row, not on what was made from it', () => {
     const extrude = step({ op: 'shape.extrude', shape: { type: 'sketch', loops: [[]] }, spec: { operation: 'new' } })
     expect(stepSketch(extrude)).toEqual({ loops: 1 })

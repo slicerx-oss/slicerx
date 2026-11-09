@@ -25,6 +25,16 @@ describe('the ribbon layout', () => {
     expect(solid).toEqual(expect.arrayContaining(['sketch', 'extrude', 'revolve', 'push', 'cut', 'array', 'holefit']))
   })
 
+  it('puts Loft and Sweep after Revolve in Solid > Create and Sketch > Make', () => {
+    const ids = (tab: 'solid' | 'sketch', group: string) => ribbonGroups(tab, all, true).find((g) => g.id === group)!.items.map((i) => i.id)
+    for (const [tab, group] of [['solid', 'create'], ['sketch', 'make']] as const) {
+      const list = ids(tab, group)
+      expect(list.slice(list.indexOf('revolve'), list.indexOf('revolve') + 3), `${tab} ${group}`).toEqual(['revolve', 'loft', 'sweep'])
+    }
+    // and they wear their own icons, on the shelf entry every place reads
+    expect(SHELF_TOOLS.filter((t) => t.id === 'loft' || t.id === 'sweep').map((t) => [t.icon, t.toolIcon, t.shelf?.group])).toEqual([['loft', 'loft', 'create'], ['sweep', 'sweep', 'create']])
+  })
+
   it('places every shelf tool that has a shelf place, and Auto orient in Mesh', () => {
     const where = placed(true)
     // the On a face tools stay in their menu; the old Mesh menu's tools sit on the Mesh tab as buttons
@@ -45,7 +55,7 @@ describe('the ribbon layout', () => {
   it('without the modeling tools, no Sketch tab and no modeling items', () => {
     expect(ribbonTabs(false).map((t) => t.id)).toEqual(['solid', 'mesh'])
     const where = placed(false, availableTools({ modeling: false, drawing: true }))
-    for (const id of ['sketch', 'push', 'fillet', 'thread']) expect(where.has(`tool:${id}`), id).toBe(false)
+    for (const id of ['sketch', 'loft', 'sweep', 'push', 'fillet', 'thread']) expect(where.has(`tool:${id}`), id).toBe(false)
     for (const id of ['extrude', 'revolve', 'chamfer']) expect(where.has(`action:${id}`), id).toBe(false)
     expect(where.has('menu:face')).toBe(false)
     for (const id of ['cut', 'measure', 'array', 'repair']) expect(where.has(`tool:${id}`), id).toBe(true)

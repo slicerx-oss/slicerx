@@ -189,6 +189,8 @@ export function toolFor(p: StepParams): CadTool | null {
   if (p.op === 'hole.apply') return 'holefit'
   if (p.op === 'thread.apply') return 'thread'
   if (p.op === 'shell') return 'shell'
+  if (p.op === 'sketch.loft') return 'loft'
+  if (p.op === 'sketch.sweep') return 'sweep'
   return null
 }
 
@@ -280,12 +282,15 @@ export function editing(): { entry: PlateEntry; step: Step; index: number } | nu
  * Saves the open step with new params, given in the object's world now, and replays the steps after
  * it. The step keeps its place and id; it is no longer suppressed.
  */
-export async function saveEdit(host: Loader, params: StepParams): Promise<{ status: StepStatus[] }> {
+export async function saveEdit(host: Loader, params: StepParams, extra: Pick<Step, 'uses'> = {}): Promise<{ status: StepStatus[] }> {
   const ed = editing()
   if (!ed) throw new Error('No step is open for editing.')
   const h = ed.entry.history!
   const before = h.steps.slice(0, ed.index)
-  const { broken: _b, suppressed: _s, follow: _f, bind: old, ...keep } = ed.step
+  const { broken: _b, suppressed: _s, follow: _f, bind: old, ...was } = ed.step
+  // a loft or sweep saved from its panel names the sketches it now copies from, which may differ from before
+  const { uses: _u, ...rest } = was
+  const keep = 'uses' in extra ? { ...rest, ...(extra.uses?.length ? { uses: [...extra.uses] } : {}) } : was
   // What the tool's field said this time, or the old binding when it still gives the step's number.
   const typed = takeBind(params)
   const n = mainNumber(params)
@@ -347,9 +352,9 @@ function reasonAfterColon(raw: string | undefined): string {
 }
 
 /** Saves the open step (saveEdit) and says how it went (editedWords), against the history as it was before. */
-export async function saveStep(host: Loader, params: StepParams): Promise<{ message: string; warn: boolean }> {
+export async function saveStep(host: Loader, params: StepParams, extra: Pick<Step, 'uses'> = {}): Promise<{ message: string; warn: boolean }> {
   const ed = editing()
-  const r = await saveEdit(host, params)
+  const r = await saveEdit(host, params, extra)
   return editedWords(ed?.index ?? 0, r.status, ed?.entry.history?.steps ?? [], (i) => (ed ? stepNumber(ed.entry.id, i) : i + 1))
 }
 

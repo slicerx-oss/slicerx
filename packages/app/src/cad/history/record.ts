@@ -82,14 +82,17 @@ export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
  * as it was. `transform` is the object's transform the params were given in (world values). `sketch`, when given, is
  * the timeline sketch the step draws on, in place of the one sketchNext set.
  */
-export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform, exactReplay = false, sketch?: string): History {
+export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform, exactReplay = false, sketch?: string, uses?: readonly string[]): History {
   if (before.history?.exact && !exactReplay) throw new Error('This operation requires exact replay. The design is unchanged.')
-  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch) })
+  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch), ...usesField(uses) })
 }
 
-/** A new body made by a step: empty base, the step first. `transform` is the new object's transform; `sketch` as in withStep. */
-export function bodyHistory(params: StepParams, transform: number[], sketch?: string): History {
-  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch) }] }
+/** A loft's or sweep's source sketches as a step field (Step.uses), or none. */
+const usesField = (uses: readonly string[] | undefined): { uses?: string[] } => (uses?.length ? { uses: [...uses] } : {})
+
+/** A new body made by a step: empty base, the step first. `transform` is the new object's transform; `sketch` and `uses` as in withStep. */
+export function bodyHistory(params: StepParams, transform: number[], sketch?: string, uses?: readonly string[]): History {
+  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params), ...takeSketch(params, sketch), ...usesField(uses) }] }
 }
 
 /** After an edit that is not a step: no history, or a fresh one starting from `parts` with the reason shown. */

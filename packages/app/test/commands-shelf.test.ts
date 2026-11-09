@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Each shelf tool has one command bar entry, gated the way the shelf gates it: by the edition's modeling tools, the
-// drawing tools switch and the selection.
+// drawing tools switch, the selection, and for Loft and Sweep the finished sketches there are to use.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { plateCommands } from '../src/plate/commands'
@@ -12,7 +12,10 @@ const commands = () => plateCommands(() => ({ id: 'slicerx' }), undefined)
 const command = (id: string) => commands().find((c) => c.id === id)
 const on = (id: string) => command(id)?.enabled?.() ?? true
 
-beforeEach(() => set({ selection: null, selectedIds: [], cadTools: true }))
+const sketch = (n: number) => ({ kind: 'sketch' as const, id: `k${n}`, name: `Sketch ${n}`, loops: [{ type: 'circle' as const, center: [0, 0] as [number, number], diameterMm: 10 }] })
+const sketches = (n: number) => ({ bodies: [], items: Array.from({ length: n }, (_, i) => sketch(i + 1)), marker: n }) as never
+
+beforeEach(() => set({ selection: null, selectedIds: [], cadTools: true, timeline: sketches(2) }))
 afterEach(() => setCurrentEdition(NEUTRAL))
 
 describe('shelf tool commands', () => {
@@ -26,6 +29,15 @@ describe('shelf tool commands', () => {
     for (const t of SHELF_TOOLS) expect(on(t.command), t.id).toBe(!t.needsSelection)
     set({ selection: 'a', selectedIds: ['a'] })
     for (const t of SHELF_TOOLS) expect(on(t.command), t.id).toBe(true)
+  })
+
+  it('waits for two finished sketches for Loft and one for Sweep', () => {
+    set({ timeline: sketches(0) })
+    expect([on('object-loft'), on('object-sweep')]).toEqual([false, false])
+    set({ timeline: sketches(1) })
+    expect([on('object-loft'), on('object-sweep')]).toEqual([false, true])
+    set({ timeline: sketches(2) })
+    expect([on('object-loft'), on('object-sweep')]).toEqual([true, true])
   })
 
   it('turns the drawing tools off with the drawing switch', () => {

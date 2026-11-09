@@ -26,7 +26,7 @@ afterEach(() => {
 describe('the shelf', () => {
   it('groups the tools as the plan does', () => {
     expect(SHELF_GROUPS.map((g) => g.id)).toEqual(['create', 'shape', 'fasten', 'mesh', 'utility'])
-    expect(names('create')).toEqual(['Sketch', 'face: SVG on a face, Shape on a face, Text on a face'])
+    expect(names('create')).toEqual(['Sketch', 'Loft', 'Sweep', 'face: SVG on a face, Shape on a face, Text on a face'])
     expect(names('shape')).toEqual(['Push and pull', 'Fillet', 'Shell', 'Subtract', 'Cut', 'Array'])
     expect(names('fasten')).toEqual(['Hole', 'Thread'])
     expect(names('mesh')).toEqual(['mesh: Hollow, Repair mesh, Simplify mesh'])
@@ -95,7 +95,7 @@ describe('the Tools menu in Slice', () => {
     const tools = availableTools({ modeling: true, drawing: true })
     expect(tools.map((t) => t.label)).toEqual([
       'Cut', 'Auto orient',
-      'Measure', 'Array', 'Sketch', 'SVG on a face', 'Push and pull', 'Fillet and chamfer', 'Hole for a screw or insert', 'Thread', 'Shell with open faces', 'Named values',
+      'Measure', 'Array', 'Sketch', 'Loft', 'Sweep', 'SVG on a face', 'Push and pull', 'Fillet and chamfer', 'Hole for a screw or insert', 'Thread', 'Shell with open faces', 'Named values',
       'Shape on a face', 'Text on a face', 'Subtract a shape',
       'Hollow', 'Repair mesh', 'Simplify mesh',
     ])
