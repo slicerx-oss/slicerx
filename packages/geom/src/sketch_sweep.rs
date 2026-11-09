@@ -26,13 +26,225 @@ const MIN_START_DEG: f64 = 1.0;
 const MIN_STEP_MM: f64 = 1e-6;
 
 /// The path of a sweep: one open chain of lines, arcs and splines drawn on a plane (the bed when `frame` is absent), or an
-/// open polyline of points in space.
+/// open polyline of points in space, taken as a smooth curve through them when `smooth`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Path {
     pub frame: Option<FaceFrame>,
     pub loops: Vec<Loop>,
     pub points: Vec<V3>,
+    pub smooth: bool,
+}
+
+/// The smallest end scale, against the start.
+pub const MIN_SCALE: f64 = 0.05;
+
+/// The profile's size at the end of the path against its start: one number for both ways, or one along each of its u
+/// and v.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Scale {
+    Even(f64),
+    Each([f64; 2]),
+}
+
+impl Default for Scale {
+    fn default() -> Self {
+        Self::Even(1.0)
+    }
+}
+
+impl Scale {
+    fn uv(self) -> [f64; 2] {
+        match self {
+            Self::Even(s) => [s, s],
+            Self::Each(s) => s,
+        }
+    }
+}
+
+/// How the change runs from the start of the path to its end.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Ease {
+    /// in step with the length along the path
+    #[default]
+    Linear,
+    /// slow at both ends and quickest halfway
+    Smooth,
+}
+
+/// How the profile changes along the path, by length from its start: scaled about its own origin to `scale_end` at
+/// the end, and turned `twist_deg` about the path (counterclockwise looking back along it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Law {
+    pub scale_end: Scale,
+    pub twist_deg: f64,
+    pub ease: Ease,
+}
+
+impl Law {
+    fn check(&self) -> Result<()> {
+        let [su, sv] = self.scale_end.uv();
+        if let Some(s) = [su, sv].into_iter().find(|s| !s.is_finite() || *s < MIN_SCALE) {
+            return Err(Error::invalid(
+                "scaleEnd",
+                format!("the end scale must be {MIN_SCALE} or more of the start, not {s}"),
+            ));
+        }
+        if !self.twist_deg.is_finite() {
+            return Err(Error::invalid("twistDeg", "must be a number"));
+        }
+        Ok(())
+    }
+
+    #[allow(
+        clippy::float_cmp,
+        reason = "only the exact defaults leave the sweep as it was"
+    )]
+    fn plain(&self) -> bool {
+        self.scale_end.uv() == [1.0, 1.0] && self.twist_deg == 0.0
+    }
+
+    /// The scale along u and v and the turn in radians at fraction `f` of the path's length.
+    fn at(&self, f: f64) -> ([f64; 2], f64) {
+        let e = match self.ease {
+            Ease::Linear => f,
+            Ease::Smooth => f * f * (3.0 - 2.0 * f),
+        };
+        let [su, sv] = self.scale_end.uv();
+        (
+            [1.0 + (su - 1.0) * e, 1.0 + (sv - 1.0) * e],
+            self.twist_deg.to_radians() * e,
+        )
+    }
+
+    /// `offs` (from the path point) scaled about the profile's origin `fo` along `fu` and `fv`, then turned about the
+    /// path's direction `t`, as they are at fraction `f`.
+    fn shape(&self, offs: &[V3], f: f64, fo: V3, (fu, fv): (V3, V3), t: V3) -> Vec<V3> {
+        let ([su, sv], a) = self.at(f);
+        let (s, c) = a.m_sin_cos();
+        offs.iter()
+            .map(|&o| {
+                let d = vec3::sub(o, fo);
+                let o = vec3::add(
+                    o,
+                    vec3::add(
+                        vec3::scale(fu, (su - 1.0) * vec3::dot(d, fu)),
+                        vec3::scale(fv, (sv - 1.0) * vec3::dot(d, fv)),
+                    ),
+                );
+                vec3::add(
+                    vec3::add(vec3::scale(o, c), vec3::scale(vec3::cross(t, o), s)),
+                    vec3::scale(t, vec3::dot(t, o) * (1.0 - c)),
+                )
+            })
+            .collect()
+    }
+
+    /// The farthest a profile point within `reach` of the profile's origin, with the path `off` from that origin,
+    /// strays from the straight side between fractions `a` and `b`: the 2 by 2 maps of the law, bounded by their size.
+    /// Quarter points too, since the smooth ease meets the straight side halfway.
+    fn stray(&self, a: f64, b: f64, reach: f64, off: f64) -> f64 {
+        let map = |f: f64| {
+            let ([su, sv], t) = self.at(f);
+            let (s, c) = t.m_sin_cos();
+            ([c * su, -s * sv, s * su, c * sv], [c, -s, s, c])
+        };
+        let ((m0, r0), (m1, r1)) = (map(a), map(b));
+        let size = |x: [f64; 4], y: [f64; 4], z: [f64; 4], q: f64| {
+            (0..4)
+                .map(|i| (z[i] - (1.0 - q) * x[i] - q * y[i]).m_powi(2))
+                .sum::<f64>()
+                .sqrt()
+        };
+        [0.25, 0.5, 0.75]
+            .into_iter()
+            .map(|q| {
+                let (mq, rq) = map(a + (b - a) * q);
+                size(m0, m1, mq, q) * reach + size(r0, r1, rq, q) * off
+            })
+            .fold(0.0, f64::max)
+    }
+
+    /// The path with points added along its pieces until the sides follow the law within the arc tolerance, and the
+    /// piece of the given path each point starts. At most `most` points.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "step counts are capped far below 2^52"
+    )]
+    fn refine(&self, pts: &[V3], reach: f64, off: f64, most: usize) -> Result<(Vec<V3>, Vec<usize>)> {
+        if self.plain() {
+            return Ok((pts.to_vec(), (0..pts.len()).collect()));
+        }
+        let at = fractions(pts);
+        let too_many = || {
+            Error::invalid(
+                "twistDeg",
+                format!(
+                    "the twist and scale need more than {most} points along the path; use less twist or a simpler profile"
+                ),
+            )
+        };
+        let mut counts = Vec::with_capacity(pts.len() - 1);
+        let mut total = 1usize;
+        for k in 0..pts.len() - 1 {
+            let (a, b) = (at[k], at[k + 1]);
+            let mut n = 1usize;
+            loop {
+                let step = (b - a) / n as f64;
+                let worst = (0..n)
+                    .map(|j| self.stray(a + step * j as f64, a + step * (j + 1) as f64, reach, off))
+                    .fold(0.0f64, f64::max);
+                if worst <= sketch_loft::SMOOTH_TOL_MM {
+                    break;
+                }
+                // the stray falls with the square of the step
+                n = ((n as f64 * (worst / sketch_loft::SMOOTH_TOL_MM).sqrt()).ceil() as usize).max(n + 1);
+                if total + n > most {
+                    return Err(too_many());
+                }
+            }
+            total += n;
+            if total > most {
+                return Err(too_many());
+            }
+            counts.push(n);
+        }
+        let mut out = Vec::with_capacity(total);
+        let mut of = Vec::with_capacity(total);
+        for (k, &n) in counts.iter().enumerate() {
+            for j in 0..n {
+                out.push(vec3::lerp(pts[k], pts[k + 1], j as f64 / n as f64));
+                of.push(k);
+            }
+        }
+        out.push(pts[pts.len() - 1]);
+        of.push(pts.len() - 1);
+        Ok((out, of))
+    }
+}
+
+/// Each point's length along the polyline as a fraction of the whole, 0 to 1.
+fn fractions(pts: &[V3]) -> Vec<f64> {
+    let mut at = Vec::with_capacity(pts.len());
+    let mut run = 0.0;
+    at.push(0.0);
+    for w in pts.windows(2) {
+        run += vec3::len(vec3::sub(w[1], w[0]));
+        at.push(run);
+    }
+    let whole = run.max(f64::MIN_POSITIVE);
+    for a in &mut at {
+        *a /= whole;
+    }
+    if let Some(l) = at.last_mut() {
+        *l = 1.0;
+    }
+    at
 }
 
 /// The solid swept from `profile` along `path`: the profile keeps its place and turn relative to the path (a rotation
@@ -41,22 +253,23 @@ pub struct Path {
 /// sweeps exact prisms and a flattened arc follows the arc. The profile does not need to touch the path; it is carried
 /// as it sits relative to the path's start.
 pub fn sweep(profile: &Profile, path: &Path) -> Result<TriMesh> {
-    sweep_with(profile, path, None)
+    sweep_with(profile, path, None, &Law::default())
 }
 
-/// The sweep, with its sides made a shell `thicken` thick and no caps when that is given. An open profile makes a
-/// surface, so it needs `thicken`.
+/// The sweep, with the profile scaled and turned along the path by `law`, and its sides made a shell `thicken` thick
+/// and no caps when that is given. An open profile makes a surface, so it needs `thicken`.
 #[allow(
     clippy::too_many_lines,
     reason = "one pass from the profile and path to the mesh"
 )]
-pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> Result<TriMesh> {
+pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>, law: &Law) -> Result<TriMesh> {
     if profile.open && thicken.is_none() {
         return Err(Error::invalid(
             "thicken",
             "an open profile makes a surface; give thicken to make it a solid",
         ));
     }
+    law.check()?;
     let (pts, t_start, t_end) = path_points(path)?;
     let frame = profile
         .frame
@@ -73,6 +286,12 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> 
     } else {
         sketch_loft::one_ring(&profile.loops, "sweep").map_err(|why| Error::invalid("profile", why))?
     };
+    let reach = flat.iter().fold(0.0f64, |r, p| r.max(p[0].m_hypot(p[1])));
+    let off = {
+        let d = vec3::sub(pts[0], frame.origin);
+        vec3::len(vec3::sub(d, vec3::scale(frame.w, vec3::dot(d, frame.w))))
+    };
+    let (pts, of) = law.refine(&pts, reach, off, MAX_POINTS / flat.len().max(1))?;
     if flat.len().saturating_mul(pts.len()) > MAX_POINTS {
         return Err(Error::invalid(
             "path",
@@ -82,6 +301,7 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> 
         ));
     }
     let m = pts.len();
+    let at = fractions(&pts);
     let tangents: Vec<V3> = (0..m - 1)
         .map(|k| vec3::normalize(vec3::sub(pts[k + 1], pts[k])).unwrap_or([0.0, 0.0, 1.0]))
         .collect();
@@ -92,79 +312,108 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> 
     if facing < 0.0 {
         flat.reverse();
     }
-    let profile_pts: Vec<V3> = flat.iter().map(|&p| frame.at(p, 0.0)).collect();
-    let size = profile_pts
+    let [su, sv] = law.scale_end.uv();
+    let size = flat
         .iter()
-        .chain(pts.iter())
+        .map(|&p| frame.at(p, 0.0))
+        .chain(pts.iter().copied())
         .fold(0.0f64, |s, p| s.max(p[0].abs()).max(p[1].abs()).max(p[2].abs()))
-        .max(1.0);
+        .max(1.0)
+        * su.max(sv).max(1.0);
     let eps = size * 1e-9;
 
     // Each profile point and the profile's axes, from the path's start, carried along the path. A flattened arc's first
     // chord leaves at half a chord's turn from the arc itself, so they turn by that first; the side lines then meet the
-    // profile's plane in a copy of it stretched by at most the arc's own flattening tolerance.
-    let lead = |v: V3| turned(v, t_start, tangents[0]);
-    let mut offs: Vec<V3> = profile_pts.iter().map(|&p| lead(vec3::sub(p, pts[0]))).collect();
-    let (mut fo, mut fu, mut fv, mut fw) = (
-        lead(vec3::sub(frame.origin, pts[0])),
-        lead(frame.u),
-        lead(frame.v),
-        lead(frame.w),
-    );
-    let mut rings: Vec<Vec<V3>> = Vec::with_capacity(m);
-    rings.push(onto(&offs, pts[0], tangents[0], frame.origin, frame.w));
-    for k in 1..m - 1 {
-        let (t0, t1) = (tangents[k - 1], tangents[k]);
-        // the miter plane between the two directions; `path_points` refused a path that doubles back
-        let nm = vec3::normalize(vec3::add(t0, t1)).unwrap_or(t0);
-        let den = vec3::dot(t0, nm);
-        rings.push(
-            offs.iter()
-                .map(|&o| {
-                    let t = -vec3::dot(o, nm) / den;
-                    vec3::add(pts[k], vec3::add(o, vec3::scale(t0, t)))
-                })
-                .collect(),
+    // profile's plane in a copy of it stretched by at most the arc's own flattening tolerance. Each ring takes the law
+    // on the carried points before they go onto its plane.
+    let carry = |flat: &[V2]| -> Result<(Vec<Vec<V3>>, Frame)> {
+        let lead = |v: V3| turned(v, t_start, tangents[0]);
+        let mut offs: Vec<V3> = flat
+            .iter()
+            .map(|&p| lead(vec3::sub(frame.at(p, 0.0), pts[0])))
+            .collect();
+        let (mut fo, mut fu, mut fv, mut fw) = (
+            lead(vec3::sub(frame.origin, pts[0])),
+            lead(frame.u),
+            lead(frame.v),
+            lead(frame.w),
         );
-        let turn = |v: V3| turned(v, t0, t1);
-        for o in &mut offs {
-            *o = turn(*o);
+        let mut rings: Vec<Vec<V3>> = Vec::with_capacity(m);
+        let first = law.shape(&offs, 0.0, fo, (fu, fv), tangents[0]);
+        rings.push(onto(&first, pts[0], tangents[0], frame.origin, frame.w));
+        for k in 1..m - 1 {
+            let (t0, t1) = (tangents[k - 1], tangents[k]);
+            // the miter plane between the two directions; `path_points` refused a path that doubles back
+            let nm = vec3::normalize(vec3::add(t0, t1)).unwrap_or(t0);
+            let den = vec3::dot(t0, nm);
+            rings.push(
+                law.shape(&offs, at[k], fo, (fu, fv), t0)
+                    .into_iter()
+                    .map(|o| {
+                        let t = -vec3::dot(o, nm) / den;
+                        vec3::add(pts[k], vec3::add(o, vec3::scale(t0, t)))
+                    })
+                    .collect(),
+            );
+            let turn = |v: V3| turned(v, t0, t1);
+            for o in &mut offs {
+                *o = turn(*o);
+            }
+            (fo, fu, fv, fw) = (turn(fo), turn(fu), turn(fv), turn(fw));
         }
-        (fo, fu, fv, fw) = (turn(fo), turn(fu), turn(fv), turn(fw));
-    }
-    // the end cap: the profile's plane carried to the end, turned to the way the path arrives there
-    let last = tangents[m - 2];
-    let tail = |v: V3| turned(v, last, t_end);
-    let (fo, fu, fv, fw) = (tail(fo), tail(fu), tail(fv), tail(fw));
-    let end_origin = vec3::add(pts[m - 1], fo);
-    across(last, fw, facing)?;
-    rings.push(onto(&offs, pts[m - 1], last, end_origin, fw));
-
-    sides_forward(&rings, &pts, &tangents, eps)?;
-
-    let end_frame = Frame {
-        origin: end_origin,
-        u: fu,
-        v: fv,
-        w: fw,
+        // the end cap: the profile's plane carried to the end, turned to the way the path arrives there
+        let last = tangents[m - 2];
+        let tail = |v: V3| turned(v, last, t_end);
+        let end = Frame {
+            origin: vec3::add(pts[m - 1], tail(fo)),
+            u: tail(fu),
+            v: tail(fv),
+            w: tail(fw),
+        };
+        across(last, end.w, facing)?;
+        let shaped = law.shape(&offs, 1.0, fo, (fu, fv), last);
+        rings.push(onto(&shaped, pts[m - 1], last, end.origin, end.w));
+        Ok((rings, end))
     };
+    let (mut rings, mut end) = carry(&flat)?;
+    if !law.plain()
+        && let Some(finer) = split_bowed(&flat, &rings, !profile.open, MAX_POINTS / m)?
+    {
+        flat = finer;
+        (rings, end) = carry(&flat)?;
+    }
+
+    sides_forward(&rings, &pts, &tangents, eps, law.scale_end != Scale::default())?;
+
     if let Some(t) = thicken {
-        let spans: Vec<usize> = (0..rings.len()).collect();
-        let surface = sketch_loft::build_rows(&rings, &spans, !profile.open, None, None, size)?;
+        let surface = sketch_loft::build_rows(&rings, &of, !profile.open, None, None, size)?;
         return thicken::thicken(&surface, t);
     }
-    let count = rings.len();
-    let sections: Vec<Section> = rings
-        .into_iter()
-        .enumerate()
-        .map(|(k, ring)| Section {
-            center: sketch_loft::centroid(&ring),
-            ring,
-            flat: flat.clone(),
-            frame: if k + 1 == count { end_frame } else { frame },
-        })
-        .collect();
-    let mesh = sketch_loft::build(&sections, size)?;
+    // the end cap is the section as the law leaves it, in its own plane
+    let end_flat = if law.plain() {
+        flat.clone()
+    } else {
+        rings[m - 1]
+            .iter()
+            .map(|&p| {
+                let d = vec3::sub(p, end.origin);
+                [vec3::dot(d, end.u), vec3::dot(d, end.v)]
+            })
+            .collect()
+    };
+    let start = Section {
+        center: sketch_loft::centroid(&rings[0]),
+        ring: rings[0].clone(),
+        flat,
+        frame,
+    };
+    let finish = Section {
+        center: sketch_loft::centroid(&rings[m - 1]),
+        ring: rings[m - 1].clone(),
+        flat: end_flat,
+        frame: end,
+    };
+    let mesh = sketch_loft::build_rows(&rings, &of, true, None, Some((&start, &finish)), size)?;
     if boolean::Solid::new(&mesh).is_ok_and(|s| s.self_intersects()) {
         return Err(Error::geometry(
             "sweep",
@@ -174,8 +423,60 @@ pub fn sweep_with(profile: &Profile, path: &Path, thicken: Option<&Thicken>) -> 
     Ok(mesh)
 }
 
+/// The profile with points added along each edge whose side quads bow out of their plane by more than the arc
+/// tolerance (a turned or unevenly scaled side does), or None when none do. A quad bows by a quarter of the skew of its
+/// corners across its plane, which grows with the edge's length.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "cut counts are capped far below 2^52"
+)]
+fn split_bowed(flat: &[V2], rings: &[Vec<V3>], closed: bool, most: usize) -> Result<Option<Vec<V2>>> {
+    let n = flat.len();
+    let edges = if closed { n } else { n - 1 };
+    let mut cuts = vec![1usize; edges];
+    for (j, c) in cuts.iter_mut().enumerate() {
+        let i = (j + 1) % n;
+        let bow = rings
+            .windows(2)
+            .map(|w| {
+                let (a0, a1, b0, b1) = (w[0][j], w[0][i], w[1][j], w[1][i]);
+                let skew = vec3::sub(vec3::add(a0, b1), vec3::add(a1, b0));
+                vec3::normalize(vec3::cross(vec3::sub(b1, a0), vec3::sub(b0, a1)))
+                    .map_or(0.0, |nn| vec3::dot(skew, nn).abs() / 4.0)
+            })
+            .fold(0.0f64, f64::max);
+        *c = (bow / sketch_loft::SMOOTH_TOL_MM).ceil().clamp(1.0, most as f64) as usize;
+    }
+    if cuts.iter().all(|&c| c == 1) {
+        return Ok(None);
+    }
+    let total = n + cuts.iter().map(|c| c - 1).sum::<usize>();
+    if total > most {
+        return Err(Error::invalid(
+            "twistDeg",
+            format!(
+                "the twist and scale need more than {most} points around the profile; use less twist or a simpler profile"
+            ),
+        ));
+    }
+    let mut out = Vec::with_capacity(total);
+    for (j, &p) in flat.iter().enumerate() {
+        out.push(p);
+        if let Some(&c) = cuts.get(j) {
+            let q = flat[(j + 1) % n];
+            out.extend((1..c).map(|s| {
+                let t = s as f64 / c as f64;
+                [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]
+            }));
+        }
+    }
+    Ok(Some(out))
+}
+
 /// Fails when a side line runs back along its piece of the path between two rings: the sides would cross there.
-fn sides_forward(rings: &[Vec<V3>], pts: &[V3], tangents: &[V3], eps: f64) -> Result<()> {
+fn sides_forward(rings: &[Vec<V3>], pts: &[V3], tangents: &[V3], eps: f64, scaled: bool) -> Result<()> {
     for k in 0..tangents.len() {
         let back = rings[k]
             .iter()
@@ -186,8 +487,11 @@ fn sides_forward(rings: &[Vec<V3>], pts: &[V3], tangents: &[V3], eps: f64) -> Re
             return Err(Error::geometry(
                 "sweep",
                 format!(
-                    "the path bends too tightly for the profile near ({:.2}, {:.2}, {:.2}) mm, so the sides would cross; use a wider bend or a smaller profile",
-                    at[0], at[1], at[2]
+                    "the path bends too tightly for the profile near ({:.2}, {:.2}, {:.2}) mm, so the sides would cross; use a wider bend or a smaller profile{}",
+                    at[0],
+                    at[1],
+                    at[2],
+                    if scaled { " or end scale" } else { "" }
                 ),
             ));
         }
@@ -271,7 +575,26 @@ fn path_points(path: &Path) -> Result<(Vec<V3>, V3, V3)> {
             if let Some(i) = path.points.iter().position(|p| !p.iter().all(|c| c.is_finite())) {
                 return Err(Error::invalid("path", format!("point {} is not a number", i + 1)));
             }
-            path.points.clone()
+            if path.smooth {
+                if path.points.len() > MAX_PATH {
+                    return Err(Error::invalid(
+                        "path",
+                        format!("a smooth path takes at most {MAX_PATH} points"),
+                    ));
+                }
+                apart(&path.points)?;
+                let (pts, start, end) = smooth(&path.points)?;
+                ends = Some((start, end));
+                pts
+            } else {
+                path.points.clone()
+            }
+        }
+        ([_], true) if path.smooth => {
+            return Err(Error::invalid(
+                "path",
+                "smooth is for a path of points; draw a spline for a smooth path on a plane",
+            ));
         }
         ([(l, lp)], true) => {
             let frame = path
@@ -302,12 +625,7 @@ fn path_points(path: &Path) -> Result<(Vec<V3>, V3, V3)> {
             format!("more than {MAX_PATH} points once its arcs are flattened"),
         ));
     }
-    if let Some(i) = (1..pts.len()).find(|&i| vec3::len(vec3::sub(pts[i], pts[i - 1])) < MIN_STEP_MM) {
-        return Err(Error::invalid(
-            "path",
-            format!("point {} is on the point before it", i + 1),
-        ));
-    }
+    apart(&pts)?;
     let m = pts.len();
     if vec3::len(vec3::sub(pts[m - 1], pts[0])) <= sketch::CLOSE_MM {
         return Err(Error::invalid(
@@ -325,6 +643,67 @@ fn path_points(path: &Path) -> Result<(Vec<V3>, V3, V3)> {
         )
     });
     Ok((pts, start, end))
+}
+
+/// Fails when a point is on the point before it.
+fn apart(pts: &[V3]) -> Result<()> {
+    match (1..pts.len()).find(|&i| vec3::len(vec3::sub(pts[i], pts[i - 1])) < MIN_STEP_MM) {
+        Some(i) => Err(Error::invalid(
+            "path",
+            format!("point {} is on the point before it", i + 1),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The centripetal Catmull-Rom curve through `pts` as the loft's smooth sides draw it, its ends mirroring their
+/// neighbors, flattened within the arc tolerance, and the directions it starts and ends in.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "step counts are capped far below 2^52"
+)]
+fn smooth(pts: &[V3]) -> Result<(Vec<V3>, V3, V3)> {
+    let m = pts.len();
+    if m < 2 {
+        return Err(Error::invalid("path", "a sweep path needs 2 or more points"));
+    }
+    let mirror = |a: V3, b: V3| vec3::sub(vec3::scale(a, 2.0), b);
+    let at = |k: usize, back: bool| -> V3 {
+        match (k, back) {
+            (0, true) => mirror(pts[0], pts[1]),
+            (k, true) => pts[k - 1],
+            (k, false) if k + 2 < m => pts[k + 2],
+            _ => mirror(pts[m - 1], pts[m - 2]),
+        }
+    };
+    let mut out = Vec::new();
+    let (mut start, mut end) = ([0.0; 3], [0.0; 3]);
+    for k in 0..m - 1 {
+        let b = sketch_loft::span(at(k, true), pts[k], pts[k + 1], at(k, false));
+        let n = sketch_loft::steps(&b);
+        if n > MAX_PATH as f64 {
+            return Err(Error::invalid(
+                "path",
+                format!(
+                    "the smooth path bends too sharply near point {}; space its points more evenly",
+                    k + 1
+                ),
+            ));
+        }
+        let n = n as usize;
+        out.extend((0..n).map(|j| sketch_loft::bezier_at(&b, j as f64 / n as f64)));
+        if k == 0 {
+            start = vec3::sub(b[1], b[0]);
+        }
+        end = vec3::sub(b[3], b[2]);
+    }
+    out.push(pts[m - 1]);
+    let chord = |a: V3, b: V3| vec3::normalize(vec3::sub(b, a)).unwrap_or([0.0, 0.0, 1.0]);
+    let start = vec3::normalize(start).unwrap_or_else(|| chord(pts[0], pts[1]));
+    let end = vec3::normalize(end).unwrap_or_else(|| chord(pts[m - 2], pts[m - 1]));
+    Ok((out, start, end))
 }
 
 /// Fails when the path doubles back at a corner or two of its pieces that are not neighbors meet.
@@ -716,6 +1095,111 @@ mod tests {
         let b = m.bounds().unwrap();
         assert!((b.max[0] - 30.0).abs() < 1e-6, "{b:?}");
         assert!((b.max[2] - 22.0).abs() < 1e-6, "{b:?}");
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a few steps per span"
+    )]
+    fn a_smooth_path_stays_on_its_curve() {
+        let given = [
+            [0.0, 0.0, 0.0],
+            [0.0, 4.0, 20.0],
+            [12.0, 10.0, 34.0],
+            [30.0, 10.0, 40.0],
+            [40.0, 0.0, 41.0],
+        ];
+        let (pts, start, end) = smooth(&given).unwrap();
+        // it passes through every given point
+        for g in given {
+            assert!(pts.iter().any(|&p| vec3::len(vec3::sub(p, g)) < 1e-12), "{g:?}");
+        }
+        // every chord stays within the arc tolerance of the curve between its ends
+        let mirror = |a: V3, b: V3| vec3::sub(vec3::scale(a, 2.0), b);
+        let mut i = 0;
+        for k in 0..given.len() - 1 {
+            let p0 = if k == 0 {
+                mirror(given[0], given[1])
+            } else {
+                given[k - 1]
+            };
+            let p3 = if k + 2 < given.len() {
+                given[k + 2]
+            } else {
+                mirror(given[4], given[3])
+            };
+            let b = sketch_loft::span(p0, given[k], given[k + 1], p3);
+            let n = sketch_loft::steps(&b) as usize;
+            for j in 0..n {
+                let mid = sketch_loft::bezier_at(&b, (j as f64 + 0.5) / n as f64);
+                let chord = vec3::lerp(pts[i + j], pts[i + j + 1], 0.5);
+                assert!(
+                    vec3::len(vec3::sub(mid, chord)) <= sketch_loft::SMOOTH_TOL_MM,
+                    "span {k} step {j}"
+                );
+            }
+            i += n;
+        }
+        assert_eq!(i + 1, pts.len());
+        // with mirrored ends the curve leaves along its first chord and arrives along its last
+        let chord = |a: V3, b: V3| vec3::normalize(vec3::sub(b, a)).unwrap();
+        assert!(
+            vec3::len(vec3::sub(start, chord(given[0], given[1]))) < 1e-9,
+            "{start:?}"
+        );
+        assert!(
+            vec3::len(vec3::sub(end, chord(given[3], given[4]))) < 1e-9,
+            "{end:?}"
+        );
+    }
+
+    #[test]
+    fn the_law_adds_steps_only_where_it_changes_the_sides() {
+        let up = points(&[[0.0, 0.0, 0.0], [0.0, 0.0, 30.0]]);
+        let taper = Law {
+            scale_end: Scale::Even(0.5),
+            ..Law::default()
+        };
+        // a linear taper on a straight piece is ruled already
+        let m = sweep_with(&bed(square([0.0, 0.0], 10.0)), &up, None, &taper).unwrap();
+        assert_eq!(m.positions.len(), 8);
+        // eased or twisted, the piece is cut into steps
+        let eased = Law {
+            ease: Ease::Smooth,
+            ..taper
+        };
+        assert!(
+            sweep_with(&bed(square([0.0, 0.0], 10.0)), &up, None, &eased)
+                .unwrap()
+                .positions
+                .len()
+                > 8
+        );
+        let end = |m: &TriMesh| -> Vec<V3> {
+            m.positions
+                .iter()
+                .copied()
+                .filter(|p| (p[2] - 30.0).abs() < 1e-9)
+                .collect()
+        };
+        // a quarter turn counterclockwise looking back along the path, and the corners scaled to [0.5, 2]
+        let law = Law {
+            scale_end: Scale::Each([0.5, 2.0]),
+            twist_deg: 90.0,
+            ease: Ease::Linear,
+        };
+        let m = sweep_with(&bed(square([0.0, 0.0], 10.0)), &up, None, &law).unwrap();
+        closed(&m);
+        let mut top = end(&m);
+        top.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+        // (5, 5) scales to (2.5, 10), then turns to (-10, 2.5)
+        assert!(
+            top.iter()
+                .any(|p| (p[0] + 10.0).abs() < 1e-9 && (p[1] - 2.5).abs() < 1e-9),
+            "{top:?}"
+        );
     }
 
     #[test]

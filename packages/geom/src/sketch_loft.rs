@@ -940,7 +940,7 @@ pub(crate) fn bezier_at(b: &[V3; 4], t: f64) -> V3 {
 
 /// The steps that keep every chord of the span within `SMOOTH_TOL_MM` of it: a polyline strays at most an eighth of
 /// the step squared times the largest second derivative.
-fn steps(b: &[V3; 4]) -> f64 {
+pub(crate) fn steps(b: &[V3; 4]) -> f64 {
     let dd =
         |i: usize, j: usize, k: usize| vec3::len(vec3::add(vec3::sub(b[i], vec3::scale(b[j], 2.0)), b[k]));
     let most = 6.0 * dd(0, 1, 2).max(dd(1, 2, 3));
@@ -1027,21 +1027,6 @@ fn smooth_rows(sections: &[Section], wrap: Option<usize>) -> Result<(Vec<Vec<V3>
         of.push(count - 1);
     }
     Ok((rows, of))
-}
-
-/// The mesh of a closed solid from its sections: ruled sides from each ring to the next and flat caps on the first and
-/// last (see [`build_rows`]).
-pub(crate) fn build(sections: &[Section], size: f64) -> Result<TriMesh> {
-    let rows: Vec<Vec<V3>> = sections.iter().map(|s| s.ring.clone()).collect();
-    let spans: Vec<usize> = (0..sections.len()).collect();
-    build_rows(
-        &rows,
-        &spans,
-        true,
-        None,
-        Some((&sections[0], &sections[sections.len() - 1])),
-        size,
-    )
 }
 
 /// The mesh: one vertex per row point, two triangles per quad between neighboring rows, and with `caps` the first and
