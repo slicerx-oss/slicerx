@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { ToolInputError } from './errors'
+import { guardedGet, type HostLookup, type PinnedGet } from './url-guard'
 
 export { ERROR_CODES, ToolInputError, type ErrorCode } from './errors'
 
@@ -20,7 +21,10 @@ export interface PathPolicy {
   allowUrls: boolean
   /** Folder with shipped sample files, for `sample:x-mark`. */
   samplesDir?: string
-  fetch?: typeof fetch
+  /** Resolves a link's host name; the system resolver unless given (tests). */
+  lookup?: HostLookup
+  /** Fetches one hop over a connection to a checked address; node's http and https unless given (tests). */
+  get?: PinnedGet
 }
 
 /** A list of types for a message: ".stl, .3mf, .sx3mf or .obj". */
@@ -56,8 +60,8 @@ export function checkModelExtension(path: string, extensions: readonly string[] 
 
 async function download(policy: PathPolicy, url: URL, extensions: readonly string[]): Promise<string> {
   if (!policy.allowUrls) throw new ToolInputError('This server was started with --no-urls. Pass a local file path instead.', 'urls_disabled')
-  const doFetch = policy.fetch ?? fetch
-  const res = await doFetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
+  // Each hop is checked before it connects: http or https, and a public address only (url-guard.ts).
+  const res = await guardedGet(url, { ...(policy.lookup ? { lookup: policy.lookup } : {}), ...(policy.get ? { get: policy.get } : {}), signal: AbortSignal.timeout(60_000) })
   if (!res.ok || !res.body) throw new ToolInputError(`Download failed: HTTP ${res.status} for ${url.href}`, 'download_failed')
   const declared = Number(res.headers.get('content-length') ?? '0')
   if (declared > MAX_DOWNLOAD_BYTES) throw new ToolInputError(`The model at ${url.href} is ${declared} bytes; the limit is ${MAX_DOWNLOAD_BYTES}.`, 'download_failed')

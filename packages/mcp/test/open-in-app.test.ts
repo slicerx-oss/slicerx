@@ -133,8 +133,12 @@ describe('slicerx_open_in_app over MCP', () => {
   })
 
   it('downloads a STEP model from a link under the same size limit, then hands it over', async () => {
-    const h = await connect()
-    vi.stubGlobal('fetch', async (url: URL) => (url.pathname.endsWith('big.step') ? new Response('x', { headers: { 'content-length': String(300 * 1024 * 1024) } }) : new Response('ISO-10303-21;')))
+    const h = await connect({
+      download: {
+        lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+        get: async (url: URL) => (url.pathname.endsWith('big.step') ? new Response('x', { headers: { 'content-length': String(300 * 1024 * 1024) } }) : new Response('ISO-10303-21;')),
+      },
+    })
     const r = await h.call('slicerx_open_in_app', { file: 'https://models.example/parts/bracket.step' })
     expect(r.isError).toBeFalsy()
     const file = data<{ file: string }>(r).file
