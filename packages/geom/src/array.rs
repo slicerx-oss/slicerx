@@ -1039,6 +1039,10 @@ mod tests {
 
     #[test]
     fn a_round_with_its_wall_split_along_the_axis_joins_fast() {
+        // a loose guard: a busy hosted runner took 2.2 s where a quiet machine takes 0.4 s.
+        // the old one at a time join (3.7 s for the disc, 27 s for the ring, f3d303f77) left
+        // slivers that the storage asserts fail anyway
+        const SLOW: f64 = 20.0;
         // an extruded 70 mm disc or ring comes back with each side facet cut into 10 bands
         let banded = |m: &TriMesh| {
             let m = crate::remesh::tidy_flat(m, &crate::remesh::RemeshOptions::default());
@@ -1050,7 +1054,7 @@ mod tests {
         };
         let disc = banded(&cylinder_at(35.0, 0.0, 10.0, 188));
         let (u, r, secs) = joined(&disc, &around_z(12, [0.0; 3]));
-        assert!(secs < 2.0, "{secs} s");
+        assert!(secs < SLOW, "{secs} s");
         assert!(r.watertight && r.shells == 1, "{r:?}");
         assert!((u.volume() - disc.volume()).abs() < 1e-3 * disc.volume());
         assert!(boolean::storage_mesh(&u).is_ok());
@@ -1060,7 +1064,7 @@ mod tests {
             &cylinder_at(32.5, -1.0, 11.0, 180),
         ));
         let (u, r, secs) = joined(&ring, &around_z(30, [0.0; 3]));
-        assert!(secs < 2.0, "{secs} s");
+        assert!(secs < SLOW, "{secs} s");
         assert!(r.watertight && r.shells == 1, "{r:?}");
         // a 210 sided wrap round the 180 sided bore, as for a tube in one band
         let want = ngon(210, 35.0 / (PI / 210.0).m_cos(), 10.0) - ngon(180, 32.5, 10.0);
@@ -1091,7 +1095,7 @@ mod tests {
             &xform::translation([-214.65, -220.25, 0.0]),
         ));
         let (u, r, secs) = joined(&ring, &around_z(30, [-32.0, -32.0, 0.0]));
-        assert!(secs < 2.0, "{secs} s");
+        assert!(secs < SLOW, "{secs} s");
         assert!(r.watertight && r.shells == 1, "{r:?}");
         assert!(boolean::storage_mesh(&u).is_ok());
     }
