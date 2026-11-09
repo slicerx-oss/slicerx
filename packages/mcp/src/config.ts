@@ -2,11 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings for one slice: schema defaults, then the printer's default filament when nothing
 // names a filament, then the project file's own settings, then each profile in order, then the
-// user's preset files, then a filament per slot, then overrides. Another slicer's project on a named printer starts from the settings
-// the app opens it with on that printer instead (project-open.ts).
+// user's preset files, then a filament per slot, then overrides, then the plate type the call names. Another slicer's
+// project on a named printer starts from the settings the app opens it with on that printer instead (project-open.ts).
 // Shared by the file tools and cloud slicing.
 import type { SettingValue, ScriptReview } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, scriptKeyValues, type GcodeChange, type GcodeKept } from '@slicerx/settings'
+import { BED_TYPE_ENGINE, BED_TYPE_TEMP_KEY, GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, scriptKeyValues, type BedType, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import type { OpenedProject } from './project-open'
@@ -71,6 +71,11 @@ export interface ExtraLayers {
   presets?: PresetLayer[] | undefined
   /** A filament per slot, applied after the preset files and before the overrides. */
   slots?: SlotLayer[] | undefined
+  /**
+   * The plate type the call names (slicerx_slice_file's plate_type). It goes over every layer's `curr_bed_type`, a
+   * project plate's own included, as a plate type set on a plate in the app does.
+   */
+  bedType?: BedType | undefined
 }
 
 /** Keys of a filament preset that describe the preset, not a slot. */
@@ -184,6 +189,14 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   const errors = validateConfig(store, typed).filter((i) => i.severity === 'error' || i.code === 'unknown_key')
   if (errors.length > 0) throw new ToolInputError(`Invalid overrides:\n${errors.map((i) => `- ${i.message}`).join('\n')}`, 'invalid_settings')
   Object.assign(explicit, typed)
+  if (extra.bedType) {
+    explicit['curr_bed_type'] = BED_TYPE_ENGINE[extra.bedType]
+    // The plate's temperatures go with it, a settings default too, as the app sends every setting: a filament that
+    // sets none for this plate prints at the temperatures the app shows for it.
+    const defaults = defaultConfig(store)
+    const key = BED_TYPE_TEMP_KEY[extra.bedType]
+    for (const k of [key, `${key}_initial_layer`]) if (explicit[k] === undefined && defaults[k] !== undefined) explicit[k] = defaults[k]!
+  }
   // A project's slice gets the printer layer's support gaps when no layer sets them, as sx slice <project.3mf> and the
   // app's open do; the engine reads gaps a request leaves out as one layer height.
   if (extra.project) {
