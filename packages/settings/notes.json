@@ -207,7 +207,7 @@
   "seam_slope_steps": "How many steps the scarf ramp is split into. More steps make a smoother ramp.",
   "seam_slope_type": "Ramps the start and end of each wall loop up and over each other, so the seam blends in and holds better. Contour applies it to outer walls, contour and hole also to holes.",
   "slicing_mode": "How the model is read when it has odd geometry. Even-odd suits 3DLabPrint airplane models; close holes fills every hole in the model.",
-  "smart_layer": "sleipnir varies the layer height up the part. Quality uses thin layers where curves and detail need them; strength thins them where the part carries load.",
+  "smart_layer": "sleipnir varies the layer height up the part. Quality uses thin layers where curves and detail need them. Strength thins layers only under overhangs and keeps every other layer thick.",
   "smart_layer_max_height": "The thickest layer sleipnir may use, in mm. Keep it at most three quarters of the nozzle diameter.",
   "smart_layer_max_step_ratio": "The biggest change in layer height from one layer to the next, as a fraction of the previous layer. Smaller steps look smoother.",
   "smart_layer_min_height": "The thinnest layer sleipnir may use, in mm. Keep it at least a quarter of the nozzle diameter.",
