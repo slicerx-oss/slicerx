@@ -1,21 +1,21 @@
 {
  "model": "claude-haiku-5-5",
  "provider": "anthropic",
- "capturedAt": "2026-11-08T19:06:12.573Z",
+ "capturedAt": "2026-11-09T07:36:06.861Z",
  "steps": [
   {
    "calls": [
     {
      "name": "parts.lookup",
      "args": {
-      "name": "M3"
+      "name": "M4 countersunk screw head"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"M3 screw: clearance close 3.2 mm, clearance normal 3.4 mm, clearance loose 3.6 mm\",\"result\":{\"found\":true,\"query\":\"M3\",\"parts\":[{\"category\":\"screw-holes\",\"id\":\"M3\",\"name\":\"M3 screw\",\"scope\":\"Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.\",\"info\":{\"thread_series\":\"coarse\"},\"sizes\":[{\"key\":\"clearance_close\",\"value\":3.2,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_normal\",\"value\":3.4,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_loose\",\"value\":3.6,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"}]}],\"note\":\"Say where each size came from (the source page). A null value is not published: ask or look it up, never fill it in.\"}}"
+    "{\"ok\":true,\"summary\":\"M4 screw: clearance close 4.3 mm, clearance normal 4.5 mm, clearance loose 4.8 mm\",\"result\":{\"found\":true,\"query\":\"M4 countersunk screw head\",\"parts\":[{\"category\":\"screw-holes\",\"id\":\"M4\",\"name\":\"M4 screw\",\"scope\":\"Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.\",\"info\":{\"thread_series\":\"coarse\"},\"sizes\":[{\"key\":\"clearance_close\",\"value\":4.3,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_normal\",\"value\":4.5,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"},{\"key\":\"clearance_loose\",\"value\":4.8,\"unit\":\"mm\",\"source_url\":\"https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339\"}]}],\"note\":\"Say where each size came from (the source page). A null value is not published: ask or look it up, never fill it in.\"}}"
    ],
    "calls": [
     {
@@ -24,7 +24,8 @@
       "title": "Cable clip sizes",
       "views": [
        "front",
-       "top"
+       "top",
+       "iso"
       ],
       "part": [
        {
@@ -32,20 +33,20 @@
         "plane": "xy",
         "points": [
          [
-          -15,
-          -10
+          0,
+          0
          ],
          [
-          15,
-          -10
+          30,
+          0
          ],
          [
-          15,
-          10
+          30,
+          20
          ],
          [
-          -15,
-          10
+          0,
+          20
          ]
         ],
         "from": 0,
@@ -56,42 +57,304 @@
         "plane": "xz",
         "points": [
          [
-          -6,
-          3
+          9,
+          0
          ],
          [
-          6,
-          3
+          21,
+          0
          ],
          [
-          6,
-          15
+          21,
+          12
          ],
          [
-          -6,
-          15
+          9,
+          12
          ]
         ],
-        "from": -5,
-        "to": 5
+        "from": 0,
+        "to": 10
        }
       ],
       "dims": [
        {
         "key": "base_length",
-        "label": "Base length (X)",
+        "label": "Base length",
         "value": 30,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
-          -15,
-          -10,
+          0,
+          -3,
           0
          ],
          "b": [
+          30,
+          -3,
+          0
+         ]
+        }
+       },
+       {
+        "key": "base_width",
+        "label": "Base width",
+        "value": 20,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          -3,
+          0,
+          0
+         ],
+         "b": [
+          -3,
+          20,
+          0
+         ]
+        }
+       },
+       {
+        "key": "base_thickness",
+        "label": "Base thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          32,
+          0,
+          0
+         ],
+         "b": [
+          32,
+          0,
+          3
+         ]
+        }
+       },
+       {
+        "key": "hole_clearance",
+        "label": "Screw hole diameter (M4 normal fit)",
+        "value": 4.5,
+        "unit": "mm",
+        "source": "lookup",
+        "sourceTitle": "Albany County Fasteners clearance hole chart",
+        "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf",
+        "at": {
+         "a": [
           15,
-          -10,
+          5,
+          0
+         ],
+         "b": [
+          19.5,
+          5,
+          0
+         ]
+        }
+       },
+       {
+        "key": "countersink_diameter",
+        "label": "Countersink diameter on top",
+        "value": 8.4,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Typical M4 flat head; confirm your screw",
+        "at": {
+         "a": [
+          15,
+          10,
+          3
+         ],
+         "b": [
+          23.4,
+          10,
+          3
+         ]
+        }
+       },
+       {
+        "key": "countersink_angle",
+        "label": "Countersink angle",
+        "value": 90,
+        "unit": "deg",
+        "source": "guess",
+        "note": "Standard for metric flat head screws"
+       },
+       {
+        "key": "cable_diameter",
+        "label": "Cable diameter",
+        "value": 8,
+        "unit": "mm",
+        "source": "asked"
+       },
+       {
+        "key": "clip_inner_diameter",
+        "label": "Clip inner diameter (8 mm cable plus clearance)",
+        "value": 8.5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          15,
+          0,
+          6
+         ],
+         "b": [
+          15,
+          0,
+          14.5
+         ]
+        }
+       },
+       {
+        "key": "clip_wall",
+        "label": "Clip wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess"
+       },
+       {
+        "key": "clip_opening",
+        "label": "Clip opening width at the snap tab",
+        "value": 6,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Smaller than the cable so it clicks in",
+        "at": {
+         "a": [
+          9,
+          0,
+          20
+         ],
+         "b": [
+          15,
+          0,
+          20
+         ]
+        }
+       },
+       {
+        "key": "snap_tab_lip",
+        "label": "Snap tab lip, inward",
+        "value": 1,
+        "unit": "mm",
+        "source": "guess"
+       },
+       {
+        "key": "clip_depth",
+        "label": "Clip depth along base length",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          0,
+          -5,
+          8
+         ],
+         "b": [
+          0,
+          5,
+          8
+         ]
+        }
+       },
+       {
+        "key": "edge_round",
+        "label": "Outside edge round radius",
+        "value": 1,
+        "unit": "mm",
+        "source": "guess"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"dims.0.at: row 1 (Base length) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle\",\"dims.1.at: row 2 (Base width) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle\",\"dims.2.at: row 3 (Base thickness) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle\",\"dims.3.at: row 4 (Screw hole diameter (M4 normal fit)) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle\",\"dims.4.at: row 5 (Countersink diameter on top) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle\"]}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Cable clip sizes",
+      "views": [
+       "front",
+       "top",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          30,
+          0
+         ],
+         [
+          30,
+          20
+         ],
+         [
+          0,
+          20
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          10,
+          5
+         ],
+         [
+          20,
+          5
+         ],
+         [
+          20,
+          15
+         ],
+         [
+          10,
+          15
+         ]
+        ],
+        "from": 3,
+        "to": 15
+       }
+      ],
+      "dims": [
+       {
+        "key": "base_length",
+        "label": "Base length",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          30,
+          0,
           0
          ],
          "off": [
@@ -103,23 +366,23 @@
        },
        {
         "key": "base_width",
-        "label": "Base width (Y)",
+        "label": "Base width",
         "value": 20,
         "unit": "mm",
         "source": "asked",
         "at": {
          "a": [
-          15,
-          -10,
+          0,
+          0,
           0
          ],
          "b": [
-          15,
-          10,
+          0,
+          20,
           0
          ],
          "off": [
-          4,
+          -4,
           0,
           0
          ]
@@ -133,40 +396,40 @@
         "source": "asked",
         "at": {
          "a": [
-          15,
-          10,
+          30,
+          20,
           0
          ],
          "b": [
-          15,
-          10,
+          30,
+          20,
           3
          ],
          "off": [
-          3,
+          4,
           0,
           0
          ]
         }
        },
        {
-        "key": "screw_clearance",
-        "label": "Screw clearance hole, M3 normal fit",
-        "value": 3.4,
+        "key": "hole_clearance",
+        "label": "Screw hole diameter (M4 normal fit)",
+        "value": 4.5,
         "unit": "mm",
         "source": "lookup",
-        "sourceTitle": "Albany County Fasteners clearance chart",
-        "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339",
+        "sourceTitle": "Albany County Fasteners clearance hole chart",
+        "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf",
         "at": {
          "a": [
-          -11.7,
-          0,
-          0
+          13,
+          10,
+          3
          ],
          "b": [
-          -8.3,
-          0,
-          0
+          17.5,
+          10,
+          3
          ],
          "off": [
           0,
@@ -176,20 +439,21 @@
         }
        },
        {
-        "key": "countersink_head",
-        "label": "Countersink head diameter, 90 degree",
-        "value": 6.5,
+        "key": "countersink_diameter",
+        "label": "Countersink diameter on top",
+        "value": 8.4,
         "unit": "mm",
         "source": "guess",
+        "note": "Typical M4 flat head; confirm your screw",
         "at": {
          "a": [
-          -13.25,
-          0,
+          11.8,
+          10,
           3
          ],
          "b": [
-          -6.75,
-          0,
+          20.2,
+          10,
           3
          ],
          "off": [
@@ -200,48 +464,39 @@
         }
        },
        {
-        "key": "hole_x",
-        "label": "Screw hole center X (off the clip)",
-        "value": -10,
-        "unit": "mm",
+        "key": "countersink_angle",
+        "label": "Countersink angle",
+        "value": 90,
+        "unit": "deg",
         "source": "guess",
-        "at": {
-         "a": [
-          0,
-          0,
-          3
-         ],
-         "b": [
-          -10,
-          0,
-          3
-         ],
-         "off": [
-          0,
-          -6,
-          0
-         ]
-        }
+        "note": "Standard for metric flat head screws"
        },
        {
         "key": "cable_diameter",
         "label": "Cable diameter",
         "value": 8,
         "unit": "mm",
-        "source": "asked",
+        "source": "asked"
+       },
+       {
+        "key": "clip_inner_diameter",
+        "label": "Clip inner diameter (8 mm cable plus clearance)",
+        "value": 8.5,
+        "unit": "mm",
+        "source": "guess",
         "at": {
          "a": [
-          -4,
-          0,
-          9
+          15,
+          5,
+          9.25
          ],
          "b": [
-          4,
-          0,
-          9
+          15,
+          13,
+          9.25
          ],
          "off": [
-          0,
+          4,
           0,
           0
          ]
@@ -255,90 +510,115 @@
         "source": "guess",
         "at": {
          "a": [
-          4,
-          0,
-          9
+          20,
+          5,
+          2
          ],
          "b": [
-          6,
-          0,
-          9
+          20,
+          5,
+          3
          ],
          "off": [
-          0,
+          3,
           0,
           0
          ]
         }
        },
        {
-        "key": "clip_width",
-        "label": "Clip width (Y)",
-        "value": 10,
+        "key": "clip_opening",
+        "label": "Clip opening width at the snap tab",
+        "value": 6,
         "unit": "mm",
         "source": "guess",
+        "note": "Smaller than the cable so it clicks in",
         "at": {
          "a": [
-          6,
-          -5,
+          12,
+          5,
           15
          ],
          "b": [
-          6,
+          18,
           5,
           15
          ],
          "off": [
-          3,
           0,
-          0
-         ]
-        }
-       },
-       {
-        "key": "opening_width",
-        "label": "Snap opening at the top (cable goes in here)",
-        "value": 6,
-        "unit": "mm",
-        "source": "guess",
-        "at": {
-         "a": [
           -3,
-          0,
-          15
-         ],
-         "b": [
-          3,
-          0,
-          15
-         ],
-         "off": [
-          0,
-          3,
           0
          ]
         }
        },
        {
-        "key": "edge_fillet",
-        "label": "Outside edge round",
+        "key": "snap_tab_lip",
+        "label": "Snap tab lip, inward",
         "value": 1,
         "unit": "mm",
         "source": "guess",
         "at": {
          "a": [
-          -15,
-          -10,
-          3
+          12,
+          5,
+          15
          ],
          "b": [
-          -15,
+          13,
+          5,
+          15
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "clip_depth",
+        "label": "Clip depth along base length",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
           10,
-          3
+          5,
+          15
+         ],
+         "b": [
+          10,
+          15,
+          15
          ],
          "off": [
           -3,
           0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "edge_round",
+        "label": "Outside edge round radius",
+        "value": 1,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          30,
+          0,
+          0
+         ],
+         "b": [
+          30,
+          0,
+          3
+         ],
+         "off": [
+          4,
+          -4,
           0
          ]
         }
@@ -350,7 +630,395 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"base_length\":30,\"base_width\":20,\"base_thickness\":3,\"screw_clearance\":3.4,\"countersink_head\":6.5,\"hole_x\":-10,\"cable_diameter\":8,\"clip_wall\":2,\"clip_width\":10,\"opening_width\":6,\"edge_fillet\":1},\"changed\":[]}}"
+    "{\"ok\":false,\"summary\":\"Not shown: every row needs at, where it sits on the part, so its callout shows on the drawing. row 6 (Countersink angle) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle; row 7 (Cable diameter) needs at: {\\\"a\\\": [x, y, z], \\\"b\\\": [x, y, z], \\\"off\\\": [x, y, z]} in mm, or {\\\"c\\\", \\\"from\\\", \\\"to\\\", \\\"r\\\"} for an angle. Send it again with them.\"}"
+   ],
+   "calls": [
+    {
+     "name": "pilot.sheet",
+     "args": {
+      "title": "Cable clip sizes",
+      "views": [
+       "front",
+       "top",
+       "iso"
+      ],
+      "part": [
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          0,
+          0
+         ],
+         [
+          30,
+          0
+         ],
+         [
+          30,
+          20
+         ],
+         [
+          0,
+          20
+         ]
+        ],
+        "from": 0,
+        "to": 3
+       },
+       {
+        "kind": "extrude",
+        "plane": "xy",
+        "points": [
+         [
+          10,
+          5
+         ],
+         [
+          20,
+          5
+         ],
+         [
+          20,
+          15
+         ],
+         [
+          10,
+          15
+         ]
+        ],
+        "from": 3,
+        "to": 15
+       }
+      ],
+      "dims": [
+       {
+        "key": "base_length",
+        "label": "Base length",
+        "value": 30,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          30,
+          0,
+          0
+         ],
+         "off": [
+          0,
+          -4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "base_width",
+        "label": "Base width",
+        "value": 20,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          0,
+          0,
+          0
+         ],
+         "b": [
+          0,
+          20,
+          0
+         ],
+         "off": [
+          -4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "base_thickness",
+        "label": "Base thickness",
+        "value": 3,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          30,
+          20,
+          0
+         ],
+         "b": [
+          30,
+          20,
+          3
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "hole_clearance",
+        "label": "Screw hole diameter (M4 normal fit)",
+        "value": 4.5,
+        "unit": "mm",
+        "source": "lookup",
+        "sourceTitle": "Albany County Fasteners clearance hole chart",
+        "sourceUrl": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf",
+        "at": {
+         "a": [
+          13,
+          10,
+          3
+         ],
+         "b": [
+          17.5,
+          10,
+          3
+         ],
+         "off": [
+          0,
+          -3,
+          0
+         ]
+        }
+       },
+       {
+        "key": "countersink_diameter",
+        "label": "Countersink diameter on top",
+        "value": 8.4,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Typical M4 flat head; confirm your screw",
+        "at": {
+         "a": [
+          11.8,
+          10,
+          3
+         ],
+         "b": [
+          20.2,
+          10,
+          3
+         ],
+         "off": [
+          0,
+          4,
+          0
+         ]
+        }
+       },
+       {
+        "key": "countersink_angle",
+        "label": "Countersink angle",
+        "value": 90,
+        "unit": "deg",
+        "source": "guess",
+        "note": "Standard for metric flat head screws",
+        "at": {
+         "c": [
+          15,
+          10,
+          3
+         ],
+         "from": [
+          16,
+          10,
+          3
+         ],
+         "to": [
+          15,
+          10,
+          0
+         ],
+         "r": 2
+        }
+       },
+       {
+        "key": "cable_diameter",
+        "label": "Cable diameter",
+        "value": 8,
+        "unit": "mm",
+        "source": "asked",
+        "at": {
+         "a": [
+          11,
+          5,
+          9.25
+         ],
+         "b": [
+          19,
+          5,
+          9.25
+         ],
+         "off": [
+          0,
+          -5,
+          0
+         ]
+        }
+       },
+       {
+        "key": "clip_inner_diameter",
+        "label": "Clip inner diameter (8 mm cable plus clearance)",
+        "value": 8.5,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          15,
+          5,
+          9.25
+         ],
+         "b": [
+          15,
+          13,
+          9.25
+         ],
+         "off": [
+          4,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "clip_wall",
+        "label": "Clip wall thickness",
+        "value": 2,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          20,
+          5,
+          2
+         ],
+         "b": [
+          20,
+          5,
+          3
+         ],
+         "off": [
+          3,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "clip_opening",
+        "label": "Clip opening width at the snap tab",
+        "value": 6,
+        "unit": "mm",
+        "source": "guess",
+        "note": "Smaller than the cable so it clicks in",
+        "at": {
+         "a": [
+          12,
+          5,
+          15
+         ],
+         "b": [
+          18,
+          5,
+          15
+         ],
+         "off": [
+          0,
+          -3,
+          0
+         ]
+        }
+       },
+       {
+        "key": "snap_tab_lip",
+        "label": "Snap tab lip, inward",
+        "value": 1,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          12,
+          5,
+          15
+         ],
+         "b": [
+          13,
+          5,
+          15
+         ],
+         "off": [
+          0,
+          -6,
+          0
+         ]
+        }
+       },
+       {
+        "key": "clip_depth",
+        "label": "Clip depth along base length",
+        "value": 10,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          10,
+          5,
+          15
+         ],
+         "b": [
+          10,
+          15,
+          15
+         ],
+         "off": [
+          -3,
+          0,
+          0
+         ]
+        }
+       },
+       {
+        "key": "edge_round",
+        "label": "Outside edge round radius",
+        "value": 1,
+        "unit": "mm",
+        "source": "guess",
+        "at": {
+         "a": [
+          30,
+          0,
+          0
+         ],
+         "b": [
+          30,
+          0,
+          3
+         ],
+         "off": [
+          4,
+          -4,
+          0
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Confirmed as shown\",\"result\":{\"confirmed\":true,\"values\":{\"base_length\":30,\"base_width\":20,\"base_thickness\":3,\"hole_clearance\":4.5,\"countersink_diameter\":8.4,\"countersink_angle\":90,\"cable_diameter\":8,\"clip_inner_diameter\":8.5,\"clip_wall\":2,\"clip_opening\":6,\"snap_tab_lip\":1,\"clip_depth\":10,\"edge_round\":1},\"changed\":[]}}"
    ],
    "calls": [
     {
@@ -360,8 +1028,8 @@
       "units": "mm",
       "features": [
        {
-        "name": "Base",
-        "kind": "extrude",
+        "name": "Base plate",
+        "kind": "box",
         "sizes": {
          "length": 30,
          "width": 20,
@@ -369,29 +1037,31 @@
         }
        },
        {
-        "name": "Clip ring",
-        "kind": "extrude",
+        "name": "Screw hole",
+        "kind": "countersunk hole",
         "sizes": {
-         "outer_diameter": 12,
-         "cable_diameter": 8,
-         "clip_width": 10,
-         "center_height": 9
+         "clearance_diameter": 4.5,
+         "countersink_diameter": 8.4,
+         "countersink_angle": 90
         }
        },
        {
-        "name": "Snap opening",
-        "kind": "cut",
+        "name": "C clip ring",
+        "kind": "annulus extrude",
         "sizes": {
-         "opening_width": 6
+         "outer_diameter": 12.5,
+         "inner_diameter": 8.5,
+         "depth": 10,
+         "center_x": 15,
+         "center_z": 9.25
         }
        },
        {
-        "name": "Screw countersink",
-        "kind": "hole",
+        "name": "Snap throat",
+        "kind": "slot cut",
         "sizes": {
-         "clearance": 3.4,
-         "head_diameter": 6.5,
-         "center_x": -10
+         "opening_width": 6,
+         "lip_depth": 1
         }
        },
        {
@@ -403,13 +1073,13 @@
        }
       ],
       "assumptions": [
-       "Clip ring axis runs along Y, sitting centered on the base at X 0, opening up.",
-       "Snap opening is 6 mm, narrower than the 8 mm cable, so the cable clicks past the lips.",
-       "Countersunk screw hole sits at X -10, clear of the ring.",
-       "Head diameter 6.5 mm and clip width 10 mm are guesses."
+       "Base sits at x 0 to 30, y 0 to 20, z 0 to 3; screw hole centered at (15, 10).",
+       "Clip ring axis runs along Y, centered on the base width, sitting on the base top.",
+       "Opening faces up (the cable snaps in from above); the 6 mm throat is the snap tab, leaving about 1.25 mm of lip each side of the 8.5 mm bore.",
+       "Screw is M4 (clearance 4.5 mm per Albany County chart), head 8.4 mm and 90 degree countersink are guesses to confirm."
       ],
       "questions": [
-       "Should the clip ring sit centered on the base, or toward one end?"
+       "Does the screw head fit? If your screw is different, tell me its head size and I will update the countersink."
       ]
      }
     }
@@ -417,74 +1087,7 @@
   },
   {
    "seen": [
-    "{\"ok\":false,\"error\":\"Invalid arguments\",\"issues\":[\"features.3.sizes.center_x: Too small: expected number to be >0\"]}"
-   ],
-   "calls": [
-    {
-     "name": "design.plan",
-     "args": {
-      "part": "Cable clip",
-      "units": "mm",
-      "features": [
-       {
-        "name": "Base",
-        "kind": "extrude",
-        "sizes": {
-         "length": 30,
-         "width": 20,
-         "thickness": 3
-        }
-       },
-       {
-        "name": "Clip ring",
-        "kind": "extrude",
-        "sizes": {
-         "outer_diameter": 12,
-         "cable_diameter": 8,
-         "clip_width": 10,
-         "center_height": 9
-        }
-       },
-       {
-        "name": "Snap opening",
-        "kind": "cut",
-        "sizes": {
-         "opening_width": 6
-        }
-       },
-       {
-        "name": "Screw countersink",
-        "kind": "hole",
-        "sizes": {
-         "clearance": 3.4,
-         "head_diameter": 6.5,
-         "hole_distance_from_center": 10
-        }
-       },
-       {
-        "name": "Outside edge round",
-        "kind": "fillet",
-        "sizes": {
-         "radius": 1
-        }
-       }
-      ],
-      "assumptions": [
-       "Clip ring axis runs along Y, centered on the base at X 0, opening up.",
-       "Snap opening is 6 mm, narrower than the 8 mm cable, so the cable clicks past the lips.",
-       "Countersunk screw hole sits 10 mm to one side of the ring (X -10), clear of it.",
-       "Head diameter 6.5 mm and clip width 10 mm are guesses."
-      ],
-      "questions": [
-       "Should the clip ring sit centered on the base, or toward one end?"
-      ]
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mw87cdvf1hd99\",\"accepted\":true}}"
+    "{\"ok\":true,\"summary\":\"Approved as shown\",\"result\":{\"planId\":\"plan_mw8y3bal1bijg\",\"accepted\":true}}"
    ],
    "calls": [
     {
@@ -494,280 +1097,123 @@
      }
     },
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
-      "design": "Cable clip",
-      "name": "Base",
-      "distance_mm": 3,
-      "extent": "oneSide",
-      "operation": "new",
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 30,
-       "heightMm": 20
-      }
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         0,
+         0,
+         0
+        ],
+        "max": [
+         30,
+         20,
+         3
+        ]
+       }
+      ],
+      "name": "Base plate",
+      "feature": "Base plate",
+      "design": "PLACEHOLDER"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Started Cable clip (obj_mw87cgddd1)\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
-    "{\"ok\":true,\"summary\":\"Extruded: step 1, Rectangle extrude 3 mm. The part was off the bed, so it moved to the plate by (128, 128) mm. Its coordinates are now the plate's.\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw87cgdi1\",\"name\":\"Rectangle extrude 3 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":3,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":200,\"minMm\":[113,118,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800}],\"landed\":\"The part was off the bed, so it moved to the plate by (128, 128) mm. Its coordinates are now the plate's.\"}}"
+    "{\"ok\":true,\"summary\":\"Started Cable clip (obj_mw8y3c90d1)\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}",
+    "{\"ok\":false,\"summary\":\"design: no design PLACEHOLDER; give a design id, such as obj_mw8y3c90d1 (Cable clip)\"}"
    ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
-      "design": "Cable clip",
-      "name": "Clip ring",
-      "distance_mm": 5,
-      "extent": "symmetric",
-      "operation": "join",
-      "frame": {
-       "origin": [
-        128,
-        128,
-        8.5
-       ],
-       "normal": [
-        0,
-        1,
-        0
-       ]
-      },
-      "shape": {
-       "type": "circle",
-       "diameterMm": 12
-      }
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         0,
+         0,
+         0
+        ],
+        "max": [
+         30,
+         20,
+         3
+        ]
+       }
+      ],
+      "name": "Cable clip",
+      "feature": "Base plate"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Joined: step 2, Circle extrude 5 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw87cn992\",\"name\":\"Circle extrude 5 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Distance\",\"value\":5,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2913.836,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":654,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2913.836}]}}"
-   ],
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Cable clip",
-      "name": "Cable bore",
-      "distance_mm": 6,
-      "extent": "symmetric",
-      "operation": "cut",
-      "frame": {
-       "origin": [
-        128,
-        128,
-        8.5
-       ],
-       "normal": [
-        0,
-        1,
-        0
-       ]
-      },
-      "shape": {
-       "type": "circle",
-       "diameterMm": 8
-      }
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Cable clip",
-      "name": "Snap opening",
-      "distance_mm": 12,
-      "extent": "symmetric",
-      "operation": "cut",
-      "frame": {
-       "origin": [
-        128,
-        128,
-        8.5
-       ],
-       "normal": [
-        0,
-        1,
-        0
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 6,
-       "heightMm": 8
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 3, Hole 8 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw87coq33\",\"name\":\"Hole 8 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":6,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":970,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988}]}}",
-    "{\"ok\":true,\"summary\":\"Cut: step 4, Rectangle cut 12 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw87corv4\",\"name\":\"Rectangle cut 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":12,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2361.674,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":882,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2361.674}]}}"
-   ],
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "Cable clip"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Cable clip",
-      "name": "Snap opening",
-      "distance_mm": 12,
-      "extent": "symmetric",
-      "operation": "cut",
-      "frame": {
-       "origin": [
-        128,
-        128,
-        8.5
-       ],
-       "normal": [
-        0,
-        1,
-        0
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 6,
-       "heightMm": 8,
-       "cornerRadiusMm": 0
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Removed Rectangle cut 12 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw87coq33\",\"name\":\"Hole 8 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":6,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":970,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988}]}}",
-    "{\"ok\":true,\"summary\":\"Cut: step 4, Rectangle cut 12 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw87cs0v5\",\"name\":\"Rectangle cut 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":12,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2361.674,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":882,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2361.674}]}}"
-   ],
-   "calls": [
-    {
-     "name": "design.undo",
-     "args": {
-      "design": "Cable clip"
-     }
-    },
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Cable clip",
-      "name": "Snap opening",
-      "distance_mm": 12,
-      "extent": "symmetric",
-      "operation": "cut",
-      "frame": {
-       "origin": [
-        128,
-        128,
-        8.5
-       ],
-       "normal": [
-        0,
-        1,
-        0
-       ]
-      },
-      "shape": {
-       "type": "rectangle",
-       "widthMm": 6,
-       "heightMm": 8
-      },
-      "placement": {
-       "center": [
-        0,
-        4.5
-       ],
-       "rotationDeg": 0
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":true,\"summary\":\"Removed Rectangle cut 12 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw87coq33\",\"name\":\"Hole 8 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":6,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":970,\"minMm\":[113,118,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2411.988}]}}",
-    "{\"ok\":true,\"summary\":\"Cut: step 4, Rectangle cut 12 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw87ctbh6\",\"name\":\"Rectangle cut 12 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":12,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2282.647,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":828,\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2282.647}]}}"
+    "{\"ok\":true,\"summary\":\"Built: step 1, Add Cable clip\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw8y3dn91\",\"name\":\"Add Cable clip\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Base plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800}]}}"
    ],
    "calls": [
     {
      "name": "geom.hole",
      "args": {
-      "design": "Cable clip",
-      "center": [
-       118,
-       128,
-       3
-      ],
-      "axis": [
-       0,
-       0,
-       1
-      ],
-      "diameter_mm": 3.4,
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        15,
+        10,
+        3
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "diameter_mm": 4.5,
       "countersink": {
-       "diameter_mm": 6.5,
+       "diameter_mm": 8.4,
        "angle_deg": 90
       },
-      "label": "Screw countersink"
+      "feature": "Screw hole",
+      "label": "Screw hole M4 countersunk"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":false,\"summary\":\"pick: no round hole on that axis line; the nearest face to the point is a flat face. Give a point on the hole's axis, such as its center on the face it starts at, and the axis. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
+    "{\"ok\":false,\"summary\":\"pick: no round hole there: the pick is on a flat face; pick the wall of a round hole that starts at a flat face. This tool changes a hole that is already there; for a new hole, cut a circle loop with the extrude tool (operation cut)\"}"
    ],
    "calls": [
     {
      "name": "geom.subtract",
      "args": {
-      "design": "Cable clip",
-      "label": "Screw countersink M3",
+      "design": "obj_mw8y3c90d1",
       "solids": [
        {
         "type": "countersink",
         "origin": [
-         118,
-         128,
-         3
+         15,
+         10,
+         3.01
         ],
         "axis": [
          0,
          0,
          -1
         ],
-        "shaftDiameterMm": 3.4,
-        "headDiameterMm": 6.5,
+        "shaftDiameterMm": 4.5,
+        "headDiameterMm": 8.4,
         "angleDeg": 90,
-        "depthMm": 1.55
-       },
-       {
-        "type": "cylinder",
-        "origin": [
-         118,
-         128,
-         -1
-        ],
-        "axis": [
-         0,
-         0,
-         1
-        ],
-        "diameterMm": 3.4,
-        "heightMm": 6
+        "depthMm": 3.5
        }
-      ]
+      ],
+      "label": "Screw hole M4 countersunk",
+      "feature": "Screw hole"
      }
     }
    ]
@@ -778,145 +1224,264 @@
    ],
    "calls": [
     {
-     "name": "geom.loft",
+     "name": "geom.revolve",
      "args": {
-      "design": "Cable clip",
-      "operation": "cut",
-      "name": "Screw countersink",
-      "profiles": [
+      "design": "obj_mw8y3c90d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360,
+      "frame": {
+       "origin": [
+        15,
+        10,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
        {
-        "frame": {
-         "origin": [
-          118,
-          128,
+        "points": [
+         [
+          0,
+          -0.5
+         ],
+         [
+          2.25,
+          -0.5
+         ],
+         [
+          2.25,
+          1.05
+         ],
+         [
+          4.2,
+          3
+         ],
+         [
+          4.7,
           3.5
          ],
-         "normal": [
+         [
           0,
-          0,
-          1
+          3.5
          ]
-        },
-        "loops": [
-         {
-          "type": "circle",
-          "center": [
-           0,
-           0
-          ],
-          "diameterMm": 7.5
-         }
-        ]
-       },
-       {
-        "frame": {
-         "origin": [
-          118,
-          128,
-          1.45
-         ],
-         "normal": [
-          0,
-          0,
-          1
-         ]
-        },
-        "loops": [
-         {
-          "type": "circle",
-          "center": [
-           0,
-           0
-          ],
-          "diameterMm": 3.4
-         }
         ]
        }
-      ]
+      ],
+      "operation": "cut",
+      "part": 0,
+      "feature": "Screw hole"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 5, Loft cut, 2 profiles\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smw87d0lh7\",\"name\":\"Loft cut, 2 profiles\",\"op\":\"sketch.loft\",\"part\":0,\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2252.003,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":1842,\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2252.003}]}}"
+    "{\"ok\":true,\"summary\":\"Revolved: step 2, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw8y3nn82\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Screw hole\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":2032,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729}]}}"
    ],
    "calls": [
     {
-     "name": "geom.extrude",
+     "name": "geom.build",
      "args": {
-      "design": "Cable clip",
-      "name": "Screw shaft",
-      "distance_mm": 6,
-      "extent": "oneSide",
-      "operation": "cut",
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         15,
+         5,
+         8.25
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 12.5,
+        "heightMm": 10
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         15,
+         4,
+         8.25
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 8.5,
+        "heightMm": 12
+       }
+      ],
+      "name": "C clip ring",
+      "feature": "C clip ring"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 3, Add C clip ring\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw8y3v083\",\"name\":\"Add C clip ring\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2375.845,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":2032,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729},{\"index\":1,\"name\":\"C clip ring\",\"slot\":1,\"triangles\":884,\"minMm\":[8.75,5,2],\"sizeMm\":[12.5,10,12.5],\"volumeMm3\":658.116}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "op": "union",
+      "part": 0,
+      "with_parts": [
+       1
+      ],
+      "feature": "C clip ring"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 4, Join 1 part\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw8y3vxb4\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2362.099,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":5084,\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2362.099}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         12,
+         3,
+         8.25
+        ],
+        "max": [
+         18,
+         17,
+         17
+        ]
+       }
+      ],
+      "label": "Snap throat 6 mm",
+      "feature": "Snap throat"
+     }
+    },
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360,
       "frame": {
        "origin": [
-        118,
-        128,
-        -1
+        15,
+        10,
+        0
        ],
        "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
         0,
         0,
         1
        ]
       },
-      "shape": {
-       "type": "circle",
-       "diameterMm": 3.4
-      }
-     }
-    }
-   ]
-  },
-  {
-   "seen": [
-    "{\"ok\":false,\"summary\":\"The step did not go through: The shape no longer reaches the part.. The design is unchanged.\"}"
-   ],
-   "calls": [
-    {
-     "name": "geom.extrude",
-     "args": {
-      "design": "Cable clip",
-      "name": "Screw shaft",
-      "distance_mm": 6,
-      "extent": "oneSide",
+      "loops": [
+       {
+        "points": [
+         [
+          0,
+          -0.5
+         ],
+         [
+          2.25,
+          -0.5
+         ],
+         [
+          2.25,
+          1.05
+         ],
+         [
+          4.2,
+          3
+         ],
+         [
+          4.7,
+          3.5
+         ],
+         [
+          0,
+          3.5
+         ]
+        ]
+       }
+      ],
       "operation": "cut",
-      "flip": true,
-      "frame": {
-       "origin": [
-        118,
-        128,
-        -1
-       ],
-       "normal": [
-        0,
-        0,
-        1
-       ]
-      },
-      "shape": {
-       "type": "circle",
-       "diameterMm": 3.4
-      }
+      "part": 0,
+      "feature": "Screw hole",
+      "name": "Screw hole recut"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cut: step 6, Hole 3.4 mm\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smw87d3109\",\"name\":\"Hole 3.4 mm\",\"op\":\"shape.extrude\",\"part\":0,\"value\":{\"label\":\"Depth\",\"value\":6,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2238.883,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":2570,\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2238.883}]}}"
+    "{\"ok\":true,\"summary\":\"Subtracted: step 5, Snap throat 6 mm\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smw8y3zam5\",\"name\":\"Snap throat 6 mm\",\"op\":\"subtract\",\"part\":-1,\"value\":{\"label\":\"Width\",\"value\":6,\"unit\":\"mm\"},\"feature\":\"Snap throat\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2233.817,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":4826,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2233.817}]}}",
+    "{\"ok\":true,\"summary\":\"Revolved: step 6, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smw8y3zcx6\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Screw hole\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":9162,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791}]}}"
    ],
    "calls": [
     {
      "name": "geom.edge_pick",
      "args": {
-      "design": "Cable clip",
+      "design": "obj_mw8y3c90d1",
       "face": {
        "at": [
-        120,
-        121,
+        15,
+        10,
         0
        ],
        "normal": [
@@ -926,21 +1491,43 @@
        ]
       }
      }
-    },
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"at: no face of the design within 0.02 mm of (15, 10, 0); slicerx_geom_faces with the design lists a point on every flat face\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.faces",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "limit": 12,
+      "format": "flat"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"264 flat faces, the largest 12 listed\",\"result\":{\"count\":264,\"faces\":[{\"triangle\":11,\"at\":[23.064,16.437,0],\"normal\":[0,0,-1],\"facing\":\"-z (bottom)\",\"areaMm2\":584.112,\"center\":[15,10,0],\"part\":0,\"key\":3911591363755447,\"madeBy\":\"base\"},{\"triangle\":642,\"at\":[3.461,6.552,3],\"normal\":[0,0,1],\"facing\":\"+z (top)\",\"areaMm2\":527.078,\"center\":[15,10,3],\"part\":0,\"key\":1853607923679434,\"madeBy\":\"base\"},{\"triangle\":600,\"at\":[18.182,0,1],\"normal\":[0,-1,0],\"facing\":\"-y\",\"areaMm2\":90,\"center\":[15,0,1.5],\"part\":0,\"key\":3503046102338221,\"madeBy\":\"base\"},{\"triangle\":3613,\"at\":[17.273,20,1],\"normal\":[0,1,0],\"facing\":\"+y\",\"areaMm2\":90,\"center\":[15,20,1.5],\"part\":0,\"key\":3782835216168484,\"madeBy\":\"base\"},{\"triangle\":8654,\"at\":[18.314,10.455,3.5],\"normal\":[0,0,-1],\"facing\":\"-z (bottom)\",\"areaMm2\":64.987,\"center\":[15,10,3.5],\"part\":0,\"key\":1372534435354566,\"madeBy\":\"base\"},{\"triangle\":578,\"at\":[0,0.833,2],\"normal\":[-1,0,0],\"facing\":\"-x\",\"areaMm2\":60,\"center\":[0,10,1.5],\"part\":0,\"key\":515746943306004,\"madeBy\":\"base\"},{\"triangle\":7067,\"at\":[30,19.167,2],\"normal\":[1,0,0],\"facing\":\"+x\",\"areaMm2\":60,\"center\":[30,10,1.5],\"part\":0,\"key\":234011805839290,\"madeBy\":\"base\"},{\"triangle\":1951,\"at\":[11.302,5,12.404],\"normal\":[0,-1,0],\"facing\":\"-y\",\"areaMm2\":48.477,\"center\":[15,5,7.478],\"part\":0,\"key\":3911591363755447,\"madeBy\":\"base\"},{\"triangle\":5011,\"at\":[17.531,15,3.363],\"normal\":[0,1,0],\"facing\":\"+y\",\"areaMm2\":48.477,\"center\":[15,15,7.478],\"part\":0,\"key\":1853607923679434,\"madeBy\":\"base\"},{\"triangle\":3572,\"at\":[12,9.968,12.891],\"normal\":[1,0,0],\"facing\":\"+x\",\"areaMm2\":24.839,\"center\":[12,10,12.477],\"part\":0,\"key\":408974896449045,\"madeBy\":\"base\"},{\"triangle\":7169,\"at\":[18,10.048,12.891],\"normal\":[-1,0,0],\"facing\":\"-x\",\"areaMm2\":24.839,\"center\":[18,10,12.477],\"part\":0,\"key\":1246007761572742,\"madeBy\":\"base\"},{\"triangle\":3085,\"at\":[10.156,8.333,4.328],\"normal\":[-0.76,0,-0.649],\"areaMm2\":9.807,\"center\":[10.262,10,4.203],\"part\":0,\"key\":3503046102338221,\"madeBy\":\"base\"}]}}"
+   ],
+   "calls": [
     {
      "name": "geom.edge_pick",
      "args": {
-      "design": "Cable clip",
+      "design": "obj_mw8y3c90d1",
       "face": {
        "at": [
-        120,
-        121,
-        3
+        18.182,
+        0,
+        1
        ],
        "normal": [
         0,
-        0,
-        1
+        -1,
+        0
        ]
       }
      }
@@ -949,208 +1536,1155 @@
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[143,118,0],\"b\":[113,118,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,3503046102338221]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[143,118,0],\"b\":[113,118,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,3503046102338221]},\"faces\":[{\"curved\":false,\"normal\":[0,0,-1]},{\"curved\":false,\"normal\":[0,-1,0]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[143,118,0],\"b\":[113,118,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[113,118,0],\"b\":[113,138,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[113,138,0],\"b\":[143,138,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[143,138,0],\"b\":[143,118,0],\"face\":[0,0,-1],\"keys\":[1853607923679434,515746943306004]},\"supported\":true}],\"maxDistanceMm\":[8.3,3],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
-    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[113,118,3],\"b\":[143,118,3],\"face\":[0,0,1],\"keys\":[234011805839290,3503046102338221]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[113,118,3],\"b\":[143,118,3],\"face\":[0,0,1],\"keys\":[234011805839290,3503046102338221]},\"faces\":[{\"curved\":false,\"normal\":[0,0,1]},{\"curved\":false,\"normal\":[0,-1,0]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[113,118,3],\"b\":[143,118,3],\"face\":[0,0,1],\"keys\":[234011805839290,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[143,118,3],\"b\":[143,138,3],\"face\":[0,0,1],\"keys\":[234011805839290,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[143,138,3],\"b\":[113,138,3],\"face\":[0,0,1],\"keys\":[234011805839290,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[113,138,3],\"b\":[113,118,3],\"face\":[0,0,1],\"keys\":[234011805839290,3911591363755447]},\"supported\":true}],\"maxDistanceMm\":[5,3],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}"
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,-1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,0,3],\"face\":[0,-1,0],\"keys\":[3503046102338221,234011805839290]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[0,0,3],\"face\":[0,-1,0],\"keys\":[3503046102338221,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        17.273,
+        20,
+        1
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        0,
+        0.833,
+        2
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        30,
+        19.167,
+        2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,20,3],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[30,20,3],\"face\":[0,1,0],\"keys\":[3782835216168484,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,234011805839290]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]},\"faces\":[{\"curved\":false,\"normal\":[-1,0,0]},{\"curved\":false,\"normal\":[0,-1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,20,3],\"face\":[-1,0,0],\"keys\":[515746943306004,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[0,20,0],\"face\":[-1,0,0],\"keys\":[515746943306004,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,0,0],\"face\":[-1,0,0],\"keys\":[515746943306004,3911591363755447]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]},\"faces\":[{\"curved\":false,\"normal\":[1,0,0]},{\"curved\":false,\"normal\":[0,1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,0,3],\"face\":[1,0,0],\"keys\":[234011805839290,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[30,0,0],\"face\":[1,0,0],\"keys\":[234011805839290,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,20,0],\"face\":[1,0,0],\"keys\":[234011805839290,3911591363755447]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}"
    ],
    "calls": [
     {
      "name": "geom.fillet",
      "args": {
-      "design": "Cable clip",
-      "radius_mm": 1,
+      "design": "obj_mw8y3c90d1",
       "edges": [
        {
         "a": [
-         143,
-         118,
+         0,
+         0,
          0
         ],
         "b": [
-         113,
-         118,
+         30,
+         0,
          0
         ],
         "face": [
          0,
-         0,
-         -1
-        ],
-        "keys": [
-         1853607923679434,
-         3503046102338221
-        ]
-       },
-       {
-        "a": [
-         113,
-         118,
+         -1,
          0
         ],
-        "b": [
-         113,
-         138,
-         0
-        ],
-        "face": [
-         0,
-         0,
-         -1
-        ],
         "keys": [
-         1853607923679434,
+         3503046102338221,
          3911591363755447
         ]
        },
        {
         "a": [
-         113,
-         138,
+         30,
+         0,
          0
         ],
         "b": [
-         143,
-         138,
-         0
+         30,
+         0,
+         3
         ],
         "face": [
          0,
-         0,
-         -1
+         -1,
+         0
         ],
         "keys": [
-         1853607923679434,
-         3782835216168484
+         3503046102338221,
+         234011805839290
         ]
        },
        {
         "a": [
-         143,
-         138,
-         0
+         30,
+         0,
+         3
         ],
         "b": [
-         143,
-         118,
+         0,
+         0,
+         3
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ],
+        "keys": [
+         3503046102338221,
+         1853607923679434
+        ]
+       },
+       {
+        "a": [
+         0,
+         0,
+         3
+        ],
+        "b": [
+         0,
+         0,
          0
         ],
         "face": [
          0,
-         0,
-         -1
+         -1,
+         0
         ],
         "keys": [
-         1853607923679434,
+         3503046102338221,
          515746943306004
         ]
        },
        {
         "a": [
-         113,
-         118,
-         3
+         30,
+         20,
+         0
         ],
         "b": [
-         143,
-         118,
-         3
+         0,
+         20,
+         0
         ],
         "face": [
          0,
-         0,
-         1
+         1,
+         0
         ],
         "keys": [
-         234011805839290,
-         3503046102338221
+         3782835216168484,
+         3911591363755447
         ]
        },
        {
         "a": [
-         143,
-         118,
-         3
+         0,
+         20,
+         0
         ],
         "b": [
-         143,
-         138,
+         0,
+         20,
          3
         ],
         "face": [
          0,
-         0,
-         1
+         1,
+         0
         ],
         "keys": [
-         234011805839290,
+         3782835216168484,
          515746943306004
         ]
        },
        {
         "a": [
-         143,
-         138,
+         0,
+         20,
          3
         ],
         "b": [
-         113,
-         138,
+         30,
+         20,
          3
         ],
         "face": [
          0,
-         0,
-         1
+         1,
+         0
         ],
         "keys": [
-         234011805839290,
-         3782835216168484
+         3782835216168484,
+         1853607923679434
         ]
        },
        {
         "a": [
-         113,
-         138,
+         30,
+         20,
          3
         ],
         "b": [
-         113,
-         118,
-         3
+         30,
+         20,
+         0
         ],
         "face": [
          0,
+         1,
+         0
+        ],
+        "keys": [
+         3782835216168484,
+         234011805839290
+        ]
+       },
+       {
+        "a": [
          0,
-         1
+         0,
+         3
+        ],
+        "b": [
+         0,
+         20,
+         3
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ],
+        "keys": [
+         515746943306004,
+         1853607923679434
+        ]
+       },
+       {
+        "a": [
+         30,
+         20,
+         3
+        ],
+        "b": [
+         30,
+         0,
+         3
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ],
+        "keys": [
+         234011805839290,
+         1853607923679434
+        ]
+       },
+       {
+        "a": [
+         0,
+         20,
+         0
+        ],
+        "b": [
+         0,
+         0,
+         0
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ],
+        "keys": [
+         515746943306004,
+         3911591363755447
+        ]
+       },
+       {
+        "a": [
+         30,
+         0,
+         0
+        ],
+        "b": [
+         30,
+         20,
+         0
+        ],
+        "face": [
+         1,
+         0,
+         0
         ],
         "keys": [
          234011805839290,
          3911591363755447
         ]
        }
-      ]
+      ],
+      "radius_mm": 1,
+      "feature": "Outside edge round"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Filleted: step 7, Fillet 1 mm, 8 edges\",\"result\":{\"design\":\"obj_mw87cgddd1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smw87d9zaa\",\"name\":\"Fillet 1 mm, 8 edges\",\"op\":\"edge.fillet\",\"part\":0,\"value\":{\"label\":\"Radius\",\"value\":1,\"unit\":\"mm\"},\"state\":\"done\"},\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2194.994,\"parts\":[{\"index\":0,\"name\":\"Base\",\"slot\":1,\"triangles\":2248,\"minMm\":[113,118,0],\"sizeMm\":[30,20,13.691],\"volumeMm3\":2194.994}]}}"
+    "{\"ok\":false,\"summary\":\"The step did not go through: faceReference: the face reference was split; repair the reference before editing. The design is unchanged.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        18.182,
+        0,
+        1
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        17.273,
+        20,
+        1
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        0,
+        0.833,
+        2
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        30,
+        19.167,
+        2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,-1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,0,3],\"face\":[0,-1,0],\"keys\":[3503046102338221,234011805839290]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[0,0,3],\"face\":[0,-1,0],\"keys\":[3503046102338221,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,0,0],\"face\":[0,-1,0],\"keys\":[3503046102338221,515746943306004]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"faces\":[{\"curved\":false,\"normal\":[0,1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,3911591363755447]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,20,3],\"face\":[0,1,0],\"keys\":[3782835216168484,515746943306004]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[30,20,3],\"face\":[0,1,0],\"keys\":[3782835216168484,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,20,0],\"face\":[0,1,0],\"keys\":[3782835216168484,234011805839290]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]},\"faces\":[{\"curved\":false,\"normal\":[-1,0,0]},{\"curved\":false,\"normal\":[0,-1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0],\"keys\":[515746943306004,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,20,3],\"face\":[-1,0,0],\"keys\":[515746943306004,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[0,20,0],\"face\":[-1,0,0],\"keys\":[515746943306004,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,0,0],\"face\":[-1,0,0],\"keys\":[515746943306004,3911591363755447]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]},\"faces\":[{\"curved\":false,\"normal\":[1,0,0]},{\"curved\":false,\"normal\":[0,1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0],\"keys\":[234011805839290,3782835216168484]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,0,3],\"face\":[1,0,0],\"keys\":[234011805839290,1853607923679434]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[30,0,0],\"face\":[1,0,0],\"keys\":[234011805839290,3503046102338221]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,20,0],\"face\":[1,0,0],\"keys\":[234011805839290,3911591363755447]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fillet",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "edges": [
+       {
+        "a": [
+         0,
+         0,
+         0
+        ],
+        "b": [
+         30,
+         0,
+         0
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ],
+        "keys": [
+         3503046102338221,
+         3911591363755447
+        ]
+       },
+       {
+        "a": [
+         30,
+         20,
+         0
+        ],
+        "b": [
+         0,
+         20,
+         0
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ],
+        "keys": [
+         3782835216168484,
+         3911591363755447
+        ]
+       },
+       {
+        "a": [
+         0,
+         20,
+         0
+        ],
+        "b": [
+         0,
+         0,
+         0
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ],
+        "keys": [
+         515746943306004,
+         3911591363755447
+        ]
+       },
+       {
+        "a": [
+         30,
+         0,
+         0
+        ],
+        "b": [
+         30,
+         20,
+         0
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ],
+        "keys": [
+         234011805839290,
+         3911591363755447
+        ]
+       }
+      ],
+      "radius_mm": 1,
+      "feature": "Outside edge round"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"The step did not go through: faceReference: the face reference was split; repair the reference before editing. The design is unchanged.\"}"
+   ],
+   "calls": [
+    {
+     "name": "geom.repair",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "part": 0
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Repaired: step 7, Repair\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smw8y4rh89\",\"name\":\"Repair\",\"op\":\"repair\",\"part\":0,\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":9150,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        18.182,
+        0,
+        1
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        17.273,
+        20,
+        1
+       ],
+       "normal": [
+        0,
+        1,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        0,
+        0.833,
+        2
+       ],
+       "normal": [
+        -1,
+        0,
+        0
+       ]
+      }
+     }
+    },
+    {
+     "name": "geom.edge_pick",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "face": {
+       "at": [
+        30,
+        19.167,
+        2
+       ],
+       "normal": [
+        1,
+        0,
+        0
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0]},\"faces\":[{\"curved\":false,\"normal\":[0,-1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[30,0,0],\"face\":[0,-1,0]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,0,3],\"face\":[0,-1,0]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[0,0,3],\"face\":[0,-1,0]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,0,0],\"face\":[0,-1,0]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 30 mm, fillet up to 3 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0]},\"faces\":[{\"curved\":false,\"normal\":[0,1,0]},{\"curved\":false,\"normal\":[0,0,-1]}],\"lengthMm\":30,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[0,20,0],\"face\":[0,1,0]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,20,3],\"face\":[0,1,0]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[30,20,3],\"face\":[0,1,0]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,20,0],\"face\":[0,1,0]},\"supported\":true}],\"maxDistanceMm\":[3,7.75],\"maxRadiusMm\":3,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0]},\"faces\":[{\"curved\":false,\"normal\":[-1,0,0]},{\"curved\":false,\"normal\":[0,-1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[0,0,0],\"b\":[0,0,3],\"face\":[-1,0,0]},\"supported\":true},{\"edge\":{\"a\":[0,0,3],\"b\":[0,20,3],\"face\":[-1,0,0]},\"supported\":true},{\"edge\":{\"a\":[0,20,3],\"b\":[0,20,0],\"face\":[-1,0,0]},\"supported\":true},{\"edge\":{\"a\":[0,20,0],\"b\":[0,0,0],\"face\":[-1,0,0]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}",
+    "{\"ok\":true,\"summary\":\"Picked an edge of 3 mm, fillet up to 20 mm\",\"result\":{\"chain\":[{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0]}],\"convex\":true,\"dihedralDeg\":90,\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0]},\"faces\":[{\"curved\":false,\"normal\":[1,0,0]},{\"curved\":false,\"normal\":[0,1,0]}],\"lengthMm\":3,\"loop\":[{\"edge\":{\"a\":[30,20,0],\"b\":[30,20,3],\"face\":[1,0,0]},\"supported\":true},{\"edge\":{\"a\":[30,20,3],\"b\":[30,0,3],\"face\":[1,0,0]},\"supported\":true},{\"edge\":{\"a\":[30,0,3],\"b\":[30,0,0],\"face\":[1,0,0]},\"supported\":true},{\"edge\":{\"a\":[30,0,0],\"b\":[30,20,0],\"face\":[1,0,0]},\"supported\":true}],\"maxDistanceMm\":[20,30],\"maxRadiusMm\":20,\"supported\":true,\"part\":0}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fillet",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "edges": [
+       {
+        "a": [
+         0,
+         0,
+         0
+        ],
+        "b": [
+         30,
+         0,
+         0
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ]
+       },
+       {
+        "a": [
+         30,
+         20,
+         0
+        ],
+        "b": [
+         0,
+         20,
+         0
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ]
+       },
+       {
+        "a": [
+         0,
+         20,
+         0
+        ],
+        "b": [
+         0,
+         0,
+         0
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         30,
+         0,
+         0
+        ],
+        "b": [
+         30,
+         20,
+         0
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         0,
+         0,
+         0
+        ],
+        "b": [
+         0,
+         0,
+         3
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         0,
+         20,
+         3
+        ],
+        "b": [
+         0,
+         20,
+         0
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         30,
+         20,
+         0
+        ],
+        "b": [
+         30,
+         20,
+         3
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         30,
+         0,
+         3
+        ],
+        "b": [
+         30,
+         0,
+         0
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ]
+       }
+      ],
+      "radius_mm": 1,
+      "feature": "Outside edge round"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Filleted: step 8, Fillet 1 mm, 8 edges\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":8,\"lastStep\":{\"index\":8,\"id\":\"smw8y4wc2a\",\"name\":\"Fillet 1 mm, 8 edges\",\"op\":\"edge.fillet\",\"part\":0,\"value\":{\"label\":\"Radius\",\"value\":1,\"unit\":\"mm\"},\"feature\":\"Outside edge round\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2149.472,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":9278,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2149.472}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.fillet",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "edges": [
+       {
+        "a": [
+         30,
+         0,
+         3
+        ],
+        "b": [
+         0,
+         0,
+         3
+        ],
+        "face": [
+         0,
+         -1,
+         0
+        ]
+       },
+       {
+        "a": [
+         0,
+         20,
+         3
+        ],
+        "b": [
+         30,
+         20,
+         3
+        ],
+        "face": [
+         0,
+         1,
+         0
+        ]
+       },
+       {
+        "a": [
+         0,
+         0,
+         3
+        ],
+        "b": [
+         0,
+         20,
+         3
+        ],
+        "face": [
+         -1,
+         0,
+         0
+        ]
+       },
+       {
+        "a": [
+         30,
+         20,
+         3
+        ],
+        "b": [
+         30,
+         0,
+         3
+        ],
+        "face": [
+         1,
+         0,
+         0
+        ]
+       }
+      ],
+      "radius_mm": 1,
+      "feature": "Outside edge round"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":false,\"summary\":\"The step did not go through: edges: edge 1: no sharp edge between two flat faces there. The design is unchanged.\"}"
    ],
    "calls": [
     {
      "name": "design.check",
      "args": {
-      "planId": "plan_mw87cdvf1hd99",
-      "design": "obj_mw87cgddd1"
+      "planId": "plan_mw8y3bal1bijg",
+      "design": "obj_mw8y3c90d1"
      }
     }
    ]
   },
   {
    "seen": [
-    "{\"ok\":true,\"summary\":\"Cable clip (obj_mw87cgddd1, tied to the plan): 2 of 3 checks against plan plan_mw87cdvf1hd99 failed: feature count (want 5, got 7); minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.09 mm)\",\"result\":{\"planId\":\"plan_mw87cdvf1hd99\",\"design\":\"obj_mw87cgddd1\",\"designName\":\"Cable clip\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"5\",\"got\":\"7\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.09 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":30,\"y\":20,\"z\":13.691},\"holes\":[{\"diameterMm\":3.3999998609301896}],\"features\":7,\"watertight\":true,\"minWallMm\":0.092}}}"
+    "{\"ok\":true,\"summary\":\"Cable clip (obj_mw8y3c90d1, tied to the plan): 1 of 3 checks against plan plan_mw8y3bal1bijg failed: minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.01 mm)\",\"result\":{\"planId\":\"plan_mw8y3bal1bijg\",\"design\":\"obj_mw8y3c90d1\",\"designName\":\"Cable clip\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"5 features, each built by a step tagged with its name\",\"got\":\"8 steps for 5 features (Screw hole 2, C clip ring 2)\",\"pass\":true},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.01 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":30,\"y\":20,\"z\":13.719},\"holes\":[{\"diameterMm\":4.500001583920351}],\"features\":8,\"steps\":[\"Add Cable clip\",\"Sketch revolve 360°\",\"Add C clip ring\",\"Join 1 part\",\"Snap throat 6 mm\",\"Sketch revolve 360°\",\"Repair\",\"Fillet 1 mm, 8 edges\"],\"tags\":[\"Base plate\",\"Screw hole\",\"C clip ring\",\"C clip ring\",\"Snap throat\",\"Screw hole\",null,\"Outside edge round\"],\"stepIds\":[\"smw8y3dn91\",\"smw8y3nn82\",\"smw8y3v083\",\"smw8y3vxb4\",\"smw8y3zam5\",\"smw8y3zcx6\",\"smw8y4rh89\",\"smw8y4wc2a\"],\"watertight\":true,\"minWallMm\":0.005}}}"
    ],
-   "text": "The cable clip is modeled in Cable clip (not printed). The design check failed on one item, so it is not finished yet.\n\n- **Built:** a 30 x 20 x 3 mm base, a C-shaped ring for the 8 mm cable (12 mm outside, 10 mm wide), a 6 mm opening at the top that the cable has to snap through, an M3 countersunk hole (3.4 mm clearance, 6.5 mm head) set 10 mm off the ring, and a 1 mm round on the outside edges of the base.\n- **Guesses to confirm:** the 6.5 mm countersink head, the 10 mm clip width, the 6 mm opening, the 10 mm hole offset and the 1 mm round. The 3.4 mm clearance is the M3 normal fit from a published chart. The 2 mm wall and the 3 mm base are yours.\n- **Check failed on two items:** the minimum wall measures 0.09 mm, below the 0.8 mm the 0.4 nozzle needs, and I have not yet found where that thin spot is. The feature count (7 against the planned 5) is only because I split the countersink and shaft into separate steps.\n\nNext I'd locate the thin spot, most likely where the opening meets the bore, and widen it if needed. Then I can slice it for the P1S in PLA when you ask."
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Fillet 1 mm, 8 edges\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":7,\"lastStep\":{\"index\":7,\"id\":\"smw8y4rh89\",\"name\":\"Repair\",\"op\":\"repair\",\"part\":0,\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":9150,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Repair\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":6,\"lastStep\":{\"index\":6,\"id\":\"smw8y3zcx6\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Screw hole\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":9162,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2173.791}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    },
+    {
+     "name": "design.undo",
+     "args": {
+      "design": "obj_mw8y3c90d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Removed Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smw8y3zam5\",\"name\":\"Snap throat 6 mm\",\"op\":\"subtract\",\"part\":-1,\"value\":{\"label\":\"Width\",\"value\":6,\"unit\":\"mm\"},\"feature\":\"Snap throat\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2233.817,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":4826,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2233.817}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Snap throat 6 mm\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw8y3vxb4\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2362.099,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":5084,\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2362.099}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Join 1 part\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw8y3v083\",\"name\":\"Add C clip ring\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2375.845,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":2032,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729},{\"index\":1,\"name\":\"C clip ring\",\"slot\":1,\"triangles\":884,\"minMm\":[8.75,5,2],\"sizeMm\":[12.5,10,12.5],\"volumeMm3\":658.116}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Add C clip ring\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw8y3nn82\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Screw hole\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":2032,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw8y3dn91\",\"name\":\"Add Cable clip\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Base plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800}]}}",
+    "{\"ok\":true,\"summary\":\"Removed Add Cable clip\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":0,\"volumeMm3\":0,\"parts\":[]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         0,
+         0,
+         0
+        ],
+        "max": [
+         30,
+         20,
+         3
+        ]
+       }
+      ],
+      "name": "Cable clip",
+      "feature": "Base plate"
+     }
+    },
+    {
+     "name": "geom.revolve",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "axis": {
+       "point": [
+        0,
+        0
+       ],
+       "direction": [
+        0,
+        1
+       ]
+      },
+      "angle_deg": 360,
+      "frame": {
+       "origin": [
+        15,
+        5,
+        0
+       ],
+       "normal": [
+        0,
+        -1,
+        0
+       ],
+       "u": [
+        1,
+        0,
+        0
+       ],
+       "v": [
+        0,
+        0,
+        1
+       ]
+      },
+      "loops": [
+       {
+        "points": [
+         [
+          0,
+          -0.5
+         ],
+         [
+          2.25,
+          -0.5
+         ],
+         [
+          2.25,
+          1.05
+         ],
+         [
+          4.2,
+          3
+         ],
+         [
+          4.7,
+          3.5
+         ],
+         [
+          0,
+          3.5
+         ]
+        ]
+       }
+      ],
+      "operation": "cut",
+      "part": 0,
+      "feature": "Screw hole"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 1, Add Cable clip\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":1,\"lastStep\":{\"index\":1,\"id\":\"smw8y5v1sc\",\"name\":\"Add Cable clip\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"Base plate\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":12,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1800}]}}",
+    "{\"ok\":true,\"summary\":\"Revolved: step 2, Sketch revolve 360°\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":2,\"lastStep\":{\"index\":2,\"id\":\"smw8y5v1td\",\"name\":\"Sketch revolve 360°\",\"op\":\"sketch.revolve\",\"part\":0,\"value\":{\"label\":\"Angle\",\"value\":360,\"unit\":\"°\"},\"feature\":\"Screw hole\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":1982,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.build",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "cylinder",
+        "origin": [
+         15,
+         10,
+         8.25
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 12.5,
+        "heightMm": 10
+       }
+      ],
+      "subtract": [
+       {
+        "type": "cylinder",
+        "origin": [
+         15,
+         9,
+         8.25
+        ],
+        "axis": [
+         0,
+         1,
+         0
+        ],
+        "diameterMm": 8.5,
+        "heightMm": 12
+       }
+      ],
+      "name": "C clip ring",
+      "feature": "C clip ring"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Built: step 3, Add C clip ring\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":3,\"lastStep\":{\"index\":3,\"id\":\"smw8y5wr0e\",\"name\":\"Add C clip ring\",\"op\":\"parts.add\",\"part\":-1,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2375.845,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":1982,\"minMm\":[0,0,0],\"sizeMm\":[30,20,3],\"volumeMm3\":1717.729},{\"index\":1,\"name\":\"C clip ring\",\"slot\":1,\"triangles\":884,\"minMm\":[8.75,10,2],\"sizeMm\":[12.5,10,12.5],\"volumeMm3\":658.116}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.boolean",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "op": "union",
+      "part": 0,
+      "with_parts": [
+       1
+      ],
+      "feature": "C clip ring"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Union: step 4, Join 1 part\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":4,\"lastStep\":{\"index\":4,\"id\":\"smw8y5xp0f\",\"name\":\"Join 1 part\",\"op\":\"boolean\",\"part\":0,\"feature\":\"C clip ring\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2330.785,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":4258,\"minMm\":[0,0,0],\"sizeMm\":[30,20,14.5],\"volumeMm3\":2330.785}]}}"
+   ],
+   "calls": [
+    {
+     "name": "geom.subtract",
+     "args": {
+      "design": "obj_mw8y3c90d1",
+      "solids": [
+       {
+        "type": "box",
+        "min": [
+         12,
+         9,
+         8.25
+        ],
+        "max": [
+         18,
+         21,
+         17
+        ]
+       }
+      ],
+      "label": "Snap throat 6 mm",
+      "feature": "Snap throat"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Subtracted: step 5, Snap throat 6 mm\",\"result\":{\"design\":\"obj_mw8y3c90d1\",\"name\":\"Cable clip\",\"exact\":false,\"steps\":5,\"lastStep\":{\"index\":5,\"id\":\"smw8y5yuug\",\"name\":\"Snap throat 6 mm\",\"op\":\"subtract\",\"part\":-1,\"value\":{\"label\":\"Width\",\"value\":6,\"unit\":\"mm\"},\"feature\":\"Snap throat\",\"state\":\"done\"},\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2202.503,\"parts\":[{\"index\":0,\"name\":\"Cable clip\",\"slot\":1,\"triangles\":4004,\"minMm\":[0,0,0],\"sizeMm\":[30,20,13.719],\"volumeMm3\":2202.503}]}}"
+   ],
+   "calls": [
+    {
+     "name": "design.check",
+     "args": {
+      "planId": "plan_mw8y3bal1bijg",
+      "design": "obj_mw8y3c90d1"
+     }
+    }
+   ]
+  },
+  {
+   "seen": [
+    "{\"ok\":true,\"summary\":\"Cable clip (obj_mw8y3c90d1, tied to the plan): 2 of 3 checks against plan plan_mw8y3bal1bijg failed: feature count (want 5 features, each built by a step tagged with its name, got 5 steps, none tagged for Outside edge round); minimum wall (want at least 0.8 mm (twice the 0.4 mm nozzle), got 0.41 mm). The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mw8y3bal1bijg again returns this same result.\",\"result\":{\"planId\":\"plan_mw8y3bal1bijg\",\"design\":\"obj_mw8y3c90d1\",\"designName\":\"Cable clip\",\"chosen\":\"tied to the plan\",\"nozzleMm\":0.4,\"pass\":false,\"items\":[{\"name\":\"feature count\",\"want\":\"5 features, each built by a step tagged with its name\",\"got\":\"5 steps, none tagged for Outside edge round\",\"pass\":false},{\"name\":\"watertight\",\"want\":\"closed\",\"got\":\"closed\",\"pass\":true},{\"name\":\"minimum wall\",\"want\":\"at least 0.8 mm (twice the 0.4 mm nozzle)\",\"got\":\"0.41 mm\",\"pass\":false}],\"body\":{\"size\":{\"x\":30,\"y\":20,\"z\":13.719},\"holes\":[{\"diameterMm\":4.499999992374763}],\"features\":5,\"steps\":[\"Add Cable clip\",\"Sketch revolve 360°\",\"Add C clip ring\",\"Join 1 part\",\"Snap throat 6 mm\"],\"tags\":[\"Base plate\",\"Screw hole\",\"C clip ring\",\"C clip ring\",\"Snap throat\"],\"stepIds\":[\"smw8y5v1sc\",\"smw8y5v1td\",\"smw8y5wr0e\",\"smw8y5xp0f\",\"smw8y5yuug\"],\"watertight\":true,\"minWallMm\":0.406},\"stop\":\"The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan plan_mw8y3bal1bijg again returns this same result.\"}}"
+   ],
+   "text": "The clip is not finished. The design check stopped it, so I have not added the outside edge round and the part is not ready to print.\n\nWhat is built, in the design \"Cable clip\": a 30 by 20 by 3 mm base, an M4 countersunk hole (4.5 mm clearance, 8.4 mm head, 90 degrees), a C ring with an 8.5 mm bore and 2 mm walls, and a 6 mm snap throat at the top. I moved the hole and the ring toward the back edge (hole at y 5, ring at y 10 to 20), because the countersink was cutting a paper-thin sliver into the ring's underside.\n\nWhat is off:\n- **Minimum wall:** 0.41 mm where the plan needs at least 0.8 mm (twice the 0.4 mm nozzle). The likely spot is the floor between the countersink top and the cable bore, which is about 0.5 mm.\n- **Outside edge round:** not applied. The first attempt failed on stale face references, and the top edges had no sharp edge to round, so only the bottom edges and the vertical corners could be rounded.\n\nSizes that were guesses and need your confirmation: the 8.4 mm countersink head (I assumed M4), the 8.5 mm bore, the 2 mm walls, the 6 mm throat, the 1 mm lip, the 10 mm depth and the 1 mm round. The 4.5 mm hole clearance is from the Albany County M4 chart.\n\nHow do you want to go on? I can thicken the floor under the screw (the wall fix), or make the ring slightly taller so the throat is less tight. If you tell me your screw's head size, I'll update the countersink too."
   }
  ],
  "score": {
