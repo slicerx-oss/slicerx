@@ -6,7 +6,8 @@
 // recorded replies. The person is played by a fixed policy: confirm the dimension sheet as shown, press Go on the plan,
 // pick the first real choice on any other question card, deny approvals for anything but design, and when a turn ends
 // with nothing built, nudge once or twice. The score counts every one of those past the first sheet and Go (past one
-// of each for every part, when the case asks for separate parts).
+// of each for every part, when the case asks for separate parts). A run that ends early (an error, the step cap, a
+// cancel, the drive's own limit) or a replay that leaves recorded replies unused says so in its error.
 import type { Host, MeshHandle, MeshPart, PilotConfig, PilotEvent, PrinterHost } from '@slicerx/contracts'
 import { modelById } from '@slicerx/printer-catalog'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type LlmClient } from '@slicerx/pilot'
@@ -117,7 +118,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   setHostSlices(true)
   clearPlans()
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null, overrides: {} })
-  const inner = opts.client ?? createScriptedClient(replaySteps(opts.steps ?? []), { chunk: false })
+  const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? []), { chunk: false })
+  const inner = opts.client ?? script!
   const steps: EvalStep[] = []
   // records each request's reply as a step, the shape the scripted client replays (as the creative eval does)
   const client: LlmClient = {
@@ -156,11 +158,20 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   const ac = new AbortController()
   const limitMs = opts.timeoutMs ?? (opts.client ? 480_000 : 120_000)
   const timer = setTimeout(() => ac.abort(), limitMs)
+  // why the run ended early, said by the pilot: an error it showed, the step cap, or a cancel the drive did not ask for
+  let ended: string | undefined
   const turn = async (message: string): Promise<string> => {
     let text = ''
     for await (const ev of pilot.run(`eval-${c.id}`, message, { signal: ac.signal })) {
       events.push(ev)
       if (ev.type === 'text') text += ev.delta
+      // a notice that mimir waits or goes on (waiting) is not an error
+      if (ev.type === 'error' && !ev.waiting) ended ??= `the run ended on an error: ${ev.message}`
+      if (ev.type === 'done') {
+        if (ev.stopReason === 'error') ended ??= 'the run ended on an error'
+        else if (ev.stopReason === 'max_steps') ended ??= 'the run stopped at the step cap'
+        else if (ev.stopReason === 'canceled' && !ac.signal.aborted) ended ??= 'the run was canceled'
+      }
       // only design is asked for: printing, profiles and notes stay with the person
       if (ev.type === 'approval_request') void pilot.resolveApproval(ev.request.id, { kind: 'deny', reason: 'not part of this request' })
       if (ev.type === 'sheet') {
@@ -202,6 +213,10 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   }
   // an abort ends the turn quietly (it reads as a canceled reply), so say it here or a stalled run scores as a finished one
   if (ac.signal.aborted && !error) error = `stopped after ${limitMs / 1000} s`
+  error ??= ended
+  // a replay that ends before its recorded replies do no longer follows what the model did live
+  const left = script?.remaining() ?? 0
+  if (left > 0) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
   const parts = placed(get().plate)
   const score = scoreCase(c, { events, turns, parts, firstReply, firstBuilt, bed: buildVolume(c.machine.printer), wallMm: Math.round(2 * c.machine.nozzle * 1000) / 1000 })
   const results = new Map(events.flatMap((e) => (e.type === 'tool_result' ? [[e.callId, e] as const] : [])))
