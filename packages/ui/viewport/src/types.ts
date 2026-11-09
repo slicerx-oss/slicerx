@@ -687,6 +687,11 @@ export interface Viewport {
    * tone and a click on it comes back as the pick event's `sketch`.
    */
   setSketchPicking(on: boolean): void
+  /**
+   * Frames the pickable finished sketches from the current angle. `coverBottomPx` is how much of the view's bottom is
+   * covered (a phone's tool sheet): they are framed in the part above it.
+   */
+  frameSketches(opts?: { coverBottomPx?: number; animate?: boolean }): void
   /** Cuts away the models on the side `normal` points to, through `point` (bed coordinates); null puts them back. */
   setSection(section: { point: [number, number, number]; normal: [number, number, number] } | null): void
   /** Turns the camera to look straight at a plane through `point` along `normal` (bed coordinates), framing `radiusMm`. */

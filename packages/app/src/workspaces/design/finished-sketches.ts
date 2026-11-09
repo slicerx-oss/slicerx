@@ -13,9 +13,13 @@ import { entityPaths, fromLoops, profileRings } from '../../cad/sketch-model'
 import { frameShown } from '../../cad/sketch-place'
 import { cameraBus } from '../../plate/tools'
 import { useSketchPicker } from '../../cad/sketch-pick'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { useApp } from '../../state/store'
 
 export { shownSketches }
+
+/** How long the phone's tool sheet takes to come up before the view frames above it. */
+const SHEET_SETTLE_MS = 350
 
 /** A finished sketch as the view draws it: its curves on its plane where it stands now. Null for one sketch mode cannot draw. */
 export function sketchScene(k: SketchItem): FinishedSketch | null {
@@ -56,6 +60,20 @@ export function useFinishedSketches(): void {
   useEffect(() => {
     cameraBus()?.cad?.setSketchPicking?.(picker !== null && !sketching)
   }, [picker, sketching])
+  // On a phone the tool sheet covers the lower view as Loft or Sweep opens: the sketches to pick are framed above it
+  const phone = usePhoneLayout()
+  const open = picker !== null && !sketching
+  useEffect(() => {
+    if (!open || !phone) return
+    const t = window.setTimeout(() => {
+      const view = cameraBus()?.cad
+      const canvas = view?.canvas?.getBoundingClientRect()
+      const sheet = document.querySelector('.pane.sheet.sheet-docked')?.getBoundingClientRect()
+      const cover = canvas && sheet ? Math.max(0, canvas.bottom - sheet.top) : 0
+      view?.frameSketches?.({ coverBottomPx: cover })
+    }, SHEET_SETTLE_MS)
+    return () => window.clearTimeout(t)
+  }, [open, phone])
   useEffect(() => () => {
     cameraBus()?.cad?.setFinishedSketches([])
     cameraBus()?.cad?.setSketchPicking?.(false)

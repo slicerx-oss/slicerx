@@ -2900,6 +2900,34 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  frameSketches(opts: { coverBottomPx?: number; animate?: boolean } = {}): void {
+    if (this.cameraHeld) return
+    const box = new Box3()
+    const m = this.stage.bedMatrix()
+    const v = new Vector3()
+    for (const s of this.finishedScenes) {
+      if (s.id === undefined) continue
+      for (const p of s.paths) for (const q of p.points) box.expandByPoint(v.set(...fromPlane(s.frame, q)).applyMatrix4(m))
+    }
+    if (box.isEmpty()) return
+    // framed in the part of the view above what covers its bottom (a phone's tool sheet), then moved up into it
+    const cover = Math.max(0, Math.min(this.height * 0.6, opts.coverBottomPx ?? 0))
+    const free = this.rig.free
+    this.rig.free = { fw: free.fw, fh: free.fh * ((this.height - cover) / Math.max(1, this.height)) }
+    const pose = this.rig.framed(box)
+    this.rig.free = free
+    if (cover > 0) {
+      const dist = pose.pos.distanceTo(pose.target)
+      const perPx = (2 * dist * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.height)
+      const up = new Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).multiplyScalar((cover / 2) * perPx)
+      pose.pos.sub(up)
+      pose.target.sub(up)
+    }
+    this.rig.preset = null
+    this.rig.go(pose, opts.animate ?? true, performance.now())
+    this.invalidate()
+  }
+
   /** The pickable finished sketch under a client point: on its lines within a few pixels, or inside its closed shape. */
   private finishedAt(e: { clientX: number; clientY: number }): string | null {
     if (!this.sketchPicking || !this.finishedScenes.length) return null
