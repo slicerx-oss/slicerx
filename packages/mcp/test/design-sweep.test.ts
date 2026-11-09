@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A client sweeps one closed profile along an open path: a new body, a post joined to a base and a groove cut across
-// it, each a step that replays from the saved 3MF, and the input the sweep refuses.
+// it, a spout that narrows and turns, each a step that replays from the saved 3MF, and the input the sweep refuses.
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -94,6 +94,46 @@ describe('sweep as a design step', () => {
     const out = data<{ output: Summary }>(r).output
     const torus = Math.PI * 25 * 20 * (Math.PI / 2)
     expect(Math.abs(out.volumeMm3 / torus - 1)).toBeLessThan(5e-3)
+  }, 60_000)
+
+  it('sweeps a spout that narrows and turns along its path, and replays the taper and twist from the saved file', async () => {
+    const h = await connect({ geomEngine: engine })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Spout' })).design
+    // 22 mm round at the base to 9 mm over 70 mm: the frustum
+    const cone = await ok('slicerx_geom_sweep', { design: d, profile: { loops: [{ type: 'circle', center: [0, 0], diameterMm: 22 }] }, path: { points: [[0, 0, 0], [0, 0, 70]] }, scale: 9 / 22, name: 'Cone' })
+    const frustum = (Math.PI * 70 * (11 * 11 + 11 * 4.5 + 4.5 * 4.5)) / 3
+    expect(Math.abs(cone.volumeMm3 / frustum - 1)).toBeLessThan(5e-3)
+    expect(cone.sizeMm[2]).toBeCloseTo(70, 3)
+    // a 10 mm square turned a quarter about a smooth path of points as it shrinks to half, eased
+    const square10 = { frame: { origin: [40, 0, 0], normal: [0, 0, 1] }, loops: [square(10)] }
+    const arm = await ok('slicerx_geom_sweep', { design: d, profile: square10, path: { points: [[40, 0, 0], [40, 0, 30], [55, 0, 50], [80, 0, 55]], smooth: true }, scale: 0.5, twist_deg: 90, ease: 'smooth', name: 'Arm' })
+    expect(arm.parts).toHaveLength(2)
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Sweep, tapered', 'Sweep, tapered, twisted'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(2)
+    expect(again.parts.map((p) => p.volumeMm3)).toEqual(arm.parts.map((p) => expect.closeTo(p.volumeMm3, 1)))
+  }, 60_000)
+
+  it('refuses a taper that crosses itself at a tight bend, naming the bend, and a scale too small', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Horn' })).output.design
+    const side = { frame: { origin: [8, 0, 0], normal: [0, 1, 0] }, loops: [{ type: 'circle', center: [0, 0], diameterMm: 10 }] }
+    const bend = { loops: [{ start: [8, 0], segments: [{ type: 'arc', center: [0, 0], sweepDeg: 90 }] }] }
+    const big = await h.call('slicerx_geom_sweep', { design: d, profile: side, path: bend, scale: 3 })
+    expect(big.isError).toBe(true)
+    expect(text(big)).toMatch(/the path bends too tightly for the profile near \(-?\d+\.\d\d, -?\d+\.\d\d, -?\d+\.\d\d\) mm/)
+    expect(text(big)).toMatch(/or end scale/)
+    const tiny = await h.call('slicerx_geom_sweep', { design: d, profile: side, path: bend, scale: 0.01 })
+    expect(tiny.isError).toBe(true)
+    expect(text(tiny)).toMatch(/scale: /)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
   }, 60_000)
 
   it('refuses a profile drawn at bed X and Y on a frame already at the path start, saying where it sits', async () => {

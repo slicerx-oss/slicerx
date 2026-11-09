@@ -35,13 +35,18 @@ export interface SweepOptions {
   profile: LoftProfile | object
   path: SweepPath | object
   thicken?: Thicken | object | undefined
+  /** the size at the end of the path against the start */
+  scaleEnd?: number | readonly [number, number] | undefined
+  /** the turn about the path by its end, degrees */
+  twistDeg?: number | undefined
+  ease?: 'linear' | 'smooth' | undefined
   operation?: SolidOperation | undefined
   name?: string | undefined
 }
 
-/** The sketch.sweep step for this profile, path and options. */
+/** The sketch.sweep step for this profile, path and options: the taper, twist and ease only when they change it. */
 export function sweepParams(o: SweepOptions): StepParams {
-  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), operation: o.operation, name: o.name })
+  return plain({ op: 'sketch.sweep', profile: o.profile, path: o.path, ...(o.thicken ? { thicken: o.thicken } : {}), ...(o.scaleEnd !== undefined && o.scaleEnd !== 1 ? { scaleEnd: o.scaleEnd } : {}), ...(o.twistDeg ? { twistDeg: o.twistDeg } : {}), ...(o.ease === 'smooth' ? { ease: o.ease } : {}), operation: o.operation, name: o.name })
 }
 
 const BED: Pick<FaceFrame, 'origin' | 'u' | 'v'> = { origin: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0] }

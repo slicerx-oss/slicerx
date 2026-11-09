@@ -54,8 +54,11 @@ export type StepParams =
    * profiles need).
    */
   | { op: 'sketch.loft'; profiles: LoftProfile[]; smooth?: boolean; closed?: boolean; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
-  /** A solid swept from one sketch profile along an open path, the profile keeping its turn relative to the path; an open profile is thickened into a shell. */
-  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; operation?: 'new' | 'join' | 'cut'; name?: string }
+  /**
+   * A solid swept from one sketch profile along an open path, the profile keeping its turn relative to the path; an open
+   * profile is thickened into a shell. scaleEnd and twistDeg taper and turn it by length along the path, eased by ease.
+   */
+  | { op: 'sketch.sweep'; profile: LoftProfile; path: SweepPath; thicken?: Thicken; scaleEnd?: number | [number, number]; twistDeg?: number; ease?: 'linear' | 'smooth'; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
@@ -102,6 +105,8 @@ export interface SweepPath {
   frame?: FaceFrame
   loops?: SketchLoop[]
   points?: Vec3[]
+  /** points only: a smooth curve through them */
+  smooth?: boolean
 }
 
 export type SolidSpec =
@@ -643,7 +648,7 @@ export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): s
     case 'sketch.loft':
       return `${p.operation === 'cut' ? 'Loft cut' : p.smooth ? 'Smooth loft' : 'Loft'}${p.closed ? ' ring' : ''}, ${p.profiles.length} profiles${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'sketch.sweep':
-      return `${p.operation === 'cut' ? 'Sweep cut' : 'Sweep'}${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
+      return `${p.operation === 'cut' ? 'Sweep cut' : 'Sweep'}${p.scaleEnd !== undefined ? ', tapered' : ''}${p.twistDeg ? ', twisted' : ''}${p.thicken ? `, ${len(p.thicken.thicknessMm)} shell` : ''}`
     case 'subtract':
       return p.label
     case 'hollow':
