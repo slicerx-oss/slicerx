@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EvalStep } from './drive'
-import type { CaseScore } from './score'
+import type { CaseScore, Verdict } from './score'
 
 export const RECORDINGS_DIR = join(__dirname, 'recordings')
 
@@ -21,9 +21,10 @@ export interface ScoreChecks {
   hook?: boolean
 }
 
-/** The parts of a score a replay must match. */
+/** The parts of a score a replay must match. `pass` is the scorer's alone; `verdict` adds what the run said of its part. */
 export interface ScoreSummary {
   pass: boolean
+  verdict: Verdict
   geometry: boolean
   built: boolean
   refused: boolean
@@ -34,7 +35,7 @@ export interface ScoreSummary {
 export function summarize(s: CaseScore): ScoreSummary {
   const checks: ScoreChecks = { ops: s.ops.pass }
   for (const k of ['watertight', 'bodies', 'minWall', 'bedFit', 'sizes', 'hook'] as const) if (s[k]) checks[k] = s[k]!.pass
-  return { pass: s.pass, geometry: s.geometry, built: s.built, refused: s.refused, extra: s.extra, checks }
+  return { pass: s.pass, verdict: s.verdict, geometry: s.geometry, built: s.built, refused: s.refused, extra: s.extra, checks }
 }
 
 export interface BuildRecording {

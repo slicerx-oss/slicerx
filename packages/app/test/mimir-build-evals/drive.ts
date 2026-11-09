@@ -223,12 +223,14 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
     if (design) t.design = design
   }
   const parts = placed(get().plate)
-  const score = scoreCase(c, { events, turns, parts, firstReply, firstBuilt, bed: buildVolume(c.machine.printer), wallMm: Math.round(2 * c.machine.nozzle * 1000) / 1000 })
+  const score = scoreCase(c, { events, turns, parts, firstReply, reply, firstBuilt, bed: buildVolume(c.machine.printer), wallMm: Math.round(2 * c.machine.nozzle * 1000) / 1000 })
   const results = new Map(events.flatMap((e) => (e.type === 'tool_result' ? [[e.callId, e] as const] : [])))
   const calls = events.flatMap((e) => {
     if (e.type !== 'tool_call' || !(e.tool.startsWith('geom.') || e.tool.startsWith('design.') || e.tool.startsWith('pilot.'))) return []
     const r = results.get(e.callId)
-    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.summary ?? ''}`.slice(0, 160) : 'ok') : 'no result'}`]
+    // a check that ran says whether the part passed it, so a run's record shows what its last check said
+    const checked = e.tool === 'design.check' && r?.ok !== false ? (r?.output as { pass?: unknown } | undefined)?.pass : undefined
+    return [`${e.tool} ${r ? (r.ok === false ? `FAIL ${r.summary ?? ''}`.slice(0, 160) : typeof checked === 'boolean' ? `ok (part ${checked ? 'passed' : 'failed'})` : 'ok') : 'no result'}`]
   })
   const run: CaseRun = { score, turns, steps, calls, reply: firstReply.slice(0, 800) }
   if (error) run.error = error

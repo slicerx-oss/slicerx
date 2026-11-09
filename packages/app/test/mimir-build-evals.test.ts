@@ -26,7 +26,7 @@ import { liveEngine, wasmGeom } from './geom-engine'
 import { BUILD_CASES } from './mimir-build-evals/cases'
 import { driveCase, EVAL_MODEL, tabConfig, type CaseRun } from './mimir-build-evals/drive'
 import { loadRecording, recordLive, refreshScore, summarize } from './mimir-build-evals/recordings'
-import { assemblySizes, classifyNoBuild, extraTurns, hookCheck, okSteps, scoreCase, type UserTurn } from './mimir-build-evals/score'
+import { assemblySizes, checkFromCalls, classifyNoBuild, extraTurns, hookCheck, lastCheckPass, okSteps, replyClaim, runClaim, scoreCase, verdictCounts, verdictOf, type UserTurn } from './mimir-build-evals/score'
 
 const live = process.env['SX_MIMIR_EVAL'] === 'live'
 
@@ -269,7 +269,8 @@ describe('build eval scoring', () => {
       const old = { pass: false, geometry: false, built: true, refused: false, extra: 0 }
       const rec = { model: 'm', provider: 'p', capturedAt: 't', steps: [{ text: 'hi' }, { calls: [{ name: 'x', args: { a: 1 } }] }], score: old }
       writeFileSync(join(dir, 'k.json'), `${JSON.stringify(rec, null, 1)}\n`)
-      const next = { ...old, checks: { ops: true, bodies: false } }
+      // a recording from before verdicts gains one
+      const next = { ...old, verdict: 'fail' as const, checks: { ops: true, bodies: false } }
       refreshScore('k', next, dir)
       const after = JSON.parse(readFileSync(join(dir, 'k.json'), 'utf8')) as typeof rec
       expect(after.score).toEqual(next)
@@ -462,6 +463,95 @@ describe('build eval scoring', () => {
     expect((await driveCase(c, { steps: lookup, timeoutMs: 20_000 })).error).toBeUndefined()
   }, 30_000)
 
+  it('reads what a reply says of its own check, tightly, and a failed check over a passed one', () => {
+    expect(replyClaim('The design check failed twice, and I have stopped building.')).toBe('fail')
+    expect(replyClaim('The clip is not finished. The design check stopped it.')).toBe('fail')
+    expect(replyClaim("The hook is modeled, but it fails the plan's size check, so I've stopped.")).toBe('fail')
+    expect(replyClaim("I built most of the box, but it doesn't pass the print-in-place check yet.")).toBe('fail')
+    expect(replyClaim('It has not passed the check.')).toBe('fail')
+    // a failed item next to passed ones is a failed check
+    expect(replyClaim('The plan check failed on one item. The other five checks pass.')).toBe('fail')
+    expect(replyClaim('The vase passes the plan check, but the walls come out at 1.66 mm.')).toBe('pass')
+    expect(replyClaim('The planter now passes all three plan checks.')).toBe('pass')
+    // a check that may come later, or none at all, says nothing
+    expect(replyClaim('If the check fails, I will widen the bore.')).toBeNull()
+    expect(replyClaim('Built the stand. I have not sliced it or sent it to the printer.')).toBeNull()
+    expect(replyClaim('Checked the part against its plan.')).toBeNull()
+  })
+
+  it('reads the last design.check result, and prefers it to the reply', () => {
+    const check = (id: string, pass?: boolean, ok = true): PilotEvent[] => [
+      { type: 'tool_call', callId: id, tool: 'design.check', source: 'command', input: { planId: 'p' } },
+      { type: 'tool_result', callId: id, ok, summary: 'checked', ...(pass === undefined ? {} : { output: { pass } }) } as PilotEvent,
+    ]
+    expect(lastCheckPass([])).toBeNull()
+    expect(lastCheckPass([...check('a', false), ...check('b', true)])).toBe(true)
+    expect(lastCheckPass([...check('a', true), ...check('b', false)])).toBe(false)
+    // a check that did not go through, or a tool that is not the check, says nothing
+    expect(lastCheckPass([...check('a', false), ...check('b', undefined, false)])).toBe(false)
+    expect(lastCheckPass([{ type: 'tool_call', callId: 'x', tool: 'geom.info', source: 'command', input: {} }, { type: 'tool_result', callId: 'x', ok: true, summary: '', output: { pass: true } } as PilotEvent])).toBeNull()
+    expect(runClaim({ check: true, reply: 'The design check failed.' })).toEqual({ said: 'pass', from: 'check' })
+    expect(runClaim({ check: null, reply: 'The design check failed.' })).toEqual({ said: 'fail', from: 'reply' })
+    expect(runClaim({ check: null, reply: 'Built it.' })).toEqual({ said: null, from: null })
+    expect(checkFromCalls(['design.check ok (part failed)', 'geom.build ok', 'design.check ok (part passed)'])).toBe(true)
+    expect(checkFromCalls(['design.check ok (part failed)', 'design.check FAIL no plan'])).toBe(false)
+    expect(checkFromCalls(['design.check ok'])).toBeNull()
+  })
+
+  it('counts a run whose own check contradicts the scorer as disagree, never as a pass', () => {
+    const said = (s: 'pass' | 'fail' | null) => ({ said: s, from: s ? ('check' as const) : null })
+    expect(verdictOf({ pass: true, geometry: true }, said(null))).toBe('pass')
+    expect(verdictOf({ pass: true, geometry: true }, said('pass'))).toBe('pass')
+    expect(verdictOf({ pass: true, geometry: true }, said('fail'))).toBe('disagree')
+    expect(verdictOf({ pass: false, geometry: false }, said('pass'))).toBe('disagree')
+    expect(verdictOf({ pass: false, geometry: false }, said('fail'))).toBe('fail')
+    // a part the scorer passes, failed on turns alone, agrees with a run that says its part passed
+    expect(verdictOf({ pass: false, geometry: true }, said('pass'))).toBe('fail')
+    const { byCase, all } = verdictCounts([
+      { id: 'cable-hook', verdict: 'pass' },
+      { id: 'hinged-box', verdict: 'disagree' },
+      { id: 'cable-hook', verdict: 'disagree' },
+      { id: 'cable-hook', verdict: 'fail' },
+    ])
+    expect(all).toEqual({ pass: 1, fail: 1, disagree: 2 })
+    expect([...byCase]).toEqual([
+      ['cable-hook', { pass: 1, fail: 1, disagree: 1 }],
+      ['hinged-box', { pass: 0, fail: 0, disagree: 1 }],
+    ])
+  })
+
+  // six live runs as their results lines kept them (fixtures/mimir-build-eval-runs.json): the scorer's result, the
+  // calls and the first 800 characters of the reply. Their calls predate checks saying passed or failed, so the claim
+  // comes from the reply.
+  const runs = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'mimir-build-eval-runs.json'), 'utf8')) as { run: string; case: string; pass: boolean; geometry: boolean; calls: string[]; reply: string }[]
+
+  it('scores the six recorded runs whose reply contradicts the scorer as disagree', () => {
+    const judged = runs.map((r) => {
+      const claim = runClaim({ check: checkFromCalls(r.calls), reply: r.reply })
+      return { run: r.run, was: r.pass ? 'pass' : 'fail', said: claim.said, from: claim.from, verdict: verdictOf(r, claim) }
+    })
+    expect(judged).toEqual([
+      // hinged box: the lid sits on the base with no gap and the box is 47 mm tall; the scorer passed it
+      { run: 'h2', was: 'pass', said: 'fail', from: 'reply', verdict: 'disagree' },
+      // hinged box: a 0.4 mm wall and 0.29 mm pin clearance after the fix round; the scorer passed it
+      { run: 'eb1', was: 'pass', said: 'fail', from: 'reply', verdict: 'disagree' },
+      // cable hooks whose plan size check failed; the scorer passed both
+      { run: 'ac4', was: 'pass', said: 'fail', from: 'reply', verdict: 'disagree' },
+      { run: 'ac5', was: 'pass', said: 'fail', from: 'reply', verdict: 'disagree' },
+      // cable hooks the reply says pass: one built without a sweep, one bent only 90 degrees with a 10 mm leg
+      { run: 'ec5', was: 'fail', said: 'pass', from: 'reply', verdict: 'disagree' },
+      { run: 'ac3', was: 'fail', said: 'pass', from: 'reply', verdict: 'disagree' },
+    ])
+  })
+
+  it('knows which recorded replays disagree: their last check failed and the scorer passes them', () => {
+    // twisted-vase and cable-clip failed their last check live too. phone-stand-lip's last check passed live and fails
+    // in the replay on the feature count, which now wants each step tied to a planned feature (a replay does not
+    // compare a check's words with the recording's)
+    const disagree = BUILD_CASES.filter((c) => loadRecording(c.id)?.score.verdict === 'disagree').map((c) => c.id)
+    expect(disagree).toEqual(['twisted-vase', 'cable-clip', 'phone-stand-lip'])
+  })
+
   it('runs the tab on a key for the eval model', () => {
     expect(tabConfig(EVAL_MODEL)).toMatchObject({ provider: 'anthropic', model: EVAL_MODEL })
   })
@@ -470,7 +560,8 @@ describe('build eval scoring', () => {
 const line = (id: string, r: CaseRun, usd?: number): string => {
   const s = r.score
   const checks = [s.ops, s.watertight, s.bodies, s.minWall, s.bedFit, s.sizes, s.hook].map((c, i) => (c ? `${['ops', 'closed', 'bodies', 'wall', 'bed', 'size', 'hook'][i]} ${c.pass ? 'ok' : 'FAIL'} (${c.detail})` : '')).filter(Boolean)
-  return `${(s.pass ? 'PASS' : s.refused ? 'REFUSED' : 'FAIL').padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
+  const said = s.claim.said ? `  says ${s.claim.said} (${s.claim.from === 'check' ? 'last design.check' : 'reply'})` : ''
+  return `${(s.verdict === 'fail' && s.refused ? 'REFUSED' : s.verdict.toUpperCase()).padEnd(8)} ${id.padEnd(16)} turns ${s.turns.pass ? 'ok' : 'FAIL'} (${s.turns.detail})  ${checks.join('  ')}${said}${usd === undefined ? '' : `  $${usd.toFixed(3)}`}${r.error ? `  error: ${r.error}` : ''}`
 }
 
 /**
@@ -522,12 +613,15 @@ describe.runIf(live)('live build evals', () => {
   })
   afterAll(() => {
     setGeomProvider(null)
-    const passed = rows.filter((r) => r.run.score.pass).length
-    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd)).join('\n')}\nlive ${model}: ${rows.length} of ${cases.length} run, ${passed} passed, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
+    // a disagree is counted on its own, never as a pass
+    const counts = verdictCounts(rows.map((r) => ({ id: r.id, verdict: r.run.score.verdict })))
+    const tally = (n: { pass: number; fail: number; disagree: number }) => `${n.pass} pass, ${n.fail} fail, ${n.disagree} disagree`
+    const perCase = [...counts.byCase].map(([id, n]) => `${id.padEnd(16)} ${tally(n)}`).join('\n')
+    console.log(`\n${rows.map((r) => line(r.id, r.run, r.usd)).join('\n')}\n\n${perCase}\nlive ${model}: ${rows.length} of ${cases.length} run: ${tally(counts.all)}, spent $${budget.spentUsd.toFixed(3)} of $${cap.toFixed(2)}${budget.stopped ? ' (stopped at the cap)' : ''}`)
     const out = process.env['SX_MIMIR_EVAL_OUT']
     if (out) {
       const at = new Date().toISOString()
-      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
+      appendFileSync(out, `${JSON.stringify({ at, model, label: process.env['SX_MIMIR_EVAL_LABEL'] ?? '', usd: Math.round(budget.spentUsd * 1000) / 1000, cap, stopped: budget.stopped, cases: rows.map((r) => ({ id: r.id, usd: Math.round(r.usd * 1000) / 1000, ...summary(r.run), turns: r.run.score.turns.detail, ops: r.run.score.ops.detail, sizes: r.run.score.sizes?.detail ?? null, hook: r.run.score.hook?.detail ?? null, claim: r.run.score.claim, calls: r.run.calls, reply: r.run.reply, ...(r.run.error ? { error: r.run.error } : {}) })) })}\n`)
     }
   })
   for (const c of cases) {
