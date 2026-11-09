@@ -232,6 +232,25 @@ fn the_indx_gcode_never_moves_the_head_to_a_dock_or_the_purge_collector() {
             }
         }
     }
+    // The start block on its own: none of its moves goes in front of the bed, the dock side (the plain Core One's start
+    // waits and purges at Y -9 and Y -2.5, where the INDX docks are).
+    let first = lines
+        .iter()
+        .position(|l| l.starts_with("; Prusa Core One with INDX: the Core One's own start G-code"))
+        .expect("the start block");
+    let last = first
+        + lines[first..]
+            .iter()
+            .position(|l| l.starts_with("M221 S100 ; set flow to 100%"))
+            .expect("the start's end");
+    let mut start_moves = 0;
+    for l in &lines[first..=last] {
+        if let Some((_, y)) = move_xy(l) {
+            start_moves += 1;
+            assert!(y.is_none_or(|y| y >= 0.0), "a start move to the dock side: {l}");
+        }
+    }
+    assert!(start_moves > 5, "{start_moves} moves in the start block");
     // The end lifts the head off the print before it parks it.
     let park = lines
         .iter()
