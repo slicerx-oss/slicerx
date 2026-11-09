@@ -218,7 +218,6 @@ describe('build eval scoring', () => {
     expect(used.error).toBeUndefined()
   }, 30_000)
 
-  // an empty design stays in the design host after the drive clears the plate, so this one has a name no recording uses
   it('keys a Go on the design its plan built, read from the plan the person approved', async () => {
     const c = asCase('plan-tie')
     const plan = { part: 'cable clip', units: 'mm', features: [{ name: 'base', kind: 'extrude', sizes: { width: 20 } }, { name: 'hook', kind: 'extrude', sizes: { width: 10 } }], assumptions: [], questions: [] }
@@ -226,6 +225,15 @@ describe('build eval scoring', () => {
     const go = r.turns.find((t) => t.kind === 'go')
     expect(go, JSON.stringify(r.calls)).toMatchObject({ kind: 'go', part: 'Build cable clip from this plan?', plan: expect.stringMatching(/^plan_/) })
     expect(go?.kind === 'go' && go.design).toMatch(/^obj_/)
+  }, 30_000)
+
+  it('starts each drive with no designs, so two drives can start a design with the same name', async () => {
+    const c = asCase('same-name')
+    const steps = [{ calls: [{ name: 'design.new', args: { name: 'Twin clip' } }] }, { calls: [{ name: 'design.steps', args: { design: 'Twin clip' } }] }, { text: 'Started it.' }]
+    const first = await driveCase(c, { steps, timeoutMs: 20_000 })
+    expect(first.calls, JSON.stringify(first.calls)).toEqual(['design.new ok', 'design.steps ok'])
+    const second = await driveCase(c, { steps, timeoutMs: 20_000 })
+    expect(second.calls, JSON.stringify(second.calls)).toEqual(['design.new ok', 'design.steps ok'])
   }, 30_000)
 
   it('charges a renamed plan of a part already built, and frees a second part whose sheet has the same title', () => {
