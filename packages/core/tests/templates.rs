@@ -3,13 +3,12 @@
 //! Every start, end, layer change and tool change template the settings
 //! package ships for its printers must parse.
 
-use serde_json::Value;
 use sx_core::template;
+mod common;
 
 #[test]
 fn every_shipped_template_parses() {
-    let path = format!("{}/../profiles/gcode.json", env!("CARGO_MANIFEST_DIR"));
-    let doc: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let doc = common::shipped_gcode::doc();
     let mut seen = 0;
     let mut bad = Vec::new();
     for (family, parts) in doc["families"].as_object().unwrap() {
@@ -35,8 +34,7 @@ fn every_shipped_template_parses() {
 /// a gap in `customgcode::context`.
 #[test]
 fn shipped_templates_render_with_a_real_print() {
-    let path = format!("{}/../profiles/gcode.json", env!("CARGO_MANIFEST_DIR"));
-    let doc: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let doc = common::shipped_gcode::doc();
     let mesh = std::sync::Arc::new(
         sx_core::Mesh::load(
             &std::fs::read(format!("{}/bench/models/x-mark.stl", env!("CARGO_MANIFEST_DIR"))).unwrap(),
@@ -209,4 +207,20 @@ fn each_filament_reads_the_size_of_its_own_nozzle() {
         render(&config, "{nozzle_diameter[0]}|{nozzle_diameter[1]}"),
         "0.4|0.4"
     );
+}
+
+/// The hand-written families join the extracted ones, and a family or model in both files is refused.
+#[test]
+fn written_gcode_merges_and_refuses_a_key_in_both_files() {
+    let doc = common::shipped_gcode::doc();
+    assert!(doc["families"].get("sovol_sv04").is_some());
+    let base = serde_json::json!({"families": {"stock": {"start": "G28"}}, "models": {"printer-a": "stock"}});
+    let family = common::shipped_gcode::merge(base.clone(), &serde_json::json!({"families": {"stock": {}}}));
+    assert!(family.unwrap_err().contains("G-code family stock is in both"));
+    let model =
+        common::shipped_gcode::merge(base.clone(), &serde_json::json!({"models": {"printer-a": "x"}}));
+    assert!(model.unwrap_err().contains("printer model printer-a is in both"));
+    let ok =
+        common::shipped_gcode::merge(base, &serde_json::json!({"models": {"printer-b": "stock"}})).unwrap();
+    assert_eq!(ok["models"]["printer-b"], "stock");
 }

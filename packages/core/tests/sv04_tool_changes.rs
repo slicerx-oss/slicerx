@@ -45,7 +45,7 @@ fn sv04_config(filaments: usize) -> Value {
         let path = format!("{}/../profiles/{file}", env!("CARGO_MANIFEST_DIR"));
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     };
-    let (machine, gcode) = (read("machine.json"), read("gcode.json"));
+    let (machine, gcode) = (read("machine.json"), common::shipped_gcode::doc());
     let mut c = machine["models"]["sovol-sv04"]["machine"].clone();
     let family = &gcode["families"][gcode["models"]["sovol-sv04"].as_str().unwrap()];
     for (key, part) in [
@@ -162,4 +162,79 @@ fn a_one_color_sv04_plate_never_heats_or_selects_the_second_tool() {
         }
     }
     assert_eq!(run.report.stats.tool_changes, 0);
+}
+
+/// The value of a G-code word (`X`, `Y`, `Z`) on a move line.
+fn word(line: &str, axis: char) -> Option<f64> {
+    code(line)
+        .split_ascii_whitespace()
+        .skip(1)
+        .find_map(|w| w.strip_prefix(axis)?.parse().ok())
+}
+
+/// Where both carriages reach on the bed. Sovol's firmware lets the left carriage travel X -62 to 302 and the right
+/// one X 0 to 362 (`X1_MIN_POS`, `X1_MAX_POS`, `X2_MIN_POS`, `X2_MAX_POS`); the bed is 300 x 300 mm.
+const BOTH_HEADS_X: (f64, f64) = (0.0, 300.0);
+const BED_Y: (f64, f64) = (0.0, 300.0);
+
+#[test]
+fn the_start_and_end_moves_stay_where_both_heads_reach_and_the_end_lifts_first() {
+    for filaments in [1, 2] {
+        let run = plate(filaments);
+        let text = String::from_utf8_lossy(&run.gcode);
+        let lines: Vec<&str> = text.lines().collect();
+        let first_layer = lines.iter().position(|l| l.starts_with(";LAYER_CHANGE")).unwrap();
+        let end = lines
+            .iter()
+            .position(|l| l.contains("; lift off the print"))
+            .unwrap();
+        let moves = |part: &[&str]| -> usize {
+            let mut n = 0;
+            for l in part {
+                let c = code(l);
+                if !(c.starts_with("G0 ") || c.starts_with("G1 ")) {
+                    continue;
+                }
+                if let Some(x) = word(l, 'X') {
+                    assert!(
+                        (BOTH_HEADS_X.0..=BOTH_HEADS_X.1).contains(&x),
+                        "{filaments} filaments: X out of reach: {l}"
+                    );
+                    n += 1;
+                }
+                if let Some(y) = word(l, 'Y') {
+                    assert!(
+                        (BED_Y.0..=BED_Y.1).contains(&y),
+                        "{filaments} filaments: Y off the bed: {l}"
+                    );
+                    n += 1;
+                }
+            }
+            n
+        };
+        assert!(moves(&lines[..first_layer]) >= 6, "the start's prime moves");
+        assert!(moves(&lines[end..]) >= 1, "the end's present move");
+        // The end lifts above the print before it moves the bed or the head.
+        let top = lines[first_layer..end]
+            .iter()
+            .filter_map(|l| word(l, 'Z'))
+            .fold(0.0_f64, f64::max);
+        let first_xy = end
+            + lines[end..]
+                .iter()
+                .position(|l| word(l, 'X').is_some() || word(l, 'Y').is_some())
+                .unwrap();
+        let lifted = lines[end..first_xy]
+            .iter()
+            .filter_map(|l| word(l, 'Z'))
+            .fold(0.0_f64, f64::max);
+        assert!(
+            lifted > top,
+            "{filaments} filaments: the end moves at Z {lifted}, the print reached Z {top}"
+        );
+        assert!(
+            !lines[end..].iter().any(|l| code(l).starts_with("G28")),
+            "no homing at the end"
+        );
+    }
 }

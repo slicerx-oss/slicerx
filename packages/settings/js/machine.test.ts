@@ -8,8 +8,9 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importFlat } from './import'
-import { MACHINE_CHECKED_COMMIT, gcodeStatus, listPrinterProfiles, machineEntry, printerConfig } from './profiles'
+import { MACHINE_CHECKED_COMMIT, gcodeStatus, listPrinterProfiles, machineEntry, mergeWrittenGcode, printerConfig } from './profiles'
 import gcodeJson from '@slicerx/profiles/gcode.json'
+import gcodeWrittenJson from '@slicerx/profiles/gcode-written.json'
 import machineJson from '@slicerx/profiles/machine.json'
 import { SETTINGS, settingDef } from './schema'
 
@@ -22,7 +23,11 @@ function fnv(text: string): string {
   return h.toString(16).padStart(8, '0')
 }
 const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v)
-const gcode = gcodeJson as unknown as { families: Record<string, Record<string, string>>; models: Record<string, string>; pending: string[] }
+type GcodeDoc = { families: Record<string, Record<string, string>>; models: Record<string, string>; pending: string[] }
+const extracted = gcodeJson as unknown as GcodeDoc
+const written = gcodeWrittenJson as unknown as Pick<GcodeDoc, 'families' | 'models'>
+// gcode.json with the hand-written families of gcode-written.json, as the profiles load them.
+const gcode = mergeWrittenGcode(extracted as never, written as never) as unknown as GcodeDoc
 const table = (): Record<string, string> => ({
   ...Object.fromEntries(Object.entries(models).map(([id, e]) => [id, fnv(JSON.stringify(canon({ machine: e.machine, nozzles: e.nozzles })))])),
   ...Object.fromEntries(Object.entries(gcode.families).map(([id, f]) => [`gcode ${id}`, fnv(JSON.stringify(canon(f)))])),
@@ -115,6 +120,25 @@ describe('machine settings', () => {
     const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as { orcaCommit: string; hashes: Record<string, string> }
     expect(lock.orcaCommit).toBe(MACHINE_CHECKED_COMMIT)
     expect(table()).toEqual(lock.hashes)
+  })
+})
+
+describe('hand-written G-code families', () => {
+  it('keeps each written family and model out of gcode.json and gives it to the printer config', () => {
+    const fields: [string, string][] = [['start', 'machine_start_gcode'], ['end', 'machine_end_gcode'], ['beforeLayerChange', 'before_layer_change_gcode'], ['layerChange', 'layer_change_gcode'], ['changeFilament', 'change_filament_gcode']]
+    expect(Object.keys(written.models).length).toBeGreaterThan(0)
+    for (const family of Object.keys(written.families)) expect(extracted.families[family], family).toBeUndefined()
+    for (const [id, family] of Object.entries(written.models)) {
+      expect(extracted.models[id], id).toBeUndefined()
+      const cfg = printerConfig(id) as unknown as Record<string, unknown>
+      for (const [field, key] of fields) expect(cfg[key], `${id} ${key}`).toBe(written.families[family]![field])
+    }
+  })
+  it('refuses a family or model that is in both files', () => {
+    const file = { families: { stock: { start: 'G28' } }, models: { 'printer-a': 'stock' }, pending: [] }
+    expect(() => mergeWrittenGcode(file as never, { families: { stock: { start: 'G90' } } } as never)).toThrow(/family stock is in both gcode.json and gcode-written.json/)
+    expect(() => mergeWrittenGcode(file as never, { models: { 'printer-a': 'ours' } })).toThrow(/printer model printer-a has a G-code family in both/)
+    expect(mergeWrittenGcode(file as never, { families: { ours: { start: 'G90' } }, models: { 'printer-b': 'ours' } } as never).models).toEqual({ 'printer-a': 'stock', 'printer-b': 'ours' })
   })
 })
 
