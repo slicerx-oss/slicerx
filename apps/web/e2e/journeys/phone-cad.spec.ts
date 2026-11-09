@@ -483,6 +483,13 @@ test('Loft and Sweep sit under Create in the Tools menu, and Loft takes sketches
   await create.locator('[data-tool="loft"]').tap()
   const panel = page.locator('[data-section="cad-tool"]')
   await expect(panel).toContainText('Tap sketches')
+  // the sketches to pick are framed in the view above the sheet
+  const sheetTop = async () => (await page.locator('.pane.sheet.sheet-docked').boundingBox())!.y
+  const above = async (z: number) => {
+    const y = (await screenOf(page, [100, 100, z]))[1]
+    return y > 0 && y < (await sheetTop()) - 8
+  }
+  for (const z of [0, 15]) await expect.poll(() => above(z), { timeout: 5_000 }).toBe(true)
   for (const k of ['k1', 'k2']) await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, sketch: k })
   await expect(panel.getByTestId('loft-profile')).toHaveCount(2)
   // each row's buttons are finger sized
