@@ -10,7 +10,7 @@ use crate::mesh::{Aabb, TriMesh};
 use crate::vec3::{self, V3};
 use crate::xform::{self, Mat4};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::{PI, TAU};
 
 pub const MAX_COPIES: usize = 2000;
@@ -205,6 +205,8 @@ struct Round {
     facets: usize,
     phase: f64,
     sides: Vec<usize>,
+    /// how many bands the wall is split into along the axis
+    bands: usize,
     /// a bore's wall, facing the axis
     inner: bool,
     /// how far its corners sit from the ideal prism, at most `ROUND_TOL`
@@ -263,7 +265,7 @@ fn lined_up(mesh: &TriMesh, t: &Turn, opts: BooleanOptions) -> Result<Option<Lin
     for r in &inner {
         // a full ring of wall, and nothing but that wall out to the fill: no groove gets sealed behind a skin
         let fill = facets(r);
-        if r.sides.len() != 2 * r.facets
+        if r.sides.len() != 2 * r.facets * r.bands
             || !clear_inside(
                 mesh,
                 &local,
@@ -412,6 +414,10 @@ fn radius_of(p: V3) -> f64 {
 
 /// the faceted rounds on the axis: side facets with all three corners at one radius and parallel to the axis
 #[allow(
+    clippy::too_many_lines,
+    reason = "one pass over the side facets, round by round"
+)]
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "a facet count checked to a small positive range"
@@ -433,45 +439,52 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
             })
             .collect();
     sides.sort_by(|a, b| a.2.cmp(&b.2).then(a.0.total_cmp(&b.0)));
+    let wall: HashSet<usize> = sides.iter().map(|s| s.1).collect();
+    // corners on a flat face across the axis, and corners on any face that is no wall
     let mut flat = vec![false; local.len()];
-    for tri in &mesh.triangles {
+    let mut other = vec![false; local.len()];
+    for (k, tri) in mesh.triangles.iter().enumerate() {
         let [a, b, c] = tri.map(at);
-        if vec3::normalize(vec3::tri_normal(a, b, c)).is_some_and(|n| n[2].abs() > 1.0 - 1e-6) {
-            for &i in tri {
-                if let Some(f) = flat.get_mut(i as usize) {
-                    *f = true;
-                }
+        let across = vec3::normalize(vec3::tri_normal(a, b, c)).is_some_and(|n| n[2].abs() > 1.0 - 1e-6);
+        for &i in tri {
+            if let (Some(f), Some(o)) = (flat.get_mut(i as usize), other.get_mut(i as usize)) {
+                *f |= across;
+                *o |= !wall.contains(&k);
             }
         }
     }
     sides
         .chunk_by(|a, b| a.2 == b.2 && b.0 - a.0 < ROUND_TOL)
         .filter_map(|group| {
-            // ends on flat faces across the axis: a sphere's middle band is no cylinder
-            let capped = group
+            let radius = group.iter().map(|g| g.0).sum::<f64>() / group.len() as f64;
+            let ids: Vec<u32> = group
                 .iter()
                 .filter_map(|g| mesh.triangles.get(g.1))
                 .flatten()
-                .all(|&i| flat.get(i as usize).copied().unwrap_or(false));
-            if !capped {
-                return None;
-            }
-            let radius = group.iter().map(|g| g.0).sum::<f64>() / group.len() as f64;
-            let mut corners: Vec<V3> = group
-                .iter()
-                .filter_map(|g| mesh.triangles.get(g.1))
-                .flat_map(|tri| tri.map(at))
+                .copied()
                 .collect();
+            let mut corners: Vec<V3> = ids.iter().map(|&i| at(i)).collect();
             let h0 = corners.iter().map(|p| p[2]).fold(f64::INFINITY, f64::min);
             let h1 = corners.iter().map(|p| p[2]).fold(f64::NEG_INFINITY, f64::max);
-            // straight facets from one height to the other
+            let to_end = |z: f64| (z - h0).abs().min((z - h1).abs());
+            let end = |z: f64| to_end(z) <= ROUND_TOL;
+            // ends on flat faces across the axis, so a sphere's middle band is no cylinder; corners between them
+            // only on walls, so a wall split into bands counts but a groove or a step does not
             if h1 - h0 < ROUND_TOL
-                || corners
-                    .iter()
-                    .any(|p| (p[2] - h0).abs() > ROUND_TOL && (p[2] - h1).abs() > ROUND_TOL)
+                || !ids.iter().all(|&i| {
+                    let k = i as usize;
+                    if end(at(i)[2]) {
+                        flat.get(k) == Some(&true)
+                    } else {
+                        other.get(k) == Some(&false)
+                    }
+                })
             {
                 return None;
             }
+            let mut hs: Vec<f64> = corners.iter().map(|p| p[2]).collect();
+            hs.sort_by(f64::total_cmp);
+            hs.dedup_by(|b, a| *b - *a < ROUND_TOL);
             let eps = ROUND_TOL / radius;
             corners.sort_by(|a, b| a[1].m_atan2(a[0]).total_cmp(&b[1].m_atan2(b[0])));
             let mut angles: Vec<f64> = corners.iter().map(|p| p[1].m_atan2(p[0])).collect();
@@ -499,7 +512,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
                 .map(|p| {
                     (radius_of(*p) - radius)
                         .abs()
-                        .max((p[2] - h0).abs().min((p[2] - h1).abs()))
+                        .max(if end(p[2]) { to_end(p[2]) } else { 0.0 })
                 })
                 .fold(off, f64::max);
             // a tessellated round, not a polygon; the wrap moves it out at most 0.01 mm
@@ -511,6 +524,7 @@ fn rounds(mesh: &TriMesh, local: &[V3]) -> Vec<Round> {
                 facets: facets as usize,
                 phase,
                 sides: group.iter().map(|g| g.1).collect(),
+                bands: hs.len() - 1,
                 inner: group.first().is_some_and(|g| g.2),
                 dev,
             })
@@ -533,7 +547,7 @@ fn plain(mesh: &TriMesh, local: &[V3], r: &Round) -> bool {
         })
         .count();
     caps + r.sides.len() == mesh.triangles.len()
-        && r.sides.len() == 2 * r.facets
+        && r.sides.len() == 2 * r.facets * r.bands
         && mesh.edge_report().is_watertight()
 }
 
@@ -842,6 +856,41 @@ mod tests {
         // the hub once and twelve teeth, not twelve hubs' slivers
         assert!(u.triangles.len() < 2 * m.triangles.len(), "{}", u.triangles.len());
         assert!(secs < 2.0, "{secs} s");
+    }
+
+    #[test]
+    fn a_round_with_its_wall_split_along_the_axis_joins_fast() {
+        // an extruded 70 mm disc or ring comes back with each side facet cut into 10 bands
+        let banded = |m: &TriMesh| {
+            let m = crate::remesh::tidy_flat(m, &crate::remesh::RemeshOptions::default());
+            let mut hs: Vec<f64> = m.positions.iter().map(|p| p[2]).collect();
+            hs.sort_by(f64::total_cmp);
+            hs.dedup();
+            assert!(hs.len() > 2, "{hs:?}");
+            m
+        };
+        let disc = banded(&cylinder_at(35.0, 0.0, 10.0, 188));
+        let (u, r, secs) = joined(&disc, &around_z(12, [0.0; 3]));
+        assert!(secs < 2.0, "{secs} s");
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        assert!((u.volume() - disc.volume()).abs() < 1e-3 * disc.volume());
+        assert!(boolean::storage_mesh(&u).is_ok());
+        assert_eq!(u.triangles.len(), 4 * 192);
+        let ring = banded(&cut(
+            &cylinder_at(35.0, 0.0, 10.0, 188),
+            &cylinder_at(32.5, -1.0, 11.0, 180),
+        ));
+        let (u, r, secs) = joined(&ring, &around_z(30, [0.0; 3]));
+        assert!(secs < 2.0, "{secs} s");
+        assert!(r.watertight && r.shells == 1, "{r:?}");
+        // a 210 sided wrap round the 180 sided bore, as for a tube in one band
+        let want = ngon(210, 35.0 / (PI / 210.0).m_cos(), 10.0) - ngon(180, 32.5, 10.0);
+        assert!(
+            (u.volume() - want).abs() < 1e-6 * want,
+            "{} vs {want}",
+            u.volume()
+        );
+        assert!(boolean::storage_mesh(&u).is_ok());
     }
 
     #[test]
@@ -1319,6 +1368,7 @@ mod tests {
             facets: 12,
             phase: 0.0,
             sides: Vec::new(),
+            bands: 1,
             inner: false,
             dev: 0.0,
         };
