@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What an approved plan still needs when mimir's reply would end, read from the run's own tool calls and results: the
+// What an approved plan still needs when mimir's reply would end, read from the chat's tool calls and results: the
 // plan from design.plan, the steps of the design built from it with their plan feature tags (lastStep and the step
-// rows the design tools return, by step id), and design.check's verdict. Nothing here is kept between calls; the run's
-// history is the record. The words for it live here too, so the chat's fold (ui/reduce.ts, which the phone app
+// rows the design tools return, by step id), and design.check's verdict. Nothing here is kept between calls; the chat's
+// history is the record (the run's own messages, or the earlier run's when the person asks to go on with its plan). The words for it live here too, so the chat's fold (ui/reduce.ts, which the phone app
 // imports) can tell the notice apart without pulling in the runtime.
 import type { LlmMessage, LlmToolCall } from './provider/types'
 
@@ -142,18 +142,21 @@ function args(call: LlmToolCall): Record<string, unknown> {
 const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((f) => str((f as { name?: unknown } | null)?.name) ?? []) : [])
 
 /**
- * What the plan approved in this run still needs, from the run's messages after `from`; null when it needs nothing or
- * nothing can be said. The plan is the last design.plan in the run the person answered with Go (with their edits). Its
+ * What the approved plan still needs, from the run's messages after `from` (the run's first message), or from the
+ * earlier run's design.plan call when the run holds no plan of its own and the person asks to go on with that one
+ * (carriedPlanFrom); null when it needs nothing or nothing can be said. The plan is the last design.plan read the
+ * person answered with Go (with their edits). Its
  * part is built in the first design a design or modeling call after the Go names. A feature is done when a step of that
  * design carries its name as the plan feature tag (case, punctuation and plurals aside), the rule design.check holds the
  * part to. A feature with no tagged step is one to build, or one to tag when an untagged step was labeled with its name
  * (the call's name or label), the hint design.check gives. Null when:
- *  - no plan was approved in this run;
+ *  - no plan was approved in this run, or carried from an earlier one;
  *  - design.check stopped the plan (its fix round is used, so mimir tells the person what is off);
  *  - design.check passed after the design's last change;
  *  - the design's steps are unknown (results without lastStep or step rows) and the part has a body.
  */
 export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | null {
+  from = carriedPlanFrom(messages, from) ?? from
   const calls = new Map<string, LlmToolCall>()
   let plan: { planId: string; part: string; features: string[] } | undefined
   let design: string | undefined
@@ -246,6 +249,52 @@ export function planLeft(messages: readonly LlmMessage[], from = 0): PlanLeft | 
     else left.build.push(feature)
   }
   return left.noBody || left.build.length || left.tag.length ? left : null
+}
+
+// Words that ask mimir to go on with the work in hand: "keep going", "continue", "go ahead", "then build it".
+const GOES_ON = /\b(?:keep (?:going|at it|building)|continue|carry on|go (?:on|ahead)|proceed|resume|finish (?:it|up|off|the|building)|(?:build|make|do) (?:it|them|that|the rest)|yes|yep|yeah|sure|ok|okay)\b/i
+// Words that set the work in hand aside: "stop", "don't", "instead", "never mind", something new.
+const SETS_ASIDE = /\b(?:stop|cancel|don['’]?t|do not|never ?mind|instead|forget|scrap|start over|something else|a different|another (?:part|design|one))\b/i
+/** What the person wrote, from a request the run sent: the words after "User request:", without the attached files. */
+const said = (content: string): string | undefined => {
+  const at = content.lastIndexOf('User request:\n')
+  return at < 0 ? undefined : content.slice(at + 'User request:\n'.length).replace(/\n\nAttached: [^\n]*$/, '')
+}
+
+/**
+ * Where to read an approved plan from when the run's own messages hold none: the message that called design.plan in an
+ * earlier run of the chat, when that call was the chat's last design.plan and the person approved it with Go, and every
+ * message the person sent since asks to go on with it ("keep going", "continue", "then build it") without setting it
+ * aside ("stop", "instead", "never mind"). Undefined otherwise: the run then reads only its own messages, so a plan the
+ * person declined, replaced or moved away from is never pushed again. `runStart` is the first message of the run, after
+ * the person's request.
+ */
+export function carriedPlanFrom(messages: readonly LlmMessage[], runStart: number): number | undefined {
+  const calls = new Map<string, { call: LlmToolCall; at: number }>()
+  let last: { at: number; approved: boolean } | undefined
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!
+    if (m.role === 'assistant') for (const c of m.toolCalls ?? []) calls.set(c.id, { call: c, at: i })
+    if (m.role !== 'tool') continue
+    const c = calls.get(m.callId)
+    if (c?.call.name !== 'design.plan') continue
+    // a plan shown in this run is this run's own: planLeft reads it from the run's messages
+    if (c.at >= runStart) return undefined
+    const r = read(m.content)
+    last = { at: c.at, approved: r.ok && r.accepted === true && r.planId !== undefined }
+  }
+  if (!last?.approved) return undefined
+  // the designs started since the plan: the first is its part's, and one this run starts after it is another part
+  let started = false
+  for (let i = last.at + 1; i < messages.length; i++) {
+    const m = messages[i]!
+    const words = i < runStart && m.role === 'user' ? said(m.content) : undefined
+    if (words !== undefined && (!GOES_ON.test(words) || SETS_ASIDE.test(words))) return undefined
+    if (m.role !== 'tool' || calls.get(m.callId)?.call.name !== 'design.new' || !read(m.content).ok) continue
+    if (started && i >= runStart) return undefined
+    started = true
+  }
+  return last.at
 }
 
 /** "a", "a and b", "a, b and c". */
