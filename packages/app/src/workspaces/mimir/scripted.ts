@@ -96,7 +96,7 @@ export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<n
 export const SCRIPTED_TIERS = { huginn: 'scripted', muninn: 'scripted' }
 
 /** The runtime over the given tools alone, answering with the scripts (the tab gives its stub the whole toolset, session.ts). */
-export function scriptedMimir(scripts: readonly MimirScript[], tools: readonly PilotTool<never>[], opts: { delayMs?: number; callDelayMs?: number; store?: SessionStore } = {}): Pilot {
+export function scriptedMimir(scripts: readonly MimirScript[], tools: readonly PilotTool<never>[], opts: { delayMs?: number; callDelayMs?: number; store?: SessionStore; standingPlan?: () => readonly LlmMessage[] | undefined } = {}): Pilot {
   return createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: NO_LLM },
     // both tiers are the stub too, so a deep turn names no model (the plan's default tiers would show one)
@@ -106,5 +106,6 @@ export function scriptedMimir(scripts: readonly MimirScript[], tools: readonly P
     builtins: false,
     tools: [...tools],
     ...(opts.store ? { store: opts.store } : {}),
+    ...(opts.standingPlan ? { standingPlan: opts.standingPlan } : {}),
   })
 }

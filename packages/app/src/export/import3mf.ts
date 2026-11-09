@@ -6,6 +6,7 @@
 // support. The archive is untrusted: entry count, sizes and names are capped before anything is inflated.
 import type { NamedValue } from '../cad/value-names'
 import { parseValues } from './values-file'
+import { plansOf, type SavedPlans } from './plans-file'
 import type { MeshPart } from '@slicerx/contracts'
 import { MarkReadError, readVaultMarks, type VaultMark, type VaultMarks } from '@slicerx/contracts/sx3mf-marks'
 import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
@@ -97,6 +98,8 @@ export interface ImportedProject {
   timeline?: Timeline | null
   /** Named values from Metadata/slicerx_values.json. */
   namedValues: NamedValue[]
+  /** The mimir plans from Metadata/slicerx_plans.json, designs by `fileId`; absent when the file has none it can read. */
+  plans?: SavedPlans
   /** Why the histories did not open, when a newer SlicerX saved them. */
   historyNote?: string
   /** Why the project's print settings were left out, when its settings file is there but not JSON settings. */
@@ -992,5 +995,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
   // Paint is checked by the open (open-project.ts), against the filaments the project has once it is open.
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...plansOf(files, fileIds), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}), ...(readerNote ? { readerNote } : {}) }
 }
