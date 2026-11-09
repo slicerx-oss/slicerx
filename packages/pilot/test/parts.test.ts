@@ -20,7 +20,7 @@ import { CAD_TOOLS, createPilot } from '../src/runtime'
 import { builtinTools } from '../src/tools/index'
 import { lookupParts, partsTool, sizeText } from '../src/tools/parts'
 import { lookupTool } from '../src/tools/ask'
-import { defineTool, type PilotTool, type ToolContext } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool, type ToolContext } from '../src/tool'
 import { z } from 'zod'
 
 const FIXTURES = join(__dirname, 'fixtures', 'standard-parts')
@@ -308,7 +308,7 @@ describe('where mimir has parts.lookup, and what the prompt says about it', () =
       config: { ...DEFAULT_CONFIG, webSearch: false },
       policy: DEFAULT_POLICY,
       client: createScriptedClient([]),
-      tools: [defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>],
+      tools: [defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>],
     })
     expect(pilot.tools().map((t) => t.name)).toContain('parts.lookup')
   })

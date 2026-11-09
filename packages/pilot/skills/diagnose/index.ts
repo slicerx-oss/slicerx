@@ -4,13 +4,13 @@
 // guides. Printer text is untrusted and passed on as data.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 
 export function createDiagnose() {
   return defineSkill({
     name: 'diagnose',
     version: '0.8.5',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Explain a failed or odd print on one of your printers: reads its status and message, matches the symptom against the troubleshooting guides and ranks causes with checks and fixes.',
     input: z.object({
       printerId: z.string().optional(),

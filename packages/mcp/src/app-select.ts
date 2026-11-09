@@ -4,7 +4,7 @@
 // there picks first, then the faces front to back, then the bodies) and picking one of them by its index, as a person
 // does from the list a held pointer opens. A pick changes what the window has selected, never the project, so both
 // tools read. Each answer carries the list again, and a pick carries the selection read back.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -72,7 +72,7 @@ export function appSelectTools(link: AppLinkCaller | undefined, appName: string)
     name: 'app.select_under',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `List everything under one spot of ${appName}'s Model view, in the order its Select Other list shows: the edge a click there picks first (one within 6 px of the spot), then every face front to back, then every body front to back. The spot is x and y in view pixels from the view's top left corner, or pointMm, a bed point in mm. Each candidate has an index for slicerx_app_select_other, a kind (edge, face or body), a plain label (Top face, Round edge, Body), the object, and where the ray meets it. Model must be open with no tool open. Reads only.`,
     input: z.object(spot).refine(oneSpot, { message: SPOT_MESSAGE }),
     async run(i) {

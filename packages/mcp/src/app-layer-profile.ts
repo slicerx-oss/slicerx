@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A plate's own layer heights in the running app: read, set and reset, as its layer height editor does.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 import { layerProfileEditInput, layerProfileReadInput } from './layer-profile-input'
@@ -20,7 +20,7 @@ export function appLayerProfileTools(link: AppLinkCaller | undefined, appName: s
     }
   }
   return [defineTool({
-    name: 'app.layer_profile', version: '1.0.0', source: 'command', permission: 'read',
+    name: 'app.layer_profile', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY,
     description: `Read a plate's own layer heights in ${appName} (the shown plate, or plate by number or id): mode (what the plate slices with: calibration, resume, own, sleipnir or fixed; a calibration plate and a resume plan keep their own layers over a profile; resume_void when a resume plan kept for the plate no longer matches it, so the plate does not slice until the plan is made again or the app's Print everything again clears it), resume (the kept plan: kept, its plate number and whether it holds), the profile as [height above the bed mm, layer height mm] points or null, the printer's limits (min_mm, max_mm, first_layer_mm), the plate's top_mm, the layer count the profile gives, the fixed layer_height_mm and a revision. Requires the app link; never reads a server-owned project.`,
     input: layerProfileReadInput,
     run: (i) => call('layers.profile.get', i),

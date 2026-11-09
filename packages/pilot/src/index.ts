@@ -14,7 +14,7 @@ export { capLine, capTools, LOAD_TOOLS_TOOL, LOADABLE_TOOLSETS, loadFits, loadTo
 export { applyToolGroups, toolGroupOf, TOOL_GROUPS, type ToolGroup, type ToolGroups } from './surfaces'
 export { editionToolGroups, modelingCommands, tabLimits, tabOptions, tabScope, TAB_MIN_STEPS, TAB_MIN_TOOL_CALLS, withBrain, type TabOptions, type TabParts } from './tab-options'
 export { chatRoute, designRoute, tabRoute, designSteps, designTier, HUGINN, MANY_STEPS, MODEL_AUTOMATIC, MODEL_AUTOMATIC_LABEL, modelFor, MUNINN, personSizes, SIZES_GIVEN, tierForPrompt, type Route, type RouteReason, type Tier } from './models'
-export { ASK_DISMISSED, ASK_SAID_MAX, defineSkill, defineTool, toolSpec, wasDismissed, type AgentWork, type AskAnswer, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'
+export { ASK_DISMISSED, ASK_SAID_MAX, READ_ONLY, defineSkill, defineTool, toolSpec, type ClassHints, type ReadToolHints, type ToolDefinition, type ToolHints, wasDismissed, type AgentWork, type AskAnswer, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'
 export { decide, normalizePolicy, policyMayGrant } from './gate'
 export { createApprovalBroker, TOKEN_TTL_MS, type ApprovalBroker } from './permit/broker'
 export { createKnowledgeBase, EMPTY_KB_INDEX, keptEditionDocs, type KbIndex, type KnowledgeBase } from './kb/kb'

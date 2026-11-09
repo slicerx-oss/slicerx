@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -30,7 +30,7 @@ export function appPreviewMarkerTools(link: AppLinkCaller | undefined, appName: 
     }
   }
   return [defineTool({
-    name: 'app.preview_markers', version: '1.0.0', source: 'command', permission: 'read', input: z.object({}).strict(),
+    name: 'app.preview_markers', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, input: z.object({}).strict(),
     description: `Read ${appName}'s preview legend marker switches: retractions, seams, lifts (Z hops), wipes, toolChanges and pauses. Reports each switch's shown preference and availability in the loaded slice. Counts are omitted until known; absent is not zero. G-code counts load asynchronously when a G-code marker is enabled. Reads live UI state through the app link.`,
     run: () => call('preview.markers', {}),
   }), defineTool({

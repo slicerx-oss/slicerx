@@ -169,6 +169,35 @@ export type AgentWork =
   /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
   | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
+/** MCP annotations a tool gives (readOnlyHint, destructiveHint, idempotentHint, openWorldHint). */
+export interface ToolHints {
+  readOnly?: boolean
+  destructive?: boolean
+  idempotent?: boolean
+  openWorld?: boolean
+}
+
+/**
+ * A read class tool always says whether it changes anything. The read class only means the policy runs it without
+ * asking; a read tool that switches what the app shows, writes a file or sends something is not read-only.
+ */
+export type ReadToolHints = ToolHints & { readOnly: boolean }
+
+/** Hints for a read class tool that only reads. */
+export const READ_ONLY: ReadToolHints = { readOnly: true }
+
+/**
+ * What a tool definition must give on top of PilotTool: a read class tool states hints.readOnly, and so does a tool
+ * whose class is only known when it is built (a plugin's or an app command's), since it may be read.
+ */
+export type ClassHints =
+  | { permission: 'read'; hints: ReadToolHints }
+  | { permission: Exclude<PermissionClass, 'read'>; hints?: ToolHints }
+  | { permission: PermissionClass; hints: ReadToolHints }
+
+/** A tool as defineTool takes it. Leaving out hints.readOnly on a read class tool is a type error. */
+export type ToolDefinition<I> = PilotTool<I> & ClassHints
+
 export interface PilotTool<I = unknown> {
   name: string
   version: string
@@ -201,7 +230,7 @@ export interface PilotTool<I = unknown> {
   /** The shape of `structured` replies, published as the MCP output schema. */
   outputShape?: z.ZodRawShape
   /** MCP hints when the permission class does not say it, such as a read tool that writes files to the output folder. */
-  hints?: { readOnly?: boolean; destructive?: boolean; idempotent?: boolean; openWorld?: boolean }
+  hints?: ToolHints
   /**
    * Runs without the permission gate and the action log: lookups that change nothing outside the output folder,
    * and calls about the server itself (approvals, the policy, the log). A tool marked so must be read class.
@@ -235,15 +264,16 @@ export interface PilotTool<I = unknown> {
   run(input: I, ctx: ToolContext): Promise<ToolOutput>
 }
 
-export function defineTool<I>(tool: PilotTool<I>): PilotTool<I> {
+export function defineTool<I>(tool: ToolDefinition<I>): PilotTool<I> {
   if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/.test(tool.name)) throw new Error(`Bad tool name ${tool.name}`)
   if (tool.ungated && tool.permission !== 'read') throw new Error(`${tool.name}: only a read tool can run without the gate`)
+  if (tool.permission === 'read' && typeof tool.hints?.readOnly !== 'boolean') throw new Error(`${tool.name}: a read tool says whether it changes anything (hints.readOnly)`)
   return tool
 }
 
 /** Skills are tools with source `skill`, listed in the inspector. */
-export function defineSkill<I>(tool: Omit<PilotTool<I>, 'source'> & { summary?: string }): PilotTool<I> {
-  return defineTool({ ...tool, source: 'skill' })
+export function defineSkill<I>(tool: Omit<PilotTool<I>, 'source' | 'permission' | 'hints'> & ClassHints & { summary?: string }): PilotTool<I> {
+  return defineTool({ ...tool, source: 'skill' } as ToolDefinition<I>)
 }
 
 export function toolSpec(t: PilotTool<never> | PilotTool<unknown>): ToolSpec {

@@ -14,7 +14,7 @@ import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createPilot, PART_GENERATORS } from '../src/runtime'
 import type { CommandSpec } from '@slicerx/contracts'
 import { DEFAULT_CONFIG } from '../src/config'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const file = (name: string, type: string): PilotAttachment => ({ id: name, name, type, bytes: 10, url: `data:${type};base64,AAAA` })
 
@@ -62,7 +62,7 @@ function geomTool(name: string, ok = true): PilotTool<never> {
     name,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `${name} for the test`,
     input: z.object({}).passthrough(),
     async run() {
@@ -267,7 +267,7 @@ describe('the tab runtime', () => {
   })
 
   it('moves up after other tools fail, as anywhere else', async () => {
-    const broken = defineTool({ name: 'kb.search', version: '1.0.0', source: 'command', permission: 'read', description: 'kb for the test', input: z.object({}).passthrough(), async run() { throw new Error('offline') } }) as PilotTool<never>
+    const broken = defineTool({ name: 'kb.search', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: 'kb for the test', input: z.object({}).passthrough(), async run() { throw new Error('offline') } }) as PilotTool<never>
     const pilot = createPilot({
       host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
       config: AUTO,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { READ_ONLY } from '@slicerx/pilot'
 import { z } from 'zod'
 import { findSettings } from '../settings'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -10,7 +11,7 @@ export default (d: ServerToolDeps) =>
     title: 'Find settings',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'settings',
     ungated: true,
     description: 'Search settings by words in the key, label or help text, such as "seam", "first layer speed" or "support interface".',

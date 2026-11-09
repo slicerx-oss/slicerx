@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { availableParallelism, homedir, totalmem } from 'node:os'
 import { dirname, join } from 'node:path'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import {
   allowedModels,
   appleGpuBudgetMb,
@@ -154,7 +154,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
     name: 'local_ai.check',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       assistantText("Check whether this computer can run mimir's model locally: the graphics card and its memory, system memory and cores, one recommended model with the reason in plain words, its download size and license, and whether Ollama or LM Studio is running. Reads only this machine and 127.0.0.1; downloads nothing."),
     input: z.object({}),
@@ -178,7 +178,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
     name: 'local_ai.status',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       `Show the local models installed in Ollama and LM Studio, with license and tool use for the ones ${productName()} knows, and the model slicerx_local_ai_setup last set up and checked. Reads only 127.0.0.1 and the local state file.`,
     input: z.object({}),

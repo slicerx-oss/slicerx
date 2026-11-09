@@ -8,7 +8,7 @@ import type { Cell, PrinterInfo, PrinterStatus, ToolDisplay } from '@slicerx/con
 import { z } from 'zod'
 import { ASSISTANT_NAME } from '../../src/name'
 import type { LlmImage } from '../../src/provider/types'
-import { defineSkill, defineTool, type ToolContext } from '../../src/tool'
+import { defineSkill, READ_ONLY, defineTool, type ToolContext } from '../../src/tool'
 import { AdjustRefused, describeLimits, materialLimits, planAdjustment, type Adjustment } from './limits'
 
 /** Frames larger than this are not sent to the model. */
@@ -83,7 +83,7 @@ export function createCheckPrint() {
   return defineSkill({
     name: 'check_print',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       "Check on a running print: takes a fresh camera frame, shows it to the user and to you with the printer's status and the limits for changes. Read the frame yourself, say plainly what you see, and propose fixes only through print.adjust, one change per call.",
     input: z.object({

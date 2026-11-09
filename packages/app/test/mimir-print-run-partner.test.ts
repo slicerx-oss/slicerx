@@ -6,7 +6,7 @@
 // the part already on the plate and sends it on the send card. The send card names the partner's assistant.
 import type { ApprovalRequest, CommandSpec, Host, MeshHandle, PilotEvent, PrinterHost, PrinterInfo, PrinterStatus, SliceResult } from '@slicerx/contracts'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, runSteps, type PilotTool, type ToolGroups } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, runSteps, type PilotTool, type ToolGroups } from '@slicerx/pilot'
 import { cleanup, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -42,7 +42,7 @@ const idle: PrinterStatus = { printerId: 'bench', state: 'idle', nozzles: [], sl
 const printers = { list: async () => [info], plugins: async () => [], fleets: async () => [], status: async () => idle, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => true, stream: () => { throw new Error('scripted') } }
 
-const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
+const tool = (name: string) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, description: name, input: z.object({}), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>
 const DESIGN_TOOLS = [tool('design.new'), tool('geom.info')]
 const SLICE: CommandSpec = { id: 'slice', title: 'Slice the plate', section: 'slice', tool: { permission: 'slice' }, run: () => undefined }
 

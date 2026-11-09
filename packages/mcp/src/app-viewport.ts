@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -18,7 +18,7 @@ export function appViewportTools(link: AppLinkCaller | undefined, appName: strin
     name: 'app.viewport',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read ${appName}'s live viewport pixelRatio, motionScale, motionFull, drawnPlate and degrade notices (count and lastAt, a UTC ISO 8601 time). Counts cover the current viewport's lifetime and include all degrade notices, not only GPU slowdowns. A new viewport resets them. viewport is null when no GPU view is mounted, including the 2D fallback. Reads through the app link; changes nothing.`,
     input: z.object({}),
     async run() {

@@ -7,7 +7,7 @@
 // turns that question down so mimir carries on. Offered while the app link is in use.
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
-import { ASK_SAID_MAX, defineTool, FILE_LIMITS, type PilotTool } from '@slicerx/pilot'
+import { ASK_SAID_MAX, READ_ONLY, defineTool, FILE_LIMITS, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -43,7 +43,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     name: 'mimir.ask',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
     description: `Send mimir a message in the open ${appName} app, with up to 4 pictures or PDF drawings from this computer (PNG, JPEG, WebP, GIF or PDF, 10 MB each), for example a photo of what a part must fit or a dimensioned drawing. It shows in the mimir tab as the person's next message, and mimir reads the files with it. Answers at once with the session id and the files as sent (a big picture is scaled down to 1568 px); read mimir's reply with slicerx_mimir_session. Refused while mimir is still answering, which includes while it waits on a question for the person (slicerx_mimir_session shows it as waiting); slicerx_mimir_dismiss turns that question down so mimir can finish.`,
     input: z.object({
       message: z.string().max(4000).default('').describe('What to ask mimir, as the person would type it'),
@@ -62,7 +62,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     name: 'mimir.session',
     version: '1.4.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups (a question answered on the person's paired phone carries answeredOn with the phone's name), the error lines with their code (one with waiting true is free mimir waiting out its limit for the minute, then going on; slow_down without it is the line that it stopped there), and waiting: the question mimir waits on now (its askId, title, question and choices), or the size sheet it waits on (its sheetId, title and sizes, with each size's unit as the sheet shows it: mm, deg, % or count), or null. Without an id, the newest conversation.`,
     input: z.object({ id: z.string().min(1).max(200).optional().describe('A session id from slicerx_mimir_ask; the newest when left out') }),
     async run(i) {
@@ -81,7 +81,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     name: 'mimir.dismiss',
     version: '1.1.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. When mimir waits on a size sheet instead, a call that gives its sheetId sets the sheet aside the way the person typing to mimir does: mimir reads said in its place, with any sizes typed on the sheet, and builds nothing from it (with no said the sheet is canceled); it never confirms a sheet, and a call without sheetId never touches one. Give the askId or sheetId from waiting so a card that has already changed is refused instead of the next one being turned down.`,
     input: z.object({
       askId: z.string().min(1).max(200).optional().describe('The waiting question to turn down, from slicerx_mimir_session (waiting.askId); the one waiting now when left out'),

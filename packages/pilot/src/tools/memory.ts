@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { DATA_MAX_KEYS, DATA_NAME_MAX, DATA_VALUE_MAX, dataLabel, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
 import type { NotesWhere } from '../memory/where'
-import { defineTool, type PilotTool } from '../tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
 
@@ -72,7 +72,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     name: 'memory.recall',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     title: 'Recall notes',
     description: "Look up the person's saved notes (printers, filaments, preferences, sizes, what worked) that match a question. Notes are their own words; the app's current machine and tool results win where they differ.",
     input: z.object({ query: z.string().min(1).max(200) }),

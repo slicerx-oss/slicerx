@@ -5,13 +5,13 @@
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
 import { fmtDuration, fmtGrams, fmtMoney, type ToolShared } from '../../src/shared'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 
 export function createEstimate(shared: ToolShared) {
   return defineSkill({
     name: 'estimate',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: 'Totals for the sliced plates: machine time, wall clock when each plate runs on its own printer, filament grams, filament and machine cost, and whether it finishes before a deadline.',
     input: z.object({
       deadline: z.string().optional().describe('ISO date or date-time the job must finish by'),

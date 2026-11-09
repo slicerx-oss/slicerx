@@ -3,7 +3,7 @@
 // The operation preview of the Model tool the person has open (push and pull, fillet and chamfer), through the app
 // link: whether the last edit previewed or failed, the error shown next to the tool, and whether the view keeps the
 // last good preview through it. Read only.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -42,7 +42,7 @@ export function appModelOpPreviewTools(link: AppLinkCaller | undefined, appName:
     name: 'app.model_op_preview',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: `Read the operation preview of the Model tool the person has open in ${appName} (push and pull, fillet and chamfer): status (none, pending, ok, or error when the last edit failed, such as a value that does not read or a size the engine refuses), the error shown next to the tool, whether the view keeps the last good preview through it, and whether the shown preview adds material (tinted) or removes it (a ghost). Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {

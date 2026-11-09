@@ -6,7 +6,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { SxlockError, openSxlock, readSxlockHeader, sealSxlock, tokenKeys, type SxlockKeys } from '@slicerx/embed/sxlock'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -107,7 +107,7 @@ export function sxlockTools(deps: SxlockToolDeps): PilotTool<never>[] {
     name: 'sxlock.inspect',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       `Read the header of a locked ${productName()} project (.sxlock) without the network: format version, the owner account id and the key id. Nothing about the project inside is readable without opening it. Use it to tell locked files apart and to see whose they are before opening.`,
     input: z.object({ file: file.describe('Absolute path to a .sxlock file') }),

@@ -6,7 +6,7 @@
 // cloud, whether mimir runs on it, whether the person is signed in, and today's use while it runs there. Neither
 // carries a key or a token: the install token stays in the app's keychain.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
@@ -19,7 +19,7 @@ export function mimirCloudTools(link: AppLinkCaller | undefined, appName: string
     name: 'mimir.share',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read whether ${appName} runs mimir on mimir cloud, whether it shares this install's mimir sessions to improve mimir (Settings > mimir, on by default), and whether the person has read the notice shown before the first chat. Reads the open app over the app link; only the person changes the setting.`),
     input: z.object({}),
     async run() {
@@ -45,7 +45,7 @@ export function mimirCloudTools(link: AppLinkCaller | undefined, appName: string
     name: 'mimir.cloud_status',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description: assistantText(`Read mimir cloud's status in ${appName}: whether this build offers mimir cloud, whether mimir is on and runs on it, whether the person is signed in to their account (null in a build without accounts), whether mimir cloud waits for a sign-in, and today's use and what is left (only while mimir runs on mimir cloud). Reads the open app over the app link; carries no key or token. slicerx-mcp --mimir-cloud-status prints the same JSON from a shell.`),
     input: z.object({}),
     async run() {

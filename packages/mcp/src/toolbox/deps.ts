@@ -9,7 +9,7 @@ import type { PathPolicy } from '../models'
 import type { PrinterBackend } from '../printers'
 import type { ProfileCatalog } from '../profiles'
 import type { SlicerBackend } from '../slicer'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { defineTool, type PilotTool, type ToolDefinition } from '@slicerx/pilot'
 
 export interface ServerToolDeps {
   store: DataStore
@@ -25,4 +25,4 @@ export interface ServerToolDeps {
 export type ServerToolFactory = (deps: ServerToolDeps) => PilotTool<never> | null
 
 /** A server tool's definition, typed for the list. */
-export const serverTool = <I>(t: PilotTool<I>): PilotTool<never> => defineTool(t) as unknown as PilotTool<never>
+export const serverTool = <I>(t: ToolDefinition<I>): PilotTool<never> => defineTool(t) as unknown as PilotTool<never>

@@ -5,7 +5,7 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrintRun, type PrinterHost, type RunJob, type RunSend, type RunSlice } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createRunBook, createScriptedClient, DEFAULT_CONFIG, defineTool, runSteps, type PrintRunHost, type ScriptStep, type ToolContext } from '../src/index'
+import { createPilot, createRunBook, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, runSteps, type PrintRunHost, type ScriptStep, type ToolContext } from '../src/index'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 
@@ -14,7 +14,7 @@ const designNew = defineTool<{ name: string }>({
   version: '1',
   description: 'Start a design',
   source: 'skill',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   input: z.object({ name: z.string() }),
   async run(input) {
     return { summary: `Started ${input.name}`, output: { design: 'des_42', name: input.name } }
@@ -27,7 +27,7 @@ const probe = defineTool<Record<string, never>>({
   version: '1',
   description: 'Looks at the run handle',
   source: 'skill',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   input: z.object({}),
   async run(_input, ctx) {
     seen.push(ctx.run ?? 'unset')
@@ -42,7 +42,7 @@ const pluginProbe = defineTool<Record<string, never>>({
   description: 'A plugin tool that looks at the run handle',
   source: 'plugin',
   plugin: { id: 'plug', kind: 'printer' },
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   input: z.object({}),
   async run(_input, ctx) {
     plugSeen.push(ctx.run ?? 'unset')
@@ -55,7 +55,7 @@ const setPrinter = defineTool<{ printerId: string }>({
   version: '1',
   description: 'Sets the run printer',
   source: 'skill',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   input: z.object({ printerId: z.string() }),
   async run(input, ctx) {
     ctx.run?.update({ printerId: input.printerId })

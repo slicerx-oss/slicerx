@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import type { AppLinkCaller } from './app-route'
 import { brimEditInput, brimReadInput } from './brim-input'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -18,7 +18,7 @@ export function appBrimTools(link: AppLinkCaller | undefined, appName: string): 
     }
   }
   return [defineTool({
-    name: 'app.brim_ears', version: '1.0.0', source: 'command', permission: 'read',
+    name: 'app.brim_ears', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY,
     description: `Read brim ears on the shown plate in ${appName}, optionally for one object: zero-based indices, local and bed coordinates in mm, world diameter, connectivity to the first layer, effective brim type, linked copies, generation defaults and a revision for edits. enabled is true when the effective brim type prints the stored ears (painted, or brim_ears, which uses them where an object has any and sharp corners otherwise); stored ears are read either way. Requires the app link; never reads a server-owned project.`,
     input: brimReadInput,
     run: (i) => call('brim.get', i),

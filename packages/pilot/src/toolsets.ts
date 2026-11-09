@@ -20,7 +20,7 @@
 import type { PilotContext } from '@slicerx/contracts'
 import { z } from 'zod'
 import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
-import { defineTool, type PilotTool, type Toolset } from './tool'
+import { READ_ONLY, defineTool, type PilotTool, type Toolset } from './tool'
 
 /**
  * The order toolsets are kept in when they do not all fit, first kept first. Core is never traded away. The design
@@ -490,7 +490,7 @@ export function loadToolsTool(report: ToolCapReport, hooks: LoadHooks): PilotToo
     name: LOAD_TOOLS_TOOL,
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     toolset: 'core',
     description: `Load a toolset that was left out of your tools to stay under the provider's tool limit. Its tools come whole with your next step; others may be left out to make room, never the ones you used last, and a toolset that cannot fit beside those is refused. Left out now: ${out.join(', ') || 'none'}. Toolsets: ${LOADABLE_TOOLSETS.map((s) => `${s}: ${TOOLSET_WORDS[s]}`).join('; ')}.`,
     input: z.object({ toolset: z.enum(LOADABLE_TOOLSETS) }),

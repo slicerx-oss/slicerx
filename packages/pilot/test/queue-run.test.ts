@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { createEvalEnv, type EvalObject } from '../evals/harness'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createShared } from '../src/shared'
-import { defineTool, type PilotTool, type ToolContext } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool, type ToolContext } from '../src/tool'
 import { printerTools } from '../src/tools/printers'
 
 const MACHINE: PilotMachine = { printer: 'bambu_p1s', material: 'pla', nozzle: 0.4 }
@@ -32,7 +32,7 @@ function runTools(host: { fp: string }): PilotTool<never>[] {
     version: '1',
     description: 'Records the slice in the run',
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run(_i, ctx) {
       ctx.run?.update({ slice: sliceOf(host.fp) })
@@ -44,7 +44,7 @@ function runTools(host: { fp: string }): PilotTool<never>[] {
     version: '1',
     description: 'Moves a part on the plate',
     source: 'skill',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     input: z.object({}),
     async run() {
       host.fp = 'fp2'

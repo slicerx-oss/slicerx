@@ -5,7 +5,7 @@
 // volume and bed contact from orient.analyze at the current rotation.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { pickObject } from '../common'
 import { currentRotation } from '../orientation_search/geometry'
 import { NO_MESH_NOTE, cm2, cm3, densityOf, fmtSize, geomRun, meshInfo, needsGeometry, objectGeometry, parseOrient, printNumbers, round, type MeshInfo, type OrientMeasure } from '../geom_common/index'
@@ -30,7 +30,7 @@ export function createMeshAnalyze() {
   return defineSkill({
     name: 'mesh_analyze',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Measure an object as it sits on the bed now: volume, surface area, size, whether it is watertight (open, flipped and non-manifold edges, separate shells), overhang area past the support angle, estimated support volume and bed contact area. Read only. Use it before repairing, hollowing, orienting or quoting a part.',
     input: z.object({

@@ -8,7 +8,7 @@ import { createElement, type ComponentType } from 'react'
 import { DEFAULT_POLICY, type ApprovalRequest, type LlmTransport, type Pilot, type PilotEvent, type PrintRun, type PrinterEvent, type PrinterHost, type RunJob, type RunSlice } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool } from '../src/index'
 import { createApprovalBroker } from '../src/permit/broker'
 import { TranscriptView, usePilotRun, type ApprovalCardProps, type ApprovalHandlers } from '../ui/index'
 import { emptyTranscript, foldEvents, reduceTranscript, startTurn, type Block, type Transcript } from '../ui/reduce'
@@ -262,7 +262,7 @@ describe('usePilotRun', () => {
       version: '1',
       description: 'Records a started print',
       source: 'skill',
-      permission: 'read',
+      permission: 'read', hints: READ_ONLY,
       input: z.object({}),
       async run(_i, ctx) {
         ctx.run?.recordJob(JOB)

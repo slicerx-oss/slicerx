@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import type { LlmRequest } from '../src/provider/types'
-import { defineTool, type PilotTool } from '../src/tool'
+import { READ_ONLY, defineTool, type PilotTool } from '../src/tool'
 
 const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 0.4 }
 
@@ -20,7 +20,7 @@ const snapshot = defineTool({
   name: 'acme.snapshot',
   version: '1.0.0',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   description: 'Read the state of a connected device.',
   input: z.object({}),
   async run() {

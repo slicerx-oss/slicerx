@@ -7,7 +7,7 @@ import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
 import { assistantText, productName } from '@slicerx/contracts'
 import type { KbDoc } from '../../src/kb/kb'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 
 type Rec = Record<string, unknown>
 const obj = (v: unknown): Rec => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Rec) : {})
@@ -125,7 +125,7 @@ export function createFitCheck() {
   return defineSkill({
     name: 'fit_check',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Check whether a designed gap will fuse, bind, press fit or slide at the layer height, line width and material, and suggest the gap to model instead. For part to part clearance (a lid that should slide, a pin that should press in) and print in place joints (hinges, chains). The gap is the air between the two faces per side, in mm, in XY (side walls) or Z (a face printed over another). Uses the tolerance calibration and dimensional accuracy knowledge. Read only; this takes a gap you give. geom.fit_check measures the gaps of a built design.',
     input: z.object({

@@ -6,7 +6,7 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type ScriptStep } from '../src/index'
+import { createPilot, createScriptedClient, DEFAULT_CONFIG, READ_ONLY, defineTool, type ScriptStep } from '../src/index'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
 const RAW = 'boolean: the result is unsafe at mesh storage precision (collapsed triangles); change the cut or placement'
@@ -16,7 +16,7 @@ const cut = defineTool<Record<string, never>>({
   version: '1',
   description: 'Cut',
   source: 'command',
-  permission: 'read',
+  permission: 'read', hints: READ_ONLY,
   input: z.object({}),
   async run() {
     throw new Error(RAW)
@@ -49,7 +49,7 @@ describe('an engine refusal in plain words', () => {
   })
 
   it('leaves a step that worked alone, even when its text has the same words', async () => {
-    const fine = defineTool<Record<string, never>>({ name: 'geom.boolean', version: '1', description: 'Cut', source: 'command', permission: 'read', input: z.object({}), async run() { return { summary: 'Cut made; it was unsafe at mesh storage precision before the nudge' } } })
+    const fine = defineTool<Record<string, never>>({ name: 'geom.boolean', version: '1', description: 'Cut', source: 'command', permission: 'read', hints: READ_ONLY, input: z.object({}), async run() { return { summary: 'Cut made; it was unsafe at mesh storage precision before the nudge' } } })
     const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [{ name: 'geom.boolean', args: {} }] }, { text: 'Done.' }], { chunk: false }), builtins: false, tools: [fine as never] })
     const events: PilotEvent[] = []
     for await (const e of p.run('s', 'Cut the slot')) events.push(e)

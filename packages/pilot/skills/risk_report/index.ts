@@ -8,7 +8,7 @@
 import type { Cell, SliceWarning } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KbDoc, KnowledgeBase } from '../../src/kb/kb'
-import { defineSkill } from '../../src/tool'
+import { READ_ONLY, defineSkill } from '../../src/tool'
 import { round } from '../common'
 import { thresholdForLayer } from '../supports/index'
 import { openEdges, overhangStats, placedParts, plateOf, type OverhangStats } from '../orientation_search/geometry'
@@ -230,7 +230,7 @@ export function createRiskReport() {
   return defineSkill({
     name: 'risk_report',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Check a plate for what is likely to fail before slicing: warping (footprint size, the material\'s shrink and enclosure need, open printers), tall thin parts, overhangs with supports off, open mesh edges and small first layer contact. Each risk gets a level, a fix, the settings the fix would use and knowledge base sources. Read only. Use it for "anything likely to fail on this plate?" or before a long or overnight print.',
     input: z.object({

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { READ_ONLY, defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { APP_VIEW_CHANGE_HINTS, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -51,7 +51,7 @@ export function appPreviewTools(link: AppLinkCaller | undefined, appName: string
     }
   }
   return [defineTool({
-    name: 'app.preview', version: '1.0.0', source: 'command', permission: 'read', input: z.object({}).strict(),
+    name: 'app.preview', version: '1.0.0', source: 'command', permission: 'read', hints: READ_ONLY, input: z.object({}).strict(),
     description: `Read the slice preview in ${appName}: whether a slice is loaded and toolpaths are shown, layer count and visible range, top height in mm, colors, camera, toolhead and gantry switches, and visible panes. Layer fields are absent before a slice is loaded. Reads the live window through the app link.`,
     run: () => call('preview.get', {}),
   }), defineTool({

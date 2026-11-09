@@ -7,7 +7,7 @@ import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { KbDoc } from '../../src/kb/kb'
 import type { ToolShared } from '../../src/shared'
-import { defineSkill, type ToolContext } from '../../src/tool'
+import { READ_ONLY, defineSkill, type ToolContext } from '../../src/tool'
 import { diffGcode, parseGcode, type GcodeStats } from './parse'
 
 type Rec = Record<string, unknown>
@@ -92,7 +92,7 @@ export function createGcodeInspect(shared: ToolShared) {
   return defineSkill({
     name: 'gcode_inspect',
     version: '1.0.0',
-    permission: 'read',
+    permission: 'read', hints: READ_ONLY,
     description:
       'Explain what a G-code file will do: layers, temperatures, typical and peak print speed, volumetric flow (checked against the filament limit), retraction count and length, fan, and time by feature from ;TYPE: or FEATURE comments. Diff two files to show the differences that matter. Reads a sliced plate (plate) or text the user pasted (text); compare against another plate or text. Read only. Use it for "why is this downloaded G-code two hours faster than mine?".',
     input: z.object({

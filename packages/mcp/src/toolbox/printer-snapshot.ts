@@ -17,7 +17,7 @@ export default (d: ServerToolDeps) => {
     ungated: true,
     description: `Take a camera snapshot from a printer and return it as an image. A printer reached through Obico has its camera off and is refused with not_supported and reason camera_off_tunnel.${printers.kind === 'demo' ? ' Simulated printers return a placeholder image.' : ''}`,
     input: z.object({ printer_id: z.string().min(1) }),
-    hints: { idempotent: false, openWorld: true },
+    hints: { readOnly: true, idempotent: false, openWorld: true },
     async run(args) {
       let blob: Blob | null
       try {
