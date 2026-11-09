@@ -164,7 +164,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.3.0',
+    version: '1.4.0',
     source: 'command',
     permission: 'slice',
     description:
