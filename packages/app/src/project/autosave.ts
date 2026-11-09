@@ -263,6 +263,29 @@ export function nothingToLose(s: Pick<AppState, 'plate' | 'plates' | 'activePlat
   return objects.length === 1 && example !== undefined && objects[0]?.name === example && !isDirty()
 }
 
+/**
+ * Puts the offer to restore unsaved work up, once. While the command bar is open the offer waits until the bar closes,
+ * however it closes: the offer is a modal dialog, which would keep the open bar inert, and the bar that takes over from
+ * its stand-in right after a reload could then never take the focus. The offer goes up only while nothing on the plate
+ * would be lost, the rule at the start, so a command that opened other work in the meantime leaves it unasked. Returns
+ * a stop, for a start that has gone before the bar closed.
+ */
+export function offerRecovery(): () => void {
+  const raise = (): void => {
+    if (nothingToLose()) set({ projectsDialog: 'recover' })
+  }
+  if (!get().commandOpen) {
+    raise()
+    return () => {}
+  }
+  const off = appStore.subscribe((s) => {
+    if (s.commandOpen) return
+    off()
+    raise()
+  })
+  return off
+}
+
 /** The autosave left from an earlier session, when there is work in it. An old one of the example plate is dropped. */
 export async function findRecovery(): Promise<Snapshot | null> {
   const rows = await snapshotStore().list().catch(() => [] as Snapshot[])

@@ -238,6 +238,7 @@ function Shell() {
   // Work that was never saved is autosaved a few seconds after each change and offered back at the next start.
   useEffect(() => {
     let stop = () => {}
+    let stopOffer = () => {}
     let gone = false
     void import('./project/autosave').then((m) => {
       if (gone) return
@@ -247,12 +248,13 @@ function Shell() {
         const crash = (await nativeCrashHost()?.recovery?.().catch(() => null)) ?? null
         if (gone) return
         if (crash) void import('./project/view-crash').then((v) => v.recoverAfterViewCrash(host, crash, r))
-        else if (r && m.nothingToLose()) set({ projectsDialog: 'recover' })
+        else if (r && m.nothingToLose()) stopOffer = m.offerRecovery()
       })
     })
     return () => {
       gone = true
       stop()
+      stopOffer()
     }
   }, [host])
   const projectsOpen = useApp((s) => s.projectsDialog !== null)

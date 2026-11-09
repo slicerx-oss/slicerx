@@ -18,6 +18,7 @@ vi.mock('../src/lib/queries', async (importOriginal) => ({ ...(await importOrigi
 let runs: string[] = []
 let off: () => void = () => {}
 let store: typeof import('../src/state/store')
+let autosave: typeof import('../src/project/autosave')
 let CommandBarSlot: typeof import('../src/shell/command-bar-slot').CommandBarSlot
 
 beforeEach(async () => {
@@ -35,6 +36,7 @@ beforeEach(async () => {
     return importOriginal<typeof import('../src/adapters/settings')>()
   })
   store = await import('../src/state/store')
+  autosave = await import('../src/project/autosave')
   ;({ CommandBarSlot } = await import('../src/shell/command-bar-slot'))
   const { registerCommands } = await import('../src/commands/registry')
   runs = []
@@ -91,6 +93,30 @@ describe('the command bar opened before its code has downloaded', () => {
     expect(input().value).toBe('cop')
     expect(document.activeElement).toBe(input())
     expect(runs).toEqual([])
+  })
+
+  it('keeps the focus and the typing when the offer to restore unsaved work comes while it is open', async () => {
+    openBar()
+    // The offer comes while the bar's code is still downloading, as right after a reload. A modal dialog now would keep
+    // the bar inert, so the offer waits for the bar to close.
+    const stop = autosave.offerRecovery()
+    try {
+      expect(store.get().projectsDialog).toBeNull()
+      expect(document.activeElement).toBe(input())
+      type('cop')
+      await load()
+      await waitFor(() => expect(screen.getByRole('option', { name: /Copy to clipboard/ })).toBeTruthy())
+      expect(document.activeElement).toBe(input())
+      expect(input().value).toBe('cop')
+      expect(store.get().projectsDialog).toBeNull()
+      // Running a command closes the bar, and the offer goes up then.
+      key('Enter')
+      await waitFor(() => expect(runs).toEqual(['test.copy']))
+      expect(store.get().commandOpen).toBe(false)
+      expect(store.get().projectsDialog).toBe('recover')
+    } finally {
+      stop()
+    }
   })
 
   it('uses the query as it stands when the list is there', async () => {
