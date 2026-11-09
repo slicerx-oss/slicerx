@@ -86,6 +86,8 @@ interface Learned {
   moved: Record<string, MovedFace>
   keys: Found['keys']
   notes: Found['notes']
+  /** Per step with face or edge keys: the keys it ran with and the keys it has once the app saves what it found. */
+  ran: Record<string, [string, string]>
 }
 // What was learned up to each cached step, by the same keys.
 const learnedAt = new Map<string, Learned>()
@@ -113,19 +115,25 @@ function hold(parts: readonly Flat[], by: 1 | -1): void {
   }
 }
 
-function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found }): void {
+function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found; ran: Learned['ran'] }): void {
   if (cache.has(key)) return
-  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes } })
+  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes }, ran: { ...learned.ran } })
   cache.set(key, parts)
   hold(parts, 1)
   cachedNumbers += sizeOf(parts)
-  for (const [k, v] of cache) {
+  for (const k of cache.keys()) {
     if (cachedNumbers <= CACHE_NUMBERS) break
-    cache.delete(k)
-    learnedAt.delete(k)
-    hold(v, -1)
-    cachedNumbers -= sizeOf(v)
+    forget(k)
   }
+}
+
+function forget(key: string): void {
+  const v = cache.get(key)
+  if (!v) return
+  cache.delete(key)
+  learnedAt.delete(key)
+  hold(v, -1)
+  cachedNumbers -= sizeOf(v)
 }
 
 function recall(key: string): Flat[] | undefined {
@@ -240,6 +248,52 @@ interface Found {
   notes: Record<string, string>
   /** Steps the exact kernel failed on this replay, which ran on the mesh. */
   fellBack: string[]
+}
+
+/**
+ * A step's params with the keys a replay found its faces or edges by saved in them, as the app keeps the step after
+ * the replay, so a step from a version 1 file has them from then on.
+ */
+export function withFound(p: StepParams, f: NonNullable<ReplayResult['found']>[string] | undefined): StepParams {
+  if (f?.faceKey && p.op === 'face.push') return { ...p, faceKey: f.faceKey }
+  if (f?.openKeys && p.op === 'shell') return { ...p, open: p.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) }
+  if (f?.edgeKeys && (p.op === 'edge.fillet' || p.op === 'edge.chamfer')) return { ...p, edges: p.edges.map((e, j) => (f.edgeKeys![j] ? { ...e, keys: f.edgeKeys![j]! } : e)) }
+  return p
+}
+
+/**
+ * The params without the face and edge keys a replay saves into them (withFound), for the cache key: saving what a
+ * replay found leaves the step's result the same, so the next replay still finds it. A hit checks the keys (fits).
+ */
+function unkeyed(p: StepParams): StepParams {
+  if (p.op === 'face.push') {
+    const { faceKey: _key, ...rest } = p
+    return rest
+  }
+  if (p.op === 'shell') return { ...p, open: p.open.map(({ key: _key, ...o }) => o) }
+  if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') return { ...p, edges: p.edges.map(({ keys: _keys, ...e }) => e) }
+  return p
+}
+
+/** The keys unkeyed leaves out, as text; empty for a step that has none to have. */
+function keysOf(p: StepParams): string {
+  if (p.op === 'face.push') return String(p.faceKey ?? 0)
+  if (p.op === 'shell') return JSON.stringify(p.open.map((o) => o.key ?? 0))
+  if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') return JSON.stringify(p.edges.map((e) => e.keys ?? 0))
+  return ''
+}
+
+/**
+ * Whether a cached result holds for these steps' keys: each step has the keys it ran with, or the ones the app saved
+ * from that run. Keys a person or a client changed another way run the step again.
+ */
+function fits(learned: Learned | undefined, steps: readonly Step[]): boolean {
+  if (!learned) return false
+  return steps.every((s) => {
+    const k = s.suppressed ? '' : keysOf(s.params)
+    const r = learned.ran[s.id]
+    return !k || (!!r && (k === r[0] || k === r[1]))
+  })
 }
 
 async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids, strict = false): Promise<Flat[]> {
@@ -550,21 +604,32 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   const found: Found = { keys: {}, notes: {}, fellBack: [] }
   // Pushes whose face went through the part.
   let gone = new Set<string>()
-  // Keys after each step; a step's key covers everything that can change its result.
+  // Keys after each step; a step's key covers everything that can change its result. The face and edge keys a replay
+  // finds and the app saves are left out (unkeyed), so saving them keeps the key; a hit checks them instead (fits).
   const keys: string[] = []
   // the shapes base parts were made as change an exact replay's parts, so they are in its key
   let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', !!history.exact, history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
   const baseKey = k
   const effective = steps.map((s) => followed(s, steps))
   for (const s of effective) {
-    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, s.params, s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
+    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, unkeyed(s.params), s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
     keys.push(k)
   }
+  // The result kept after step i, when it was made with the keys the steps have now; one made with others goes.
+  const known = (i: number): Flat[] | undefined => {
+    const key = keys[i]!
+    if (!cache.has(key)) return undefined
+    if (fits(learnedAt.get(key), effective.slice(0, i + 1))) return recall(key)
+    forget(key)
+    return undefined
+  }
+  // Per keyed step: the keys it ran with on this replay or the one kept, and the keys it has once saved.
+  const ran: Learned['ran'] = {}
   // Start after the last step whose result is still known, when every step before it went through.
   let start = 0
   let parts: Flat[] = history.base.map(flat)
   for (let i = keys.length - 1; i >= 0; i--) {
-    const hit = recall(keys[i]!)
+    const hit = known(i)
     if (hit) {
       start = i + 1
       parts = hit
@@ -573,12 +638,13 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       Object.assign(moved, learned?.moved)
       Object.assign(found.keys, learned?.keys)
       Object.assign(found.notes, learned?.notes)
+      Object.assign(ran, learned?.ran)
       break
     }
   }
-  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, fellBack: [] } })
+  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, fellBack: [] }, ran: {} })
   const fonts = req.fonts ?? {}
-  let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? recall(keys[req.before - 1]!) : undefined
+  let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? known(req.before - 1) : undefined
   for (let i = 0; i < start; i++) {
     if (steps[i]!.suppressed) continue
     const note = found.notes[steps[i]!.id]
@@ -588,7 +654,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     if (req.before === i) before = parts
     const s = effective[i]!
     if (s.suppressed) {
-      remember(keys[i]!, parts, { gone, moved, found })
+      remember(keys[i]!, parts, { gone, moved, found, ran })
       continue
     }
     if (o.yieldStep) await o.yieldStep(s)
@@ -596,7 +662,9 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
       parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
-      remember(keys[i]!, parts, { gone, moved, found })
+      const had = keysOf(s.params)
+      if (had) ran[s.id] = [had, keysOf(withFound(s.params, found.keys[s.id]))]
+      remember(keys[i]!, parts, { gone, moved, found, ran })
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
       status[i] = { state: 'broken', message: e instanceof Error ? e.message : String(e) }
