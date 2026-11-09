@@ -26,6 +26,7 @@ import { setHostSlices } from '../../src/state/model-mode'
 import { get, set } from '../../src/state/store'
 import { bundledKb } from '../../src/workspaces/mimir/kb'
 import { cardPlans, clearPlans, PLAN_GO } from '../../src/workspaces/mimir/plan-tool'
+import { forgetWaiting } from '../../src/cad/waiting'
 import { tabPilotOptions, toolsFor } from '../../src/workspaces/mimir/session'
 import type { BuildCase } from './cases'
 import { classifyNoBuild, placed, scoreCase, type CaseScore, type UserTurn } from './score'
@@ -111,6 +112,8 @@ export interface CaseRun {
 export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?: EvalStep[]; model?: string; timeoutMs?: number }): Promise<CaseRun> {
   setHostSlices(true)
   clearPlans()
+  // designs an earlier drive started and never built on wait in the host; let them go, as clearing a project does
+  forgetWaiting()
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null, overrides: {} })
   const replayCheck = createReplayCheck()
   const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
