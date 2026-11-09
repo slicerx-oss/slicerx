@@ -392,6 +392,41 @@ describe('build eval scoring', () => {
     expect(onTop.detail).toMatch(/meets the stem only at its top/)
   })
 
+  // a recording as a live run made it: a lookup, then a reply, each reply with the results it read
+  const lookup = [{ calls: [{ name: 'parts.lookup', args: { name: 'M3' } }] }, { text: 'Done.' }]
+
+  it('fails a replay whose tool result differs from the recorded one, naming the request and the tool', async () => {
+    const c = asCase('diverge-lookup')
+    const live = await driveCase(c, { steps: lookup, timeoutMs: 20_000 })
+    expect(live.steps[1]?.seen).toHaveLength(1)
+    // an ok that was recorded as an error says so
+    const flipped = structuredClone(live.steps)
+    flipped[1]!.seen = [JSON.stringify({ ok: false, error: 'The shape no longer reaches the part.' })]
+    const f = await driveCase(c, { steps: flipped, timeoutMs: 20_000 })
+    expect(f.error).toMatch(/^replay diverged at request 2 \(parts\.lookup\): recorded failed "The shape no longer reaches the part\.", got ok "M3 screw/)
+    // a tool that changes the design says something else: the recording saw a design start where this one refuses
+    const start = await driveCase(asCase('diverge-new'), { steps: [{ calls: [{ name: 'design.new', args: { name: 'Diverge new probe' } }] }, { text: 'Done.' }], timeoutMs: 20_000 })
+    const moved = structuredClone(start.steps)
+    moved[1]!.seen = moved[1]!.seen!.map((t) => t.replace('Started', 'Started again'))
+    const m = await driveCase(asCase('diverge-new'), { steps: moved, timeoutMs: 20_000 })
+    expect(m.error).toMatch(/^replay diverged at request 2 \(design\.new\): recorded ok "Started again Diverge new probe \(<id>\)", got ok "Started Diverge new probe \(<id>\)"/)
+  }, 30_000)
+
+  it('replays a recording whose tool results match, ignoring the ids a run makes, and one without results', async () => {
+    const c = asCase('diverge-match')
+    const live = await driveCase(c, { steps: lookup, timeoutMs: 20_000 })
+    expect((await driveCase(c, { steps: live.steps, timeoutMs: 20_000 })).error).toBeUndefined()
+    // a new design is named by an id made from the time, so each run's differs from the recorded one
+    const start = await driveCase(asCase('diverge-ids'), { steps: [{ calls: [{ name: 'design.new', args: { name: 'Diverge ids probe' } }] }, { text: 'Done.' }], timeoutMs: 20_000 })
+    expect(start.steps[1]?.seen?.[0]).toMatch(/obj_[0-9a-z]+/)
+    const stamped = structuredClone(start.steps)
+    stamped[1]!.seen = stamped[1]!.seen!.map((t) => t.replace(/obj_[0-9a-z]+/g, 'obj_zz11aa22bb'))
+    const again = await driveCase(asCase('diverge-ids'), { steps: stamped, timeoutMs: 20_000 })
+    expect(again.error).toBeUndefined()
+    // a recording from before results were kept is not checked
+    expect((await driveCase(c, { steps: lookup, timeoutMs: 20_000 })).error).toBeUndefined()
+  }, 30_000)
+
   it('runs the tab on a key for the eval model', () => {
     expect(tabConfig(EVAL_MODEL)).toMatchObject({ provider: 'anthropic', model: EVAL_MODEL })
   })

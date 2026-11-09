@@ -7,7 +7,8 @@
 // pick the first real choice on any other question card, deny approvals for anything but design, and when a turn ends
 // with nothing built, nudge once or twice. The score counts every one of those past the first sheet and Go (past one
 // of each for every part, when the case asks for separate parts). A run that ends early (an error, the step cap, a
-// cancel, the drive's own limit) or a replay that leaves recorded replies unused says so in its error.
+// cancel, the drive's own limit), a replay that leaves recorded replies unused, and a replay whose tool results stop
+// matching the ones its recording saw (replay-divergence.ts) all say so in the error.
 import type { Host, MeshHandle, MeshPart, PilotConfig, PilotEvent, PrinterHost } from '@slicerx/contracts'
 import { modelById } from '@slicerx/printer-catalog'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type LlmClient } from '@slicerx/pilot'
@@ -15,6 +16,7 @@ import printerModels from '@slicerx/settings/printer-models.json' with { type: '
 import type { ScriptStep, ScriptStepData } from '../../../pilot/src/provider/scripted'
 import type { LlmMessage } from '../../../pilot/src/provider/types'
 import type { BuildVolume } from '../../../mcp/evals/creative/mesh-checks'
+import { createReplayCheck, MADE_ID, toolResultsSeen } from '../../../mcp/evals/creative/replay-divergence'
 import { builtinCommands } from '../../src/commands/builtin'
 import { currentEdition } from '../../src/edition'
 import { editionToolGroups, withBrain } from '../../src/pilot-connect/brain'
@@ -70,25 +72,17 @@ export interface EvalStep extends ScriptStepData {
   seen?: string[]
 }
 
-/** The tool results after the last assistant message: what the model read just before this reply. */
-function toolResultsSeen(messages: readonly LlmMessage[]): string[] {
-  let k = messages.length
-  while (k > 0 && messages[k - 1]!.role !== 'assistant') k--
-  return messages.slice(k).flatMap((m) => (m.role === 'tool' ? [m.content] : []))
-}
-
-// ids the app makes from the time and a counter: designs and objects (obj_...), plans (plan_...), steps (s...) and
-// dimensions (d...), each with at least one digit
-const MADE_ID = /\b(?:obj|plan|vol|plate)_[0-9a-z~]+\b|\b[sd](?=[0-9a-z]*\d)[0-9a-z]{9,}\b/g
-
 /**
  * The recorded replies as script steps that swap the ids of the live run for the ones this run made. Each step pairs
  * the ids in the results it saw live with the ids in the results this run's model reads at the same point, in order,
  * and replaces them in its tool calls; the pairs build up over the run.
  */
-export function replaySteps(steps: readonly EvalStep[]): ScriptStep[] {
+export function replaySteps(steps: readonly EvalStep[], check = createReplayCheck()): ScriptStep[] {
   const ids = new Map<string, string>()
-  return steps.map(({ seen, ...step }) => (messages: LlmMessage[]): ScriptStepData => {
+  return steps.map(({ seen, ...step }, index) => (messages: LlmMessage[]): ScriptStepData => {
+    // a result that differs from the one the recording saw ends the replay there, saying where
+    const diverged = check.step(index, seen, messages)
+    if (diverged) return { text: diverged }
     const was = (seen ?? []).join('\n').match(MADE_ID) ?? []
     const now = toolResultsSeen(messages).join('\n').match(MADE_ID) ?? []
     was.forEach((id, i) => {
@@ -118,7 +112,8 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   setHostSlices(true)
   clearPlans()
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null, printerModel: { vendor: 'Bambu Lab', model: 'P1S' }, profile: null, overrides: {} })
-  const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? []), { chunk: false })
+  const replayCheck = createReplayCheck()
+  const script = opts.client ? undefined : createScriptedClient(replaySteps(opts.steps ?? [], replayCheck), { chunk: false })
   const inner = opts.client ?? script!
   const steps: EvalStep[] = []
   // records each request's reply as a step, the shape the scripted client replays (as the creative eval does)
@@ -214,9 +209,11 @@ export async function driveCase(c: BuildCase, opts: { client?: LlmClient; steps?
   // an abort ends the turn quietly (it reads as a canceled reply), so say it here or a stalled run scores as a finished one
   if (ac.signal.aborted && !error) error = `stopped after ${limitMs / 1000} s`
   error ??= ended
+  // a replay whose tool results stopped matching the recording's says where, ahead of whatever that led to
+  if (replayCheck.diverged) error = replayCheck.diverged
   // a replay that ends before its recorded replies do no longer follows what the model did live
   const left = script?.remaining() ?? 0
-  if (left > 0) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
+  if (left > 0 && !replayCheck.diverged) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
   // each Go stands for the design its plan was built in (the tie the plan card makes), not the model's words for the part
   for (const t of turns) if (t.kind === 'go') {
     const design = cardPlans.plans.get(t.plan)?.design
