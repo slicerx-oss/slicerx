@@ -55,7 +55,7 @@ export function lookupTool(): PilotTool<never> {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Show the person something you looked up as a card in the view, with its source link: a title, up to four label and value rows, and the page it came from. It also stays in the conversation.',
+    description: 'Show the person something you looked up as a card in the view, with its source link: a title, up to 4 label and value rows and the page it came from. It stays in the conversation too.',
     input: z.object({
       title: z.string().min(2).max(60),
       fields: z.array(z.tuple([z.string().min(1).max(32), z.string().min(1).max(80)])).min(1).max(4),
@@ -249,7 +249,7 @@ export function sheetTool(): PilotTool<never> {
     description:
       'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess, and kind count or angle for a row that is a count or an angle. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change), or that they set it aside by writing to you (then do what they wrote). A sheet with one row asks for one number. Every row of a sheet of several sizes needs at, where it sits on the part, so each row gets its numbered callout. For a new part give part, the part as it will be built, never boxes standing in for it: extruded outlines (a hollow wall as its outline with the inside as a hole, posts, ribs, the lid beside the base as it prints), and a revolve, sweep or loft for a round, bent or tapered body (a pipe bend is a sweep with round). For a part already built give design, its id: the sheet then draws that design as built, so part can be left out, and at is in the design\'s own coordinates, as geom.info and geom.faces read them.',
     localDescription:
-      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for them to confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
+      'Before building a part, show the person a sheet (title, views) with every size it is built from (dims: width, length, height, wall, holes, clearance) and wait for a confirm or edit; use it whenever a size matters and you are unsure. Give each its best value, unit, source and kind for a count or angle. Returns the values to build with and which changed, or a cancel (then build nothing, ask what to change). One row asks for one number. Several rows each need at. New part: part, its solids as built (hollow walls as outline plus hole, lid beside base), never stand-in boxes. Built part: design, its id.',
     input: z
       .object({
         title: z.string().min(2).max(60),
@@ -300,7 +300,7 @@ export function sheetBindTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'After building from a sheet, never before, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again. With no row to tie, do not call it.',
+      'After building from a sheet, never before, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again. With no row to tie, skip it.',
     input: z.object({
       design: z.string().min(1).max(80),
       binds: z
