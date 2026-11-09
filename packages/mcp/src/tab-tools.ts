@@ -194,13 +194,20 @@ export function createCardPlans(plans: PlanRegistry) {
 export type CardPlans = ReturnType<typeof createCardPlans>
 
 /**
+ * The design toolset's tools the tab leaves out. design.put_plan keeps a client plan with no card, for MCP clients:
+ * plans in the tab are made on the card. design.trace_image waits for now, since in the tab the person traces with the
+ * sketch tool's dialog. design.save and design.open write and read 3MF files, which the tab has none of: a design there
+ * stays on the plate, and saving the project is the person's, so offered, they only refused, and a reply called save
+ * to finish a part.
+ */
+export const TAB_LEAVES_OUT: readonly string[] = ['design.put_plan', 'design.trace_image', 'design.save', 'design.open']
+
+/**
  * The tab's tools: its own (the question, the lookup card, the dimension sheet and its binding, and `plan`), then
- * `extra` (the design toolset). The tab's own tools win, and the design toolset's design.put_plan (a client plan kept
- * with no card, for MCP clients) stays out: plans in the tab are made on the card. So does design.trace_image for now:
- * in the tab the person traces with the sketch tool's dialog.
+ * `extra` (the design toolset) without the tools in TAB_LEAVES_OUT. The tab's own tools win.
  */
 export function mimirTabTools(plan: PilotTool<never>, extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
   const own = [askTool({ sizesOnSheet: true }), lookupTool(), sheetTool(), sheetBindTool(), plan]
-  const names = new Set([...own.map((t) => t.name), 'design.put_plan', 'design.trace_image'])
+  const names = new Set([...own.map((t) => t.name), ...TAB_LEAVES_OUT])
   return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
