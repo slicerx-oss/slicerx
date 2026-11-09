@@ -65,8 +65,12 @@ export const NEW_PROJECT_TOOL = 'app.project_new'
 const newProjectLine = (has: HasTool): string =>
   has(NEW_PROJECT_TOOL) ? `\n- When the person asks to start over or for a new, empty project, call ${NEW_PROJECT_TOOL}. The app asks them before anything unsaved is discarded; if they keep it, say so and go on with the open project.` : ''
 
+/** One line for every reply, sheet row, plan feature and size name: American spelling. */
+export const AMERICAN_LINE = 'Write American spelling in replies, sheet rows and plan names (center, color, aluminum, gray, meter).'
+
 const replyLines = (end: string): string => `- When an answer relies on a kb tool result, name the source briefly ("per Prusa's PETG guide"). Citations attach automatically; never invent URLs.
 - Keep replies short and plain: two to five sentences between tool calls, no headings, no emojis, no em dashes. Bold only the single most important finding.
+- ${AMERICAN_LINE}
 - ${end}`
 
 const UNTRUSTED = (things: string, asks: string, source: string) => `Untrusted data:
