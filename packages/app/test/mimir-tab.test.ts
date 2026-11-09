@@ -161,6 +161,21 @@ describe('agents', () => {
     set({ pilotPrompt: null })
   })
 
+  it('offers the demo fleet example prompts only while the printers are the demo fleet', () => {
+    const host = { capabilities: { printers: 'sim' } } as unknown as Host
+    const cmds = pilotFeature.commands!(host)
+    const demo = cmds.filter((c) => c.id !== 'pilot-ask')
+    expect(demo.map((c) => c.id)).toEqual(['pilot-bay-planning', 'pilot-diagnose'])
+    expect(demo.every((c) => c.enabled?.())).toBe(true)
+    // a connected bridge swaps the capability after the commands were registered
+    for (const real of ['none', 'link', 'native'] as const) {
+      host.capabilities.printers = real
+      expect(demo.some((c) => c.enabled?.())).toBe(false)
+    }
+    expect(pilotFeature.commands!({} as Host).filter((c) => c.id !== 'pilot-ask').some((c) => c.enabled?.())).toBe(false)
+    expect(cmds.find((c) => c.id === 'pilot-ask')!.enabled).toBeUndefined()
+  })
+
   it('read the mode back from the bridge state', () => {
     set({ modelMode: 'mimir' })
     expect(appState(get())).toMatchObject({ tab: 'prepare', mode: 'mimir' })

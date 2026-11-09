@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Feature `pilot`: mimir's commands and the Cmd+K handoff of free text, which open the mimir tab (the tab itself is
 // part of the plate workspace, workspaces/mimir). Entry point @slicerx/app/features/pilot.
-import type { AppFeature } from '@slicerx/contracts'
+import type { AppFeature, CommandSpec, Host } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { set, setModelMode } from '../../state/store'
 
@@ -14,10 +14,33 @@ function ask(prompt: string): void {
   set({ pilotPrompt: prompt })
 }
 
+/** True while the printers are the in-memory demo fleet; read each time, since a connected bridge replaces it. */
+const onDemoFleet = (host: Host) => (): boolean => host.capabilities?.printers === 'sim'
+
+/** Example prompts about the in-memory demo fleet. They only make sense there, so a real install never lists them. */
+const demoFleetCommands = (host: Host): CommandSpec[] => [
+  {
+    id: 'pilot-bay-planning',
+    title: `${ASSISTANT_NAME}: plan 12 strong PETG brackets by Friday`,
+    section: 'pilot',
+    enabled: onDemoFleet(host),
+    keywords: ['demo', 'brackets', 'batch', 'plan', 'cheapest printers'],
+    run: () => ask('Plan 12 strong PETG brackets by Friday'),
+  },
+  {
+    id: 'pilot-diagnose',
+    title: `${ASSISTANT_NAME}: diagnose the failed print on Bay 4`,
+    section: 'pilot',
+    enabled: onDemoFleet(host),
+    keywords: ['layer shift', 'failure', 'why'],
+    run: () => ask('Diagnose the Bay 4 failure'),
+  },
+]
+
 export const pilotFeature: AppFeature = {
   id: 'pilot',
   requires: ['llm', 'approvals', 'printers'],
-  commands: () => [
+  commands: (host) => [
     {
       id: 'pilot-ask',
       title: `Ask ${ASSISTANT_NAME}`,
@@ -29,19 +52,6 @@ export const pilotFeature: AppFeature = {
         else openMimir()
       },
     },
-    {
-      id: 'pilot-bay-planning',
-      title: `${ASSISTANT_NAME}: plan 12 strong PETG brackets by Friday`,
-      section: 'pilot',
-      keywords: ['demo', 'brackets', 'batch', 'plan', 'cheapest printers'],
-      run: () => ask('Plan 12 strong PETG brackets by Friday'),
-    },
-    {
-      id: 'pilot-diagnose',
-      title: `${ASSISTANT_NAME}: diagnose the failed print on Bay 4`,
-      section: 'pilot',
-      keywords: ['layer shift', 'failure', 'why'],
-      run: () => ask('Diagnose the Bay 4 failure'),
-    },
+    ...demoFleetCommands(host),
   ],
 }
