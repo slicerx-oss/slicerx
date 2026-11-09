@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A client sweeps one closed profile along an open path: a new body, a post joined to a base and a groove cut across
-// it, a spout that narrows and turns, each a step that replays from the saved 3MF, and the input the sweep refuses.
+// it, a spout that narrows and turns, a tube and a spout with their bores, each a step that replays from the saved 3MF,
+// and the input the sweep refuses.
 import { describe, expect, it } from 'vitest'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -119,6 +120,52 @@ describe('sweep as a design step', () => {
     const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
     expect(again.steps).toBe(2)
     expect(again.parts.map((p) => p.volumeMm3)).toEqual(arm.parts.map((p) => expect.closeTo(p.volumeMm3, 1)))
+  }, 60_000)
+
+  it('sweeps a tube and a bent spout with their bores, keeps both loops on the step, and replays them from the saved file', async () => {
+    const sent: { op: string; request: unknown }[] = []
+    const h = await connect({ geomEngine: (op, request) => (sent.push({ op, request }), engine(op, request)) })
+    const ok = async (name: string, args: Record<string, unknown>): Promise<Summary> => {
+      const r = await h.call(name, args)
+      expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+      return data<{ output: Summary }>(r).output
+    }
+    const d = (await ok('slicerx_design_new', { name: 'Spout' })).design
+    // a 20 mm round with a 16 mm bore, 40 mm long: the ring's area times the length
+    const ring = [{ type: 'circle', center: [0, 0], diameterMm: 20 }, { type: 'circle', center: [0, 0], diameterMm: 16 }]
+    const tube = await ok('slicerx_geom_sweep', { design: d, profile: { loops: ring }, path: { points: [[0, 0, 0], [0, 0, 40]] }, name: 'Tube' })
+    expect(Math.abs(tube.volumeMm3 / (Math.PI * (100 - 64) * 40) - 1)).toBeLessThan(5e-3)
+    const swept = sent.filter((s) => s.op === 'sketch.sweep').at(-1)?.request as { profile: { loops: unknown[] } }
+    expect(swept.profile.loops).toHaveLength(2)
+    // the same ring up a quarter bend of 30 mm, narrowing to half: the bore narrows with it
+    const bend = { loops: [{ start: [60, 0], segments: [{ type: 'arc', center: [30, 0], sweepDeg: 90 }] }] }
+    const spout = await ok('slicerx_geom_sweep', { design: d, profile: { frame: { origin: [60, 0, 0], normal: [0, 1, 0] }, loops: ring }, path: bend, scale: 0.5, name: 'Spout' })
+    expect(spout.parts).toHaveLength(2)
+    // between the narrow end's ring and the wide one's along the arc
+    const arc = 30 * (Math.PI / 2)
+    const wide = Math.PI * (100 - 64)
+    expect(spout.parts[1]!.volumeMm3).toBeGreaterThan(wide * 0.25 * arc)
+    expect(spout.parts[1]!.volumeMm3).toBeLessThan(wide * arc)
+    const steps = data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps
+    expect(steps.map((s) => s.name)).toEqual(['Sweep', 'Sweep, tapered'])
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
+    const again = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs[0]!
+    expect(again.steps).toBe(2)
+    expect(again.parts.map((p) => p.volumeMm3)).toEqual(spout.parts.map((p) => expect.closeTo(p.volumeMm3, 1)))
+  }, 60_000)
+
+  it('refuses a bore that touches the outside and a thickened profile with holes, and leaves the design as it was', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Pipe' })).output.design
+    const up = { points: [[0, 0, 0], [0, 0, 10]] }
+    const touching = await h.call('slicerx_geom_sweep', { design: d, profile: { loops: [square(20), { points: [[0, -10], [5, -5], [-5, -5]] }] }, path: up })
+    expect(touching.isError).toBe(true)
+    expect(text(touching)).toMatch(/Loop 2 crosses loop 1/)
+    const ring = [{ type: 'circle', center: [0, 0], diameterMm: 20 }, { type: 'circle', center: [0, 0], diameterMm: 16 }]
+    const shell = await h.call('slicerx_geom_sweep', { design: d, profile: { loops: ring }, path: up, thicken: { thicknessMm: 1 } })
+    expect(shell.isError).toBe(true)
+    expect(text(shell)).toMatch(/a profile with holes already has its walls; leave thicken out/)
+    expect(data<{ output: { steps: Row[] } }>(await h.call('slicerx_design_steps', { design: d })).output.steps).toHaveLength(0)
   }, 60_000)
 
   it('refuses a taper that crosses itself at a tight bend, naming the bend, and a scale too small', async () => {

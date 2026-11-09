@@ -964,12 +964,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   const twistShape = z.number().min(-3600).max(3600)
   const sweep = defineTool({
     name: 'geom.sweep',
-    version: '1.5.0',
+    version: '1.6.0',
     source: 'command',
     permission: 'slice',
     description: 'Sweep a profile along an open path (hook, handle, pipe, spout) as a body, joined or cut (must overlap the part); scale and twist_deg taper and turn it. A hook starts inside a side wall below its top, not on an open top, and its path ends bending up into a lip. With "design" it adds a step.',
     input: z.object({
-      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("One loop and frame as revolve takes; plane across the path's start; open: open chain"),
+      profile: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()), open: z.boolean().optional() }).optional().describe("Loops (inner ones are holes) and frame as revolve takes; plane across the path's start; open: open chain"),
       path: z.object({ frame: z.unknown().optional(), loops: z.array(z.unknown()).optional(), points: z.array(z.array(z.number())).optional(), smooth: z.boolean().optional() }).optional().describe('Open chain (frame, loops) or points; smooth: curve through points'),
       profile_sketch: z.string().optional(),
       path_sketch: z.string().optional(),
