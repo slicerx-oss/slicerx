@@ -7,9 +7,10 @@
 // The default replays the recorded replies in evals/creative/recordings, offline and with no key, and lists the
 // prompts that have no recording yet. A live run asks a model and needs the model's price per million input and
 // output tokens, so it can stop: no new request starts once the spend reaches the cap less the stop margin
-// (CAP_USD 1.50 by default, stopping at 1.40), or when the most it could cost would take the spend past the cap.
-// A reply cut off before its usage arrived is charged that most. --record saves each live reply as that prompt's
-// recording.
+// (CAP_USD 1.50 by default, stopping at 1.40), or when its reserve (its input tokens, estimated from its size, and its
+// whole output limit; live.ts worstUsd) would take the spend past the cap.
+// A reply cut off before its usage arrived is charged its reserve. --record saves each live reply as that prompt's
+// recording, except a run the cap stopped.
 // A full live run of every prompt takes about 30 minutes. On a shared build machine, run it under the heavy lock with a
 // hold limit of 2400 seconds, so a shorter limit on the machine does not stop it partway:
 //   SX_HEAVY_MAX_HOLD=2400 scripts/ci/heavy.sh pnpm --filter @slicerx/mcp eval:creative --mode live ...
@@ -119,7 +120,8 @@ const waiting: string[] = []
 const skipped: string[] = []
 const stale: string[] = []
 const report = (p: CreativePrompt, run: PromptRun): void => {
-  if (mode === 'live' && flag('record') && run.steps.length && !run.error) {
+  // a run the budget stopped ends partway, which is not what the model would do: it is never saved
+  if (mode === 'live' && flag('record') && run.steps.length && !run.error && !budget.stopped) {
     saveRecording(p.id, { status: 'recorded', model: model ?? '', provider, capturedAt: new Date().toISOString(), steps: run.steps, ...(defaultAnswer ? { defaultAnswer: true } : {}), tabTools: true, samePart: true, ...(run.planGoesOn ? { planGoesOn: true } : {}) })
   }
   // a replay that got the plan_left note its recording never answered stands for no reply of the model's: stale, not scored
