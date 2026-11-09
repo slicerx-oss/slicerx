@@ -1,0 +1,3 @@
+### Fixed
+
+- `slicerx_design_check` 1.4.0 (past 1.3.0, the print-in-place check, and past 1.2.0, which the design placement change leaves it at, since this changes it too) finds a plan the person made in the mimir tab after the project was saved and opened again over the app link. The project file now keeps its card plans (Metadata/slicerx_plans.json), and opening the project puts them back, tied to the objects their parts were built in, with their failed checks and a used fix round. Before, checking with that planId after a reopen was refused with "there is no plan". A plan whose object is not in the project is still refused that way.
