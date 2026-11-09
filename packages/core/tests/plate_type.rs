@@ -160,3 +160,145 @@ fn writes_the_cool_plate_files_for_a_diff_when_asked() {
     std::fs::write(format!("{dir}/a1-no-plate-type.gcode"), slice(before).gcode).unwrap();
     std::fs::write(format!("{dir}/a1-cool-plate.gcode"), slice(after).gcode).unwrap();
 }
+
+/// The settings schema's default for `key` (`packages/settings/defaults.json`), as a number: what the app shows for a
+/// key the print's settings leave out.
+fn schema_default(key: &str) -> f64 {
+    let v = &read("packages/settings/defaults.json")[key][1];
+    v.get(0).unwrap_or(v).as_f64().unwrap()
+}
+
+/// The A1 as a host that sends only the settings it changed gives it (the MCP server leaves out every value equal to
+/// the schema's default): no plate temperatures but the one its PETG sets, the textured plate's 70 C, and no plate
+/// type.
+fn sparse_a1_petg() -> serde_json::Map<String, Value> {
+    let mut cfg = stock_a1();
+    cfg.retain(|k, _| !k.contains("plate_temp") && k != "curr_bed_type" && k != "default_bed_type");
+    cfg.insert("textured_plate_temp".into(), json!(["70"]));
+    cfg
+}
+
+/// Bed temperature lines as (command, degrees).
+type BedLines = Vec<(String, f64)>;
+
+/// The first two bed lines (the start G-code's M140 and M190), every bed temperature set after them, and the header's
+/// `first_layer_bed_temperature`.
+fn bed_lines(cfg: serde_json::Map<String, Value>) -> (BedLines, BedLines, f64) {
+    let gcode = slice(cfg).gcode;
+    let temps = bed_temps(&gcode);
+    let header = String::from_utf8_lossy(&gcode)
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("; first_layer_bed_temperature = ")?
+                .trim()
+                .parse()
+                .ok()
+        })
+        .unwrap();
+    (
+        temps.iter().take(2).cloned().collect(),
+        temps.iter().skip(2).cloned().collect(),
+        header,
+    )
+}
+
+/// The bed heats to `first_layer` for the first layer (the start G-code's M140 and M190, and the header says the
+/// same), then to `other`, and is off only at the end.
+fn heats(cfg: serde_json::Map<String, Value>, first_layer: f64, other: f64, what: &str) {
+    let (start, rest, header) = bed_lines(cfg);
+    assert_eq!(
+        start,
+        [("M140".to_owned(), first_layer), ("M190".to_owned(), first_layer)],
+        "{what}: {start:?} {rest:?}"
+    );
+    assert!(
+        near(header, first_layer),
+        "{what}: header {header}, start {start:?}"
+    );
+    if !near(first_layer, other) {
+        assert!(
+            rest.iter().any(|(c, t)| c == "M140" && near(*t, other)),
+            "{what}: {rest:?}"
+        );
+    }
+    assert!(
+        rest.iter().all(|(_, t)| near(*t, other) || near(*t, 0.0)),
+        "{what}: {rest:?}"
+    );
+}
+
+#[test]
+fn a_plate_without_its_first_layer_temperature_heats_the_first_layer_like_the_rest() {
+    let mut cfg = sparse_a1_petg();
+    cfg.insert("curr_bed_type".into(), json!("Textured PEI Plate"));
+    heats(cfg.clone(), 70.0, 70.0, "textured PEI, no first layer key");
+    // 0 for the first layer means the same
+    cfg.insert("textured_plate_temp_initial_layer".into(), json!(["0"]));
+    heats(cfg, 70.0, 70.0, "textured PEI, first layer 0");
+}
+
+#[test]
+fn the_printers_default_plate_type_picks_the_bed_temperatures_when_the_print_names_none() {
+    // A PETG cube on an A1 whose printer says Textured PEI Plate and whose settings name no plate type: the bed was
+    // set to 0 for the whole print.
+    let mut cfg = sparse_a1_petg();
+    cfg.insert("default_bed_type".into(), json!("Textured PEI Plate"));
+    heats(cfg, 70.0, 70.0, "default_bed_type Textured PEI Plate");
+}
+
+#[test]
+fn a_plate_with_neither_temperature_heats_to_the_settings_defaults() {
+    let mut cfg = sparse_a1_petg();
+    cfg.remove("textured_plate_temp");
+    cfg.insert("curr_bed_type".into(), json!("Textured PEI Plate"));
+    heats(
+        cfg,
+        schema_default("textured_plate_temp_initial_layer"),
+        schema_default("textured_plate_temp"),
+        "textured PEI, no keys",
+    );
+}
+
+#[test]
+fn with_no_plate_type_and_no_first_layer_temperature_the_bed_still_heats() {
+    let mut cfg = sparse_a1_petg();
+    cfg.insert("hot_plate_temp".into(), json!(["60"]));
+    heats(cfg, 60.0, 60.0, "no plate type");
+}
+
+#[test]
+fn every_plate_type_from_the_print_or_the_printer_heats_to_its_own_two_temperatures() {
+    let plates = [
+        ("Cool Plate", "cool_plate_temp", Some(1)),
+        ("Engineering Plate", "eng_plate_temp", Some(2)),
+        ("High Temp Plate", "hot_plate_temp", Some(3)),
+        ("Textured PEI Plate", "textured_plate_temp", Some(4)),
+        ("Supertack Plate", "supertack_plate_temp", None),
+        ("Textured Cool Plate", "textured_cool_plate_temp", None),
+    ];
+    let mut base = stock_a1();
+    base.remove("default_bed_type");
+    // every plate its own pair, the first layer one degree over the rest, so a wrong key shows
+    let pairs: Vec<f64> = (0..plates.len())
+        .map(|i| 50.0 + 2.0 * f64::from(u8::try_from(i).unwrap()))
+        .collect();
+    for ((_, key, _), other) in plates.iter().zip(&pairs) {
+        base.insert((*key).into(), json!([other.to_string()]));
+        base.insert(format!("{key}_initial_layer"), json!([(other + 1.0).to_string()]));
+    }
+    for ((plate, _, number), &other) in plates.iter().zip(&pairs) {
+        let mut sources = vec![
+            ("curr_bed_type", json!(plate)),
+            ("curr_bed_type", json!(plate.to_lowercase())),
+            ("default_bed_type", json!(plate)),
+        ];
+        if let Some(n) = number {
+            sources.push(("default_bed_type", json!(n.to_string())));
+        }
+        for (key, value) in sources {
+            let mut cfg = base.clone();
+            cfg.insert(key.into(), value.clone());
+            heats(cfg, other + 1.0, other, &format!("{key} {value}"));
+        }
+    }
+}

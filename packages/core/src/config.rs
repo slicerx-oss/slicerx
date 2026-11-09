@@ -616,6 +616,24 @@ pub fn default_wall_generator(config: &serde_json::Map<String, Value>) -> String
     }
 }
 
+/// The settings schema's default for `key`, the value the app shows for a key a request leaves out. None for a key the
+/// schema does not have.
+pub(crate) fn schema_default(key: &str) -> Option<&'static Value> {
+    static ALL: std::sync::OnceLock<serde_json::Map<String, Value>> = std::sync::OnceLock::new();
+    ALL.once(|| {
+        let mut out = serde_json::Map::new();
+        if let Ok(Value::Object(all)) = serde_json::from_str::<Value>(SCHEMA_DEFAULTS) {
+            for (key, entry) in all {
+                if let Some([_, value]) = entry.as_array().map(Vec::as_slice) {
+                    out.insert(key, value.clone());
+                }
+            }
+        }
+        out
+    })
+    .get(key)
+}
+
 /// The process keys of the schema defaults as one object. Printer and filament keys come from their profiles.
 fn process_defaults() -> Value {
     let mut out = serde_json::Map::new();

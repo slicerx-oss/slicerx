@@ -1281,27 +1281,87 @@ pub(crate) const PLATES: [(&str, &str); 6] = [
     ("Textured Cool Plate", "textured_cool_plate_temp"),
 ];
 
+/// The plate type a config prints on, as its row of [`PLATES`]: `curr_bed_type`, else the printer's
+/// `default_bed_type`, as the app picks it. A name matches in any letter case; `default_bed_type` may also be the number
+/// older printer profiles write (1 Cool Plate, 2 Engineering Plate, 3 High Temp Plate, 4 Textured PEI Plate). None
+/// when neither names a plate type here: the bed then follows the high temp plate's keys.
+pub(crate) fn plate_type(raw: &serde_json::Map<String, Value>) -> Option<(&'static str, &'static str)> {
+    let named = |key: &str| {
+        let v = raw.get(key)?;
+        let v = match v {
+            Value::Array(a) => a.first()?,
+            v => v,
+        };
+        let text = match v {
+            Value::String(s) => s.trim().to_owned(),
+            Value::Number(n) => n.to_string(),
+            _ => return None,
+        };
+        if let Ok(n) = text.parse::<usize>() {
+            return (key == "default_bed_type" && (1..=4).contains(&n))
+                .then(|| PLATES.get(n - 1).copied())
+                .flatten();
+        }
+        PLATES
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&text))
+            .copied()
+    };
+    named("curr_bed_type").or_else(|| named("default_bed_type"))
+}
+
+/// A plate's bed temperatures for the first layer (`first`) or the others, one per filament. A first layer entry that
+/// is missing or 0 is the other layers' temperature of the same plate, and a plate with only its first layer key prints
+/// every layer at it. When the config has neither key of the plate, the settings schema's defaults stand, as the app
+/// shows them for keys a request leaves out. Empty when nothing names the temperatures.
+pub(crate) fn plate_layer_temps(raw: &serde_json::Map<String, Value>, key: &str, first: bool) -> Vec<f64> {
+    let list = |v: &Value| -> Vec<f64> {
+        match v {
+            Value::Array(a) => a.iter().filter_map(number).collect(),
+            v => number(v).into_iter().collect(),
+        }
+    };
+    let first_key = format!("{key}_initial_layer");
+    match (raw.get(key).map(list), raw.get(&first_key).map(list)) {
+        (None, None) => crate::config::schema_default(if first { &first_key } else { key })
+            .map(list)
+            .unwrap_or_default(),
+        (Some(other), None) => other,
+        (None, Some(own)) => own,
+        (Some(other), Some(_)) if !first => other,
+        (Some(other), Some(own)) => (0..own.len().max(other.len()))
+            .filter_map(|i| {
+                let rest = other.get(i).or_else(|| other.last()).copied();
+                match own.get(i).or_else(|| own.last()).copied() {
+                    Some(t) if t > 0.0 => Some(t),
+                    _ => rest,
+                }
+            })
+            .collect(),
+    }
+}
+
 /// Sets the bed temperatures from the chosen plate type. Runs before the temperature limits, so
 /// the plate's temperatures are held to the bed limit like any other.
 fn plate_temps(cfg: &mut PrintConfig) -> Vec<Issue> {
     let mut issues = Vec::new();
     // Plate type: use that plate's temperatures, since the engine reads only hot_plate_temp.
-    if let Some(Value::String(plate)) = cfg.raw.get("curr_bed_type").cloned()
-        && let Some((_, key)) = PLATES.iter().find(|(n, _)| *n == plate)
+    if let Some((plate, key)) = plate_type(&cfg.raw)
+        && let Some(t) = plate_layer_temps(&cfg.raw, key, false).first().copied()
     {
-        let first_key = format!("{key}_initial_layer");
-        if let Some(t) = raw_number(cfg, key) {
-            if t <= 0.0 {
-                issues.push(Issue::new(
-                    "plate_unsupported",
-                    Severity::Warning,
-                    format!("the filament has no bed temperature for the {plate}; it may not stick or may damage the plate"),
-                ));
-            } else {
-                cfg.hot_plate_temp = t;
-                cfg.hot_plate_temp_initial_layer =
-                    raw_number(cfg, &first_key).filter(|v| *v > 0.0).unwrap_or(t);
-            }
+        if t <= 0.0 {
+            issues.push(Issue::new(
+                "plate_unsupported",
+                Severity::Warning,
+                format!("the filament has no bed temperature for the {plate}; it may not stick or may damage the plate"),
+            ));
+        } else {
+            cfg.hot_plate_temp = t;
+            cfg.hot_plate_temp_initial_layer = plate_layer_temps(&cfg.raw, key, true)
+                .first()
+                .copied()
+                .filter(|v| *v > 0.0)
+                .unwrap_or(t);
         }
     }
     issues
