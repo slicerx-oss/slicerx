@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, withFound, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -54,18 +54,8 @@ export function withStatus(steps: readonly Step[], status: readonly StepStatus[]
   return steps.map((s, i) => {
     const st = status[i]
     const { broken: _b, note: _n, ...rest } = s
-    const f = found[s.id]
     // The keys a step found its faces by are kept with it, so a step from a version 1 file has them from now on.
-    const p = rest.params
-    const params =
-      f?.faceKey && p.op === 'face.push'
-        ? { ...p, faceKey: f.faceKey }
-        : f?.openKeys && p.op === 'shell'
-          ? { ...p, open: p.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) }
-          : f?.edgeKeys && (p.op === 'edge.fillet' || p.op === 'edge.chamfer')
-            ? { ...p, edges: p.edges.map((e, j) => (f.edgeKeys![j] ? { ...e, keys: f.edgeKeys![j]! } : e)) }
-            : p
-    const kept = { ...rest, params }
+    const kept = { ...rest, params: withFound(rest.params, found[s.id]) }
     if (st?.state === 'broken') return { ...kept, broken: st.message ?? 'This step failed.' }
     return st?.note ? { ...kept, note: st.note } : kept
   })
