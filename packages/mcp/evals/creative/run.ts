@@ -265,10 +265,12 @@ function restartRefused(messages: readonly LlmMessage[]): boolean {
  * question without it is marked stale, and so is a recording from before the tab's tools (`tabTools` unset) and one whose
  * reply met the refusal of a restarted part though it was captured before that refusal (STALE_RESTART, `samePart` unset),
  * or got the note that its approved plan is unfinished though it was captured before that note (STALE_PLAN_GOES_ON,
- * `planGoesOn` unset).
+ * `planGoesOn` unset). A run that ends early says why in `error`: an error the chat showed, the step cap, or a cancel
+ * the eval did not ask for; so does a replay that leaves recorded replies unused. The eval never records such a run.
  */
 export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom']; steps?: ScriptStepData[]; client?: LlmClient; timeoutMs?: number; defaultAnswer?: boolean; answerRecorded?: boolean; tabTools?: boolean; samePart?: boolean; planGoesOn?: boolean; before?: (env: ReturnType<typeof creativeEnv>) => Promise<void> }): Promise<PromptRun> {
-  const inner = opts.client ?? createScriptedClient(opts.steps ?? [], { chunk: false })
+  const script = opts.client ? undefined : createScriptedClient(opts.steps ?? [], { chunk: false })
+  const inner = opts.client ?? script!
   const steps: ScriptStepData[] = []
   // a replay compares the tool results it gets with the ones its recording saw (recordings made before they were kept skip it)
   const replayCheck = createReplayCheck()
@@ -325,6 +327,8 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   let stale: string | undefined
   // what the reply said since its plan was approved or the eval answered it; undefined while neither has happened
   let after: string | undefined
+  // why the run ended early, said by the pilot: an error it showed, the step cap, or a cancel the eval did not ask for
+  let ended: string | undefined
   // a replay sends the default answer only where the live run did
   const mayAnswer = (): boolean => opts.defaultAnswer !== false && !answered && (opts.client !== undefined || opts.answerRecorded === true)
   /** One message to mimir in the prompt's chat; returns the reply's text. */
@@ -334,6 +338,13 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
     let running = ''
     for await (const ev of env.pilot.run(`creative-${p.id}`, message, { signal: ac.signal, context: { project: 'creative', machine: p.machine, objects: [] } })) {
       events.push(ev)
+      // a notice that mimir waits or goes on (waiting) is not an error
+      if (ev.type === 'error' && !ev.waiting && ev.code !== PLAN_LEFT_CODE) ended ??= `the run ended on an error: ${ev.message}`
+      if (ev.type === 'done') {
+        if (ev.stopReason === 'error') ended ??= 'the run ended on an error'
+        else if (ev.stopReason === 'max_steps') ended ??= 'the run stopped at the step cap'
+        else if (ev.stopReason === 'canceled' && !ac.signal.aborted) ended ??= 'the run was canceled'
+      }
       if (ev.type === 'text') {
         reply += ev.delta
         if (after !== undefined) after += ev.delta
@@ -384,6 +395,10 @@ export async function runPrompt(p: CreativePrompt, opts: { geom: ToolHost['geom'
   } finally {
     clearTimeout(timer)
   }
+  error ??= ended
+  // a replay that ends before its recorded replies do no longer follows what the model did live
+  const left = script?.remaining() ?? 0
+  if (left > 0) error ??= `the replay left ${left} recorded repl${left === 1 ? 'y' : 'ies'} unused`
   const noBuild = built() ? undefined : classifyNoBuild(text, after)
   const calls = events.filter((e): e is Extract<PilotEvent, { type: 'tool_call' }> => e.type === 'tool_call')
   const results = new Map(events.filter((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result').map((r) => [r.callId, r]))
