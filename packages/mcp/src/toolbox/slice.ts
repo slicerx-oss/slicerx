@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { gcodeLabel, printerForProfile, printerProfile } from '@slicerx/settings'
+import { BED_TYPE_OPTIONS, bedTypeByName, gcodeLabel, printerForProfile, printerProfile, type BedType } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { COLOR_SLOT_MAX, productName, type ScriptReplacementChoice } from '@slicerx/contracts'
@@ -34,6 +34,7 @@ export const sliceInput = {
   script_printer: z.object({ model: z.string().min(1), firmware: z.string().min(1) }).optional().describe('Explicit target model id and firmware for comparing imported scripts with known stock, without replacing project settings. Conflicting project identity or changed executable text still requires review.'),
   model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (an X mark)'),
   plate: z.number().int().min(1).max(999).optional().describe('For a 3MF or .sx3mf project, the plate to slice (1-based, see slicerx_inspect_project). Default: the first plate.'),
+  plate_type: z.string().max(64).optional().describe(`The build plate the print goes on, which sets the bed temperatures: ${BED_TYPE_OPTIONS.map((o) => o.label).join(', ')}, as the app names them, in any letter case. It goes over the plate type a project, its plate or a profile sets. Leave it out to keep the plate type the settings give.`),
   placement: z
     .enum(['center', 'keep', 'arrange'])
     .default('center')
@@ -88,7 +89,7 @@ export const sliceInput = {
 }
 
 /** What slicerx_arrange_file takes: the slice inputs without placement, plus the arrange's own. */
-const { placement: _placement, ...arrangeBase } = sliceInput
+const { placement: _placement, plate_type: _plateType, ...arrangeBase } = sliceInput
 export const arrangeInput = {
   ...arrangeBase,
   spacing_mm: z.number().min(0).max(50).optional().describe('Space between parts and from the bed edge, mm (default 6). Printing by object the parts keep the extruder clearance apart whatever this says.'),
@@ -223,6 +224,7 @@ export const summaryShape = {
   }).optional().describe('The prime tower as the engine placed it, when the plate prints one. A smooth timelapse (overrides timelapse_type "1") on a Bambu Lab printer prints one with a single filament too.'),
   plate: z.number().optional(),
   plate_count: z.number().optional().describe('How many plates of the project have something to print, when it has more than one and no plate was asked for'),
+  plate_type: z.string().optional().describe('The plate type the call named in plate_type, as the app names it'),
   gcode_path: z.string().optional(),
   gcode_sha256: z.string().optional(),
   gcode_3mf_path: z.string().optional(),
@@ -273,7 +275,16 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; placement?: 'center' | 'keep' | 'arrange'; spacing_mm?: number | undefined; rotate?: boolean | undefined; step_deg?: number | undefined; effort?: 'quick' | 'normal' | 'thorough' | undefined; keep?: string[] | undefined; new_plates?: boolean | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
+export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; plate_type?: string | undefined; placement?: 'center' | 'keep' | 'arrange'; spacing_mm?: number | undefined; rotate?: boolean | undefined; step_deg?: number | undefined; effort?: 'quick' | 'normal' | 'thorough' | undefined; keep?: string[] | undefined; new_plates?: boolean | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean; preview_format?: 'v1' | 'v2' }
+
+const PLATE_NAMES = `Use one of: ${BED_TYPE_OPTIONS.map((o) => o.label).join(', ')}.`
+
+/** The plate type plate_type names, refused when no plate type has that name. */
+function plateType(name: string): BedType {
+  const bed = bedTypeByName(name)
+  if (!bed) throw new ToolInputError(`plate_type: no plate is called "${name.trim()}". ${PLATE_NAMES}`, 'invalid_input')
+  return bed
+}
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -313,6 +324,11 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   if ((arrangeOnly || args.placement === 'arrange') && (slicer.kind !== 'sx' || (arrangeOnly && !slicer.arrange))) throw new ToolInputError('Arranging a plate takes the sx engine. Install the sx CLI (docs/install.md).', 'engine_unavailable')
   const asked3mf = emitGcode && args.output === 'gcode.3mf'
   if (asked3mf && slicer.kind === 'stub') throw new ToolInputError('The stub engine writes no printable G-code, so it cannot make a .gcode.3mf. Install the sx CLI (docs/install.md).', 'engine_unavailable')
+  // The plate type is the call's to set, as a person sets it on the plate in the app, never a setting override.
+  const takesPlate = known.includes('plate_type')
+  if (takesPlate && args.overrides?.['curr_bed_type'] !== undefined) throw new ToolInputError(`overrides: set the plate type with plate_type, not curr_bed_type. ${PLATE_NAMES}`, 'invalid_settings')
+  const bed = takesPlate && args.plate_type !== undefined ? plateType(args.plate_type) : undefined
+  const plateLabel = bed ? BED_TYPE_OPTIONS.find((o) => o.value === bed)?.label : undefined
   await progress(0, 'Reading the model')
   const modelPath = await resolveModel(d.policy, args.model)
   const isProject = ['.3mf', '.sx3mf'].includes(extname(modelPath).toLowerCase())
@@ -361,7 +377,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     project = { ...project, config: replacementConfig(project.config, args.script_replacements, 'candidate') }
   }
   const scriptReviews = await reviewProjectScripts(profiles, args.profiles, { project, presets, slots }, args.overrides, slicer, args.script_printer)
-  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter, widthsAsGiven } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews })
+  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter, widthsAsGiven } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews, ...(bed ? { bedType: bed } : {}) })
   const projectGcode = [
     ...gcodeKept.filter((k) => !args.script_replacements?.some((c) => c.key === k.key && c.slot === k.slot)).map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
@@ -436,6 +452,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     `${result.model.name}${result.plate ? `, plate ${result.plate}` : ''}: ${result.layer_count} layers, ${result.time_text}, ${result.filament_g} g (${(result.filament_mm / 1000).toFixed(2)} m) [engine ${result.engine}]`,
     ...(result.filaments.length > 1 ? [`Filaments: ${result.filaments.map((f) => `slot ${f.slot} ${f.filament_g} g`).join(', ')}`] : []),
     ...(applied.length ? [`Profiles: ${applied.join(', ')}`] : []),
+    ...(plateLabel ? [`Plate type: ${plateLabel}`] : []),
     ...(result.gcode_path ? [`G-code: ${result.gcode_path}`] : []),
     ...(result.gcode_3mf_path ? [`G-code 3MF: ${result.gcode_3mf_path}`] : []),
     ...(result.preview_path ? [`Preview: ${result.preview_path}`] : []),
@@ -446,7 +463,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
     ...(result.note ? [result.note] : []),
   ]
-  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), ...(madeFor ? { project_printer: madeFor.report } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
+  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(plateLabel ? { plate_type: plateLabel } : {}), ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), ...(madeFor ? { project_printer: madeFor.report } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
 }
 
 

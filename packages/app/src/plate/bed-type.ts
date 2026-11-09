@@ -3,23 +3,15 @@
 // The plate type a plate prints on: its own, or the printer's default. The engine reads it as `curr_bed_type` to pick
 // the bed temperatures, so a plate type set by hand has to reach the slice, not only the plate card.
 import type { PlateMeta, PlateSettings } from '../state/store'
-import { BED_TYPE_ENGINE, printerBedType, settingsBedType, sliceBedType } from '@slicerx/settings/bed-type'
+import { BED_TYPE_ENGINE, BED_TYPE_OPTIONS as OPTIONS, printerBedType, settingsBedType, sliceBedType } from '@slicerx/settings/bed-type'
 
 // The engine's plate type names and how a printer or the print settings name a plate are shared with the MCP server.
 export { BED_TYPE_ENGINE, printerBedType, settingsBedType }
 
 export type BedType = NonNullable<PlateSettings['bedType']>
 
-/** The plate types in the order the pickers list them. */
-export const BED_TYPE_OPTIONS: readonly { value: BedType; label: string }[] = [
-  { value: 'textured-pei', label: 'Textured PEI' },
-  { value: 'smooth-pei', label: 'Smooth PEI' },
-  { value: 'cool', label: 'Cool plate' },
-  { value: 'engineering', label: 'Engineering plate' },
-  { value: 'high-temp', label: 'High temp plate' },
-  { value: 'textured-cool', label: 'Textured cool plate' },
-  { value: 'supertack', label: 'Supertack plate' },
-]
+/** The plate types in the order the pickers list them, by the names the MCP server's plate_type takes too. */
+export const BED_TYPE_OPTIONS: readonly { value: BedType; label: string }[] = OPTIONS
 
 const label = (v: BedType): string => BED_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? v
 

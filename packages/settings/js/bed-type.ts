@@ -17,6 +17,41 @@ export const BED_TYPE_ENGINE: Readonly<Record<BedType, string>> = {
   supertack: 'Supertack Plate',
 }
 
+/** The plate types in the order the app's pickers list them, with the names a person sees. */
+export const BED_TYPE_OPTIONS: readonly { value: BedType; label: string }[] = [
+  { value: 'textured-pei', label: 'Textured PEI' },
+  { value: 'smooth-pei', label: 'Smooth PEI' },
+  { value: 'cool', label: 'Cool plate' },
+  { value: 'engineering', label: 'Engineering plate' },
+  { value: 'high-temp', label: 'High temp plate' },
+  { value: 'textured-cool', label: 'Textured cool plate' },
+  { value: 'supertack', label: 'Supertack plate' },
+]
+
+/** A plate name folded for matching: lowercase, dashes and underscores as spaces, single spaces, no trailing "plate". */
+const fold = (name: string): string => name.trim().toLowerCase().replace(/[-_\s]+/g, ' ').replace(/ plate$/, '')
+
+/**
+ * The plate type a person or a client names, as the pickers label it ("Textured PEI", "Cool plate"), in any letter
+ * case, with or without "plate", and with dashes for spaces (`textured-pei`, the app's own value). Undefined for a
+ * name no plate type has.
+ */
+export function bedTypeByName(name: string): BedType | undefined {
+  const want = fold(name)
+  return want ? BED_TYPE_OPTIONS.find((o) => fold(o.label) === want)?.value : undefined
+}
+
+/** The setting that holds each plate type's bed temperature per filament; `<key>_initial_layer` holds the first layer's. */
+export const BED_TYPE_TEMP_KEY: Readonly<Record<BedType, string>> = {
+  cool: 'cool_plate_temp',
+  engineering: 'eng_plate_temp',
+  'high-temp': 'hot_plate_temp',
+  'textured-pei': 'textured_plate_temp',
+  'smooth-pei': 'hot_plate_temp',
+  'textured-cool': 'textured_cool_plate_temp',
+  supertack: 'supertack_plate_temp',
+}
+
 // Orca's BedType enum: 1 Cool Plate, 2 Engineering Plate, 3 High Temp Plate, 4 Textured PEI Plate.
 const BY_NUMBER: Readonly<Record<number, BedType>> = { 1: 'cool', 2: 'engineering', 3: 'smooth-pei', 4: 'textured-pei' }
 
