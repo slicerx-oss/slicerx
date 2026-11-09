@@ -52,7 +52,7 @@ export const partPlanSchema = z.object({
   printInPlace: z
     .union([z.array(text(60)).min(2).max(30), z.literal(false)])
     .optional()
-    .describe('Print-in-place parts only: the pieces that print assembled and move, each its own body (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8); false when the pieces print separately'),
+    .describe('Pieces that print assembled and move, by name (such as Lid and Tray, Sun and Planet 1, or Segment 1 to Segment 8); false if they print separately'),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 
