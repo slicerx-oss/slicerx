@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Model's icons tell tools and steps apart: no two shelf tools share one, and each kind of step in the tree shows the
-// icon of the tool that made it, so a sketch, an extrude, a revolve, a repair and an array never look alike.
+// icon of the tool that made it, so a sketch, an extrude, a revolve, a loft, a sweep, a repair and an array never look alike.
 import { describe, expect, it } from 'vitest'
 import { stepIcon, stepSketch } from '../src/cad/history/step-icon'
 import type { StepParams } from '@slicerx/cad-history'
@@ -23,6 +23,8 @@ describe('Model icons', () => {
       ['text', step({ op: 'shape.extrude', shape: { type: 'text' }, spec: { operation: 'new' } })],
       ['shape on a face', step({ op: 'shape.extrude', shape: { type: 'rect' }, spec: { operation: 'new' } })],
       ['revolve', step({ op: 'sketch.revolve', loops: [] })],
+      ['loft', step({ op: 'sketch.loft' })],
+      ['sweep', step({ op: 'sketch.sweep' })],
       ['subtract', step({ op: 'subtract' })],
       ['hollow', step({ op: 'hollow' })],
       ['shell', step({ op: 'shell' })],

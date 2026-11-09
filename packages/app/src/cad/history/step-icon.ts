@@ -16,8 +16,9 @@ export function stepIcon(p: StepParams): IconName {
     case 'sketch.revolve':
       return 'revolve'
     case 'sketch.loft':
+      return 'loft'
     case 'sketch.sweep':
-      return 'extrude'
+      return 'sweep'
     case 'subtract':
       return 'subtract-shape'
     case 'hollow':

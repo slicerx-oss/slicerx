@@ -23,6 +23,10 @@ export const MODEL_ICONS = {
   extrude: '<path d="M3 19.5l4-3.5h14l-4 3.5z"/><path d="M12 13V4M9 7l3-3 3 3"/>' + dash('<path d="M3 19.5V13M17 19.5V13"/>'),
   // a profile turned about its axis, the far side ghosted
   revolve: dash('<path d="M12 2.5v19"/>', '1.5 2.2') + '<path d="M12 5.5h4l2.5 3.5v6L16 18.5h-4"/>' + dash('<path d="M12 5.5H8L5.5 9v6L8 18.5h4"/>'),
+  // a square section blended into a round one above it
+  loft: '<path d="M3.5 20l3.5-3h13.5l-3.5 3z"/><ellipse cx="12" cy="5.5" rx="4" ry="2"/><path d="M4.75 18.9 8 5.5M19.25 18.1 16 5.5"/>',
+  // a round profile carried up a bend: the tube's outlines and its end face
+  sweep: '<path d="M3.5 20.5V12a8 8 0 0 1 8-8H17M9 20.5V12a2.5 2.5 0 0 1 2.5-2.5H17M3.5 20.5H9"/><ellipse cx="17.5" cy="6.75" rx="2" ry="2.75"/>',
   // a body: a solid with a history, the clock at its corner
   body: '<path d="M9.5 3l6 3.4v4.1M9.5 17l-6-3.4V6.4L9.5 3"/><path d="M3.5 6.4l6 3.4 6-3.4M9.5 9.8V17"/><circle cx="17" cy="17" r="4"/><path d="M17 15v2l1.25 1"/>',
   // a mesh: the cube with its faces split into triangles
@@ -65,7 +69,7 @@ export const MODEL_ICONS = {
 
 export const MODEL_ICON_GROUPS = {
   Model: ['model', 'body', 'mesh-object', 'part', 'modifier', 'box-shape'],
-  Steps: ['sketch', 'extrude', 'revolve', 'array-linear', 'array-polar', 'repair-mesh', 'mesh-menu', 'step-broken'],
+  Steps: ['sketch', 'extrude', 'revolve', 'loft', 'sweep', 'array-linear', 'array-polar', 'repair-mesh', 'mesh-menu', 'step-broken'],
   Sketch: ['sk-line', 'sk-rect', 'sk-circle', 'sk-arc', 'sk-polygon', 'sk-slot'],
   Picking: ['select-object', 'select-face', 'select-edge', 'box-select', 'roll-to-here'],
 }

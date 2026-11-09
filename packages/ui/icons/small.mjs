@@ -22,6 +22,8 @@ export const SMALL_ICONS = {
   sketch: '<path d="M1.75 14l3-2.5h9.5l-3 2.5z"/><path d="M10 2l2.5 2.5-5 5H5V7z"/>',
   extrude: '<path d="M1.75 13.5l2.5-2.5h10l-2.5 2.5z"/><path d="M8 8.75V2.25M5.75 4.5 8 2.25l2.25 2.25"/>',
   revolve: '<path d="M8 1.75v12.5"/><path d="M8 3.5h2.5l2 2.5v4l-2 2.5H8"/><path d="M5.75 3.75a5.5 5.5 0 0 0 0 8.5"/>',
+  loft: '<path d="M2.25 13.75l2.25-2h9.25l-2.25 2z"/><ellipse cx="8" cy="3.75" rx="2.75" ry="1.25"/><path d="M3.25 13 5.25 3.75M13 12.5 10.75 3.75"/>',
+  sweep: '<path d="M2.25 13.75V8a5.25 5.25 0 0 1 5.25-5.25h3.75M6 13.75V8a1.5 1.5 0 0 1 1.5-1.5h3.75M2.25 13.75H6"/><ellipse cx="11.75" cy="4.5" rx="1.25" ry="1.75"/>',
   'array-linear': '<path d="M1.5 4h2.5v8h-2.5zM6.75 4h2.5v8h-2.5zM12 4h2.5v8h-2.5z"/>',
   'array-polar': '<path d="M2.5 10v.01M5.25 5.25v.01M10.75 5.25v.01M13.5 10v.01" stroke-width="3"/><path d="M8 9v2M7 10h2"/>',
   'repair-mesh': '<path d="M6 13.25H2.25L8 2.75l2.75 5"/><path d="M8.5 11.5l1.75 1.75 3.5-3.5"/>',

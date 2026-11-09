@@ -146,6 +146,62 @@ G.revolve = () => {
   glyph(g, 11, 4, ['  a', ' aa', 'aaa', ' aa'])
   return g
 }
+/** a quarter of a circle as one cubic: from the point at angle a0 to a0 + 90 deg, in the plane spanned by U and W round O */
+const BK = 0.5523
+const quarterC = (P, O, U, W, rad, a0) => {
+  const at = (a, k = 0) => { const c = Math.cos(a), s = Math.sin(a); return O.map((o, i) => o + rad * (c * U[i] + s * W[i]) + k * rad * (-s * U[i] + c * W[i])) }
+  const a = (a0 * Math.PI) / 180, b = a + Math.PI / 2
+  return [at(a, BK), at(b, -BK), at(b)].map((p) => P(...p).join(' ')).join(' ')
+}
+V.loft = (c) => {
+  // the sketch plane, and the accent body that blends its square section into a round one on top
+  const h = 4.2, rad = 1.55, d = c.disc(3.5, 3.5, h, rad)
+  const [L, F, R] = [c.P(1.5, 5.5, 0), c.P(5.5, 5.5, 0), c.P(5.5, 1.5, 0)].map((p) => p.join(' '))
+  const front = `${d.cx} ${r2(d.cy + d.ry)}`, left = `${r2(d.cx - d.rx)} ${d.cy}`, right = `${r2(d.cx + d.rx)} ${d.cy}`, arc = `A${d.rx} ${d.ry} 0 0 1`
+  return plane(c) + `<path class="a2" d="M${L}L${F}L${front}${arc} ${left}Z"/><path class="a3" d="M${F}L${R}L${right}${arc} ${front}Z"/>` + c.ell(d, 'a1') +
+    node(c, ...c.P(1.5, 5.5, 0)) + node(c, ...c.P(5.5, 5.5, 0)) + node(c, ...c.P(5.5, 1.5, 0))
+}
+G.loft = () => {
+  const g = grid()
+  stamp(g, 0, 0, ['', '      dddd', '    ddaaaadd', '    daaaaaad', '    ddaaaadd', '   dbbddddccd', '   dbbbbbcccd', '  dbbbbbbccccd', '  dbbbbbbccccd', ' dbbbbbbbcccccd', ' ddbbbbbbccccdd', '   ddbbbbccdd', '     ddbbcdd', '       dd', ' ssssssssssssss'])
+  return g
+}
+V.sweep = (c) => {
+  // a round profile on the sketch plane carried up a bend toward +x: the accent tube, a light band along its outer side,
+  // and its end face. The bend's outlines are quarter circles round O in the x-z plane, drawn as one cubic each.
+  const B = [2.2, 4.2, 0], Rr = 4.1, R = 1.55, X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1], back = [-1, 0, 0]
+  const P = (x, y, z) => c.P(x, y, z), pt = (p) => P(...p).join(' ')
+  const O = [B[0] + Rr, B[1], 0], E = [B[0] + Rr, B[1], Rr]
+  /** a point at radius rho round O: angle 0 down at the plane on the base side, 90 at the top */
+  const on = (rho, a) => { const t = (a * Math.PI) / 180; return [O[0] - rho * Math.cos(t), O[1], rho * Math.sin(t)] }
+  /** the band between two radii: up the outer one, back down the inner one */
+  const band = (r0, r1) => `M${pt(on(r0, 0))}C${quarterC(P, O, back, Z, r0, 0)}L${pt(on(r1, 90))}C${quarterC(P, O, Z, back, r1, 0)}`
+  return c.box([B[0] - 2.4, B[1] - 2.4, -0.4], [B[0] + 2.4, B[1] + 2.4, 0]) +
+    `<path class="a2" d="${band(Rr + R, Rr - R)}C${quarterC(P, B, X, Y, R, 0)}C${quarterC(P, B, X, Y, R, 90)}Z"/>` +
+    `<path class="a1 nos" d="${band(Rr + 0.75 * R, Rr + 0.2 * R)}Z"/>` +
+    `<path class="a1" d="M${pt(on(Rr, 90).map((v, i) => v + R * Z[i]))}${[0, 90, 180, 270].map((a) => 'C' + quarterC(P, E, Z, Y, R, a)).join('')}Z"/>`
+}
+G.sweep = () => {
+  // the bend rising from the plane strip, its end face a ring at the right
+  const g = grid()
+  stamp(g, 0, 0, [
+    '                ',
+    '            dd  ',
+    '     dddddddaad ',
+    '   ddaaaaadaaad ',
+    '  daaaaaaadaaad ',
+    ' daabbbbbbdaaad ',
+    ' dabbbbbbbdaaad ',
+    ' dabbcccccdaaad ',
+    ' dabcddddddaad  ',
+    ' dabcd    dd    ',
+    ' dabcd          ',
+    ' dabcd          ',
+    ' dabcd          ',
+    ' dddddssssssss  ',
+  ])
+  return g
+}
 V['box-shape'] = (c) => cyl(c, 6, 1, 0, 4.5, 1.8) + c.abox([0, 2.2, 0], [4, 6.2, 3.6])
 G['box-shape'] = () => {
   const g = grid()
@@ -675,7 +731,7 @@ export const GRIDS = G
 
 /** each icon's name in the app, the tab and group the ribbon puts it in */
 export const SET = [
-  ['Solid · Create', ['sketch', 'extrude', 'revolve', 'box-shape', 'cube', 'cylinder', 'sphere', 'cone', 'on-face', 'shape-face', 'text-face', 'svg-face']],
+  ['Solid · Create', ['sketch', 'extrude', 'revolve', 'loft', 'sweep', 'box-shape', 'cube', 'cylinder', 'sphere', 'cone', 'on-face', 'shape-face', 'text-face', 'svg-face']],
   ['Solid · Modify', ['push', 'fillet', 'chamfer', 'shell', 'hole-fit', 'thread-bolt', 'subtract-shape', 'cut', 'array-linear', 'merge', 'split']],
   ['Solid · Inspect and output', ['measure', 'named-values', 'export', 'export-selection', 'project-file']],
   ['Mesh', ['repair-mesh', 'simplify-mesh', 'hollow', 'orient', 'mesh-cut', 'mesh-split', 'mesh-measure', 'mesh-export']],

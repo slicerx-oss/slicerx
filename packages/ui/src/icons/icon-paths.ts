@@ -418,6 +418,8 @@ export const ICON_PATHS = {
   "sketch": "<path d=\"M2.5 20.5l4.5-4h14.5l-4.5 4z\"/><path d=\"M15 3.5l3.5 3.5-7.5 7.5H7.5V11z\"/><path d=\"M12.75 5.75l3.5 3.5\"/>",
   "extrude": "<path d=\"M3 19.5l4-3.5h14l-4 3.5z\"/><path d=\"M12 13V4M9 7l3-3 3 3\"/><path stroke-dasharray=\"2 2.2\" d=\"M3 19.5V13M17 19.5V13\"/>",
   "revolve": "<path stroke-dasharray=\"1.5 2.2\" d=\"M12 2.5v19\"/><path d=\"M12 5.5h4l2.5 3.5v6L16 18.5h-4\"/><path stroke-dasharray=\"2 2.2\" d=\"M12 5.5H8L5.5 9v6L8 18.5h4\"/>",
+  "loft": "<path d=\"M3.5 20l3.5-3h13.5l-3.5 3z\"/><ellipse cx=\"12\" cy=\"5.5\" rx=\"4\" ry=\"2\"/><path d=\"M4.75 18.9 8 5.5M19.25 18.1 16 5.5\"/>",
+  "sweep": "<path d=\"M3.5 20.5V12a8 8 0 0 1 8-8H17M9 20.5V12a2.5 2.5 0 0 1 2.5-2.5H17M3.5 20.5H9\"/><ellipse cx=\"17.5\" cy=\"6.75\" rx=\"2\" ry=\"2.75\"/>",
   "body": "<path d=\"M9.5 3l6 3.4v4.1M9.5 17l-6-3.4V6.4L9.5 3\"/><path d=\"M3.5 6.4l6 3.4 6-3.4M9.5 9.8V17\"/><circle cx=\"17\" cy=\"17\" r=\"4\"/><path d=\"M17 15v2l1.25 1\"/>",
   "mesh-object": "<path d=\"M12 3l7.5 4.25v9L12 20.5l-7.5-4.25v-9z\"/><path d=\"M4.5 7.25L12 11.5l7.5-4.25M12 11.5v9\"/><path d=\"M12 3v8.5M4.5 7.25 12 20.5M19.5 7.25 12 20.5\"/>",
   "part": "<path d=\"M3.5 4.5h17v15h-9v-6h-8z\"/>",
@@ -472,9 +474,9 @@ export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Slice": ["negative-part","support-blocker","support-enforcer","select-by-filament","move-to-plate","skip-object","color-by"],
   "Settings tabs": ["section-printer","section-print-settings","tab-quality","tab-strength","tab-speed","tab-adhesion","tab-color","tab-surface","tab-output"],
   "Model": ["model","body","mesh-object","part","modifier","box-shape"],
-  "Steps": ["sketch","extrude","revolve","array-linear","array-polar","repair-mesh","mesh-menu","step-broken"],
+  "Steps": ["sketch","extrude","revolve","loft","sweep","array-linear","array-polar","repair-mesh","mesh-menu","step-broken"],
   "Sketch": ["sk-line","sk-rect","sk-circle","sk-arc","sk-polygon","sk-slot"],
   "Picking": ["select-object","select-face","select-edge","box-select","roll-to-here"],
 }
 
-export const ICON_COUNT = 433
+export const ICON_COUNT = 435
