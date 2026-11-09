@@ -241,7 +241,7 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
     }
     const steps = standSteps(overTop, (r) => (check = r))
     const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(steps, { chunk: false }) })
-    expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
+    expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok (part passed)'])
     // one body from the loft and the sweep, on the bed, at the sizes asked, with only the sheet and Go asked of the person
     const s = r.score
     expect({ ops: s.ops.pass, watertight: s.watertight?.pass, bodies: s.bodies?.pass, bed: s.bedFit?.pass, sizes: s.sizes?.pass, turns: s.turns.pass }, JSON.stringify(s)).toEqual({ ops: true, watertight: true, bodies: true, bed: true, sizes: true, turns: true })
@@ -266,7 +266,7 @@ describe.skipIf(!liveEngine)('scripted loft and sweep builds in the tab', () => 
       return { calls: [{ name: 'geom.sweep', args: { design, feature: 'Hook', part: 0, operation: 'join', profile, path, name: 'Hook' } }] }
     }
     const r = await driveCase(caseOf('headphone-stand'), { client: createScriptedClient(standSteps(side, (x) => (check = x)), { chunk: false }) })
-    expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok'])
+    expect(r.calls).toEqual(['pilot.sheet ok', 'design.plan ok', 'design.new ok', 'geom.extrude ok', 'geom.loft ok', 'geom.sweep ok', 'design.check ok (part passed)'])
     const s = r.score
     expect(s.hook, JSON.stringify(s.hook)).toMatchObject({ pass: true })
     // the stem is read from the part, so the lofted stem shows its taper
