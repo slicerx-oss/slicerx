@@ -145,6 +145,63 @@ fn a_two_color_indx_plate_changes_tools_on_our_change_gcode_with_no_manual_swap(
     assert_eq!(run.report.stats.tool_changes as usize, changes);
 }
 
+/// A G0 or G1 move's X and Y words, if it has any.
+fn move_xy(line: &str) -> Option<(Option<f64>, Option<f64>)> {
+    let code = line.split(';').next()?.trim();
+    let mut words = code.split_ascii_whitespace();
+    if !matches!(words.next()?, "G0" | "G1") {
+        return None;
+    }
+    let (mut x, mut y) = (None, None);
+    for w in words {
+        if let Some(v) = w.strip_prefix('X') {
+            x = v.parse().ok();
+        } else if let Some(v) = w.strip_prefix('Y') {
+            y = v.parse().ok();
+        }
+    }
+    Some((x, y))
+}
+
+#[test]
+fn the_indx_gcode_never_moves_the_head_to_a_dock_or_the_purge_collector() {
+    // The dock and purge collector positions are estimated and live only in Preview: the change G-code hands the
+    // whole park, pick and purge to the printer's firmware (`T`), so no move of ours may go there.
+    let run = two_colors(&json!({}));
+    let text = String::from_utf8_lossy(&run.gcode);
+    let lines: Vec<&str> = text.lines().collect();
+    let mut blocks = 0;
+    for (i, l) in lines.iter().enumerate() {
+        if !l.starts_with("; Tool change: the firmware parks the tool") {
+            continue;
+        }
+        blocks += 1;
+        // The block is the comment, the T command and the temperature wait, with no move among them.
+        let block = &lines[i..(i + 3).min(lines.len())];
+        assert!(block[1].starts_with('T'), "{block:?}");
+        assert!(block[2].starts_with("M109 T"), "{block:?}");
+        assert!(
+            block.iter().all(|b| move_xy(b).is_none()),
+            "a move in the change block: {block:?}"
+        );
+    }
+    assert_eq!(blocks, run.report.stats.tool_changes as usize);
+    // Nowhere in the file a move in front of the bed (the dock row, Y below 0) or past its right edge (the purge
+    // collector beside it): every X and Y we write stays on the 248 x 205 mm bed.
+    for l in &lines {
+        if let Some((x, y)) = move_xy(l) {
+            assert!(
+                x.is_none_or(|x| (0.0..=248.0).contains(&x)),
+                "off the bed in X: {l}"
+            );
+            assert!(
+                y.is_none_or(|y| (0.0..=205.0).contains(&y)),
+                "off the bed in Y: {l}"
+            );
+        }
+    }
+}
+
 #[test]
 fn each_indx_change_takes_the_profile_change_time() {
     let stock = two_colors(&json!({}));
