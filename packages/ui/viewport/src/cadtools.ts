@@ -658,6 +658,17 @@ export class SketchLayer {
     return null
   }
 
+  /**
+   * The marks beside the drawing (tags) on screen, in client pixels: each one's box, its bottom left on its spot.
+   * `toScreen` takes a plane point to client pixels.
+   */
+  tagBoxes(toScreen: (at: V2) => [number, number]): { left: number; top: number; right: number; bottom: number }[] {
+    return this.labels.filter((l) => !l.mark && l.at && l.sprite.center.x === 0 && l.sprite.center.y === 0).map((l) => {
+      const [x, y] = toScreen(l.at!)
+      return { left: x, top: y - TAG_PX, right: x + TAG_PX * l.aspect, bottom: y }
+    })
+  }
+
   /** Keeps dimension values LABEL_PX tall on screen, as the dimension layer does. */
   fit(fovDeg: number, heightPx: number): void {
     const key = `${fovDeg}:${heightPx}:${this.labels.length}:${this.cursorLabel?.text ?? ''}`
@@ -847,6 +858,8 @@ export interface DimensionMark {
 
 /** Label height on screen, CSS pixels. */
 const LABEL_PX = 20
+/** A tag's height on screen: tags are drawn at the dimension values' size. */
+export const TAG_PX = LABEL_PX
 
 /**
  * Kept dimensions: leader lines through the model and a value label that always faces the camera.

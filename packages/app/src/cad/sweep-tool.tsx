@@ -21,6 +21,8 @@ import { sizeWords } from './op-preview'
 import { frameShown } from './sketch-place'
 import { profileNow, ResultChoice, useLiveSketches, useResult, useSketchPicks, type Result } from './solid-kit'
 import { cameraBus } from '../plate/tools'
+import { usePhoneLayout } from '../lib/phone-layout'
+import { touchWords } from './touch-words'
 
 type Slot = 'profile' | 'path'
 /** What fills the profile slot: a picked sketch, or the step's own profile when no sketch matches it now. */
@@ -211,10 +213,12 @@ export function SweepTool() {
 
 /** One slot the next pick fills: its label, then what fills it or what to click. Pressing it makes it the active one. */
 function PickSlot({ id, label, empty, name, active, onActivate }: { id: string; label: string; empty: string; name: string | null; active: boolean; onActivate: () => void }) {
+  // a finger taps
+  const phone = usePhoneLayout()
   return (
     <Row label={label} labelId={`${id}-label`} testId={`${id}-row`}>
       <button type="button" id={id} className="solid-slot" aria-labelledby={`${id}-label ${id}`} aria-pressed={active} data-filled={name !== null ? '' : undefined} data-testid={id} onClick={onActivate}>
-        <span className="min0">{name ?? empty}</span>
+        <span className="min0">{name ?? (phone ? touchWords(empty) : empty)}</span>
       </button>
     </Row>
   )

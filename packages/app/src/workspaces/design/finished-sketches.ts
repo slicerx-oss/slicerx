@@ -14,9 +14,28 @@ import { frameShown } from '../../cad/sketch-place'
 import { cameraBus } from '../../plate/tools'
 import { useSketchPicker } from '../../cad/sketch-pick'
 import { usePhoneLayout } from '../../lib/phone-layout'
+import { OVERLAY_GAP } from '../../viewport/overlay-insets'
 import { useApp } from '../../state/store'
 
 export { shownSketches }
+
+/**
+ * How much of the view a phone covers at its top (the selection and transform toolbars and the camera buttons, every
+ * floating bar whose middle is in the view's upper half) and at its bottom (the docked tool sheet), in pixels, with a
+ * small gap so nothing framed touches them.
+ */
+export function phoneCover(canvas: DOMRect): { coverTopPx: number; coverBottomPx: number } {
+  const mid = (canvas.top + canvas.bottom) / 2
+  let top = canvas.top
+  for (const el of document.querySelectorAll<HTMLElement>('.sx-overlay')) {
+    if (el.offsetParent === null || el.closest('.pane.sheet')) continue
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0 || r.bottom <= canvas.top || r.top >= canvas.bottom || (r.top + r.bottom) / 2 > mid) continue
+    top = Math.max(top, r.bottom)
+  }
+  const sheet = document.querySelector('.pane.sheet.sheet-docked')?.getBoundingClientRect()
+  return { coverTopPx: top > canvas.top ? top - canvas.top + OVERLAY_GAP : 0, coverBottomPx: sheet ? Math.max(0, canvas.bottom - sheet.top) + OVERLAY_GAP : 0 }
+}
 
 /** How long the phone's tool sheet takes to come up before the view frames above it. */
 const SHEET_SETTLE_MS = 350
@@ -68,9 +87,8 @@ export function useFinishedSketches(): void {
     const t = window.setTimeout(() => {
       const view = cameraBus()?.cad
       const canvas = view?.canvas?.getBoundingClientRect()
-      const sheet = document.querySelector('.pane.sheet.sheet-docked')?.getBoundingClientRect()
-      const cover = canvas && sheet ? Math.max(0, canvas.bottom - sheet.top) : 0
-      view?.frameSketches?.({ coverBottomPx: cover })
+      if (!canvas) return
+      view?.frameSketches?.(phoneCover(canvas))
     }, SHEET_SETTLE_MS)
     return () => window.clearTimeout(t)
   }, [open, phone])

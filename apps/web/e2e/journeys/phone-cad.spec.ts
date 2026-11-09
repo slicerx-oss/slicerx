@@ -483,18 +483,63 @@ test('Loft and Sweep sit under Create in the Tools menu, and Loft takes sketches
   await create.locator('[data-tool="loft"]').tap()
   const panel = page.locator('[data-section="cad-tool"]')
   await expect(panel).toContainText('Tap sketches')
-  // the sketches to pick are framed in the view above the sheet
-  const sheetTop = async () => (await page.locator('.pane.sheet.sheet-docked').boundingBox())!.y
-  const above = async (z: number) => {
-    const y = (await screenOf(page, [100, 100, z]))[1]
-    return y > 0 && y < (await sheetTop()) - 8
-  }
-  for (const z of [0, 15]) await expect.poll(() => above(z), { timeout: 5_000 }).toBe(true)
   for (const k of ['k1', 'k2']) await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, sketch: k })
   await expect(panel.getByTestId('loft-profile')).toHaveCount(2)
+  await expect.poll(() => clearOfBars(page), { timeout: 5_000 }).toEqual([])
   // each row's buttons are finger sized
   for (const b of await panel.getByTestId('loft-profile').first().getByRole('button').all()) expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await expect(panel.getByTestId('model-tool-apply')).toBeEnabled()
   await panel.getByTestId('model-tool-apply').tap()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length), { timeout: 30_000 }).toBe(1)
+})
+
+/**
+ * Every pickable sketch and every pick mark that is not wholly in the clear band of the view: below the floating bars
+ * at its top and above the tool sheet, as boxes on screen (the bars' and the sheet's from the page, the drawings' and
+ * the marks' from the view). Empty when all are clear.
+ */
+async function clearOfBars(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    type Box = { left: number; top: number; right: number; bottom: number }
+    const vp = (window as unknown as { __vp: { canvas: HTMLCanvasElement; finishedBoxes(): { id: string; drawing: Box; mark: Box | null }[] } }).__vp
+    const canvas = vp.canvas.getBoundingClientRect()
+    const mid = (canvas.top + canvas.bottom) / 2
+    let top = canvas.top
+    for (const el of document.querySelectorAll<HTMLElement>('.sx-overlay')) {
+      if (el.offsetParent === null || el.closest('.pane.sheet')) continue
+      const r = el.getBoundingClientRect()
+      if (r.width && r.height && r.bottom > canvas.top && r.top < canvas.bottom && (r.top + r.bottom) / 2 <= mid) top = Math.max(top, r.bottom)
+    }
+    const bottom = document.querySelector('.pane.sheet.sheet-docked')!.getBoundingClientRect().top
+    const out: string[] = []
+    const check = (what: string, b: Box) => {
+      if (b.top < top || b.bottom > bottom || b.left < canvas.left || b.right > canvas.right) out.push(`${what} ${Math.round(b.left)},${Math.round(b.top)} to ${Math.round(b.right)},${Math.round(b.bottom)} outside ${Math.round(top)} to ${Math.round(bottom)}`)
+    }
+    for (const f of vp.finishedBoxes()) {
+      check(`${f.id} drawing`, f.drawing)
+      if (f.mark) check(`${f.id} mark`, f.mark)
+    }
+    return out
+  })
+}
+
+test('Sweep frames the profile, the bent path and both marks between the toolbars and the sheet', async ({ page }) => {
+  test.slow()
+  await phoneStudio(page)
+  const level = { origin: [100, 100, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+  const upright = { origin: [100, 100, 0], normal: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] }
+  await page.evaluate(({ level, upright }) => {
+    const items = [
+      { kind: 'sketch', id: 'k1', name: 'Sketch 1', frame: level, loops: [{ type: 'circle', center: [0, 0], diameterMm: 6 }] },
+      { kind: 'sketch', id: 'k2', name: 'Sketch 2', frame: upright, loops: [{ start: [0, 0], segments: [{ type: 'line', to: [0, 30] }, { type: 'arc', center: [15, 30], sweepDeg: -90 }] }] },
+    ]
+    ;(window as unknown as { __sx: Sx }).__sx.setState({ timeline: { bodies: [], items, marker: items.length } })
+  }, { level, upright })
+  await page.getByTestId('phone-tools').tap()
+  await page.getByTestId('phone-tools-menu').getByRole('group', { name: 'Create' }).locator('[data-tool="sweep"]').tap()
+  const panel = page.locator('[data-section="cad-tool"]')
+  await expect(panel.getByTestId('sweep-profile')).toHaveText('Tap a sketch.')
+  for (const k of ['k1', 'k2']) await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, sketch: k })
+  await expect(panel.getByTestId('sweep-path')).toHaveText('Sketch 2')
+  await expect.poll(() => clearOfBars(page), { timeout: 5_000 }).toEqual([])
 })
