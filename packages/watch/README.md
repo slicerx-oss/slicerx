@@ -1,6 +1,6 @@
 # sx-watch
 
-The print watch's failure detector. It runs beside sx-link on the user's own machine. It pairs with the hub's `watch` role, takes a still of every printing printer every 10 seconds, and reports failures with `watch.report`. Frames never leave the machine.
+The print watch's failure detector. It runs beside sx-link on the user's own machine. It pairs with the hub's `watch` role, takes a still of every printing printer every 10 seconds, and reports failures with `watch.report`. Frames stay on the machine with one exception: for a printer the person turned huginn confirmation on for (`--huginn`, off unless given), when the local watch agrees on a failure, that one frame (the last scored one) is sent to ChatGPT on the person's own ChatGPT plan with one fixed question, whether the print failed, before the report goes out. Nothing else is sent, and no frame is sent for any other printer or when nothing was found. Only a confirmed failure can auto-pause a print; without confirmation a finding notifies and nothing more (`src/confirm.rs`).
 
 ```
 sx-watch --code-stdin [--url ws://127.0.0.1:47615] [--state-dir <sx-link state dir>]

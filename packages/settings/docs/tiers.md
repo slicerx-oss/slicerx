@@ -7,22 +7,23 @@ How the settings are grouped for the app. Every Orca key stays in `schema.json`,
 Each process key has `mode` and, for the user tiers, an `intent`.
 
 - `simple`: the keys the Simple controls drive directly (6): `layer_height`, `wall_loops`, `sparse_infill_density`, `enable_support`, `brim_type`, `smart_layer`. The Simple panel shows 7 controls, not these rows.
-- `advanced`: a curated list of 82 process keys grouped by `intent`.
-- `expert`: every other process key, shown behind search. 291 keys.
-- `develop`: developer only, never listed (7 keys, including `resolution` and `slice_closing_radius`).
+- `advanced`: a curated list of 42 process keys grouped by `intent`.
+- `expert`: every other process key, shown behind search. 339 keys.
+- `develop`: developer only, never listed (6 keys, including `resolution` and `slice_closing_radius`).
 - `hidden`: profile keys such as `inherits`, `print_extruder_variant`, `compatible_printers`, `wiping_volumes_extruders`, `prime_volume`, and the filament and printer profile keys. Imported and exported, shown nowhere.
 
 Tiers are cumulative: Advanced lists simple plus advanced keys, Expert lists all three. `settingsForTier(section, tier, { filamentCount })` and `isVisible(def, ctx)` (Rust: `settings_for_tier`, `is_visible`) do the filtering.
 
 Intents: quality, strength, speed, supports, adhesion, multicolor, effects, and output (G-code and file keys, Expert only). Advanced keys by intent:
 
-- quality (26): `initial_layer_print_height`, `line_width`, `outer_wall_line_width`, `inner_wall_line_width`, `initial_layer_line_width`, `sparse_infill_line_width`, `top_surface_line_width`, `print_flow_ratio`, `seam_position`, `seam_gap`, `seam_slope_conditional`, `wall_generator`, `wall_sequence`, `wall_direction`, `precise_outer_wall`, `only_one_wall_top`, `only_one_wall_first_layer`, `elefant_foot_compensation`, `xy_contour_compensation`, `xy_hole_compensation`, `enable_arc_fitting`, `thick_bridges`, `hole_to_polyhole`, `top_surface_pattern`, `bottom_surface_pattern`, `internal_solid_infill_pattern`
-- strength (9): `top_shell_thickness`, `bottom_shell_thickness`, `sparse_infill_pattern`, `top_surface_density`, `bottom_surface_density`, `infill_direction`, `infill_anchor_max`, `alternate_extra_wall`, `interlocking_beam`
+- quality (11): `initial_layer_print_height`, `seam_position`, `wall_generator`, `wall_sequence`, `precise_outer_wall`, `only_one_wall_first_layer`, `elefant_foot_compensation`, `xy_hole_compensation`, `thick_bridges`, `top_surface_pattern`, `bottom_surface_pattern`
+- strength (5): `top_shell_thickness`, `bottom_shell_thickness`, `sparse_infill_pattern`, `top_shell_layers`, `bottom_shell_layers`
 - speed (1): `outer_wall_speed`
-- supports (16): `support_type`, `support_style`, `support_threshold_angle`, `support_on_build_plate_only`, `support_critical_regions_only`, `support_object_xy_distance`, `support_top_z_distance`, `support_bottom_z_distance`, `support_interface_top_layers`, `support_interface_bottom_layers`, `support_base_pattern`, `support_interface_pattern`, `tree_support_branch_diameter`, `tree_support_tip_diameter`, `tree_support_branch_angle`, `tree_support_wall_count`
-- adhesion (12): `brim_width`, `brim_object_gap`, `skirt_loops`, `skirt_distance`, `skirt_height`, `skirt_type`, `min_skirt_length`, `raft_layers`, `raft_contact_distance`, `raft_expansion`, `draft_shield`, `tree_support_brim_width`
-- multicolor (14): `enable_prime_tower`, `prime_tower_width`, `prime_tower_brim_width`, `prime_tower_auto_position`, `wipe_tower_rotation_angle`, `wipe_tower_extra_spacing`, `wipe_tower_no_sparse_layers`, `flush_into_infill`, `flush_into_objects`, `flush_into_support`, `support_filament`, `support_interface_filament`, `ooze_prevention`, `standby_temperature_delta`
+- supports (8): `support_type`, `support_style`, `support_threshold_angle`, `support_on_build_plate_only`, `support_object_xy_distance`, `support_top_z_distance`, `support_bottom_z_distance`, `support_interface_top_layers`
+- adhesion (5): `brim_width`, `brim_object_gap`, `skirt_loops`, `skirt_height`, `raft_layers`
+- multicolor (7): `enable_prime_tower`, `prime_tower_width`, `flush_into_infill`, `flush_into_objects`, `flush_into_support`, `support_filament`, `support_interface_filament`
 - effects (4): `fuzzy_skin`, `fuzzy_skin_thickness`, `spiral_mode`, `ironing_type`
+- output (1): `print_sequence`
 
 Fuzzy skin is under effects: `fuzzy_skin` and `fuzzy_skin_thickness` in Advanced, noise type, point distance and first layer in Expert. The support style (`support_type`, `support_style`) and `support_threshold_angle` are Advanced. `print_sequence` belongs in the plate menu and `timelapse_type` in the send dialog; both stay Expert keys.
 
