@@ -768,7 +768,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 **Adaptive layer height**
 
-Automatic variable layer height. Off keeps one layer height. Quality thins layers where curved and detailed surfaces need it; Strength thins layers where the part carries load and keeps them thick elsewhere.
+Automatic variable layer height. Off keeps one layer height. Quality thins layers where curved and detailed surfaces need it; Strength thins layers only under overhangs and keeps every other layer thick.
 
 - Type: enum
 - Default: "quality"

@@ -45,6 +45,11 @@ describe('sleipnir window', () => {
     expect(settingDef('smart_layer')?.enumLabels).toEqual(['Off', 'sleipnir: Quality', 'sleipnir: Strength'])
     expect(settingDef('smart_layer')?.label).toBe('Adaptive layer height')
   })
+  it('says what Strength does: it thins layers under overhangs only, and the engine does no load analysis', () => {
+    const help = settingDef('smart_layer')?.help ?? ''
+    expect(help).toMatch(/Strength thins layers only under overhangs/)
+    expect(help).not.toMatch(/load/i)
+  })
 })
 
 describe('sleipnir in Easy mode', () => {
