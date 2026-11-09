@@ -20,7 +20,7 @@ describe('project Undo and Redo commands', () => {
       if (method !== 'history.get' && args['revision'] !== state.revision) throw Object.assign(new Error('History changed'), { code: 'busy' })
       return method === 'history.get' ? state : { ...state, changed: true, revision: 'project:3', undo: 0, redo: 1, plates: [{ id: 'p1', objects: [{ id: 'box', minMm: [0, 0, 0] }] }] }
     })
-    const ctx = await createContext({ engine: 'sx', printers: 'off', outDir: dir, profilesDir: join(dir, 'profiles') })
+    const ctx = await createContext({ engine: 'sx', printers: 'off', outDir: dir, profilesDir: join(dir, 'profiles'), policy: { classes: { slice: 'allow', remove: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } } })
     ctx.tools = appHistoryTools({ call } as AppLinkCaller, 'SlicerX')
     const server = createSlicerxServer(ctx)
     const client = new Client({ name: 'history-test', version: '1.0.0' })
@@ -44,6 +44,13 @@ describe('project Undo and Redo commands', () => {
         const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--printers', 'off', '--out-dir', dir, '--profiles-dir', join(dir, 'profiles'), 'call', tool, JSON.stringify(args), 'app_history'], { cwd: resolve(__dirname, '..'), env: { ...env, HOME: dir, USERPROFILE: dir } }).then(() => { throw new Error('Expected missing app') }, (e: unknown) => e as { code: number; stdout: string })
         expect(result.code).toBe(1)
         const rows = result.stdout.trim().split('\n').map((line) => JSON.parse(line))
+        if (tool !== 'app_history') {
+          // Undo and Redo can take objects off the plate, so under the default policy they ask before the app is reached.
+          expect(rows).toHaveLength(2)
+          expect(rows[0]).toMatchObject({ tool: `slicerx_${tool}`, ok: true, output: { status: 'approval_required', permission: 'remove' } })
+          expect(rows[1]).toMatchObject({ tool: 'slicerx_app_history', ok: false, output: { error: { code: 'not_configured' } } })
+          continue
+        }
         expect(rows).toHaveLength(1)
         expect(rows[0]).toMatchObject({ tool: `slicerx_${tool}`, ok: false, output: { error: { code: 'not_configured' } } })
       }
@@ -52,7 +59,7 @@ describe('project Undo and Redo commands', () => {
 
   it('requires a revision for edits, and preserves app-link permissions and failures', async () => {
     const tools = appHistoryTools(undefined, 'SlicerX')
-    expect(tools.map((t) => t.permission)).toEqual(['read', 'slice', 'slice'])
+    expect(tools.map((t) => t.permission)).toEqual(['read', 'remove', 'remove'])
     for (const args of [{}, { revision: 2 }, { revision: '' }, { revision: 'r', steps: 2 }]) expect(tools[1]!.input.safeParse(args).success).toBe(false)
     await expect(tools[0]!.run({} as never, {} as never)).rejects.toMatchObject({ code: 'not_configured' })
     for (const [code, wanted] of [['app_closed', 'not_configured'], ['read_only', 'not_supported'], ['busy', 'busy'], ['invalid_input', 'invalid_input']]) {

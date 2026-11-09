@@ -113,11 +113,18 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const open = defineTool({
     name: 'project.open',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    // Replaces this server's working project, never the person's project in the app.
+    // Replaces this server's working project, never the person's project in the app. Replacing one that has objects
+    // takes them off its plates, so that call is the remove class, which asks first by default.
     hints: { readOnly: false, destructive: true, idempotent: false, openWorld: false },
+    permissionFor: () => (deps.project.current && deps.project.current.objects().length > 0 ? 'remove' : 'read'),
+    async approval() {
+      const open = deps.project.current
+      const count = open?.objects().length ?? 0
+      return { title: `Replace the open project "${open?.name ?? ''}" and its ${count} ${count === 1 ? 'object' : 'objects'}?`, lines: [], actions: [] }
+    },
     description:
       assistantText('Start a new project for mimir skills to work on (replaces the current one). Name the printer and filament by knowledge id or name, and optionally extra profiles such as "intent:strong" or "process:fine". Then add models with slicerx_project_add_model.'),
     input: z.object({

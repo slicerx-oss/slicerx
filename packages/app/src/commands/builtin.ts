@@ -84,9 +84,10 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
 
   out.push(
-    // mimir may start a new project too; the discard question still goes to the person, and its answer comes back
-    { id: 'project-new', title: 'New project', section: 'plate', keywords: ['new', 'empty', 'blank', 'clear', 'start'], shortcut: 'Mod+N', tool: { permission: 'slice' }, run: async () => { const made = await newProject(); if (made) setWorkspace('prepare'); return { started: made } } },
-    { id: 'plate-default', title: 'Start over with the example plate', section: 'plate', keywords: ['example', 'demo', 'new', 'reset'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('start over'))) return; setWorkspace('prepare'); await loadDefaultPlate(host) } },
+    // mimir may start a new project too. It clears the plate, so it is the remove class (a card first by default, even
+    // for a saved project); the discard question for unsaved work still goes to the person, and its answer comes back.
+    { id: 'project-new', title: 'New project', section: 'plate', keywords: ['new', 'empty', 'blank', 'clear', 'start'], shortcut: 'Mod+N', tool: { permission: 'remove' }, run: async () => { const made = await newProject(); if (made) setWorkspace('prepare'); return { started: made } } },
+    { id: 'plate-default', title: 'Start over with the example plate', section: 'plate', keywords: ['example', 'demo', 'new', 'reset'], workspace: 'prepare', tool: { permission: 'remove' }, run: async () => { if (!(await confirmDiscard('start over'))) return; setWorkspace('prepare'); await loadDefaultPlate(host) } },
     { id: 'plate-open', title: 'Open a model file', section: 'plate', keywords: ['import', 'stl', '3mf', 'obj', 'step', 'stp', 'iges', 'igs', 'add'], shortcut: 'Mod+O', workspace: 'prepare', run: async () => { setWorkspace('prepare'); await openModelFiles(host) } },
     { id: 'gcode-open', title: 'Open a G-code file to view', section: 'plate', keywords: ['gcode', 'view', 'preview', 'file'], run: () => pickGcodeFile(host) },
     { id: 'gcode-lines', title: 'Show or hide the G-code lines', section: 'view', keywords: ['gcode', 'text', 'lines', 'viewer'], workspace: 'prepare', enabled: () => get().preview !== null, run: () => { showSliced(); setGcodePanel(!gcodeView.getState().panel) } },

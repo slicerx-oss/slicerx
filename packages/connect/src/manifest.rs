@@ -18,9 +18,13 @@ pub enum PluginKind {
 pub enum PermissionClass {
     Read,
     Slice,
+    Remove,
     Queue,
     Start,
     Profile,
+    #[serde(rename = "printer_config")]
+    PrinterConfig,
+    Share,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

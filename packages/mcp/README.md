@@ -121,7 +121,7 @@ Native slice results include `feature_filaments`: each object's name and the 1-b
 
 Pass that revision to `slicerx_app_undo` or `slicerx_app_redo` to take one step in the same history. Their responses include `changed` and the resulting state and revision. A new edit clears Redo. A stale revision returns `busy` without changing anything; read history again before deciding what to undo. Active loading, a live edit, an open object tool or a history replay also returns `busy`.
 
-These commands require the app link and an edit grant. They can reverse the person's last recorded edit as well as a command's edit. They affect only edits recorded by the toolbar, including transforms, plate edits, design changes and filament setup; they do not undo preferences, network actions or printing. `slicerx_design_undo` remains the separate command that removes a design's last feature.
+These commands are in the `remove` permission class, which asks first by default, since a step can take objects off the plate and the app cannot say beforehand what it will do. They require the app link and an edit grant. They can reverse the person's last recorded edit as well as a command's edit. They affect only edits recorded by the toolbar, including transforms, plate edits, design changes and filament setup; they do not undo preferences, network actions or printing. `slicerx_design_undo` remains the separate command that removes a design's last feature.
 
 From the command line, use `slicerx-mcp --printers link call app_history`, then `slicerx-mcp --printers link call app_undo '{"revision":"<revision from the read>"}'`. `app_redo` takes the same argument. The app stays the source of the history; these commands do not fall back to a separate server project.
 
@@ -173,7 +173,7 @@ The policy file gives each class of action one of three modes:
 | Class | Covers | Default |
 | --- | --- | --- |
 | `slice` | Orient, arrange, cut, slice and change settings inside the project | Allow |
-| `remove` | Take objects off the plate: remove an object, or delete a plate with the objects on it | Ask first |
+| `remove` | Take objects off the plate: remove an object, delete a plate with the objects on it, undo a design's only step, the app's Undo and Redo, and open a new working project over one that has objects | Ask first |
 | `queue` | Upload a plate to a printer and start it | Ask first (ask or off only) |
 | `start` | Heat or move a printer: start, pause, resume, cancel, temperatures, filament, G-code | Ask first (allow per printer, for pause and cancel only) |
 | `profile` | Write a saved printer, filament or process profile, or update Spoolman inventory | Ask first |
