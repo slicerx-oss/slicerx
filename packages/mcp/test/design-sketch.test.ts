@@ -57,6 +57,28 @@ describe('finished sketches in the design tools', () => {
     expect(d.history.steps.map((s) => s.sketch)).toEqual(['k1', 'k1'])
   })
 
+  it('carries a sweep\'s scale, twist and ease and a smooth path of points into the step, and names a bad value by its field', async () => {
+    const { add, run } = host()
+    const points = [[0, 0, 0], [0, 10, 30], [0, 40, 60]]
+    await run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points, smooth: true }, scale: 0.41, twist_deg: 30, ease: 'smooth' })
+    const p = add.mock.calls[0]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    expect(p).toMatchObject({ scaleEnd: 0.41, twistDeg: 30, ease: 'smooth', path: { points, smooth: true } })
+    await run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points }, scale: [1.5, 0.5] })
+    expect((add.mock.calls[1]![2] as Extract<StepParams, { op: 'sketch.sweep' }>).scaleEnd).toEqual([1.5, 0.5])
+    // the defaults leave the step as a plain sweep
+    await run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points }, scale: 1, twist_deg: 0, ease: 'linear' })
+    const q = add.mock.calls[2]![2] as Extract<StepParams, { op: 'sketch.sweep' }>
+    for (const k of ['scaleEnd', 'twistDeg', 'ease']) expect(q).not.toHaveProperty(k)
+    expect(q.path).toEqual({ points })
+    const bad = (extra: Record<string, unknown>) => run('geom.sweep', { design: 'd1', profile: { loops: LOOPS }, path: { points }, ...extra })
+    await expect(bad({ scale: 0 })).rejects.toThrow(/^scale: /)
+    await expect(bad({ scale: [1, 0.01] })).rejects.toThrow(/^scale\.1: /)
+    await expect(bad({ scale: 'half' })).rejects.toThrow(/^scale: /)
+    await expect(bad({ twist_deg: 5000 })).rejects.toThrow(/^twist_deg: /)
+    await expect(bad({ path: { frame: FRAME, loops: [{ points: [[0, 0], [0, 10]] }], smooth: true } })).rejects.toThrow('path.smooth: smooth is for a path of points; draw a spline for a smooth path on a plane')
+    expect(add).toHaveBeenCalledTimes(3)
+  })
+
   it('sweeps a finished profile sketch along a finished open path sketch, copying both into the step', async () => {
     const { add, run, sketches } = host()
     await run('design.sketch', { loops: LOOPS, frame: { origin: FRAME.origin, normal: FRAME.normal, u: FRAME.u } })

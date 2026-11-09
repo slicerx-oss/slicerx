@@ -296,7 +296,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out, dropped)
   if (newBody) {
     const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve' || p.op === 'sketch.loft' || p.op === 'sketch.sweep') && p.name ? p.name : 'Body'
-    const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: 'new' } : p.op === 'sketch.sweep' ? { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), operation: 'new' } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
+    const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: 'new' } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: 'new' } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
     const r = (await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } }
     const body = local(r.mesh, { name, slot: out[s.part]?.slot ?? 1 })
     if (s.part < out.length) out[s.part] = body
@@ -329,7 +329,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'sketch.revolve':
       case 'sketch.loft':
       case 'sketch.sweep': {
-        const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
+        const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : p.op === 'sketch.loft' ? { ...loftOpts(p), operation: p.operation, target: item(part) } : p.op === 'sketch.sweep' ? { ...sweepOpts(p), operation: p.operation, target: item(part) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean; volumeChangeMm3?: number; watertight?: boolean } }
         // a join off the part always adds a piece, so one that adds no volume sits inside it
         const joins = (p.op === 'shape.extrude' ? p.spec.operation : p.operation) === 'join'
@@ -511,6 +511,11 @@ async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[
       return out
     }
   }
+}
+
+/** A sweep step's engine request without its operation: the profile, the path and the taper and twist it was made with. */
+function sweepOpts(p: Extract<StepParams, { op: 'sketch.sweep' }>): Record<string, unknown> {
+  return { profile: p.profile, path: p.path, ...(p.thicken ? { thicken: p.thicken } : {}), ...(p.scaleEnd !== undefined ? { scaleEnd: p.scaleEnd } : {}), ...(p.twistDeg ? { twistDeg: p.twistDeg } : {}), ...(p.ease ? { ease: p.ease } : {}) }
 }
 
 /** A loft step's engine request without its operation: the profiles and the options it was made with. */
